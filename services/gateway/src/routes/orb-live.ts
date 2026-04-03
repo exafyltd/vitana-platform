@@ -4546,10 +4546,12 @@ router.post('/text', async (req: Request, res: Response) => {
       systemInstruction = generateSystemInstruction(session);
     }
 
+    // VTID-DEV-ASSIST: Pass user role for tool authorization filtering
     const geminiResponse = await processWithGemini({
       text: body.text,
       threadId,
-      systemInstruction
+      systemInstruction,
+      userRole: session.role || undefined,
     });
 
     const replyText = geminiResponse.reply || '';
@@ -5237,12 +5239,14 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       // Process with Gemini using Vertex routing (same as Operator Console)
       // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
       // VTID-01106: Pass memory-enhanced system instruction
+      // VTID-DEV-ASSIST: Pass user role for tool authorization filtering
       const geminiResponse = await processWithGemini({
         text: inputText,
         threadId,
         conversationHistory: conversation.history,
         conversationId,
-        systemInstruction
+        systemInstruction,
+        userRole: identity.active_role || undefined,
       });
       replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
       provider = (geminiResponse.meta?.provider as string) || 'vertex';

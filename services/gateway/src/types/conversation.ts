@@ -20,7 +20,7 @@ import { ContextLens } from './context-lens';
 /**
  * Conversation channels - where the message originates
  */
-export const CONVERSATION_CHANNELS = ['orb', 'operator'] as const;
+export const CONVERSATION_CHANNELS = ['orb', 'operator', 'developer_assistant'] as const;
 export type ConversationChannel = typeof CONVERSATION_CHANNELS[number];
 
 /**

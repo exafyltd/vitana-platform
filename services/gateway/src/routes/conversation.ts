@@ -53,7 +53,9 @@ import {
   getGeminiToolDefinitions,
   logToolExecution,
 } from '../services/tool-registry';
-import { processWithGemini } from '../services/gemini-operator';
+import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
+// VTID-DEV-ASSIST: Developer assistant personality
+import { getPersonalityConfigSync } from '../services/ai-personality-service';
 // Memory auto-write for conversation turns
 import { classifyCategory } from './memory';
 import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
@@ -190,6 +192,66 @@ router.post('/turn', async (req: Request, res: Response) => {
     const input = validation.data;
     const { channel, tenant_id, user_id, role, message, ui_context, vtid, options } = input;
 
+    // =========================================================================
+    // VTID-DEV-ASSIST: STRICT ROLE ENFORCEMENT for developer_assistant channel
+    // The developer_assistant channel grants access to task management, specs,
+    // CI/CD, deployments, and approvals. Only verified developer/admin users
+    // may access it. The role is verified server-side from user_tenants table,
+    // NOT from the client-supplied role parameter.
+    // =========================================================================
+    if (channel === 'developer_assistant') {
+      let verifiedRole: string | null = null;
+
+      // Server-side role verification: query user_tenants for the actual active_role
+      const supabase = getSupabase();
+      if (supabase && user_id && tenant_id) {
+        try {
+          const { data: membership } = await supabase
+            .from('user_tenants')
+            .select('active_role')
+            .eq('user_id', user_id)
+            .eq('tenant_id', tenant_id)
+            .limit(1)
+            .single();
+
+          verifiedRole = membership?.active_role || null;
+        } catch (err: any) {
+          console.warn(`[VTID-DEV-ASSIST] Role verification failed for user ${user_id}: ${err.message}`);
+        }
+      }
+
+      // HARD BLOCK: Only developer and admin roles may use the developer_assistant channel
+      const allowedDevRoles = ['developer', 'admin'];
+      if (!verifiedRole || !allowedDevRoles.includes(verifiedRole)) {
+        console.warn(
+          `[VTID-DEV-ASSIST] ACCESS DENIED: user=${user_id} claimed_role=${role} verified_role=${verifiedRole} channel=developer_assistant`
+        );
+
+        await emitOasisEvent({
+          vtid: 'VTID-DEV-ASSIST',
+          type: 'conversation.turn.received',
+          source: 'conversation-developer_assistant',
+          status: 'error',
+          message: `ACCESS DENIED: Non-developer user attempted developer_assistant channel`,
+          payload: {
+            request_id: requestId,
+            user_id,
+            tenant_id,
+            claimed_role: role,
+            verified_role: verifiedRole,
+          },
+        }).catch(() => {});
+
+        return res.status(403).json({
+          ok: false,
+          error: 'FORBIDDEN',
+          message: 'Access denied. The developer assistant is restricted to authorized developer accounts.',
+        });
+      }
+
+      console.log(`[VTID-DEV-ASSIST] Access granted: user=${user_id} verified_role=${verifiedRole}`);
+    }
+
     // VTID-01260: Generate conversation turn ID for event grouping
     const conversationTurnId = `turn-${requestId}`;
 
@@ -220,6 +282,9 @@ router.post('/turn', async (req: Request, res: Response) => {
     // Get or create conversation thread
     const thread = getOrCreateThread(input.thread_id, tenant_id, user_id, channel);
     thread.turn_count++;
+
+    // VTID-DEV-ASSIST: Set thread identity with role for tool-level role enforcement
+    setThreadIdentity(thread.thread_id, { tenant_id, user_id, role });
 
     // Create context lens for memory access
     const lens: ContextLens = createContextLens(tenant_id, user_id, {
@@ -282,29 +347,47 @@ router.post('/turn', async (req: Request, res: Response) => {
       const languageDirective = buildLanguageDirective(preferredLanguage);
 
       // Build system instruction with context pack
-      const systemInstruction = `You are Vitana, an intelligent assistant. Respond helpfully and accurately based on the context provided.
-${languageDirective}
-${contextForLLM}
+      // VTID-DEV-ASSIST: Use developer_assistant personality for developer channel
+      let channelInstructions = '';
+      if (channel === 'developer_assistant') {
+        const devConfig = getPersonalityConfigSync('developer_assistant');
+        channelInstructions = `${devConfig.base_identity || ''}
 
-Current conversation channel: ${channel}
-User's role: ${role}
+${devConfig.purpose || ''}
 
-Instructions:
+${devConfig.guidelines || ''}
+
+${devConfig.tools_section || ''}
+
+${devConfig.important_section || ''}`;
+      } else {
+        channelInstructions = `Instructions:
 - Use the memory context to personalize responses
 - Use knowledge context for Vitana-specific questions
 - Be concise but helpful
 - For ORB (voice), keep responses conversational
 - For Operator, you can be more detailed`;
+      }
+
+      const systemInstruction = `${channel === 'developer_assistant' ? '' : 'You are Vitana, an intelligent assistant. Respond helpfully and accurately based on the context provided.\n'}${languageDirective}
+${contextForLLM}
+
+Current conversation channel: ${channel}
+User's role: ${role}
+
+${channelInstructions}`;
 
       // Get tool definitions for the user's role
       const toolDefs = getGeminiToolDefinitions(role);
 
       // Process with Gemini
+      // VTID-DEV-ASSIST: Pass role so tool definitions are filtered by authorization
       const geminiResult = await processWithGemini({
         text: message.text,
         systemInstruction,
         conversationHistory: thread.history.slice(-10), // Last 10 turns
         threadId: thread.thread_id,
+        userRole: role,
       });
 
       reply = geminiResult.reply;
@@ -576,6 +659,31 @@ router.post('/stream', async (req: Request, res: Response) => {
 
     const input = validation.data;
 
+    // VTID-DEV-ASSIST: Block developer_assistant channel on stream endpoint too
+    if (input.channel === 'developer_assistant') {
+      const supabase = getSupabase();
+      let verifiedRole: string | null = null;
+      if (supabase && input.user_id && input.tenant_id) {
+        try {
+          const { data: membership } = await supabase
+            .from('user_tenants')
+            .select('active_role')
+            .eq('user_id', input.user_id)
+            .eq('tenant_id', input.tenant_id)
+            .limit(1)
+            .single();
+          verifiedRole = membership?.active_role || null;
+        } catch {}
+      }
+      if (!verifiedRole || !['developer', 'admin'].includes(verifiedRole)) {
+        return res.status(403).json({
+          ok: false,
+          error: 'FORBIDDEN',
+          message: 'Access denied. The developer assistant is restricted to authorized developer accounts.',
+        });
+      }
+    }
+
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -634,11 +742,13 @@ Instructions:
 
     // Process with Gemini
     try {
+      // VTID-DEV-ASSIST: Pass role for tool authorization filtering
       const geminiResult = await processWithGemini({
         text: input.message.text,
         systemInstruction,
         conversationHistory: [],
         threadId: thread.thread_id,
+        userRole: input.role,
       });
 
       // Send text chunks (simulate streaming)

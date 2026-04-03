@@ -51,6 +51,10 @@ import { getPersonalityConfigSync } from './ai-personality-service';
 import { scoreAndRankEvents, formatForText, EventRecord, EventSearchFilters, ScoredEventResults } from './event-relevance-scoring';
 // VTID-01270: Matchmaking tool handler
 import { executeGetUserMatches as executeGetUserMatchesTool } from './match-tool-handler';
+// VTID-DEV-ASSIST: Developer Assistant imports
+import githubService from './github-service';
+import cicdLockManager from './cicd-lock-manager';
+import { runFullQualityCheck } from './spec-quality-agent';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -457,6 +461,203 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
         },
         required: []
       }
+    },
+    // ===== VTID-DEV-ASSIST: Developer Assistant Tools =====
+    {
+      name: 'dev_list_tasks',
+      description: 'List all tasks from the VTID ledger with status, column, and terminal state derived from OASIS events.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: 'Max tasks to return. Defaults to 50.' },
+          status: { type: 'string', description: 'Filter by status.' },
+          layer: { type: 'string', description: 'Filter by layer.' }
+        },
+        required: []
+      }
+    },
+    {
+      name: 'dev_get_task_detail',
+      description: 'Get full detail for a specific VTID including ledger data and recent OASIS events.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID to look up.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_generate_spec',
+      description: 'Generate an implementation spec from seed notes for a VTID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID to generate a spec for.' },
+          seed_notes: { type: 'string', description: 'Additional context or notes.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_get_spec',
+      description: 'Get the current spec content and status for a VTID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID to get the spec for.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_validate_spec',
+      description: 'Run validation checks on a spec for a VTID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID whose spec to validate.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_quality_check',
+      description: 'Run a quality check on a spec for a VTID using the spec quality agent.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID whose spec to quality-check.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_approve_spec',
+      description: 'Approve a validated spec for a VTID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID whose spec to approve.' }
+        },
+        required: ['vtid']
+      }
+    },
+    {
+      name: 'dev_list_approvals',
+      description: 'List pending approval items (PRs awaiting review).',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: 'Max approvals to return. Defaults to 50.' }
+        },
+        required: []
+      }
+    },
+    {
+      name: 'dev_approval_count',
+      description: 'Get the count of pending approvals.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    },
+    {
+      name: 'dev_approve_item',
+      description: 'Approve a pending approval item by approval_id. Triggers safe merge.',
+      parameters: {
+        type: 'object',
+        properties: {
+          approval_id: { type: 'string', description: 'The approval_id to approve.' }
+        },
+        required: ['approval_id']
+      }
+    },
+    {
+      name: 'dev_reject_item',
+      description: 'Reject a pending approval item by approval_id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          approval_id: { type: 'string', description: 'The approval_id to reject.' },
+          reason: { type: 'string', description: 'Reason for rejection.' }
+        },
+        required: ['approval_id']
+      }
+    },
+    {
+      name: 'dev_query_oasis_events',
+      description: 'Query OASIS events with optional filtering by VTID, topic, or status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'Filter by VTID.' },
+          topic: { type: 'string', description: 'Filter by topic pattern.' },
+          status: { type: 'string', description: 'Filter by status.' },
+          limit: { type: 'integer', description: 'Max events. Defaults to 50.' }
+        },
+        required: []
+      }
+    },
+    {
+      name: 'dev_create_pr',
+      description: 'Create a GitHub pull request for a VTID branch.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID this PR is for.' },
+          head_branch: { type: 'string', description: 'Branch to merge from.' },
+          base_branch: { type: 'string', description: 'Branch to merge into. Defaults to main.' },
+          title: { type: 'string', description: 'PR title.' },
+          body: { type: 'string', description: 'PR body.' }
+        },
+        required: ['vtid', 'head_branch']
+      }
+    },
+    {
+      name: 'dev_merge_pr',
+      description: 'Safe merge a PR with CI gate. Only merges if checks pass.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: { type: 'string', description: 'The VTID for this merge.' },
+          pr_number: { type: 'integer', description: 'PR number to merge.' },
+          merge_method: { type: 'string', enum: ['squash', 'merge', 'rebase'], description: 'Merge method. Defaults to squash.' }
+        },
+        required: ['vtid', 'pr_number']
+      }
+    },
+    {
+      name: 'dev_deploy_service',
+      description: 'Deploy a service via CI/CD pipeline.',
+      parameters: {
+        type: 'object',
+        properties: {
+          service: { type: 'string', description: 'Service to deploy (e.g., gateway).' },
+          vtid: { type: 'string', description: 'VTID triggering this deploy.' },
+          environment: { type: 'string', enum: ['production', 'staging'], description: 'Target environment.' }
+        },
+        required: ['service']
+      }
+    },
+    {
+      name: 'dev_deployment_status',
+      description: 'Check deployment history and status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          service: { type: 'string', description: 'Filter by service.' },
+          limit: { type: 'integer', description: 'Max deployments. Defaults to 10.' }
+        },
+        required: []
+      }
+    },
+    {
+      name: 'dev_cicd_health',
+      description: 'Check CI/CD pipeline health.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    },
+    {
+      name: 'dev_lock_status',
+      description: 'Check deploy concurrency lock status.',
+      parameters: { type: 'object', properties: {}, required: [] }
     }
   ]
 };
@@ -2190,6 +2391,21 @@ export async function executeTool(
 ): Promise<ToolExecutionResult> {
   console.log(`[VTID-0536] Executing tool: ${toolName}`);
 
+  // VTID-DEV-ASSIST: Defense-in-depth role enforcement for dev_ tools.
+  // Even if a tool call reaches the executor through an unexpected path,
+  // dev_ prefixed tools are HARD BLOCKED for non-developer roles.
+  if (toolName.startsWith('dev_') && toolName !== 'dev_verify_deploy_checklist') {
+    const threadIdentity = threadIdentityMap.get(threadId);
+    const threadRole = threadIdentity?.role;
+    if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+      console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+      return {
+        ok: false,
+        error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+      };
+    }
+  }
+
   // Log assistant turn start
   const startTime = Date.now();
 
@@ -2329,6 +2545,79 @@ export async function executeTool(
         break;
       }
 
+      // ===== VTID-DEV-ASSIST: Developer Assistant Tool Cases =====
+      case 'dev_list_tasks':
+        result = await executeDevListTasks(args as { limit?: number; status?: string; layer?: string }, threadId);
+        break;
+
+      case 'dev_get_task_detail':
+        result = await executeDevGetTaskDetail(args as { vtid: string }, threadId);
+        break;
+
+      case 'dev_generate_spec':
+        result = await executeDevGenerateSpec(args as { vtid: string; seed_notes?: string }, threadId);
+        break;
+
+      case 'dev_get_spec':
+        result = await executeDevGetSpec(args as { vtid: string }, threadId);
+        break;
+
+      case 'dev_validate_spec':
+        result = await executeDevValidateSpec(args as { vtid: string }, threadId);
+        break;
+
+      case 'dev_quality_check':
+        result = await executeDevQualityCheck(args as { vtid: string }, threadId);
+        break;
+
+      case 'dev_approve_spec':
+        result = await executeDevApproveSpec(args as { vtid: string }, threadId);
+        break;
+
+      case 'dev_list_approvals':
+        result = await executeDevListApprovals(args as { limit?: number }, threadId);
+        break;
+
+      case 'dev_approval_count':
+        result = await executeDevApprovalCount(threadId);
+        break;
+
+      case 'dev_approve_item':
+        result = await executeDevApproveItem(args as { approval_id: string }, threadId);
+        break;
+
+      case 'dev_reject_item':
+        result = await executeDevRejectItem(args as { approval_id: string; reason?: string }, threadId);
+        break;
+
+      case 'dev_query_oasis_events':
+        result = await executeDevQueryOasisEvents(args as { vtid?: string; topic?: string; status?: string; limit?: number }, threadId);
+        break;
+
+      case 'dev_create_pr':
+        result = await executeDevCreatePr(args as { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
+        break;
+
+      case 'dev_merge_pr':
+        result = await executeDevMergePr(args as { vtid: string; pr_number: number; merge_method?: string }, threadId);
+        break;
+
+      case 'dev_deploy_service':
+        result = await executeDevDeployService(args as { service: string; vtid?: string; environment?: string }, threadId);
+        break;
+
+      case 'dev_deployment_status':
+        result = await executeDevDeploymentStatus(args as { service?: string; limit?: number }, threadId);
+        break;
+
+      case 'dev_cicd_health':
+        result = await executeDevCicdHealth(threadId);
+        break;
+
+      case 'dev_lock_status':
+        result = await executeDevLockStatus(threadId);
+        break;
+
       default:
         result = {
           ok: false,
@@ -2403,10 +2692,17 @@ function getOperatorSystemPrompt(): string {
  * VTID-01023: Convert tool definitions to Vertex AI format
  * Uses explicit typing to match Vertex AI SDK requirements
  */
-function getVertexToolDefinitions(): Tool[] {
-  // Convert our tool definitions to Vertex AI format
-  // The Vertex AI SDK expects a specific schema structure
-  const functionDeclarations: FunctionDeclaration[] = GEMINI_TOOL_DEFINITIONS.functionDeclarations.map(fd => ({
+function getVertexToolDefinitions(userRole?: string): Tool[] {
+  // VTID-DEV-ASSIST: Filter tool definitions by user role.
+  // dev_ prefixed tools are ONLY included when role is explicitly developer/admin.
+  // If role is unknown/undefined, dev_ tools are excluded (whitelist, not blacklist).
+  let toolDefs = GEMINI_TOOL_DEFINITIONS.functionDeclarations;
+  const isDeveloper = userRole && ['developer', 'admin'].includes(userRole);
+  if (!isDeveloper) {
+    toolDefs = toolDefs.filter(fd => !fd.name.startsWith('dev_') || fd.name === 'dev_verify_deploy_checklist');
+  }
+
+  const functionDeclarations: FunctionDeclaration[] = toolDefs.map(fd => ({
     name: fd.name,
     description: fd.description,
     // Cast parameters through unknown to satisfy TypeScript
@@ -2426,7 +2722,8 @@ async function callVertexWithTools(
   threadId: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   customSystemInstruction?: string,
-  vtid?: string | null
+  vtid?: string | null,
+  userRole?: string
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -2474,7 +2771,7 @@ async function callVertexWithTools(
       role: 'system',
       parts: [{ text: systemPrompt }]
     },
-    tools: getVertexToolDefinitions()
+    tools: getVertexToolDefinitions(userRole)
   });
 
   // VTID-01027: Build contents array with conversation history
@@ -2707,8 +3004,10 @@ export async function processWithGemini(input: {
   conversationId?: string;
   // VTID-01106: Optional system instruction override (for ORB memory context)
   systemInstruction?: string;
+  // VTID-DEV-ASSIST: User role for tool filtering — only send tools the user is authorized to use
+  userRole?: string;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole } = input;
 
   console.log(`[VTID-01023] Processing message: "${text.substring(0, 50)}..."`);
   if (conversationHistory.length > 0) {
@@ -2720,7 +3019,8 @@ export async function processWithGemini(input: {
     try {
       console.log('[VTID-01023] Using Vertex AI with ADC');
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
-      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction);
+      // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole);
 
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
@@ -2779,7 +3079,8 @@ export async function processWithGemini(input: {
       // Call Gemini API with function calling
       // VTID-01027: Pass conversation history
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
-      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory, systemInstruction);
+      // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
+      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole);
 
       // Check if Gemini wants to call any tools
       if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
@@ -2849,7 +3150,8 @@ async function callGeminiWithTools(
   threadId: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   customSystemInstruction?: string,
-  vtid?: string | null
+  vtid?: string | null,
+  userRole?: string
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -2904,7 +3206,12 @@ async function callGeminiWithTools(
 
   const requestBody = {
     contents,
-    tools: [GEMINI_TOOL_DEFINITIONS],
+    // VTID-DEV-ASSIST: Filter tool definitions by role — dev_ tools ONLY for developer/admin (whitelist)
+    tools: [{
+      functionDeclarations: (userRole && ['developer', 'admin'].includes(userRole))
+        ? GEMINI_TOOL_DEFINITIONS.functionDeclarations
+        : GEMINI_TOOL_DEFINITIONS.functionDeclarations.filter(fd => !fd.name.startsWith('dev_') || fd.name === 'dev_verify_deploy_checklist')
+    }],
     systemInstruction: {
       parts: [{
         text: systemPrompt
@@ -3300,6 +3607,730 @@ What would you like to do?`,
       tool_calls: toolResults.length
     }
   };
+}
+
+// ==================== VTID-DEV-ASSIST: Developer Assistant Executor Functions ====================
+
+/**
+ * List tasks from vtid_ledger with OASIS-derived terminal state
+ */
+async function executeDevListTasks(
+  args: { limit?: number; status?: string; layer?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const limit = args.limit || 50;
+    let url = `${SUPABASE_URL}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit}&status=neq.deleted`;
+    if (args.status) url += `&status=eq.${args.status}`;
+    if (args.layer) url += `&layer=eq.${args.layer}`;
+
+    const resp = await fetch(url, {
+      headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` },
+    });
+
+    if (!resp.ok) return { ok: false, error: `Query failed: ${resp.status}` };
+    const rows = await resp.json() as any[];
+
+    // Fetch OASIS events for terminal state derivation
+    const eventsResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/oasis_events?order=created_at.desc&limit=500`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` } }
+    );
+    const allEvents = eventsResp.ok ? (await eventsResp.json() as any[]) : [];
+
+    const tasks = rows.map((row: any) => {
+      const vtidEvents = allEvents.filter((e: any) => e.vtid === row.vtid);
+      let column = 'SCHEDULED';
+      let isTerminal = false;
+      let terminalOutcome: string | null = null;
+      const ledgerStatus = (row.status || '').toLowerCase();
+
+      const hasCompleted = vtidEvents.some((e: any) => (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed');
+      const hasFailed = vtidEvents.some((e: any) => (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed');
+
+      if (hasCompleted) { isTerminal = true; terminalOutcome = 'success'; column = 'COMPLETED'; }
+      else if (hasFailed) { isTerminal = true; terminalOutcome = 'failed'; column = 'COMPLETED'; }
+      else if (['done', 'closed', 'deployed', 'completed'].includes(ledgerStatus)) { isTerminal = true; terminalOutcome = 'success'; column = 'COMPLETED'; }
+      else if (['failed', 'error'].includes(ledgerStatus)) { isTerminal = true; terminalOutcome = 'failed'; column = 'COMPLETED'; }
+      else if (['in_progress', 'running', 'active', 'validating'].includes(ledgerStatus)) { column = 'IN_PROGRESS'; }
+
+      return {
+        vtid: row.vtid,
+        title: row.title || row.description,
+        status: row.status,
+        column,
+        is_terminal: isTerminal,
+        terminal_outcome: terminalOutcome,
+        layer: row.layer,
+        module: row.module,
+        updated_at: row.updated_at,
+      };
+    });
+
+    return { ok: true, data: { tasks, total: tasks.length } as any };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Get full task detail for a VTID
+ */
+async function executeDevGetTaskDetail(
+  args: { vtid: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const headers = { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` };
+
+    // Fetch ledger entry
+    const ledgerResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${args.vtid}&limit=1`,
+      { headers }
+    );
+    const ledgerRows = ledgerResp.ok ? (await ledgerResp.json() as any[]) : [];
+    const ledger = ledgerRows[0] || null;
+
+    // Fetch OASIS events for this VTID
+    const eventsResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/oasis_events?vtid=eq.${args.vtid}&order=created_at.desc&limit=50`,
+      { headers }
+    );
+    const events = eventsResp.ok ? (await eventsResp.json() as any[]) : [];
+
+    // Fetch spec if available
+    const specResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/oasis_specs?vtid=eq.${args.vtid}&limit=1`,
+      { headers }
+    );
+    const specRows = specResp.ok ? (await specResp.json() as any[]) : [];
+    const spec = specRows[0] || null;
+
+    return {
+      ok: true,
+      data: {
+        vtid: args.vtid,
+        ledger: ledger ? {
+          title: ledger.title,
+          summary: ledger.summary,
+          status: ledger.status,
+          layer: ledger.layer,
+          module: ledger.module,
+          created_at: ledger.created_at,
+          updated_at: ledger.updated_at,
+        } : null,
+        spec: spec ? {
+          status: spec.status,
+          title: spec.title,
+          updated_at: spec.updated_at,
+          has_content: !!spec.spec_markdown,
+        } : null,
+        recent_events: events.slice(0, 20).map((e: any) => ({
+          topic: e.topic,
+          status: e.status,
+          message: e.message,
+          created_at: e.created_at,
+        })),
+        event_count: events.length,
+      } as any,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Generate spec for a VTID by calling the specs API internally
+ */
+async function executeDevGenerateSpec(
+  args: { vtid: string; seed_notes?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const headers = { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` };
+
+    // Get ledger entry for task info
+    const ledgerResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${args.vtid}&limit=1`,
+      { headers }
+    );
+    const ledgerRows = ledgerResp.ok ? (await ledgerResp.json() as any[]) : [];
+    if (ledgerRows.length === 0) {
+      return { ok: false, error: `VTID ${args.vtid} not found in ledger` };
+    }
+    const ledger = ledgerRows[0];
+    const title = ledger.title || ledger.description || args.vtid;
+    const summary = ledger.summary || '';
+    const seedNotes = args.seed_notes || summary || title;
+
+    // Call the internal spec generation endpoint via HTTP
+    const gatewayPort = process.env.PORT || '8080';
+    const generateResp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({ seed_notes: seedNotes, source: 'developer_assistant' }),
+    });
+
+    const result = await generateResp.json() as any;
+    if (!generateResp.ok) {
+      return { ok: false, error: result.error || `Spec generation failed: ${generateResp.status}` };
+    }
+
+    await emitOasisEvent({
+      vtid: args.vtid,
+      type: 'dev_assist.spec.generated',
+      source: 'developer-assistant',
+      status: 'success',
+      message: `Spec generated for ${args.vtid} via developer assistant`,
+      payload: { thread_id: threadId },
+    }).catch(() => {});
+
+    return { ok: true, data: { vtid: args.vtid, message: `Spec generated successfully for ${args.vtid}`, spec_status: result.spec_status || 'draft' } as any };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Get spec content for a VTID
+ */
+async function executeDevGetSpec(
+  args: { vtid: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const headers = { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` };
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/oasis_specs?vtid=eq.${args.vtid}&limit=1`,
+      { headers }
+    );
+
+    if (!resp.ok) return { ok: false, error: `Query failed: ${resp.status}` };
+    const rows = await resp.json() as any[];
+
+    if (rows.length === 0) {
+      return { ok: true, data: { vtid: args.vtid, exists: false, message: 'No spec found for this VTID' } as any };
+    }
+
+    const spec = rows[0];
+    return {
+      ok: true,
+      data: {
+        vtid: args.vtid,
+        exists: true,
+        status: spec.status,
+        title: spec.title,
+        spec_markdown: spec.spec_markdown,
+        hash: spec.hash,
+        updated_at: spec.updated_at,
+      } as any,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Validate spec for a VTID
+ */
+async function executeDevValidateSpec(
+  args: { vtid: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Validation failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Quality check spec for a VTID
+ */
+async function executeDevQualityCheck(
+  args: { vtid: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/quality-check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Quality check failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Approve spec for a VTID
+ */
+async function executeDevApproveSpec(
+  args: { vtid: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({ approved_by: 'developer_assistant' }),
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: args.vtid,
+        type: 'dev_assist.spec.approved',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `Spec approved for ${args.vtid} via developer assistant`,
+        payload: { thread_id: threadId },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Approval failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * List pending approvals
+ */
+async function executeDevListApprovals(
+  args: { limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const limit = args.limit || 50;
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/pending?limit=${limit}`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Failed to fetch approvals') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Get pending approval count
+ */
+async function executeDevApprovalCount(threadId: string): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/count`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Failed to get count') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Approve a pending item
+ */
+async function executeDevApproveItem(
+  args: { approval_id: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: 'VTID-DEV-ASSIST',
+        type: 'dev_assist.approval.approved',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `Approval ${args.approval_id} approved via developer assistant`,
+        payload: { approval_id: args.approval_id, thread_id: threadId },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Approve failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Reject a pending item
+ */
+async function executeDevRejectItem(
+  args: { approval_id: string; reason?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/reject`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({ reason: args.reason || 'Rejected via developer assistant' }),
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: 'VTID-DEV-ASSIST',
+        type: 'dev_assist.approval.rejected',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `Approval ${args.approval_id} rejected via developer assistant`,
+        payload: { approval_id: args.approval_id, reason: args.reason, thread_id: threadId },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Reject failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Query OASIS events with filtering
+ */
+async function executeDevQueryOasisEvents(
+  args: { vtid?: string; topic?: string; status?: string; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const limit = args.limit || 50;
+    let url = `${SUPABASE_URL}/rest/v1/oasis_events?order=created_at.desc&limit=${limit}`;
+    if (args.vtid) url += `&vtid=eq.${args.vtid}`;
+    if (args.topic) url += `&topic=ilike.*${encodeURIComponent(args.topic)}*`;
+    if (args.status) url += `&status=eq.${args.status}`;
+
+    const resp = await fetch(url, {
+      headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` },
+    });
+
+    if (!resp.ok) return { ok: false, error: `Query failed: ${resp.status}` };
+    const events = await resp.json() as any[];
+
+    return {
+      ok: true,
+      data: {
+        events: events.map((e: any) => ({
+          vtid: e.vtid,
+          topic: e.topic,
+          status: e.status,
+          message: e.message,
+          created_at: e.created_at,
+          metadata: e.metadata,
+        })),
+        total: events.length,
+      } as any,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Create a GitHub PR
+ */
+async function executeDevCreatePr(
+  args: { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/create-pr`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({
+        vtid: args.vtid,
+        repo: 'exafyltd/vitana-platform',
+        head_branch: args.head_branch,
+        base_branch: args.base_branch || 'main',
+        title: args.title || `${args.vtid}: ${args.head_branch}`,
+        body: args.body || `PR created via Vitana Developer Assistant for ${args.vtid}`,
+      }),
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: args.vtid,
+        type: 'dev_assist.pr.created',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `PR created for ${args.vtid} via developer assistant`,
+        payload: { head_branch: args.head_branch, thread_id: threadId, pr_url: result.pr_url },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'PR creation failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Safe merge a PR
+ */
+async function executeDevMergePr(
+  args: { vtid: string; pr_number: number; merge_method?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/safe-merge`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({
+        vtid: args.vtid,
+        repo: 'exafyltd/vitana-platform',
+        pr_number: args.pr_number,
+        merge_method: args.merge_method || 'squash',
+      }),
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: args.vtid,
+        type: 'dev_assist.pr.merged',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `PR #${args.pr_number} merged for ${args.vtid} via developer assistant`,
+        payload: { pr_number: args.pr_number, thread_id: threadId },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Merge failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Deploy a service
+ */
+async function executeDevDeployService(
+  args: { service: string; vtid?: string; environment?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/deploy/service`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({
+        service: args.service,
+        vtid: args.vtid || 'VTID-DEV-ASSIST',
+        environment: args.environment || 'production',
+      }),
+    });
+
+    const result = await resp.json() as any;
+
+    if (resp.ok) {
+      await emitOasisEvent({
+        vtid: args.vtid || 'VTID-DEV-ASSIST',
+        type: 'dev_assist.deploy.triggered',
+        source: 'developer-assistant',
+        status: 'success',
+        message: `Deploy triggered for ${args.service} via developer assistant`,
+        payload: { service: args.service, environment: args.environment, thread_id: threadId },
+      }).catch(() => {});
+    }
+
+    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Deploy failed') };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Check deployment status/history
+ */
+async function executeDevDeploymentStatus(
+  args: { service?: string; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const limit = args.limit || 10;
+    let url = `${SUPABASE_URL}/rest/v1/oasis_events?topic=ilike.deploy.*&order=created_at.desc&limit=${limit}`;
+    if (args.service) url += `&topic=ilike.*${args.service}*`;
+
+    const resp = await fetch(url, {
+      headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` },
+    });
+
+    if (!resp.ok) return { ok: false, error: `Query failed: ${resp.status}` };
+    const events = await resp.json() as any[];
+
+    return {
+      ok: true,
+      data: {
+        deployments: events.map((e: any) => ({
+          vtid: e.vtid,
+          topic: e.topic,
+          status: e.status,
+          message: e.message,
+          created_at: e.created_at,
+          metadata: e.metadata,
+        })),
+        total: events.length,
+      } as any,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Check CI/CD pipeline health
+ */
+async function executeDevCicdHealth(threadId: string): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/cicd/health`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Check deploy concurrency lock status
+ */
+async function executeDevLockStatus(threadId: string): Promise<ToolExecutionResult> {
+  try {
+    const gatewayPort = process.env.PORT || '8080';
+    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/cicd/lock-status`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE!,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    const result = await resp.json() as any;
+    return { ok: resp.ok, data: result };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // ==================== Exports ====================

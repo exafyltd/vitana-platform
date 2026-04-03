@@ -534,7 +534,15 @@ export type CicdEventType =
   | 'self-healing.rollback.completed'
   | 'self-healing.kill_switch.activated'
   | 'self-healing.kill_switch.deactivated'
-  | 'autopilot.task.spec.created';
+  | 'autopilot.task.spec.created'
+  // VTID-DEV-ASSIST: Developer Assistant Events
+  | 'dev_assist.spec.generated'
+  | 'dev_assist.spec.approved'
+  | 'dev_assist.approval.approved'
+  | 'dev_assist.approval.rejected'
+  | 'dev_assist.pr.created'
+  | 'dev_assist.pr.merged'
+  | 'dev_assist.deploy.triggered';
 
 export interface CicdOasisEvent {
   vtid: string;

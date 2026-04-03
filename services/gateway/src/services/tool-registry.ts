@@ -324,6 +324,441 @@ CRITICAL — How to present results:
     },
   ],
 
+  // ===== VTID-DEV-ASSIST: Developer Assistant Tools (Task & Spec Lifecycle) =====
+  [
+    'dev_list_tasks',
+    {
+      name: 'dev_list_tasks',
+      description: 'List all tasks from the VTID ledger with status, column, and terminal state. Use when the developer asks to see tasks, the board, or task status.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of tasks to return. Defaults to 50.',
+          },
+          status: {
+            type: 'string',
+            description: 'Filter by ledger status (e.g., scheduled, in_progress, completed, failed).',
+          },
+          layer: {
+            type: 'string',
+            description: 'Filter by layer (e.g., platform, community).',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_get_task_detail',
+    {
+      name: 'dev_get_task_detail',
+      description: 'Get full detail for a specific VTID including ledger data and recent OASIS events. Use when the developer asks about a specific task.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to look up (e.g., VTID-01216).',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_generate_spec',
+    {
+      name: 'dev_generate_spec',
+      description: 'Generate an implementation spec from seed notes for a VTID. Calls the spec generation pipeline with LLM.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to generate a spec for.',
+          },
+          seed_notes: {
+            type: 'string',
+            description: 'Additional context or notes for the spec generation.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_get_spec',
+    {
+      name: 'dev_get_spec',
+      description: 'Get the current spec content and status for a VTID.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to get the spec for.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_validate_spec',
+    {
+      name: 'dev_validate_spec',
+      description: 'Run validation checks on a spec for a VTID. Checks required sections and governance rules.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID whose spec to validate.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_quality_check',
+    {
+      name: 'dev_quality_check',
+      description: 'Run a quality check on a spec for a VTID. Uses the spec quality agent for deeper analysis.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID whose spec to quality-check.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_approve_spec',
+    {
+      name: 'dev_approve_spec',
+      description: 'Approve a validated spec for a VTID, moving it to approved status.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID whose spec to approve.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+
+  // ===== VTID-DEV-ASSIST: Developer Assistant Tools (Approvals & Events) =====
+  [
+    'dev_list_approvals',
+    {
+      name: 'dev_list_approvals',
+      description: 'List pending approval items (PRs awaiting review). Returns approval queue with checks and governance status.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of approvals to return. Defaults to 50.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_approval_count',
+    {
+      name: 'dev_approval_count',
+      description: 'Get the count of pending approvals.',
+      parameters_schema: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_approve_item',
+    {
+      name: 'dev_approve_item',
+      description: 'Approve a pending approval item by its approval_id. Triggers safe merge.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          approval_id: {
+            type: 'string',
+            description: 'The approval_id of the item to approve.',
+          },
+        },
+        required: ['approval_id'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_reject_item',
+    {
+      name: 'dev_reject_item',
+      description: 'Reject a pending approval item by its approval_id.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          approval_id: {
+            type: 'string',
+            description: 'The approval_id of the item to reject.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Reason for rejection.',
+          },
+        },
+        required: ['approval_id'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_query_oasis_events',
+    {
+      name: 'dev_query_oasis_events',
+      description: 'Query OASIS events with optional filtering by VTID, topic, or status. Returns recent events from the event ledger.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'Filter events by VTID.',
+          },
+          topic: {
+            type: 'string',
+            description: 'Filter events by topic pattern (e.g., deploy.*, cicd.*).',
+          },
+          status: {
+            type: 'string',
+            description: 'Filter events by status (e.g., success, error, info).',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of events to return. Defaults to 50.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+
+  // ===== VTID-DEV-ASSIST: Developer Assistant Tools (CI/CD & Deployment) =====
+  [
+    'dev_create_pr',
+    {
+      name: 'dev_create_pr',
+      description: 'Create a GitHub pull request for a VTID branch.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID this PR is for.',
+          },
+          head_branch: {
+            type: 'string',
+            description: 'The branch to merge from.',
+          },
+          base_branch: {
+            type: 'string',
+            description: 'The branch to merge into. Defaults to main.',
+          },
+          title: {
+            type: 'string',
+            description: 'PR title. Defaults to "VTID: <task title>".',
+          },
+          body: {
+            type: 'string',
+            description: 'PR body/description.',
+          },
+        },
+        required: ['vtid', 'head_branch'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_merge_pr',
+    {
+      name: 'dev_merge_pr',
+      description: 'Safe merge a pull request with CI gate checks. Merges only if CI passes.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID this merge is for.',
+          },
+          pr_number: {
+            type: 'integer',
+            description: 'The PR number to merge.',
+          },
+          merge_method: {
+            type: 'string',
+            enum: ['squash', 'merge', 'rebase'],
+            description: 'Merge method. Defaults to squash.',
+          },
+        },
+        required: ['vtid', 'pr_number'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_deploy_service',
+    {
+      name: 'dev_deploy_service',
+      description: 'Deploy a service via the CI/CD pipeline. Triggers the deployment workflow.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          service: {
+            type: 'string',
+            description: 'Service to deploy (e.g., gateway, frontend).',
+          },
+          vtid: {
+            type: 'string',
+            description: 'The VTID triggering this deployment.',
+          },
+          environment: {
+            type: 'string',
+            enum: ['production', 'staging'],
+            description: 'Target environment. Defaults to production.',
+          },
+        },
+        required: ['service'],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_deployment_status',
+    {
+      name: 'dev_deployment_status',
+      description: 'Check deployment history and status for services.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          service: {
+            type: 'string',
+            description: 'Filter by service name.',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of deployments to return. Defaults to 10.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_cicd_health',
+    {
+      name: 'dev_cicd_health',
+      description: 'Check CI/CD pipeline health — GitHub connectivity, deployment readiness, lock status.',
+      parameters_schema: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+  [
+    'dev_lock_status',
+    {
+      name: 'dev_lock_status',
+      description: 'Check the current deploy concurrency lock status — who holds the lock, when it expires.',
+      parameters_schema: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+      allowed_roles: ['developer', 'admin'],
+      enabled: true,
+      category: 'system',
+      vtid: 'VTID-DEV-ASSIST',
+    },
+  ],
+
   // ===== VTID-01221: Deterministic Fallback Tools =====
   [
     'oasis_analyze_vtid',
@@ -530,7 +965,7 @@ export async function runToolHealthChecks(): Promise<ToolHealthResponse> {
   const supabaseAvailable = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
 
   // Update health for Supabase-dependent tools
-  const supabaseTools = ['autopilot_create_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'discover_oasis_tasks'];
+  const supabaseTools = ['autopilot_create_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
   for (const toolName of supabaseTools) {
     updateToolHealth(
       toolName,
