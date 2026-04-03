@@ -1,12 +1,61 @@
 /**
  * Command Hub Route Handler
  * Serves the Command Hub Tasks UI and provides backend APIs
+ *
+ * Access Control: Requires developer, admin, or exafy_admin role.
+ * Community/patient/professional users are blocked with 403.
  */
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { naturalLanguageService } from '../services/natural-language-service';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { createUserSupabaseClient } from '../lib/supabase-user';
 
 const router = Router();
+
+/** Allowed roles for Command Hub access */
+const COMMAND_HUB_ROLES = ['developer', 'admin', 'infra', 'staff'];
+
+/**
+ * Middleware: require developer/admin role for Command Hub.
+ * Must be used AFTER requireAuth.
+ */
+async function requireDeveloperAccess(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: Function
+): Promise<void> {
+  // exafy_admin always has access
+  if (req.identity?.exafy_admin) {
+    return next();
+  }
+
+  // Look up active_role from database via me_context RPC
+  try {
+    const token = req.headers.authorization?.slice(7);
+    if (!token) {
+      res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      return;
+    }
+    const userClient = createUserSupabaseClient(token);
+    const { data: meData } = await userClient.rpc('me_context');
+    const activeRole = meData?.active_role || null;
+
+    if (activeRole && COMMAND_HUB_ROLES.includes(activeRole)) {
+      return next();
+    }
+
+    console.warn(`[Command Hub] Access denied for role="${activeRole}" user="${req.identity?.email}"`);
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'Command Hub requires developer or admin access',
+    });
+  } catch (err: any) {
+    console.error('[Command Hub] Role check error:', err.message);
+    res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+}
 
 /**
  * Serve Command Hub UI
@@ -27,7 +76,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-router.post('/api/chat', async (req: Request, res: Response) => {
+router.post('/api/chat', requireAuth, requireDeveloperAccess, async (req: Request, res: Response) => {
   const message = req.body?.message || '';
   
   if (!message.trim()) {

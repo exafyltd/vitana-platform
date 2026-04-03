@@ -242,6 +242,16 @@ router.post('/grant', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'INVALID_ROLE', valid_roles: VALID_ROLES });
   }
 
+  // Developer and infra roles can only be granted by super admin (exafy_admin)
+  const SUPER_ADMIN_ONLY_ROLES = ['developer', 'infra'];
+  if (SUPER_ADMIN_ONLY_ROLES.includes(role) && !auth.is_exafy_admin) {
+    return res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: `Only super admins can grant the '${role}' role`,
+    });
+  }
+
   // Check caller permission
   const permission = await canManageRoles(auth, targetUserId);
   if (!permission.allowed) {
