@@ -25,49 +25,74 @@ cd /home/user && git clone https://github.com/exafyltd/vitana-v1.git
 
 ## Architecture Overview
 
-- **Backend (Gateway):** Cloud Run service `gateway` in `us-central1`, project `lovable-vitana-vers1`
-  - Source: `vitana-platform/services/gateway/`
-  - URL: `https://gateway-q74ibpv6ia-uc.a.run.app`
-  - Deploys via: `.github/workflows/EXEC-DEPLOY.yml` (governed, with VTID tracking)
-  - Auto-deploys on push to `main` via `.github/workflows/AUTO-DEPLOY.yml`
+There are THREE deployable components across two repos:
 
-- **Frontend (Community App):** React/Vite SPA in `exafyltd/vitana-v1`
-  - Repo: `exafyltd/vitana-v1` (filesystem: `/home/user/vitana-v1/`)
-  - Hosted: `vitana-lovable-vers1.lovable.app` (auto-deploys on push to `main`)
-  - Supabase project: `inmkhvwdcuyhnxkgfvsb`
-  - Auth: Dual JWT — Platform + Lovable Supabase secrets
-  - CORS: Configured in `vitana-platform/services/gateway/src/middleware/cors.ts`
+### 1. Backend + Command Hub (vitana-platform)
+- **Cloud Run service:** `gateway` in `us-central1`, project `lovable-vitana-vers1`
+- **Source:** `vitana-platform/services/gateway/`
+- **Includes:** Backend API routes + Command Hub frontend (operator/developer UI)
+- **URL:** `https://gateway-q74ibpv6ia-uc.a.run.app`
+- **Command Hub frontend:** `services/gateway/src/frontend/command-hub/app.js` (vanilla JS, served by gateway)
+- **Deploys via:** `.github/workflows/EXEC-DEPLOY.yml` (governed, with VTID tracking)
+- **Auto-deploys** on push to `main` via `.github/workflows/AUTO-DEPLOY.yml`
+- **One deploy = backend API + Command Hub frontend together** (same Docker image)
+
+### 2. Community App (vitana-v1) 
+- **Repo:** `exafyltd/vitana-v1` (filesystem: `/home/user/vitana-v1/`)
+- **Stack:** React/Vite SPA with TypeScript, Tailwind, Supabase Auth
+- **Hosted:** `vitana-lovable-vers1.lovable.app` (auto-deploys on push to `main`)
+- **This is the end-user mobile/web app** (Events, Autopilot Actions popup, diary, matches, etc.)
+- **Supabase project:** `inmkhvwdcuyhnxkgfvsb`
+- **Auth:** Dual JWT — Platform + Lovable Supabase secrets
+- **CORS:** Configured in `vitana-platform/services/gateway/src/middleware/cors.ts`
+
+### Which frontend is which?
+| Feature | Command Hub (`vitana-platform`) | Community App (`vitana-v1`) |
+|---------|-------------------------------|---------------------------|
+| Users | Operators, developers, admins | Community users (end users) |
+| UI | "AUTOPILOT" pill, "OPERATOR" pill | "Autopilot Actions" popup, events, diary |
+| Tech | Vanilla JS (`app.js`) | React/Vite/TypeScript |
+| Deploy | With gateway (Cloud Run) | Push to `main` (Lovable CDN) |
+| URL | `gateway-*.run.app/command-hub` | `vitana-lovable-vers1.lovable.app` |
 
 - **Platform Supabase:** Secrets in GCP Secret Manager (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`)
 - **Lovable Supabase:** `https://inmkhvwdcuyhnxkgfvsb.supabase.co` (env: `LOVABLE_SUPABASE_URL`)
 
 ## Deployment Process
 
-### Backend (Gateway)
+### Backend API + Command Hub changes (vitana-platform)
 
-1. Make changes in `services/gateway/`
+1. Make changes in `services/gateway/src/` (API routes, middleware, services, OR Command Hub frontend)
 2. Verify TypeScript compiles: `cd services/gateway && npx tsc`
 3. Commit and push to feature branch
 4. Create PR to `main`, merge (squash)
 5. AUTO-DEPLOY triggers → dispatches EXEC-DEPLOY
 6. EXEC-DEPLOY: VTID check → Governance → `gcloud run deploy gateway` → Health check → Smoke tests
 7. If no VTID in commit, uses `BOOTSTRAP-AUTO-{sha}` fallback
+8. **Both backend API and Command Hub frontend deploy together** (same image)
 
-### Frontend (Community App — vitana-v1)
+### Community App changes (vitana-v1)
 
 1. Source: `/home/user/vitana-v1/` (or clone from `exafyltd/vitana-v1`)
-2. Make changes, commit, push to `main`
-3. Auto-deploys to `vitana-lovable-vers1.lovable.app` on push to `main`
+2. Make changes in `src/` (React components, hooks, pages)
+3. Commit and push to `main` (auto-deploys to `vitana-lovable-vers1.lovable.app`)
 4. For feature work: create branch, PR, merge to `main`
 
 ### Full-Stack Changes (both repos)
 
-When a change spans backend + frontend:
+When a change spans backend + community app:
 1. Make backend changes in `vitana-platform/services/gateway/`
 2. Make frontend changes in `vitana-v1/src/`
 3. Deploy backend first (merge to `vitana-platform` main)
 4. Deploy frontend second (merge to `vitana-v1` main)
 5. Verify both are live before testing
+
+### Command Hub + Community App (both frontends)
+
+When a feature affects BOTH frontends (e.g., autopilot):
+1. Backend/API changes + Command Hub in `vitana-platform` (one deploy)
+2. Community App UI in `vitana-v1` (separate deploy)
+3. Both call the same API endpoints — keep response format compatible
 
 ### Environment Variables (Gateway)
 
