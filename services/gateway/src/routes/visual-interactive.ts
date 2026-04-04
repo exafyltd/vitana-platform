@@ -225,30 +225,36 @@ router.post('/interactive-test', async (req: Request, res: Response) => {
  *
  * Check if visual testing is available
  */
-router.get('/health', async (req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
+  let mcpAvailable = false;
+  let playwrightStatus = 'unknown';
+
   try {
-    const mcpHealth = await fetch(`${CONFIG.mcpGatewayUrl}/mcp/health`);
-    const mcpData = await mcpHealth.json() as { connectors?: any[] };
-
-    const playwrightConnector = mcpData.connectors?.find((c: any) => c.name === 'playwright');
-
-    res.json({
-      status: 'ok',
-      visual_testing: {
-        available: playwrightConnector?.status === 'ok',
-        mcp_gateway: CONFIG.mcpGatewayUrl,
-        frontend_url: CONFIG.frontendUrl,
-        playwright_status: playwrightConnector?.status || 'unknown',
-      },
-      timestamp: new Date().toISOString(),
+    const mcpHealth = await fetch(`${CONFIG.mcpGatewayUrl}/mcp/health`, {
+      signal: AbortSignal.timeout(3000),
     });
-  } catch (error: any) {
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    });
+    if (mcpHealth.ok) {
+      const mcpData = await mcpHealth.json() as { connectors?: any[] };
+      const playwrightConnector = mcpData.connectors?.find((c: any) => c.name === 'playwright');
+      mcpAvailable = true;
+      playwrightStatus = playwrightConnector?.status || 'not_found';
+    }
+  } catch {
+    // MCP gateway unreachable — service is still healthy, just degraded
   }
+
+  res.json({
+    ok: true,
+    status: 'ok',
+    service: 'visual-interactive',
+    visual_testing: {
+      available: mcpAvailable,
+      mcp_gateway: CONFIG.mcpGatewayUrl,
+      frontend_url: CONFIG.frontendUrl,
+      playwright_status: playwrightStatus,
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;

@@ -75,6 +75,20 @@ function isDevSandbox(): boolean {
 }
 
 // =============================================================================
+// GET /health
+// =============================================================================
+
+router.get('/health', (_req: Request, res: Response) => {
+  res.json({
+    ok: true,
+    service: 'health-capacity-awareness',
+    vtid: VTID,
+    version: 'v1',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// =============================================================================
 // POST /compute
 // Compute capacity state from signals
 // =============================================================================
