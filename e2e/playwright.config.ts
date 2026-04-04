@@ -22,6 +22,7 @@ const mobileIPhone = {
 };
 
 export default defineConfig({
+  globalSetup: './global-setup',
   testDir: '.',
   timeout: 60_000,
   expect: { timeout: 10_000 },
