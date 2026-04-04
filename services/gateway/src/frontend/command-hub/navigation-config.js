@@ -138,10 +138,11 @@ export const NAVIGATION_CONFIG = [
     module: 'integrations-tools',
     label: 'Integrations & Tools',
     tabs: [
-      { key: 'mcp-connectors', label: 'MCP Connectors' },
+      { key: 'mcp-connectors', label: 'MCP & CLI' },
       { key: 'llm-providers', label: 'LLM Providers' },
-      { key: 'apis', label: 'APIs' },
+      { key: 'apis', label: "API's" },
       { key: 'tools', label: 'Tools' },
+      { key: 'plugins', label: 'Plugins & Extensions' },
       { key: 'service-mesh', label: 'Service Mesh' }
     ]
   },

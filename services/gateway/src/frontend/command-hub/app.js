@@ -2631,6 +2631,7 @@ const NAVIGATION_CONFIG = [
             { "key": "llm-providers", "path": "/command-hub/integrations-tools/llm-providers/" },
             { "key": "apis", "path": "/command-hub/integrations-tools/apis/" },
             { "key": "tools", "path": "/command-hub/integrations-tools/tools/" },
+            { "key": "plugins", "path": "/command-hub/integrations-tools/plugins/" },
             { "key": "service-mesh", "path": "/command-hub/integrations-tools/service-mesh/" }
         ]
     },
@@ -3511,6 +3512,7 @@ const state = {
     integrationsMcp: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     integrationsLlm: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     integrationsTools: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
+    integrationsPlugins: { items: [], loading: false, error: null, fetched: false },
 
     // Diagnostics missing
     diagHealthChecks: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -5903,6 +5905,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderIntegrationsApisView());
     } else if (moduleKey === 'integrations-tools' && tab === 'tools') {
         container.appendChild(renderIntegrationsToolsView());
+    } else if (moduleKey === 'integrations-tools' && tab === 'plugins') {
+        container.appendChild(renderIntegrationsPluginsView());
     } else if (moduleKey === 'integrations-tools' && tab === 'service-mesh') {
         container.appendChild(renderIntegrationsServiceMeshView());
 
@@ -29480,6 +29484,7 @@ function renderCommandHubLiveConsoleView() {
 function fetchIntegrationsMcp() {
     state.integrationsMcp.loading = true;
     state.integrationsMcp.error = null;
+    renderApp();
 
     fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -29491,6 +29496,7 @@ function fetchIntegrationsMcp() {
         })
         .catch(function (err) {
             state.integrationsMcp.error = err.message;
+            state.integrationsMcp.fetched = true;
         })
         .finally(function() {
             state.integrationsMcp.loading = false;
@@ -29500,33 +29506,28 @@ function fetchIntegrationsMcp() {
 
 function renderIntegrationsMcpView() {
     var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-
-    var title = document.createElement('h2');
-    title.textContent = 'MCP Connectors';
-    container.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Model Context Protocol connectors registered with the gateway worker orchestrator.';
-    container.appendChild(subtitle);
+    container.className = 'infra-services-container';
 
     if (!state.integrationsMcp.fetched && !state.integrationsMcp.loading) {
         fetchIntegrationsMcp();
     }
 
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>MCP & CLI</h2><p class="infra-subtitle">Model Context Protocol connectors and CLI tools registered with the gateway worker orchestrator.</p>';
+    container.appendChild(header);
+
     if (state.integrationsMcp.loading) {
         var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading...';
+        loading.className = 'infra-empty';
+        loading.textContent = 'Loading connectors...';
         container.appendChild(loading);
         return container;
     }
 
     if (state.integrationsMcp.error) {
         var errDiv = document.createElement('div');
-        errDiv.style.color = '#ef4444';
-        errDiv.style.padding = '1rem';
+        errDiv.className = 'infra-empty';
         errDiv.textContent = 'Error: ' + state.integrationsMcp.error;
         container.appendChild(errDiv);
         return container;
@@ -29535,14 +29536,25 @@ function renderIntegrationsMcpView() {
     var items = state.integrationsMcp.items;
     if (items.length === 0) {
         var empty = document.createElement('div');
-        empty.className = 'placeholder-content';
-        empty.textContent = 'No MCP connectors found.';
+        empty.className = 'infra-empty';
+        empty.textContent = 'No MCP connectors registered. Connectors appear here when workers register via the gateway orchestrator.';
         container.appendChild(empty);
         return container;
     }
 
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'infra-table-wrap';
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'infra-table';
+
+    var colgroup = document.createElement('colgroup');
+    [22, 12, 12, 18, 36].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
+
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr><th>Name</th><th>Type</th><th>Status</th><th>Last Seen</th><th>Capabilities</th></tr>';
     table.appendChild(thead);
@@ -29551,25 +29563,26 @@ function renderIntegrationsMcpView() {
     items.forEach(function (item) {
         var row = document.createElement('tr');
         var statusVal = (item.status || 'disconnected').toLowerCase();
-        var badgeClass = statusVal === 'connected' ? 'status-connected' : 'status-disconnected';
-        row.innerHTML = '<td>' + (item.name || item.worker_id || '-') + '</td>' +
-            '<td>' + (item.type || item.worker_type || 'mcp') + '</td>' +
-            '<td><span class="status-badge ' + badgeClass + '">' + statusVal + '</span></td>' +
+        var badgeType = statusVal === 'connected' ? 'healthy' : 'down';
+        row.innerHTML = '<td>' + escapeHtml(item.name || item.worker_id || '-') + '</td>' +
+            '<td><code>' + escapeHtml(item.type || item.worker_type || 'mcp') + '</code></td>' +
+            '<td><span class="infra-card__badge infra-card__badge--' + badgeType + '">' + escapeHtml(statusVal) + '</span></td>' +
             '<td>' + formatEventTimestamp(item.last_seen || item.last_heartbeat) + '</td>' +
-            '<td>' + (Array.isArray(item.capabilities) ? item.capabilities.join(', ') : (item.capabilities || '-')) + '</td>';
+            '<td>' + escapeHtml(Array.isArray(item.capabilities) ? item.capabilities.join(', ') : (item.capabilities || '-')) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
-    container.appendChild(table);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
 
     autoAddLoadMore(container, 'integrationsMcp');
-
     return container;
 }
 
 function fetchIntegrationsLlm() {
     state.integrationsLlm.loading = true;
     state.integrationsLlm.error = null;
+    renderApp();
 
     fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -29581,6 +29594,7 @@ function fetchIntegrationsLlm() {
         })
         .catch(function (err) {
             state.integrationsLlm.error = err.message;
+            state.integrationsLlm.fetched = true;
         })
         .finally(function() {
             state.integrationsLlm.loading = false;
@@ -29590,33 +29604,28 @@ function fetchIntegrationsLlm() {
 
 function renderIntegrationsLlmProvidersView() {
     var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-
-    var title = document.createElement('h2');
-    title.textContent = 'LLM Providers';
-    container.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Connected LLM providers, models, and usage metrics.';
-    container.appendChild(subtitle);
+    container.className = 'infra-services-container';
 
     if (!state.integrationsLlm.fetched && !state.integrationsLlm.loading) {
         fetchIntegrationsLlm();
     }
 
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>LLM Providers</h2><p class="infra-subtitle">Connected LLM providers, models, and usage metrics.</p>';
+    container.appendChild(header);
+
     if (state.integrationsLlm.loading) {
         var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading...';
+        loading.className = 'infra-empty';
+        loading.textContent = 'Loading providers...';
         container.appendChild(loading);
         return container;
     }
 
     if (state.integrationsLlm.error) {
         var errDiv = document.createElement('div');
-        errDiv.style.color = '#ef4444';
-        errDiv.style.padding = '1rem';
+        errDiv.className = 'infra-empty';
         errDiv.textContent = 'Error: ' + state.integrationsLlm.error;
         container.appendChild(errDiv);
         return container;
@@ -29625,12 +29634,13 @@ function renderIntegrationsLlmProvidersView() {
     var items = state.integrationsLlm.items;
     if (items.length === 0) {
         var empty = document.createElement('div');
-        empty.className = 'placeholder-content';
-        empty.textContent = 'No LLM providers configured.';
+        empty.className = 'infra-empty';
+        empty.textContent = 'No LLM providers configured. Providers appear here when models are registered via the gateway.';
         container.appendChild(empty);
         return container;
     }
 
+    // Group by provider
     var providers = {};
     items.forEach(function (m) {
         var prov = m.provider || 'unknown';
@@ -29639,56 +29649,65 @@ function renderIntegrationsLlmProvidersView() {
     });
 
     var grid = document.createElement('div');
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(320px, 1fr))';
-    grid.style.gap = '1rem';
-    grid.style.marginTop = '1rem';
+    grid.className = 'infra-card-grid';
 
     Object.keys(providers).forEach(function (provName) {
         var models = providers[provName];
         var card = document.createElement('div');
-        card.className = 'llm-provider-card';
-        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
-        card.style.border = '1px solid var(--color-border, #333)';
-        card.style.borderRadius = '8px';
-        card.style.padding = '1.25rem';
+        card.className = 'infra-card';
 
-        var provTitle = document.createElement('h3');
-        provTitle.style.margin = '0 0 0.75rem 0';
-        provTitle.style.fontSize = '1.1rem';
-        provTitle.style.color = 'var(--color-accent, #6c63ff)';
-        provTitle.textContent = provName.charAt(0).toUpperCase() + provName.slice(1);
-        card.appendChild(provTitle);
+        // Provider header
+        var hdr = document.createElement('div');
+        hdr.className = 'infra-card__header';
+        var name = document.createElement('span');
+        name.className = 'infra-card__name';
+        name.style.fontSize = '1rem';
+        name.style.fontWeight = '700';
+        name.textContent = provName.charAt(0).toUpperCase() + provName.slice(1);
+        hdr.appendChild(name);
+        var countBadge = document.createElement('span');
+        countBadge.className = 'infra-card__badge infra-card__badge--healthy';
+        countBadge.textContent = models.length + ' model' + (models.length !== 1 ? 's' : '');
+        hdr.appendChild(countBadge);
+        card.appendChild(hdr);
 
+        // Models list
+        var meta = document.createElement('div');
+        meta.className = 'infra-card__meta';
         models.forEach(function (m) {
-            var modelRow = document.createElement('div');
-            modelRow.style.display = 'flex';
-            modelRow.style.justifyContent = 'space-between';
-            modelRow.style.alignItems = 'center';
-            modelRow.style.padding = '0.4rem 0';
-            modelRow.style.borderBottom = '1px solid var(--color-border, #333)';
-            modelRow.style.fontSize = '0.85rem';
-
-            var nameSpan = document.createElement('span');
-            nameSpan.textContent = m.model_id || m.model || m.name || '-';
-            modelRow.appendChild(nameSpan);
-
-            var statusSpan = document.createElement('span');
+            var row = document.createElement('div');
+            row.className = 'infra-card__meta-row';
+            var modelName = document.createElement('span');
+            modelName.className = 'infra-card__meta-value';
+            modelName.style.textAlign = 'left';
+            modelName.style.flex = '1';
+            modelName.textContent = m.model_id || m.model || m.name || '-';
+            row.appendChild(modelName);
             var st = (m.status || 'active').toLowerCase();
-            statusSpan.className = 'status-badge status-' + st;
-            statusSpan.textContent = st;
-            modelRow.appendChild(statusSpan);
-
-            card.appendChild(modelRow);
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'infra-card__badge infra-card__badge--' + (st === 'active' ? 'healthy' : 'degraded');
+            statusBadge.textContent = st;
+            row.appendChild(statusBadge);
+            meta.appendChild(row);
         });
+        card.appendChild(meta);
 
-        var metaRow = document.createElement('div');
-        metaRow.style.marginTop = '0.75rem';
-        metaRow.style.fontSize = '0.8rem';
-        metaRow.style.color = 'var(--color-text-secondary)';
+        // Footer metrics
         var firstModel = models[0];
-        metaRow.textContent = 'Avg Latency: ' + (firstModel.avg_latency || firstModel.latency_ms || 'N/A') + 'ms | Cost/1K: $' + (firstModel.cost_per_1k || firstModel.cost || 'N/A');
-        card.appendChild(metaRow);
+        var footer = document.createElement('div');
+        footer.className = 'infra-card__meta';
+        footer.style.borderTop = '1px solid rgba(255,255,255,0.06)';
+        footer.style.paddingTop = '8px';
+        footer.style.marginTop = '4px';
+        var footerRow = document.createElement('div');
+        footerRow.className = 'infra-card__meta-row';
+        footerRow.innerHTML = '<span class="infra-card__meta-label">Avg Latency</span><span class="infra-card__meta-value">' + escapeHtml(String(firstModel.avg_latency || firstModel.latency_ms || 'N/A')) + 'ms</span>';
+        footer.appendChild(footerRow);
+        var costRow = document.createElement('div');
+        costRow.className = 'infra-card__meta-row';
+        costRow.innerHTML = '<span class="infra-card__meta-label">Cost/1K</span><span class="infra-card__meta-value">$' + escapeHtml(String(firstModel.cost_per_1k || firstModel.cost || 'N/A')) + '</span>';
+        footer.appendChild(costRow);
+        card.appendChild(footer);
 
         grid.appendChild(card);
     });
@@ -29700,16 +29719,12 @@ function renderIntegrationsLlmProvidersView() {
 
 function renderIntegrationsApisView() {
     var container = document.createElement('div');
-    container.style.padding = '1.5rem';
+    container.className = 'infra-services-container';
 
-    var title = document.createElement('h2');
-    title.textContent = 'Gateway API Inventory';
-    container.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Major route groups registered on the Vitana Gateway.';
-    container.appendChild(subtitle);
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = "<h2>API's</h2><p class=\"infra-subtitle\">Major route groups registered on the Vitana Gateway.</p>";
+    container.appendChild(header);
 
     var routeGroups = [
         { path: '/api/v1/oasis', description: 'OASIS Event Store & Task Lifecycle', endpoints: 12 },
@@ -29722,8 +29737,19 @@ function renderIntegrationsApisView() {
         { path: '/api/v1/execute', description: 'Worker Execution, Subagent & Terminalization', endpoints: 8 }
     ];
 
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'infra-table-wrap';
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'infra-table';
+
+    var colgroup = document.createElement('colgroup');
+    [28, 52, 20].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
+
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr><th>Route Group</th><th>Description</th><th>Endpoints</th></tr>';
     table.appendChild(thead);
@@ -29731,18 +29757,19 @@ function renderIntegrationsApisView() {
     var tbody = document.createElement('tbody');
     routeGroups.forEach(function (rg) {
         var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-family: monospace; color: var(--color-accent, #6c63ff);">' + rg.path + '</td>' +
-            '<td>' + rg.description + '</td>' +
-            '<td style="text-align: center; font-weight: 600;">' + rg.endpoints + '</td>';
+        row.innerHTML = '<td><code>' + escapeHtml(rg.path) + '</code></td>' +
+            '<td>' + escapeHtml(rg.description) + '</td>' +
+            '<td style="text-align:center;font-weight:600;">' + rg.endpoints + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
-    container.appendChild(table);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
 
     var total = document.createElement('div');
-    total.style.marginTop = '1rem';
-    total.style.fontSize = '0.85rem';
-    total.style.color = 'var(--color-text-secondary)';
+    total.style.marginTop = '16px';
+    total.style.fontSize = '0.8rem';
+    total.style.color = 'var(--color-text-secondary, #94a3b8)';
     total.textContent = 'Total: ' + routeGroups.reduce(function (sum, rg) { return sum + rg.endpoints; }, 0) + ' endpoints across ' + routeGroups.length + ' route groups';
     container.appendChild(total);
 
@@ -29752,6 +29779,7 @@ function renderIntegrationsApisView() {
 function fetchIntegrationsTools() {
     state.integrationsTools.loading = true;
     state.integrationsTools.error = null;
+    renderApp();
 
     Promise.all([
         fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
@@ -29782,6 +29810,7 @@ function fetchIntegrationsTools() {
         })
         .catch(function (err) {
             state.integrationsTools.error = err.message;
+            state.integrationsTools.fetched = true;
         })
         .finally(function() {
             state.integrationsTools.loading = false;
@@ -29791,33 +29820,28 @@ function fetchIntegrationsTools() {
 
 function renderIntegrationsToolsView() {
     var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Tools';
-    container.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Conversation tools available to the assistant and agents.';
-    container.appendChild(subtitle);
+    container.className = 'infra-services-container';
 
     if (!state.integrationsTools.fetched && !state.integrationsTools.loading) {
         fetchIntegrationsTools();
     }
 
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Tools</h2><p class="infra-subtitle">Conversation tools available to the assistant and agents.</p>';
+    container.appendChild(header);
+
     if (state.integrationsTools.loading) {
         var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading...';
+        loading.className = 'infra-empty';
+        loading.textContent = 'Loading tools...';
         container.appendChild(loading);
         return container;
     }
 
     if (state.integrationsTools.error) {
         var errDiv = document.createElement('div');
-        errDiv.style.color = '#ef4444';
-        errDiv.style.padding = '1rem';
+        errDiv.className = 'infra-empty';
         errDiv.textContent = 'Error: ' + state.integrationsTools.error;
         container.appendChild(errDiv);
         return container;
@@ -29826,14 +29850,25 @@ function renderIntegrationsToolsView() {
     var items = state.integrationsTools.items;
     if (items.length === 0) {
         var empty = document.createElement('div');
-        empty.className = 'placeholder-content';
+        empty.className = 'infra-empty';
         empty.textContent = 'No tools registered.';
         container.appendChild(empty);
         return container;
     }
 
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'infra-table-wrap';
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'infra-table';
+
+    var colgroup = document.createElement('colgroup');
+    [18, 38, 12, 14, 18].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
+
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr><th>Name</th><th>Description</th><th>Status</th><th>Avg Latency</th><th>Last Used</th></tr>';
     table.appendChild(thead);
@@ -29842,84 +29877,250 @@ function renderIntegrationsToolsView() {
     items.forEach(function (tool) {
         var row = document.createElement('tr');
         var st = (tool.status || 'available').toLowerCase();
-        var badgeClass = st === 'available' ? 'status-available' : 'status-unavailable';
-        row.innerHTML = '<td style="font-weight: 600;">' + tool.name + '</td>' +
-            '<td>' + tool.description + '</td>' +
-            '<td><span class="status-badge ' + badgeClass + '">' + st + '</span></td>' +
-            '<td>' + (tool.avg_latency ? tool.avg_latency + 'ms' : '-') + '</td>' +
+        var badgeType = st === 'available' ? 'healthy' : 'down';
+        row.innerHTML = '<td><strong>' + escapeHtml(tool.name) + '</strong></td>' +
+            '<td>' + escapeHtml(tool.description) + '</td>' +
+            '<td><span class="infra-card__badge infra-card__badge--' + badgeType + '">' + escapeHtml(st) + '</span></td>' +
+            '<td>' + (tool.avg_latency ? escapeHtml(String(tool.avg_latency)) + 'ms' : '-') + '</td>' +
             '<td>' + formatEventTimestamp(tool.last_used) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
-    container.appendChild(table);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
 
     autoAddLoadMore(container, 'integrationsTools');
+    return container;
+}
+
+/**
+ * Plugins & Extensions — tracks what's connected to the system.
+ * Discovers: MCP servers, Claude plugins, npm packages, and external services.
+ */
+function fetchIntegrationsPlugins() {
+    state.integrationsPlugins.loading = true;
+    state.integrationsPlugins.error = null;
+    renderApp();
+
+    // Gather from multiple lightweight sources in parallel
+    Promise.all([
+        fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() }).then(function(r) { return r.json(); }).catch(function() { return { data: [] }; }),
+        fetch('/api/v1/llm/models', { headers: buildContextHeaders() }).then(function(r) { return r.json(); }).catch(function() { return { data: [] }; })
+    ]).then(function(results) {
+        var connectors = results[0].data || results[0].connectors || (Array.isArray(results[0]) ? results[0] : []);
+        var models = results[1].data || results[1].models || (Array.isArray(results[1]) ? results[1] : []);
+
+        var plugins = [];
+
+        // MCP connectors as plugins
+        (Array.isArray(connectors) ? connectors : []).forEach(function(c) {
+            plugins.push({
+                name: c.name || c.worker_id || 'Unknown Connector',
+                type: 'MCP Connector',
+                status: (c.status || 'disconnected').toLowerCase(),
+                version: c.version || '-',
+                description: Array.isArray(c.capabilities) ? c.capabilities.join(', ') : (c.capabilities || 'Worker connector'),
+                source: 'gateway'
+            });
+        });
+
+        // LLM providers as plugins (grouped)
+        var provGroups = {};
+        (Array.isArray(models) ? models : []).forEach(function(m) {
+            var prov = m.provider || 'unknown';
+            if (!provGroups[prov]) provGroups[prov] = 0;
+            provGroups[prov]++;
+        });
+        Object.keys(provGroups).forEach(function(prov) {
+            plugins.push({
+                name: prov.charAt(0).toUpperCase() + prov.slice(1),
+                type: 'LLM Provider',
+                status: 'active',
+                version: provGroups[prov] + ' models',
+                description: 'Language model provider',
+                source: 'gateway'
+            });
+        });
+
+        // Known platform extensions (static registry)
+        var platformExtensions = [
+            { name: 'Supabase', type: 'Database', status: 'active', version: 'v2', description: 'Auth, PostgreSQL, RLS, Edge Functions', source: 'platform' },
+            { name: 'Firebase', type: 'Push Notifications', status: 'active', version: 'Admin SDK', description: 'FCM push delivery for web & mobile', source: 'platform' },
+            { name: 'Cognee', type: 'Knowledge Engine', status: 'active', version: '-', description: 'Knowledge graph extraction & RAG pipeline', source: 'agent' },
+            { name: 'OASIS', type: 'Event System', status: 'active', version: '-', description: 'Event sourcing, projections & task lifecycle', source: 'platform' },
+            { name: 'Cloud Run', type: 'Runtime', status: 'active', version: 'managed', description: 'Container hosting for all services', source: 'infrastructure' },
+            { name: 'Vertex AI', type: 'AI Platform', status: 'active', version: '-', description: 'Gemini Live API for ORB voice sessions', source: 'platform' },
+            { name: 'GitHub Actions', type: 'CI/CD', status: 'active', version: '-', description: 'EXEC-DEPLOY pipeline & governance gates', source: 'infrastructure' },
+            { name: 'Appilix', type: 'Mobile Wrapper', status: 'degraded', version: 'WebView', description: 'Android WebView wrapper for vitanaland.com', source: 'platform' }
+        ];
+
+        plugins = plugins.concat(platformExtensions);
+        state.integrationsPlugins.items = plugins;
+        state.integrationsPlugins.fetched = true;
+        state.integrationsPlugins.error = null;
+    }).catch(function(err) {
+        state.integrationsPlugins.error = err.message;
+        state.integrationsPlugins.fetched = true;
+    }).finally(function() {
+        state.integrationsPlugins.loading = false;
+        renderApp();
+    });
+}
+
+function renderIntegrationsPluginsView() {
+    var container = document.createElement('div');
+    container.className = 'infra-services-container';
+
+    if (!state.integrationsPlugins.fetched && !state.integrationsPlugins.loading) {
+        fetchIntegrationsPlugins();
+    }
+
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Plugins & Extensions</h2><p class="infra-subtitle">All plugins, connectors, and external services connected to the Vitana platform. Helps track dependencies and identify what can be unloaded.</p>';
+    container.appendChild(header);
+
+    if (state.integrationsPlugins.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'infra-empty';
+        loading.textContent = 'Discovering plugins & extensions...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.integrationsPlugins.error) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'infra-empty';
+        errDiv.textContent = 'Error: ' + state.integrationsPlugins.error;
+        container.appendChild(errDiv);
+        return container;
+    }
+
+    var items = state.integrationsPlugins.items;
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'infra-empty';
+        empty.textContent = 'No plugins or extensions discovered.';
+        container.appendChild(empty);
+        return container;
+    }
+
+    // Summary metrics
+    var activeCount = items.filter(function(i) { return i.status === 'active' || i.status === 'connected'; }).length;
+    var degradedCount = items.filter(function(i) { return i.status === 'degraded'; }).length;
+    var offlineCount = items.length - activeCount - degradedCount;
+
+    var metricsGrid = document.createElement('div');
+    metricsGrid.className = 'infra-card-grid';
+    [
+        { label: 'Total', value: String(items.length), detail: 'Plugins & extensions discovered' },
+        { label: 'Active', value: String(activeCount), detail: 'Connected and operational' },
+        { label: 'Degraded', value: String(degradedCount), detail: 'Partial issues detected' },
+        { label: 'Offline', value: String(offlineCount), detail: 'Disconnected or unavailable' }
+    ].forEach(function(m) {
+        var card = document.createElement('div');
+        card.className = 'infra-metric-card';
+        card.innerHTML = '<div class="infra-metric-card__label">' + escapeHtml(m.label) + '</div>' +
+            '<div class="infra-metric-card__value">' + escapeHtml(m.value) + '</div>' +
+            '<div class="infra-metric-card__detail">' + escapeHtml(m.detail) + '</div>';
+        metricsGrid.appendChild(card);
+    });
+    container.appendChild(metricsGrid);
+
+    // Full table
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'infra-table-wrap';
+    var table = document.createElement('table');
+    table.className = 'infra-table';
+
+    var colgroup = document.createElement('colgroup');
+    [20, 14, 10, 10, 34, 12].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Name</th><th>Type</th><th>Status</th><th>Version</th><th>Description</th><th>Source</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (plugin) {
+        var row = document.createElement('tr');
+        var st = (plugin.status || 'unknown').toLowerCase();
+        var badgeType = (st === 'active' || st === 'connected') ? 'healthy' : (st === 'degraded' ? 'degraded' : 'down');
+        row.innerHTML = '<td><strong>' + escapeHtml(plugin.name) + '</strong></td>' +
+            '<td>' + escapeHtml(plugin.type) + '</td>' +
+            '<td><span class="infra-card__badge infra-card__badge--' + badgeType + '">' + escapeHtml(st) + '</span></td>' +
+            '<td><code>' + escapeHtml(plugin.version || '-') + '</code></td>' +
+            '<td>' + escapeHtml(plugin.description) + '</td>' +
+            '<td>' + escapeHtml(plugin.source || '-') + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
 
     return container;
 }
 
 function renderIntegrationsServiceMeshView() {
     var container = document.createElement('div');
-    container.style.padding = '1.5rem';
+    container.className = 'infra-services-container';
 
-    var title = document.createElement('h2');
-    title.textContent = 'Service Mesh';
-    container.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Cloud Run services topology and internal connectivity.';
-    container.appendChild(subtitle);
+    var header = document.createElement('div');
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Service Mesh</h2><p class="infra-subtitle">Cloud Run services topology and internal connectivity.</p>';
+    container.appendChild(header);
 
     var services = [
-        { name: 'gateway', url: 'https://gateway-86804897789.us-central1.run.app', health: '/alive', desc: 'API Gateway, Frontend, Auth, Routing' },
-        { name: 'oasis-operator', url: 'https://oasis-operator-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Event Processing & Projections' },
-        { name: 'oasis-projector', url: 'https://oasis-projector-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Read Model Projections' },
-        { name: 'worker-runner', url: 'https://worker-runner-86804897789.us-central1.run.app', health: '/alive', desc: 'Autonomous Worker Execution Plane' },
-        { name: 'verification-engine', url: 'https://vitana-verification-engine-86804897789.us-central1.run.app', health: '/alive', desc: 'Validator Agent & Governance Checks' }
+        { name: 'gateway', url: 'gateway-86804897789.us-central1.run.app', health: '/alive', desc: 'API Gateway, Frontend, Auth, Routing' },
+        { name: 'oasis-operator', url: 'oasis-operator-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Event Processing & Projections' },
+        { name: 'oasis-projector', url: 'oasis-projector-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Read Model Projections' },
+        { name: 'worker-runner', url: 'worker-runner-86804897789.us-central1.run.app', health: '/alive', desc: 'Autonomous Worker Execution Plane' },
+        { name: 'verification-engine', url: 'vitana-verification-engine-86804897789.us-central1.run.app', health: '/alive', desc: 'Validator Agent & Governance Checks' }
     ];
 
     var grid = document.createElement('div');
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
-    grid.style.gap = '1rem';
-    grid.style.marginTop = '1rem';
+    grid.className = 'infra-card-grid';
 
     services.forEach(function (svc) {
         var card = document.createElement('div');
-        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
-        card.style.border = '1px solid var(--color-border, #333)';
-        card.style.borderRadius = '8px';
-        card.style.padding = '1.25rem';
+        card.className = 'infra-card';
 
-        var svcName = document.createElement('h3');
-        svcName.style.margin = '0 0 0.5rem 0';
-        svcName.style.fontSize = '1rem';
-        svcName.style.color = 'var(--color-accent, #6c63ff)';
-        svcName.textContent = svc.name;
-        card.appendChild(svcName);
+        // Header
+        var hdr = document.createElement('div');
+        hdr.className = 'infra-card__header';
+        var dot = document.createElement('span');
+        dot.className = 'infra-card__dot infra-card__dot--healthy';
+        hdr.appendChild(dot);
+        var name = document.createElement('span');
+        name.className = 'infra-card__name';
+        name.textContent = svc.name;
+        hdr.appendChild(name);
+        card.appendChild(hdr);
 
-        var desc = document.createElement('p');
-        desc.style.margin = '0 0 0.75rem 0';
-        desc.style.fontSize = '0.85rem';
-        desc.style.color = 'var(--color-text-secondary)';
-        desc.textContent = svc.desc;
-        card.appendChild(desc);
+        // Meta
+        var meta = document.createElement('div');
+        meta.className = 'infra-card__meta';
 
-        var urlLine = document.createElement('div');
-        urlLine.style.fontFamily = 'monospace';
-        urlLine.style.fontSize = '0.75rem';
-        urlLine.style.color = 'var(--color-text-secondary)';
-        urlLine.style.wordBreak = 'break-all';
-        urlLine.textContent = svc.url;
-        card.appendChild(urlLine);
+        var descRow = document.createElement('div');
+        descRow.className = 'infra-card__meta-row';
+        descRow.innerHTML = '<span class="infra-card__meta-label">Role</span><span class="infra-card__meta-value" style="text-align:left;">' + escapeHtml(svc.desc) + '</span>';
+        meta.appendChild(descRow);
 
-        var healthLine = document.createElement('div');
-        healthLine.style.marginTop = '0.5rem';
-        healthLine.style.fontSize = '0.8rem';
-        healthLine.innerHTML = 'Health: <span style="font-family: monospace; color: var(--color-accent);">' + svc.health + '</span>';
-        card.appendChild(healthLine);
+        var urlRow = document.createElement('div');
+        urlRow.className = 'infra-card__meta-row';
+        urlRow.innerHTML = '<span class="infra-card__meta-label">URL</span><span class="infra-card__meta-value">' + escapeHtml(svc.url) + '</span>';
+        meta.appendChild(urlRow);
 
+        var healthRow = document.createElement('div');
+        healthRow.className = 'infra-card__meta-row';
+        healthRow.innerHTML = '<span class="infra-card__meta-label">Health</span><span class="infra-card__meta-value"><code>' + escapeHtml(svc.health) + '</code></span>';
+        meta.appendChild(healthRow);
+
+        card.appendChild(meta);
         grid.appendChild(card);
     });
 
