@@ -3542,6 +3542,7 @@ const state = {
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
     orbMonitor: { runs: [], screens: {}, loading: false, error: null, fetched: false },
+    cloudRunUrl: '',  // Set after first community-app deploy (e.g. https://community-app-86804897789.us-central1.run.app)
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -30832,14 +30833,16 @@ function fetchTestingCycles() {
         });
 }
 
-async function triggerTestRun(type, projects, btn) {
+async function triggerTestRun(type, projects, btn, communityUrl) {
     var originalLabel = btn ? btn.textContent : "";
     if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
     try {
+        var payload = { type: type, projects: projects };
+        if (communityUrl) payload.community_url = communityUrl;
         var response = await fetch('/api/v1/testing/run', {
             method: 'POST',
             headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ type: type, projects: projects })
+            body: JSON.stringify(payload)
         });
         var result = await response.json();
         if (result.ok) {
@@ -31186,12 +31189,73 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">219 tests</span>';
+    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">272+ routes</span>';
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
     subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) \u00d7 6 roles.';
     container.appendChild(subtitle);
+
+    // ─── Cloud Run Migration Testing Banner ─────────────────────────
+    var cloudRunBanner = document.createElement('div');
+    cloudRunBanner.style.cssText = 'background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(168,85,247,0.08));border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;';
+
+    var bannerTitle = document.createElement('div');
+    bannerTitle.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
+    bannerTitle.innerHTML = '<span style="font-size:1.1rem;">&#9729;</span><strong style="font-size:0.95rem;">Cloud Run Migration Testing</strong>';
+    cloudRunBanner.appendChild(bannerTitle);
+
+    var bannerDesc = document.createElement('div');
+    bannerDesc.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+    bannerDesc.textContent = 'Run smoke tests against the Cloud Run community-app deployment to verify all 272 routes work before decommissioning Lovable CDN.';
+    cloudRunBanner.appendChild(bannerDesc);
+
+    var bannerBtnRow = document.createElement('div');
+    bannerBtnRow.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;';
+
+    var critBtn = document.createElement('button');
+    critBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    critBtn.style.fontSize = '0.8rem';
+    critBtn.textContent = 'Cloud Run \u2014 Critical Path';
+    critBtn.title = 'Runs desktop-community + mobile-community against Cloud Run URL';
+    critBtn.onclick = function () {
+        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], critBtn, state.cloudRunUrl || '');
+    };
+    bannerBtnRow.appendChild(critBtn);
+
+    var fullBtn = document.createElement('button');
+    fullBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    fullBtn.style.fontSize = '0.8rem';
+    fullBtn.textContent = 'Cloud Run \u2014 Full Suite';
+    fullBtn.title = 'Runs all desktop + mobile projects against Cloud Run URL';
+    fullBtn.onclick = function () {
+        triggerTestRun('e2e',
+            ['desktop-community', 'desktop-patient', 'desktop-professional', 'desktop-staff', 'desktop-admin', 'desktop-shared',
+             'mobile-community', 'mobile-patient', 'mobile-professional', 'mobile-staff', 'mobile-admin', 'mobile-shared'],
+            fullBtn, state.cloudRunUrl || ''
+        );
+    };
+    bannerBtnRow.appendChild(fullBtn);
+
+    var lovableBtn = document.createElement('button');
+    lovableBtn.className = 'task-spec-pipeline-btn';
+    lovableBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
+    lovableBtn.textContent = 'Lovable CDN \u2014 Critical Path';
+    lovableBtn.title = 'Runs desktop-community + mobile-community against Lovable (baseline)';
+    lovableBtn.onclick = function () {
+        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], lovableBtn);
+    };
+    bannerBtnRow.appendChild(lovableBtn);
+    cloudRunBanner.appendChild(bannerBtnRow);
+
+    // Cloud Run URL display
+    var urlRow = document.createElement('div');
+    urlRow.style.cssText = 'margin-top:0.6rem;font-size:0.75rem;color:var(--color-text-secondary);';
+    urlRow.innerHTML = '<strong>Cloud Run URL:</strong> <code style="background:var(--color-bg-primary);padding:0.15rem 0.4rem;border-radius:3px;">' +
+        (state.cloudRunUrl || 'Not configured \u2014 set in state after first deploy') + '</code>';
+    cloudRunBanner.appendChild(urlRow);
+
+    container.appendChild(cloudRunBanner);
 
     // Fetch suites + runs
     fetchTestingSuites();

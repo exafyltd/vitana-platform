@@ -1,6 +1,8 @@
 name: E2E Test Run
 
 on:
+  repository_dispatch:
+    types: [community-app-deployed]
   workflow_dispatch:
     inputs:
       projects:
@@ -12,6 +14,11 @@ on:
         required: false
         type: string
         default: ''
+      community_url:
+        description: 'Community app URL to test against (default: vitanaland.com, use Cloud Run URL for migration testing)'
+        required: false
+        type: string
+        default: 'https://vitanaland.com'
 
 concurrency:
   group: e2e-run-${{ github.run_id }}
@@ -39,8 +46,14 @@ jobs:
       - name: Build Playwright command
         id: cmd
         run: |
-          PROJECTS="${{ inputs.projects }}"
-          SPEC="${{ inputs.spec_filter }}"
+          # Support both workflow_dispatch inputs and repository_dispatch payload
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PROJECTS="${{ github.event.client_payload.projects }}"
+            SPEC=""
+          else
+            PROJECTS="${{ inputs.projects }}"
+            SPEC="${{ inputs.spec_filter }}"
+          fi
           CMD="npx playwright test"
           # Add each project as --project flag
           IFS=',' read -ra PROJ_ARRAY <<< "$PROJECTS"
@@ -60,6 +73,7 @@ jobs:
         run: ${{ steps.cmd.outputs.cmd }}
         env:
           HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://vitanaland.com' }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
 

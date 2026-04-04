@@ -93,7 +93,7 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
 
 // ─── POST /run — Trigger a test run ──────────────────────────────────────
 router.post('/run', async (req: Request, res: Response) => {
-  const { projects = [], type = 'e2e' } = req.body;
+  const { projects = [], type = 'e2e', community_url } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
   }
@@ -127,7 +127,7 @@ router.post('/run', async (req: Request, res: Response) => {
     }
 
     res.json({ ok: true, run_id: run.id, status: 'running', via: 'local' });
-    executePlaywrightRun(run.id, validProjects, type, supabase).catch(err => {
+    executePlaywrightRun(run.id, validProjects, type, supabase, community_url).catch(err => {
       console.error('[Testing] Run failed:', err);
     });
     return;
@@ -137,8 +137,9 @@ router.post('/run', async (req: Request, res: Response) => {
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
       projects: validProjects.join(','),
+      ...(community_url ? { community_url } : {}),
     });
-    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects });
+    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects, community_url: community_url || 'default' });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
   }
@@ -217,7 +218,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
       .eq('id', cycle.id);
 
     res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name, via: 'local' });
-    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase).catch(err => {
+    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, req.body?.community_url).catch(err => {
       console.error('[Testing] Cycle run failed:', err);
     });
     return;
@@ -246,7 +247,8 @@ async function executePlaywrightRun(
   runId: string,
   projects: string[],
   type: string,
-  supabase: ReturnType<typeof getSupabase>
+  supabase: ReturnType<typeof getSupabase>,
+  communityUrl?: string,
 ) {
   if (!supabase) return;
 
@@ -277,7 +279,7 @@ async function executePlaywrightRun(
 
       let proc;
       if (isCloudRun) {
-        proc = spawn('npx', args, { cwd: e2eDir, shell: true, env: { ...process.env, CI: 'true' } });
+        proc = spawn('npx', args, { cwd: e2eDir, shell: true, env: { ...process.env, CI: 'true', ...(communityUrl ? { COMMUNITY_URL: communityUrl } : {}) } });
       } else {
         // WSL2: use cmd.exe to run on Windows side where Chromium works
         const cmd = `cd /d "${e2eDir.replace(/\//g, '\\')}" && npx ${args.join(' ')}`;
