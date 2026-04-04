@@ -54,7 +54,12 @@ export default defineConfig({
     {
       name: 'desktop-shared',
       testDir: './community-desktop/shared',
-      use: { baseURL: COMMUNITY_URL, ...desktopChrome },
+      use: {
+        baseURL: COMMUNITY_URL,
+        storageState: '.auth/community.json',
+        ...desktopChrome,
+      },
+      dependencies: ['auth-community'],
     },
 
     // ── UI 2: Lovable Mobile (per role) ──────────────────
