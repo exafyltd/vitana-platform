@@ -669,6 +669,8 @@ interface GeminiLiveSession {
   consecutiveToolCalls: number;
   // VTID-ANON: Whether this is an anonymous/unauthenticated session (landing page)
   isAnonymous: boolean;
+  // VTID-ANON-SIGNUP-INTENT: Set true when user expresses signup intent
+  signupIntentDetected?: boolean;
   // VTID-CONTEXT: Client environment context (IP geo, device, time)
   clientContext?: ClientContext;
 }
@@ -2006,6 +2008,42 @@ ${trimmedHistory}
 }
 
 /**
+/**
+ * VTID-ANON-SIGNUP-INTENT: Lightweight keyword-based detection of signup/registration intent.
+ * No AI calls — pure regex matching. Supports EN + DE.
+ */
+const SIGNUP_EXCLUSION_PATTERNS = [
+  /\b(already|schon)\s+(have|habe|bin)\s+(an?\s+)?(account|konto|registriert|angemeldet)/i,
+  /\b(can'?t|kann\s+nicht|unable)\s+(sign\s*up|register|registrier|anmeld)/i,
+  /\b(cancel|abbrech|k[uü]ndig)\s*(my|mein)?\s*(registration|registrierung|anmeldung)/i,
+];
+
+const SIGNUP_POSITIVE_PATTERNS = [
+  /\b(sign\s*up|register|sign\s+me\s+up|count\s+me\s+in)\b/i,
+  /\bhow\s+(do\s+i|can\s+i|to)\s+(sign\s*up|register|join|get\s+started)\b/i,
+  /\b(i\s+want|i'?d\s+like|let\s+me)\s+(to\s+)?(sign\s*up|register|join|try\s+it)\b/i,
+  /\b(i\s+want\s+to|let\s+me|can\s+i|how\s+(do|can)\s+i)\s+join\b/i,
+  /\bi'?m\s+(convinced|sold|ready|in)\b/i,
+  /\b(take\s+me\s+there|where\s+do\s+i\s+(sign\s*up|register|join))\b/i,
+  /\b(ich\s+)?(will|m[oö]chte|h[aä]tte\s+gern)\s+(mich\s+)?(registrier|anmeld|beitret|mitmach)/i,
+  /\bwie\s+(kann|mach)\s+ich\s+(mit)?machen\b/i,
+  /\bwo\s+(kann\s+ich\s+(mich\s+)?|registrier|meld)\s*(ich\s*)?(mich\s*)?(an)?\b/i,
+  /\b(ich\s+bin\s+)(dabei|[uü]berzeugt|interessiert|bereit)\b/i,
+  /\b(ich\s+)?(will|m[oö]chte)\s+(mich\s+)?(anmelden|registrieren|beitreten)\b/i,
+];
+
+function detectSignupIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  for (const pattern of SIGNUP_EXCLUSION_PATTERNS) {
+    if (pattern.test(lower)) return false;
+  }
+  for (const pattern of SIGNUP_POSITIVE_PATTERNS) {
+    if (pattern.test(lower)) return true;
+  }
+  return false;
+}
+
+/**
  * VTID-ANON: Build system instruction for anonymous/unauthenticated sessions.
  * No memory, no tools, no personal data. Focused on welcoming first-time users,
  * explaining Vitana, and guiding toward signup.
@@ -2391,8 +2429,41 @@ async function connectToLiveAPI(
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
 
-            // VTID-ANON-NUDGE: Escalating signup nudges for anonymous sessions
+            // VTID-ANON-SIGNUP-INTENT: Early exit when user expresses signup intent
             if (session.isAnonymous && !isGreetingTurn && ws.readyState === WebSocket.OPEN) {
+              // Phase 2: Vitana has delivered registration guidance — end session gracefully
+              if (session.signupIntentDetected) {
+                console.log(`[VTID-ANON-SIGNUP-INTENT] Farewell delivered — ending session ${session.sessionId} at turn ${session.turn_count}`);
+                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Signup intent detected — guiding to registration.' });
+                if (session.sseResponse) {
+                  session.sseResponse.write(`data: ${limitMsg}\n\n`);
+                }
+                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                  try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
+                }
+              }
+              // Phase 1: Check user's spoken text for signup intent
+              else {
+                const intentText = session.inputTranscriptBuffer.trim();
+                if (intentText.length > 0 && detectSignupIntent(intentText)) {
+                  session.signupIntentDetected = true;
+                  console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${session.turn_count} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
+                  try {
+                    ws.send(JSON.stringify({
+                      client_content: {
+                        turns: [{ role: 'user', parts: [{ text: '[SYSTEM INSTRUCTION UPDATE — CRITICAL — the visitor wants to register NOW]: The visitor just expressed interest in joining! Respond with enthusiasm and give clear, concise registration instructions. Say something like: "That is wonderful to hear! You can register right now — just click the Register button right here on vitanaland.com. It is completely free and only takes a moment. Once you are a member, I will remember everything we talk about and become your personal wellness companion. I cannot wait to continue this journey with you!" Then say a warm goodbye.' }] }],
+                        turn_complete: true
+                      }
+                    }));
+                  } catch (e) {
+                    console.warn(`[VTID-ANON-SIGNUP-INTENT] Failed to inject signup guidance: ${(e as Error).message}`);
+                  }
+                }
+              }
+            }
+
+            // VTID-ANON-NUDGE: Escalating signup nudges (skipped if signup intent detected)
+            if (session.isAnonymous && !isGreetingTurn && !session.signupIntentDetected && ws.readyState === WebSocket.OPEN) {
               const tc = session.turn_count;
               let nudgePrompt: string | null = null;
 
@@ -7248,7 +7319,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   // VTID-ANON-NUDGE: Block all input after turn limit — Vitana's final message (turn 8)
   // has already been delivered. Silently drop audio/text so no partial response starts.
-  if (session.isAnonymous && session.turn_count > 8) {
+  if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
     return res.json({ ok: true });
   }
 
@@ -7360,7 +7431,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       const textContent = (body as any).text as string;
 
       // VTID-ANON-NUDGE: Block text input after turn limit (SSE text path)
-      if (session.isAnonymous && session.turn_count > 8) {
+      if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
         return res.json({ ok: true });
       }
 
@@ -8594,7 +8665,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
   if (!liveSession) return;
 
   // VTID-ANON-NUDGE: Block all input after turn limit (WebSocket path)
-  if (liveSession.isAnonymous && liveSession.turn_count > 8) {
+  if (liveSession.isAnonymous && (liveSession.turn_count > 8 || liveSession.signupIntentDetected)) {
     return;
   }
 
@@ -8719,7 +8790,7 @@ function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMe
   if (!liveSession) return;
 
   // VTID-ANON-NUDGE: Block all input after turn limit (WebSocket text path)
-  if (liveSession.isAnonymous && liveSession.turn_count > 8) {
+  if (liveSession.isAnonymous && (liveSession.turn_count > 8 || liveSession.signupIntentDetected)) {
     return;
   }
 
