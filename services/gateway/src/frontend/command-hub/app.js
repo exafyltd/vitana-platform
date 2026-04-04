@@ -32671,21 +32671,15 @@ function renderInfraServicesView() {
 
     // Header
     var header = document.createElement('div');
-    header.className = 'section-header';
-    var h2 = document.createElement('h2');
-    h2.textContent = 'Services';
-    header.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Real-time health status of all Vitana platform services. Each card shows endpoint, status, and response latency.';
-    header.appendChild(subtitle);
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Services</h2><p class="infra-subtitle">Real-time health status of all Vitana platform services. Each card shows endpoint, status, and response latency.</p>';
     container.appendChild(header);
 
     // Loading
     if (state.infraServices.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
-        loadingDiv.textContent = 'Loading...';
+        loadingDiv.className = 'infra-empty';
+        loadingDiv.textContent = 'Loading services...';
         container.appendChild(loadingDiv);
         return container;
     }
@@ -32693,7 +32687,7 @@ function renderInfraServicesView() {
     // Error
     if (state.infraServices.error) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.className = 'infra-empty';
         errorDiv.textContent = 'Error: ' + state.infraServices.error;
         container.appendChild(errorDiv);
         return container;
@@ -32701,51 +32695,44 @@ function renderInfraServicesView() {
 
     // Services Grid
     var grid = document.createElement('div');
-    grid.className = 'infra-services-grid';
+    grid.className = 'infra-card-grid';
 
     state.infraServices.items.forEach(function (svc) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card service-health-card';
+        card.className = 'infra-card';
 
-        // Status dot + name row
-        var nameRow = document.createElement('div');
-        nameRow.className = 'infra-service-card-title';
+        // Header row: dot + name + badge
+        var hdr = document.createElement('div');
+        hdr.className = 'infra-card__header';
         var dot = document.createElement('span');
-        dot.className = 'status-dot status-dot-' + svc.status;
-        dot.style.display = 'inline-block';
-        dot.style.width = '10px';
-        dot.style.height = '10px';
-        dot.style.borderRadius = '50%';
-        dot.style.marginRight = '8px';
-        dot.style.backgroundColor = svc.status === 'healthy' ? '#22c55e' : (svc.status === 'degraded' ? '#f59e0b' : '#ef4444');
-        nameRow.appendChild(dot);
-        nameRow.appendChild(document.createTextNode(svc.name));
-        card.appendChild(nameRow);
+        dot.className = 'infra-card__dot infra-card__dot--' + svc.status;
+        hdr.appendChild(dot);
+        var name = document.createElement('span');
+        name.className = 'infra-card__name';
+        name.textContent = svc.name;
+        hdr.appendChild(name);
+        var badge = document.createElement('span');
+        badge.className = 'infra-card__badge infra-card__badge--' + svc.status;
+        badge.textContent = svc.status.toUpperCase();
+        hdr.appendChild(badge);
+        card.appendChild(hdr);
 
-        // URL
-        var urlDiv = document.createElement('div');
-        urlDiv.className = 'infra-service-card-detail';
-        urlDiv.textContent = svc.url;
-        card.appendChild(urlDiv);
+        // Metadata rows
+        var meta = document.createElement('div');
+        meta.className = 'infra-card__meta';
 
-        // Status badge
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + svc.status;
-        statusBadge.textContent = svc.status.charAt(0).toUpperCase() + svc.status.slice(1);
-        card.appendChild(statusBadge);
-
-        // Latency
-        var latencyDiv = document.createElement('div');
-        latencyDiv.className = 'infra-service-card-detail';
-        latencyDiv.textContent = 'Latency: ' + svc.latency_ms + 'ms';
-        card.appendChild(latencyDiv);
-
-        // Last checked
-        var checkedDiv = document.createElement('div');
-        checkedDiv.className = 'infra-service-card-detail';
-        checkedDiv.textContent = 'Checked: ' + formatEventTimestamp(svc.last_checked);
-        card.appendChild(checkedDiv);
-
+        var rows = [
+            { label: 'Endpoint', value: svc.url },
+            { label: 'Latency', value: svc.latency_ms + 'ms' },
+            { label: 'Checked', value: formatEventTimestamp(svc.last_checked) }
+        ];
+        rows.forEach(function (r) {
+            var row = document.createElement('div');
+            row.className = 'infra-card__meta-row';
+            row.innerHTML = '<span class="infra-card__meta-label">' + r.label + '</span><span class="infra-card__meta-value">' + escapeHtml(r.value) + '</span>';
+            meta.appendChild(row);
+        });
+        card.appendChild(meta);
         grid.appendChild(card);
     });
 
@@ -32769,19 +32756,13 @@ function renderInfraHealthView() {
 
     // Header
     var header = document.createElement('div');
-    header.className = 'section-header';
-    var h2 = document.createElement('h2');
-    h2.textContent = 'System Health';
-    header.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Aggregate health view across all infrastructure services. Highlights degraded or down services.';
-    header.appendChild(subtitle);
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>System Health</h2><p class="infra-subtitle">Aggregate health view across all infrastructure services. Highlights degraded or down services.</p>';
     container.appendChild(header);
 
     if (state.infraServices.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
+        loadingDiv.className = 'infra-empty';
         loadingDiv.textContent = 'Loading...';
         container.appendChild(loadingDiv);
         return container;
@@ -32794,38 +32775,24 @@ function renderInfraHealthView() {
     var downCount = services.filter(function (s) { return s.status === 'down'; }).length;
     var healthScore = totalCount > 0 ? Math.round((healthyCount / totalCount) * 100) : 0;
 
-    // Health Score Cards
+    // Metric Cards Grid (4 across)
     var cardsGrid = document.createElement('div');
-    cardsGrid.className = 'infra-services-grid';
+    cardsGrid.className = 'infra-card-grid';
 
     var healthCards = [
-        { title: 'Health Score', value: healthScore + '%', detail: healthyCount + ' of ' + totalCount + ' services healthy' },
-        { title: 'Healthy', value: String(healthyCount), detail: 'Services responding normally' },
-        { title: 'Degraded', value: String(degradedCount), detail: 'Services with partial issues' },
-        { title: 'Down', value: String(downCount), detail: 'Services not responding' }
+        { label: 'Health Score', value: healthScore + '%', detail: healthyCount + ' of ' + totalCount + ' services healthy' },
+        { label: 'Healthy', value: String(healthyCount), detail: 'Services responding normally' },
+        { label: 'Degraded', value: String(degradedCount), detail: 'Services with partial issues' },
+        { label: 'Down', value: String(downCount), detail: 'Services not responding' }
     ];
 
     healthCards.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card service-health-card';
-
-        var cardTitle = document.createElement('div');
-        cardTitle.className = 'infra-service-card-title';
-        cardTitle.textContent = info.title;
-        card.appendChild(cardTitle);
-
-        var cardValue = document.createElement('div');
-        cardValue.className = 'infra-service-card-value';
-        cardValue.style.fontSize = '24px';
-        cardValue.style.fontWeight = '700';
-        cardValue.textContent = info.value;
-        card.appendChild(cardValue);
-
-        var cardDetail = document.createElement('div');
-        cardDetail.className = 'infra-service-card-detail';
-        cardDetail.textContent = info.detail;
-        card.appendChild(cardDetail);
-
+        card.className = 'infra-metric-card';
+        card.innerHTML =
+            '<div class="infra-metric-card__label">' + escapeHtml(info.label) + '</div>' +
+            '<div class="infra-metric-card__value">' + escapeHtml(info.value) + '</div>' +
+            '<div class="infra-metric-card__detail">' + escapeHtml(info.detail) + '</div>';
         cardsGrid.appendChild(card);
     });
     container.appendChild(cardsGrid);
@@ -32834,14 +32801,14 @@ function renderInfraHealthView() {
     var degradedServices = services.filter(function (s) { return s.status !== 'healthy'; });
     if (degradedServices.length > 0) {
         var alertSection = document.createElement('div');
-        alertSection.className = 'databases-arch-note';
+        alertSection.className = 'infra-panel infra-panel--warning';
         alertSection.innerHTML = '<h3>Attention Required</h3>';
 
         var alertList = document.createElement('ul');
         degradedServices.forEach(function (s) {
             var li = document.createElement('li');
             li.innerHTML = '<strong>' + escapeHtml(s.name) + '</strong> — ' +
-                '<span class="status-badge status-' + s.status + '">' + s.status.toUpperCase() + '</span>' +
+                '<span class="infra-card__badge infra-card__badge--' + s.status + '">' + s.status.toUpperCase() + '</span>' +
                 ' (' + s.latency_ms + 'ms)' +
                 (s.error ? ' — ' + escapeHtml(s.error) : '');
             alertList.appendChild(li);
@@ -32852,7 +32819,7 @@ function renderInfraHealthView() {
 
     // Heartbeat info
     var heartbeatSection = document.createElement('div');
-    heartbeatSection.className = 'databases-arch-note';
+    heartbeatSection.className = 'infra-panel';
     heartbeatSection.innerHTML = '<h3>Heartbeat</h3>' +
         '<p>Operator heartbeat endpoint: <code>GET /api/v1/operator/heartbeat</code></p>' +
         '<p>Gateway polls the operator heartbeat to detect service availability. ' +
@@ -32899,21 +32866,15 @@ function renderInfraDeploymentsView() {
 
     // Header
     var header = document.createElement('div');
-    header.className = 'section-header';
-    var h2 = document.createElement('h2');
-    h2.textContent = 'Deployments';
-    header.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Recent deployment history across all services. Tracked via OASIS operator events.';
-    header.appendChild(subtitle);
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Deployments</h2><p class="infra-subtitle">Recent deployment history across all services. Tracked via OASIS operator events.</p>';
     container.appendChild(header);
 
     // Loading
     if (state.infraDeployments.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
-        loadingDiv.textContent = 'Loading...';
+        loadingDiv.className = 'infra-empty';
+        loadingDiv.textContent = 'Loading deployments...';
         container.appendChild(loadingDiv);
         return container;
     }
@@ -32921,7 +32882,7 @@ function renderInfraDeploymentsView() {
     // Error
     if (state.infraDeployments.error) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.className = 'infra-empty';
         errorDiv.textContent = 'Error: ' + state.infraDeployments.error;
         container.appendChild(errorDiv);
         return container;
@@ -32930,7 +32891,7 @@ function renderInfraDeploymentsView() {
     // Empty
     if (state.infraDeployments.items.length === 0) {
         var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
+        emptyDiv.className = 'infra-empty';
         emptyDiv.textContent = 'No deployments found.';
         container.appendChild(emptyDiv);
         return container;
@@ -32938,10 +32899,19 @@ function renderInfraDeploymentsView() {
 
     // Table
     var tableWrapper = document.createElement('div');
-    tableWrapper.className = 'gov-history-table-wrapper';
+    tableWrapper.className = 'infra-table-wrap';
 
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'infra-table';
+
+    // Column widths: Time 18%, Service 14%, Version 10%, SHA 10%, Status 12%, Initiator 12%, Duration 10%
+    var colgroup = document.createElement('colgroup');
+    [18, 14, 12, 10, 12, 12, 10].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -32978,7 +32948,7 @@ function renderInfraDeploymentsView() {
         var statusCell = document.createElement('td');
         var deployStatus = (deploy.status || 'unknown').toLowerCase();
         var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + deployStatus;
+        statusBadge.className = 'infra-card__badge infra-card__badge--' + (deployStatus === 'success' ? 'healthy' : (deployStatus === 'failed' ? 'down' : 'degraded'));
         statusBadge.textContent = deployStatus.charAt(0).toUpperCase() + deployStatus.slice(1);
         statusCell.appendChild(statusBadge);
         row.appendChild(statusCell);
@@ -33042,22 +33012,15 @@ function renderInfraLogsView() {
 
     // Header
     var header = document.createElement('div');
-    header.className = 'section-header';
-    var h2 = document.createElement('h2');
-    h2.textContent = 'Infrastructure Logs';
-    header.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'System, deployment, and CI/CD events from OASIS. Filtered to infrastructure-relevant topics.';
-    header.appendChild(subtitle);
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Infrastructure Logs</h2><p class="infra-subtitle">System, deployment, and CI/CD events from OASIS. Filtered to infrastructure-relevant topics.</p>';
     container.appendChild(header);
 
-    // Source filter dropdown
+    // Toolbar: source filter + event count
     var toolbar = document.createElement('div');
-    toolbar.className = 'gov-history-toolbar';
+    toolbar.className = 'infra-toolbar';
 
     var sourceSelect = document.createElement('select');
-    sourceSelect.className = 'form-control governance-filter-select';
     sourceSelect.autocomplete = 'off';
     sourceSelect.name = 'infra-logs-source-filter-' + Date.now();
     sourceSelect.innerHTML =
@@ -33076,12 +33039,8 @@ function renderInfraLogsView() {
     };
     toolbar.appendChild(sourceSelect);
 
-    var spacer = document.createElement('div');
-    spacer.className = 'spacer';
-    toolbar.appendChild(spacer);
-
     var countLabel = document.createElement('span');
-    countLabel.className = 'gov-history-count';
+    countLabel.className = 'infra-toolbar__count';
     countLabel.textContent = state.infraLogs.items.length + ' events';
     toolbar.appendChild(countLabel);
 
@@ -33090,8 +33049,8 @@ function renderInfraLogsView() {
     // Loading
     if (state.infraLogs.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
-        loadingDiv.textContent = 'Loading...';
+        loadingDiv.className = 'infra-empty';
+        loadingDiv.textContent = 'Loading logs...';
         container.appendChild(loadingDiv);
         return container;
     }
@@ -33099,7 +33058,7 @@ function renderInfraLogsView() {
     // Error
     if (state.infraLogs.error) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.className = 'infra-empty';
         errorDiv.textContent = 'Error: ' + state.infraLogs.error;
         container.appendChild(errorDiv);
         return container;
@@ -33116,20 +33075,27 @@ function renderInfraLogsView() {
     // Empty
     if (filteredItems.length === 0) {
         var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
+        emptyDiv.className = 'infra-empty';
         emptyDiv.textContent = 'No infrastructure log events found.';
         container.appendChild(emptyDiv);
         return container;
     }
 
-    // Scrollable Table
+    // Table
     var tableWrapper = document.createElement('div');
-    tableWrapper.className = 'gov-history-table-wrapper';
-    tableWrapper.style.maxHeight = '600px';
-    tableWrapper.style.overflowY = 'auto';
+    tableWrapper.className = 'infra-table-wrap';
 
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'infra-table';
+
+    // Column widths: Time 18%, Source 14%, Level 10%, VTID 14%, Message 44%
+    var colgroup = document.createElement('colgroup');
+    [18, 14, 10, 14, 44].forEach(function (w) {
+        var col = document.createElement('col');
+        col.style.width = w + '%';
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -33156,7 +33122,8 @@ function renderInfraLogsView() {
         var levelCell = document.createElement('td');
         var levelVal = (event.status || 'info').toLowerCase();
         var levelBadge = document.createElement('span');
-        levelBadge.className = 'status-badge status-' + levelVal;
+        var levelBadgeClass = levelVal === 'error' ? 'down' : (levelVal === 'warning' ? 'degraded' : 'healthy');
+        levelBadge.className = 'infra-card__badge infra-card__badge--' + levelBadgeClass;
         levelBadge.textContent = levelVal;
         levelCell.appendChild(levelBadge);
         row.appendChild(levelCell);
@@ -33167,10 +33134,6 @@ function renderInfraLogsView() {
 
         var msgCell = document.createElement('td');
         msgCell.textContent = event.message || '-';
-        msgCell.style.maxWidth = '400px';
-        msgCell.style.overflow = 'hidden';
-        msgCell.style.textOverflow = 'ellipsis';
-        msgCell.style.whiteSpace = 'nowrap';
         msgCell.title = event.message || '';
         row.appendChild(msgCell);
 
@@ -33224,27 +33187,21 @@ function renderInfraConfigView() {
 
     // Header
     var header = document.createElement('div');
-    header.className = 'section-header';
-    var h2 = document.createElement('h2');
-    h2.textContent = 'Infrastructure Configuration';
-    header.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Governance control flags and service configuration. Read-only view — use Governance > Controls to modify.';
-    header.appendChild(subtitle);
+    header.className = 'infra-section-header';
+    header.innerHTML = '<h2>Infrastructure Configuration</h2><p class="infra-subtitle">Governance control flags and service configuration. Read-only view — use Governance &gt; Controls to modify.</p>';
     container.appendChild(header);
 
     if (state.infraConfig.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
-        loadingDiv.textContent = 'Loading...';
+        loadingDiv.className = 'infra-empty';
+        loadingDiv.textContent = 'Loading configuration...';
         container.appendChild(loadingDiv);
         return container;
     }
 
     if (state.infraConfig.error) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.className = 'infra-empty';
         errorDiv.textContent = 'Error: ' + state.infraConfig.error;
         container.appendChild(errorDiv);
         return container;
@@ -33254,73 +33211,91 @@ function renderInfraConfigView() {
 
     if (controls.length === 0) {
         var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
+        emptyDiv.className = 'infra-empty';
         emptyDiv.textContent = 'No configuration controls found.';
         container.appendChild(emptyDiv);
         return container;
     }
 
+    // Control flags as structured cards
+    var titleDiv = document.createElement('h3');
+    titleDiv.className = 'infra-section-title';
+    titleDiv.textContent = 'Governance Controls';
+    container.appendChild(titleDiv);
+
     var cardsGrid = document.createElement('div');
-    cardsGrid.className = 'infra-services-grid';
+    cardsGrid.className = 'infra-card-grid infra-card-grid--3col';
 
     controls.forEach(function (control) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
-
-        var keyDiv = document.createElement('div');
-        keyDiv.className = 'infra-service-card-title';
-        keyDiv.textContent = control.key || control.name || 'Unknown';
-        card.appendChild(keyDiv);
+        card.className = 'infra-card';
 
         var isEnabled = control.enabled === true;
-        var stateBadge = document.createElement('span');
-        stateBadge.className = 'status-badge status-' + (isEnabled ? 'active' : 'inactive');
-        stateBadge.textContent = isEnabled ? 'ARMED' : 'DISARMED';
-        card.appendChild(stateBadge);
+
+        // Header: name + badge
+        var hdr = document.createElement('div');
+        hdr.className = 'infra-card__header';
+        var name = document.createElement('span');
+        name.className = 'infra-card__name';
+        name.textContent = control.key || control.name || 'Unknown';
+        hdr.appendChild(name);
+        var badge = document.createElement('span');
+        badge.className = 'infra-card__badge infra-card__badge--' + (isEnabled ? 'armed' : 'disarmed');
+        badge.textContent = isEnabled ? 'ARMED' : 'DISARMED';
+        hdr.appendChild(badge);
+        card.appendChild(hdr);
+
+        // Metadata
+        var meta = document.createElement('div');
+        meta.className = 'infra-card__meta';
 
         if (control.reason) {
-            var reasonDiv = document.createElement('div');
-            reasonDiv.className = 'infra-service-card-detail';
-            reasonDiv.textContent = 'Reason: ' + control.reason;
-            card.appendChild(reasonDiv);
+            var reasonRow = document.createElement('div');
+            reasonRow.className = 'infra-card__meta-row';
+            reasonRow.innerHTML = '<span class="infra-card__meta-label">Reason</span><span class="infra-card__meta-value">' + escapeHtml(control.reason) + '</span>';
+            meta.appendChild(reasonRow);
         }
-
         if (control.updated_at) {
-            var updatedDiv = document.createElement('div');
-            updatedDiv.className = 'infra-service-card-detail';
-            updatedDiv.textContent = 'Last changed: ' + formatEventTimestamp(control.updated_at);
-            card.appendChild(updatedDiv);
+            var updRow = document.createElement('div');
+            updRow.className = 'infra-card__meta-row';
+            updRow.innerHTML = '<span class="infra-card__meta-label">Changed</span><span class="infra-card__meta-value">' + escapeHtml(formatEventTimestamp(control.updated_at)) + '</span>';
+            meta.appendChild(updRow);
         }
-
         if (control.updated_by) {
-            var byDiv = document.createElement('div');
-            byDiv.className = 'infra-service-card-detail';
-            byDiv.textContent = 'By: ' + control.updated_by;
-            card.appendChild(byDiv);
+            var byRow = document.createElement('div');
+            byRow.className = 'infra-card__meta-row';
+            byRow.innerHTML = '<span class="infra-card__meta-label">By</span><span class="infra-card__meta-value">' + escapeHtml(control.updated_by) + '</span>';
+            meta.appendChild(byRow);
         }
-
+        card.appendChild(meta);
         cardsGrid.appendChild(card);
     });
 
     container.appendChild(cardsGrid);
 
+    // Service URLs panel
     var urlSection = document.createElement('div');
-    urlSection.className = 'databases-arch-note';
+    urlSection.className = 'infra-panel';
     urlSection.innerHTML = '<h3>Service URLs</h3>' +
         '<ul>' +
         '<li><strong>Gateway:</strong> <code>gateway-86804897789.us-central1.run.app</code></li>' +
         '<li><strong>OASIS Operator:</strong> <code>oasis-operator-86804897789.us-central1.run.app</code></li>' +
         '<li><strong>Worker Runner:</strong> <code>worker-runner-86804897789.us-central1.run.app</code></li>' +
         '<li><strong>Verification Engine:</strong> <code>vitana-verification-engine-86804897789.us-central1.run.app</code></li>' +
-        '</ul>' +
-        '<h3>Environment</h3>' +
+        '</ul>';
+    container.appendChild(urlSection);
+
+    // Environment panel
+    var envSection = document.createElement('div');
+    envSection.className = 'infra-panel';
+    envSection.innerHTML = '<h3>Environment</h3>' +
         '<ul>' +
         '<li><strong>GCP Project:</strong> lovable-vitana-vers1</li>' +
         '<li><strong>Region:</strong> us-central1</li>' +
         '<li><strong>Runtime:</strong> Cloud Run (managed)</li>' +
-        '<li><strong>Registry:</strong> us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy</li>' +
+        '<li><strong>Registry:</strong> <code>us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy</code></li>' +
         '</ul>';
-    container.appendChild(urlSection);
+    container.appendChild(envSection);
 
     return container;
 }
@@ -33384,27 +33359,25 @@ function renderSelfHealingView() {
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    header.className = 'infra-section-header';
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'flex-start';
+    header.style.gap = '16px';
+    header.style.flexWrap = 'wrap';
     var titleDiv = document.createElement('div');
-    var h2 = document.createElement('h2');
-    h2.textContent = 'Self-Healing System';
-    h2.style.cssText = 'margin:0 0 4px 0;';
-    titleDiv.appendChild(h2);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Autonomous detection, diagnosis, fix, and verification of failing services.';
-    subtitle.style.cssText = 'margin:0;opacity:0.7;font-size:13px;';
-    titleDiv.appendChild(subtitle);
+    titleDiv.innerHTML = '<h2>Self-Healing System</h2><p class="infra-subtitle">Autonomous detection, diagnosis, fix, and verification of failing services.</p>';
     header.appendChild(titleDiv);
 
     // Kill switch button
     var cfg = state.selfHealing.config;
     var isEnabled = cfg && cfg.enabled !== false;
     var killBtn = document.createElement('button');
-    killBtn.textContent = isEnabled ? '🔴 KILL SWITCH' : '🟢 RE-ENABLE';
-    killBtn.style.cssText = isEnabled
-        ? 'background:#dc2626;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;'
-        : 'background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;';
+    killBtn.className = 'infra-btn ' + (isEnabled ? 'infra-btn--danger' : 'infra-btn--success');
+    killBtn.style.flexShrink = '0';
+    killBtn.style.padding = '8px 18px';
+    killBtn.style.fontSize = '0.8rem';
+    killBtn.textContent = isEnabled ? 'KILL SWITCH' : 'RE-ENABLE';
     killBtn.onclick = function() {
         var action = isEnabled ? 'activate' : 'deactivate';
         if (isEnabled && !confirm('This will PAUSE all active self-healing tasks. Continue?')) return;
@@ -33419,7 +33392,7 @@ function renderSelfHealingView() {
             fetchSelfHealingData();
         }).catch(function(err) {
             killBtn.disabled = false;
-            killBtn.textContent = isEnabled ? '🔴 KILL SWITCH' : '🟢 RE-ENABLE';
+            killBtn.textContent = isEnabled ? 'KILL SWITCH' : 'RE-ENABLE';
             showToast('Kill switch error: ' + err.message, 'error');
         });
     };
@@ -33428,7 +33401,7 @@ function renderSelfHealingView() {
 
     if (state.selfHealing.loading) {
         var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'placeholder-content';
+        loadingDiv.className = 'infra-empty';
         loadingDiv.textContent = 'Loading self-healing data...';
         container.appendChild(loadingDiv);
         return container;
@@ -33436,7 +33409,7 @@ function renderSelfHealingView() {
 
     if (state.selfHealing.error) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
+        errorDiv.className = 'infra-empty';
         errorDiv.textContent = 'Error: ' + state.selfHealing.error;
         container.appendChild(errorDiv);
         return container;
@@ -33444,7 +33417,7 @@ function renderSelfHealingView() {
 
     // ── ZONE 1: Status Bar ──
     var statusBar = document.createElement('div');
-    statusBar.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:24px;align-items:center;';
+    statusBar.className = 'sh-status-bar';
     var activeTasks = state.selfHealing.active || [];
     var pendingApproval = activeTasks.filter(function(t) { return t.spec_status === 'validated'; });
     var inProgress = activeTasks.filter(function(t) { return t.status === 'in_progress' || t.status === 'pending'; });
@@ -33452,15 +33425,25 @@ function renderSelfHealingView() {
     var autonomyNames = ['OBSERVE ONLY', 'DIAGNOSE ONLY', 'SPEC & WAIT', 'AUTO-FIX SIMPLE', 'FULL AUTO'];
     var autonomyLevel = (cfg && cfg.autonomy_level !== undefined) ? cfg.autonomy_level : 3;
 
-    statusBar.innerHTML =
-        '<div style="font-size:13px;"><strong>Status:</strong> ' + (isEnabled ? '<span style="color:#4ade80;">ACTIVE</span>' : '<span style="color:#f87171;">DISABLED</span>') + '</div>' +
-        '<div style="font-size:13px;"><strong>Mode:</strong> ' + (autonomyNames[autonomyLevel] || 'UNKNOWN') + '</div>' +
-        '<div style="font-size:13px;"><strong>Active Repairs:</strong> ' + inProgress.length + '</div>' +
-        '<div style="font-size:13px;"><strong>Awaiting Approval:</strong> ' + pendingApproval.length + '</div>';
+    var statusItems = [
+        { label: 'Status', value: isEnabled ? '<span style="color:#4ade80;">ACTIVE</span>' : '<span style="color:#f87171;">DISABLED</span>' },
+        { label: 'Mode', value: escapeHtml(autonomyNames[autonomyLevel] || 'UNKNOWN') },
+        { label: 'Active Repairs', value: String(inProgress.length) },
+        { label: 'Awaiting Approval', value: String(pendingApproval.length) }
+    ];
+    statusItems.forEach(function(item) {
+        var div = document.createElement('div');
+        div.className = 'sh-status-bar__item';
+        div.innerHTML = '<strong>' + item.label + ':</strong> ' + item.value;
+        statusBar.appendChild(div);
+    });
+
+    var spacer = document.createElement('div');
+    spacer.className = 'sh-status-bar__spacer';
+    statusBar.appendChild(spacer);
 
     // Autonomy level selector
     var levelSelect = document.createElement('select');
-    levelSelect.style.cssText = 'margin-left:auto;background:var(--bg-primary,#111);color:var(--text-primary,#eee);border:1px solid var(--border-color,#444);border-radius:4px;padding:4px 8px;font-size:12px;';
     autonomyNames.forEach(function(name, i) {
         var opt = document.createElement('option');
         opt.value = i;
@@ -33484,50 +33467,61 @@ function renderSelfHealingView() {
     // ── ZONE 2: Active Repairs ──
     if (activeTasks.length > 0) {
         var activeSection = document.createElement('div');
-        activeSection.style.cssText = 'margin-bottom:16px;';
         var activeH3 = document.createElement('h3');
+        activeH3.className = 'infra-section-title';
         activeH3.textContent = 'Active Repairs';
-        activeH3.style.cssText = 'margin:0 0 8px 0;font-size:14px;';
         activeSection.appendChild(activeH3);
 
         activeTasks.forEach(function(task) {
             var card = document.createElement('div');
-            card.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:8px;padding:12px;margin-bottom:8px;';
+            card.className = 'sh-repair-card';
 
-            var meta = task.metadata || {};
+            var taskMeta = task.metadata || {};
             var stages = ['DIAGNOSE', 'SPEC', 'INJECT', 'EXECUTE', 'VERIFY'];
-            var currentStage = 2; // default: injected
+            var currentStage = 2;
             if (task.status === 'allocated') currentStage = 0;
             if (task.spec_status === 'validated' && task.status === 'pending') currentStage = 2;
             if (task.status === 'in_progress') currentStage = 3;
             if (task.status === 'completed') currentStage = 4;
 
-            // Pipeline visualization
-            var pipeline = '<div style="display:flex;gap:4px;margin-bottom:8px;">';
+            // Pipeline visualization using CSS classes
+            var pipeline = document.createElement('div');
+            pipeline.className = 'sh-pipeline';
             stages.forEach(function(stage, i) {
-                var color = i < currentStage ? '#4ade80' : (i === currentStage ? '#facc15' : '#555');
-                var icon = i < currentStage ? '✅' : (i === currentStage ? '⏳' : '─');
-                pipeline += '<div style="flex:1;text-align:center;padding:4px;border-radius:4px;background:' + color + '22;border:1px solid ' + color + ';font-size:11px;">' + icon + ' ' + stage + '</div>';
-                if (i < stages.length - 1) pipeline += '<div style="align-self:center;color:#555;">→</div>';
+                var stageClass = i < currentStage ? 'sh-pipeline__stage--done' : (i === currentStage ? 'sh-pipeline__stage--active' : 'sh-pipeline__stage--pending');
+                var stageDiv = document.createElement('div');
+                stageDiv.className = 'sh-pipeline__stage ' + stageClass;
+                stageDiv.textContent = stage;
+                pipeline.appendChild(stageDiv);
+                if (i < stages.length - 1) {
+                    var arrow = document.createElement('span');
+                    arrow.className = 'sh-pipeline__arrow';
+                    arrow.textContent = '\u2192';
+                    pipeline.appendChild(arrow);
+                }
             });
-            pipeline += '</div>';
+            card.appendChild(pipeline);
 
-            card.innerHTML = pipeline +
-                '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + task.vtid + ': ' + (task.title || '').replace('SELF-HEAL: ', '') + '</div>' +
-                '<div style="font-size:12px;opacity:0.7;margin-bottom:4px;">' +
-                    'Class: ' + (meta.failure_class || '?') +
-                    ' | Confidence: ' + ((meta.confidence || 0) * 100).toFixed(0) + '%' +
-                    ' | Endpoint: ' + (meta.endpoint || '?') +
-                '</div>';
+            var titleDiv2 = document.createElement('div');
+            titleDiv2.className = 'sh-repair-card__title';
+            titleDiv2.textContent = task.vtid + ': ' + (task.title || '').replace('SELF-HEAL: ', '');
+            card.appendChild(titleDiv2);
+
+            var metaDiv = document.createElement('div');
+            metaDiv.className = 'sh-repair-card__meta';
+            metaDiv.textContent = 'Class: ' + (taskMeta.failure_class || '?') +
+                '  \u00b7  Confidence: ' + ((taskMeta.confidence || 0) * 100).toFixed(0) + '%' +
+                '  \u00b7  Endpoint: ' + (taskMeta.endpoint || '?');
+            card.appendChild(metaDiv);
 
             // Action buttons
             var actions = document.createElement('div');
-            actions.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+            actions.className = 'sh-repair-card__actions';
 
             if (task.spec_status === 'validated') {
                 var approveBtn = document.createElement('button');
-                approveBtn.textContent = '✅ APPROVE';
-                approveBtn.style.cssText = 'background:#16a34a;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+                approveBtn.className = 'infra-btn infra-btn--success';
+                approveBtn.textContent = 'APPROVE';
                 approveBtn.onclick = function() {
                     fetch('/api/v1/specs/approve', {
                         method: 'POST',
@@ -33542,8 +33536,8 @@ function renderSelfHealingView() {
                 actions.appendChild(approveBtn);
 
                 var rejectBtn = document.createElement('button');
-                rejectBtn.textContent = '❌ REJECT';
-                rejectBtn.style.cssText = 'background:#dc2626;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+                rejectBtn.className = 'infra-btn infra-btn--danger';
+                rejectBtn.textContent = 'REJECT';
                 rejectBtn.onclick = function() {
                     fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
                         state.selfHealing.fetched = false;
@@ -33555,8 +33549,8 @@ function renderSelfHealingView() {
             }
 
             var rollbackBtn = document.createElement('button');
-            rollbackBtn.textContent = '↩ ROLLBACK';
-            rollbackBtn.style.cssText = 'background:#9333ea;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+            rollbackBtn.className = 'infra-btn infra-btn--purple';
+            rollbackBtn.textContent = 'ROLLBACK';
             rollbackBtn.onclick = function() {
                 if (!confirm('Rollback ' + task.vtid + '?')) return;
                 fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
@@ -33576,35 +33570,49 @@ function renderSelfHealingView() {
 
     // ── ZONE 3: History Table ──
     var historyH3 = document.createElement('h3');
+    historyH3.className = 'infra-section-title';
     historyH3.textContent = 'Self-Healing History';
-    historyH3.style.cssText = 'margin:16px 0 8px 0;font-size:14px;';
     container.appendChild(historyH3);
 
     var historyItems = state.selfHealing.history || [];
     if (historyItems.length === 0) {
         var emptyDiv = document.createElement('div');
-        emptyDiv.style.cssText = 'padding:24px;text-align:center;opacity:0.5;font-size:13px;';
+        emptyDiv.className = 'infra-empty';
         emptyDiv.textContent = 'No self-healing history yet. The system will create entries when health failures are detected.';
         container.appendChild(emptyDiv);
     } else {
-        var table = document.createElement('table');
-        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+        var tableWrapper = document.createElement('div');
+        tableWrapper.className = 'infra-table-wrap';
 
-        var thead = '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">';
-        ['VTID', 'Endpoint', 'Class', 'Conf', 'Result', 'Blast', 'Time'].forEach(function(col) {
-            thead += '<th style="padding:6px 8px;text-align:left;font-weight:600;font-size:11px;opacity:0.7;">' + col + '</th>';
+        var table = document.createElement('table');
+        table.className = 'infra-table';
+
+        // Column widths
+        var colgroup = document.createElement('colgroup');
+        [14, 22, 14, 8, 8, 10, 10].forEach(function (w) {
+            var col = document.createElement('col');
+            col.style.width = w + '%';
+            colgroup.appendChild(col);
         });
-        thead += '</tr></thead>';
-        table.innerHTML = thead;
+        table.appendChild(colgroup);
+
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['VTID', 'Endpoint', 'Class', 'Conf', 'Result', 'Blast', 'Time'].forEach(function(col) {
+            var th = document.createElement('th');
+            th.textContent = col;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
 
         var tbody = document.createElement('tbody');
         historyItems.forEach(function(item) {
             var tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid var(--border-color,#222);';
 
             var outcomeIcons = {
-                fixed: '✅', failed: '❌', rolled_back: '❌↩', escalated: '🚨↑',
-                pending: '⏳', skipped: '⏭', paused: '⏸'
+                fixed: '\u2705', failed: '\u274c', rolled_back: '\u274c\u21a9', escalated: '\ud83d\udea8\u2191',
+                pending: '\u23f3', skipped: '\u23ed', paused: '\u23f8'
             };
             var outcomeIcon = outcomeIcons[item.outcome] || '?';
 
@@ -33616,27 +33624,29 @@ function renderSelfHealingView() {
                 var ms = new Date(item.resolved_at) - new Date(item.created_at);
                 elapsed = Math.round(ms / 60000) + 'min';
             } else {
-                elapsed = '—';
+                elapsed = '\u2014';
             }
 
             tr.innerHTML =
-                '<td style="padding:6px 8px;font-family:monospace;">' + (item.vtid || '—') + '</td>' +
-                '<td style="padding:6px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.endpoint || '') + '">' + (item.endpoint || '—') + '</td>' +
-                '<td style="padding:6px 8px;">' + (item.failure_class || '—') + '</td>' +
-                '<td style="padding:6px 8px;">' + ((item.confidence * 100).toFixed(0)) + '%</td>' +
-                '<td style="padding:6px 8px;">' + outcomeIcon + '</td>' +
-                '<td style="padding:6px 8px;color:' + blastColor + ';">' + (item.blast_radius || 'none') + '</td>' +
-                '<td style="padding:6px 8px;">' + elapsed + '</td>';
+                '<td><code>' + escapeHtml(item.vtid || '\u2014') + '</code></td>' +
+                '<td title="' + escapeHtml(item.endpoint || '') + '">' + escapeHtml(item.endpoint || '\u2014') + '</td>' +
+                '<td>' + escapeHtml(item.failure_class || '\u2014') + '</td>' +
+                '<td>' + ((item.confidence * 100).toFixed(0)) + '%</td>' +
+                '<td>' + outcomeIcon + '</td>' +
+                '<td style="color:' + blastColor + ';">' + escapeHtml(item.blast_radius || 'none') + '</td>' +
+                '<td>' + escapeHtml(elapsed) + '</td>';
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
-        container.appendChild(table);
+        tableWrapper.appendChild(table);
+        container.appendChild(tableWrapper);
     }
 
     // Refresh button
     var refreshBtn = document.createElement('button');
-    refreshBtn.textContent = '↻ Refresh';
-    refreshBtn.style.cssText = 'margin-top:12px;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#eee);border:1px solid var(--border-color,#444);padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;';
+    refreshBtn.className = 'infra-btn infra-btn--ghost';
+    refreshBtn.style.marginTop = '16px';
+    refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function() {
         state.selfHealing.fetched = false;
         fetchSelfHealingData();

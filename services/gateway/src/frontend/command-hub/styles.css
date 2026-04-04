@@ -17418,7 +17418,7 @@ border-bottom: 1px solid var(--color-border, #333);
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .metrics-grid { grid-template-columns: repeat(2, 1fr); }
-  .overview-services-grid, .infra-services-grid, .config-cards-grid, .llm-providers-grid, .controls-grid { grid-template-columns: 1fr; }
+  .overview-services-grid, .infra-services-grid, .infra-card-grid, .infra-card-grid--3col, .config-cards-grid, .llm-providers-grid, .controls-grid { grid-template-columns: 1fr; }
   .playground-container { grid-template-columns: 1fr; }
   .personality-field-group { grid-template-columns: 1fr; }
 }
