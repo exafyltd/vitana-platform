@@ -5,6 +5,16 @@ export const TEST_USER = {
   password: process.env.TEST_USER_PASSWORD || '',
 };
 
+/** Call at the start of auth setup to fail fast if credentials are missing */
+export function validateTestCredentials() {
+  if (!TEST_USER.password) {
+    throw new Error(
+      'TEST_USER_PASSWORD env var is required but empty. ' +
+      'Set it in GitHub Actions secrets or export it locally.',
+    );
+  }
+}
+
 export const SUPABASE_CONFIG = {
   url: process.env.SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co',
   anonKey: process.env.SUPABASE_ANON_KEY || '',

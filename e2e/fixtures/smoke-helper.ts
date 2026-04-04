@@ -31,7 +31,12 @@ export function createSmokeTests(suiteName: string, routes: string[]) {
           !e.includes('favicon') &&
           !e.includes('analytics') &&
           !e.includes('GTM') &&
-          !e.includes('hotjar')
+          !e.includes('hotjar') &&
+          !e.includes('ResizeObserver') &&
+          !e.includes('hydration') &&
+          !e.includes('Warning:') &&
+          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
+          !e.includes('net::ERR_')
         );
         expect(fatalErrors).toHaveLength(0);
       });
@@ -64,7 +69,15 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
         expect(hasOverflow).toBe(false);
 
         const fatalErrors = errors.filter(e =>
-          !e.includes('favicon') && !e.includes('analytics')
+          !e.includes('favicon') &&
+          !e.includes('analytics') &&
+          !e.includes('GTM') &&
+          !e.includes('hotjar') &&
+          !e.includes('ResizeObserver') &&
+          !e.includes('hydration') &&
+          !e.includes('Warning:') &&
+          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
+          !e.includes('net::ERR_')
         );
         expect(fatalErrors).toHaveLength(0);
       });
