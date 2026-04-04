@@ -218,6 +218,29 @@ async function processFailingService(
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
   }
 
+  // For auto-approved tasks: directly dispatch to worker orchestrator
+  if (diagnosis.confidence >= 0.8 && diagnosis.auto_fixable) {
+    const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+    try {
+      console.log(`[self-healing] ${vtid} auto-approved — dispatching to worker orchestrator`);
+      const dispatchResp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vtid,
+          title: `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
+          spec: spec.substring(0, 8000),
+          source: 'self-healing',
+          priority: 'critical',
+        }),
+      });
+      const dispatchResult = await dispatchResp.json() as Record<string, unknown>;
+      console.log(`[self-healing] ${vtid} dispatch result: ${JSON.stringify(dispatchResult).substring(0, 200)}`);
+    } catch (dispatchErr: any) {
+      console.warn(`[self-healing] ${vtid} direct dispatch failed: ${dispatchErr.message}`);
+    }
+  }
+
   // Notify Google Chat
   await notifyGChat(
     `🔧 *Self-Healing Initiated*\n` +
