@@ -2429,35 +2429,23 @@ async function connectToLiveAPI(
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
 
-            // VTID-ANON-SIGNUP-INTENT: Early exit when user expresses signup intent
-            if (session.isAnonymous && !isGreetingTurn && ws.readyState === WebSocket.OPEN) {
-              // Phase 2: Vitana has delivered registration guidance — end session gracefully
-              if (session.signupIntentDetected) {
-                console.log(`[VTID-ANON-SIGNUP-INTENT] Farewell delivered — ending session ${session.sessionId} at turn ${session.turn_count}`);
-                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Signup intent detected — guiding to registration.' });
+            // VTID-ANON-SIGNUP-INTENT: Early exit when user expresses signup intent.
+            // Gemini already responds naturally to "I want to register" from the system instruction.
+            // We just detect that intent happened, block further input, and end the session
+            // AFTER Gemini's natural response finishes playing — no injected second prompt.
+            if (session.isAnonymous && !isGreetingTurn) {
+              const intentText = session.inputTranscriptBuffer.trim();
+              if (intentText.length > 0 && !session.signupIntentDetected && detectSignupIntent(intentText)) {
+                session.signupIntentDetected = true;
+                console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${session.turn_count} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
+                // Gemini's natural response to the signup intent has already been delivered
+                // (turn_complete means model finished speaking). Send session_limit_reached now.
+                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Signup intent detected — session ending after natural response.' });
                 if (session.sseResponse) {
                   session.sseResponse.write(`data: ${limitMsg}\n\n`);
                 }
                 if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                   try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
-                }
-              }
-              // Phase 1: Check user's spoken text for signup intent
-              else {
-                const intentText = session.inputTranscriptBuffer.trim();
-                if (intentText.length > 0 && detectSignupIntent(intentText)) {
-                  session.signupIntentDetected = true;
-                  console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${session.turn_count} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
-                  try {
-                    ws.send(JSON.stringify({
-                      client_content: {
-                        turns: [{ role: 'user', parts: [{ text: '[SYSTEM INSTRUCTION UPDATE — CRITICAL — the visitor wants to register NOW]: The visitor just expressed interest in joining! Respond with enthusiasm and give clear, concise registration instructions. Say something like: "That is wonderful to hear! You can register right now — just click the Register button right here on vitanaland.com. It is completely free and only takes a moment. Once you are a member, I will remember everything we talk about and become your personal wellness companion. I cannot wait to continue this journey with you!" Then say a warm goodbye.' }] }],
-                        turn_complete: true
-                      }
-                    }));
-                  } catch (e) {
-                    console.warn(`[VTID-ANON-SIGNUP-INTENT] Failed to inject signup guidance: ${(e as Error).message}`);
-                  }
                 }
               }
             }
