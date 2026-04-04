@@ -19,7 +19,7 @@ export type UserRole = 'community' | 'patient' | 'professional' | 'staff' | 'adm
 export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   const baseURL = role === 'developer'
     ? (process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app')
-    : 'https://vitanaland.com';
+    : (process.env.COMMUNITY_URL || 'https://vitanaland.com');
 
   // Navigate to the app
   await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
