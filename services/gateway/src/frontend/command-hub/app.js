@@ -5360,7 +5360,7 @@ function renderHeader() {
         };
         modal.appendChild(hmHeader);
 
-        // Body with grid
+        // Body with grouped grid
         var hmBody = document.createElement('div');
         hmBody.className = 'modal-body';
 
@@ -5370,67 +5370,108 @@ function renderHeader() {
         hmDetail.style.display = 'none';
 
         if (state.serviceHealth.items.length > 0) {
-            var grid = document.createElement('div');
-            grid.className = 'health-grid';
-
-            // Sort: failed first, then alphabetical
-            var sortedItems = state.serviceHealth.items.slice().sort(function (a, b) {
-                if (a.healthy !== b.healthy) return a.healthy ? 1 : -1;
-                return a.name.localeCompare(b.name);
-            });
-
-            for (var shi = 0; shi < sortedItems.length; shi++) {
-                (function (svc) {
-                    var dot = 'green';
-                    if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
-                    if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
-                    if (!svc.healthy && dot === 'green') dot = 'red';
-
-                    var cell = document.createElement('div');
-                    cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
-                    cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
-                    cell.innerHTML =
-                        '<span class="health-dot health-dot-' + dot + '"></span>' +
-                        '<span class="health-grid__cell-name">' + svc.name + '</span>' +
-                        '<span class="health-grid__cell-latency">' + (svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '') + '</span>';
-                    cell.onclick = function () {
-                        // Show detail panel for this service
-                        var detailHTML = '<div class="health-detail__header">' +
-                            '<span class="health-dot health-dot-' + dot + '"></span>' +
-                            '<strong>' + svc.name + '</strong>' +
-                            '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
-                            (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
-                            (svc.latency_ms >= 0 ? '<span class="health-detail__latency">' + svc.latency_ms + 'ms</span>' : '') +
-                            '</div>';
-                        if (svc.url) {
-                            detailHTML += '<div class="health-detail__url">' + svc.url + '</div>';
-                        }
-                        if (svc.details) {
-                            // Show reason if present
-                            if (svc.details.reason) {
-                                detailHTML += '<div class="health-detail__reason">' + svc.details.reason + '</div>';
-                            }
-                            // Show error if present
-                            if (svc.details.error) {
-                                detailHTML += '<div class="health-detail__reason" style="color:#ef4444;">Error: ' + svc.details.error + '</div>';
-                            }
-                            // Show full JSON response
-                            detailHTML += '<pre class="health-detail__json">' +
-                                JSON.stringify(svc.details, null, 2).replace(/</g, '&lt;') + '</pre>';
-                        } else {
-                            detailHTML += '<div class="health-detail__reason">No detail data available.</div>';
-                        }
-                        hmDetail.innerHTML = detailHTML;
-                        hmDetail.style.display = 'block';
-                        // Highlight selected cell
-                        var allCells = grid.querySelectorAll('.health-grid__cell');
-                        for (var ci = 0; ci < allCells.length; ci++) allCells[ci].classList.remove('health-grid__cell--selected');
-                        cell.classList.add('health-grid__cell--selected');
-                    };
-                    grid.appendChild(cell);
-                })(sortedItems[shi]);
+            // Group items by their group field (preserved from endpoint definition)
+            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling', 'Community & Social', 'Domain & Context', 'Visual & VTID'];
+            var grouped = {};
+            for (var gi = 0; gi < state.serviceHealth.items.length; gi++) {
+                var grp = state.serviceHealth.items[gi].group || 'Other';
+                if (!grouped[grp]) grouped[grp] = [];
+                grouped[grp].push(state.serviceHealth.items[gi]);
             }
-            hmBody.appendChild(grid);
+
+            // Render each group
+            for (var goi = 0; goi < groupOrder.length; goi++) {
+                var groupName = groupOrder[goi];
+                var groupItems = grouped[groupName];
+                if (!groupItems || groupItems.length === 0) continue;
+
+                // Sort within group: failed first, then alphabetical
+                groupItems.sort(function (a, b) {
+                    if (a.healthy !== b.healthy) return a.healthy ? 1 : -1;
+                    return a.name.localeCompare(b.name);
+                });
+
+                // Group header
+                var groupFailed = groupItems.filter(function (s) { return !s.healthy; }).length;
+                var grpHeader = document.createElement('div');
+                grpHeader.className = 'health-grid__group-header';
+                grpHeader.innerHTML = groupName +
+                    (groupFailed > 0 ? ' <span class="health-grid__group-badge--bad">' + groupFailed + ' down</span>' : '');
+                hmBody.appendChild(grpHeader);
+
+                // Grid for this group
+                var grid = document.createElement('div');
+                grid.className = 'health-grid';
+
+                for (var shi = 0; shi < groupItems.length; shi++) {
+                    (function (svc) {
+                        var dot = 'green';
+                        if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
+                        if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
+                        if (!svc.healthy && dot === 'green') dot = 'red';
+
+                        var cell = document.createElement('div');
+                        cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
+                        cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
+                        cell.innerHTML =
+                            '<span class="health-dot health-dot-' + dot + '"></span>' +
+                            '<span class="health-grid__cell-name">' + svc.name + '</span>';
+                        cell.onclick = function () {
+                            var detailHTML = '<div class="health-detail__header">' +
+                                '<span class="health-dot health-dot-' + dot + '"></span>' +
+                                '<strong>' + svc.name + '</strong>' +
+                                '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
+                                (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
+                                (svc.latency_ms >= 0 ? '<span class="health-detail__latency">' + svc.latency_ms + 'ms</span>' : '') +
+                                '</div>';
+                            if (svc.url) {
+                                detailHTML += '<div class="health-detail__url">' + svc.url + '</div>';
+                            }
+                            if (svc.details) {
+                                if (svc.details.reason) {
+                                    detailHTML += '<div class="health-detail__reason">' + svc.details.reason + '</div>';
+                                }
+                                if (svc.details.error) {
+                                    detailHTML += '<div class="health-detail__reason" style="color:#ef4444;">Error: ' + svc.details.error + '</div>';
+                                }
+                                detailHTML += '<pre class="health-detail__json">' +
+                                    JSON.stringify(svc.details, null, 2).replace(/</g, '&lt;') + '</pre>';
+                            } else {
+                                detailHTML += '<div class="health-detail__reason">No detail data available.</div>';
+                            }
+                            hmDetail.innerHTML = detailHTML;
+                            hmDetail.style.display = 'block';
+                            // Highlight selected cell across all grids
+                            var allCells = hmBody.querySelectorAll('.health-grid__cell');
+                            for (var ci = 0; ci < allCells.length; ci++) allCells[ci].classList.remove('health-grid__cell--selected');
+                            cell.classList.add('health-grid__cell--selected');
+                            // Scroll detail into view
+                            setTimeout(function () { hmDetail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 50);
+                        };
+                        grid.appendChild(cell);
+                    })(groupItems[shi]);
+                }
+                hmBody.appendChild(grid);
+            }
+
+            // Render any ungrouped items
+            if (grouped['Other'] && grouped['Other'].length > 0) {
+                var otherHeader = document.createElement('div');
+                otherHeader.className = 'health-grid__group-header';
+                otherHeader.textContent = 'Other';
+                hmBody.appendChild(otherHeader);
+                var otherGrid = document.createElement('div');
+                otherGrid.className = 'health-grid';
+                for (var oi = 0; oi < grouped['Other'].length; oi++) {
+                    var os = grouped['Other'][oi];
+                    var oc = document.createElement('div');
+                    oc.className = 'health-grid__cell';
+                    oc.innerHTML = '<span class="health-dot health-dot-green"></span><span class="health-grid__cell-name">' + os.name + '</span>';
+                    otherGrid.appendChild(oc);
+                }
+                hmBody.appendChild(otherGrid);
+            }
+
             hmBody.appendChild(hmDetail);
         } else {
             hmBody.innerHTML = '<div style="text-align:center; color:var(--color-text-secondary);">Loading...</div>';
@@ -23848,67 +23889,60 @@ async function fetchServiceHealth(silentRefresh) {
     state.serviceHealth.loading = true;
 
     var healthEndpoints = [
-        // Core infrastructure
-        { name: 'Gateway',              url: '/health' },
-        { name: 'Gateway Alive',        url: '/alive' },
-        { name: 'Auth',                 url: '/api/v1/auth/health' },
-        { name: 'CI/CD',                url: '/api/v1/cicd/health' },
-        { name: 'Execute Runner',       url: '/api/v1/execute/health' },
-        { name: 'Operator',             url: '/api/v1/operator/health' },
-        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health' },
-        { name: 'Telemetry',            url: '/api/v1/telemetry/health' },
-        { name: 'Events',               url: '/events/health' },
-        { name: 'Command Hub UI',       url: '/command-hub/health' },
-        // AI & Assistant
-        { name: 'Assistant',            url: '/api/v1/assistant/health' },
-        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health' },
-        { name: 'ORB Live',             url: '/api/v1/orb/health' },
-        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health' },
-        { name: 'Conversation',         url: '/api/v1/conversation/health' },
-        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health' },
-        // Autopilot
-        { name: 'Autopilot',            url: '/api/v1/autopilot/health' },
-        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health' },
-        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health' },
-        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health' },
-        // Automation & Scheduling
-        { name: 'Automations',          url: '/api/v1/automations/health' },
-        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health' },
-        { name: 'Memory',               url: '/api/v1/memory/health' },
-        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health' },
-        { name: 'Diary',                url: '/api/v1/diary/health' },
-        { name: 'Health Capacity',      url: '/api/v1/capacity/health' },
-        { name: 'Scheduler',            url: '/api/v1/scheduler/health' },
-        { name: 'Sched. Notifs',        url: '/api/v1/scheduled-notifications/health' },
-        { name: 'Email Intake',         url: '/api/v1/intake/email/health' },
-        // Community & Social
-        { name: 'Community',            url: '/api/v1/community/health' },
-        { name: 'Relationships',        url: '/api/v1/relationships/health' },
-        { name: 'Matchmaking',          url: '/api/v1/match/health' },
-        { name: 'Personalization',      url: '/api/v1/personalization/health' },
-        { name: 'Live Rooms',           url: '/api/v1/live/health' },
-        { name: 'Social Context',       url: '/api/v1/social/health' },
-        { name: 'Social Connect',       url: '/api/v1/social-accounts/health' },
-        { name: 'Social Alignment',     url: '/api/v1/alignment/health' },
-        { name: 'Topics',               url: '/api/v1/topics/health' },
-        // Domain & Context
-        { name: 'Domain Routing',       url: '/api/v1/routing/health' },
-        { name: 'Locations',            url: '/api/v1/locations/health' },
-        { name: 'Offers',               url: '/api/v1/offers/health' },
-        { name: 'Feedback',             url: '/api/v1/feedback/health' },
-        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health' },
-        { name: 'Situational',          url: '/api/v1/situational/health' },
-        { name: 'Availability',         url: '/api/v1/availability/health' },
-        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health' },
-        { name: 'User Preferences',     url: '/api/v1/user-preferences/health' },
-        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health' },
-        { name: 'Overload Detection',   url: '/api/v1/overload/health' },
-        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health' },
-        { name: 'Opportunities',        url: '/api/v1/opportunities/health' },
-        // Visual & VTID
-        { name: 'Visual Interactive',   url: '/api/v1/visual/health' },
-        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health' },
-        { name: 'VTID',                 url: '/api/v1/vtid/health' }
+        { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
+        { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
+        { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
+        { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
+        { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
+        { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
+        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
+        { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
+        { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
+        { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
+        { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
+        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
+        { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
+        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
+        { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
+        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
+        { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
+        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
+        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
+        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
+        { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
+        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
+        { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
+        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
+        { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
+        { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
+        { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
+        { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
+        { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
+        { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
+        { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
+        { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
+        { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
+        { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
+        { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
+        { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
+        { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
+        { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
+        { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
+        { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
+        { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
+        { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
+        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
+        { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
+        { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
+        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
+        { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
+        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
+        { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
+        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
+        { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
+        { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
+        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
+        { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' }
     ];
 
     try {
@@ -23921,13 +23955,13 @@ async function fetchServiceHealth(silentRefresh) {
                     return r.json().then(function (body) {
                         var rawStatus = ok ? (body.status || 'healthy') : 'degraded';
                         var isHealthy = (rawStatus === 'ok' || rawStatus === 'healthy' || rawStatus === 'ok_governance_limited');
-                        return { name: ep.name, url: ep.url, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
+                        return { name: ep.name, url: ep.url, group: ep.group, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
                     }).catch(function () {
-                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
+                        return { name: ep.name, url: ep.url, group: ep.group, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
                     });
                 })
                 .catch(function () {
-                    return { name: ep.name, url: ep.url, status: 'down', healthy: false, latency_ms: -1, details: null };
+                    return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, latency_ms: -1, details: null };
                 });
         }));
 

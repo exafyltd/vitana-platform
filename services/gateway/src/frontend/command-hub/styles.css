@@ -2996,21 +2996,44 @@ body {
 
 /* --- Service Health Grid (inside .modal) --- */
 
+.health-grid__group-header {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 12px 0 6px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+
+.health-grid__group-header:first-child {
+  padding-top: 0;
+}
+
+.health-grid__group-badge--bad {
+  color: #ef4444;
+  font-weight: 700;
+  text-transform: none;
+  margin-left: 6px;
+}
+
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
+  margin-bottom: 8px;
 }
 
 .health-grid__cell {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 10px 14px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
   cursor: pointer;
   min-width: 0;
   border: 1px solid transparent;
@@ -3024,12 +3047,14 @@ body {
 
 .health-grid__cell--selected {
   border-color: var(--color-accent, #3b82f6);
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .health-grid__cell--bad {
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
+  border-left: 3px solid #ef4444;
+  font-weight: 600;
 }
 
 .health-grid__cell--bad:hover {
@@ -3052,13 +3077,6 @@ body {
   white-space: nowrap;
 }
 
-.health-grid__cell-latency {
-  font-size: 0.65rem;
-  color: var(--color-text-secondary);
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
 /* Detail panel shown below grid when a cell is clicked */
 .health-detail {
   margin-top: 16px;
@@ -3078,13 +3096,13 @@ body {
 
 .health-detail__status--ok {
   color: #10b981;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 
 .health-detail__status--bad {
   color: #ef4444;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 
@@ -3094,7 +3112,7 @@ body {
 }
 
 .health-detail__url {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--color-text-secondary);
   font-family: monospace;
   margin-bottom: 8px;
@@ -3116,7 +3134,7 @@ body {
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
   margin: 0;
   white-space: pre-wrap;
@@ -3125,7 +3143,7 @@ body {
 
 @media (max-width: 700px) {
   .health-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
