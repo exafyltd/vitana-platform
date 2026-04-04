@@ -1,8 +1,8 @@
 import { type Page } from '@playwright/test';
 
 export const TEST_USER = {
-  email: process.env.TEST_USER_EMAIL || 'dstevanovic@outlook.com',
-  password: process.env.TEST_USER_PASSWORD || '',
+  email: process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev',
+  password: process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!',
 };
 
 /** Call at the start of auth setup to fail fast if credentials are missing */
