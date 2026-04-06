@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const COMMUNITY_URL = 'https://vitanaland.com';
+const COMMUNITY_URL = process.env.COMMUNITY_URL || 'https://vitanaland.com';
 const HUB_URL = process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
 
 /** Roles that use the Lovable frontend (Desktop + Mobile) */
