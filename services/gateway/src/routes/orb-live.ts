@@ -2148,12 +2148,19 @@ IMPORTANT: The speech above is your MINIMUM first message. You may add warmth an
 - Share enthusiasm: "This is what I love about the Maxina Community..."
 - Be concrete: mention specific events (dance sessions with Mariia, yoga meetups, nutrition workshops, hiking groups)
 
-=== GUIDING TO SIGNUP ===
+=== GUIDING TO SIGNUP (escalate naturally as the conversation progresses) ===
 - Frame joining as joining a COMMUNITY, not creating an account
 - "Join the Maxina Community" — not "create an account" or "sign up"
-- Mention that as a member, Vitana becomes their personal companion who remembers everything
-- "Once you join, I'll remember our conversations and give you personalized wellness guidance"
-- Be enthusiastic but not pushy — present it as an invitation to something exciting
+- In your first few responses: just answer their questions, be helpful and enthusiastic
+- After 3-4 exchanges: naturally mention that as a member, you would remember everything and give personalized guidance — and it is free
+- After 5-6 exchanges: warmly invite them to join — "You can register right here on vitanaland.com, it is free and takes just a moment!"
+- After 7+ exchanges: make it your main message — "I would love to keep helping you! To continue, just join the Maxina Community — it is completely free. I will remember everything we talked about."
+
+=== IF THE USER WANTS TO REGISTER ===
+- If the user says they want to register, sign up, join, or asks how to register:
+- Respond with clear instructions: "Just click the Register button right here on vitanaland.com. It is completely free and only takes a moment."
+- Be enthusiastic: "I cannot wait to continue this journey with you!"
+- Say a warm goodbye — this will be your last message in this session
 
 === WHAT YOU CANNOT DO ===
 - Access personal memories or past conversations (you have none)
@@ -2429,64 +2436,30 @@ async function connectToLiveAPI(
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
 
-            // VTID-ANON-SIGNUP-INTENT: Early exit when user expresses signup intent.
-            // Gemini already responds naturally to "I want to register" from the system instruction.
-            // We just detect that intent happened, block further input, and end the session
-            // AFTER Gemini's natural response finishes playing — no injected second prompt.
+            // VTID-ANON-SIGNUP-INTENT + VTID-ANON-NUDGE: Detect signup intent and enforce turn limits.
+            // CRITICAL: No client_content injections — those cause double responses.
+            // All nudging is done via the system instruction (see buildAnonymousSystemInstruction).
+            // This block only DETECTS intent and ENDS sessions — it never injects prompts.
             if (session.isAnonymous && !isGreetingTurn) {
+              const tc = session.turn_count;
+
+              // Detect signup intent from user's spoken text
               const intentText = session.inputTranscriptBuffer.trim();
               if (intentText.length > 0 && !session.signupIntentDetected && detectSignupIntent(intentText)) {
                 session.signupIntentDetected = true;
-                console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${session.turn_count} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
-                // Gemini's natural response to the signup intent has already been delivered
-                // (turn_complete means model finished speaking). Send session_limit_reached now.
-                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Signup intent detected — session ending after natural response.' });
+                console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${tc} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
+              }
+
+              // End session if: signup intent detected OR hard turn limit reached
+              if (session.signupIntentDetected || tc > 8) {
+                const reason = session.signupIntentDetected ? 'signup_intent' : 'turn_limit';
+                console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
+                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.' });
                 if (session.sseResponse) {
                   session.sseResponse.write(`data: ${limitMsg}\n\n`);
                 }
                 if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                   try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
-                }
-              }
-            }
-
-            // VTID-ANON-NUDGE: Escalating signup nudges (skipped if signup intent detected)
-            if (session.isAnonymous && !isGreetingTurn && !session.signupIntentDetected && ws.readyState === WebSocket.OPEN) {
-              const tc = session.turn_count;
-              let nudgePrompt: string | null = null;
-
-              if (tc === 4) {
-                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — weave this into your NEXT response naturally]: Mention that as a registered member, you (Vitana) would remember this conversation and provide personalized guidance. Say something like: "By the way, if you join the Maxina Community, I will remember everything we talk about and can give you personalized recommendations. And it is completely free!"';
-                console.log(`[VTID-ANON-NUDGE] Soft nudge injected at turn ${tc} for session ${session.sessionId}`);
-              } else if (tc === 6) {
-                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — make this a clear invitation in your NEXT response]: Warmly invite them to join now. Say something like: "I am really enjoying our conversation! To keep this going and for me to truly become your personal health companion, all you need to do is join the Maxina Community — it is free and takes just a moment. You can register right here on vitanaland.com!"';
-                console.log(`[VTID-ANON-NUDGE] Firm nudge injected at turn ${tc} for session ${session.sessionId}`);
-              } else if (tc === 8) {
-                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — CRITICAL — this is your FINAL message to this visitor]: This is your last response in this session. Deliver a warm, memorable closing. Say something like: "It has been wonderful talking with you! I would love to continue being your companion, but to do that I need you to join the Maxina Community. It is completely free, and once you register, I will remember everything — your goals, your preferences, our conversations. Just click the register button right here on vitanaland.com. I truly hope to see you inside the community — I will be waiting for you!" Then say goodbye warmly.';
-                console.log(`[VTID-ANON-NUDGE] Hard cutoff nudge injected at turn ${tc} for session ${session.sessionId}`);
-              } else if (tc > 8) {
-                // Hard cutoff — notify client. Input is already blocked by the gates
-                // in /stream/send, handleWsAudioMessage, and handleWsTextMessage.
-                console.log(`[VTID-ANON-NUDGE] Session cutoff at turn ${tc} for session ${session.sessionId}`);
-                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Please register to continue the conversation.' });
-                if (session.sseResponse) {
-                  session.sseResponse.write(`data: ${limitMsg}\n\n`);
-                }
-                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                  try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
-                }
-              }
-
-              if (nudgePrompt) {
-                try {
-                  ws.send(JSON.stringify({
-                    client_content: {
-                      turns: [{ role: 'user', parts: [{ text: nudgePrompt }] }],
-                      turn_complete: true
-                    }
-                  }));
-                } catch (e) {
-                  console.warn(`[VTID-ANON-NUDGE] Failed to inject nudge: ${(e as Error).message}`);
                 }
               }
             }
