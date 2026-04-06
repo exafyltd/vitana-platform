@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+// Login flow tests must run unauthenticated — override the project-level storageState
+test.use({ storageState: { cookies: [], origins: [] } });
+
 test.describe('Desktop — Login Flow', () => {
   test('shows landing page or login when unauthenticated', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
