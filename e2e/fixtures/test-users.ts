@@ -17,73 +17,77 @@ export function validateTestCredentials() {
 
 export const SUPABASE_CONFIG = {
   url: process.env.SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co',
-  anonKey: process.env.SUPABASE_ANON_KEY || '',
+  anonKey: process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4NjY2MzcsImV4cCI6MjA3MTQ0MjYzN30._-QX8ZFgDsKgLM7eDlyc64vi73F-Hwc4ttnDPHjZgVw',
 };
 
 export type UserRole = 'community' | 'patient' | 'professional' | 'staff' | 'admin' | 'developer';
 
 /**
- * Login via the Lovable frontend's Supabase auth form, then switch to target role.
- * Stores auth state in localStorage for reuse.
+ * Authenticate via Supabase REST API, then inject session into browser.
+ * Much more reliable than browser-based form login — no selectors to break.
  */
 export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   const baseURL = role === 'developer'
     ? (process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app')
     : (process.env.COMMUNITY_URL || 'https://vitanaland.com');
 
-  // Navigate to the app
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  // Step 1: Sign in via Supabase REST API (no browser interaction needed)
+  const signInRes = await fetch(
+    `${SUPABASE_CONFIG.url}/auth/v1/token?grant_type=password`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_CONFIG.anonKey,
+      },
+      body: JSON.stringify({
+        email: TEST_USER.email,
+        password: TEST_USER.password,
+      }),
+    },
+  );
 
-  // Wait for auth page or redirect
-  await page.waitForTimeout(2000);
-
-  // Try to fill login form if present
-  const emailInput = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]').first();
-  const passwordInput = page.locator('input[type="password"]').first();
-
-  if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await emailInput.fill(TEST_USER.email);
-    await passwordInput.fill(TEST_USER.password);
-
-    // Click submit
-    const submitBtn = page.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Login"), button:has-text("Anmelden")').first();
-    await submitBtn.click();
-
-    // Wait for navigation after login
-    await page.waitForTimeout(3000);
+  if (!signInRes.ok) {
+    const body = await signInRes.text();
+    throw new Error(`Supabase sign-in failed (${signInRes.status}): ${body}`);
   }
 
-  // Switch to target role via API
-  const token = await page.evaluate(() => {
-    return localStorage.getItem('vitana.authToken')
-      || localStorage.getItem('sb-inmkhvwdcuyhnxkgfvsb-auth-token');
-  });
+  const session = await signInRes.json();
+  const jwt = session.access_token;
 
-  if (token) {
-    // Parse JWT from Supabase storage if needed
-    let jwt = token;
+  if (!jwt) {
+    throw new Error('Supabase sign-in returned no access_token');
+  }
+
+  // Step 2: Navigate to the app and inject auth tokens into localStorage
+  await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+
+  await page.evaluate(({ session: s }) => {
+    // Supabase JS client storage key
+    const storageKey = 'sb-inmkhvwdcuyhnxkgfvsb-auth-token';
+    localStorage.setItem(storageKey, JSON.stringify(s));
+    // App-level auth token (some code reads this directly)
+    localStorage.setItem('vitana.authToken', s.access_token);
+  }, { session });
+
+  // Step 3: Switch to target role via gateway API
+  const gatewayUrl = process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+
+  await page.evaluate(async ({ gatewayUrl: gw, jwt: token, role: r }) => {
     try {
-      const parsed = JSON.parse(token);
-      jwt = parsed.access_token || token;
-    } catch { /* already a raw JWT */ }
-
-    // Switch role via gateway
-    const gatewayUrl = process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
-    await page.evaluate(async ({ gatewayUrl, jwt, role }) => {
-      await fetch(`${gatewayUrl}/api/v1/me/active-role`, {
+      await fetch(`${gw}/api/v1/me/active-role`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwt}`,
+          'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify({ role: r }),
       });
-      // Store role in localStorage for the app to pick up
-      localStorage.setItem('vitana.viewRole', role);
-    }, { gatewayUrl, jwt, role });
-  }
+    } catch { /* gateway may be unreachable in some test configs — role stays default */ }
+    localStorage.setItem('vitana.viewRole', r);
+  }, { gatewayUrl, jwt, role });
 
-  // Reload to apply role
+  // Step 4: Reload to apply auth + role
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
 }
