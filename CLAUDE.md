@@ -126,6 +126,31 @@ Key env vars set during deploy (see EXEC-DEPLOY.yml):
 - EXEC-DEPLOY is the canonical governed deploy pipeline
 - If push fails, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s)
 
+## GitHub Actions Access
+
+To check workflow runs and logs, use `gh` CLI (install if missing: download binary from GitHub releases):
+```bash
+# Install gh if not present
+gh --version || (curl -fsSL https://github.com/cli/cli/releases/download/v2.67.0/gh_2.67.0_linux_amd64.tar.gz -o /tmp/gh.tar.gz && tar -xzf /tmp/gh.tar.gz -C /tmp && cp /tmp/gh_2.67.0_linux_amd64/bin/gh /usr/local/bin/gh)
+
+# Auth requires GH_TOKEN env var — set in Claude Code settings or export manually
+gh run list --repo exafyltd/vitana-v1 --limit 5
+gh run view <run-id> --repo exafyltd/vitana-v1 --log-failed
+```
+
+**Note:** The `gh` CLI needs a `GH_TOKEN` environment variable. If not available, use MCP GitHub tools (`mcp__github__*`) for PR/issue/commit operations, but those don't cover Actions API.
+
+## E2E Testing
+
+- **Config:** `e2e/playwright.config.ts` — 16 projects (desktop/mobile per role + shared + hub)
+- **Auth:** API-based via Supabase REST (`POST /auth/v1/token`) — NOT browser form login
+- **Test user:** Auto-provisioned by `e2e/global-setup.ts` → `e2e-test@vitana.dev` with `exafy_admin: true`
+- **Service role key:** Lovable Supabase (in `EXEC-DEPLOY.yml:305` and `E2E-TEST-RUN.yml`)
+- **Anon key:** In `e2e/fixtures/test-users.ts` (public, same as `vitana-v1/.env`)
+- **Run:** `cd e2e && npx playwright test --project=desktop-community`
+- **CI:** `.github/workflows/E2E-TEST-RUN.yml` (manual dispatch or `repository_dispatch` from vitana-v1 deploy)
+- **Cloud Run E2E:** Set `COMMUNITY_URL=<cloud-run-url>` to test against Cloud Run instead of vitanaland.com
+
 ## Gateway URLs
 
 - Primary: `https://gateway-q74ibpv6ia-uc.a.run.app`
