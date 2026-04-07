@@ -1,7 +1,8 @@
 import { test as setup } from '@playwright/test';
-import { loginAsRole } from '../fixtures/test-users';
+import { loginAsRole, validateTestCredentials } from '../fixtures/test-users';
 
 setup('authenticate as professional role', async ({ page }) => {
+  validateTestCredentials();
   await loginAsRole(page, 'professional');
   await page.context().storageState({ path: '.auth/professional.json' });
 });
