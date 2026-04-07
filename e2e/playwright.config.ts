@@ -22,6 +22,7 @@ const mobileIPhone = {
 };
 
 export default defineConfig({
+  globalSetup: './global-setup',
   testDir: '.',
   timeout: 60_000,
   expect: { timeout: 10_000 },
@@ -54,7 +55,12 @@ export default defineConfig({
     {
       name: 'desktop-shared',
       testDir: './community-desktop/shared',
-      use: { baseURL: COMMUNITY_URL, ...desktopChrome },
+      use: {
+        baseURL: COMMUNITY_URL,
+        storageState: '.auth/community.json',
+        ...desktopChrome,
+      },
+      dependencies: ['auth-community'],
     },
 
     // ── UI 2: Lovable Mobile (per role) ──────────────────
