@@ -39,6 +39,17 @@
     return 'https://gateway-q74ibpv6ia-uc.a.run.app'; // hardcoded fallback
   })();
 
+  // VTID-ANON-FIX: Check if a JWT is expired by decoding the payload (no verification needed)
+  function _isTokenExpired(token) {
+    try {
+      var parts = token.split('.');
+      if (parts.length !== 3) return true;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload.exp) return false; // No expiry claim — treat as valid
+      return payload.exp * 1000 < Date.now();
+    } catch (e) { return true; } // Can't decode — treat as expired
+  }
+
   // Auto-detect auth token from localStorage (read-only, never writes/deletes)
   // Priority: Supabase native key (managed by auth SDK) > vitana.authToken (legacy)
   var _autoToken = (function () {
@@ -52,15 +63,20 @@
         if (sbData) {
           try {
             var parsed = JSON.parse(sbData);
-            return parsed.access_token || parsed.token || '';
+            var token = parsed.access_token || parsed.token || '';
+            if (token && !_isTokenExpired(token)) return token;
+            if (token) console.log('[VTOrb] Auto-detect: Supabase token expired — treating as anonymous');
+            return '';
           } catch (_) {
-            return sbData;
+            // Not JSON — might be raw token, check expiry
+            if (sbData && !_isTokenExpired(sbData)) return sbData;
+            return '';
           }
         }
       }
       // 2. Command Hub custom key (fallback)
       var t = localStorage.getItem('vitana.authToken');
-      if (t) return t;
+      if (t && !_isTokenExpired(t)) return t;
     } catch (e) { /* localStorage may be blocked */ }
     return '';
   })();
@@ -1306,23 +1322,26 @@
             var parsed = JSON.parse(sbData);
             // Supabase v2 stores { access_token, refresh_token, user, ... }
             var token = parsed.access_token || parsed.token || '';
-            if (token) {
+            if (token && !_isTokenExpired(token)) {
               _cfg.token = token;
               console.log('[VTOrb] Auth from Supabase key: ' + sbKey + ', user=' + (parsed.user?.id || 'unknown').substring(0, 8));
               return;
             }
+            if (token) console.log('[VTOrb] Supabase token expired — treating as anonymous');
           } catch (_) {
             // Not JSON — might be raw token
-            _cfg.token = sbData;
-            console.log('[VTOrb] Auth from Supabase key (raw): ' + sbKey);
-            return;
+            if (sbData && !_isTokenExpired(sbData)) {
+              _cfg.token = sbData;
+              console.log('[VTOrb] Auth from Supabase key (raw): ' + sbKey);
+              return;
+            }
           }
         }
       }
 
       // 2. Command Hub custom key (fallback — only if no Supabase key found)
       var t = localStorage.getItem('vitana.authToken');
-      if (t) {
+      if (t && !_isTokenExpired(t)) {
         _cfg.token = t;
         console.log('[VTOrb] Auth from vitana.authToken (Command Hub fallback)');
         return;
