@@ -39,14 +39,22 @@
     return 'https://gateway-q74ibpv6ia-uc.a.run.app'; // hardcoded fallback
   })();
 
-  // VTID-ANON-FIX: Check if a JWT is expired by decoding the payload (no verification needed)
+  // VTID-ANON-FIX: Check if a JWT is expired OR stale (issued > 5 min ago).
+  // The 5-minute staleness rule catches tokens left behind after logout —
+  // Supabase keeps valid JWTs in localStorage even after signOut.
+  // This only affects auto-detect mode (landing page). Command Hub uses init()
+  // with explicit tokens, which bypasses _isTokenExpired entirely.
+  var TOKEN_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
   function _isTokenExpired(token) {
     try {
       var parts = token.split('.');
       if (parts.length !== 3) return true;
       var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      if (!payload.exp) return false; // No expiry claim — treat as valid
-      return payload.exp * 1000 < Date.now();
+      // Check actual expiry
+      if (payload.exp && payload.exp * 1000 < Date.now()) return true;
+      // Check staleness — if issued more than 5 min ago, treat as stale
+      if (payload.iat && (Date.now() - payload.iat * 1000) > TOKEN_MAX_AGE_MS) return true;
+      return false;
     } catch (e) { return true; } // Can't decode — treat as expired
   }
 
