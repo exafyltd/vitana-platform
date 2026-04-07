@@ -63,6 +63,15 @@
         if (sbData) {
           try {
             var parsed = JSON.parse(sbData);
+            // Supabase session check: user must exist and session must not be expired
+            if (!parsed.user || !parsed.user.id) {
+              console.log('[VTOrb] Auto-detect: Supabase key has no user — logged out');
+              return '';
+            }
+            if (parsed.expires_at && parsed.expires_at * 1000 < Date.now()) {
+              console.log('[VTOrb] Auto-detect: Supabase session expired (expires_at)');
+              return '';
+            }
             var token = parsed.access_token || parsed.token || '';
             if (token && !_isTokenExpired(token)) return token;
             if (token) console.log('[VTOrb] Auto-detect: Supabase token expired — treating as anonymous');
@@ -1320,14 +1329,23 @@
         if (sbData) {
           try {
             var parsed = JSON.parse(sbData);
-            // Supabase v2 stores { access_token, refresh_token, user, ... }
-            var token = parsed.access_token || parsed.token || '';
-            if (token && !_isTokenExpired(token)) {
-              _cfg.token = token;
-              console.log('[VTOrb] Auth from Supabase key: ' + sbKey + ', user=' + (parsed.user?.id || 'unknown').substring(0, 8));
-              return;
+            // Supabase session check: user must exist and session must not be expired
+            if (!parsed.user || !parsed.user.id) {
+              console.log('[VTOrb] Supabase key has no user — logged out, treating as anonymous');
+              // Fall through to clear token below
+            } else if (parsed.expires_at && parsed.expires_at * 1000 < Date.now()) {
+              console.log('[VTOrb] Supabase session expired (expires_at) — treating as anonymous');
+              // Fall through to clear token below
+            } else {
+              // Supabase v2 stores { access_token, refresh_token, user, ... }
+              var token = parsed.access_token || parsed.token || '';
+              if (token && !_isTokenExpired(token)) {
+                _cfg.token = token;
+                console.log('[VTOrb] Auth from Supabase key: ' + sbKey + ', user=' + (parsed.user?.id || 'unknown').substring(0, 8));
+                return;
+              }
+              if (token) console.log('[VTOrb] Supabase token expired — treating as anonymous');
             }
-            if (token) console.log('[VTOrb] Supabase token expired — treating as anonymous');
           } catch (_) {
             // Not JSON — might be raw token
             if (sbData && !_isTokenExpired(sbData)) {
