@@ -20,6 +20,7 @@ import {
 import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
+import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 
 const router = Router();
 
@@ -258,6 +259,18 @@ router.post('/login', async (req: Request, res: Response) => {
             })
             .catch(err => {
               console.warn(`[VTID-01185] First-login recommendations failed for ${uid.slice(0, 8)}: ${err.message}`);
+            });
+
+          // Send welcome chat messages from new user to all community members (fire-and-forget)
+          sendWelcomeChatMessages(uid, tid, supabase)
+            .then(result => {
+              console.log(
+                `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
+                `sent=${result.sent}, skipped=${result.skipped}${result.reason ? `, reason=${result.reason}` : ''}`
+              );
+            })
+            .catch(err => {
+              console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
             });
         }
       }

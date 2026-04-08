@@ -3544,7 +3544,7 @@ const state = {
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
     orbMonitor: { runs: [], screens: {}, loading: false, error: null, fetched: false },
-    cloudRunUrl: '',  // Set after first community-app deploy (e.g. https://community-app-86804897789.us-central1.run.app)
+    cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
