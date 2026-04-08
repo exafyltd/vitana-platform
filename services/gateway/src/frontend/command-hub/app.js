@@ -27066,7 +27066,7 @@ function renderOverviewSystemView() {
         genBtn.disabled = true;
         genBtn.textContent = 'Generating...';
         try {
-            await fetch('/api/v1/autopilot/recommendations/generate', { method: 'POST' });
+            await fetch('/api/v1/autopilot/recommendations/generate', { method: 'POST', headers: buildContextHeaders({}) });
             state.overviewPipelineSummary.fetched = false;
             fetchPipelineSummary();
         } catch (err) {
@@ -29058,7 +29058,9 @@ async function fetchOperatorRunbook() {
                 if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
                 return r.json();
             }),
-            fetch('/api/v1/autopilot/recommendations?status=new&limit=20').then(function (r) {
+            fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
+                headers: buildContextHeaders({})
+            }).then(function (r) {
                 if (!r.ok) throw new Error('Recommendations: ' + r.status);
                 return r.json();
             })
@@ -29488,15 +29490,18 @@ function fetchIntegrationsMcp() {
     renderApp();
 
     fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+            if (!r.ok) return { data: [] };
+            return r.json();
+        })
         .then(function (data) {
             var items = data.data || data.connectors || data;
             state.integrationsMcp.items = Array.isArray(items) ? items : [];
             state.integrationsMcp.fetched = true;
             state.integrationsMcp.error = null;
         })
-        .catch(function (err) {
-            state.integrationsMcp.error = err.message;
+        .catch(function () {
+            state.integrationsMcp.items = [];
             state.integrationsMcp.fetched = true;
         })
         .finally(function() {
@@ -29586,15 +29591,18 @@ function fetchIntegrationsLlm() {
     renderApp();
 
     fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+            if (!r.ok) return { data: [] };
+            return r.json();
+        })
         .then(function (data) {
             var items = data.data || data.models || data;
             state.integrationsLlm.items = Array.isArray(items) ? items : [];
             state.integrationsLlm.fetched = true;
             state.integrationsLlm.error = null;
         })
-        .catch(function (err) {
-            state.integrationsLlm.error = err.message;
+        .catch(function () {
+            state.integrationsLlm.items = [];
             state.integrationsLlm.fetched = true;
         })
         .finally(function() {
@@ -29783,8 +29791,8 @@ function fetchIntegrationsTools() {
     renderApp();
 
     Promise.all([
-        fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
-        fetch('/api/v1/conversation/tool-health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return {}; })
+        fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { if (!r.ok) return { data: [] }; return r.json(); }).catch(function () { return { data: [] }; }),
+        fetch('/api/v1/conversation/tool-health', { headers: buildContextHeaders() }).then(function (r) { if (!r.ok) return {}; return r.json(); }).catch(function () { return {}; })
     ])
         .then(function (results) {
             var toolsData = results[0];
@@ -32313,11 +32321,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('[VTID-01046] Auth boot complete');
 
         // Access control: Command Hub requires developer/admin/infra/staff role
+        // VTID-01230-FIX: Check BOTH active_role AND permittedRoles to avoid
+        // false 403 when active_role defaults to 'community' but user actually
+        // has developer access. This fixes the "login → 403 → refresh twice" bug.
         var allowedRoles = ['developer', 'admin', 'infra', 'staff'];
         var userRole = state.meContext?.active_role || '';
         var isExafyAdmin = state.isSuperAdmin || state.authIdentity?.identity?.exafy_admin === true;
-        if (!isExafyAdmin && !allowedRoles.includes(userRole)) {
-            console.warn('[Command Hub] Access denied — role=' + userRole);
+        var hasActiveAllowed = allowedRoles.includes(userRole);
+        var hasPermittedAllowed = (state.permittedRoles || []).some(function(r) {
+            return allowedRoles.includes(r);
+        });
+        // Also check memberships from /auth/me as a third source of truth
+        var hasMembershipAllowed = (state.authIdentity?.memberships || []).some(function(m) {
+            return allowedRoles.includes((m.role || '').toLowerCase());
+        });
+
+        if (!isExafyAdmin && !hasActiveAllowed && !hasPermittedAllowed && !hasMembershipAllowed) {
+            console.warn('[Command Hub] Access denied — active_role=' + userRole +
+                ', permitted=' + JSON.stringify(state.permittedRoles) +
+                ', memberships=' + JSON.stringify((state.authIdentity?.memberships || []).map(function(m) { return m.role; })));
             document.getElementById('root').innerHTML =
                 '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;text-align:center;padding:2rem;">' +
                 '<h1 style="font-size:2rem;margin-bottom:1rem;">403 — Access Denied</h1>' +
@@ -32328,8 +32350,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Command Hub always operates in Developer context
-        state.viewRole = 'Developer';
-        localStorage.setItem('vitana.viewRole', 'Developer');
+        // VTID-01230-FIX: Determine the best allowed role to switch to.
+        // Prefer 'developer' if permitted, otherwise pick the first allowed role from permitted list.
+        var bestRole = 'developer';
+        if (!allowedRoles.includes(userRole)) {
+            // Active role is not allowed (e.g. 'community') — pick the best from permitted/membership
+            var allUserRoles = (state.permittedRoles || []).concat(
+                (state.authIdentity?.memberships || []).map(function(m) { return (m.role || '').toLowerCase(); })
+            );
+            if (allUserRoles.includes('developer')) {
+                bestRole = 'developer';
+            } else {
+                // Pick first allowed role the user actually has
+                for (var i = 0; i < allowedRoles.length; i++) {
+                    if (allUserRoles.includes(allowedRoles[i])) {
+                        bestRole = allowedRoles[i];
+                        break;
+                    }
+                }
+            }
+        } else {
+            bestRole = userRole;
+        }
+
+        var capitalBestRole = bestRole.charAt(0).toUpperCase() + bestRole.slice(1);
+        state.viewRole = capitalBestRole;
+        localStorage.setItem('vitana.viewRole', capitalBestRole);
+        // Sync meContext.active_role so API headers send the correct role
+        // Without this, buildContextHeaders() sends the server-side role (e.g. 'community')
+        // instead of 'developer', causing role-filtered APIs to return wrong data.
+        if (state.meContext && state.meContext.active_role !== bestRole) {
+            state.meContext.active_role = bestRole;
+            // Persist server-side so next page load doesn't default to 'community' again
+            setActiveRole(bestRole).catch(function(err) {
+                console.warn('[Command Hub] Failed to persist ' + bestRole + ' role:', err);
+            });
+        }
 
         // Final UI refresh after auth data is in
         renderApp();
