@@ -9,6 +9,8 @@ const ALLOWED_ORIGINS = [
   "https://gateway-86804897789.us-central1.run.app",         // Short alias
   "https://gateway-q74ibpv6ia-uc.a.run.app",                 // Cloud Run generated
   "https://vitana-dev-gateway-86804897789.us-central1.run.app", // Deprecated redirector
+  "https://community-app-86804897789.us-central1.run.app",    // Community app on Cloud Run
+  "https://community-app-q74ibpv6ia-uc.a.run.app",           // Community app Cloud Run alias
   "https://id-preview--vitana-v1.lovable.app",               // Lovable preview
   "https://vitanaland.com",                                    // Production custom domain (mobile app)
   "https://www.vitanaland.com",                                // Production custom domain (www)
