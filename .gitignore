@@ -23,3 +23,4 @@ Thumbs.db
 .env
 .env.local
 .env.production
+.claude/settings.local.json
