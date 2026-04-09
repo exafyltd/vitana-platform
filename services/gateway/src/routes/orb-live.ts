@@ -2170,9 +2170,9 @@ IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove o
 
 === IF THE USER WANTS TO REGISTER ===
 - If the user says they want to register, sign up, join, or asks how to register:
-- Respond with clear instructions: "Just click the Register button right here on vitanaland.com. It is completely free and only takes a moment."
-- Be enthusiastic: "I cannot wait to continue this journey with you!"
-- Say a warm goodbye — this will be your last message in this session
+- Say a warm, enthusiastic goodbye: "Wonderful! Let me guide you back to the registration page — it is completely free and takes just a moment. I cannot wait to continue this journey with you!"
+- Keep it to 2-3 sentences maximum. Do NOT continue the conversation after this.
+- This is your LAST message in this session — do NOT say anything else after the goodbye.
 
 === WHAT YOU CANNOT DO ===
 - Access personal memories or past conversations (you have none)
@@ -2466,12 +2466,22 @@ async function connectToLiveAPI(
               if (session.signupIntentDetected || tc > 8) {
                 const reason = session.signupIntentDetected ? 'signup_intent' : 'turn_limit';
                 console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
-                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.' });
-                if (session.sseResponse) {
-                  session.sseResponse.write(`data: ${limitMsg}\n\n`);
-                }
-                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                  try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
+
+                const sendLimitMsg = () => {
+                  const limitMsg = JSON.stringify({ type: 'session_limit_reached', reason, message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.' });
+                  if (session.sseResponse) {
+                    session.sseResponse.write(`data: ${limitMsg}\n\n`);
+                  }
+                  if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                    try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
+                  }
+                };
+
+                if (reason === 'signup_intent') {
+                  // Delay to let Vitana's goodbye audio finish playing on the client
+                  setTimeout(sendLimitMsg, 12000);
+                } else {
+                  sendLimitMsg();
                 }
               }
             }

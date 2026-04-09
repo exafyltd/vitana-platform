@@ -867,13 +867,19 @@
         break;
 
       case 'session_limit_reached':
-        // VTID-ANON-NUDGE: Anonymous session hit turn limit — show registration prompt
-        console.log('[VTOrb] Session limit reached — prompting registration');
-        _setStatus(_cfg.lang.startsWith('de')
-          ? 'Registriere dich kostenlos, um das Gespräch fortzusetzen!'
-          : 'Register for free to continue the conversation!');
-        _setOrbState('paused');
-        setTimeout(_sessionStop, 8000);
+        if (msg.reason === 'signup_intent') {
+          // VTID-ANON-SIGNUP: Vitana already said goodbye — gracefully close
+          console.log('[VTOrb] Signup intent — graceful session close');
+          _sessionStop();
+        } else {
+          // VTID-ANON-NUDGE: Turn limit — show registration prompt
+          console.log('[VTOrb] Session limit reached — prompting registration');
+          _setStatus(_cfg.lang.startsWith('de')
+            ? 'Registriere dich kostenlos, um das Gespräch fortzusetzen!'
+            : 'Register for free to continue the conversation!');
+          _setOrbState('paused');
+          setTimeout(_sessionStop, 8000);
+        }
         break;
 
       case 'link':
