@@ -19,9 +19,10 @@ import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
 const MAX_COMMUNITY_SIZE = 1000;
 const BATCH_SIZE = 50;
 
-const WELCOME_MESSAGE =
-  'Hello! I am a new community member and happy to join you. ' +
-  'Looking forward to having a great time together! 🙌';
+function buildWelcomeMessage(displayName?: string): string {
+  const name = displayName?.trim() || 'a new member';
+  return `Hello! My name is ${name} — I just joined the community and I'm excited to connect with you! 🙌`;
+}
 
 /**
  * Send introduction chat messages from a newly registered user to all
@@ -33,6 +34,7 @@ const WELCOME_MESSAGE =
 export async function sendWelcomeChatMessages(
   userId: string,
   tenantId: string,
+  displayName: string | undefined,
   supabase: SupabaseClient,
 ): Promise<{ sent: number; skipped: boolean; reason?: string }> {
   const tag = '[WelcomeChat]';
@@ -98,11 +100,12 @@ export async function sendWelcomeChatMessages(
 
     // 4. Build chat_messages rows
     const now = new Date().toISOString();
+    const message = buildWelcomeMessage(displayName);
     const rows = members.map((m: { user_id: string }) => ({
       tenant_id: tenantId,
       sender_id: userId,
       receiver_id: m.user_id,
-      content: WELCOME_MESSAGE,
+      content: message,
       message_type: 'text',
       metadata: { source: 'welcome_chat', automated: true },
       created_at: now,

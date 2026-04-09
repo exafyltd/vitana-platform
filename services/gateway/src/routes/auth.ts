@@ -262,7 +262,7 @@ router.post('/login', async (req: Request, res: Response) => {
             });
 
           // Send welcome chat messages from new user to all community members (fire-and-forget)
-          sendWelcomeChatMessages(uid, tid, supabase as any)
+          sendWelcomeChatMessages(uid, tid, profile.display_name, supabase as any)
             .then(result => {
               console.log(
                 `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
