@@ -131,10 +131,12 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     console.log(`[VTID-01079] Board adapter request, completedLimit=${completedLimit}, include_dev=${includeDev}`);
 
-    // VTID-01058: Step 1: Fetch ALL VTIDs from ledger (no limit - we filter by column later)
+    // VTID-01058: Step 1: Fetch VTIDs from ledger (only needed columns)
     // Note: PostgREST not.in filter is unreliable, so we fetch all and filter in post-fetch
+    // PERF-FIX: Select only the columns we actually use instead of SELECT *
+    const ledgerColumns = 'vtid,title,status,is_terminal,terminal_outcome,failure_count,last_failure_at,updated_at,created_at,deleted_at,voided_at,metadata,spec_status,spec_current_id,spec_current_hash,spec_approved_hash,spec_last_error';
     const vtidResp = await fetch(
-      `${supaUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=1000`,
+      `${supaUrl}/rest/v1/vtid_ledger?select=${ledgerColumns}&order=updated_at.desc&limit=1000`,
       { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
     );
 
@@ -185,18 +187,29 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     // Step 2: Fetch OASIS events ONLY for the VTIDs we're displaying
     // CRITICAL FIX: Previously we fetched limit=500 globally, which caused old events
     // to fall off when new events were created. Now we query specifically for our VTIDs.
+    // PERF-FIX: Select only needed columns (vtid, topic, created_at) instead of SELECT *
     let allEvents: any[] = [];
+    // PERF-FIX: Pre-build a Map<vtid, events[]> to avoid O(n*m) .filter() per VTID
+    const eventsByVtid = new Map<string, any[]>();
     if (vtidList.length > 0) {
       // PostgREST IN filter: vtid=in.(VTID-01020,VTID-01021,...)
       // VTID-01227: Add LIMIT to prevent disk IO exhaustion (was unbounded, causing Supabase IO budget depletion)
       const vtidFilter = `vtid=in.(${vtidList.join(',')})`;
       const eventsResp = await fetch(
-        `${supaUrl}/rest/v1/oasis_events?${vtidFilter}&order=created_at.desc&limit=5000`,
+        `${supaUrl}/rest/v1/oasis_events?select=vtid,topic,created_at&${vtidFilter}&order=created_at.desc&limit=5000`,
         { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
       );
       if (eventsResp.ok) {
         allEvents = await eventsResp.json() as any[];
-        console.log(`[VTID-01079] Fetched ${allEvents.length} OASIS events for ${vtidList.length} VTIDs`);
+        // PERF-FIX: Index events by VTID for O(1) lookup instead of O(n) filter per VTID
+        for (const evt of allEvents) {
+          const key = evt.vtid;
+          if (!eventsByVtid.has(key)) {
+            eventsByVtid.set(key, []);
+          }
+          eventsByVtid.get(key)!.push(evt);
+        }
+        console.log(`[VTID-01079] Fetched ${allEvents.length} OASIS events for ${vtidList.length} VTIDs (indexed into ${eventsByVtid.size} groups)`);
       }
     }
 
@@ -206,7 +219,8 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     const boardItems: BoardItem[] = allRows.map((row: any) => {
       const vtid = row.vtid;
-      const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
+      // PERF-FIX: O(1) Map lookup instead of O(n) filter across all events
+      const vtidEvents = eventsByVtid.get(vtid) || [];
 
       // VTID-01111: Debug logging for problematic VTIDs
       if (debugVtidList.includes(vtid)) {

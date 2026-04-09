@@ -64,7 +64,12 @@ async function requireDeveloperAccess(
 router.get('/', (req: Request, res: Response) => {
   try {
     // CSP compliant - no inline scripts or styles
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' data:");
+    // VTID-01230-FIX: img-src allows Supabase storage (avatar_url) and data: URIs.
+    // Without this, avatar background-image was blocked by default-src 'self'.
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
+    res.setHeader('Content-Security-Policy',
+      `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' ${supabaseDomain} data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
