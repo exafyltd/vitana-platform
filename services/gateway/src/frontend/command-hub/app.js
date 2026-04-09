@@ -971,16 +971,58 @@ async function doLogin(email, password) {
         console.log('[VTID-01196] User state from login:', { name: displayName, avatarUrl: avatarUrl ? 'yes' : 'no' });
         renderApp(); // Show immediate feedback
 
-        // Fetch full identity (will update with avatar_url if available)
-        await fetchAuthMe(loginEmail);
+        // VTID-01230-FIX: Full post-login boot — fetch auth + role + permissions in parallel,
+        // then correct role to developer and load all data. Without this, login left
+        // the board empty because fetchTasks() was never called after login.
+        await Promise.all([
+            fetchAuthMe(loginEmail),
+            fetchMeContext(),
+            fetchPermittedRoles()
+        ]);
 
-        // Also fetch me context to update MeState
-        await fetchMeContext();
+        // Role correction: Command Hub requires developer/admin/infra/staff
+        var postLoginAllowed = ['developer', 'admin', 'infra', 'staff'];
+        var postLoginRole = state.meContext?.active_role || '';
+        var postLoginPermitted = (state.permittedRoles || []).concat(
+            (state.authIdentity?.memberships || []).map(function(m) { return (m.role || '').toLowerCase(); })
+        );
+        var postLoginBest = 'developer';
+        if (!postLoginAllowed.includes(postLoginRole)) {
+            if (postLoginPermitted.includes('developer')) {
+                postLoginBest = 'developer';
+            } else {
+                for (var ri = 0; ri < postLoginAllowed.length; ri++) {
+                    if (postLoginPermitted.includes(postLoginAllowed[ri])) {
+                        postLoginBest = postLoginAllowed[ri];
+                        break;
+                    }
+                }
+            }
+        } else {
+            postLoginBest = postLoginRole;
+        }
+        var capBest = postLoginBest.charAt(0).toUpperCase() + postLoginBest.slice(1);
+        state.viewRole = capBest;
+        localStorage.setItem('vitana.viewRole', capBest);
+        if (state.meContext && state.meContext.active_role !== postLoginBest) {
+            state.meContext.active_role = postLoginBest;
+            setActiveRole(postLoginBest).catch(function(err) {
+                console.warn('[Command Hub] Failed to persist ' + postLoginBest + ' role after login:', err);
+            });
+        }
 
         // Close profile modal and refresh
         state.showProfileModal = false;
         showToast('Logged in successfully', 'success');
         renderApp();
+
+        // Load all data now that auth + role are established
+        Promise.all([
+            fetchTasks(),
+            fetchTelemetrySnapshot(),
+            fetchApprovals(true),
+            fetchAutopilotRecommendationsCount()
+        ]).catch(function(err) { console.error('[Command Hub] Post-login data fetch error:', err); });
 
         return { ok: true };
     } catch (err) {
