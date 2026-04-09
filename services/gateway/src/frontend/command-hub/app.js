@@ -2627,11 +2627,11 @@ const NAVIGATION_CONFIG = [
         "section": "integrations-tools",
         "basePath": "/command-hub/integrations-tools/",
         "tabs": [
-            { "key": "mcp-connectors", "path": "/command-hub/integrations-tools/mcp-connectors/" },
-            { "key": "llm-providers", "path": "/command-hub/integrations-tools/llm-providers/" },
-            { "key": "apis", "path": "/command-hub/integrations-tools/apis/" },
+            { "key": "mcp-connectors", "label": "MCP & CLI", "path": "/command-hub/integrations-tools/mcp-connectors/" },
+            { "key": "llm-providers", "label": "LLM Providers", "path": "/command-hub/integrations-tools/llm-providers/" },
+            { "key": "apis", "label": "API's", "path": "/command-hub/integrations-tools/apis/" },
             { "key": "tools", "path": "/command-hub/integrations-tools/tools/" },
-            { "key": "plugins", "path": "/command-hub/integrations-tools/plugins/" },
+            { "key": "plugins", "label": "Plugins & Extensions", "path": "/command-hub/integrations-tools/plugins/" },
             { "key": "service-mesh", "path": "/command-hub/integrations-tools/service-mesh/" }
         ]
     },
@@ -5655,7 +5655,7 @@ function renderMainContent() {
         tabs.forEach(tab => {
             const tabEl = document.createElement('div');
             tabEl.className = `sub-nav-tab ${state.currentTab === tab.key ? 'active' : ''}`;
-            tabEl.textContent = formatTabLabel(tab.key);
+            tabEl.textContent = tab.label || formatTabLabel(tab.key);
 
             // VTID-01151: Add badge counter to Approvals tab
             if (tab.key === 'approvals') {
