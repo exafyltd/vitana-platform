@@ -868,9 +868,9 @@
 
       case 'session_limit_reached':
         if (msg.reason === 'signup_intent') {
-          // VTID-ANON-SIGNUP: Vitana already said goodbye — gracefully close
-          console.log('[VTOrb] Signup intent — graceful session close');
-          _sessionStop();
+          // VTID-ANON-SIGNUP: Vitana already said goodbye — close widget after audio finishes
+          console.log('[VTOrb] Signup intent — closing widget after goodbye');
+          setTimeout(_hide, 3000);
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');

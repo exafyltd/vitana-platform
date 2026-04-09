@@ -2477,12 +2477,7 @@ async function connectToLiveAPI(
                   }
                 };
 
-                if (reason === 'signup_intent') {
-                  // Delay to let Vitana's goodbye audio finish playing on the client
-                  setTimeout(sendLimitMsg, 12000);
-                } else {
-                  sendLimitMsg();
-                }
+                sendLimitMsg();
               }
             }
 
