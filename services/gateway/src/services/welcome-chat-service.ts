@@ -13,10 +13,8 @@
  *  - Batches inserts to avoid overwhelming the database
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
-
-type Supabase = ReturnType<typeof createClient>;
 
 const MAX_COMMUNITY_SIZE = 1000;
 const BATCH_SIZE = 50;
@@ -35,7 +33,7 @@ const WELCOME_MESSAGE =
 export async function sendWelcomeChatMessages(
   userId: string,
   tenantId: string,
-  supabase: Supabase,
+  supabase: SupabaseClient,
 ): Promise<{ sent: number; skipped: boolean; reason?: string }> {
   const tag = '[WelcomeChat]';
 
@@ -116,7 +114,7 @@ export async function sendWelcomeChatMessages(
       const batch = rows.slice(i, i + BATCH_SIZE);
       const { error: insertErr } = await supabase
         .from('chat_messages')
-        .insert(batch);
+        .insert(batch as any);
 
       if (insertErr) {
         console.warn(`${tag} Batch insert failed at offset ${i}: ${insertErr.message}`);
@@ -136,10 +134,10 @@ export async function sendWelcomeChatMessages(
   }
 }
 
-async function markWelcomeSent(userId: string, supabase: Supabase): Promise<void> {
+async function markWelcomeSent(userId: string, supabase: SupabaseClient): Promise<void> {
   const { error } = await supabase
     .from('app_users')
-    .update({ welcome_chat_sent: true })
+    .update({ welcome_chat_sent: true } as any)
     .eq('user_id', userId);
 
   if (error) {
