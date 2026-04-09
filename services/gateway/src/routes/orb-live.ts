@@ -3388,8 +3388,25 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
 
+  // VTID-ANON-GREETING: For anonymous sessions (landing page), the system instruction
+  // contains the full introductory speech. Send a prompt that triggers it
+  // instead of the short greeting that contradicts it.
+  if (session.isAnonymous && !((session as any)._reconnectCount > 0)) {
+    const anonPrompts: Record<string, string> = {
+      'en': 'Please deliver the complete introductory speech as described in your instructions.',
+      'de': 'Bitte halte die vollständige Begrüßungsrede wie in deinen Anweisungen beschrieben.',
+      'fr': "Veuillez prononcer le discours d'introduction complet tel que décrit dans vos instructions.",
+      'es': 'Por favor, pronuncia el discurso introductorio completo tal como se describe en tus instrucciones.',
+      'ar': 'يرجى إلقاء خطاب التعريف الكامل كما هو موضح في تعليماتك.',
+      'zh': '请按照您的指示发表完整的介绍性演讲。',
+      'ru': 'Пожалуйста, произнесите полную вступительную речь, как описано в ваших инструкциях.',
+      'sr': 'Молимо вас, одржите комплетан уводни говор како је описано у вашим упутствима.',
+    };
+    prompt = anonPrompts[lang] || anonPrompts['en'];
+  }
+
   // VTID-01224-FIX: Add temporal awareness to greeting
-  if (session.lastSessionInfo) {
+  if (session.lastSessionInfo && !session.isAnonymous) {
     const lastTime = new Date(session.lastSessionInfo.time);
     const now = new Date();
     const diffMs = now.getTime() - lastTime.getTime();
