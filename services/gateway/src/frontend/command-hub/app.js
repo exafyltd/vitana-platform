@@ -28041,10 +28041,12 @@ function renderOverviewReleaseFeedView() {
 
         var versionTd = document.createElement('td');
         versionTd.className = 'event-vtid';
-        var ver = item.version || item.image_tag || item.commit_sha || '';
-        if (ver.length > 12) ver = ver.substring(0, 12) + '...';
-        versionTd.textContent = ver;
-        versionTd.title = item.version || item.image_tag || item.commit_sha || '';
+        var ver = item.git_commit || item.version || item.image_tag || item.commit_sha || '';
+        var fullVer = ver;
+        if (ver.length > 12) ver = ver.substring(0, 12);
+        var swvId = item.swv_id || '';
+        versionTd.textContent = swvId ? swvId + ' · ' + ver : ver;
+        versionTd.title = fullVer;
         row.appendChild(versionTd);
 
         var statusTd = document.createElement('td');
