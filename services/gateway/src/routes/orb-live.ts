@@ -1328,10 +1328,12 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
   ];
 
   if (mode === 'anonymous') {
-    // Anonymous sessions only get the Navigator tools — no memory, no events,
-    // no community search. Catalog has anonymous_safe filtering so the only
-    // destinations they can land on are public/auth screens.
-    return [{ function_declarations: navigatorTools }];
+    // VTID-NAV-ANON-FIX: Anonymous sessions get NO tools. The Navigator tools
+    // were competing with the transcript-based signup intent flow, causing
+    // Gemini to both say the goodbye AND call navigate_to_screen, which
+    // triggered a second function-response turn and overlapping audio.
+    // Anonymous nav is handled entirely by detectAuthIntent + session_limit_reached.
+    return [];
   }
 
   return [
@@ -2720,7 +2722,12 @@ IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove o
 - Be energetic and inspiring — first impressions matter
 - NEVER reference other users, names, or personal data
 - Make people WANT to be part of the Maxina Community
-${buildNavigatorPolicySection(lang)}`;
+
+=== TOOLS ===
+You have NO tools available in this anonymous session. Do NOT attempt to call any
+function or tool. The signup and login flows are handled automatically by the
+backend when you say the appropriate goodbye per the sections above — just speak
+naturally, never call a tool.`;
 }
 
 /**
