@@ -3575,7 +3575,7 @@ const state = {
     infraDeployments: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraLogs: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraConfig: { data: null, loading: false, error: null, fetched: false },
-    selfHealing: { config: null, active: [], history: [], loading: false, error: null, fetched: false },
+    selfHealing: { config: null, active: [], history: [], pendingApproval: [], loading: false, error: null, fetched: false },
 
     // Security module
     securityPolicies: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -26428,15 +26428,12 @@ async function fetchOverviewDashboard() {
         state.overviewHealth.items = healthChecks.map(function (h) { return { name: h.name, status: h.status, latency_ms: h.latency_ms }; });
         state.overviewHealth.fetched = true;
 
-        // Sync fresh health data back to shared serviceHealth (keeps pill and grid aligned)
-        if (!useSharedHealth && healthChecks.length > 0) {
-            state.serviceHealth.items = healthChecks.map(function (h) {
-                var isHealthy = (h.status === 'ok' || h.status === 'healthy' || h.status === 'ok_governance_limited');
-                return { name: h.name, url: h.url || '', status: h.status, healthy: isHealthy, latency_ms: h.latency_ms, details: h.details };
-            });
-            state.serviceHealth.fetched = true;
-            state.serviceHealth.lastRefreshed = new Date().toISOString();
-        }
+        // NOTE: we deliberately do NOT write back to state.serviceHealth here.
+        // fetchServiceHealth() is the single source of truth for the 54-service
+        // grouped view; this dashboard fetcher only runs a 5-service mini probe
+        // for its own metric calculations. Writing that 5-item list into
+        // state.serviceHealth would clobber the full 54-item list and collapse
+        // the grouped view into the legacy 5-service fallback.
 
         console.log('[VTID-01864] Dashboard loaded:', healthChecks.length, 'services,', deployEvents.length, 'deploy events,', orbEvents.length, 'ORB events,', recentFailures.length, 'failures');
     } catch (error) {
@@ -34044,11 +34041,13 @@ function fetchSelfHealingData() {
     Promise.all([
         fetch('/api/v1/self-healing/config').then(function(r) { return r.json(); }),
         fetch('/api/v1/self-healing/active').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/history?limit=20').then(function(r) { return r.json(); })
+        fetch('/api/v1/self-healing/history?limit=20').then(function(r) { return r.json(); }),
+        fetch('/api/v1/self-healing/pending-approval').then(function(r) { return r.json(); })
     ]).then(function(results) {
         state.selfHealing.config = results[0];
         state.selfHealing.active = (results[1] && results[1].tasks) || [];
         state.selfHealing.history = (results[2] && results[2].items) || [];
+        state.selfHealing.pendingApproval = (results[3] && results[3].items) || [];
         state.selfHealing.loading = false;
         state.selfHealing.fetched = true;
         renderApp();
@@ -34130,7 +34129,10 @@ function renderSelfHealingView() {
     var statusBar = document.createElement('div');
     statusBar.className = 'sh-status-bar';
     var activeTasks = state.selfHealing.active || [];
-    var pendingApproval = activeTasks.filter(function(t) { return t.spec_status === 'validated'; });
+    // Awaiting Approval is sourced from self_healing_log (authoritative),
+    // not from vtid_ledger — rows with confidence < 0.8 stay visible even
+    // after the ledger row transitions out of allocated/pending status.
+    var pendingApproval = state.selfHealing.pendingApproval || [];
     var inProgress = activeTasks.filter(function(t) { return t.status === 'in_progress' || t.status === 'pending'; });
 
     var autonomyNames = ['OBSERVE ONLY', 'DIAGNOSE ONLY', 'SPEC & WAIT', 'AUTO-FIX SIMPLE', 'FULL AUTO'];

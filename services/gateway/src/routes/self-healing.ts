@@ -10,6 +10,7 @@
  * - PATCH /config              — Update autonomy level
  * - GET  /active               — List active self-healing tasks
  * - GET  /history              — List past self-healing attempts
+ * - GET  /pending-approval     — Rows needing a human approval decision
  * - GET  /snapshots/:vtid      — Get pre/post snapshots for a VTID
  * - POST /verify/:vtid         — Manually trigger post-fix verification
  * - POST /rollback/:vtid       — Manually trigger rollback
@@ -547,6 +548,47 @@ router.get('/history', async (req: Request, res: Response) => {
     const total = countHeader ? parseInt(countHeader.split('/')[1] || '0', 10) : items.length;
 
     return res.json({ ok: true, items, total, limit, offset });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /pending-approval — Rows that need a human decision.
+ *
+ * Reads directly from self_healing_log (authoritative) instead of
+ * vtid_ledger, so rows stay visible even after the reconciler or
+ * autopilot transitions the ledger row out of the `allocated/pending/…`
+ * status window. A row qualifies as "awaiting approval" when:
+ *   - outcome = 'pending' (not yet resolved or escalated), AND
+ *   - confidence < 0.8 (below the auto-fix auto-approval threshold)
+ *
+ * Rows with confidence >= 0.8 and outcome='pending' are still executing
+ * via the direct-dispatch path and belong in "Active Repairs", not here.
+ */
+router.get('/pending-approval', async (req: Request, res: Response) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 200);
+
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/self_healing_log?` +
+        `outcome=eq.pending&confidence=lt.0.8` +
+        `&select=id,vtid,endpoint,failure_class,confidence,diagnosis,created_at,attempt_number` +
+        `&order=created_at.desc&limit=${limit}`,
+      { headers: supabaseHeaders() },
+    );
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return res.status(500).json({ ok: false, error: `Failed to query pending-approval: ${errText}` });
+    }
+
+    const items = (await resp.json()) as any[];
+    return res.json({ ok: true, items, count: items.length });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }
