@@ -870,22 +870,36 @@
 
       case 'session_limit_reached':
         if (msg.reason === 'signup_intent') {
-          // VTID-ANON-SIGNUP: Vitana already said goodbye — close widget after audio finishes,
-          // then redirect to the registration page. Block the listening transition.
-          console.log('[VTOrb] Signup intent — closing widget and redirecting to ' + (msg.redirect || 'none'));
+          // VTID-ANON-SIGNUP: Wait for Vitana's goodbye audio to finish fully before
+          // closing + redirecting — don't cut her off mid-sentence. Block listening.
+          console.log('[VTOrb] Signup intent — waiting for goodbye audio to finish, then redirecting to ' + (msg.redirect || 'none'));
           _s.signupClosing = true;
           var redirectUrl = msg.redirect || null;
-          setTimeout(function () {
-            _hide();
-            if (redirectUrl) {
-              if (typeof _cfg.onSignupRedirect === 'function') {
-                try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
-              } else {
-                // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
-                try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
+          var _signupCloseAttempts = 0;
+          (function _waitForGoodbyeEnd() {
+            setTimeout(function () {
+              var stillPlaying = _s.audioPlaying ||
+                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                (_s.audioQueue && _s.audioQueue.length > 0);
+              // Hard safety cap: 30s (100 * 300ms) so we never get stuck waiting forever
+              if (stillPlaying && _signupCloseAttempts++ < 100) {
+                _waitForGoodbyeEnd();
+                return;
               }
-            }
-          }, 3000);
+              // Small grace period so the very last audio sample plays out cleanly
+              setTimeout(function () {
+                _hide();
+                if (redirectUrl) {
+                  if (typeof _cfg.onSignupRedirect === 'function') {
+                    try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
+                  } else {
+                    // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
+                    try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
+                  }
+                }
+              }, 600);
+            }, 300);
+          })();
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
