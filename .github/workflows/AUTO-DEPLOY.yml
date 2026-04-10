@@ -149,7 +149,7 @@ jobs:
                   service: "gateway",
                   environment,
                   health_path: "/alive",
-                  initiator: "auto"
+                  initiator: "agent"
                 }
               });
               core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=gateway`);
@@ -167,7 +167,7 @@ jobs:
                   service: "worker-runner",
                   environment,
                   health_path: "/alive",
-                  initiator: "auto"
+                  initiator: "agent"
                 }
               });
               core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=worker-runner`);

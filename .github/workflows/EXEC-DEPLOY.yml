@@ -464,13 +464,21 @@ jobs:
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
           GIT_COMMIT="${{ github.sha }}"
 
-          # Call operator API to record deployment
-          curl -fsS "${GATEWAY_URL}/api/v1/operator/deployments" \
+          # Call operator API to record deployment — fail the job if it doesn't stick,
+          # otherwise the Release Feed silently drifts and supervisors can't trust it.
+          HTTP_CODE=$(curl -sS -o /tmp/record_resp.json -w "%{http_code}" \
+            "${GATEWAY_URL}/api/v1/operator/deployments" \
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-VTID: ${{ github.event.inputs.vtid }}" \
-            -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"normal\",\"initiator\":\"${{ github.event.inputs.initiator }}\",\"environment\":\"dev-sandbox\"}" \
-            || echo "Warning: Failed to record version (non-fatal)"
+            -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"normal\",\"initiator\":\"${{ github.event.inputs.initiator }}\",\"environment\":\"dev-sandbox\"}")
+          echo "Record Software Version HTTP $HTTP_CODE"
+          cat /tmp/record_resp.json || true
+          echo ""
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "::error::Failed to record software version (HTTP $HTTP_CODE). Release Feed will be incomplete."
+            exit 1
+          fi
 
       # =========================================================================
       # VTID-0416: Emit OASIS Event for Deploy Success
