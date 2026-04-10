@@ -1752,6 +1752,20 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
     return '';
   }
 
+  // VTID-NAV-01: Filter out navigator-action memories. These are records of
+  // Vitana's own past navigations (mode='navigator_action' in content_json)
+  // and they are useful for the navigator-consult service to avoid looping
+  // the user, but they pollute the system prompt with "you sent the user to
+  // /home yesterday" noise that the LLM should not be reasoning about.
+  // Detection is robust to either content_json shape or content prefix.
+  items = items.filter((i) => {
+    const cj = (i as any).content_json;
+    if (cj && typeof cj === 'object' && cj.mode === 'navigator_action') return false;
+    if (typeof i.content === 'string' && i.content.startsWith('Vitana navigated to ')) return false;
+    return true;
+  });
+  if (items.length === 0) return '';
+
   const lines: string[] = [];
 
   // VTID-01225-READ-FIX: Separate structured facts (from memory_facts) from raw memory items.

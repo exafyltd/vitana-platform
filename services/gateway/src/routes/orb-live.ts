@@ -1239,11 +1239,105 @@ async function buildBootstrapContextPack(
 /**
  * VTID-01224: Build Live API tool declarations for function calling
  * These tools enable dynamic context retrieval during the conversation
+ *
+ * VTID-NAV: Mode parameter — anonymous sessions get a narrow allowlist
+ * (navigator_consult + navigate_to_screen) so onboarding visitors can be
+ * guided to public destinations like the Maxina portal. Authenticated
+ * sessions get the full set including memory/knowledge/event search.
  */
-function buildLiveApiTools(): object[] {
+function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'): object[] {
+  const navigatorTools: any[] = [
+    {
+      name: 'navigator_consult',
+      description: [
+        'Consult the Vitana Navigator. This is a composite backend service that',
+        'combines the navigation catalog, the knowledge base, and the user\'s',
+        'current page + recent navigation history to recommend where to send',
+        'the user next.',
+        '',
+        'WHEN TO CALL:',
+        '- Exploratory or open-ended questions where you are not 100% sure',
+        '  exactly which screen the user wants ("how do I track my biology?",',
+        '  "where do I find dance events?", "I want to make money with the community").',
+        '- First-time visitor questions about how features work.',
+        '- Any case where a brief explanation would help the user understand',
+        '  what they are about to see.',
+        '',
+        'WHEN NOT TO CALL:',
+        '- Direct task requests with an obvious destination ("open my wallet",',
+        '  "take me to events"). Call navigate_to_screen directly instead.',
+        '- Quick factual questions answerable in 1-2 sentences of speech.',
+        '',
+        'WHAT YOU GET BACK:',
+        '- A primary screen recommendation (or null if confidence is too low)',
+        '- An optional alternative if two candidates are close',
+        '- An explanation text in the user\'s language you can speak naturally',
+        '- KB excerpts you may quote',
+        '- A confirmation_needed flag — if true, ask the user the suggested_question',
+        '  instead of navigating immediately, then call navigate_to_screen with',
+        '  their chosen screen_id on the next turn.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          question: {
+            type: 'string',
+            description: 'The user\'s question or intent in natural language. Pass it as the user expressed it.',
+          },
+        },
+        required: ['question'],
+      },
+    },
+    {
+      name: 'navigate_to_screen',
+      description: [
+        'Close the ORB and send the user to a specific screen in the Vitana platform.',
+        '',
+        'WHEN TO CALL:',
+        '- AFTER navigator_consult returned a high-confidence recommendation, OR',
+        '- Directly for unambiguous task requests like "open my wallet",',
+        '  "take me to events", "go to my settings".',
+        '',
+        'IMPORTANT speech rules after calling this tool:',
+        '- Speak ONLY a brief transition sentence ("heading there now",',
+        '  "let me take you there"). Do NOT describe what the user will see.',
+        '- Do NOT claim the user has arrived ("you\'re on the X page now") —',
+        '  the widget takes 1-3 seconds to actually navigate.',
+        '- Never speak raw URLs or route paths.',
+        '',
+        'If the tool returns "Unknown screen_id", retry with one of the suggested',
+        'ids on the next turn. If it returns "requires_auth", tell the user',
+        'briefly that the feature needs them to join the community and offer to',
+        'take them to registration instead.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {
+          screen_id: {
+            type: 'string',
+            description: 'Canonical screen id from the Vitana Navigator catalog (e.g. COMM.EVENTS, HEALTH.MY_BIOLOGY, WALLET.REWARDS, BUSINESS.SELL_EARN).',
+          },
+          reason: {
+            type: 'string',
+            description: 'One short sentence explaining why this screen is the right destination, for telemetry.',
+          },
+        },
+        required: ['screen_id', 'reason'],
+      },
+    },
+  ];
+
+  if (mode === 'anonymous') {
+    // Anonymous sessions only get the Navigator tools — no memory, no events,
+    // no community search. Catalog has anonymous_safe filtering so the only
+    // destinations they can land on are public/auth screens.
+    return [{ function_declarations: navigatorTools }];
+  }
+
   return [
     {
       function_declarations: [
+        ...navigatorTools,
         {
           name: 'search_memory',
           description: 'Search the user\'s personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.',
@@ -1407,6 +1501,214 @@ async function executeLiveApiTool(
   return result;
 }
 
+// VTID-NAV: Tools that may execute without an authenticated identity.
+// Anonymous orb sessions get this narrow allowlist so onboarding visitors can
+// still be guided to public destinations like the Maxina portal.
+const ANONYMOUS_SAFE_TOOLS = new Set<string>([
+  'navigator_consult',
+  'navigate_to_screen',
+]);
+
+/**
+ * VTID-NAV: Handle navigator_consult tool call. Self-contained — does not
+ * require an authenticated identity (anonymous sessions can still consult,
+ * just with empty memory hints).
+ */
+async function handleNavigatorConsult(
+  session: GeminiLiveSession,
+  args: Record<string, unknown>
+): Promise<{ success: boolean; result: string; error?: string }> {
+  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
+  const question = String(args.question || '').trim();
+  if (!question) {
+    return { success: false, result: '', error: 'navigator_consult requires a non-empty question.' };
+  }
+
+  const consultInput: NavigatorConsultInput = {
+    question,
+    lang: session.lang || 'en',
+    identity: hasIdentity
+      ? {
+          user_id: session.identity!.user_id,
+          tenant_id: session.identity!.tenant_id as string,
+          role: session.identity!.role || session.active_role || undefined,
+        }
+      : null,
+    is_anonymous: !!session.isAnonymous || !hasIdentity,
+    current_route: session.current_route,
+    recent_routes: session.recent_routes,
+    transcript_excerpt: session.inputTranscriptBuffer,
+    session_id: session.sessionId,
+    turn_number: session.turn_count,
+    conversation_start: session.createdAt.toISOString(),
+  };
+
+  const consultResult = await consultNavigator(consultInput);
+  const formatted = formatConsultResultForLLM(consultResult);
+
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.consulted',
+    source: 'orb-live-ws',
+    status: consultResult.confidence === 'low' ? 'warning' : 'info',
+    message: `navigator_consult: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
+    payload: {
+      session_id: session.sessionId,
+      question,
+      primary_screen_id: consultResult.primary?.screen_id || null,
+      alternative_screen_id: consultResult.alternative?.screen_id || null,
+      confidence: consultResult.confidence,
+      confirmation_needed: consultResult.confirmation_needed,
+      kb_excerpt_count: consultResult.kb_excerpt_count,
+      memory_hint_count: consultResult.memory_hint_count,
+      ms_elapsed: consultResult.ms_elapsed,
+      lang: consultInput.lang,
+      is_anonymous: consultInput.is_anonymous,
+      blocked_reason: consultResult.blocked_reason || null,
+    },
+  }).catch(() => { /* ignore telemetry failure */ });
+
+  return { success: true, result: formatted };
+}
+
+/**
+ * VTID-NAV: Handle navigate_to_screen tool call. Self-contained — does not
+ * require an authenticated identity. Anonymous sessions are gated to
+ * anonymous_safe screens by the catalog access check below.
+ */
+async function handleNavigateToScreen(
+  session: GeminiLiveSession,
+  args: Record<string, unknown>
+): Promise<{ success: boolean; result: string; error?: string }> {
+  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
+  const screenId = String(args.screen_id || '').trim();
+  const reason = String(args.reason || '').trim();
+  if (!screenId) {
+    return { success: false, result: '', error: 'navigate_to_screen requires screen_id.' };
+  }
+
+  const entry = lookupNavScreen(screenId);
+  if (!entry) {
+    const suggestions = suggestNavSimilar(screenId, 5).map(e => e.screen_id);
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-live-ws',
+      status: 'warning',
+      message: `Unknown screen_id '${screenId}'`,
+      payload: {
+        session_id: session.sessionId,
+        attempted_screen_id: screenId,
+        error_kind: 'unknown',
+        suggestions,
+      },
+    }).catch(() => {});
+    return {
+      success: false,
+      result: '',
+      error: `Unknown screen_id '${screenId}'. Did you mean one of: ${suggestions.join(', ')}? Retry with a valid id.`,
+    };
+  }
+
+  const isAnon = !!session.isAnonymous || !hasIdentity;
+  if (isAnon && !entry.anonymous_safe) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-live-ws',
+      status: 'warning',
+      message: `Screen '${screenId}' requires authentication`,
+      payload: {
+        session_id: session.sessionId,
+        attempted_screen_id: screenId,
+        error_kind: 'auth_required',
+      },
+    }).catch(() => {});
+    return {
+      success: false,
+      result: '',
+      error: `Screen '${screenId}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
+    };
+  }
+
+  if (session.current_route && session.current_route === entry.route) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `User is already on ${entry.route}`,
+      payload: {
+        session_id: session.sessionId,
+        attempted_screen_id: screenId,
+        error_kind: 'already_there',
+      },
+    }).catch(() => {});
+    return {
+      success: false,
+      result: '',
+      error: `The user is already on ${entry.route}. Suggest a related screen or just answer in voice instead.`,
+    };
+  }
+
+  // Queue the navigation. The orb_directive dispatch in turn_complete
+  // will pick this up AFTER the existing memory flush completes.
+  const lang = session.lang || 'en';
+  const content = getNavContent(entry, lang);
+  session.pendingNavigation = {
+    screen_id: entry.screen_id,
+    route: entry.route,
+    title: content.title,
+    reason: reason || 'navigate_to_screen tool call',
+    decision_source: 'direct',
+    requested_at: Date.now(),
+  };
+  // VTID-NAV: Set the gate that drops further input audio so Gemini does
+  // not start a new turn while the widget is closing.
+  session.navigationDispatched = true;
+
+  // Persist the navigation as a memory item (authenticated only).
+  if (hasIdentity) {
+    writeNavigatorActionMemory({
+      identity: {
+        user_id: session.identity!.user_id,
+        tenant_id: session.identity!.tenant_id as string,
+        role: session.identity!.role || session.active_role || undefined,
+      },
+      screen: {
+        screen_id: entry.screen_id,
+        route: entry.route,
+        title: content.title,
+      },
+      reason: session.pendingNavigation.reason,
+      decision_source: session.pendingNavigation.decision_source,
+      orb_session_id: session.sessionId,
+      conversation_id: session.conversation_id,
+      lang,
+    }).catch(() => { /* fire-and-forget */ });
+  }
+
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.requested',
+    source: 'orb-live-ws',
+    status: 'info',
+    message: `navigate_to_screen ${entry.screen_id} (${entry.route})`,
+    payload: {
+      session_id: session.sessionId,
+      screen_id: entry.screen_id,
+      route: entry.route,
+      reason: session.pendingNavigation.reason,
+      is_anonymous: isAnon,
+    },
+  }).catch(() => {});
+
+  return {
+    success: true,
+    result: `Navigation queued to ${content.title} (${entry.route}). Speak ONLY a brief transition sentence — do not describe the page.`,
+  };
+}
+
 async function executeLiveApiToolInner(
   session: GeminiLiveSession,
   toolName: string,
@@ -1414,7 +1716,18 @@ async function executeLiveApiToolInner(
   startTime: number
 ): Promise<{ success: boolean; result: string; error?: string }> {
 
-  // Validate identity for tool execution
+  // VTID-NAV: Navigator tools have their own handler path that may run
+  // without identity for anonymous onboarding sessions. Handle them BEFORE
+  // the auth gate so the existing identity check + lens construction below
+  // can stay non-null for the other tools.
+  if (toolName === 'navigator_consult') {
+    return await handleNavigatorConsult(session, args);
+  }
+  if (toolName === 'navigate_to_screen') {
+    return await handleNavigateToScreen(session, args);
+  }
+
+  // Validate identity for tool execution (everything below requires auth)
   if (!session.identity || !session.identity.tenant_id || !session.identity.user_id) {
     return {
       success: false,
@@ -1947,6 +2260,145 @@ function sendFunctionResponseToLiveAPI(
 }
 
 /**
+ * VTID-NAV-01: Vitana Navigator policy section appended to every system
+ * instruction. Teaches the model when to call navigator_consult,
+ * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
+ */
+function buildNavigatorPolicySection(lang: string): string {
+  const isDe = lang.startsWith('de');
+  if (isDe) {
+    return `
+
+=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===
+Du bist der Navigationsführer für die Maxina Community. Die Community hat viele
+Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
+eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
+
+  • navigator_consult(question) — kombiniert den Navigationskatalog, die
+    Wissensdatenbank und den aktuellen Bildschirm + Verlauf des Nutzers, um zu
+    empfehlen wohin geleitet werden soll. Nutze es für offene oder explorative
+    Fragen, bei denen du nicht 100% sicher bist welcher Bildschirm gemeint ist.
+
+  • navigate_to_screen(screen_id) — schließt das ORB und navigiert. Rufe es
+    NACH navigator_consult auf, ODER direkt für eindeutige Aufgaben wie "öffne
+    mein Wallet", "zeig mir die Events".
+
+ENTSCHEIDUNGSREGELN:
+
+1. NUR ERKLÄREN (keine Tools):
+   • Schnelle Faktenfragen, in 1-2 Sätzen beantwortbar
+   • Smalltalk, Ermutigung, Nachfragen
+   • Wenn der Nutzer offensichtlich gerade etwas tut
+
+2. OHNE LANGE ERKLÄRUNG NAVIGIEREN:
+   • Direkte Aufgaben: "öffne mein Wallet", "zeig mir die Events"
+   • Sprich EINEN kurzen Übergangssatz ("ich bringe dich gleich dort hin"),
+     dann rufe sofort navigate_to_screen auf.
+
+3. KONSULTIEREN, DANN NAVIGIEREN (häufigster Fall):
+   • Explorative oder Erstbesucher-Fragen: "wie verfolge ich meine Biologie?",
+     "wo finde ich Tanz-Events?", "ich möchte mit der Community Geld verdienen"
+   • Rufe navigator_consult zuerst auf. Das Ergebnis sagt dir den primären
+     Bildschirm, eine optionale Alternative, eine Erklärung, KB-Auszüge, und
+     ob der Nutzer bestätigen muss.
+   • Bei hoher Konfidenz und confirmation_needed=false:
+       Sprich die Erklärung (du darfst KB-Auszüge natürlich zitieren),
+       dann rufe navigate_to_screen mit der primären screen_id auf.
+   • Bei confirmation_needed=true:
+       Stelle dem Nutzer die suggested_question. Warte auf die Antwort im
+       nächsten Turn, dann rufe navigate_to_screen mit der gewählten id auf.
+   • Bei niedriger Konfidenz (primary ist null):
+       Entschuldige dich kurz und bitte um mehr Kontext. NICHT navigieren.
+
+PRIORITÄTSZIELE (Maxina-Wachstumsfokus):
+   • Events & Meetups — die meistgenutzte Funktion heute
+   • Business & Verkaufen-Verdienen / Wallet & Belohnungen — der nächste große
+     Anwendungsfall, bei dem Nutzer neue Einkommensquellen in der Maxina
+     Community aufbauen. Behandle Fragen zu Verdienen, Monetarisieren,
+     Geschäftsaufbau oder Service-Verkauf als hochwertige Navigationsmomente.
+
+REGELN BEIM NAVIGIEREN:
+   • Verwende nur kanonische screen_ids. Wenn das Tool "Unknown screen_id"
+     mit Vorschlägen zurückgibt, versuche es im nächsten Turn mit einer der
+     vorgeschlagenen ids erneut.
+   • Nach dem Aufruf von navigate_to_screen sprich NUR einen Übergangssatz
+     ("ich bringe dich gleich dort hin"). Sage NICHT "du bist jetzt auf der
+     X-Seite" — das Widget braucht ein paar Sekunden zum tatsächlichen
+     Navigieren.
+   • Wenn ein Bildschirm Anmeldung erfordert und der Nutzer anonym ist, gibt
+     das Tool einen Zugriffsfehler zurück. Sage dem Nutzer kurz dass die
+     Funktion das Beitreten zur Community erfordert und biete an ihn zur
+     Registrierung zu bringen.
+
+NIEMALS rohe URLs oder Routenpfade aussprechen.`;
+  }
+
+  return `
+
+=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
+You are the navigation guide for the Maxina community. The community has many
+screens and people cannot find things on their own — guiding them is one of
+your most important jobs. You have two tools:
+
+  • navigator_consult(question) — composes the navigation catalog, the
+    knowledge base, and the user's current page + history to recommend a
+    destination. Use this for exploratory questions, "where can I find X",
+    or anything you're not 100% sure about.
+
+  • navigate_to_screen(screen_id) — closes the ORB and navigates. Call this
+    AFTER navigator_consult, OR directly for unambiguous task requests
+    ("open my wallet", "take me to events").
+
+DECISION RULES:
+
+1. EXPLAIN ONLY (no tools):
+   • Quick factual questions answerable in 1-2 sentences
+   • Small talk, encouragement, clarifying questions
+   • When the user is clearly mid-task and just wants information
+
+2. NAVIGATE WITHOUT CONSULTING:
+   • Direct task requests with an obvious destination ("open my wallet",
+     "take me to events", "go to my settings")
+   • Speak ONE short transition sentence, then call navigate_to_screen
+     immediately.
+
+3. CONSULT, THEN NAVIGATE (the most common case):
+   • Exploratory or first-time questions: "how do I track my biology?",
+     "where do I find dance events?", "I want to make money with the community"
+   • Call navigator_consult first. The result tells you the primary screen,
+     an optional alternative, an explanation, KB excerpts, and whether to
+     ask the user to confirm.
+   • If confidence is high and confirmation_needed is false:
+       Speak the explanation (you may quote KB excerpts naturally), then
+       call navigate_to_screen with the primary screen_id.
+   • If confirmation_needed is true:
+       Ask the user the suggested_question. Wait for their answer in the
+       next turn, then call navigate_to_screen with the chosen screen_id.
+   • If confidence is low (primary is null):
+       Apologize briefly and ask the user to clarify. Do NOT navigate.
+
+PRIORITY DESTINATIONS (Maxina growth focus):
+   • Events & Meetups — the most-used feature today
+   • Business & Sell-Earn / Wallet & Rewards — the next big use case where
+     users build new income streams in the Maxina community. Treat questions
+     about earning, monetizing, building a business, or selling services as
+     high-value navigation moments.
+
+RULES WHEN NAVIGATING:
+   • Use canonical screen_ids only. If the tool returns "Unknown screen_id"
+     with suggestions, retry with one of them on the next turn.
+   • After calling navigate_to_screen, speak ONLY a transition sentence
+     ("heading there now"). Do NOT say "you're on the X page" — the widget
+     takes a few seconds to actually navigate.
+   • If a screen requires sign-in and the user is anonymous, the tool returns
+     an access error. Tell the user briefly that the feature requires joining
+     the community and offer to take them to registration — they can say
+     "yes" and the existing signup flow takes over.
+
+NEVER speak raw URLs or route paths.`;
+}
+
+/**
  * VTID-01219: Build system instruction for Live API
  * VTID-01224: Extended to accept bootstrap context
  */
@@ -2044,6 +2496,11 @@ The following is the recent conversation from this session before a brief connec
 ${trimmedHistory}
 </conversation_history>`;
   }
+
+  // VTID-NAV-01: Append the Vitana Navigator policy section so the model knows
+  // when to consult the navigator, when to navigate directly, and when to
+  // simply answer in voice without any tool call.
+  instruction += buildNavigatorPolicySection(lang);
 
   return instruction;
 }
@@ -2262,7 +2719,8 @@ IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove o
 - This is a real-time voice conversation
 - Be energetic and inspiring — first impressions matter
 - NEVER reference other users, names, or personal data
-- Make people WANT to be part of the Maxina Community`;
+- Make people WANT to be part of the Maxina Community
+${buildNavigatorPolicySection(lang)}`;
 }
 
 /**
@@ -2398,9 +2856,13 @@ async function connectToLiveAPI(
                   )
             }]
           },
-          // VTID-ANON: No tools for anonymous sessions — they have no identity to search with.
-          // VTID-01224: Include tools for authenticated sessions.
-          tools: (session.identity && !session.isAnonymous) ? buildLiveApiTools() : []
+          // VTID-NAV: Anonymous sessions get a narrow Navigator-only tool allowlist
+          // (navigator_consult + navigate_to_screen) so they can be guided to public
+          // destinations during onboarding. Authenticated sessions get the full set.
+          // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
+          tools: buildLiveApiTools(
+            session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous'
+          )
         }
       };
 
@@ -2801,6 +3263,8 @@ async function connectToLiveAPI(
             // disconnects) without hammering the API during active conversation.
             const EXTRACTION_THROTTLE_MS = 60_000;
             // VTID-01230: Deduplicated extraction replaces manual throttle logic
+            // VTID-NAV: When a navigation is queued, force the extraction so the
+            // last turn before session close always contributes to memory facts.
             if (session.identity && session.identity.tenant_id) {
               const recentTurns = session.transcriptTurns.slice(-4);
               if (recentTurns.length > 0) {
@@ -2813,8 +3277,52 @@ async function connectToLiveAPI(
                   user_id: session.identity.user_id,
                   session_id: session.sessionId,
                   turn_count: session.turn_count,
+                  force: !!session.pendingNavigation,
                 });
               }
+            }
+
+            // VTID-NAV: Dispatch the orb_directive for any pending navigation.
+            // This MUST come AFTER the memory flush, chat_messages bridge, and
+            // fact extractor above so the navigation turn's memory writes are
+            // committed before the widget tears down the session.
+            if (session.pendingNavigation) {
+              const nav = session.pendingNavigation;
+              const directive = {
+                type: 'orb_directive',
+                directive: 'navigate',
+                screen_id: nav.screen_id,
+                route: nav.route,
+                title: nav.title,
+                reason: nav.reason,
+                vtid: 'VTID-NAV-01',
+              };
+              const directiveJson = JSON.stringify(directive);
+              if (session.sseResponse) {
+                try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+              }
+              if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+              }
+              console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+              emitOasisEvent({
+                vtid: 'VTID-NAV-01',
+                type: 'orb.navigator.dispatched',
+                source: 'orb-live-ws',
+                status: 'info',
+                message: `dispatched navigate to ${nav.screen_id}`,
+                payload: {
+                  session_id: session.sessionId,
+                  screen_id: nav.screen_id,
+                  route: nav.route,
+                  decision_source: nav.decision_source,
+                  drain_wait_ms: Date.now() - nav.requested_at,
+                },
+              }).catch(() => {});
+              // Clear pending so we don't re-dispatch on subsequent turns.
+              // navigationDispatched stays TRUE so input audio stays gated until
+              // the widget closes the connection.
+              session.pendingNavigation = undefined;
             }
 
             // Notify client that response is complete
@@ -6841,6 +7349,18 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     isAnonymous: isAnonymousSession,
     // VTID-CONTEXT: Client environment context
     clientContext,
+    // VTID-NAV: Current page + recent navigation history from the host React
+    // Router. The widget pushes these via VTOrb.updateContext() and includes
+    // them in the session-start payload so the consult service can score
+    // catalog matches with the user's actual context.
+    current_route: typeof (body as any).current_route === 'string'
+      ? (body as any).current_route
+      : undefined,
+    recent_routes: Array.isArray((body as any).recent_routes)
+      ? ((body as any).recent_routes as any[])
+          .filter((r): r is string => typeof r === 'string')
+          .slice(0, 5)
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -7420,6 +7940,14 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   try {
     if (body.type === 'audio') {
+      // VTID-NAV: Once a navigation is queued, drop ALL further mic audio so
+      // Gemini cannot start a new turn while the widget is closing. Without
+      // this gate the model talks over its own goodbye sentence.
+      if (session.navigationDispatched) {
+        session.audioInChunks++;
+        return res.json({ ok: true, dropped: true, reason: 'navigation_dispatched' });
+      }
+
       // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
       if (session.isModelSpeaking) {
         session.audioInChunks++;
@@ -8550,6 +9078,17 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     consecutiveToolCalls: 0,
     // VTID-ANON: WS sessions with no JWT are anonymous
     isAnonymous: !identity?.user_id,
+    // VTID-NAV: Current page + recent navigation history pushed by the host
+    // React Router via VTOrb.updateContext() and included in the WS start
+    // message. The consult service uses these for context-aware ranking.
+    current_route: typeof (message as any).current_route === 'string'
+      ? (message as any).current_route
+      : undefined,
+    recent_routes: Array.isArray((message as any).recent_routes)
+      ? ((message as any).recent_routes as any[])
+          .filter((r): r is string => typeof r === 'string')
+          .slice(0, 5)
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
@@ -8766,6 +9305,15 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   if (!message.data_b64) {
     sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in audio message' });
+    return;
+  }
+
+  // VTID-NAV: Once a navigation is queued, drop ALL further mic audio so
+  // Gemini cannot start a new turn while the widget is closing. Without this
+  // gate the model talks over its own goodbye sentence.
+  if (liveSession.navigationDispatched) {
+    liveSession.audioInChunks++;
+    liveSession.lastActivity = new Date();
     return;
   }
 

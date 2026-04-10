@@ -34298,9 +34298,9 @@ function renderSelfHealingView() {
         var table = document.createElement('table');
         table.className = 'infra-table';
 
-        // Column widths
+        // Column widths: VTID, Endpoint, Class, Conf, Result, Blast, Detected, Resolved
         var colgroup = document.createElement('colgroup');
-        [14, 22, 14, 8, 8, 10, 10].forEach(function (w) {
+        [10, 18, 11, 6, 11, 8, 18, 18].forEach(function (w) {
             var col = document.createElement('col');
             col.style.width = w + '%';
             colgroup.appendChild(col);
@@ -34309,7 +34309,7 @@ function renderSelfHealingView() {
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['VTID', 'Endpoint', 'Class', 'Conf', 'Result', 'Blast', 'Time'].forEach(function(col) {
+        ['VTID', 'Endpoint', 'Class', 'Conf', 'Result', 'Blast', 'Detected', 'Resolved'].forEach(function(col) {
             var th = document.createElement('th');
             th.textContent = col;
             headerRow.appendChild(th);
@@ -34317,25 +34317,105 @@ function renderSelfHealingView() {
         thead.appendChild(headerRow);
         table.appendChild(thead);
 
+        // Format an ISO timestamp as a compact absolute date+time, or an em-dash.
+        function shFmtAbs(iso) {
+            if (!iso) return '\u2014';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return '\u2014';
+            return d.toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hour12: false
+            });
+        }
+        // Relative hint: "3m ago", "2h ago", "7d ago".
+        function shFmtRel(iso) {
+            if (!iso) return '';
+            var t = new Date(iso).getTime();
+            if (isNaN(t)) return '';
+            var s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+            if (s < 60) return 'just now';
+            var m = Math.floor(s / 60);
+            if (m < 60) return m + 'm ago';
+            var h = Math.floor(m / 3600);
+            if (h < 24) return h + 'h ago';
+            var dys = Math.floor(s / 86400);
+            if (dys < 30) return dys + 'd ago';
+            var mo = Math.floor(dys / 30);
+            if (mo < 12) return mo + 'mo ago';
+            return Math.floor(mo / 12) + 'y ago';
+        }
+
         var tbody = document.createElement('tbody');
         historyItems.forEach(function(item) {
             var tr = document.createElement('tr');
 
+            // Distinguish reconciler outcomes from true fixes/failures.
+            // diagnosis.reconciled_reason is set by self-healing-reconciler.ts.
+            var reconciledReason = (item.diagnosis && item.diagnosis.reconciled_reason) || null;
+            var isReconciledRecovered = reconciledReason === 'recovered_externally';
+            var isReconciledStale = reconciledReason === 'stale_no_progress';
+
             var outcomeIcons = {
-                fixed: '\u2705', failed: '\u274c', rolled_back: '\u274c\u21a9', escalated: '\ud83d\udea8\u2191',
-                pending: '\u23f3', skipped: '\u23ed', paused: '\u23f8'
+                fixed: '\u2705', failed: '\u274c', rolled_back: '\u274c\u21a9',
+                escalated: '\ud83d\udea8\u2191', pending: '\u23f3',
+                skipped: '\u23ed', paused: '\u23f8'
             };
-            var outcomeIcon = outcomeIcons[item.outcome] || '?';
+            var outcomeLabel, outcomeIcon, outcomeColor;
+            if (isReconciledRecovered) {
+                outcomeIcon = '\u2705';
+                outcomeLabel = 'auto-resolved';
+                outcomeColor = '#4ade80';
+            } else if (isReconciledStale) {
+                outcomeIcon = '\u26a0\ufe0f';
+                outcomeLabel = 'stale';
+                outcomeColor = '#facc15';
+            } else {
+                outcomeIcon = outcomeIcons[item.outcome] || '?';
+                outcomeLabel = item.outcome || '';
+                outcomeColor = '';
+            }
+
+            var resultTitle = 'Outcome: ' + (item.outcome || 'unknown');
+            if (reconciledReason) {
+                resultTitle += '\nReconciler: ' + reconciledReason;
+                if (item.diagnosis && item.diagnosis.reconciled_probe_http_status != null) {
+                    resultTitle += ' (probe HTTP ' + item.diagnosis.reconciled_probe_http_status + ')';
+                }
+                if (item.diagnosis && item.diagnosis.reconciled_at) {
+                    resultTitle += '\nReconciled at: ' + item.diagnosis.reconciled_at;
+                }
+            }
 
             var blastColors = { none: '#4ade80', contained: '#facc15', critical: '#f87171' };
             var blastColor = blastColors[item.blast_radius] || '#888';
 
-            var elapsed = '';
-            if (item.resolved_at && item.created_at) {
-                var ms = new Date(item.resolved_at) - new Date(item.created_at);
-                elapsed = Math.round(ms / 60000) + 'min';
+            // Build Detected and Resolved cells with absolute + relative + tooltip.
+            var detectedAbs = shFmtAbs(item.created_at);
+            var detectedRel = shFmtRel(item.created_at);
+            var detectedCell = item.created_at
+                ? '<div>' + escapeHtml(detectedAbs) + '</div>' +
+                  '<div style="font-size:11px;color:#888;">' + escapeHtml(detectedRel) + '</div>'
+                : '\u2014';
+            var detectedTitle = item.created_at
+                ? 'Detected (failure first reported)\nISO: ' + item.created_at
+                : 'No detection timestamp';
+
+            var resolvedCell, resolvedTitle;
+            if (item.resolved_at) {
+                var durMs = new Date(item.resolved_at).getTime() - new Date(item.created_at).getTime();
+                var durMin = isFinite(durMs) ? Math.round(durMs / 60000) : null;
+                var durStr = durMin == null
+                    ? ''
+                    : (durMin < 120 ? durMin + ' min' : Math.round(durMin / 60) + ' h');
+                resolvedCell =
+                    '<div>' + escapeHtml(shFmtAbs(item.resolved_at)) + '</div>' +
+                    '<div style="font-size:11px;color:#888;">' + escapeHtml(shFmtRel(item.resolved_at)) +
+                    (durStr ? ' \u00b7 took ' + escapeHtml(durStr) : '') + '</div>';
+                resolvedTitle = 'Resolved (outcome committed)\nISO: ' + item.resolved_at +
+                    (durStr ? '\nDuration pending\u2192resolved: ' + durStr : '');
             } else {
-                elapsed = '\u2014';
+                resolvedCell = '<span style="color:#facc15;">\u23f3 still pending</span>';
+                resolvedTitle = 'Row is still in pending state.\nReconciler runs every 10 min on rows older than 1 h.';
             }
 
             tr.innerHTML =
@@ -34343,9 +34423,11 @@ function renderSelfHealingView() {
                 '<td title="' + escapeHtml(item.endpoint || '') + '">' + escapeHtml(item.endpoint || '\u2014') + '</td>' +
                 '<td>' + escapeHtml(item.failure_class || '\u2014') + '</td>' +
                 '<td>' + ((item.confidence * 100).toFixed(0)) + '%</td>' +
-                '<td>' + outcomeIcon + '</td>' +
+                '<td title="' + escapeHtml(resultTitle) + '" style="color:' + outcomeColor + ';">' +
+                    outcomeIcon + ' <span style="font-size:11px;">' + escapeHtml(outcomeLabel) + '</span></td>' +
                 '<td style="color:' + blastColor + ';">' + escapeHtml(item.blast_radius || 'none') + '</td>' +
-                '<td>' + escapeHtml(elapsed) + '</td>';
+                '<td title="' + escapeHtml(detectedTitle) + '">' + detectedCell + '</td>' +
+                '<td title="' + escapeHtml(resolvedTitle) + '">' + resolvedCell + '</td>';
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);

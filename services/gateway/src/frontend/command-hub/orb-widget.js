@@ -560,15 +560,22 @@
 
       console.log('[VTOrb] _sessionStart: hasToken=' + !!_cfg.token + ', lang=' + _cfg.lang + ', tokenSetByInit=' + _tokenSetByInit);
 
+      // VTID-NAV: Include current page + recent navigation history so the
+      // backend Navigator service has context for screen recommendations.
+      // Values are pushed via VTOrb.updateContext() by the host React Router.
+      var startPayload = {
+        lang: _cfg.lang,
+        voice_style: 'friendly, calm, empathetic',
+        response_modalities: ['audio', 'text'],
+        vad_silence_ms: 1200
+      };
+      if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
+      if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
+
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({
-          lang: _cfg.lang,
-          voice_style: 'friendly, calm, empathetic',
-          response_modalities: ['audio', 'text'],
-          vad_silence_ms: 1200
-        })
+        body: JSON.stringify(startPayload)
       });
 
       var data = await resp.json();
@@ -800,8 +807,9 @@
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
-            // VTID-ANON-SIGNUP: signup close pending — don't transition to listening
-            if (_s.signupClosing) return;
+            // VTID-NAV: Any close-pending state suppresses the listening transition.
+            // Covers signup close (legacy) AND navigator-driven navigation close.
+            if (_isClosingForNav()) return;
             var stillPlaying = _s.audioPlaying ||
               (_s.scheduledSources && _s.scheduledSources.length > 0) ||
               (_s.audioQueue && _s.audioQueue.length > 0);
@@ -908,6 +916,51 @@
             : 'Register for free to continue the conversation!');
           _setOrbState('paused');
           setTimeout(_sessionStop, 8000);
+        }
+        break;
+
+      case 'orb_directive':
+        // VTID-NAV-01: Vitana Navigator dispatch. Today the only directive is
+        // 'navigate' (close + redirect). The discriminator is here so future
+        // directives like 'minimize' or 'dismiss' can be added without a new
+        // message type.
+        if (msg.directive === 'navigate') {
+          var navRoute = msg.route;
+          var navCtx = { screen_id: msg.screen_id, reason: msg.reason, title: msg.title };
+          if (!navRoute) {
+            console.warn('[VTOrb] orb_directive navigate received without route — ignoring');
+            break;
+          }
+          console.log('[VTOrb] orb_directive navigate to ' + navRoute + ' (screen=' + msg.screen_id + ')');
+          _s.navigationPending = true;
+          var _navAttempts = 0;
+          (function _waitForNavReady() {
+            setTimeout(function () {
+              var stillPlaying = _s.audioPlaying ||
+                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                (_s.audioQueue && _s.audioQueue.length > 0);
+              // Hard safety cap: 30s (100 * 300ms) so we never wait forever
+              if (stillPlaying && _navAttempts++ < 100) {
+                _waitForNavReady();
+                return;
+              }
+              // Grace period so the very last audio sample plays out cleanly
+              setTimeout(function () {
+                _hide();
+                if (typeof _cfg.onNavigationRequest === 'function') {
+                  try { _cfg.onNavigationRequest(navRoute, navCtx); }
+                  catch (e) { console.error('[VTOrb] onNavigationRequest failed:', e); }
+                } else {
+                  // Fallback: hard navigation. Works in Command Hub and as a
+                  // last resort when the host app didn't register a callback.
+                  try { window.location.href = navRoute; }
+                  catch (e) { console.error('[VTOrb] navigation fallback failed:', e); }
+                }
+              }, 600);
+            }, 300);
+          })();
+        } else {
+          console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }
         break;
 
@@ -1455,6 +1508,13 @@
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
 
+  // VTID-NAV: Returns true when the widget is in any close-pending state.
+  // Used by the turn_complete handler to suppress the listening transition
+  // so we don't reactivate the orb while we are about to navigate away.
+  function _isClosingForNav() {
+    return _s.signupClosing === true || _s.navigationPending === true;
+  }
+
   // 12. (Transcript UI removed — unified widget is voice-only, no chat bubbles)
 
   // ============================================================
@@ -1623,6 +1683,22 @@
       if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
       if (typeof opts.onLink === 'function') _cfg.onLink = opts.onLink;
       if (typeof opts.onSignupRedirect === 'function') _cfg.onSignupRedirect = opts.onSignupRedirect;
+      // VTID-NAV: Vitana Navigator close-and-navigate callback. Host React Router
+      // hooks pass a function here that calls navigate(url) for SPA transitions.
+      if (typeof opts.onNavigationRequest === 'function') _cfg.onNavigationRequest = opts.onNavigationRequest;
+      // VTID-NAV: Optional initial context — current page + recent routes — so
+      // the very first session has Navigator context even before any route
+      // change has been observed by the React Router listener.
+      if (opts.initialContext && typeof opts.initialContext === 'object') {
+        if (typeof opts.initialContext.current_route === 'string') {
+          _s.currentRoute = opts.initialContext.current_route;
+        }
+        if (Array.isArray(opts.initialContext.recent_routes)) {
+          _s.recentRoutes = opts.initialContext.recent_routes
+            .filter(function (r) { return typeof r === 'string'; })
+            .slice(0, 5);
+        }
+      }
 
       _injectStyles();
       _renderOverlay();
@@ -1652,6 +1728,22 @@
 
     setLang: function (lang) {
       _cfg.lang = lang || 'en';
+    },
+
+    // VTID-NAV: Push current navigation context from the host app. Called by
+    // useOrbWidget on every React Router route change so the next orb session
+    // start payload includes fresh context for the Navigator service.
+    // Safe to call as often as needed — does not trigger any I/O.
+    updateContext: function (ctx) {
+      if (!ctx || typeof ctx !== 'object') return;
+      if (typeof ctx.current_route === 'string') {
+        _s.currentRoute = ctx.current_route;
+      }
+      if (Array.isArray(ctx.recent_routes)) {
+        _s.recentRoutes = ctx.recent_routes
+          .filter(function (r) { return typeof r === 'string'; })
+          .slice(0, 5);
+      }
     },
 
     destroy: function () {

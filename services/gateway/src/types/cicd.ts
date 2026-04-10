@@ -499,6 +499,11 @@ export type CicdEventType =
   // VTID-FALLBACK: Chat-TTS fallback events
   | 'orb.live.fallback_used'
   | 'orb.live.fallback_error'
+  // VTID-NAV-01: Vitana Navigator — voice-driven navigation guide events
+  | 'orb.navigator.consulted'
+  | 'orb.navigator.requested'
+  | 'orb.navigator.blocked'
+  | 'orb.navigator.dispatched'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
