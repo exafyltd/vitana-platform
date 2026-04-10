@@ -19,12 +19,12 @@
 
   /* Overview / Command Hub Card Tokens
      Use these in .overview-* classes — do NOT hardcode in element.style.cssText. */
-  --overview-grid-gap: 0.4rem;
-  --metric-card-min-height: 88px;
-  --metric-card-padding: 0.6rem 0.4rem;
-  --metric-value-size: 1.15rem;
-  --metric-label-size: 0.62rem;
-  --metric-subtitle-size: 0.55rem;
+  --overview-grid-gap: 0.45rem;
+  --metric-card-min-height: 108px;
+  --metric-card-padding: 0.75rem 0.5rem;
+  --metric-value-size: 1.35rem;
+  --metric-label-size: 0.66rem;
+  --metric-subtitle-size: 0.58rem;
 
   --health-card-padding: 6px 8px;
   --health-card-font-size: 0.72rem;
@@ -17809,8 +17809,10 @@ border-bottom: 1px solid var(--color-border, #333);
 .overview-dashboard {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-    padding: 0.6rem 0.8rem;
+    grid-auto-rows: min-content;
+    align-content: start;
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
     overflow-x: hidden;
     overflow-y: auto;
     max-height: calc(100vh - 120px);
@@ -17932,9 +17934,12 @@ border-bottom: 1px solid var(--color-border, #333);
 .overview-metrics-grid {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: var(--overview-grid-gap, 0.35rem);
+    grid-auto-rows: var(--metric-card-min-height, 108px);
+    align-items: stretch;
+    gap: var(--overview-grid-gap, 0.45rem);
     width: 100%;
     box-sizing: border-box;
+    align-self: start;
 }
 
 @media (max-width: 1400px) {
@@ -18104,8 +18109,8 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* Metric card icon */
-.metric-icon { display:flex; justify-content:center; margin-bottom:2px; }
-.metric-icon svg { width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.metric-icon { display:flex; justify-content:center; margin-bottom:3px; color: var(--text-secondary, #94a3b8); }
+.metric-icon svg { width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 
 /* Health grid card — small box with name + latency (4x4 grid) */
 .health-grid-card {
