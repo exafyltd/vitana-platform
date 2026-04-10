@@ -869,10 +869,10 @@
         break;
 
       case 'session_limit_reached':
-        if (msg.reason === 'signup_intent') {
+        if (msg.reason === 'signup_intent' || msg.reason === 'login_intent') {
           // VTID-ANON-SIGNUP: Wait for Vitana's goodbye audio to finish fully before
           // closing + redirecting — don't cut her off mid-sentence. Block listening.
-          console.log('[VTOrb] Signup intent — waiting for goodbye audio to finish, then redirecting to ' + (msg.redirect || 'none'));
+          console.log('[VTOrb] ' + msg.reason + ' — waiting for goodbye audio to finish, then redirecting to ' + (msg.redirect || 'none'));
           _s.signupClosing = true;
           var redirectUrl = msg.redirect || null;
           var _signupCloseAttempts = 0;

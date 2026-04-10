@@ -116,6 +116,18 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { scoreAndRankEvents, formatForVoice, EventRecord, EventSearchFilters, ScoredEventResults } from '../services/event-relevance-scoring';
 // VTID-01224: Conversation types for thread continuity
 import { ContextPack } from '../types/conversation';
+// VTID-NAV: Vitana Navigator — consult orchestration + action memory writer
+import {
+  consultNavigator,
+  formatConsultResultForLLM,
+  writeNavigatorActionMemory,
+  NavigatorConsultInput,
+} from '../services/navigator-consult';
+import {
+  lookupScreen as lookupNavScreen,
+  suggestSimilar as suggestNavSimilar,
+  getContent as getNavContent,
+} from '../lib/navigation-catalog';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
   getOrbContext,
@@ -669,10 +681,39 @@ interface GeminiLiveSession {
   consecutiveToolCalls: number;
   // VTID-ANON: Whether this is an anonymous/unauthenticated session (landing page)
   isAnonymous: boolean;
-  // VTID-ANON-SIGNUP-INTENT: Set true when user expresses signup intent
+  // VTID-ANON-SIGNUP-INTENT: Set true when user expresses signup OR login intent
+  // (kept as a boolean for input-gating backwards compatibility).
   signupIntentDetected?: boolean;
+  // VTID-ANON-AUTH-INTENT: Which auth flow the user wants — used to pick
+  // the right tab on the /maxina redirect page.
+  authIntent?: 'signup' | 'login';
   // VTID-CONTEXT: Client environment context (IP geo, device, time)
   clientContext?: ClientContext;
+  // VTID-NAV: Vitana Navigator state — populated when navigate_to_screen tool fires.
+  // The orb_directive dispatch in turn_complete reads pendingNavigation and emits
+  // an orb_directive message to the widget after the existing memory flush completes.
+  pendingNavigation?: {
+    screen_id: string;
+    route: string;
+    title: string;
+    reason: string;
+    decision_source: 'consult' | 'direct';
+    requested_at: number;
+  };
+  // VTID-NAV: Set true the moment a navigation is queued. Gates input audio
+  // forwarding so Gemini doesn't start a new turn while the widget is closing.
+  // Once true, the session is effectively in "closing for navigation" mode.
+  navigationDispatched?: boolean;
+  // VTID-NAV: Current page URL the user is on when the orb session opened.
+  // Used by navigator_consult to exclude the current screen from recommendations.
+  current_route?: string;
+  // VTID-NAV: Last few routes the user visited (newest first), pushed by the
+  // host React Router via VTOrb.updateContext before the session started.
+  recent_routes?: string[];
+  // VTID-NAV: Cached memory pack from the first navigator_consult call this
+  // session, with a 30s TTL — subsequent consult calls reuse it instead of
+  // re-paying retrieval cost.
+  cachedMemoryPack?: { pack: ContextPack; cachedAt: number };
 }
 
 /**
@@ -2008,39 +2049,71 @@ ${trimmedHistory}
 }
 
 /**
-/**
- * VTID-ANON-SIGNUP-INTENT: Lightweight keyword-based detection of signup/registration intent.
- * No AI calls — pure regex matching. Supports EN + DE.
+ * VTID-ANON-AUTH-INTENT: Lightweight keyword-based detection of signup vs login intent.
+ * No AI calls — pure regex matching. Supports EN + DE. Returns 'signup', 'login', or null.
+ * Login is checked FIRST (more specific), then signup. Exclusions return null.
  */
-const SIGNUP_EXCLUSION_PATTERNS = [
-  /\b(already|schon)\s+(have|habe|bin)\s+(an?\s+)?(account|konto|registriert|angemeldet)/i,
-  /\b(can'?t|kann\s+nicht|unable)\s+(sign\s*up|register|registrier|anmeld)/i,
-  /\b(cancel|abbrech|k[uü]ndig)\s*(my|mein)?\s*(registration|registrierung|anmeldung)/i,
+const AUTH_EXCLUSION_PATTERNS = [
+  /\b(can'?t|kann\s+nicht|unable)\s+(sign\s*up|register|registrier|anmeld|log\s*in|einlogg)/i,
+  /\b(cancel|abbrech|k[uü]ndig)\s*(my|mein)?\s*(registration|registrierung|anmeldung|account|konto)/i,
+  /\b(not|nicht|kein)\s+(interested|interessiert|jetzt|now)\b/i,
 ];
 
+// Login intent — must be checked BEFORE signup since some phrases overlap
+// (e.g. "ich möchte mich anmelden" could be either, but "ich habe schon ein Konto" is login).
+const LOGIN_POSITIVE_PATTERNS = [
+  // English
+  /\b(sign\s+in|log\s+in|log\s+me\s+in|login)\b/i,
+  /\bi\s+(already\s+)?(have|got)\s+(an?\s+)?(account|login)\b/i,
+  /\b(i'?m|i\s+am)\s+already\s+(registered|a\s+member|signed\s*up)\b/i,
+  /\bi'?m\s+already\s+in\b/i,
+  // German
+  /\beinlogg\w*/i,                                              // einloggen, einlogge, eingeloggt
+  /\blog\s+mich\s+ein\b/i,
+  /\b(ich\s+)?(will|m[oö]chte|h[aä]tte\s+gern)\s+(mich\s+)?einlogg/i,
+  /\b(ich\s+habe|ich\s+hab)\s+(schon|bereits)\s+(ein|einen)?\s*(konto|account|zugang|mitgliedschaft)/i,
+  /\b(ich\s+)?bin\s+(schon|bereits)\s+(mitglied|registriert|angemeldet|kunde)\b/i,
+  /\b(already|schon|bereits)\s+(have|habe|hab|bin)\s+(an?\s+)?(account|konto|registriert|angemeldet|mitglied)/i,
+  /\banmelden\s+bitte\b/i,                                      // "anmelden bitte" usually means login in landing context
+];
+
+// Signup intent — broad catch-all. German patterns use `\w*` suffixes to match
+// any inflection (registrier → registrieren, registriere, registriert, etc.).
 const SIGNUP_POSITIVE_PATTERNS = [
-  /\b(sign\s*up|register|sign\s+me\s+up|count\s+me\s+in)\b/i,
-  /\bhow\s+(do\s+i|can\s+i|to)\s+(sign\s*up|register|join|get\s+started)\b/i,
-  /\b(i\s+want|i'?d\s+like|let\s+me)\s+(to\s+)?(sign\s*up|register|join|try\s+it)\b/i,
+  // English
+  /\b(sign\s*up|register|sign\s+me\s+up|count\s+me\s+in|join\s+now|create\s+(an?\s+)?account)\b/i,
+  /\bhow\s+(do\s+i|can\s+i|to)\s+(sign\s*up|register|join|get\s+started|become\s+a\s+member)\b/i,
+  /\b(i\s+want|i'?d\s+like|let\s+me|i\s+would\s+like)\s+(to\s+)?(sign\s*up|register|join|try\s+it|become\s+a\s+member)\b/i,
   /\b(i\s+want\s+to|let\s+me|can\s+i|how\s+(do|can)\s+i)\s+join\b/i,
-  /\bi'?m\s+(convinced|sold|ready|in)\b/i,
+  /\bi'?m\s+(convinced|sold|ready|in|interested|all\s+in)\b/i,
   /\b(take\s+me\s+there|where\s+do\s+i\s+(sign\s*up|register|join))\b/i,
-  /\b(ich\s+)?(will|m[oö]chte|h[aä]tte\s+gern)\s+(mich\s+)?(registrier|anmeld|beitret|mitmach)/i,
+  // German — broad "any form of the verb" patterns
+  /\bregistrier\w*/i,                                           // registrieren, registriere, registriert
+  /\banmeld\w*/i,                                               // anmelden, anmelde, anmeldung, angemeldet
+  /\bbeitret\w*/i,                                              // beitreten, beitritt, beigetreten
+  /\bmitmach\w*/i,                                              // mitmachen, mitmache, mitgemacht
+  /\bmitglied\s+werden\b/i,                                     // "Mitglied werden"
+  /\b(ich\s+)?(will|m[oö]chte|h[aä]tte\s+gern|w[uü]rde\s+gern)\s+(mich\s+)?(registrier|anmeld|beitret|mitmach|mitglied|dabei)/i,
+  /\b(ich\s+bin|ich'?m)\s+(dabei|[uü]berzeugt|interessiert|bereit|ready|all\s+in|sold)\b/i,
+  /\b(ja|okay|ok|klar|perfekt|gerne?|super|toll|cool)[,.!]?\s+(ich\s+)?(will|m[oö]chte|w[uü]rde|mache|bin)/i,
+  /\bauf\s+jeden\s+fall\b/i,                                    // "auf jeden Fall" — strong yes
+  /\blos\s+geht'?s\b/i,                                         // "los geht's"
+  /\bmach\s+(mich|mir)\s+mit\b/i,                               // "mach mich mit"
   /\bwie\s+(kann|mach)\s+ich\s+(mit)?machen\b/i,
-  /\bwo\s+(kann\s+ich\s+(mich\s+)?|registrier|meld)\s*(ich\s*)?(mich\s*)?(an)?\b/i,
-  /\b(ich\s+bin\s+)(dabei|[uü]berzeugt|interessiert|bereit)\b/i,
-  /\b(ich\s+)?(will|m[oö]chte)\s+(mich\s+)?(anmelden|registrieren|beitreten)\b/i,
 ];
 
-function detectSignupIntent(text: string): boolean {
+function detectAuthIntent(text: string): 'signup' | 'login' | null {
   const lower = text.toLowerCase();
-  for (const pattern of SIGNUP_EXCLUSION_PATTERNS) {
-    if (pattern.test(lower)) return false;
+  for (const pattern of AUTH_EXCLUSION_PATTERNS) {
+    if (pattern.test(lower)) return null;
+  }
+  for (const pattern of LOGIN_POSITIVE_PATTERNS) {
+    if (pattern.test(lower)) return 'login';
   }
   for (const pattern of SIGNUP_POSITIVE_PATTERNS) {
-    if (pattern.test(lower)) return true;
+    if (pattern.test(lower)) return 'signup';
   }
-  return false;
+  return null;
 }
 
 /**
@@ -2168,9 +2241,11 @@ IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove o
 - After 5-6 exchanges: warmly invite them to join — "You can register right here on vitanaland.com, it is free and takes just a moment!"
 - After 7+ exchanges: make it your main message — "I would love to keep helping you! To continue, just join the Maxina Community — it is completely free. I will remember everything we talked about."
 
-=== IF THE USER WANTS TO REGISTER ===
-- If the user says they want to register, sign up, join, or asks how to register:
-- Say a warm, enthusiastic goodbye: "Wonderful! Let me guide you back to the registration page — it is completely free and takes just a moment. I cannot wait to continue this journey with you!"
+=== IF THE USER WANTS TO REGISTER OR LOG IN ===
+- If the user says they want to REGISTER, sign up, or join (a new member):
+  - Say a warm, enthusiastic goodbye: "Wonderful! Let me guide you to the registration page — it is completely free and takes just a moment. I cannot wait to continue this journey with you!"
+- If the user says they want to LOG IN, sign in, or are already a member with an existing account:
+  - Say a warm welcome-back goodbye: "Welcome back! Let me guide you to the login page. I am so glad to have you with us again!"
 - Keep it to 2-3 sentences maximum. Do NOT continue the conversation after this.
 - This is your LAST message in this session — do NOT say anything else after the goodbye.
 
@@ -2455,26 +2530,43 @@ async function connectToLiveAPI(
             if (session.isAnonymous && !isGreetingTurn) {
               const tc = session.turn_count;
 
-              // Detect signup intent from user's spoken text
+              // Detect signup OR login intent from user's spoken text. Login is
+              // distinguished so we can redirect to the correct tab on /maxina.
               const intentText = session.inputTranscriptBuffer.trim();
-              if (intentText.length > 0 && !session.signupIntentDetected && detectSignupIntent(intentText)) {
-                session.signupIntentDetected = true;
-                console.log(`[VTID-ANON-SIGNUP-INTENT] Signup intent detected at turn ${tc} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
+              if (intentText.length > 0 && !session.signupIntentDetected) {
+                const detected = detectAuthIntent(intentText);
+                if (detected) {
+                  session.signupIntentDetected = true;
+                  session.authIntent = detected;
+                  console.log(`[VTID-ANON-AUTH-INTENT] ${detected} intent detected at turn ${tc} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
+                } else if (intentText.length > 3) {
+                  // Log near-miss so we can refine patterns
+                  console.log(`[VTID-ANON-AUTH-INTENT] no match at turn ${tc}, text="${intentText.substring(0, 120)}"`);
+                }
               }
 
-              // End session if: signup intent detected OR hard turn limit reached
+              // End session if: auth intent detected OR hard turn limit reached
               if (session.signupIntentDetected || tc > 8) {
-                const reason = session.signupIntentDetected ? 'signup_intent' : 'turn_limit';
+                const authIntent = session.authIntent;
+                const reason = authIntent
+                  ? (authIntent === 'login' ? 'login_intent' : 'signup_intent')
+                  : 'turn_limit';
                 console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
 
                 const sendLimitMsg = () => {
                   const payload: Record<string, unknown> = {
                     type: 'session_limit_reached',
                     reason,
-                    message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.',
+                    message: reason === 'login_intent'
+                      ? 'Guiding to login.'
+                      : reason === 'signup_intent'
+                        ? 'Guiding to registration.'
+                        : 'Please register to continue.',
                   };
-                  if (reason === 'signup_intent') {
-                    payload.redirect = '/maxina';
+                  if (authIntent === 'login') {
+                    payload.redirect = '/maxina?tab=signin';
+                  } else if (authIntent === 'signup') {
+                    payload.redirect = '/maxina?tab=signup';
                   }
                   const limitMsg = JSON.stringify(payload);
                   if (session.sseResponse) {
