@@ -219,26 +219,67 @@ async function processFailingService(
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
   }
 
-  // For auto-approved tasks: directly dispatch to worker orchestrator
+  // For auto-approved tasks: directly dispatch to worker orchestrator,
+  // with bounded retry. The autopilot event loop is a backup, but a
+  // single transient 5xx / network blip used to leave rows pending until
+  // the reconciler tombstoned them as `stale_no_progress`. Retry up to
+  // 3 times with exponential backoff (1s, 2s, 4s) before giving up.
   if (diagnosis.confidence >= 0.8 && diagnosis.auto_fixable) {
     const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
-    try {
-      console.log(`[self-healing] ${vtid} auto-approved — dispatching to worker orchestrator`);
-      const dispatchResp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vtid,
-          title: `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
-          spec: spec.substring(0, 8000),
-          source: 'self-healing',
-          priority: 'critical',
-        }),
+    const maxAttempts = 3;
+    let dispatched = false;
+    let lastError: string | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`[self-healing] ${vtid} auto-approved — dispatch attempt ${attempt}/${maxAttempts}`);
+        const dispatchResp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vtid,
+            title: `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
+            spec: spec.substring(0, 8000),
+            source: 'self-healing',
+            priority: 'critical',
+          }),
+        });
+
+        if (dispatchResp.ok) {
+          const dispatchResult = await dispatchResp.json() as Record<string, unknown>;
+          console.log(`[self-healing] ${vtid} dispatch ok on attempt ${attempt}: ${JSON.stringify(dispatchResult).substring(0, 200)}`);
+          dispatched = true;
+          break;
+        }
+
+        lastError = `HTTP ${dispatchResp.status}`;
+        console.warn(`[self-healing] ${vtid} dispatch attempt ${attempt} non-OK: ${lastError}`);
+      } catch (dispatchErr: any) {
+        lastError = dispatchErr.message;
+        console.warn(`[self-healing] ${vtid} dispatch attempt ${attempt} threw: ${lastError}`);
+      }
+
+      if (attempt < maxAttempts) {
+        const backoffMs = 1000 * Math.pow(2, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    if (!dispatched) {
+      console.error(`[self-healing] ${vtid} dispatch failed after ${maxAttempts} attempts: ${lastError}`);
+      await emitOasisEvent({
+        type: 'self-healing.dispatch.failed',
+        vtid,
+        source: 'self-healing',
+        status: 'error',
+        message: `Worker orchestrator dispatch failed after ${maxAttempts} attempts: ${lastError}`,
+        payload: {
+          attempts: maxAttempts,
+          last_error: lastError,
+          confidence: diagnosis.confidence,
+          service: diagnosis.service_name,
+        },
       });
-      const dispatchResult = await dispatchResp.json() as Record<string, unknown>;
-      console.log(`[self-healing] ${vtid} dispatch result: ${JSON.stringify(dispatchResult).substring(0, 200)}`);
-    } catch (dispatchErr: any) {
-      console.warn(`[self-healing] ${vtid} direct dispatch failed: ${dispatchErr.message}`);
     }
   }
 

@@ -540,6 +540,10 @@ export type CicdEventType =
   | 'self-healing.kill_switch.activated'
   | 'self-healing.kill_switch.deactivated'
   | 'self-healing.reconciled'
+  | 'self-healing.dispatch.failed'
+  | 'self-healing.dispatch.retried'
+  | 'self-healing.approved'
+  | 'self-healing.rejected'
   | 'autopilot.task.spec.created'
   // VTID-DEV-ASSIST: Developer Assistant Events
   | 'dev_assist.spec.generated'
