@@ -17,9 +17,14 @@ const ALLOWED_ORIGINS = [
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
+// VTID-NAV-HOTFIX3: Also allow any Cloud Run community-app revision URL so
+// future deploys don't break CORS when the revision hash in the hostname
+// changes (e.g. community-app-00030-abc.run.app).
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,  // Lovable project previews
   /^https:\/\/[a-z0-9-]+\.lovable\.app$/,         // Lovable app domains
+  /^https:\/\/community-app[a-z0-9-]*\.run\.app$/,           // Cloud Run revision aliases
+  /^https:\/\/community-app[a-z0-9-]*\.us-central1\.run\.app$/, // Cloud Run full URLs
 ];
 
 function isOriginAllowed(origin: string): boolean {

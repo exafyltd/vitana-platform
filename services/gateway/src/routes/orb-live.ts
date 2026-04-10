@@ -249,6 +249,13 @@ const ALLOWED_ORIGINS = [
   'https://gateway-536750820055.us-central1.run.app',
   'https://gateway-q74ibpv6ia-uc.a.run.app',
   'https://gateway-86804897789.us-central1.run.app',
+  // VTID-NAV-HOTFIX3: Community App Cloud Run origins. With Lovable retired
+  // 2026-04-10, the community-app Cloud Run revision URLs are what users hit
+  // directly until the vitanaland.com DNS cutover completes. Without this,
+  // POST /orb/live/session/start returns 403 "Origin not allowed" and the
+  // orb can't open a session at all.
+  'https://community-app-q74ibpv6ia-uc.a.run.app',
+  'https://community-app-86804897789.us-central1.run.app',
   'https://id-preview--vitana-v1.lovable.app',
   'https://vitanaland.com',                            // Production custom domain (mobile app)
   'https://www.vitanaland.com',                        // Production custom domain (www)
@@ -261,9 +268,13 @@ const ALLOWED_ORIGINS = [
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
+// VTID-NAV-HOTFIX3: Also allow any Cloud Run community-app revision URL so
+// future deploys don't break when the revision hash in the hostname changes.
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
   /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/community-app[a-z0-9-]*\.run\.app$/,
+  /^https:\/\/community-app[a-z0-9-]*\.us-central1\.run\.app$/,
 ];
 
 // Connection limit per IP (dev sandbox)
