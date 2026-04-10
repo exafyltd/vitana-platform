@@ -3526,6 +3526,8 @@ const state = {
         orbHealth: null,
         orbSessionStats: null,
         recentFailures: [],
+        deployEvents: [],
+        orbEvents: [],
         controllerStatus: null,
         loopStatus: null,
         violationCount24h: 0,
@@ -24027,7 +24029,7 @@ async function fetchServiceHealth(silentRefresh) {
     try {
         var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
             var start = Date.now();
-            return fetch(ep.url)
+            return fetchWT(ep.url, {}, 6000)
                 .then(function (r) {
                     var latency = Date.now() - start;
                     var ok = r.ok;
@@ -24119,6 +24121,21 @@ function startCicdHealthPolling() {
     }, 30000);
 
     console.log('[ServiceHealth] Polling started (30s interval, scroll-safe)');
+}
+
+// Overview dashboard auto-refresh (60 s) — only active while on overview tab
+var overviewDashboardRefreshInterval = null;
+function startOverviewDashboardPolling() {
+    if (overviewDashboardRefreshInterval) return;
+    overviewDashboardRefreshInterval = setInterval(function () {
+        if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+            state.overviewDashboard.fetched = false;
+            state.overviewPipelineSummary.fetched = false;
+            fetchOverviewDashboard();
+            fetchPipelineSummary();
+        }
+    }, 60000);
+    console.log('[Overview] Auto-refresh polling started (60 s)');
 }
 
 /**
@@ -26225,6 +26242,18 @@ function metricColorInverse(value, greenMax, amberMax) {
 }
 
 // ---------------------------------------------------------------------------
+// fetchWT — fetch with AbortController timeout (default 8 s)
+// Prevents any single hanging endpoint from blocking Promise.allSettled forever.
+// ---------------------------------------------------------------------------
+function fetchWT(url, opts, timeoutMs) {
+    var ms = timeoutMs || 8000;
+    var ctrl = new AbortController();
+    var tid = setTimeout(function () { ctrl.abort(); }, ms);
+    var options = Object.assign({}, opts || {}, { signal: ctrl.signal });
+    return fetch(url, options).finally(function () { clearTimeout(tid); });
+}
+
+// ---------------------------------------------------------------------------
 // VTID-01864: fetchOverviewDashboard — comprehensive parallel fetch
 // ---------------------------------------------------------------------------
 async function fetchOverviewDashboard() {
@@ -26252,7 +26281,7 @@ async function fetchOverviewDashboard() {
             ];
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
             var start = Date.now();
-            return fetch(ep.url)
+            return fetchWT(ep.url)
                 .then(function (r) {
                     var latency = Date.now() - start;
                     var ok = r.ok;
@@ -26273,23 +26302,23 @@ async function fetchOverviewDashboard() {
             // 0: Health checks (shared or fresh)
             healthCheckPromise,
             // 1: Deployments
-            fetch('/api/v1/operator/deployments?limit=10').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/operator/deployments?limit=10').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 2: Deploy events (OASIS)
-            fetch('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 3: ORB events (OASIS) — both vtid.live and voice.live
-            fetch('/api/v1/oasis/events?topic=vtid.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/oasis/events?topic=vtid.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 4: Recent failures
-            fetch('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/oasis/events?status=error&limit=30').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 5: Autopilot controller
-            fetch('/api/v1/autopilot/controller/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+            fetchWT('/api/v1/autopilot/controller/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 6: Autopilot loop
-            fetch('/api/v1/autopilot/loop/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+            fetchWT('/api/v1/autopilot/loop/status').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // 7: Governance violations
-            fetch('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 8: voice.live events (second ORB topic pattern)
-            fetch('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            fetchWT('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 9: User stats (for overview cards)
-            fetch('/api/v1/admin/users?limit=200', { headers: buildContextHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+            fetchWT('/api/v1/admin/users?limit=200', { headers: buildContextHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
         ]);
 
         // Parse health checks
@@ -26380,6 +26409,8 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.orbHealth = orbHealthDetails;
         state.overviewDashboard.orbSessionStats = orbSessionStats;
         state.overviewDashboard.recentFailures = recentFailures;
+        state.overviewDashboard.deployEvents = deployEvents;
+        state.overviewDashboard.orbEvents = orbEvents;
         state.overviewDashboard.controllerStatus = controllerStatus;
         state.overviewDashboard.loopStatus = loopStatus;
         state.overviewDashboard.violationCount24h = violationCount;
@@ -26431,7 +26462,7 @@ async function fetchOverviewHealth() {
     try {
         var results = await Promise.allSettled(endpoints.map(function (ep) {
             var start = Date.now();
-            return fetch(ep.url)
+            return fetchWT(ep.url, {}, 6000)
                 .then(function (r) {
                     var latency = Date.now() - start;
                     var ok = r.ok;
@@ -26485,42 +26516,46 @@ function renderOverviewSystemView() {
 
     var db = state.overviewDashboard;
 
-    // ── Loading state ──
+    // ── Loading / Error banner (inline, non-blocking) ──
+    // Never block the full render — show whatever data is available immediately
+    // and overlay a small status bar while a fresh fetch is in progress.
     if (db.loading && !db.fetched) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'overview-dashboard-loading';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading supervisor dashboard\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
+        // First-load: show a slim progress bar at the top but still render the
+        // dashboard frame so the layout is visible rather than a blank spinner.
+        var progressBanner = document.createElement('div');
+        progressBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
+            'background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);border-radius:6px;' +
+            'margin-bottom:0.75rem;font-size:0.8rem;color:#93c5fd;';
+        var pbSpinner = document.createElement('div');
+        pbSpinner.className = 'attention-spinner';
+        pbSpinner.style.cssText = 'width:14px;height:14px;min-width:14px;border-width:2px;';
+        progressBanner.appendChild(pbSpinner);
+        var pbText = document.createElement('span');
+        pbText.textContent = 'Loading dashboard data\u2026';
+        progressBanner.appendChild(pbText);
+        container.appendChild(progressBanner);
+        // Fall through — render the rest of the dashboard with empty/default values
     }
 
-    // ── Error state ──
+    // ── Error state (inline, non-blocking) ──
     if (db.error && !db.fetched) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'overview-dashboard-loading';
-        var errText = document.createElement('div');
-        errText.className = 'error-text';
-        errText.style.fontSize = '1rem';
-        errText.textContent = 'Dashboard Error: ' + (db.error || 'Unknown');
-        errorDiv.appendChild(errText);
+        var errorBanner = document.createElement('div');
+        errorBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
+            'background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:6px;' +
+            'margin-bottom:0.75rem;font-size:0.8rem;color:#fca5a5;';
+        errorBanner.innerHTML = '\u26a0\ufe0f Dashboard fetch error: ' + (db.error || 'Unknown') + ' \u2014 ';
         var retryBtn = document.createElement('button');
         retryBtn.className = 'btn btn-sm';
-        retryBtn.style.marginTop = '0.5rem';
+        retryBtn.style.cssText = 'padding:1px 8px;font-size:0.75rem;';
         retryBtn.textContent = 'Retry';
         retryBtn.onclick = function () {
             state.overviewDashboard.fetched = false;
             state.overviewDashboard.error = null;
             fetchOverviewDashboard();
         };
-        errorDiv.appendChild(retryBtn);
-        container.appendChild(errorDiv);
-        return container;
+        errorBanner.appendChild(retryBtn);
+        container.appendChild(errorBanner);
+        // Fall through — render the dashboard frame with whatever data exists
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -26772,14 +26807,21 @@ function renderOverviewSystemView() {
     container.appendChild(metricsGrid);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 3: Service Health — Full-Width 4x4 Grid
+    // SECTION 3: Service Health — Full-width grouped view (all 54 services)
+    // Prefer the richer state.serviceHealth.items (with group labels); fall
+    // back to db.healthChecks for the initial render before polling completes.
     // ═══════════════════════════════════════════════════════════════════════
     var healthPanel = document.createElement('div');
     healthPanel.className = 'overview-health-grid';
     healthPanel.style.cssText = 'grid-column: 1 / -1;';
 
+    // Use the full 54-service poll result when available; it has .group field
+    var allHealthServices = state.serviceHealth.fetched && state.serviceHealth.items.length > 0
+        ? state.serviceHealth.items
+        : db.healthChecks;
+
     var criticalOrder = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner', 'Operator'];
-    var sortedHealth = db.healthChecks.slice().sort(function (a, b) {
+    var sortedHealth = allHealthServices.slice().sort(function (a, b) {
         var ai = criticalOrder.indexOf(a.name);
         var bi = criticalOrder.indexOf(b.name);
         if (ai >= 0 && bi >= 0) return ai - bi;
@@ -26789,17 +26831,19 @@ function renderOverviewSystemView() {
     });
 
     // Header with healthy count badge
-    var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok'; }).length;
+    var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok' || s.healthy; }).length;
     var healthHeaderEl = document.createElement('div');
     healthHeaderEl.className = 'overview-panel-title-row';
+    var hdrSuffix = state.serviceHealth.loading ? ' <span style="font-size:0.72rem;color:#6b7280;">(refreshing\u2026)</span>' : '';
     healthHeaderEl.innerHTML = '<span class="overview-panel-title">Service Health</span>' +
-        '<span class="overview-count-badge overview-count-badge-green">' + healthyCount + '/' + sortedHealth.length + ' healthy</span>';
+        '<span class="overview-count-badge overview-count-badge-' + (healthyCount === sortedHealth.length ? 'green' : 'amber') + '">' +
+        healthyCount + '/' + sortedHealth.length + ' healthy</span>' + hdrSuffix;
     healthPanel.appendChild(healthHeaderEl);
 
     if (sortedHealth.length === 0) {
         var noH = document.createElement('div');
         noH.className = 'placeholder-content';
-        noH.textContent = 'Loading health checks...';
+        noH.textContent = state.serviceHealth.loading ? 'Loading health checks\u2026' : 'No service health data available.';
         healthPanel.appendChild(noH);
     } else {
         // Failed services alert (if any)
@@ -26809,45 +26853,97 @@ function renderOverviewSystemView() {
         if (failedSvcs.length > 0) {
             var failSection = document.createElement('div');
             failSection.className = 'overview-status-banner overview-status-critical';
-            failSection.style.cssText = 'margin-bottom:10px;padding:8px 12px;';
+            failSection.style.cssText = 'margin-bottom:8px;padding:6px 10px;font-size:0.8rem;';
             var failHTML = '<strong>Critical Issues (' + failedSvcs.length + '):</strong> ';
-            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(', ');
+            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' \u2022 ');
             failSection.innerHTML = failHTML;
             healthPanel.appendChild(failSection);
         }
 
-        // Dynamic health grid — rows computed from service count
-        var HEALTH_COLS = 4;
-        var HEALTH_ROWS = Math.ceil(sortedHealth.length / HEALTH_COLS);
-        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:4px;">';
-        for (var hri = 0; hri < HEALTH_ROWS; hri++) {
-            healthHTML += '<tr>';
-            for (var hci = 0; hci < HEALTH_COLS; hci++) {
-                var hidx = hri * HEALTH_COLS + hci;
-                if (hidx < sortedHealth.length) {
-                    var hsvc = sortedHealth[hidx];
-                    var hdot = 'green';
-                    if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
-                    if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
-                    var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
-                    healthHTML += '<td style="width:25%;padding:2px;vertical-align:top;">' +
-                        '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
-                        '<div class="health-grid-card-name">' +
-                        '<span class="health-dot health-dot-' + hdot + '"></span>' +
-                        hsvc.name +
-                        '</div>' +
-                        hlatency +
-                        '</div></td>';
-                } else {
-                    healthHTML += '<td style="width:25%;padding:2px;"></td>';
+        // Group services by their group field (from fetchServiceHealth) if available
+        var hasGroups = allHealthServices.some(function (s) { return s.group; });
+        if (hasGroups) {
+            // Build group buckets preserving group order from the endpoint list
+            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+                              'Community & Social', 'Domain & Context', 'Visual & VTID'];
+            var groupMap = {};
+            sortedHealth.forEach(function (s) {
+                var g = s.group || 'Other';
+                if (!groupMap[g]) groupMap[g] = [];
+                groupMap[g].push(s);
+            });
+            var orderedGroups = groupOrder.filter(function (g) { return groupMap[g]; });
+            Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
+
+            var groupsContainer = document.createElement('div');
+            groupsContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+
+            orderedGroups.forEach(function (groupName) {
+                var svcs = groupMap[groupName];
+                var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
+                var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
+                var gColor = gFailed > 0 ? '#ef4444' : (gHealthy < svcs.length ? '#f59e0b' : '#10b981');
+
+                var groupBox = document.createElement('div');
+                groupBox.style.cssText = 'flex:1;min-width:180px;background:rgba(255,255,255,0.04);' +
+                    'border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 8px;';
+
+                var groupTitle = document.createElement('div');
+                groupTitle.style.cssText = 'font-size:0.7rem;font-weight:600;color:#9ca3af;text-transform:uppercase;' +
+                    'letter-spacing:0.04em;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between;';
+                groupTitle.innerHTML = '<span>' + groupName + '</span>' +
+                    '<span style="color:' + gColor + ';font-size:0.68rem;">' + gHealthy + '/' + svcs.length + '</span>';
+                groupBox.appendChild(groupTitle);
+
+                var svcList = document.createElement('div');
+                svcList.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;';
+                svcs.forEach(function (s) {
+                    var dotCol = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? '#10b981'
+                        : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? '#f59e0b'
+                        : '#ef4444';
+                    var chip = document.createElement('span');
+                    chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
+                    chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-size:0.68rem;' +
+                        'padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:3px;color:#d1d5db;white-space:nowrap;';
+                    chip.innerHTML = '<span style="width:5px;height:5px;border-radius:50%;background:' + dotCol + ';flex-shrink:0;display:inline-block;"></span>' +
+                        s.name + (s.latency_ms >= 0 ? '<span style="color:#6b7280;margin-left:2px;">' + s.latency_ms + 'ms</span>' : '');
+                    svcList.appendChild(chip);
+                });
+                groupBox.appendChild(svcList);
+                groupsContainer.appendChild(groupBox);
+            });
+            healthPanel.appendChild(groupsContainer);
+        } else {
+            // Fallback: flat grid (used when .group is not available yet)
+            var HEALTH_COLS = 6;
+            var HEALTH_ROWS = Math.ceil(sortedHealth.length / HEALTH_COLS);
+            var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;">';
+            for (var hri = 0; hri < HEALTH_ROWS; hri++) {
+                healthHTML += '<tr>';
+                for (var hci = 0; hci < HEALTH_COLS; hci++) {
+                    var hidx = hri * HEALTH_COLS + hci;
+                    if (hidx < sortedHealth.length) {
+                        var hsvc = sortedHealth[hidx];
+                        var hdot = 'green';
+                        if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
+                        if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                        var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
+                        healthHTML += '<td style="padding:2px;vertical-align:top;">' +
+                            '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
+                            '<div class="health-grid-card-name">' +
+                            '<span class="health-dot health-dot-' + hdot + '"></span>' + hsvc.name +
+                            '</div>' + hlatency + '</div></td>';
+                    } else {
+                        healthHTML += '<td style="padding:2px;"></td>';
+                    }
                 }
+                healthHTML += '</tr>';
             }
-            healthHTML += '</tr>';
+            healthHTML += '</table>';
+            var healthGridEl = document.createElement('div');
+            healthGridEl.innerHTML = healthHTML;
+            healthPanel.appendChild(healthGridEl);
         }
-        healthHTML += '</table>';
-        var healthGridEl = document.createElement('div');
-        healthGridEl.innerHTML = healthHTML;
-        healthPanel.appendChild(healthGridEl);
     }
     container.appendChild(healthPanel);
 
@@ -27257,6 +27353,84 @@ function renderOverviewSystemView() {
     bottomRowWrap.appendChild(recsSection);
     container.appendChild(bottomRowWrap);
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 8: Live Activity Feed (full width) — recent OASIS events
+    // Shows a compact stream of what the platform is doing right now so
+    // operators get a true "live overview" beyond the static metric cards.
+    // ═══════════════════════════════════════════════════════════════════════
+    var liveEvents = [];
+    // Combine deploy events + ORB events + failures for a mixed activity feed
+    if (db.deployEvents && db.deployEvents.length) {
+        db.deployEvents.slice(0, 10).forEach(function (e) { liveEvents.push({ type: 'deploy', data: e }); });
+    }
+    if (db.orbEvents && db.orbEvents.length) {
+        db.orbEvents.slice(0, 8).forEach(function (e) { liveEvents.push({ type: 'orb', data: e }); });
+    }
+    if (db.recentFailures && db.recentFailures.length) {
+        db.recentFailures.slice(0, 6).forEach(function (e) { liveEvents.push({ type: 'error', data: e }); });
+    }
+    // Sort combined feed by time descending
+    liveEvents.sort(function (a, b) {
+        var ta = new Date((a.data.created_at || 0)).getTime();
+        var tb = new Date((b.data.created_at || 0)).getTime();
+        return tb - ta;
+    });
+
+    if (liveEvents.length > 0) {
+        var livePanel = document.createElement('div');
+        livePanel.style.cssText = 'grid-column:1/-1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);' +
+            'border-radius:8px;padding:12px 14px;';
+
+        var liveHdr = document.createElement('div');
+        liveHdr.className = 'overview-panel-title-row';
+        liveHdr.innerHTML = '<span class="overview-panel-title">Live Activity</span>' +
+            '<span class="overview-count-badge overview-count-badge-green">' + liveEvents.length + ' events</span>' +
+            '<a href="#" onclick="event.preventDefault();state.activeModule=\'overview\';state.activeTab=\'recent-events\';renderApp();" ' +
+            'style="margin-left:auto;font-size:0.75rem;color:#60a5fa;text-decoration:none;">View all \u2192</a>';
+        livePanel.appendChild(liveHdr);
+
+        var liveTable = document.createElement('div');
+        liveTable.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;';
+
+        liveEvents.slice(0, 20).forEach(function (ev) {
+            var e = ev.data;
+            var typeColors = { deploy: '#3b82f6', orb: '#8b5cf6', error: '#ef4444' };
+            var typeLabels = { deploy: 'DEPLOY', orb: 'ORB', error: 'ERROR' };
+            var row = document.createElement('div');
+            row.style.cssText = 'display:grid;grid-template-columns:52px 80px 1fr auto;align-items:center;gap:8px;' +
+                'padding:3px 6px;border-radius:4px;font-size:0.75rem;';
+            row.style.background = ev.type === 'error' ? 'rgba(239,68,68,0.06)' : 'transparent';
+
+            var tsEl = document.createElement('span');
+            tsEl.style.cssText = 'color:#6b7280;font-size:0.68rem;white-space:nowrap;';
+            var ts = e.created_at ? new Date(e.created_at) : null;
+            tsEl.textContent = ts ? (String(ts.getHours()).padStart(2,'0') + ':' + String(ts.getMinutes()).padStart(2,'0')) : '';
+
+            var typeEl = document.createElement('span');
+            typeEl.style.cssText = 'font-size:0.65rem;font-weight:700;color:' + (typeColors[ev.type] || '#9ca3af') +
+                ';background:' + (typeColors[ev.type] || '#9ca3af') + '22;padding:1px 5px;border-radius:3px;text-align:center;';
+            typeEl.textContent = typeLabels[ev.type] || ev.type.toUpperCase();
+
+            var msgEl = document.createElement('span');
+            msgEl.style.cssText = 'color:#d1d5db;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            var msgText = e.topic || e.message || (e.metadata && e.metadata.message) || e.status || '';
+            msgEl.textContent = msgText;
+            msgEl.title = msgText;
+
+            var srcEl = document.createElement('span');
+            srcEl.style.cssText = 'color:#6b7280;font-size:0.68rem;white-space:nowrap;';
+            srcEl.textContent = e.source || e.service || '';
+
+            row.appendChild(tsEl);
+            row.appendChild(typeEl);
+            row.appendChild(msgEl);
+            row.appendChild(srcEl);
+            liveTable.appendChild(row);
+        });
+        livePanel.appendChild(liveTable);
+        container.appendChild(livePanel);
+    }
+
     return container;
 }
 
@@ -27270,7 +27444,7 @@ async function fetchPipelineSummary() {
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/autopilot/pipeline/summary');
+        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', {}, 12000);
         if (!response.ok) throw new Error('Pipeline summary fetch failed: ' + response.status);
 
         var data = await response.json();
@@ -32628,6 +32802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // VTID-0520: Start Background Polling
         startCicdHealthPolling();
         startApprovalsBadgePolling();
+        startOverviewDashboardPolling();
 
     } catch (e) {
         console.error('Critical Render Error:', e);
