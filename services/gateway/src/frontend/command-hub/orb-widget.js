@@ -535,6 +535,16 @@
     _s._audioSendErrorLogged = false;
     _s._inputTranscriptBuffer = '';
     _s._outputTranscriptBuffer = '';
+    // VTID-NAV-HOTFIX2: Reset close-pending flags from any previous session.
+    // The widget IIFE persists across SPA navigations (the script loads once
+    // and _s is module-scoped), so if the previous session ended by firing
+    // orb_directive or session_limit_reached, navigationPending/signupClosing
+    // were set to true and never reset. On the next orb open, the 'audio'
+    // case at the top of the message handler sees navigationPending === true
+    // and drops EVERY audio chunk — effectively muting the orb permanently
+    // after the first navigation. Reset here so each new session starts clean.
+    _s.navigationPending = false;
+    _s.signupClosing = false;
 
     // Create playback AudioContext in user gesture (critical for mobile)
     if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
