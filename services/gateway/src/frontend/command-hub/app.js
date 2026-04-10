@@ -1423,7 +1423,8 @@ var SCROLLABLE_SELECTORS_FALLBACK = [
     '.ledger-list-pane',
     '.approvals-list',
     '.version-dropdown__list',
-    '.split-pane-content'
+    '.split-pane-content',
+    '.overview-dashboard'
 ];
 
 /**
@@ -24126,14 +24127,16 @@ function startCicdHealthPolling() {
     console.log('[ServiceHealth] Polling started (30s interval, scroll-safe)');
 }
 
-// Overview dashboard auto-refresh (60 s) — only active while on overview tab
+// Overview dashboard auto-refresh (60 s) — only active while on overview tab.
+// We don't reset `fetched` so the loading banner never flickers on silent refresh.
+// fetchOverviewDashboard/fetchPipelineSummary guard on .loading, so concurrent
+// calls are no-ops — this is safe to call directly.
 var overviewDashboardRefreshInterval = null;
 function startOverviewDashboardPolling() {
     if (overviewDashboardRefreshInterval) return;
     overviewDashboardRefreshInterval = setInterval(function () {
         if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
-            state.overviewDashboard.fetched = false;
-            state.overviewPipelineSummary.fetched = false;
+            // Silent refresh: state updated in-place, render fires once at end
             fetchOverviewDashboard();
             fetchPipelineSummary();
         }
@@ -26507,6 +26510,9 @@ async function fetchOverviewHealth() {
 function renderOverviewSystemView() {
     var container = document.createElement('div');
     container.className = 'overview-dashboard';
+    // VTID-01002: retain scroll across renderApp() cycles
+    container.setAttribute('data-scroll-retain', 'true');
+    container.setAttribute('data-scroll-key', 'overview-dashboard');
 
     // Auto-fetch dashboard data
     if (!state.overviewDashboard.fetched && !state.overviewDashboard.loading) {
@@ -26515,6 +26521,10 @@ function renderOverviewSystemView() {
     // Also fetch pipeline summary (needed for attention queue + metrics)
     if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
         fetchPipelineSummary();
+    }
+    // Trigger full 54-service health fetch if not yet populated (for grouped view)
+    if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
+        fetchServiceHealth();
     }
 
     var db = state.overviewDashboard;
@@ -26775,37 +26785,25 @@ function renderOverviewSystemView() {
         'Attention Queue': '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>'
     };
 
-    function metricCardHTML(m, width) {
-        var w = width || '11.1%';
+    function metricCardHTML(m) {
         var icon = metricIcons[m.label] || '';
-        return '<td style="width:' + w + ';padding:0.15rem;vertical-align:top;">' +
-            '<div class="overview-metric-card">' +
+        return '<div class="overview-metric-card">' +
             (icon ? '<div class="metric-icon">' + icon + '</div>' : '') +
             '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
-            '</div></td>';
+            '</div>';
     }
 
-    // Combine all 18 cards, lay out in 3 rows of 6 (proven column count)
+    // Combine all 18 cards. Use CSS Grid (repeat(6, minmax(0, 1fr))) instead of
+    // a <table> so every card gets exactly 1/6 of the row width — no column can
+    // stretch because of content length ("Inactive" vs. numeric values).
     var allMetrics = row1.concat(row2);
-    var METRIC_COLS = 6;
-    var metricsHTML = '';
-    for (var mri = 0; mri < Math.ceil(allMetrics.length / METRIC_COLS); mri++) {
-        metricsHTML += '<tr>';
-        for (var mci = 0; mci < METRIC_COLS; mci++) {
-            var midx = mri * METRIC_COLS + mci;
-            if (midx < allMetrics.length) {
-                metricsHTML += metricCardHTML(allMetrics[midx], '16.66%');
-            } else {
-                metricsHTML += '<td style="width:16.66%;"></td>';
-            }
-        }
-        metricsHTML += '</tr>';
-    }
+    var metricsHTML = allMetrics.map(function (m) { return metricCardHTML(m); }).join('');
 
-    metricsGrid.innerHTML = '<table style="width:100%;border-collapse:separate;border-spacing:0.15rem;table-layout:fixed;">' +
-        metricsHTML + '</table>';
+    metricsGrid.style.cssText = 'grid-column:1/-1;display:grid;' +
+        'grid-template-columns:repeat(6, minmax(0, 1fr));gap:0.3rem;';
+    metricsGrid.innerHTML = metricsHTML;
 
     container.appendChild(metricsGrid);
 
