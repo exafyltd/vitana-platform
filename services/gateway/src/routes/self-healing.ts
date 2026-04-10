@@ -219,63 +219,26 @@ async function processFailingService(
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
   }
 
-  // For auto-approved tasks: directly dispatch to worker orchestrator,
-  // with bounded retry. The autopilot event loop is a backup, but a
-  // single transient 5xx / network blip used to leave rows pending until
-  // the reconciler tombstoned them as `stale_no_progress`. Retry up to
-  // 3 times with exponential backoff (1s, 2s, 4s) before giving up.
+  // For auto-approved tasks: directly dispatch to worker orchestrator
+  // with bounded retry (autopilot event loop is the backup, but a single
+  // transient 5xx / network blip used to leave rows pending until the
+  // reconciler tombstoned them).
   if (diagnosis.confidence >= 0.8 && diagnosis.auto_fixable) {
-    const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
-    const maxAttempts = 3;
-    let dispatched = false;
-    let lastError: string | undefined;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        console.log(`[self-healing] ${vtid} auto-approved — dispatch attempt ${attempt}/${maxAttempts}`);
-        const dispatchResp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vtid,
-            title: `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
-            spec: spec.substring(0, 8000),
-            source: 'self-healing',
-            priority: 'critical',
-          }),
-        });
-
-        if (dispatchResp.ok) {
-          const dispatchResult = await dispatchResp.json() as Record<string, unknown>;
-          console.log(`[self-healing] ${vtid} dispatch ok on attempt ${attempt}: ${JSON.stringify(dispatchResult).substring(0, 200)}`);
-          dispatched = true;
-          break;
-        }
-
-        lastError = `HTTP ${dispatchResp.status}`;
-        console.warn(`[self-healing] ${vtid} dispatch attempt ${attempt} non-OK: ${lastError}`);
-      } catch (dispatchErr: any) {
-        lastError = dispatchErr.message;
-        console.warn(`[self-healing] ${vtid} dispatch attempt ${attempt} threw: ${lastError}`);
-      }
-
-      if (attempt < maxAttempts) {
-        const backoffMs = 1000 * Math.pow(2, attempt - 1);
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
-      }
-    }
-
-    if (!dispatched) {
-      console.error(`[self-healing] ${vtid} dispatch failed after ${maxAttempts} attempts: ${lastError}`);
+    const dispatch = await dispatchToWorkerWithRetry(
+      vtid,
+      `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
+      spec,
+    );
+    if (!dispatch.ok) {
+      console.error(`[self-healing] ${vtid} dispatch failed after retries: ${dispatch.lastError}`);
       await emitOasisEvent({
         type: 'self-healing.dispatch.failed',
         vtid,
         source: 'self-healing',
         status: 'error',
-        message: `Worker orchestrator dispatch failed after ${maxAttempts} attempts: ${lastError}`,
+        message: `Worker orchestrator dispatch failed after retries: ${dispatch.lastError}`,
         payload: {
-          attempts: maxAttempts,
-          last_error: lastError,
+          last_error: dispatch.lastError,
           confidence: diagnosis.confidence,
           service: diagnosis.service_name,
         },
@@ -628,8 +591,216 @@ router.get('/pending-approval', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: `Failed to query pending-approval: ${errText}` });
     }
 
-    const items = (await resp.json()) as any[];
+    // Filter out rows already decided by a human (approve/reject sets
+    // diagnosis.human_decision). Done client-side because PostgREST
+    // jsonb path filters are awkward and the result set is small.
+    const all = (await resp.json()) as any[];
+    const items = all.filter(r => !(r.diagnosis && r.diagnosis.human_decision));
     return res.json({ ok: true, items, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * Helper: dispatch a self-healing VTID to the worker orchestrator with
+ * bounded retry. Used by both the auto-approved direct-dispatch path
+ * (in runHealing) and the human-approve path below. Returns true on
+ * success, false after maxAttempts failures.
+ */
+async function dispatchToWorkerWithRetry(
+  vtid: string,
+  title: string,
+  spec: string,
+  maxAttempts = 3,
+): Promise<{ ok: boolean; lastError?: string }> {
+  const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+  let lastError: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`[self-healing] ${vtid} dispatch attempt ${attempt}/${maxAttempts}`);
+      const resp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vtid,
+          title,
+          spec: spec.substring(0, 8000),
+          source: 'self-healing',
+          priority: 'critical',
+        }),
+      });
+
+      if (resp.ok) {
+        console.log(`[self-healing] ${vtid} dispatch ok on attempt ${attempt}`);
+        return { ok: true };
+      }
+      lastError = `HTTP ${resp.status}`;
+    } catch (err: any) {
+      lastError = err.message;
+    }
+    if (attempt < maxAttempts) {
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    }
+  }
+  return { ok: false, lastError };
+}
+
+/**
+ * POST /approve — Human approves a sub-0.8 row from pending-approval.
+ * Body: { id: number, operator?: string }
+ *
+ * Marks the self_healing_log row as human-approved (so it leaves the
+ * Awaiting Approval list), sets vtid_ledger.spec_status='approved', and
+ * dispatches the existing fix spec to the worker orchestrator with the
+ * same bounded retry as the auto-approved path.
+ */
+router.post('/approve', async (req: Request, res: Response) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+    const { id, operator } = req.body || {};
+    if (!id || typeof id !== 'number') {
+      return res.status(400).json({ ok: false, error: 'id (number) required' });
+    }
+
+    // 1. Read the self_healing_log row
+    const logResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}&select=*&limit=1`,
+      { headers: supabaseHeaders() },
+    );
+    const logRows = (await logResp.json()) as any[];
+    if (!logRows || logRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'self_healing_log row not found' });
+    }
+    const logRow = logRows[0];
+    const vtid = logRow.vtid;
+
+    // 2. Read the vtid_ledger row to get title + spec
+    const ledgerResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,title,summary&limit=1`,
+      { headers: supabaseHeaders() },
+    );
+    const ledgerRows = (await ledgerResp.json()) as any[];
+    if (!ledgerRows || ledgerRows.length === 0) {
+      return res.status(404).json({ ok: false, error: `vtid_ledger row ${vtid} not found` });
+    }
+    const ledgerRow = ledgerRows[0];
+
+    // 3. Mark spec approved in vtid_ledger
+    await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: supabaseHeaders(),
+      body: JSON.stringify({ spec_status: 'approved', updated_at: new Date().toISOString() }),
+    });
+
+    // 4. Dispatch with bounded retry
+    const dispatch = await dispatchToWorkerWithRetry(
+      vtid,
+      ledgerRow.title || `SELF-HEAL: ${vtid}`,
+      ledgerRow.summary || '',
+    );
+
+    // 5. Mark self_healing_log row as human-approved (regardless of dispatch outcome —
+    //    the OASIS event captures the dispatch failure separately)
+    const newDiagnosis = {
+      ...(logRow.diagnosis || {}),
+      human_decision: 'approved',
+      human_decision_at: new Date().toISOString(),
+      human_decision_by: operator || 'command-hub',
+      human_dispatch_ok: dispatch.ok,
+      human_dispatch_error: dispatch.lastError,
+    };
+    await fetch(`${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: supabaseHeaders(),
+      body: JSON.stringify({ diagnosis: newDiagnosis }),
+    });
+
+    // 6. Emit OASIS event
+    await emitOasisEvent({
+      type: dispatch.ok ? 'self-healing.approved' : 'self-healing.dispatch.failed',
+      vtid,
+      source: 'self-healing',
+      status: dispatch.ok ? 'info' : 'error',
+      message: dispatch.ok
+        ? `Self-healing ${vtid} approved by ${operator || 'command-hub'} and dispatched`
+        : `Self-healing ${vtid} approved but dispatch failed: ${dispatch.lastError}`,
+      payload: {
+        operator: operator || 'command-hub',
+        confidence: logRow.confidence,
+        dispatch_ok: dispatch.ok,
+        dispatch_error: dispatch.lastError,
+      },
+    });
+
+    return res.json({ ok: true, vtid, dispatched: dispatch.ok, error: dispatch.lastError });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /reject — Human rejects a sub-0.8 row from pending-approval.
+ * Body: { id: number, operator?: string, reason?: string }
+ *
+ * Marks the self_healing_log row as escalated with human_rejected reason
+ * so it leaves the Awaiting Approval list and lands in history.
+ */
+router.post('/reject', async (req: Request, res: Response) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+    const { id, operator, reason } = req.body || {};
+    if (!id || typeof id !== 'number') {
+      return res.status(400).json({ ok: false, error: 'id (number) required' });
+    }
+
+    const logResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}&select=*&limit=1`,
+      { headers: supabaseHeaders() },
+    );
+    const logRows = (await logResp.json()) as any[];
+    if (!logRows || logRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'self_healing_log row not found' });
+    }
+    const logRow = logRows[0];
+    const vtid = logRow.vtid;
+
+    const newDiagnosis = {
+      ...(logRow.diagnosis || {}),
+      human_decision: 'rejected',
+      human_decision_at: new Date().toISOString(),
+      human_decision_by: operator || 'command-hub',
+      reject_reason: reason || 'no reason provided',
+    };
+    await fetch(`${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: supabaseHeaders(),
+      body: JSON.stringify({
+        outcome: 'escalated',
+        resolved_at: new Date().toISOString(),
+        diagnosis: newDiagnosis,
+      }),
+    });
+
+    await emitOasisEvent({
+      type: 'self-healing.rejected',
+      vtid,
+      source: 'self-healing',
+      status: 'info',
+      message: `Self-healing ${vtid} rejected by ${operator || 'command-hub'}: ${reason || 'no reason'}`,
+      payload: {
+        operator: operator || 'command-hub',
+        reason: reason || null,
+        confidence: logRow.confidence,
+      },
+    });
+
+    return res.json({ ok: true, vtid });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }

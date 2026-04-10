@@ -34177,6 +34177,110 @@ function renderSelfHealingView() {
     statusBar.appendChild(levelSelect);
     container.appendChild(statusBar);
 
+    // ── ZONE 2A: Awaiting Human Approval (sub-0.8 confidence rows) ──
+    if (pendingApproval.length > 0) {
+        var approvalSection = document.createElement('div');
+        var approvalH3 = document.createElement('h3');
+        approvalH3.className = 'infra-section-title';
+        approvalH3.textContent = 'Awaiting Human Approval';
+        approvalSection.appendChild(approvalH3);
+
+        var approvalSubtitle = document.createElement('p');
+        approvalSubtitle.className = 'infra-subtitle';
+        approvalSubtitle.style.marginTop = '0';
+        approvalSubtitle.textContent = 'Self-healing rows below the auto-fix confidence threshold (0.8). Approve to dispatch the existing fix spec to the worker; reject to escalate.';
+        approvalSection.appendChild(approvalSubtitle);
+
+        pendingApproval.forEach(function(row) {
+            var card = document.createElement('div');
+            card.className = 'sh-repair-card';
+
+            var titleEl = document.createElement('div');
+            titleEl.className = 'sh-repair-card__title';
+            titleEl.textContent = row.vtid + ': ' + (row.failure_class || 'unknown') + ' on ' + (row.endpoint || '?');
+            card.appendChild(titleEl);
+
+            var meta = document.createElement('div');
+            meta.className = 'sh-repair-card__meta';
+            var confPct = ((row.confidence || 0) * 100).toFixed(0);
+            var rootCause = (row.diagnosis && row.diagnosis.root_cause) ? row.diagnosis.root_cause : '';
+            meta.textContent = 'Confidence: ' + confPct + '%  ·  Detected: ' + (row.created_at ? new Date(row.created_at).toLocaleString() : '?');
+            card.appendChild(meta);
+
+            if (rootCause) {
+                var rc = document.createElement('div');
+                rc.className = 'sh-repair-card__meta';
+                rc.style.marginTop = '4px';
+                rc.style.fontStyle = 'italic';
+                rc.textContent = 'Root cause: ' + rootCause.substring(0, 240);
+                card.appendChild(rc);
+            }
+
+            var actions = document.createElement('div');
+            actions.className = 'sh-repair-card__actions';
+
+            var approveBtn = document.createElement('button');
+            approveBtn.className = 'infra-btn infra-btn--success';
+            approveBtn.textContent = 'APPROVE & DISPATCH';
+            approveBtn.onclick = function() {
+                if (!confirm('Approve and dispatch fix for ' + row.vtid + '?')) return;
+                approveBtn.disabled = true;
+                approveBtn.textContent = 'DISPATCHING…';
+                fetch('/api/v1/self-healing/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: row.id, operator: 'command-hub' })
+                }).then(function(r) { return r.json(); }).then(function(result) {
+                    state.selfHealing.fetched = false;
+                    fetchSelfHealingData();
+                    if (result && result.ok) {
+                        showToast('Approved ' + row.vtid + (result.dispatched ? ' — worker dispatched' : ' — dispatch FAILED, see OASIS'), result.dispatched ? 'success' : 'warning');
+                    } else {
+                        showToast('Approve failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+                    }
+                }).catch(function(err) {
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = 'APPROVE & DISPATCH';
+                    showToast('Approve error: ' + err.message, 'error');
+                });
+            };
+            actions.appendChild(approveBtn);
+
+            var rejectBtn = document.createElement('button');
+            rejectBtn.className = 'infra-btn infra-btn--danger';
+            rejectBtn.textContent = 'REJECT';
+            rejectBtn.onclick = function() {
+                var reason = prompt('Reject ' + row.vtid + ' — reason (optional):');
+                if (reason === null) return; // user cancelled
+                rejectBtn.disabled = true;
+                rejectBtn.textContent = 'REJECTING…';
+                fetch('/api/v1/self-healing/reject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: row.id, operator: 'command-hub', reason: reason || '' })
+                }).then(function(r) { return r.json(); }).then(function(result) {
+                    state.selfHealing.fetched = false;
+                    fetchSelfHealingData();
+                    if (result && result.ok) {
+                        showToast('Rejected ' + row.vtid, 'info');
+                    } else {
+                        showToast('Reject failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+                    }
+                }).catch(function(err) {
+                    rejectBtn.disabled = false;
+                    rejectBtn.textContent = 'REJECT';
+                    showToast('Reject error: ' + err.message, 'error');
+                });
+            };
+            actions.appendChild(rejectBtn);
+
+            card.appendChild(actions);
+            approvalSection.appendChild(card);
+        });
+
+        container.appendChild(approvalSection);
+    }
+
     // ── ZONE 2: Active Repairs ──
     if (activeTasks.length > 0) {
         var activeSection = document.createElement('div');
