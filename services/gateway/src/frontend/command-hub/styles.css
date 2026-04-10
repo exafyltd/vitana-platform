@@ -16,6 +16,24 @@
   --color-task-scheduled: #60a5fa;
   --color-task-progress: #f59e0b;
   --color-task-completed: #10b981;
+
+  /* Overview / Command Hub Card Tokens
+     Use these in .overview-* classes — do NOT hardcode in element.style.cssText. */
+  --overview-grid-gap: 0.4rem;
+  --metric-card-min-height: 88px;
+  --metric-card-padding: 0.6rem 0.4rem;
+  --metric-value-size: 1.15rem;
+  --metric-label-size: 0.62rem;
+  --metric-subtitle-size: 0.55rem;
+
+  --health-card-padding: 6px 8px;
+  --health-card-font-size: 0.72rem;
+  --health-card-bg: rgba(30, 41, 59, 0.55);
+  --health-card-border: rgba(148, 163, 184, 0.16);
+  --health-card-border-hover: rgba(148, 163, 184, 0.32);
+
+  --overview-panel-padding: 0.6rem 0.7rem;
+  --overview-panel-radius: 8px;
 }
 
 * {
@@ -17825,6 +17843,27 @@ border-bottom: 1px solid var(--color-border, #333);
     border: 1px solid;
 }
 
+.overview-failed-services {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    display: block;
+}
+
+.overview-list-wrap {
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 360px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.overview-refreshing-tag {
+    font-size: 0.72rem;
+    color: #6b7280;
+}
+
 .overview-status-operational {
     background: rgba(16, 185, 129, 0.08);
     border-color: rgba(16, 185, 129, 0.3);
@@ -17892,17 +17931,26 @@ border-bottom: 1px solid var(--color-border, #333);
 /* Key Metrics Grid */
 .overview-metrics-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.35rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--overview-grid-gap, 0.35rem);
     width: 100%;
     box-sizing: border-box;
 }
+
+@media (max-width: 1400px) {
+    .overview-metrics-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+    .overview-metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* The existing @media (max-width: 768px) block below collapses to 2 columns. */
 
 .overview-metric-card {
     background: var(--bg-tertiary, #16213e);
     border: 1px solid var(--border-color, #2d3748);
     border-radius: 6px;
-    padding: 0.4rem 0.3rem;
+    padding: var(--metric-card-padding, 0.6rem 0.4rem);
+    min-height: var(--metric-card-min-height, 88px);
     text-align: center;
     transition: border-color 0.2s;
     min-width: 0;
@@ -17911,6 +17959,7 @@ border-bottom: 1px solid var(--color-border, #333);
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
 }
 
 .overview-metric-card:hover {
@@ -17918,7 +17967,7 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 .metric-value {
-    font-size: 1.1rem;
+    font-size: var(--metric-value-size, 1.15rem);
     font-weight: 700;
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
@@ -17930,24 +17979,26 @@ border-bottom: 1px solid var(--color-border, #333);
 .metric-value-neutral { color: var(--text-primary, #e2e8f0); }
 
 .metric-label {
-    font-size: 0.6rem;
+    font-size: var(--metric-label-size, 0.62rem);
     color: var(--text-secondary, #94a3b8);
-    margin-top: 0.15rem;
+    margin-top: 0.2rem;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .metric-subtitle {
-    font-size: 0.5rem;
+    font-size: var(--metric-subtitle-size, 0.55rem);
     color: var(--text-tertiary, #64748b);
-    margin-top: 0.1rem;
+    margin-top: 0.15rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 /* Panel Shared Styles — see compact versions below */
@@ -18084,10 +18135,86 @@ border-bottom: 1px solid var(--color-border, #333);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     padding-left: 13px;
 }
-.health-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.health-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; display:inline-block; }
 .health-dot-green { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.4); }
 .health-dot-yellow { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,0.4); }
 .health-dot-red { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.4); }
+
+/* Service Health — grouped view (used by overview System Overview page) */
+.overview-health-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.55rem;
+    width: 100%;
+}
+
+.overview-health-group {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-width: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.overview-health-group-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.overview-health-group-count {
+    font-size: 0.68rem;
+    flex-shrink: 0;
+}
+
+.overview-health-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.health-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--health-card-font-size, 0.72rem);
+    padding: var(--health-card-padding, 6px 8px);
+    background: var(--health-card-bg, rgba(30, 41, 59, 0.55));
+    border: 1px solid var(--health-card-border, rgba(148, 163, 184, 0.16));
+    border-radius: 5px;
+    color: #e2e8f0;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: border-color 0.2s;
+}
+
+.health-pill:hover {
+    border-color: var(--health-card-border-hover, rgba(148, 163, 184, 0.32));
+}
+
+.health-pill-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.health-pill-latency {
+    color: #6b7280;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.66rem;
+    margin-left: 2px;
+    flex-shrink: 0;
+}
 
 /* ORB Communication Panel */
 .overview-orb-panel {
@@ -18159,6 +18286,8 @@ border-bottom: 1px solid var(--color-border, #333);
     padding: 0.2rem 0;
     font-size: 0.72rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    min-width: 0;
+    width: 100%;
 }
 
 .failure-row:last-child {
@@ -18178,18 +18307,24 @@ border-bottom: 1px solid var(--color-border, #333);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 0.7rem;
     max-width: 180px;
+    flex-shrink: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .failure-message {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     color: var(--text-secondary, #94a3b8);
     font-size: 0.73rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.overview-failures-panel {
+    min-width: 0;
 }
 
 /* Deploy History Panel */
@@ -18304,7 +18439,7 @@ border-bottom: 1px solid var(--color-border, #333);
         grid-template-columns: 1fr;
     }
     .overview-metrics-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .overview-bottom-row {
         grid-template-columns: 1fr;

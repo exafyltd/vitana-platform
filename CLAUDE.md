@@ -211,3 +211,39 @@ The Command Hub **Publish** button (`renderPublishModal()` in `app.js`) is the s
 3. **Phase 3:** Expand Command Hub Publish modal — preview panel, branch selector, multi-service publish
 4. **Phase 4:** Backend API — `GET /api/v1/preview/status`, `POST /api/v1/operator/publish`
 5. **Lovable cleanup:** Remove `lovable-tagger`, `.lovable/`, cut over DNS (after Cloud Run verified)
+
+---
+
+## 19. Command Hub Frontend — Layout Rules (DO NOT VIOLATE)
+
+The Command Hub layout (`services/gateway/src/frontend/command-hub/`) has been broken multiple times by ad-hoc inline styles in `app.js`. Every regression has followed the same pattern: a developer hits a layout bug, reaches for `element.style.cssText = '...'` in JS, and silently overrides the design system in `styles.css`. **This stops here.**
+
+### The Rule
+**Layout, padding, font-size, color, border, and background styles MUST live in `styles.css` as class definitions.** Reference the `:root` design tokens (`--metric-card-min-height`, `--metric-card-padding`, `--health-card-padding`, `--health-card-font-size`, etc. — all defined at the top of `styles.css`).
+
+In `app.js`, use `element.className = 'foo-class'`. Do **not** write `element.style.cssText = 'padding:...; font-size:...; background:...'`.
+
+### What is allowed inline
+Only dynamic positioning that genuinely cannot live in CSS:
+- `element.style.gridColumn = '1 / -1'` (placement within a parent grid)
+- `element.style.display = 'none'` / `'block'` (visibility toggles)
+- Computed transforms, scroll offsets, drag positions
+
+### What is forbidden inline
+- `padding`, `margin`, `gap`
+- `font-size`, `font-weight`, `color`
+- `background`, `border`, `border-radius`
+- `display: flex/grid` + flex/grid layout properties
+- `width`, `min-width`, `max-width`, `min-height`, `max-height`
+
+### The flexbox text-truncation pattern
+Any `.x-row { display:flex }` row containing a `.x-message { flex:1; overflow:hidden; text-overflow:ellipsis }` MUST also have `min-width:0` on **both** the row and the message — without it the message expands to its natural width and overflows the parent. This is the most common Command Hub layout bug.
+
+### Card sizing
+Cards in CSS Grid that use `justify-content:center` MUST declare `min-height` (use `var(--metric-card-min-height)` or similar). Without it, content visually escapes the border because `justify-content` has nothing to center against.
+
+### Audit before adding new code
+Before adding a new panel/card/list to the overview, grep `services/gateway/src/frontend/command-hub/styles.css` for an existing class that fits (`.health-card`, `.health-pill`, `.overview-list-wrap`, `.overview-failed-services`, `.failure-row`, `.deploy-row`, `.overview-metric-card`, `.overview-health-group`). Reuse before reinventing.
+
+### Why this matters
+Inline styles have higher specificity than any class, so a single `style.cssText` line can silently break responsive media queries, hover states, and design tokens for the entire page. They are also invisible to anyone reading `styles.css`. Every "fix the layout" commit that uses inline JS styles makes the next regression more likely.

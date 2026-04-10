@@ -26625,10 +26625,10 @@ function renderOverviewSystemView() {
     container.appendChild(banner);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 2: Key Metrics Grid (2x4)
+    // SECTION 2: Key Metrics Grid
+    // Layout owned by .overview-metrics-grid in styles.css.
     // ═══════════════════════════════════════════════════════════════════════
     var metricsGrid = document.createElement('div');
-    metricsGrid.style.cssText = 'grid-column: 1 / -1;';
 
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
@@ -26801,8 +26801,10 @@ function renderOverviewSystemView() {
     var allMetrics = row1.concat(row2);
     var metricsHTML = allMetrics.map(function (m) { return metricCardHTML(m); }).join('');
 
-    metricsGrid.style.cssText = 'grid-column:1/-1;display:grid;' +
-        'grid-template-columns:repeat(6, minmax(0, 1fr));gap:0.3rem;';
+    // Layout lives in styles.css (.overview-metrics-grid). Only the placement
+    // (full-width within the parent dashboard grid) is set inline.
+    metricsGrid.className = 'overview-metrics-grid';
+    metricsGrid.style.gridColumn = '1 / -1';
     metricsGrid.innerHTML = metricsHTML;
 
     container.appendChild(metricsGrid);
@@ -26814,7 +26816,7 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     var healthPanel = document.createElement('div');
     healthPanel.className = 'overview-health-grid';
-    healthPanel.style.cssText = 'grid-column: 1 / -1;';
+    healthPanel.style.gridColumn = '1 / -1';
 
     // Use the full 54-service poll result when available; it has .group field
     var allHealthServices = state.serviceHealth.fetched && state.serviceHealth.items.length > 0
@@ -26835,7 +26837,7 @@ function renderOverviewSystemView() {
     var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok' || s.healthy; }).length;
     var healthHeaderEl = document.createElement('div');
     healthHeaderEl.className = 'overview-panel-title-row';
-    var hdrSuffix = state.serviceHealth.loading ? ' <span style="font-size:0.72rem;color:#6b7280;">(refreshing\u2026)</span>' : '';
+    var hdrSuffix = state.serviceHealth.loading ? ' <span class="overview-refreshing-tag">(refreshing\u2026)</span>' : '';
     healthHeaderEl.innerHTML = '<span class="overview-panel-title">Service Health</span>' +
         '<span class="overview-count-badge overview-count-badge-' + (healthyCount === sortedHealth.length ? 'green' : 'amber') + '">' +
         healthyCount + '/' + sortedHealth.length + ' healthy</span>' + hdrSuffix;
@@ -26853,8 +26855,7 @@ function renderOverviewSystemView() {
         });
         if (failedSvcs.length > 0) {
             var failSection = document.createElement('div');
-            failSection.className = 'overview-status-banner overview-status-critical';
-            failSection.style.cssText = 'margin-bottom:8px;padding:6px 10px;font-size:0.8rem;';
+            failSection.className = 'overview-status-banner overview-status-critical overview-failed-services';
             var failHTML = '<strong>Critical Issues (' + failedSvcs.length + '):</strong> ';
             failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' \u2022 ');
             failSection.innerHTML = failHTML;
@@ -26877,37 +26878,36 @@ function renderOverviewSystemView() {
             Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
 
             var groupsContainer = document.createElement('div');
-            groupsContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+            groupsContainer.className = 'overview-health-groups';
 
             orderedGroups.forEach(function (groupName) {
                 var svcs = groupMap[groupName];
                 var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
                 var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
-                var gColor = gFailed > 0 ? '#ef4444' : (gHealthy < svcs.length ? '#f59e0b' : '#10b981');
+                var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
 
                 var groupBox = document.createElement('div');
-                groupBox.style.cssText = 'flex:1;min-width:180px;background:rgba(255,255,255,0.04);' +
-                    'border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 8px;';
+                groupBox.className = 'overview-health-group';
 
                 var groupTitle = document.createElement('div');
-                groupTitle.style.cssText = 'font-size:0.7rem;font-weight:600;color:#9ca3af;text-transform:uppercase;' +
-                    'letter-spacing:0.04em;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between;';
-                groupTitle.innerHTML = '<span>' + groupName + '</span>' +
-                    '<span style="color:' + gColor + ';font-size:0.68rem;">' + gHealthy + '/' + svcs.length + '</span>';
+                groupTitle.className = 'overview-health-group-title';
+                groupTitle.innerHTML = '<span>' + escapeHtml(groupName) + '</span>' +
+                    '<span class="overview-health-group-count metric-value-' + gColorClass + '">' +
+                    gHealthy + '/' + svcs.length + '</span>';
                 groupBox.appendChild(groupTitle);
 
                 var svcList = document.createElement('div');
-                svcList.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;';
+                svcList.className = 'overview-health-chip-row';
                 svcs.forEach(function (s) {
-                    var dotCol = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? '#10b981'
-                        : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? '#f59e0b'
-                        : '#ef4444';
+                    var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                        : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
+                        : 'red';
                     var chip = document.createElement('span');
+                    chip.className = 'health-pill';
                     chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
-                    chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-size:0.68rem;' +
-                        'padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:3px;color:#d1d5db;white-space:nowrap;';
-                    chip.innerHTML = '<span style="width:5px;height:5px;border-radius:50%;background:' + dotCol + ';flex-shrink:0;display:inline-block;"></span>' +
-                        s.name + (s.latency_ms >= 0 ? '<span style="color:#6b7280;margin-left:2px;">' + s.latency_ms + 'ms</span>' : '');
+                    chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
+                        '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
+                        (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
                     svcList.appendChild(chip);
                 });
                 groupBox.appendChild(svcList);
@@ -27048,7 +27048,7 @@ function renderOverviewSystemView() {
         failPanel.appendChild(noFail);
     } else {
         var failListWrap = document.createElement('div');
-        failListWrap.style.cssText = 'overflow-y:auto;max-height:360px;';
+        failListWrap.className = 'overview-list-wrap';
         db.recentFailures.slice(0, 20).forEach(function (evt) {
             var row = document.createElement('div');
             row.className = 'failure-row';
@@ -27098,7 +27098,7 @@ function renderOverviewSystemView() {
         deployPanel.appendChild(noDep);
     } else {
         var deployListWrap = document.createElement('div');
-        deployListWrap.style.cssText = 'overflow-y:auto;max-height:360px;';
+        deployListWrap.className = 'overview-list-wrap';
         db.deployments.slice(0, 20).forEach(function (dep) {
             var row = document.createElement('div');
             row.className = 'deploy-row';
