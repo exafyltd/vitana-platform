@@ -5,19 +5,18 @@
  * A row is orphaned when outcome='pending' for longer than the stale
  * threshold — typically because the autopilot event loop's cursor slipped
  * past the spec.created event, or the dispatch action failed silently and
- * left no trace. Without this reconciler, such rows sit in 'pending' forever
- * and the Self-Healing History tab shows permanent hourglass spinners.
+ * left no trace.
  *
  * Per stale row the reconciler:
  *   1. Re-probes the endpoint.
  *      - healthy now → mark outcome='escalated', reason='recovered_externally'
- *      - still down  → mark outcome='escalated', reason='stale_no_progress'
- *   2. Emits a self-healing.reconciled OASIS event for the Command Hub
- *      timeline so operators see the reconciliation happened.
- *
- * This service does NOT re-drive fixes. It only clears stuck state.
- * Operators can re-report a failure via collect-status.py on the next run
- * if the underlying problem still needs attention.
+ *      - still down  → try to re-dispatch the existing fix spec to the
+ *        worker orchestrator (capped at MAX_REDISPATCH_ATTEMPTS, gated by
+ *        MIN_REDISPATCH_INTERVAL_MS so we don't pile on a worker that's
+ *        already running). Only after exhausting redispatches do we mark
+ *        the row outcome='escalated', reason='stale_no_progress'.
+ *   2. Emits self-healing.reconciled (terminal) or
+ *      self-healing.dispatch.retried (re-drive) OASIS events.
  */
 
 import { emitOasisEvent } from './oasis-event-service';
@@ -31,6 +30,14 @@ const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
 const DEFAULT_STALE_THRESHOLD_MS = 60 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 8000;
 const BATCH_LIMIT = 50;
+// Re-dispatch budget per row before we give up and tombstone as stale.
+// Auto-fix path already does 3 attempts on first dispatch; reconciler
+// adds 2 more spread across cycles, so total worst-case is 5 attempts.
+const MAX_REDISPATCH_ATTEMPTS = 2;
+// Minimum gap between successive redispatches for the same row, so we
+// don't slam the worker if it's still processing the previous attempt.
+const MIN_REDISPATCH_INTERVAL_MS = 30 * 60 * 1000;
+const DISPATCH_TIMEOUT_MS = 10_000;
 
 let reconcilerTimer: NodeJS.Timeout | null = null;
 let running = false;
@@ -43,6 +50,7 @@ interface StaleRow {
   failure_class: string;
   created_at: string;
   diagnosis: Record<string, unknown> | null;
+  attempt_number: number | null;
 }
 
 function supabaseHeaders(): Record<string, string> {
@@ -58,7 +66,7 @@ async function fetchStaleRows(thresholdMs: number): Promise<StaleRow[]> {
   const cutoff = new Date(Date.now() - thresholdMs).toISOString();
   const url =
     `${SUPABASE_URL}/rest/v1/self_healing_log` +
-    `?select=id,vtid,endpoint,failure_class,created_at,diagnosis` +
+    `?select=id,vtid,endpoint,failure_class,created_at,diagnosis,attempt_number` +
     `&outcome=eq.pending&created_at=lt.${encodeURIComponent(cutoff)}` +
     `&order=created_at.asc&limit=${BATCH_LIMIT}`;
   const res = await fetch(url, { headers: supabaseHeaders() });
@@ -81,6 +89,88 @@ async function probeEndpoint(
   } catch {
     return { healthy: false, http_status: null };
   }
+}
+
+/**
+ * Try to re-dispatch a stuck row to the worker orchestrator. Returns
+ * `redispatched` if we successfully POSTed a new run, `skipped` if the
+ * row is over the attempt cap or hit too recently, or `failed` if the
+ * fetch errored / returned non-OK.
+ */
+async function attemptRedispatch(
+  row: StaleRow,
+): Promise<{ status: 'redispatched' | 'skipped' | 'failed'; reason?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return { status: 'skipped', reason: 'no_supabase' };
+
+  const diagnosis = row.diagnosis || {};
+  const reconcilerAttempts = Number(diagnosis.reconciler_redispatch_count || 0);
+  if (reconcilerAttempts >= MAX_REDISPATCH_ATTEMPTS) {
+    return { status: 'skipped', reason: 'attempt_cap_reached' };
+  }
+
+  const lastRedispatchedAt = diagnosis.reconciler_redispatched_at as string | undefined;
+  if (lastRedispatchedAt) {
+    const ageMs = Date.now() - new Date(lastRedispatchedAt).getTime();
+    if (ageMs < MIN_REDISPATCH_INTERVAL_MS) {
+      return { status: 'skipped', reason: 'cooldown' };
+    }
+  }
+
+  // Fetch the spec from vtid_ledger so we can re-POST it.
+  const ledgerRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${row.vtid}&select=vtid,title,summary&limit=1`,
+    { headers: supabaseHeaders() },
+  );
+  if (!ledgerRes.ok) {
+    return { status: 'failed', reason: `ledger_fetch_${ledgerRes.status}` };
+  }
+  const ledgerRows = (await ledgerRes.json()) as Array<{ title?: string; summary?: string }>;
+  if (!ledgerRows || ledgerRows.length === 0) {
+    return { status: 'failed', reason: 'no_ledger_row' };
+  }
+  const ledger = ledgerRows[0];
+  const spec = (ledger.summary || '').substring(0, 8000);
+  const title = ledger.title || `SELF-HEAL: ${row.vtid}`;
+
+  if (!spec) {
+    return { status: 'skipped', reason: 'no_spec' };
+  }
+
+  try {
+    const dispatchRes = await fetch(`${GATEWAY_URL}/api/v1/worker/orchestrator/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vtid: row.vtid,
+        title,
+        spec,
+        source: 'self-healing-reconciler',
+        priority: 'critical',
+      }),
+      signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
+    });
+    if (!dispatchRes.ok) {
+      return { status: 'failed', reason: `dispatch_http_${dispatchRes.status}` };
+    }
+  } catch (err: any) {
+    return { status: 'failed', reason: `dispatch_throw_${err.message || 'unknown'}` };
+  }
+
+  // Mark the row so the next cycle waits the cooldown out.
+  const newDiagnosis = {
+    ...diagnosis,
+    reconciler_redispatch_count: reconcilerAttempts + 1,
+    reconciler_redispatched_at: new Date().toISOString(),
+  };
+  await fetch(`${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${row.id}`, {
+    method: 'PATCH',
+    headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+    body: JSON.stringify({ diagnosis: newDiagnosis }),
+  }).catch(err => {
+    console.warn(`${LOG_PREFIX} Failed to patch redispatch metadata for ${row.vtid}: ${err.message}`);
+  });
+
+  return { status: 'redispatched' };
 }
 
 async function markEscalated(
@@ -126,24 +216,89 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
     if (rows.length === 0) return;
     console.log(`${LOG_PREFIX} Found ${rows.length} stale row(s) to reconcile`);
     for (const row of rows) {
-      const { healthy, http_status } = await probeEndpoint(row.endpoint);
-      const reason = healthy ? 'recovered_externally' : 'stale_no_progress';
-      const ok = await markEscalated(row, reason, http_status);
-      if (!ok) continue;
       const ageHours = (Date.now() - new Date(row.created_at).getTime()) / 3600000;
+      const { healthy, http_status } = await probeEndpoint(row.endpoint);
+
+      // Path A: endpoint healthy now → tombstone as recovered_externally
+      if (healthy) {
+        const ok = await markEscalated(row, 'recovered_externally', http_status);
+        if (!ok) continue;
+        try {
+          await emitOasisEvent({
+            vtid: row.vtid,
+            type: 'self-healing.reconciled',
+            source: 'self-healing-reconciler',
+            status: 'info',
+            message: `Reconciler: ${row.vtid} recovered externally (${row.endpoint} HTTP ${http_status})`,
+            payload: {
+              endpoint: row.endpoint,
+              failure_class: row.failure_class,
+              reason: 'recovered_externally',
+              http_status,
+              age_hours: Number(ageHours.toFixed(2)),
+            },
+            actor_role: 'system',
+            surface: 'system',
+          });
+        } catch (emitErr) {
+          console.warn(`${LOG_PREFIX} Failed to emit OASIS event for ${row.vtid}:`, emitErr);
+        }
+        console.log(`${LOG_PREFIX} Reconciled ${row.vtid}: recovered_externally (age=${ageHours.toFixed(1)}h)`);
+        continue;
+      }
+
+      // Path B: endpoint still down → try to redispatch the existing fix spec
+      const redispatch = await attemptRedispatch(row);
+
+      if (redispatch.status === 'redispatched') {
+        try {
+          await emitOasisEvent({
+            vtid: row.vtid,
+            type: 'self-healing.dispatch.retried',
+            source: 'self-healing-reconciler',
+            status: 'info',
+            message: `Reconciler re-dispatched ${row.vtid} to worker orchestrator (age=${ageHours.toFixed(1)}h)`,
+            payload: {
+              endpoint: row.endpoint,
+              failure_class: row.failure_class,
+              age_hours: Number(ageHours.toFixed(2)),
+              reconciler_redispatch_count: Number((row.diagnosis || {}).reconciler_redispatch_count || 0) + 1,
+            },
+            actor_role: 'system',
+            surface: 'system',
+          });
+        } catch (emitErr) {
+          console.warn(`${LOG_PREFIX} Failed to emit dispatch.retried event for ${row.vtid}:`, emitErr);
+        }
+        console.log(`${LOG_PREFIX} Re-dispatched ${row.vtid} (age=${ageHours.toFixed(1)}h) — leaving outcome=pending`);
+        continue;
+      }
+
+      if (redispatch.status === 'skipped' && redispatch.reason === 'cooldown') {
+        // Worker may still be processing the previous redispatch — leave it alone for now.
+        console.log(`${LOG_PREFIX} Skipping ${row.vtid}: redispatch cooldown still active`);
+        continue;
+      }
+
+      // Path C: redispatch was capped, infeasible (no spec), or failed →
+      // tombstone as stale_no_progress so it leaves the pending list.
+      const ok = await markEscalated(row, 'stale_no_progress', http_status);
+      if (!ok) continue;
       try {
         await emitOasisEvent({
           vtid: row.vtid,
           type: 'self-healing.reconciled',
           source: 'self-healing-reconciler',
-          status: healthy ? 'info' : 'warning',
-          message: `Reconciler escalated stuck self-healing task — ${reason} (${row.endpoint} HTTP ${http_status ?? 'err'})`,
+          status: 'warning',
+          message: `Reconciler tombstoned ${row.vtid} as stale_no_progress (redispatch ${redispatch.status}: ${redispatch.reason || 'n/a'})`,
           payload: {
             endpoint: row.endpoint,
             failure_class: row.failure_class,
-            reason,
+            reason: 'stale_no_progress',
             http_status,
             age_hours: Number(ageHours.toFixed(2)),
+            redispatch_status: redispatch.status,
+            redispatch_reason: redispatch.reason,
           },
           actor_role: 'system',
           surface: 'system',
@@ -152,7 +307,7 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
         console.warn(`${LOG_PREFIX} Failed to emit OASIS event for ${row.vtid}:`, emitErr);
       }
       console.log(
-        `${LOG_PREFIX} Reconciled ${row.vtid}: ${reason} (age=${ageHours.toFixed(1)}h)`,
+        `${LOG_PREFIX} Tombstoned ${row.vtid} as stale_no_progress (age=${ageHours.toFixed(1)}h, redispatch=${redispatch.status}/${redispatch.reason || 'n/a'})`,
       );
     }
   } catch (err) {
