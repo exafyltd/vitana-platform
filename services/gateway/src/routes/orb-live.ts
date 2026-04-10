@@ -2468,7 +2468,15 @@ async function connectToLiveAPI(
                 console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
 
                 const sendLimitMsg = () => {
-                  const limitMsg = JSON.stringify({ type: 'session_limit_reached', reason, message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.' });
+                  const payload: Record<string, unknown> = {
+                    type: 'session_limit_reached',
+                    reason,
+                    message: reason === 'signup_intent' ? 'Guiding to registration.' : 'Please register to continue.',
+                  };
+                  if (reason === 'signup_intent') {
+                    payload.redirect = '/maxina';
+                  }
+                  const limitMsg = JSON.stringify(payload);
                   if (session.sseResponse) {
                     session.sseResponse.write(`data: ${limitMsg}\n\n`);
                   }

@@ -800,6 +800,8 @@
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
+            // VTID-ANON-SIGNUP: signup close pending — don't transition to listening
+            if (_s.signupClosing) return;
             var stillPlaying = _s.audioPlaying ||
               (_s.scheduledSources && _s.scheduledSources.length > 0) ||
               (_s.audioQueue && _s.audioQueue.length > 0);
@@ -868,9 +870,22 @@
 
       case 'session_limit_reached':
         if (msg.reason === 'signup_intent') {
-          // VTID-ANON-SIGNUP: Vitana already said goodbye — close widget after audio finishes
-          console.log('[VTOrb] Signup intent — closing widget after goodbye');
-          setTimeout(_hide, 3000);
+          // VTID-ANON-SIGNUP: Vitana already said goodbye — close widget after audio finishes,
+          // then redirect to the registration page. Block the listening transition.
+          console.log('[VTOrb] Signup intent — closing widget and redirecting to ' + (msg.redirect || 'none'));
+          _s.signupClosing = true;
+          var redirectUrl = msg.redirect || null;
+          setTimeout(function () {
+            _hide();
+            if (redirectUrl) {
+              if (typeof _cfg.onSignupRedirect === 'function') {
+                try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
+              } else {
+                // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
+                try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
+              }
+            }
+          }, 3000);
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
@@ -1593,6 +1608,7 @@
       if (typeof opts.onSessionStart === 'function') _cfg.onSessionStart = opts.onSessionStart;
       if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
       if (typeof opts.onLink === 'function') _cfg.onLink = opts.onLink;
+      if (typeof opts.onSignupRedirect === 'function') _cfg.onSignupRedirect = opts.onSignupRedirect;
 
       _injectStyles();
       _renderOverlay();
