@@ -534,6 +534,7 @@ export type CicdEventType =
   | 'self-healing.rollback.completed'
   | 'self-healing.kill_switch.activated'
   | 'self-healing.kill_switch.deactivated'
+  | 'self-healing.reconciled'
   | 'autopilot.task.spec.created'
   // VTID-DEV-ASSIST: Developer Assistant Events
   | 'dev_assist.spec.generated'

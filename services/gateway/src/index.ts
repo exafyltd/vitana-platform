@@ -787,6 +787,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autonomous engine initialization failed (non-fatal):', error);
       }
 
+      // Self-Healing Reconciler: safety net for orphaned pending rows
+      try {
+        const reconcilerEnabled = process.env.SELF_HEALING_RECONCILER_ENABLED !== 'false';
+        if (reconcilerEnabled) {
+          const { startReconciler } = require('./services/self-healing-reconciler');
+          startReconciler();
+        } else {
+          console.log('⏸️ Self-healing reconciler disabled (SELF_HEALING_RECONCILER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
       // AI Personality: Pre-warm config cache from Supabase
       try {
         const { warmPersonalityCache } = require('./services/ai-personality-service');
