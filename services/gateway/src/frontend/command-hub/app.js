@@ -1033,9 +1033,12 @@ async function doLogin(email, password) {
             }
         }
 
-        // Close profile modal and refresh
+        // Close profile modal and refresh UI.
+        // VTID-01230-FIX: Do NOT call showToast here — it causes an infinite
+        // recursion crash in showToast → renderApp → showToast under CSP errors.
+        // The login form closing + tasks appearing is enough success feedback.
         state.showProfileModal = false;
-        showToast('Logged in successfully', 'success');
+        console.log('[BOOT-DIAG] Rendering post-login UI');
         renderApp();
 
         // Load all data now that auth + role are established

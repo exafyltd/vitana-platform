@@ -69,7 +69,7 @@ router.get('/', (req: Request, res: Response) => {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
     res.setHeader('Content-Security-Policy',
-      `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' ${supabaseDomain} data: blob:; media-src 'self' data:`);
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
@@ -174,7 +174,13 @@ router.get('/*', (req: Request, res: Response, next: Function) => {
   }
 
   try {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' data:");
+    // VTID-01230-FIX: img-src allows Supabase storage (avatar_url) and data: URIs.
+    // style-src allows inline styles (app.js uses .style.cssText everywhere).
+    // Without this, avatars were blocked and many render functions threw CSP errors.
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
+    res.setHeader('Content-Security-Policy',
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
