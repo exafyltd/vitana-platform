@@ -365,6 +365,46 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         };
       }
 
+      // VTID-01230-FIX: Match /auth/login fallback chain for avatar_url.
+      // If app_users has no avatar_url, try users table (vitana-v1 compat),
+      // then auth.users.user_metadata. Otherwise fetchAuthMe() in the frontend
+      // overwrites state.user with avatar_url=null, making the avatar disappear
+      // moments after login.
+      if (!profile.avatar_url) {
+        try {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('display_name, avatar_url')
+            .eq('id', identity.user_id)
+            .single();
+          if (usersData) {
+            if (!profile.display_name && usersData.display_name) {
+              profile.display_name = usersData.display_name;
+            }
+            if (usersData.avatar_url) {
+              profile.avatar_url = usersData.avatar_url;
+              console.log(`[VTID-01230-FIX] /auth/me avatar_url from users table: ${profile.avatar_url}`);
+            }
+          }
+        } catch (_usersErr) {
+          // Silent — users table may not exist in all envs
+        }
+      }
+
+      if (!profile.avatar_url) {
+        // Try auth.users.user_metadata
+        try {
+          const { data: authUser } = await (supabase as any).auth.admin.getUserById(identity.user_id);
+          const metaAvatar = authUser?.user?.user_metadata?.avatar_url;
+          if (metaAvatar) {
+            profile.avatar_url = metaAvatar;
+            console.log(`[VTID-01230-FIX] /auth/me avatar_url from user_metadata: ${metaAvatar}`);
+          }
+        } catch (_metaErr) {
+          // Silent — admin API requires service role
+        }
+      }
+
       // Fetch user memberships from user_tenants
       const { data: membershipData, error: membershipError } = await supabase
         .from('user_tenants')
