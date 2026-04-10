@@ -755,6 +755,12 @@
       case 'audio':
       case 'audio_out':
         if (_s.interruptPending) break;
+        // VTID-NAV: Once a navigation is queued, drop all further audio
+        // chunks. The model should have stopped speaking but late audio
+        // chunks that were already in flight from the backend would
+        // otherwise get scheduled and play for a few ms after the widget
+        // hides — producing the "half word" tail fragment the user hears.
+        if (_s.navigationPending) break;
         // Cancel pending thinking timer and progress — response arrived
         clearTimeout(_s.thinkingDelayTimer);
         clearInterval(_s.thinkingProgressTimer);
@@ -946,6 +952,24 @@
               }
               // Grace period so the very last audio sample plays out cleanly
               setTimeout(function () {
+                // VTID-NAV: Aggressive audio kill right before hide. The
+                // drain check above waits for the queue to empty, but a
+                // late audio chunk could still slip into scheduledSources
+                // between the check and the hide. This cleanup matches
+                // what the 'interrupted' handler does — clear the queue
+                // and stop every scheduled source so no tail fragment
+                // plays after navigation. Without this, the user hears
+                // a half-word fragment right after the redirect.
+                _s.audioQueue = [];
+                if (_s.scheduledSources && _s.scheduledSources.length > 0) {
+                  for (var _si = 0; _si < _s.scheduledSources.length; _si++) {
+                    try { _s.scheduledSources[_si].stop(); } catch (_e) { /* ok */ }
+                  }
+                  _s.scheduledSources = [];
+                }
+                _s.lastScheduledEnd = 0;
+                _s.audioPlaying = false;
+
                 _hide();
                 if (typeof _cfg.onNavigationRequest === 'function') {
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
