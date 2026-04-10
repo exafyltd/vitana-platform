@@ -787,7 +787,15 @@
         break;
 
       case 'turn_complete':
-        _s.lastScheduledEnd = 0;
+        // VTID-NAV-HOTFIX: Only reset the scheduling cursor if no audio is
+        // still scheduled. Otherwise next-turn chunks schedule at `now` via
+        // _processQueue's `lastScheduledEnd < now` check and play on top of
+        // in-flight current-turn audio. When all current-turn sources drain,
+        // _processQueue's own check naturally resets the cursor on the next
+        // chunk, so this guard has no impact on the happy path.
+        if (!_s.scheduledSources || _s.scheduledSources.length === 0) {
+          _s.lastScheduledEnd = 0;
+        }
         _s.interruptPending = false;
         _s.turnCompleteAt = Date.now();
         // Clear thinking progress if running

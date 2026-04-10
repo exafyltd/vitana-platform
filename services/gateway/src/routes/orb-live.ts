@@ -3389,6 +3389,23 @@ async function connectToLiveAPI(
               const inlineData = part.inline_data || part.inlineData;
               const mimeType = inlineData?.mime_type || inlineData?.mimeType;
               if (inlineData && mimeType?.startsWith('audio/')) {
+                // VTID-NAV-HOTFIX: Once navigation is queued, drop ALL further
+                // audio from Gemini. After navigate_to_screen fires, Gemini's
+                // tool-use protocol FORCES a model response to the
+                // function_response — that response IS a second (Turn 2) audio
+                // stream that would arrive at the widget before Turn 1's
+                // turn_complete and overlap the transition sentence the user
+                // is already hearing. The flag is set synchronously inside
+                // handleNavigateToScreen BEFORE sendFunctionResponseToLiveAPI
+                // is called, so by the time Gemini even produces Turn 2 audio,
+                // this gate is already armed.
+                if (session.navigationDispatched) {
+                  session.audioOutChunks++;
+                  if (session.audioOutChunks % 50 === 1) {
+                    console.log(`[VTID-NAV-HOTFIX] Dropping post-nav audio chunk ${session.audioOutChunks} for session ${session.sessionId}`);
+                  }
+                  continue;
+                }
                 // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
@@ -3492,12 +3509,19 @@ async function connectToLiveAPI(
             }
           }
           if (outputTranscription) {
-            console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
-            if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
+            // VTID-NAV-HOTFIX: Drop Turn 2 transcription the same way we drop
+            // Turn 2 audio. Without this, memory + chat bridge would capture
+            // the post-nav model response even though the user never heard it.
+            if (session.navigationDispatched) {
+              console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
+            } else {
+              console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
+              if (session.sseResponse) {
+                session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
+              }
+              // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
+              session.outputTranscriptBuffer += outputTranscription;
             }
-            // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
-            session.outputTranscriptBuffer += outputTranscription;
           }
         }
 
