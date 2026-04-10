@@ -825,6 +825,7 @@ async function fetchAuthMe(fallbackEmail) {
             roleLabel = firstRole.charAt(0).toUpperCase() + firstRole.slice(1);
         }
 
+        console.log('[BOOT-DIAG] fetchAuthMe profile=', JSON.stringify(profile), 'avatar_url=' + (profile.avatar_url || 'NULL'));
         state.user = {
             name: name,
             role: roleLabel,
@@ -974,11 +975,13 @@ async function doLogin(email, password) {
         // VTID-01230-FIX: Full post-login boot — fetch auth + role + permissions in parallel,
         // then correct role to developer and load all data. Without this, login left
         // the board empty because fetchTasks() was never called after login.
+        console.log('[BOOT-DIAG] Post-login boot starting');
         await Promise.all([
             fetchAuthMe(loginEmail),
             fetchMeContext(),
             fetchPermittedRoles()
         ]);
+        console.log('[BOOT-DIAG] Post-login Promise.all complete, active_role=' + (state.meContext?.active_role || 'null') + ', permittedRoles=' + JSON.stringify(state.permittedRoles));
 
         // Role correction: Command Hub requires developer/admin/infra/staff
         var postLoginAllowed = ['developer', 'admin', 'infra', 'staff'];
@@ -1004,11 +1007,30 @@ async function doLogin(email, password) {
         var capBest = postLoginBest.charAt(0).toUpperCase() + postLoginBest.slice(1);
         state.viewRole = capBest;
         localStorage.setItem('vitana.viewRole', capBest);
+        console.log('[BOOT-DIAG] Role corrected to: ' + postLoginBest);
+
+        // Persist role server-side (AWAIT, not fire-and-forget) so no race with fetchTasks.
+        // Only call if different from what server has.
         if (state.meContext && state.meContext.active_role !== postLoginBest) {
-            state.meContext.active_role = postLoginBest;
-            setActiveRole(postLoginBest).catch(function(err) {
-                console.warn('[Command Hub] Failed to persist ' + postLoginBest + ' role after login:', err);
-            });
+            try {
+                // Direct POST without setActiveRole() to avoid its nested fetchTasks + showToast race
+                var roleResp = await fetch('/api/v1/me/active-role', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ role: postLoginBest })
+                });
+                var roleData = await roleResp.json();
+                if (roleResp.ok && roleData.ok) {
+                    state.meContext.active_role = postLoginBest;
+                    console.log('[BOOT-DIAG] Role persisted server-side: ' + postLoginBest);
+                } else {
+                    console.warn('[BOOT-DIAG] Role persist failed, continuing anyway:', roleData);
+                    state.meContext.active_role = postLoginBest; // Set locally even if persist fails
+                }
+            } catch (persistErr) {
+                console.warn('[BOOT-DIAG] Role persist exception, continuing anyway:', persistErr);
+                state.meContext.active_role = postLoginBest;
+            }
         }
 
         // Close profile modal and refresh
@@ -1017,12 +1039,16 @@ async function doLogin(email, password) {
         renderApp();
 
         // Load all data now that auth + role are established
+        console.log('[BOOT-DIAG] Firing post-login data fetch (tasks, telemetry, approvals, autopilot)');
         Promise.all([
             fetchTasks(),
             fetchTelemetrySnapshot(),
             fetchApprovals(true),
             fetchAutopilotRecommendationsCount()
-        ]).catch(function(err) { console.error('[Command Hub] Post-login data fetch error:', err); });
+        ]).then(function() {
+            console.log('[BOOT-DIAG] Post-login data fetch complete. state.tasks length=' + state.tasks.length);
+            renderApp();
+        }).catch(function(err) { console.error('[BOOT-DIAG] Post-login data fetch error:', err); });
 
         return { ok: true };
     } catch (err) {
@@ -9387,14 +9413,19 @@ function mapStatusToColumnWithOverride(vtid, apiStatus, oasisColumn) {
  * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
  */
 async function fetchTasks() {
+    console.log('[BOOT-DIAG] fetchTasks() called, authToken=' + (state.authToken ? 'yes' : 'no'));
     state.tasksLoading = true;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/commandhub/board?limit=50');
+        var response = await fetch('/api/v1/commandhub/board?limit=50', {
+            headers: state.authToken ? { 'Authorization': 'Bearer ' + state.authToken } : {}
+        });
+        console.log('[BOOT-DIAG] fetchTasks response status=' + response.status);
         if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
 
         var json = await response.json();
+        console.log('[BOOT-DIAG] fetchTasks got ' + (Array.isArray(json) ? json.length : (json.items || []).length) + ' items');
 
         // Handle both array and wrapped response formats
         var items = [];
@@ -9448,6 +9479,7 @@ async function fetchTasks() {
         // CRITICAL: This is the ONLY assignment to state.tasks - complete overwrite, no merge
         state.tasks = Array.from(byVtid.values());
         state.tasksError = null;
+        console.log('[BOOT-DIAG] fetchTasks set state.tasks to ' + state.tasks.length + ' items');
 
         // VTID-01055: Track which VTIDs came from API for ghost detection
         lastApiVtids = new Set(byVtid.keys());
@@ -32468,6 +32500,7 @@ function autoAddLoadMore(container, stateKey) {
 // --- Init ---
 
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('%c[BOOT] command-hub v2026-04-10-postlogin-boot-v2', 'color:#3b82f6;font-weight:bold;font-size:14px');
     console.log('App v4 starting...');
     try {
         // Init Router
