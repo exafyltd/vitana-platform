@@ -870,8 +870,12 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
     terminated++;
 
     // Emit OASIS event (fire-and-forget)
+    // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
+    // this event when the user next opens the ORB.
     emitLiveSessionEvent('vtid.live.session.stop', {
       session_id: sid,
+      user_id: existingSession.identity?.user_id || null,
+      tenant_id: existingSession.identity?.tenant_id || null,
       reason: 'superseded_by_new_session',
       audio_in_chunks: existingSession.audioInChunks,
       audio_out_chunks: existingSession.audioOutChunks,
@@ -2583,8 +2587,13 @@ function buildTemporalJourneyContextSection(
   lines.push('');
 
   // Time since last session.
+  // VTID-NAV-TIMEJOURNEY: 'first' here means "no session event in oasis_events
+  // for this user". In practice that never means "first ever meeting" — it
+  // means the telemetry lookup missed (retention, schema migration, or
+  // user hasn't been in a Live session yet). Authenticated users are
+  // returning users by definition, so we report this as "unknown recency".
   if (temporal.bucket === 'first') {
-    lines.push('- Time since last ORB session: this is the FIRST time the user opens you. There is no prior session on record.');
+    lines.push('- Time since last ORB session: UNKNOWN (telemetry lookup returned no prior session). Do NOT assume this means the user is new — if they are authenticated, they are a returning user.');
   } else {
     lines.push(`- Time since last ORB session: ${temporal.timeAgo}`);
     if (temporal.wasFailure) {
@@ -2659,9 +2668,15 @@ function buildTemporalJourneyContextSection(
       break;
     case 'first':
     default:
-      lines.push('- BUCKET = first (no prior ORB session on record).');
-      lines.push('  • This is a first impression. Warm introduction is OK. Example: "Hi, I\'m Vitana — happy to help. What would you like to explore?"');
-      lines.push('  • Max 1–2 short sentences.');
+      // VTID-NAV-TIMEJOURNEY: 'first' here is the "no telemetry found"
+      // fallback, NOT a genuine first meeting. For authenticated users
+      // (everyone who reaches this code path) we treat it as a returning
+      // user with unknown recency — a light re-engagement, NOT an intro.
+      lines.push('- BUCKET = first (telemetry lookup found no prior session — treat as RETURNING user with unknown recency).');
+      lines.push('  • Do NOT say "Hello", "Hi", or the user\'s name as a salutation.');
+      lines.push('  • Do NOT introduce yourself. The user is authenticated — they already know who you are.');
+      lines.push('  • Open with a short re-engagement line like "What can I help with?" or "I\'m listening — what do you need?" or reference the current screen if it fits.');
+      lines.push('  • Max ONE short sentence.');
       break;
   }
 
@@ -2670,11 +2685,13 @@ function buildTemporalJourneyContextSection(
   }
 
   lines.push('');
-  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
-  lines.push('- NEVER open EVERY session with "Hello <name>!" — it makes you sound like a goldfish that forgot the last conversation.');
-  lines.push('- NEVER introduce yourself ("My name is Vitana...") unless this is the user\'s FIRST session (bucket = first).');
+  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE — unconditional, overrides every other greeting rule)');
+  lines.push('- NEVER open with "Hello <name>!" or "Hi <name>!" on authenticated sessions. This is the single most important rule — it makes you sound like a goldfish that forgot the last conversation.');
+  lines.push('- NEVER introduce yourself ("My name is Vitana...", "I\'m Vitana...") on authenticated sessions. The user is logged in and already knows who you are.');
+  lines.push('- NEVER use the user\'s name as the FIRST word of your opening line. You may use it later in the sentence if it flows naturally, but never as a salutation.');
   lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
   lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
+  lines.push('- NEVER deliver a "first impression" introduction on an authenticated session. Authenticated users are returning users, regardless of what the telemetry lookup found.');
   lines.push('');
   lines.push('## JOURNEY AWARENESS');
   lines.push('- You know which screen the user is currently on and which screens they came from. Use this silently to anticipate what they probably need help with, but do NOT list their browsing history back at them.');
@@ -4328,15 +4345,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const lang = session.lang;
+  // VTID-NAV-TIMEJOURNEY: The default greeting prompt for AUTHENTICATED
+  // sessions no longer says "greet warmly" — that instruction is what
+  // produced "Hello Dragan!" every single session. Authenticated users
+  // are by definition returning users (they have an account and have
+  // completed auth), so treat them that way even when we don't know when
+  // they were last here. The anonymous path below still uses the old
+  // warm-intro prompt because first-time landing-page visitors actually
+  // are first meetings.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Please greet the user warmly. Keep it to 1-2 short sentences.',
-    'de': 'Bitte begrüße den Benutzer herzlich. Halte es auf 1-2 kurze Sätze.',
-    'fr': 'Veuillez saluer l\'utilisateur chaleureusement. Limitez-vous à 1-2 courtes phrases.',
-    'es': 'Por favor, saluda al usuario con calidez. Mantenlo en 1-2 frases cortas.',
-    'ar': 'يرجى تحية المستخدم بحرارة. اجعلها جملة أو جملتين قصيرتين.',
-    'zh': '请热情地问候用户。保持1-2句简短的话。',
-    'ru': 'Пожалуйста, тепло поприветствуйте пользователя. Ограничьтесь 1-2 короткими предложениями.',
-    'sr': 'Молимо вас топло поздравите корисника. Ограничите се на 1-2 кратке реченице.',
+    'en': 'Open with a SHORT re-engagement line (ONE sentence only). Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself. Examples: "What can I help with?" or "I\'m listening — what do you need?"',
+    'de': 'Beginne mit EINEM kurzen Wiedereinstiegssatz. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers als Begrüßung. Stelle dich NICHT vor. Beispiele: "Womit kann ich helfen?" oder "Ich höre zu — was brauchst du?"',
+    'fr': 'Commence par UNE courte phrase de reprise. Ne dis PAS "Bonjour", ni le prénom de l\'utilisateur comme salutation. Ne te présente PAS. Exemples: "En quoi puis-je aider ?"',
+    'es': 'Comienza con UNA frase corta de reenganche. NO digas "Hola" ni el nombre del usuario como saludo. NO te presentes. Ejemplos: "¿En qué puedo ayudar?"',
+    'ar': 'ابدأ بجملة قصيرة واحدة لإعادة التفاعل. لا تقل "مرحبا" أو اسم المستخدم كتحية. لا تقدم نفسك. مثال: "كيف يمكنني المساعدة؟"',
+    'zh': '用一句简短的重新互动开场。不要说"你好"或用用户的名字作为问候。不要自我介绍。例如:"我能帮什么忙?"',
+    'ru': 'Начни с ОДНОЙ короткой фразы продолжения. НЕ говори "Здравствуйте", "Привет" или имя пользователя как приветствие. НЕ представляйся. Пример: "Чем могу помочь?"',
+    'sr': 'Почни са ЈЕДНОМ кратком реченицом. НЕ изговарај "Здраво", "Хеј" или име корисника као поздрав. НЕ представљај се. Пример: "Како могу да помогнем?"',
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
@@ -7311,40 +7336,89 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
 
 /**
  * VTID-01224-FIX: Fetch the user's last session info from oasis_events.
- * Queries the last session.stop event to get both timestamp and outcome
- * (turn_count, audio_out_chunks). If the last session had 0 turns or 0 audio
- * out, it was likely a failed/stuck session and the greeting should acknowledge it.
+ *
+ * VTID-NAV-TIMEJOURNEY (fix): The original implementation queried
+ * `vtid.live.session.stop` events filtered by `metadata->>user_id`, but
+ * the three session.stop emitters in this file never included user_id in
+ * their payload — so the query always returned zero rows, lastSessionInfo
+ * was always null, and Vitana always greeted every session as a first
+ * meeting (hence "Hello Dragan!" every single time).
+ *
+ * This rewrite primarily queries `vtid.live.session.start` events, which
+ * DO reliably carry user_id in their payload, and falls back to session.stop
+ * if a start event cannot be found. fetchLastSessionInfo is called BEFORE
+ * the current session's own start event is emitted, so the newest start
+ * event in oasis_events is guaranteed to be the PREVIOUS session — exactly
+ * what we want for "time since last visit".
+ *
+ * wasFailure detection now reads the most recent session.stop event for
+ * the same user (independent of start query) and checks turn_count /
+ * audio_out_chunks metrics. If no stop event exists, wasFailure is false.
  */
 async function fetchLastSessionInfo(userId: string): Promise<{ time: string; wasFailure: boolean } | null> {
   try {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-    if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      console.warn('[VTID-01224-FIX] fetchLastSessionInfo: missing SUPABASE env — returning null');
+      return null;
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
-      // Single query: last session stop event with outcome metrics
-      const url = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at,metadata&topic=eq.vtid.live.session.stop&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-        signal: controller.signal,
-      });
-      if (resp.ok) {
-        const data = await resp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
-        if (data.length > 0) {
-          const meta = data[0].metadata || {};
+      // Primary: last session.START event (reliably tagged with user_id).
+      // Secondary: last session.STOP event with matching user_id if the start
+      // event also has one (used for wasFailure detection). We use
+      // Supabase's `or` filter to read actor_id OR metadata->>user_id, so
+      // older events and any future actor_id-based emission both match.
+      const userFilter = `or=(actor_id.eq.${userId},metadata->>user_id.eq.${userId})`;
+
+      const startUrl = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at,metadata&topic=eq.vtid.live.session.start&${userFilter}&order=created_at.desc&limit=1`;
+      const stopUrl = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at,metadata&topic=eq.vtid.live.session.stop&${userFilter}&order=created_at.desc&limit=1`;
+
+      const [startResp, stopResp] = await Promise.all([
+        fetch(startUrl, { method: 'GET', headers, signal: controller.signal }),
+        fetch(stopUrl, { method: 'GET', headers, signal: controller.signal }).catch(() => null),
+      ]);
+
+      let time: string | null = null;
+      if (startResp.ok) {
+        const startData = await startResp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
+        if (startData.length > 0) {
+          time = startData[0].created_at;
+        }
+      } else {
+        console.warn(`[VTID-01224-FIX] session.start query failed: ${startResp.status}`);
+      }
+
+      // Stop-event check is best-effort: used only to detect wasFailure.
+      let wasFailure = false;
+      if (stopResp && stopResp.ok) {
+        const stopData = await stopResp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
+        if (stopData.length > 0) {
+          const meta = stopData[0].metadata || {};
           const turnCount = Number(meta.turn_count) || 0;
           const audioOut = Number(meta.audio_out_chunks) || 0;
-          const wasFailure = turnCount === 0 || audioOut === 0;
-          return { time: data[0].created_at, wasFailure };
+          wasFailure = turnCount === 0 || audioOut === 0;
+          // If we only have a stop event (no start event hit), fall back to the stop time.
+          if (!time) time = stopData[0].created_at;
         }
       }
+
+      if (!time) {
+        console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no prior session found for user=${userId.substring(0, 8)}...`);
+        return null;
+      }
+
+      console.log(`[VTID-01224-FIX] fetchLastSessionInfo: user=${userId.substring(0, 8)}... last=${time} wasFailure=${wasFailure}`);
+      return { time, wasFailure };
     } finally {
       clearTimeout(timeoutId);
     }
@@ -7842,8 +7916,12 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   clearResponseWatchdog(session);
 
   // Emit OASIS event
+  // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
+  // this event when the user next opens the ORB.
   await emitLiveSessionEvent('vtid.live.session.stop', {
     session_id,
+    user_id: session.identity?.user_id || null,
+    tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
@@ -9902,8 +9980,12 @@ function handleWsStopSession(clientSession: WsClientSession): void {
     }
 
     // Emit OASIS event
+    // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
+    // this event when the user next opens the ORB.
     emitLiveSessionEvent('vtid.live.session.stop', {
       session_id: sessionId,
+      user_id: liveSession.identity?.user_id || null,
+      tenant_id: liveSession.identity?.tenant_id || null,
       audio_in_chunks: liveSession.audioInChunks,
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
