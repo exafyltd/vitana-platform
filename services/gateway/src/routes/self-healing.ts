@@ -682,8 +682,12 @@ router.post('/approve', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
     }
     const { id, operator } = req.body || {};
-    if (!id || typeof id !== 'number') {
-      return res.status(400).json({ ok: false, error: 'id (number) required' });
+    // self_healing_log.id is UUID. Accept only a non-empty string that
+    // matches the UUID format so malformed ids fail fast with 400 and
+    // never reach PostgREST (where they produced a 500 crash before).
+    const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (typeof id !== 'string' || !UUID_RE.test(id)) {
+      return res.status(400).json({ ok: false, error: 'id (UUID string) required' });
     }
 
     // 1. Read the self_healing_log row
@@ -691,11 +695,15 @@ router.post('/approve', async (req: Request, res: Response) => {
       `${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}&select=*&limit=1`,
       { headers: supabaseHeaders() },
     );
-    const logRows = (await logResp.json()) as any[];
-    if (!logRows || logRows.length === 0) {
+    if (!logResp.ok) {
+      const errText = await logResp.text().catch(() => '');
+      return res.status(500).json({ ok: false, error: `self_healing_log query failed: ${errText.slice(0, 200)}` });
+    }
+    const logBody = await logResp.json();
+    if (!Array.isArray(logBody) || logBody.length === 0) {
       return res.status(404).json({ ok: false, error: 'self_healing_log row not found' });
     }
-    const logRow = logRows[0];
+    const logRow = logBody[0];
     const vtid = logRow.vtid;
 
     // 2. Read the vtid_ledger row to get title + spec
@@ -703,11 +711,15 @@ router.post('/approve', async (req: Request, res: Response) => {
       `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,title,summary&limit=1`,
       { headers: supabaseHeaders() },
     );
-    const ledgerRows = (await ledgerResp.json()) as any[];
-    if (!ledgerRows || ledgerRows.length === 0) {
+    if (!ledgerResp.ok) {
+      const errText = await ledgerResp.text().catch(() => '');
+      return res.status(500).json({ ok: false, error: `vtid_ledger query failed: ${errText.slice(0, 200)}` });
+    }
+    const ledgerBody = await ledgerResp.json();
+    if (!Array.isArray(ledgerBody) || ledgerBody.length === 0) {
       return res.status(404).json({ ok: false, error: `vtid_ledger row ${vtid} not found` });
     }
-    const ledgerRow = ledgerRows[0];
+    const ledgerRow = ledgerBody[0];
 
     // 3. Mark spec approved in vtid_ledger
     await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
@@ -788,19 +800,24 @@ router.post('/reject', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
     }
     const { id, operator, reason } = req.body || {};
-    if (!id || typeof id !== 'number') {
-      return res.status(400).json({ ok: false, error: 'id (number) required' });
+    const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (typeof id !== 'string' || !UUID_RE.test(id)) {
+      return res.status(400).json({ ok: false, error: 'id (UUID string) required' });
     }
 
     const logResp = await fetch(
       `${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}&select=*&limit=1`,
       { headers: supabaseHeaders() },
     );
-    const logRows = (await logResp.json()) as any[];
-    if (!logRows || logRows.length === 0) {
+    if (!logResp.ok) {
+      const errText = await logResp.text().catch(() => '');
+      return res.status(500).json({ ok: false, error: `self_healing_log query failed: ${errText.slice(0, 200)}` });
+    }
+    const logBody = await logResp.json();
+    if (!Array.isArray(logBody) || logBody.length === 0) {
       return res.status(404).json({ ok: false, error: 'self_healing_log row not found' });
     }
-    const logRow = logRows[0];
+    const logRow = logBody[0];
     const vtid = logRow.vtid;
 
     const newDiagnosis = {
