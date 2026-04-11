@@ -30,7 +30,7 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { createUserSupabaseClient } from '../lib/supabase-user';
+import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   refreshNavCatalogCache,
   invalidateNavCatalogCache,
@@ -43,32 +43,20 @@ import { SPA_ROUTES_FALLBACK } from '../lib/spa-routes-fallback';
 const router = Router();
 const VTID = 'VTID-NAV-02';
 
-// ── Auth helper ─────────────────────────────────────────────────────────────
+// VTID-NAV-02: Every admin-navigator endpoint accepts BOTH Platform and
+// Lovable JWTs via the dual-JWT requireAdminAuth middleware. The community
+// app (vitana-v1) uses Lovable Supabase, so this is required for admins
+// logged in through the community app to actually reach these endpoints.
+// requireAdminAuth enforces (a) valid JWT signature against either secret,
+// (b) non-expired, (c) app_metadata.exafy_admin === true — returning 401 or
+// 403 as appropriate. It attaches req.identity for downstream handlers.
+router.use(requireAdminAuth);
 
-function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
-}
-
-async function verifyExafyAdmin(
-  req: Request
-): Promise<{ ok: true; user_id: string; email: string } | { ok: false; status: number; error: string }> {
-  const token = getBearerToken(req);
-  if (!token) return { ok: false, status: 401, error: 'UNAUTHENTICATED' };
-  try {
-    const userClient = createUserSupabaseClient(token);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData?.user) return { ok: false, status: 401, error: 'INVALID_TOKEN' };
-    const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
-      return { ok: false, status: 403, error: 'FORBIDDEN' };
-    }
-    return { ok: true, user_id: authData.user.id, email: authData.user.email || 'unknown' };
-  } catch (err: any) {
-    console.error(`[${VTID}] Auth error:`, err.message);
-    return { ok: false, status: 500, error: 'INTERNAL_ERROR' };
-  }
+function actorFromReq(req: AuthenticatedRequest): { user_id: string; email: string } {
+  return {
+    user_id: req.identity?.user_id || 'unknown',
+    email: req.identity?.email || 'unknown',
+  };
 }
 
 // ── Validation helpers ──────────────────────────────────────────────────────
@@ -160,10 +148,7 @@ async function writeAudit(args: {
 
 // ── GET /catalog ────────────────────────────────────────────────────────────
 
-router.get('/catalog', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-
+router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -221,10 +206,7 @@ router.get('/catalog', async (req: Request, res: Response) => {
 
 // ── GET /catalog/:id ────────────────────────────────────────────────────────
 
-router.get('/catalog/:id', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-
+router.get('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -263,9 +245,8 @@ router.get('/catalog/:id', async (req: Request, res: Response) => {
 
 // ── POST /catalog ───────────────────────────────────────────────────────────
 
-router.post('/catalog', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -337,9 +318,8 @@ router.post('/catalog', async (req: Request, res: Response) => {
 
 // ── PATCH /catalog/:id ──────────────────────────────────────────────────────
 
-router.patch('/catalog/:id', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -409,9 +389,8 @@ router.patch('/catalog/:id', async (req: Request, res: Response) => {
 
 // ── DELETE /catalog/:id (soft) ──────────────────────────────────────────────
 
-router.delete('/catalog/:id', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.delete('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -450,9 +429,8 @@ router.delete('/catalog/:id', async (req: Request, res: Response) => {
 
 // ── POST /catalog/:id/restore/:audit_id ─────────────────────────────────────
 
-router.post('/catalog/:id/restore/:audit_id', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -525,9 +503,8 @@ router.post('/catalog/:id/restore/:audit_id', async (req: Request, res: Response
 
 // ── POST /simulate ──────────────────────────────────────────────────────────
 
-router.post('/simulate', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.post('/simulate', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const { utterance, lang, current_route, recent_routes, is_anonymous, tenant_id, user_id } = req.body || {};
   if (typeof utterance !== 'string' || utterance.trim().length === 0) {
@@ -559,10 +536,7 @@ router.post('/simulate', async (req: Request, res: Response) => {
 
 // ── GET /spa-routes ─────────────────────────────────────────────────────────
 
-router.get('/spa-routes', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-
+router.get('/spa-routes', async (req: AuthenticatedRequest, res: Response) => {
   // Static fallback shipped with the gateway. The build-time extract from
   // vitana-v1 (scripts/extract-routes.ts) will replace this when CI wires it.
   return res.json({ ok: true, source: 'gateway_fallback', routes: SPA_ROUTES_FALLBACK });
@@ -570,9 +544,8 @@ router.get('/spa-routes', async (req: Request, res: Response) => {
 
 // ── GET /coverage ───────────────────────────────────────────────────────────
 
-router.get('/coverage', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
+  const auth = actorFromReq(req as any);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -643,10 +616,7 @@ router.get('/coverage', async (req: Request, res: Response) => {
 
 // ── GET /telemetry ──────────────────────────────────────────────────────────
 
-router.get('/telemetry', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
-
+router.get('/telemetry', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -711,9 +681,7 @@ router.get('/telemetry', async (req: Request, res: Response) => {
 
 // ── POST /reload ────────────────────────────────────────────────────────────
 
-router.post('/reload', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
-  if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
+router.post('/reload', async (req: AuthenticatedRequest, res: Response) => {
   try {
     await refreshNavCatalogCache();
     return res.json({ ok: true });
