@@ -29,6 +29,13 @@ import {
   searchCatalog,
   lookupScreen,
 } from '../lib/navigation-catalog';
+import {
+  getCatalogForTenant,
+  findOverrideTriggerMatch,
+  searchCatalogEntries,
+  isNavCatalogLoaded,
+  type NavCatalogEntryWithRules,
+} from '../lib/nav-catalog-db';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import { searchKnowledgeDocs, KnowledgeDoc } from './knowledge-hub';
 import { buildContextPack } from './context-pack-builder';
@@ -64,9 +71,19 @@ export interface NavigatorConsultPick {
   screen_id: string;
   route: string;
   title: string;
+  // Attached when the pick comes from real catalog scoring; admins use the
+  // score to debug near-misses in the /admin/navigator Coverage & Telemetry
+  // views. Optional because synthetic picks (e.g. override-trigger matches)
+  // don't have a score on the normal scale.
+  score?: number;
 }
 
 export type ConsultConfidence = 'high' | 'medium' | 'low';
+
+// VTID-NAV-02: How the winning pick was chosen. Surfaced in telemetry so
+// admins can distinguish "LLM-scored win" from "exact-phrase override" from
+// "tenant forced a custom screen".
+export type ConsultDecisionSource = 'scoring' | 'override_trigger' | 'static_fallback';
 
 export interface NavigatorConsultResult {
   confidence: ConsultConfidence;
@@ -77,6 +94,11 @@ export interface NavigatorConsultResult {
   suggested_question?: string;
   kb_excerpts: string[];
   blocked_reason?: 'requires_auth' | 'no_match';
+  // VTID-NAV-02: top-3 scored picks emitted in orb.navigator.consulted events
+  // so the admin telemetry page can surface near-misses ("we picked A, but B
+  // was at score-2") and dead triggers.
+  top_picks: NavigatorConsultPick[];
+  decision_source: ConsultDecisionSource;
   // Telemetry
   ms_elapsed: number;
   catalog_match_count: number;
@@ -287,10 +309,23 @@ function scoreCatalogWithMemory(
   const excludeRoutes: string[] = [];
   if (input.current_route) excludeRoutes.push(input.current_route);
 
-  const baseResults = searchCatalog(input.question, input.lang, {
-    anonymous_only: input.is_anonymous,
-    exclude_routes: excludeRoutes,
-  });
+  // VTID-NAV-02: prefer the DB-backed tenant-aware catalog when the cache
+  // has been warmed. Falls back transparently to the static scorer so that
+  // the 77 navigation-catalog tests keep passing unchanged and first-boot
+  // sessions still work before refreshNavCatalogCache completes.
+  const tenantId = input.identity?.tenant_id || null;
+  const baseResults: Array<{ entry: NavCatalogEntry; score: number }> =
+    isNavCatalogLoaded()
+      ? searchCatalogEntries(
+          getCatalogForTenant(tenantId) as ReadonlyArray<NavCatalogEntry>,
+          input.question,
+          input.lang,
+          { anonymous_only: input.is_anonymous, exclude_routes: excludeRoutes }
+        )
+      : searchCatalog(input.question, input.lang, {
+          anonymous_only: input.is_anonymous,
+          exclude_routes: excludeRoutes,
+        });
 
   if (baseResults.length === 0) return baseResults;
 
@@ -335,6 +370,42 @@ export async function consultNavigator(
 ): Promise<NavigatorConsultResult> {
   const startTime = Date.now();
 
+  // ── VTID-NAV-02: override-trigger shortcut ─────────────────────────────
+  // Before running scoring, check if an admin has registered an exact-match
+  // phrase override for this utterance in this tenant's catalog. If so, we
+  // short-circuit with synthetic high confidence — this is the escape hatch
+  // for "wrong screen" bugs the scorer can't fix through tuning.
+  const tenantIdForOverride = input.identity?.tenant_id || null;
+  const overrideMatch = isNavCatalogLoaded()
+    ? findOverrideTriggerMatch(input.question, input.lang, tenantIdForOverride)
+    : null;
+  if (overrideMatch && !input.is_anonymous) {
+    const pick = entryToPick(overrideMatch as NavCatalogEntry, input.lang);
+    const explanation = buildExplanation({
+      primary: pick,
+      confidence: 'high',
+      hints: EMPTY_HINTS,
+      lang: input.lang,
+    });
+    return {
+      confidence: 'high',
+      primary: pick,
+      explanation,
+      confirmation_needed: false,
+      kb_excerpts: staticKbAnchors(overrideMatch as NavCatalogEntry),
+      top_picks: [pick],
+      decision_source: 'override_trigger',
+      ms_elapsed: Date.now() - startTime,
+      catalog_match_count: 1,
+      memory_hint_count: 0,
+      kb_excerpt_count: 0,
+    };
+  }
+  // Anonymous sessions + override triggers: fall through to normal flow so
+  // anonymous_safe gating still applies (an admin-set override must not leak
+  // an authenticated-only screen to unauthenticated sessions).
+  const decisionSource: ConsultDecisionSource = isNavCatalogLoaded() ? 'scoring' : 'static_fallback';
+
   // Run memory hints + KB search in parallel — they're the slow parts.
   const [hints, runtimeKbExcerpts] = await Promise.all([
     fetchMemoryHints(input),
@@ -345,6 +416,14 @@ export async function consultNavigator(
   const scored = scoreCatalogWithMemory(input, hints);
   const top = scored[0];
   const second = scored[1];
+
+  // VTID-NAV-02: build the top-3 picks payload for telemetry. Attach the raw
+  // score so the admin Telemetry view can surface near-misses and the admin
+  // Simulator can show the full ranking.
+  const topPicks: NavigatorConsultPick[] = scored.slice(0, 3).map(s => ({
+    ...entryToPick(s.entry, input.lang),
+    score: s.score,
+  }));
 
   // ── Bucket by confidence ────────────────────────────────────────────────
   let confidence: ConsultConfidence;
@@ -430,6 +509,8 @@ export async function consultNavigator(
     suggested_question: suggestedQuestion,
     kb_excerpts: kbExcerpts,
     blocked_reason: blockedReason,
+    top_picks: topPicks,
+    decision_source: decisionSource,
     ms_elapsed: Date.now() - startTime,
     catalog_match_count: scored.length,
     memory_hint_count:
