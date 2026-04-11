@@ -11494,20 +11494,187 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+// ===========================================================================
+// Agents Registry View — three-tier rendering backed by /api/v1/agents/registry
+// ===========================================================================
+
+function getProviderBadgeInfo(provider) {
+    if (provider === 'claude')    return { label: 'Claude', cls: 'provider-claude' };
+    if (provider === 'gemini')    return { label: 'Gemini', cls: 'provider-gemini' };
+    if (provider === 'conductor') return { label: 'Conductor', cls: 'provider-conductor' };
+    if (provider === 'none')      return { label: 'None', cls: 'provider-none' };
+    return { label: 'Unknown', cls: 'provider-unknown' };
+}
+
+function getStatusBadgeInfo(status) {
+    if (status === 'healthy')  return { icon: '\u{1F7E2}', label: 'Healthy', cls: 'status-healthy' };
+    if (status === 'degraded') return { icon: '\u{1F7E1}', label: 'Degraded', cls: 'status-degraded' };
+    if (status === 'down')     return { icon: '\u{1F534}', label: 'Down', cls: 'status-down' };
+    return { icon: '\u26AA', label: 'Unknown', cls: 'status-unknown' };
+}
+
+function formatHeartbeatAge(iso, ageMs) {
+    if (!iso) return '—';
+    if (ageMs == null) return new Date(iso).toLocaleString();
+    if (ageMs < 60 * 1000) return Math.round(ageMs / 1000) + 's ago';
+    if (ageMs < 60 * 60 * 1000) return Math.round(ageMs / (60 * 1000)) + 'm ago';
+    if (ageMs < 24 * 60 * 60 * 1000) return Math.round(ageMs / (60 * 60 * 1000)) + 'h ago';
+    return Math.round(ageMs / (24 * 60 * 60 * 1000)) + 'd ago';
+}
+
+function renderAgentsCountsStrip(counts) {
+    var strip = document.createElement('div');
+    strip.className = 'agents-counts-strip';
+
+    var cards = [
+        { label: 'Total agents', value: counts.total, cls: 'count-total' },
+        { label: 'Services', value: counts.by_tier.service, cls: 'count-service' },
+        { label: 'Embedded', value: counts.by_tier.embedded, cls: 'count-embedded' },
+        { label: 'Scheduled', value: counts.by_tier.scheduled, cls: 'count-scheduled' },
+        { label: 'Healthy', value: counts.by_status.healthy, cls: 'count-healthy' },
+        { label: 'Degraded', value: counts.by_status.degraded, cls: 'count-degraded' },
+        { label: 'Down', value: counts.by_status.down, cls: 'count-down' },
+        { label: 'Unknown', value: counts.by_status.unknown, cls: 'count-unknown' }
+    ];
+
+    cards.forEach(function (c) {
+        var card = document.createElement('div');
+        card.className = 'agents-count-card ' + c.cls;
+        card.innerHTML = '<div class="agents-count-value">' + c.value +
+            '</div><div class="agents-count-label">' + escapeHtml(c.label) + '</div>';
+        strip.appendChild(card);
+    });
+
+    return strip;
+}
+
+function renderProviderBreakdown(counts) {
+    var row = document.createElement('div');
+    row.className = 'agents-provider-breakdown';
+
+    var heading = document.createElement('span');
+    heading.className = 'agents-provider-heading';
+    heading.textContent = 'Providers: ';
+    row.appendChild(heading);
+
+    ['claude', 'gemini', 'conductor', 'none', 'unknown'].forEach(function (p) {
+        var info = getProviderBadgeInfo(p);
+        var count = counts.by_provider[p] || 0;
+        if (count === 0) return;
+        var badge = document.createElement('span');
+        badge.className = 'agents-provider-badge ' + info.cls;
+        badge.textContent = info.label + ' \u00D7 ' + count;
+        row.appendChild(badge);
+    });
+
+    return row;
+}
+
+function renderAgentTableRow(agent) {
+    var row = document.createElement('tr');
+    row.className = 'agents-row status-' + (agent.derived_status || 'unknown');
+
+    var statusInfo = getStatusBadgeInfo(agent.derived_status);
+    var statusCell = document.createElement('td');
+    statusCell.className = 'agents-cell-status';
+    statusCell.title = statusInfo.label;
+    statusCell.innerHTML = '<span class="agents-status-icon ' + statusInfo.cls + '">' +
+        statusInfo.icon + '</span>';
+    row.appendChild(statusCell);
+
+    var nameCell = document.createElement('td');
+    nameCell.className = 'agents-cell-name';
+    nameCell.innerHTML =
+        '<div class="agents-name-display">' + escapeHtml(agent.display_name || agent.agent_id) + '</div>' +
+        '<div class="agents-name-id">' + escapeHtml(agent.agent_id) + '</div>';
+    row.appendChild(nameCell);
+
+    var providerInfo = getProviderBadgeInfo(agent.llm_provider);
+    var providerCell = document.createElement('td');
+    providerCell.className = 'agents-cell-provider';
+    var providerHtml = '<span class="agents-provider-badge ' + providerInfo.cls + '">' +
+        providerInfo.label + '</span>';
+    if (agent.llm_model) {
+        providerHtml += '<div class="agents-model">' + escapeHtml(agent.llm_model) + '</div>';
+    }
+    providerCell.innerHTML = providerHtml;
+    row.appendChild(providerCell);
+
+    var roleCell = document.createElement('td');
+    roleCell.className = 'agents-cell-role';
+    roleCell.textContent = agent.role || '—';
+    row.appendChild(roleCell);
+
+    var heartbeatCell = document.createElement('td');
+    heartbeatCell.className = 'agents-cell-heartbeat';
+    heartbeatCell.textContent = formatHeartbeatAge(agent.last_heartbeat_at, agent.heartbeat_age_ms);
+    row.appendChild(heartbeatCell);
+
+    var pathCell = document.createElement('td');
+    pathCell.className = 'agents-cell-path';
+    pathCell.innerHTML = '<code>' + escapeHtml(agent.source_path) + '</code>';
+    row.appendChild(pathCell);
+
+    var descCell = document.createElement('td');
+    descCell.className = 'agents-cell-description';
+    descCell.textContent = agent.description || '';
+    row.appendChild(descCell);
+
+    return row;
+}
+
+function renderAgentsTierSection(tier, label, agents) {
+    var section = document.createElement('div');
+    section.className = 'agents-tier-section agents-tier-' + tier;
+
+    var heading = document.createElement('h3');
+    heading.className = 'agents-tier-heading';
+    heading.textContent = label + ' (' + agents.length + ')';
+    section.appendChild(heading);
+
+    if (agents.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-tier-empty';
+        empty.textContent = 'No agents in this tier yet.';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'agents-table agents-tier-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['', 'Agent', 'Provider', 'Role', 'Last heartbeat', 'Source path', 'Description'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    agents.forEach(function (agent) {
+        tbody.appendChild(renderAgentTableRow(agent));
+    });
+    table.appendChild(tbody);
+
+    section.appendChild(table);
+    return section;
+}
+
 /**
- * VTID-01173: Render the Registered Agents View
- * Main entry point for /command-hub/agents/registered-agents/
+ * Render the Registered Agents View — main entry for
+ * /command-hub/agents/registered-agents/
  */
 function renderRegisteredAgentsView() {
     var container = document.createElement('div');
     container.className = 'agents-registry-container';
 
-    // Auto-fetch if not loaded
     if (!state.agentsRegistry.fetched && !state.agentsRegistry.loading) {
         fetchAgentsRegistry();
     }
 
-    // Header
     var header = document.createElement('div');
     header.className = 'agents-registry-header';
 
@@ -11517,10 +11684,9 @@ function renderRegisteredAgentsView() {
 
     var subtitle = document.createElement('p');
     subtitle.className = 'agents-registry-subtitle';
-    subtitle.textContent = 'Worker Orchestrator APIs - VTID-01173';
+    subtitle.textContent = 'Live registry of every LLM-powered workload — services, embedded gateway calls, and scheduled jobs.';
     header.appendChild(subtitle);
 
-    // Refresh button
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-secondary agents-refresh-btn';
     refreshBtn.textContent = state.agentsRegistry.loading ? 'Loading...' : 'Refresh';
@@ -11533,37 +11699,51 @@ function renderRegisteredAgentsView() {
 
     container.appendChild(header);
 
-    // API Status Strip
     container.appendChild(renderAgentsApiStatusStrip());
 
-    // Error panel (if any errors)
     var errorPanel = renderAgentsErrorPanel();
     if (errorPanel) {
         container.appendChild(errorPanel);
     }
 
-    // Loading state
     if (state.agentsRegistry.loading) {
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'agents-loading';
-        loadingDiv.textContent = 'Loading Worker Orchestrator data...';
+        loadingDiv.textContent = 'Loading agents registry...';
         container.appendChild(loadingDiv);
         return container;
     }
 
-    // VTID Fingerprints
-    container.appendChild(renderVtidFingerprints());
+    var registry = state.agentsRegistry.registry;
+    if (!registry || !registry.ok) {
+        var emptyState = document.createElement('div');
+        emptyState.className = 'agents-empty-state';
+        emptyState.innerHTML =
+            '<p>The agents registry endpoint did not return any data.</p>' +
+            '<p>Confirm <code>GET /api/v1/agents/registry</code> is reachable and the <code>agents_registry</code> migration has been applied.</p>';
+        container.appendChild(emptyState);
+        return container;
+    }
 
-    // Orchestrator Summary Card
-    container.appendChild(renderOrchestratorSummaryCard());
+    container.appendChild(renderAgentsCountsStrip(registry.counts));
+    container.appendChild(renderProviderBreakdown(registry.counts));
 
-    // Subagents Table
-    container.appendChild(renderSubagentsTable());
+    container.appendChild(renderAgentsTierSection(
+        'service',
+        'Services — dedicated agent processes',
+        registry.by_tier.service
+    ));
+    container.appendChild(renderAgentsTierSection(
+        'embedded',
+        'Embedded — LLM workloads inside the gateway',
+        registry.by_tier.embedded
+    ));
+    container.appendChild(renderAgentsTierSection(
+        'scheduled',
+        'Scheduled — recurring background jobs',
+        registry.by_tier.scheduled
+    ));
 
-    // Skills Table
-    container.appendChild(renderSkillsTable());
-
-    // Raw JSON Debug sections
     var debugSection = document.createElement('div');
     debugSection.className = 'agents-debug-section';
 
@@ -11571,8 +11751,9 @@ function renderRegisteredAgentsView() {
     debugHeading.textContent = 'Debug Data';
     debugSection.appendChild(debugHeading);
 
-    debugSection.appendChild(renderRawJsonDebug('orchestratorHealth', 'Orchestrator Health'));
-    debugSection.appendChild(renderRawJsonDebug('subagents', 'Subagents'));
+    debugSection.appendChild(renderRawJsonDebug('registry', 'Agents Registry (canonical)'));
+    debugSection.appendChild(renderRawJsonDebug('orchestratorHealth', 'Orchestrator Health (legacy)'));
+    debugSection.appendChild(renderRawJsonDebug('subagents', 'Subagents (legacy)'));
     debugSection.appendChild(renderRawJsonDebug('skills', 'Skills'));
 
     container.appendChild(debugSection);
