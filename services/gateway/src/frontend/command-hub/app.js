@@ -3397,36 +3397,36 @@ const state = {
     },
 
     // VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
+    // Now backed by GET /api/v1/agents/registry (real registry, three tiers).
     agentsRegistry: {
-        // API response data
+        registry: null,
         orchestratorHealth: null,
         subagents: null,
         skills: null,
-        // Loading states
         loading: false,
         fetched: false,
-        // API call timing (ms)
         timing: {
+            registry: null,
             orchestratorHealth: null,
             subagents: null,
             skills: null
         },
-        // API status codes
         status: {
+            registry: null,
             orchestratorHealth: null,
             subagents: null,
             skills: null
         },
-        // Error state
         errors: {
+            registry: null,
             orchestratorHealth: null,
             subagents: null,
             skills: null
         },
-        // Raw JSON debug toggle states
         showRawHealth: false,
         showRawSubagents: false,
-        showRawSkills: false
+        showRawSkills: false,
+        showRawRegistry: false
     },
 
     // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
@@ -10956,11 +10956,17 @@ async function fetchAgentsRegistry() {
     if (state.agentsRegistry.loading) return;
 
     state.agentsRegistry.loading = true;
-    state.agentsRegistry.errors = { orchestratorHealth: null, subagents: null, skills: null };
+    state.agentsRegistry.errors = {
+        registry: null,
+        orchestratorHealth: null,
+        subagents: null,
+        skills: null
+    };
     renderApp();
 
     try {
         var endpoints = [
+            { key: 'registry', url: '/api/v1/agents/registry' },
             { key: 'orchestratorHealth', url: '/api/v1/worker/orchestrator/health' },
             { key: 'subagents', url: '/api/v1/worker/subagents' },
             { key: 'skills', url: '/api/v1/worker/skills' }
@@ -11026,8 +11032,9 @@ function renderAgentsApiStatusStrip() {
     strip.className = 'agents-api-status-strip';
 
     var endpoints = [
+        { key: 'registry', label: 'Agents Registry' },
         { key: 'orchestratorHealth', label: 'Orchestrator Health' },
-        { key: 'subagents', label: 'Subagents' },
+        { key: 'subagents', label: 'Subagents (legacy)' },
         { key: 'skills', label: 'Skills' }
     ];
 
@@ -11078,7 +11085,7 @@ function renderAgentsApiStatusStrip() {
  */
 function renderAgentsErrorPanel() {
     var errors = state.agentsRegistry.errors;
-    var hasErrors = errors.orchestratorHealth || errors.subagents || errors.skills;
+    var hasErrors = errors.registry || errors.orchestratorHealth || errors.subagents || errors.skills;
 
     if (!hasErrors) return null;
 
@@ -11089,7 +11096,7 @@ function renderAgentsErrorPanel() {
     heading.textContent = 'API Errors';
     panel.appendChild(heading);
 
-    ['orchestratorHealth', 'subagents', 'skills'].forEach(function (key) {
+    ['registry', 'orchestratorHealth', 'subagents', 'skills'].forEach(function (key) {
         var err = errors[key];
         if (!err) return;
 
