@@ -184,6 +184,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { router: executeRouter } = require('./routes/execute');
   // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
+  // Agents Registry — single source of truth for every LLM-powered workload
+  const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
   const approvalsRouter = require('./routes/approvals').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
@@ -428,6 +430,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   mountRouterSync(app, '/', workerOrchestratorRouter, { owner: 'worker-orchestrator' });
+
+  // Agents Registry — replaces the hardcoded subagents array with a real, queryable registry
+  mountRouterSync(app, '/', agentsRegistryRouter, { owner: 'agents-registry' });
 
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
@@ -822,6 +827,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
       } catch (error) {
         console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
+      }
+
+      // Agents Registry: bootstrap Tier 2 (embedded) agents — they live in this
+      // process so if the gateway is up, they are up. Marks each as healthy.
+      try {
+        await bootstrapEmbeddedAgents();
+        console.log('📒 Agents registry: embedded agents bootstrapped');
+      } catch (error) {
+        console.warn('⚠️ Agents registry bootstrap failed (non-fatal):', error);
       }
     });
   }
