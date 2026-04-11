@@ -28,6 +28,7 @@ import {
   SubagentResult
 } from '../services/worker-orchestrator-service';
 import { runPreflightChain, listSkills, getPreflightChains } from '../services/skills/preflight-runner';
+import { fetchServiceTierAgents } from './agents-registry';
 
 export const workerOrchestratorRouter = Router();
 
@@ -614,73 +615,54 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/health', (_req: Reques
 /**
  * GET /api/v1/worker/subagents
  *
- * List available subagents with their configurations
+ * Legacy endpoint — list available subagents.
+ *
+ * NOTE: As of the agents-registry rewrite, this endpoint reads from the
+ * agents_registry table (tier=service) instead of the hardcoded array it
+ * used to return. The response shape is preserved (id/domain/allowed_paths/
+ * guardrails/default_budget) so existing UI callers do not break, but the
+ * canonical endpoint going forward is GET /api/v1/agents/registry which
+ * returns all three tiers grouped with derived health status.
  */
-/**
- * VTID-01207: Added worker-infra and worker-ai to subagents list
- */
-workerOrchestratorRouter.get('/api/v1/worker/subagents', (_req: Request, res: Response) => {
-  return res.status(200).json({
-    ok: true,
-    subagents: [
-      {
-        id: 'worker-frontend',
-        domain: 'frontend',
-        allowed_paths: [
-          'services/gateway/src/frontend/**',
-          'services/gateway/dist/frontend/**'
-        ],
-        guardrails: ['CSP compliance', 'No inline scripts', 'No external CDNs'],
-        default_budget: { max_files: 10, max_directories: 5 }
-      },
-      {
-        id: 'worker-backend',
-        domain: 'backend',
-        allowed_paths: [
-          'services/gateway/src/routes/**',
-          'services/gateway/src/controllers/**'
-        ],
-        guardrails: ['Route mount validation', 'Path restrictions'],
-        default_budget: { max_files: 15, max_directories: 8 }
-      },
-      {
-        id: 'worker-memory',
-        domain: 'memory',
-        allowed_paths: [
-          'supabase/migrations/**',
-          'services/agents/memory-indexer/**'
-        ],
-        guardrails: ['Tenant context', 'RPC signatures', 'Migration naming'],
-        default_budget: { max_files: 5, max_directories: 3 }
-      },
-      {
-        id: 'worker-infra',
-        domain: 'infra',
-        allowed_paths: [
-          '.github/workflows/**',
-          'scripts/**',
-          'Dockerfile',
-          'docker-compose*.yml',
-          'terraform/**',
-          'k8s/**'
-        ],
-        guardrails: ['CI/CD validation', 'Secrets policy', 'Deploy config review'],
-        default_budget: { max_files: 10, max_directories: 6 }
-      },
-      {
-        id: 'worker-ai',
-        domain: 'ai',
-        allowed_paths: [
-          'services/agents/**',
-          'services/gateway/src/services/skills/**',
-          'services/gateway/src/services/*-intelligence/**',
-          'services/gateway/src/services/orb/**'
-        ],
-        guardrails: ['Model config validation', 'Prompt safety', 'Agent permissions'],
-        default_budget: { max_files: 12, max_directories: 5 }
-      }
-    ]
-  });
+workerOrchestratorRouter.get('/api/v1/worker/subagents', async (_req: Request, res: Response) => {
+  try {
+    const result = await fetchServiceTierAgents();
+    if (!result.ok || !result.agents) {
+      return res.status(500).json({
+        ok: false,
+        error: result.error || 'Failed to load service-tier agents from registry',
+      });
+    }
+
+    // Map registry rows into the legacy response shape. Fields that don't
+    // have a registry equivalent (allowed_paths, guardrails, default_budget)
+    // come from the row's metadata blob if present, otherwise defaulted.
+    const subagents = result.agents.map((row) => {
+      const meta = row.metadata || {};
+      return {
+        id: row.agent_id,
+        domain: row.role || 'default',
+        status: row.derived_status,
+        llm_provider: row.llm_provider,
+        llm_model: row.llm_model,
+        last_heartbeat_at: row.last_heartbeat_at,
+        source_path: row.source_path,
+        allowed_paths: Array.isArray((meta as any).allowed_paths) ? (meta as any).allowed_paths : [],
+        guardrails: Array.isArray((meta as any).guardrails) ? (meta as any).guardrails : [],
+        default_budget: (meta as any).default_budget || null,
+      };
+    });
+
+    return res.status(200).json({
+      ok: true,
+      subagents,
+      source: 'agents_registry',
+      deprecated: 'Use GET /api/v1/agents/registry instead — returns all three tiers with derived health status.',
+    });
+  } catch (error: any) {
+    console.error('[worker-orchestrator] /worker/subagents error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 /**

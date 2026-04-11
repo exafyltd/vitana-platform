@@ -12447,6 +12447,247 @@ body {
   max-width: 1400px;
 }
 
+/* ===========================================================================
+ * Agents Registry — three-tier view (services / embedded / scheduled)
+ * =========================================================================== */
+
+.agents-counts-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.agents-count-card {
+  padding: 14px 16px;
+  background: rgba(30, 41, 59, 0.8);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.agents-count-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+.agents-count-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.agents-count-card.count-total { border-color: rgba(59, 130, 246, 0.4); }
+.agents-count-card.count-healthy { border-color: rgba(16, 185, 129, 0.4); }
+.agents-count-card.count-healthy .agents-count-value { color: #34d399; }
+.agents-count-card.count-degraded { border-color: rgba(245, 158, 11, 0.4); }
+.agents-count-card.count-degraded .agents-count-value { color: #fbbf24; }
+.agents-count-card.count-down { border-color: rgba(239, 68, 68, 0.4); }
+.agents-count-card.count-down .agents-count-value { color: #f87171; }
+.agents-count-card.count-unknown { border-color: rgba(156, 163, 175, 0.3); }
+.agents-count-card.count-unknown .agents-count-value { color: #9ca3af; }
+
+.agents-provider-breakdown {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.agents-provider-heading {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.agents-provider-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.agents-provider-badge.provider-claude {
+  background: rgba(217, 119, 87, 0.15);
+  color: #f0a883;
+  border-color: rgba(217, 119, 87, 0.4);
+}
+
+.agents-provider-badge.provider-gemini {
+  background: rgba(66, 133, 244, 0.15);
+  color: #93c5fd;
+  border-color: rgba(66, 133, 244, 0.4);
+}
+
+.agents-provider-badge.provider-conductor {
+  background: rgba(168, 85, 247, 0.15);
+  color: #d8b4fe;
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.agents-provider-badge.provider-none {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+  border-color: rgba(107, 114, 128, 0.4);
+}
+
+.agents-provider-badge.provider-unknown {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border-color: rgba(107, 114, 128, 0.3);
+}
+
+.agents-model {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  margin-top: 4px;
+}
+
+.agents-tier-section {
+  margin-bottom: 28px;
+  background: rgba(17, 24, 39, 0.5);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.agents-tier-section.agents-tier-service { border-left: 3px solid #3b82f6; }
+.agents-tier-section.agents-tier-embedded { border-left: 3px solid #a855f7; }
+.agents-tier-section.agents-tier-scheduled { border-left: 3px solid #06b6d4; }
+
+.agents-tier-heading {
+  margin: 0 0 14px 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.agents-tier-empty {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-style: italic;
+  margin: 8px 0 0 0;
+}
+
+.agents-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.agents-tier-table thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.agents-tier-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agents-tier-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: top;
+  color: var(--color-text-primary);
+}
+
+.agents-tier-table tr:last-child td { border-bottom: none; }
+.agents-tier-table tr.agents-row:hover { background: rgba(255, 255, 255, 0.02); }
+
+.agents-cell-status { width: 32px; text-align: center; }
+
+.agents-status-icon { font-size: 1rem; line-height: 1; }
+
+.agents-tier-table tr.status-degraded td { background: rgba(245, 158, 11, 0.04); }
+.agents-tier-table tr.status-down td { background: rgba(239, 68, 68, 0.05); }
+.agents-tier-table tr.status-unknown td { background: rgba(107, 114, 128, 0.04); }
+
+.agents-cell-name { min-width: 180px; }
+
+.agents-name-display {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.agents-name-id {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.agents-cell-provider { white-space: nowrap; }
+
+.agents-cell-role {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.agents-cell-heartbeat {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+.agents-cell-path code {
+  font-size: 0.72rem;
+  color: #93c5fd;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+.agents-cell-description {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  max-width: 340px;
+}
+
+.agents-empty-state {
+  padding: 32px;
+  text-align: center;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+}
+
+.agents-empty-state p { margin: 8px 0; }
+
+.agents-empty-state code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  color: #93c5fd;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
 
@@ -12476,6 +12717,23 @@ body {
   .agents-table th,
   .agents-table td {
     padding: 8px 12px;
+  }
+
+  .agents-counts-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .agents-tier-table {
+    font-size: 0.78rem;
+  }
+
+  .agents-tier-table th,
+  .agents-tier-table td {
+    padding: 8px 10px;
+  }
+
+  .agents-cell-description {
+    max-width: none;
   }
 }
 
