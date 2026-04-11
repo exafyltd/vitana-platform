@@ -905,6 +905,34 @@ const BY_ID: Map<string, NavCatalogEntry> = new Map(
 );
 
 /**
+ * Route lookup map. Normalized to strip trailing slashes and lowercase so
+ * lookups tolerate "/events/", "/Events", etc.
+ *
+ * NOTE: A single canonical route may only map to one entry; duplicates in
+ * the catalog (e.g. two variants pointing at `/`) collapse to the first.
+ */
+const BY_ROUTE: Map<string, NavCatalogEntry> = (() => {
+  const map = new Map<string, NavCatalogEntry>();
+  for (const entry of NAVIGATION_CATALOG) {
+    const key = normalizeRoute(entry.route);
+    if (key && !map.has(key)) {
+      map.set(key, entry);
+    }
+  }
+  return map;
+})();
+
+function normalizeRoute(route: string | undefined | null): string {
+  if (!route) return '';
+  // Strip query/hash, trailing slash, lowercase.
+  const cleaned = route.split('?')[0].split('#')[0];
+  const trimmed = cleaned.length > 1 && cleaned.endsWith('/')
+    ? cleaned.slice(0, -1)
+    : cleaned;
+  return trimmed.toLowerCase();
+}
+
+/**
  * Resolve a localized content block for an entry, falling back to English
  * when the requested language is not curated for this entry.
  */
@@ -918,6 +946,39 @@ export function getContent(entry: NavCatalogEntry, lang: LangCode): NavCatalogCo
 export function lookupScreen(id: string): NavCatalogEntry | null {
   if (!id) return null;
   return BY_ID.get(id) || null;
+}
+
+/**
+ * VTID-NAV-TIMEJOURNEY: Look up a catalog entry by route path.
+ *
+ * Returns the entry whose `route` matches (case/trailing-slash insensitive).
+ * Also handles nested routes by stripping segments: `/events/123` falls back
+ * to `/events` if an exact match isn't present.
+ *
+ * Used by the time+journey greeting context builder to resolve friendly
+ * titles ("Events & Meetups") for the raw paths the React Router pushes
+ * into the session via VTOrb.updateContext().
+ */
+export function lookupByRoute(route: string | undefined | null): NavCatalogEntry | null {
+  if (!route) return null;
+  const normalized = normalizeRoute(route);
+  if (!normalized) return null;
+
+  const direct = BY_ROUTE.get(normalized);
+  if (direct) return direct;
+
+  // Progressive fallback: strip trailing segments until a match is found.
+  // /events/abc123 → /events
+  // /community/groups/42/members → /community/groups/42 → /community/groups → /community
+  const parts = normalized.split('/').filter(Boolean);
+  while (parts.length > 1) {
+    parts.pop();
+    const candidate = '/' + parts.join('/');
+    const hit = BY_ROUTE.get(candidate);
+    if (hit) return hit;
+  }
+
+  return null;
 }
 
 /**

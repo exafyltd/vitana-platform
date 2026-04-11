@@ -127,6 +127,7 @@ import {
   lookupScreen as lookupNavScreen,
   suggestSimilar as suggestNavSimilar,
   getContent as getNavContent,
+  lookupByRoute as lookupNavByRoute,
 } from '../lib/navigation-catalog';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
@@ -2449,8 +2450,247 @@ NEVER speak raw URLs or route paths.`;
 }
 
 /**
+ * VTID-NAV-TIMEJOURNEY: Compute a human-readable description of how long ago
+ * the user was last here, plus a classification bucket the greeting logic can
+ * switch on.
+ *
+ * Buckets:
+ *   - 'reconnect'  (< 2 min — user literally just closed the widget)
+ *   - 'recent'     (< 15 min — same micro-session, probably quick follow-up)
+ *   - 'same_day'   (< 8 h — same working day)
+ *   - 'today'      (< 24 h — still the same day-ish)
+ *   - 'yesterday'  (1 day ago)
+ *   - 'week'       (2–7 days)
+ *   - 'long'       (>7 days)
+ *   - 'first'      (no prior session recorded)
+ */
+type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
+
+function describeTimeSince(lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined): {
+  bucket: TemporalBucket;
+  timeAgo: string;
+  diffMs: number;
+  wasFailure: boolean;
+} {
+  if (!lastSessionInfo?.time) {
+    return { bucket: 'first', timeAgo: 'never before', diffMs: Number.POSITIVE_INFINITY, wasFailure: false };
+  }
+  const lastTs = new Date(lastSessionInfo.time).getTime();
+  if (!Number.isFinite(lastTs)) {
+    return { bucket: 'first', timeAgo: 'never before', diffMs: Number.POSITIVE_INFINITY, wasFailure: !!lastSessionInfo.wasFailure };
+  }
+  const diffMs = Date.now() - lastTs;
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  let bucket: TemporalBucket;
+  let timeAgo: string;
+  if (diffSec < 120) {
+    bucket = 'reconnect';
+    timeAgo = diffSec < 30 ? 'a few seconds ago' : `about ${diffSec} seconds ago`;
+  } else if (diffMin < 15) {
+    bucket = 'recent';
+    timeAgo = `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+  } else if (diffHour < 8) {
+    bucket = 'same_day';
+    if (diffMin < 60) {
+      timeAgo = `${diffMin} minutes ago`;
+    } else {
+      timeAgo = `about ${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
+    }
+  } else if (diffHour < 24) {
+    bucket = 'today';
+    timeAgo = `earlier today (about ${diffHour} hours ago)`;
+  } else if (diffDay === 1) {
+    bucket = 'yesterday';
+    timeAgo = 'yesterday';
+  } else if (diffDay < 7) {
+    bucket = 'week';
+    timeAgo = `${diffDay} days ago`;
+  } else {
+    bucket = 'long';
+    timeAgo = `${diffDay} days ago`;
+  }
+
+  return { bucket, timeAgo, diffMs, wasFailure: !!lastSessionInfo.wasFailure };
+}
+
+/**
+ * VTID-NAV-TIMEJOURNEY: Resolve a raw React Router path to a friendly screen
+ * label using the navigation catalog. Falls back to the path itself if there
+ * is no catalog entry so the assistant never loses context.
+ */
+function describeRoute(route: string | undefined | null, lang: string): { title: string; path: string } | null {
+  if (!route || typeof route !== 'string') return null;
+  const entry = lookupNavByRoute(route);
+  if (entry) {
+    const content = getNavContent(entry, lang);
+    return { title: content.title || entry.screen_id, path: entry.route };
+  }
+  return { title: route, path: route };
+}
+
+/**
+ * VTID-NAV-TIMEJOURNEY: Build the TEMPORAL + JOURNEY CONTEXT block appended
+ * to the authenticated Vitana system instruction.
+ *
+ * The purpose of this block is three-fold:
+ *   1. Tell the model how long it has been since the last ORB session so it
+ *      can pick an appropriate greeting style (re-engage vs. welcome back).
+ *   2. Tell the model which screen the user is currently looking at and
+ *      which screens they visited just before opening the ORB, so it can
+ *      acknowledge their journey naturally ("I see you're in the Wallet —
+ *      want a hand with something there?").
+ *   3. Stop the "Hello Dragan!" habit: explicit anti-patterns forbid
+ *      re-introducing the assistant when the user was just here.
+ *
+ * The block is language-agnostic — Gemini Live translates it into the
+ * session language via the LANGUAGE directive earlier in the instruction.
+ */
+function buildTemporalJourneyContextSection(
+  lang: string,
+  lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
+  currentRoute: string | null | undefined,
+  recentRoutes: string[] | null | undefined,
+  isReconnect: boolean,
+): string {
+  const temporal = describeTimeSince(lastSessionInfo);
+  const current = describeRoute(currentRoute, lang);
+
+  // Deduplicated, ordered (newest first), friendly-titled journey trail.
+  const trail: Array<{ title: string; path: string }> = [];
+  const seen = new Set<string>();
+  const currentPath = current?.path || '';
+  if (Array.isArray(recentRoutes)) {
+    for (const raw of recentRoutes) {
+      if (typeof raw !== 'string' || !raw) continue;
+      const described = describeRoute(raw, lang);
+      if (!described) continue;
+      // Skip the current screen — we already mention it explicitly.
+      if (described.path === currentPath) continue;
+      if (seen.has(described.path)) continue;
+      seen.add(described.path);
+      trail.push(described);
+      if (trail.length >= 5) break;
+    }
+  }
+
+  const lines: string[] = [];
+  lines.push('## TEMPORAL AND JOURNEY CONTEXT');
+  lines.push('This is real, per-session data. Treat it as ground truth about what the user is doing RIGHT NOW.');
+  lines.push('');
+
+  // Time since last session.
+  if (temporal.bucket === 'first') {
+    lines.push('- Time since last ORB session: this is the FIRST time the user opens you. There is no prior session on record.');
+  } else {
+    lines.push(`- Time since last ORB session: ${temporal.timeAgo}`);
+    if (temporal.wasFailure) {
+      lines.push('- Last session status: it FAILED (no audio delivered). The user did NOT actually hear you last time, so they may be confused or frustrated.');
+    }
+  }
+
+  // Current screen.
+  if (current) {
+    lines.push(`- Current screen: "${current.title}" (route: ${current.path})`);
+  } else {
+    lines.push('- Current screen: not reported by the host app.');
+  }
+
+  // Journey trail.
+  if (trail.length > 0) {
+    const trailStr = trail.map(t => `"${t.title}"`).join(' → ');
+    lines.push(`- Journey before opening ORB (newest → oldest): ${trailStr}`);
+  } else {
+    lines.push('- Journey before opening ORB: (no prior screens reported this session)');
+  }
+
+  lines.push('');
+  lines.push('## GREETING POLICY — TIME AND JOURNEY AWARE (CRITICAL, overrides generic GREETING RULES above)');
+  lines.push('');
+  lines.push('Pick your opening line based on the bucket below. Follow it literally.');
+  lines.push('');
+
+  const bucket = isReconnect ? 'reconnect' : temporal.bucket;
+  switch (bucket) {
+    case 'reconnect':
+      lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
+      lines.push('  • Do NOT greet. Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name as a salutation.');
+      lines.push('  • Do NOT introduce yourself. The user knows who you are — you were literally just talking.');
+      lines.push('  • Open with a short continuation cue, e.g. "Yes?" or "Ready — what\'s next?" or reference the screen they\'re on ("Still on the Events page — how can I help?").');
+      lines.push('  • Max ONE short sentence.');
+      break;
+    case 'recent':
+      lines.push('- BUCKET = recent (2–15 min since last session).');
+      lines.push('  • Do NOT use a formal greeting. No "Hello Dragan!", no "Hi there!", no introductions.');
+      lines.push('  • Acknowledge that you were just talking. Example: "Back again — what\'s up?" or "Right where we left off — what do you need?"');
+      lines.push('  • If the current screen is different from the one you last talked about, you may gently reference it.');
+      lines.push('  • Max ONE short sentence.');
+      break;
+    case 'same_day':
+      lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
+      lines.push('  • Use a light re-engagement, NOT a formal greeting. Never say "Hello <name>!" as if you have never met.');
+      lines.push('  • Good examples: "Hey, good to have you back — what can I do?", "Back for more? I\'m listening."');
+      lines.push('  • You may reference the current screen if it naturally fits.');
+      lines.push('  • Max ONE short sentence.');
+      break;
+    case 'today':
+      lines.push('- BUCKET = today (8–24 h since last session).');
+      lines.push('  • Warm short re-engagement. You may use the user\'s name ONCE if it flows naturally, but not as the first word.');
+      lines.push('  • Example: "Glad you\'re back — how can I help?"');
+      lines.push('  • Max ONE short sentence.');
+      break;
+    case 'yesterday':
+      lines.push('- BUCKET = yesterday.');
+      lines.push('  • Warm greeting. A simple "Good to see you again — what\'s on your mind?" is perfect. Name is optional.');
+      lines.push('  • Max ONE short sentence.');
+      break;
+    case 'week':
+      lines.push('- BUCKET = week (2–7 days since last session).');
+      lines.push('  • Warmer greeting, you may acknowledge the gap. Example: "Nice to hear from you again — what can I help with today?"');
+      lines.push('  • Max 1–2 short sentences.');
+      break;
+    case 'long':
+      lines.push('- BUCKET = long (> 7 days since last session).');
+      lines.push('  • Genuine welcome-back greeting. You may use the user\'s name. Example: "Welcome back — I\'ve been around, what can I help you with today?"');
+      lines.push('  • Max 1–2 short sentences.');
+      break;
+    case 'first':
+    default:
+      lines.push('- BUCKET = first (no prior ORB session on record).');
+      lines.push('  • This is a first impression. Warm introduction is OK. Example: "Hi, I\'m Vitana — happy to help. What would you like to explore?"');
+      lines.push('  • Max 1–2 short sentences.');
+      break;
+  }
+
+  if (temporal.wasFailure && (bucket === 'reconnect' || bucket === 'recent')) {
+    lines.push('- OVERRIDE: The previous session FAILED. Briefly acknowledge it: "Sorry about earlier — I\'m here now. What can I help with?" Still max ONE sentence.');
+  }
+
+  lines.push('');
+  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
+  lines.push('- NEVER open EVERY session with "Hello <name>!" — it makes you sound like a goldfish that forgot the last conversation.');
+  lines.push('- NEVER introduce yourself ("My name is Vitana...") unless this is the user\'s FIRST session (bucket = first).');
+  lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
+  lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
+  lines.push('');
+  lines.push('## JOURNEY AWARENESS');
+  lines.push('- You know which screen the user is currently on and which screens they came from. Use this silently to anticipate what they probably need help with, but do NOT list their browsing history back at them.');
+  lines.push('- If the user asks "where am I?" or "what is this screen", answer using the Current screen field above.');
+  lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence.');
+
+  return '\n\n' + lines.join('\n');
+}
+
+/**
  * VTID-01219: Build system instruction for Live API
  * VTID-01224: Extended to accept bootstrap context
+ * VTID-NAV-TIMEJOURNEY: Extended to accept per-session temporal + journey
+ * context (time since last session, current route, recent routes) so the
+ * model can pick a time-appropriate greeting and acknowledge where the
+ * user is in the app instead of restarting with "Hello <name>!" every time.
  */
 function buildLiveSystemInstruction(
   lang: string,
@@ -2459,7 +2699,10 @@ function buildLiveSystemInstruction(
   activeRole?: string | null,
   conversationSummary?: string,
   conversationHistory?: string,
-  isReconnect?: boolean
+  isReconnect?: boolean,
+  lastSessionInfo?: { time: string; wasFailure: boolean } | null,
+  currentRoute?: string | null,
+  recentRoutes?: string[] | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -2551,6 +2794,17 @@ ${trimmedHistory}
   // when to consult the navigator, when to navigate directly, and when to
   // simply answer in voice without any tool call.
   instruction += buildNavigatorPolicySection(lang);
+
+  // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
+  // its greeting policy overrides the generic GREETING RULES higher up. This
+  // is what stops Vitana from saying "Hello <name>!" every single session.
+  instruction += buildTemporalJourneyContextSection(
+    lang,
+    lastSessionInfo,
+    currentRoute,
+    recentRoutes,
+    !!isReconnect,
+  );
 
   return instruction;
 }
@@ -2907,7 +3161,14 @@ async function connectToLiveAPI(
                       ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
                       : undefined,
                     // Pass reconnect flag so greeting rules are suppressed on reconnect
-                    ((session as any)._reconnectCount || 0) > 0
+                    ((session as any)._reconnectCount || 0) > 0,
+                    // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
+                    // model uses this to pick a time-appropriate greeting and
+                    // acknowledge the screen the user is on instead of
+                    // restarting with "Hello <name>!" every session.
+                    session.lastSessionInfo || null,
+                    session.current_route || null,
+                    session.recent_routes || null,
                   )
             }]
           },
@@ -4097,37 +4358,54 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     prompt = anonPrompts[lang] || anonPrompts['en'];
   }
 
-  // VTID-01224-FIX: Add temporal awareness to greeting
-  if (session.lastSessionInfo && !session.isAnonymous) {
-    const lastTime = new Date(session.lastSessionInfo.time);
-    const now = new Date();
-    const diffMs = now.getTime() - lastTime.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+  // VTID-NAV-TIMEJOURNEY: Build a time-and-journey aware greeting prompt.
+  // The prompt now (a) references the bucket the system instruction already
+  // knows about, (b) explicitly forbids "Hello <name>!" when the user was
+  // just here, and (c) mentions the current screen so the model can ground
+  // the greeting in the user's actual journey instead of restarting.
+  if (!session.isAnonymous) {
+    const temporal = describeTimeSince(session.lastSessionInfo);
+    const currentScreen = describeRoute(session.current_route || null, lang);
+    const screenHint = currentScreen
+      ? ` The user is currently on the "${currentScreen.title}" screen.`
+      : '';
 
-    let timeAgo: string;
-    if (diffMins < 2) {
-      timeAgo = 'just moments ago';
-    } else if (diffMins < 60) {
-      timeAgo = `about ${diffMins} minutes ago`;
-    } else if (diffHours < 24) {
-      timeAgo = diffHours === 1 ? 'about an hour ago' : `about ${diffHours} hours ago`;
+    // VTID-WATCHDOG: If the previous session failed (no audio delivered) and
+    // the user comes back within 10 minutes, acknowledge it explicitly.
+    if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
+      prompt = `Say exactly: "Sorry about earlier — I'm here now. What can I help with?" ONE short sentence only. Do NOT say "Hello" or the user's name.${screenHint}`;
     } else {
-      timeAgo = diffDays === 1 ? 'yesterday' : `${diffDays} days ago`;
+      switch (temporal.bucket) {
+        case 'reconnect':
+          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with a short continuation cue in ONE sentence only — e.g. "Yes?" or "Still here — what's next?" or reference the current screen briefly.${screenHint}`;
+          break;
+        case 'recent':
+          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say "Hello <name>!". Acknowledge briefly that you were just together and ask what's next — ONE short sentence only.${screenHint}`;
+          break;
+        case 'same_day':
+          prompt = `The user was here ${temporal.timeAgo}. Light re-engagement, NOT a formal greeting. Do NOT say "Hello <name>!" as if you've never met. ONE short sentence only.${screenHint}`;
+          break;
+        case 'today':
+          prompt = `The user was here ${temporal.timeAgo}. Warm short re-engagement in ONE short sentence only. Use the user's name at most once, and never as the first word.${screenHint}`;
+          break;
+        case 'yesterday':
+          prompt = `The user was last here yesterday. Warm greeting in ONE short sentence only. Name is optional.${screenHint}`;
+          break;
+        case 'week':
+          prompt = `The user was last here ${temporal.timeAgo}. Warmer greeting acknowledging the gap — 1 short sentence only.${screenHint}`;
+          break;
+        case 'long':
+          prompt = `The user hasn't been here in ${temporal.timeAgo}. Genuine welcome-back greeting — 1 short sentence only. You may use their name.${screenHint}`;
+          break;
+        case 'first':
+        default:
+          // Leave default generic greeting (1–2 sentences, friendly intro).
+          if (screenHint) {
+            prompt = `${prompt} The user is currently on the "${currentScreen?.title || 'app'}" screen — you may reference it if it flows naturally.`;
+          }
+          break;
+      }
     }
-
-    // VTID-WATCHDOG: If last session was a failure, acknowledge it
-    if (session.lastSessionInfo.wasFailure && diffMins < 10) {
-      prompt = `Say: "Sorry about earlier, I'm here now! What can I help with?" Keep it to exactly ONE short sentence.`;
-    } else if (diffMins < 5) {
-      prompt = `Say something like "Hey, welcome back!" — ONE short sentence only.`;
-    } else if (diffMins < 60) {
-      prompt = `The user was here ${timeAgo}. Greet briefly — ONE short sentence only.`;
-    } else if (diffHours < 24) {
-      prompt = `Greet warmly. ONE sentence only.`;
-    }
-    // For 24h+, use the default generic greeting
   }
 
   const message = {
