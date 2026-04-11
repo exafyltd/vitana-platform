@@ -1769,7 +1769,13 @@ async function handleNavigateToScreen(
 
   return {
     success: true,
-    result: `Navigation queued to ${content.title} (${entry.route}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
+    // Simplified from earlier aggressive "DO NOT speak" language. The
+    // backend audio-forwarder gate in eac41e7 is what actually stops Turn 2
+    // audio from reaching the widget, not natural-language instructions to
+    // the model. The "If the user later asks..." hint stays so Gemini has
+    // the destination in context for follow-up questions without needing
+    // another get_current_screen call.
+    result: `Navigation queued to ${content.title} (${entry.route}). If the user later asks which screen they are on, they are on "${content.title}".`,
   };
 }
 
@@ -2433,42 +2439,28 @@ ENTSCHEIDUNGSREGELN:
 
 2. OHNE LANGE ERKLÄRUNG NAVIGIEREN:
    • Direkte Aufgaben: "öffne mein Wallet", "zeig mir die Events"
-   • Sprich EINEN kurzen Übergangssatz ("ich bringe dich gleich dort hin"),
-     und beende diesen Satz mit dem Aufruf von navigate_to_screen im
-     SELBEN Turn. Sprich NICHT NACH dem Tool-Aufruf — dein Turn endet in
-     dem Moment in dem das Tool aufgerufen wird.
+   • Sprich einen kurzen Übergangssatz wie "ich bringe dich gleich dort hin",
+     dann rufe navigate_to_screen auf.
 
 3. KONSULTIEREN, DANN NAVIGIEREN (häufigster Fall):
    • Explorative oder Erstbesucher-Fragen: "wie verfolge ich meine Biologie?",
      "wo finde ich Tanz-Events?", "ich möchte mit der Community Geld verdienen"
    • Rufe navigator_consult zuerst auf. Das Ergebnis sagt dir den primären
-     Bildschirm, eine optionale Alternative, einen Erklärungshinweis,
-     KB-Auszüge und ob der Nutzer bestätigen muss.
-   • Die EXPLANATION und KB_EXCERPTS Felder sind KONTEXT FÜR DICH, kein
-     Skript. Formuliere EINE kurze natürliche Antwort in deinen eigenen
-     Worten (maximal 2-3 Sätze). Du darfst auf die KB-Auszüge zurückgreifen,
-     aber lies die Felder NICHT wörtlich vor.
-   • Bei hoher Konfidenz und confirmation_needed=false:
-       Sprich deine EINE formulierte Antwort, und rufe am ENDE dieser
-       gesprochenen Antwort navigate_to_screen mit der primären screen_id
-       auf. Sprich NICHT NACH dem Tool-Aufruf.
-   • Bei confirmation_needed=true:
-       Stelle dem Nutzer die suggested_question. Warte auf die Antwort im
-       nächsten Turn, dann rufe navigate_to_screen mit der gewählten id auf.
-   • Bei niedriger Konfidenz (primary ist null):
-       Entschuldige dich kurz und bitte um mehr Kontext. NICHT navigieren.
+     Bildschirm, eine optionale Alternative, einen Erklärungshinweis
+     und KB-Auszüge.
+   • Sprich eine kurze natürliche Antwort in deinen eigenen Worten (2-3
+     Sätze), dann rufe navigate_to_screen mit der primären screen_id auf.
+     Du darfst die EXPLANATION und KB_EXCERPTS Felder als Kontext nutzen,
+     aber lies sie nicht wörtlich vor.
+   • Bei confirmation_needed=true stelle dem Nutzer die suggested_question
+     und warte auf die Antwort bevor du navigate_to_screen aufrufst.
+   • Bei niedriger Konfidenz (primary ist null) entschuldige dich kurz
+     und bitte um mehr Kontext. Nicht navigieren.
 
-KRITISCH — EINE ANTWORT PRO TURN:
-   • Wenn du dich entscheidest zu navigieren, muss deine gesamte gesprochene
-     Ausgabe für den Turn EINE durchgehende Antwort sein. Generiere NICHT
-     zuerst eine Antwort und danach einen Übergangssatz — die enden als
-     zwei überlappende Audiostreams die sich gegenseitig überreden.
-   • Das navigate_to_screen Tool ist IMMER die LETZTE Aktion in deinem
-     Turn. Danach kommt nichts mehr — keine weitere Sprache, kein weiterer
-     Tool-Aufruf.
-   • Wenn das Tool "widget is closing now" zurückgibt, ist das das Signal
-     dass dein Turn vorbei ist. STOPP sofort. Bestätige das Tool-Ergebnis
-     nicht. Sage nichts mehr.
+Du musst immer navigate_to_screen aufrufen wenn der Nutzer irgendwohin
+gebracht werden möchte. Dieser Tool-Aufruf ist was das Orb tatsächlich
+schließt und den Nutzer zum Ziel bringt. Ohne den Tool-Aufruf passiert
+nichts — der Nutzer bleibt im Hörmodus hängen.
 
 PRIORITÄTSZIELE (Maxina-Wachstumsfokus):
    • Events & Meetups — die meistgenutzte Funktion heute
@@ -2526,41 +2518,27 @@ DECISION RULES:
 2. NAVIGATE WITHOUT CONSULTING:
    • Direct task requests with an obvious destination ("open my wallet",
      "take me to events", "go to my settings")
-   • Speak ONE short transition sentence ("heading there now" /
-     "let me take you there"), and in the SAME turn, end with a call to
-     navigate_to_screen. Do NOT speak AFTER the tool returns — your turn
-     ends the moment the tool is called.
+   • Speak a brief transition sentence like "heading there now" or
+     "let me take you there", then call navigate_to_screen.
 
 3. CONSULT, THEN NAVIGATE (the most common case):
    • Exploratory or first-time questions: "how do I track my biology?",
      "where do I find dance events?", "I want to make money with the community"
    • Call navigator_consult first. The result tells you the primary screen,
-     an optional alternative, an explanation hint, KB excerpts, and whether
-     to ask the user to confirm.
-   • The EXPLANATION and KB_EXCERPTS fields are CONTEXT for YOU, not a
-     script. Synthesize ONE short natural response in your own words (2-3
-     sentences maximum). You may draw on the KB excerpts, but do NOT
-     read the fields verbatim.
-   • If confidence is high and confirmation_needed is false:
-       Speak your ONE synthesized response, and at the END of that same
-       spoken response, call navigate_to_screen with the primary screen_id.
-       Do NOT speak AFTER the tool returns.
-   • If confirmation_needed is true:
-       Ask the user the suggested_question. Wait for their answer in the
-       next turn, then call navigate_to_screen with the chosen screen_id.
-   • If confidence is low (primary is null):
-       Apologize briefly and ask the user to clarify. Do NOT navigate.
+     an optional alternative, an explanation hint, and KB excerpts.
+   • Speak a short, natural response in your own words (2-3 sentences), then
+     call navigate_to_screen with the primary screen_id. You may draw on
+     the EXPLANATION and KB_EXCERPTS fields as context, but do not read
+     them verbatim.
+   • If confirmation_needed is true, ask the user the suggested_question
+     and wait for their answer before calling navigate_to_screen.
+   • If confidence is low (primary is null), apologize briefly and ask
+     the user to clarify. Do not navigate.
 
-CRITICAL — ONE RESPONSE PER TURN:
-   • When you decide to navigate, your entire spoken output for the turn
-     must be a SINGLE continuous response. Do NOT generate an answer first
-     and then a transition sentence afterward — those end up as two
-     overlapping audio streams that talk over each other.
-   • The navigate_to_screen tool is ALWAYS the LAST action in your turn.
-     Nothing comes after it — no more speech, no more tool calls.
-   • When the tool returns "widget is closing now", that is a signal that
-     your turn is over. STOP immediately. Do not acknowledge the tool
-     result. Do not say anything else.
+You must always call navigate_to_screen when the user wants to be taken
+somewhere. That tool call is what actually closes the orb and moves
+them to the destination. Without the tool call nothing happens — the
+user will be stuck waiting in listening mode.
 
 PRIORITY DESTINATIONS (Maxina growth focus):
    • Events & Meetups — the most-used feature today
