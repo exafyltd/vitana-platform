@@ -1626,7 +1626,10 @@ async function handleNavigatorConsult(
  * require an authenticated identity. Anonymous sessions are gated to
  * anonymous_safe screens by the catalog access check below.
  */
-async function handleNavigateToScreen(
+// VTID-NAV-TEST: Exported for integration test that verifies the full
+// navigate_to_screen → pendingNavigation → orb_directive dispatch flow
+// without needing a real Gemini Live session.
+export async function handleNavigateToScreen(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
@@ -3380,6 +3383,15 @@ async function connectToLiveAPI(
         }
       };
 
+      // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
+      // tool declarations for this session. Helps diagnose "redirect not
+      // working" reports by showing whether Gemini even had the tool to call.
+      const toolMode = session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous';
+      const toolDecls = (setupMessage.setup as any)?.tools?.[0]?.function_declarations as any[] | undefined;
+      const toolNames = Array.isArray(toolDecls) ? toolDecls.map(t => t?.name).filter(Boolean) : [];
+      const hasNavigateTool = toolNames.includes('navigate_to_screen');
+      console.log(`[VTID-NAV-DIAG] Session ${session.sessionId}: mode=${toolMode} isAnonymous=${session.isAnonymous} hasIdentity=${!!session.identity} toolCount=${toolNames.length} hasNavigateTool=${hasNavigateTool} toolNames=[${toolNames.join(',')}]`);
+
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
@@ -3837,6 +3849,12 @@ async function connectToLiveAPI(
               // navigationDispatched stays TRUE so input audio stays gated until
               // the widget closes the connection.
               session.pendingNavigation = undefined;
+            } else {
+              // VTID-NAV-DIAG: turn_complete fired but no navigation was queued.
+              // This is what "stuck in listening after asking for redirect" looks
+              // like server-side. If we see this log line after a user asked for
+              // a redirect, it means Gemini never called navigate_to_screen.
+              console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
             }
 
             // Notify client that response is complete
