@@ -102,8 +102,8 @@ jobs:
             filename=$(basename "$file")
             dirname=$(dirname "$file")
             
-            # Skip node_modules, .git, etc
-            if echo "$file" | grep -qE "node_modules|\.git|\.next|dist|build"; then
+            # Skip node_modules, .git, temp_* directories, etc
+            if echo "$file" | grep -qE "node_modules|\.git|\.next|dist|build|/temp_"; then
               continue
             fi
             
