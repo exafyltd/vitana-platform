@@ -40,6 +40,12 @@ const router = Router();
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
+// Deep link used in every real-time Gchat alert so recipients can
+// click straight into the Self Healing panel and act on the row.
+const COMMAND_HUB_SH_URL =
+  process.env.COMMAND_HUB_SH_URL ||
+  'https://gateway-q74ibpv6ia-uc.a.run.app/command-hub/infrastructure/self-healing';
+
 function supabaseHeaders() {
   return {
     apikey: SUPABASE_SERVICE_ROLE!,
@@ -243,21 +249,35 @@ async function processFailingService(
           service: diagnosis.service_name,
         },
       });
+      // Real-time Gchat alert — autopilot couldn't dispatch, team needs
+      // to investigate or manually approve.
+      await notifyGChat(
+        `🚨 *Self-Healing Dispatch FAILED*\n` +
+        `Task: ${vtid}\n` +
+        `Service: ${diagnosis.service_name}\n` +
+        `Endpoint: ${diagnosis.endpoint}\n` +
+        `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%\n` +
+        `Error: ${dispatch.lastError}\n` +
+        `Autopilot exhausted retries. Reconciler will attempt redispatch within 1h.\n` +
+        `Act now: ${COMMAND_HUB_SH_URL}`,
+      );
     }
   }
 
-  // Notify Google Chat
-  await notifyGChat(
-    `🔧 *Self-Healing Initiated*\n` +
-    `Task: ${vtid}\n` +
-    `Service: ${diagnosis.service_name}\n` +
-    `Issue: ${diagnosis.failure_class}\n` +
-    `Root cause: ${diagnosis.root_cause.substring(0, 200)}\n` +
-    `Files: ${diagnosis.files_to_modify.join(', ') || 'TBD by worker'}\n` +
-    `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%\n` +
-    `Spec quality: ${quality_score.toFixed(2)}\n` +
-    `Auto-fix: ${diagnosis.confidence >= 0.8 ? '✅ Autopilot executing' : '⏳ Awaiting human approval'}`,
-  );
+  // Gchat notification ONLY when a human decision is required.
+  // Auto-approved tasks run silently — the team sees them in the
+  // Command Hub if they look, but we don't ping for in-progress work.
+  if (diagnosis.confidence < 0.8) {
+    await notifyGChat(
+      `⏳ *Self-Healing AWAITING APPROVAL*\n` +
+      `Task: ${vtid}\n` +
+      `Service: ${diagnosis.service_name}\n` +
+      `Issue: ${diagnosis.failure_class}\n` +
+      `Root cause: ${diagnosis.root_cause.substring(0, 200)}\n` +
+      `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%\n` +
+      `Approve/reject: ${COMMAND_HUB_SH_URL}`,
+    );
+  }
 
   return { action: 'created', vtid };
 }
@@ -736,6 +756,19 @@ router.post('/approve', async (req: Request, res: Response) => {
       },
     });
 
+    // Gchat notification ONLY on failure — a successful approve is a
+    // "done" state the operator who clicked the button already knows
+    // about. If the dispatch failed, manual retry is needed.
+    if (!dispatch.ok) {
+      await notifyGChat(
+        `🚨 *Self-Healing Approved but Dispatch FAILED*\n` +
+        `Task: ${vtid}\n` +
+        `Operator: ${operator || 'command-hub'}\n` +
+        `Error: ${dispatch.lastError}\n` +
+        `Manual retry needed: ${COMMAND_HUB_SH_URL}`,
+      );
+    }
+
     return res.json({ ok: true, vtid, dispatched: dispatch.ok, error: dispatch.lastError });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -799,6 +832,9 @@ router.post('/reject', async (req: Request, res: Response) => {
         confidence: logRow.confidence,
       },
     });
+
+    // Reject is a terminal human decision — no Gchat ping; the operator
+    // who clicked reject already knows it happened.
 
     return res.json({ ok: true, vtid });
   } catch (err: any) {

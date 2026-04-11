@@ -20,10 +20,14 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+import { notifyGChat } from './self-healing-snapshot-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+const COMMAND_HUB_SH_URL =
+  process.env.COMMAND_HUB_SH_URL ||
+  'https://gateway-q74ibpv6ia-uc.a.run.app/command-hub/infrastructure/self-healing';
 const LOG_PREFIX = '[self-healing-reconciler]';
 
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
@@ -251,6 +255,7 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
       const redispatch = await attemptRedispatch(row);
 
       if (redispatch.status === 'redispatched') {
+        const attemptNum = Number((row.diagnosis || {}).reconciler_redispatch_count || 0) + 1;
         try {
           await emitOasisEvent({
             vtid: row.vtid,
@@ -262,7 +267,7 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
               endpoint: row.endpoint,
               failure_class: row.failure_class,
               age_hours: Number(ageHours.toFixed(2)),
-              reconciler_redispatch_count: Number((row.diagnosis || {}).reconciler_redispatch_count || 0) + 1,
+              reconciler_redispatch_count: attemptNum,
             },
             actor_role: 'system',
             surface: 'system',
@@ -270,7 +275,10 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
         } catch (emitErr) {
           console.warn(`${LOG_PREFIX} Failed to emit dispatch.retried event for ${row.vtid}:`, emitErr);
         }
-        console.log(`${LOG_PREFIX} Re-dispatched ${row.vtid} (age=${ageHours.toFixed(1)}h) — leaving outcome=pending`);
+        // No Gchat ping for redispatch — it's autonomous recovery in progress,
+        // not a human-action moment. Team only hears about it if it ultimately
+        // fails (tombstone path below) or succeeds silently.
+        console.log(`${LOG_PREFIX} Re-dispatched ${row.vtid} (age=${ageHours.toFixed(1)}h, attempt=${attemptNum}) — leaving outcome=pending`);
         continue;
       }
 
@@ -305,6 +313,20 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
         });
       } catch (emitErr) {
         console.warn(`${LOG_PREFIX} Failed to emit OASIS event for ${row.vtid}:`, emitErr);
+      }
+      // Real-time Gchat — this is a GIVE-UP signal, team must act.
+      try {
+        await notifyGChat(
+          `🚨 *Self-Healing GAVE UP — stale_no_progress*\n` +
+          `Task: ${row.vtid}\n` +
+          `Endpoint: ${row.endpoint} (HTTP ${http_status ?? 'err'})\n` +
+          `Age: ${ageHours.toFixed(1)}h\n` +
+          `Reason: Reconciler exhausted redispatch attempts (${redispatch.status}: ${redispatch.reason || 'n/a'}).\n` +
+          `Endpoint still down. Manual investigation required.\n` +
+          `Act now: ${COMMAND_HUB_SH_URL}`,
+        );
+      } catch (notifyErr) {
+        console.warn(`${LOG_PREFIX} Failed to send Gchat tombstone notification:`, notifyErr);
       }
       console.log(
         `${LOG_PREFIX} Tombstoned ${row.vtid} as stale_no_progress (age=${ageHours.toFixed(1)}h, redispatch=${redispatch.status}/${redispatch.reason || 'n/a'})`,
