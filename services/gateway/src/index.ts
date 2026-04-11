@@ -221,6 +221,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminTenantsRouter = require('./routes/admin-tenants').default;
   // Admin: Content Moderation
   const adminModerationRouter = require('./routes/admin-moderation').default;
+  // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
+  const adminNavigatorRouter = require('./routes/admin-navigator').default;
+  // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
+  const { warmNavCatalogCache } = require('./lib/nav-catalog-db');
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
@@ -561,6 +565,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Admin: Content Moderation
   mountRouterSync(app, '/api/v1/admin/moderation', adminModerationRouter, { owner: 'admin-moderation' });
 
+  // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
+  mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
+
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
   mountRouterSync(app, '/api/v1/automations', automationsRouter, { owner: 'automations' });
 
@@ -807,6 +814,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('🧠 AI Personality config cache pre-warmed');
       } catch (error) {
         console.warn('⚠️ AI Personality cache warm failed (non-fatal, using defaults):', error);
+      }
+
+      // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
+      try {
+        warmNavCatalogCache();
+        console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
+      } catch (error) {
+        console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
       }
     });
   }
