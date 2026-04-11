@@ -1264,6 +1264,35 @@ async function buildBootstrapContextPack(
 function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'): object[] {
   const navigatorTools: any[] = [
     {
+      name: 'get_current_screen',
+      description: [
+        'Return the screen the user is CURRENTLY looking at, as a fresh live',
+        'lookup. Always call this tool when the user asks any variation of:',
+        '  "where am I?", "which screen is this?", "what page am I on?",',
+        '  "what am I looking at?", "wo bin ich?", "welcher Bildschirm ist das?".',
+        '',
+        'You should also call it after you have just navigated via',
+        'navigate_to_screen if the user asks a follow-up about "this page" —',
+        'the in-memory location is updated immediately after navigation so',
+        'this tool always reflects the freshest screen.',
+        '',
+        'The result contains:',
+        '  - title: the friendly screen title (e.g. "Events & Meetups")',
+        '  - route: the raw URL path (do NOT speak this out loud)',
+        '  - description: a short description of what the screen is for',
+        '  - category: the section of the app (community, health, wallet, ...)',
+        '',
+        'When answering, speak ONLY the title and the short description in',
+        'natural language. Never read the route aloud. If the tool returns',
+        '"unknown", tell the user you can see they\'re in the Vitana app but',
+        'not which specific screen, and ask them what they\'d like to do.',
+      ].join('\n'),
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
       name: 'navigator_consult',
       description: [
         'Consult the Vitana Navigator. This is a composite backend service that',
@@ -1522,9 +1551,12 @@ async function executeLiveApiTool(
 // VTID-NAV: Tools that may execute without an authenticated identity.
 // Anonymous orb sessions get this narrow allowlist so onboarding visitors can
 // still be guided to public destinations like the Maxina portal.
+// VTID-NAV-TIMEJOURNEY: get_current_screen is identity-free — it just reads
+// session.current_route — so it's safe for anonymous sessions too.
 const ANONYMOUS_SAFE_TOOLS = new Set<string>([
   'navigator_consult',
   'navigate_to_screen',
+  'get_current_screen',
 ]);
 
 /**
@@ -1685,6 +1717,20 @@ async function handleNavigateToScreen(
   // not start a new turn while the widget is closing.
   session.navigationDispatched = true;
 
+  // VTID-NAV-TIMEJOURNEY (journey-awareness fix): Eagerly update the
+  // in-memory session route + journey trail so the next turn / any
+  // subsequent get_current_screen tool call sees the FRESH destination,
+  // not the stale route the user was on when the session started. This
+  // is what makes "which screen am I on?" answerable after Vitana has
+  // just redirected the user via this tool.
+  const previousRoute = session.current_route;
+  session.current_route = entry.route;
+  if (previousRoute && previousRoute !== entry.route) {
+    const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+    const deduped = trail.filter(r => r !== previousRoute);
+    session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+  }
+
   // Persist the navigation as a memory item (authenticated only).
   if (hasIdentity) {
     writeNavigatorActionMemory({
@@ -1723,7 +1769,82 @@ async function handleNavigateToScreen(
 
   return {
     success: true,
-    result: `Navigation queued to ${content.title} (${entry.route}).`,
+    // Simplified from earlier aggressive "DO NOT speak" language. The
+    // backend audio-forwarder gate in eac41e7 is what actually stops Turn 2
+    // audio from reaching the widget, not natural-language instructions to
+    // the model. The "If the user later asks..." hint stays so Gemini has
+    // the destination in context for follow-up questions without needing
+    // another get_current_screen call.
+    result: `Navigation queued to ${content.title} (${entry.route}). If the user later asks which screen they are on, they are on "${content.title}".`,
+  };
+}
+
+/**
+ * VTID-NAV-TIMEJOURNEY: Handle get_current_screen tool call.
+ *
+ * Returns the user's LIVE current screen based on session.current_route,
+ * resolved through the navigation catalog for a friendly title +
+ * description. This is how Gemini answers "where am I?" reliably — the
+ * system instruction gets stale the moment anything navigates, but this
+ * tool always reads the freshest in-memory value and returns it.
+ *
+ * Self-contained — no identity required (reads session state only), so
+ * it's anonymous-safe.
+ */
+function handleGetCurrentScreen(
+  session: GeminiLiveSession
+): { success: boolean; result: string; error?: string } {
+  const route = session.current_route || null;
+  if (!route) {
+    return {
+      success: true,
+      result: 'The host app has not reported a current screen for this session. Tell the user you can see they\'re in the Vitana app but not which specific screen, and ask what they\'d like to do next.',
+    };
+  }
+
+  const lang = session.lang || 'en';
+  const entry = lookupNavByRoute(route);
+  if (entry) {
+    const content = getNavContent(entry, lang);
+    // Include the journey trail so Gemini can also answer "where was I before?"
+    // in the same tool call without needing another hop.
+    const trail = Array.isArray(session.recent_routes) ? session.recent_routes : [];
+    const trailTitles: string[] = [];
+    for (const r of trail) {
+      if (r === route) continue;
+      const e = lookupNavByRoute(r);
+      if (e) {
+        trailTitles.push(getNavContent(e, lang).title);
+      }
+      if (trailTitles.length >= 4) break;
+    }
+    const payload = {
+      title: content.title,
+      description: content.description,
+      category: entry.category,
+      screen_id: entry.screen_id,
+      // route intentionally included for structured context, but Gemini
+      // is instructed in the tool description not to speak it aloud.
+      route: entry.route,
+      recent_screens: trailTitles,
+    };
+    return {
+      success: true,
+      result: JSON.stringify(payload),
+    };
+  }
+
+  // Unknown route — catalog miss. Return what we have so Gemini can still
+  // give a useful answer (e.g. "I can see you're in the Vitana app but not
+  // which exact screen — would you like me to take you somewhere?")
+  return {
+    success: true,
+    result: JSON.stringify({
+      title: 'Unknown screen',
+      description: 'The user is on a route that is not in the navigation catalog.',
+      route,
+      recent_screens: [],
+    }),
   };
 }
 
@@ -1738,6 +1859,9 @@ async function executeLiveApiToolInner(
   // without identity for anonymous onboarding sessions. Handle them BEFORE
   // the auth gate so the existing identity check + lens construction below
   // can stay non-null for the other tools.
+  if (toolName === 'get_current_screen') {
+    return handleGetCurrentScreen(session);
+  }
   if (toolName === 'navigator_consult') {
     return await handleNavigatorConsult(session, args);
   }
@@ -2292,6 +2416,11 @@ Du bist der Navigationsführer für die Maxina Community. Die Community hat viel
 Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
 eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
 
+  • get_current_screen() — gibt den Bildschirm zurück auf dem der Nutzer
+    GERADE JETZT ist. RUFE DIESES TOOL AUF, wenn der Nutzer fragt "wo bin ich?",
+    "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
+    hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
+
   • navigator_consult(question) — kombiniert den Navigationskatalog, die
     Wissensdatenbank und den aktuellen Bildschirm + Verlauf des Nutzers, um zu
     empfehlen wohin geleitet werden soll. Nutze es für offene oder explorative
@@ -2361,7 +2490,14 @@ NIEMALS rohe URLs oder Routenpfade aussprechen.`;
 === VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
 You are the navigation guide for the Maxina community. The community has many
 screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
+your most important jobs. You have three tools:
+
+  • get_current_screen() — returns the screen the user is looking at RIGHT
+    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
+    "which screen is this?", "what page am I on?", "what can I do here?".
+    NEVER answer those questions from memory — always call the tool. It is
+    also the right call after you\'ve navigated, if the user asks about
+    "this page". It is cheap and always returns the fresh answer.
 
   • navigator_consult(question) — composes the navigation catalog, the
     knowledge base, and the user's current page + history to recommend a
@@ -2598,45 +2734,80 @@ function buildTemporalJourneyContextSection(
   switch (bucket) {
     case 'reconnect':
       lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
-      lines.push('  • Do NOT greet. Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name as a salutation.');
-      lines.push('  • Do NOT introduce yourself. The user knows who you are — you were literally just talking.');
-      lines.push('  • Open with a short continuation cue, e.g. "Yes?" or "Ready — what\'s next?" or reference the screen they\'re on ("Still on the Events page — how can I help?").');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name as a salutation. Do NOT introduce yourself.');
+      lines.push('  • Open with a WARM, POLITE, KIND continuation line — the user was just talking to you seconds ago, so acknowledge that gently.');
+      lines.push('  • Pick ONE of these example phrasings (vary them, do not always pick the same one):');
+      lines.push('      "Yes, of course — how can I help?"');
+      lines.push('      "Of course — what would you like to know?"');
+      lines.push('      "Sure, I\'m listening — tell me more."');
+      lines.push('      "Happy to — go ahead."');
+      lines.push('      "Of course — what can I do for you?"');
+      lines.push('      "Yes, I\'m here — what else?"');
+      lines.push('  • Max ONE short sentence. Warm and polite, never curt.');
       break;
     case 'recent':
       lines.push('- BUCKET = recent (2–15 min since last session).');
-      lines.push('  • Do NOT use a formal greeting. No "Hello Dragan!", no "Hi there!", no introductions.');
-      lines.push('  • Acknowledge that you were just talking. Example: "Back again — what\'s up?" or "Right where we left off — what do you need?"');
-      lines.push('  • If the current screen is different from the one you last talked about, you may gently reference it.');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction.');
+      lines.push('  • Acknowledge gently and kindly that you were just talking, then ask how you can help.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "Happy to help again — what\'s on your mind?"');
+      lines.push('      "Of course, I\'m here — how can I assist?"');
+      lines.push('      "Glad you\'re back — what would you like to talk about?"');
+      lines.push('      "Sure, tell me more — I\'m listening."');
+      lines.push('      "Absolutely — what do you need?"');
+      lines.push('      "Of course — how can I support you?"');
+      lines.push('  • Max ONE short sentence. Warm, polite, never cold.');
       break;
     case 'same_day':
       lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
-      lines.push('  • Use a light re-engagement, NOT a formal greeting. Never say "Hello <name>!" as if you have never met.');
-      lines.push('  • Good examples: "Hey, good to have you back — what can I do?", "Back for more? I\'m listening."');
-      lines.push('  • You may reference the current screen if it naturally fits.');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Light, warm re-engagement. NOT a formal greeting. NEVER "Hello <name>!" as if you\'ve never met.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "Lovely to hear from you again — how can I help?"');
+      lines.push('      "Happy to help — what\'s on your mind?"');
+      lines.push('      "I\'m here for you — what do you need?"');
+      lines.push('      "Of course — what would you like to explore?"');
+      lines.push('      "Glad you\'re back — how can I assist?"');
+      lines.push('      "So nice that you\'re here — what can I do for you?"');
+      lines.push('  • Max ONE short sentence. Warm and polite.');
       break;
     case 'today':
       lines.push('- BUCKET = today (8–24 h since last session).');
-      lines.push('  • Warm short re-engagement. You may use the user\'s name ONCE if it flows naturally, but not as the first word.');
-      lines.push('  • Example: "Glad you\'re back — how can I help?"');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Warm re-engagement. You may use the user\'s name ONCE if it flows naturally, but never as the first word.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "Wonderful to hear from you — how can I help?"');
+      lines.push('      "Happy you stopped by — what would you like to do?"');
+      lines.push('      "Of course, I\'m here — what\'s on your mind?"');
+      lines.push('      "Lovely to see you — how can I support you?"');
+      lines.push('      "Glad you came back — what can I help with?"');
+      lines.push('  • Max ONE short sentence. Genuine warmth, never robotic.');
       break;
     case 'yesterday':
       lines.push('- BUCKET = yesterday.');
-      lines.push('  • Warm greeting. A simple "Good to see you again — what\'s on your mind?" is perfect. Name is optional.');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Warm, kind greeting. Name is optional and only mid-sentence.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "So nice to hear from you again — what would you like to explore today?"');
+      lines.push('      "Lovely to have you back — how can I help?"');
+      lines.push('      "Wonderful to see you — what\'s on your mind today?"');
+      lines.push('      "Happy you came by — what can I do for you?"');
+      lines.push('  • Max ONE short sentence. Warm, polite, kind.');
       break;
     case 'week':
       lines.push('- BUCKET = week (2–7 days since last session).');
-      lines.push('  • Warmer greeting, you may acknowledge the gap. Example: "Nice to hear from you again — what can I help with today?"');
-      lines.push('  • Max 1–2 short sentences.');
+      lines.push('  • Warmer greeting that gently acknowledges the short gap. Polite and kind.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "It\'s been a little while — lovely to have you back. How can I help?"');
+      lines.push('      "So nice to see you again — what would you like to explore today?"');
+      lines.push('      "Welcome back — I\'m happy you\'re here. What can I help with?"');
+      lines.push('  • Max 1–2 short sentences. Always warm, never cold.');
       break;
     case 'long':
       lines.push('- BUCKET = long (> 7 days since last session).');
-      lines.push('  • Genuine welcome-back greeting. You may use the user\'s name. Example: "Welcome back — I\'ve been around, what can I help you with today?"');
-      lines.push('  • Max 1–2 short sentences.');
+      lines.push('  • Genuine, warm welcome-back. You may use the user\'s name mid-sentence.');
+      lines.push('  • Pick ONE of these example phrasings:');
+      lines.push('      "It\'s so nice to see you again — I\'ve missed our chats. What can I help with today?"');
+      lines.push('      "Welcome back! I\'m happy you\'re here — how can I support you today?"');
+      lines.push('      "Wonderful to have you back — what would you like to explore today?"');
+      lines.push('  • Max 1–2 short sentences. Sincere and kind, never performative.');
       break;
     case 'first':
     default:
@@ -2645,16 +2816,28 @@ function buildTemporalJourneyContextSection(
       // (everyone who reaches this code path) we treat it as a returning
       // user with unknown recency — a light re-engagement, NOT an intro.
       lines.push('- BUCKET = first (telemetry lookup found no prior session — treat as RETURNING user with unknown recency).');
-      lines.push('  • Do NOT say "Hello", "Hi", or the user\'s name as a salutation.');
-      lines.push('  • Do NOT introduce yourself. The user is authenticated — they already know who you are.');
-      lines.push('  • Open with a short re-engagement line like "What can I help with?" or "I\'m listening — what do you need?" or reference the current screen if it fits.');
-      lines.push('  • Max ONE short sentence.');
+      lines.push('  • Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself.');
+      lines.push('  • The user is authenticated — they already know who you are.');
+      lines.push('  • Pick ONE of these WARM example phrasings:');
+      lines.push('      "Happy to help — what would you like to do?"');
+      lines.push('      "I\'m here for you — what\'s on your mind?"');
+      lines.push('      "Of course — how can I assist you?"');
+      lines.push('      "Sure, I\'m listening — what can I help with?"');
+      lines.push('      "Lovely to have you here — what can I do for you?"');
+      lines.push('  • Max ONE short sentence. Warm, polite, kind — never cold or curt.');
       break;
   }
 
   if (temporal.wasFailure && (bucket === 'reconnect' || bucket === 'recent')) {
-    lines.push('- OVERRIDE: The previous session FAILED. Briefly acknowledge it: "Sorry about earlier — I\'m here now. What can I help with?" Still max ONE sentence.');
+    lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
   }
+
+  lines.push('');
+  lines.push('## TONE RULES (CRITICAL)');
+  lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
+  lines.push('- Words like "of course", "happy to help", "lovely", "I\'m here for you", "what\'s on your mind", "how can I support you" are your baseline register.');
+  lines.push('- Avoid clipped or blunt openers like "Yes?", "What?", "Go.", "Ready." — they sound rude even when brief.');
+  lines.push('- Even your shortest responses must feel genuinely kind. A one-sentence answer can still be warm.');
 
   lines.push('');
   lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE — unconditional, overrides every other greeting rule)');
@@ -2665,10 +2848,14 @@ function buildTemporalJourneyContextSection(
   lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
   lines.push('- NEVER deliver a "first impression" introduction on an authenticated session. Authenticated users are returning users, regardless of what the telemetry lookup found.');
   lines.push('');
-  lines.push('## JOURNEY AWARENESS');
-  lines.push('- You know which screen the user is currently on and which screens they came from. Use this silently to anticipate what they probably need help with, but do NOT list their browsing history back at them.');
-  lines.push('- If the user asks "where am I?" or "what is this screen", answer using the Current screen field above.');
-  lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence.');
+  lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
+  lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
+  lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
+  lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
+  lines.push('- You already know the screen the user just arrived on if you navigated them via navigate_to_screen on the PREVIOUS turn (the tool result told you the destination title). You may reference that from conversation memory without re-calling get_current_screen, but if in doubt, call the tool — it is cheap.');
+  lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
+  lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
+  lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
 
   return '\n\n' + lines.join('\n');
 }
@@ -4317,23 +4504,22 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const lang = session.lang;
-  // VTID-NAV-TIMEJOURNEY: The default greeting prompt for AUTHENTICATED
-  // sessions no longer says "greet warmly" — that instruction is what
-  // produced "Hello Dragan!" every single session. Authenticated users
-  // are by definition returning users (they have an account and have
-  // completed auth), so treat them that way even when we don't know when
-  // they were last here. The anonymous path below still uses the old
-  // warm-intro prompt because first-time landing-page visitors actually
-  // are first meetings.
+  // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
+  // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
+  // never curt. The previous iteration fixed "Hello Dragan!" but made
+  // Vitana sound rude ("Yes?", "What do you need?"). This rewrite gives
+  // Gemini a menu of warm example phrasings and explicitly tells it not
+  // to sound clipped. Each language is independently written so nothing
+  // depends on Gemini translating cold English cues into warmer German.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Open with a SHORT re-engagement line (ONE sentence only). Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself. Examples: "What can I help with?" or "I\'m listening — what do you need?"',
-    'de': 'Beginne mit EINEM kurzen Wiedereinstiegssatz. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers als Begrüßung. Stelle dich NICHT vor. Beispiele: "Womit kann ich helfen?" oder "Ich höre zu — was brauchst du?"',
-    'fr': 'Commence par UNE courte phrase de reprise. Ne dis PAS "Bonjour", ni le prénom de l\'utilisateur comme salutation. Ne te présente PAS. Exemples: "En quoi puis-je aider ?"',
-    'es': 'Comienza con UNA frase corta de reenganche. NO digas "Hola" ni el nombre del usuario como saludo. NO te presentes. Ejemplos: "¿En qué puedo ayudar?"',
-    'ar': 'ابدأ بجملة قصيرة واحدة لإعادة التفاعل. لا تقل "مرحبا" أو اسم المستخدم كتحية. لا تقدم نفسك. مثال: "كيف يمكنني المساعدة؟"',
-    'zh': '用一句简短的重新互动开场。不要说"你好"或用用户的名字作为问候。不要自我介绍。例如:"我能帮什么忙?"',
-    'ru': 'Начни с ОДНОЙ короткой фразы продолжения. НЕ говори "Здравствуйте", "Привет" или имя пользователя как приветствие. НЕ представляйся. Пример: "Чем могу помочь?"',
-    'sr': 'Почни са ЈЕДНОМ кратком реченицом. НЕ изговарај "Здраво", "Хеј" или име корисника као поздрав. НЕ представљај се. Пример: "Како могу да помогнем?"',
+    'en': 'Open with ONE warm, polite, kind sentence. Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself. Do NOT sound clipped, curt, or cold. Pick ONE of: "Happy to help — what\'s on your mind?" / "Of course, I\'m here — how can I assist?" / "Lovely to hear from you — how can I help?" / "I\'m here for you — what do you need?" / "Sure, I\'m listening — what can I help with?". Vary across sessions.',
+    'de': 'Beginne mit EINEM warmen, höflichen, freundlichen Satz. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers als Begrüßung. Stelle dich NICHT vor. Sei NICHT kurz angebunden, kalt oder schroff. Wähle EINE dieser Formulierungen: "Gerne — womit kann ich helfen?" / "Natürlich, ich bin da — wie kann ich dich unterstützen?" / "Schön, dass du da bist — was möchtest du wissen?" / "Ich höre dir zu — was brauchst du?" / "Freut mich, dass du da bist — wie kann ich dir helfen?". Variiere zwischen Sitzungen.',
+    'fr': 'Commence par UNE phrase chaleureuse, polie et bienveillante. Ne dis PAS "Bonjour", ni le prénom de l\'utilisateur comme salutation. Ne te présente PAS. Ne sois PAS sec ou froid. Choisis UNE de ces formulations : "Avec plaisir — en quoi puis-je aider ?" / "Bien sûr, je suis là — comment puis-je vous assister ?" / "Ravie de vous entendre — que puis-je faire pour vous ?" / "Je vous écoute — qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
+    'es': 'Comienza con UNA frase cálida, amable y educada. NO digas "Hola" ni el nombre del usuario como saludo. NO te presentes. NO suenes seco ni frío. Elige UNA de estas frases: "Con mucho gusto — ¿en qué puedo ayudar?" / "Claro, estoy aquí — ¿cómo puedo asistirte?" / "Qué bueno verte de nuevo — ¿qué te gustaría explorar?" / "Te escucho — ¿qué necesitas?". Varía entre sesiones.',
+    'ar': 'ابدأ بجملة واحدة دافئة ومهذبة ولطيفة. لا تقل "مرحبا" أو اسم المستخدم كتحية. لا تقدم نفسك. لا تكن جافًا أو باردًا. اختر واحدة من هذه: "بكل سرور — كيف يمكنني المساعدة؟" / "بالتأكيد، أنا هنا — كيف يمكنني مساعدتك؟" / "سعيدة بسماعك — ماذا تود أن تفعل؟"',
+    'zh': '用一句温暖、礼貌、友善的话开场。不要说"你好"或用用户的名字作为问候。不要自我介绍。不要听起来生硬或冷淡。从这些中选一个:"很乐意帮忙,有什么我可以为你做的?" / "当然,我在这里,怎么协助你?" / "很高兴听到你,你想聊什么?"',
+    'ru': 'Начни с ОДНОЙ тёплой, вежливой и доброжелательной фразы. НЕ говори "Здравствуйте", "Привет" или имя пользователя как приветствие. НЕ представляйся. НЕ звучи резко или холодно. Выбери одну из: "С удовольствием — чем могу помочь?" / "Конечно, я здесь — как я могу помочь?" / "Рада вас слышать — что бы вы хотели узнать?" / "Я вас слушаю — что вам нужно?"',
+    'sr': 'Почни са ЈЕДНОМ топлом, љубазном и пријатном реченицом. НЕ говори "Здраво", "Хеј" или име корисника као поздрав. НЕ представљај се. НЕ звучи кратко, хладно ни грубо. Изабери једну од: "Радо — како могу да помогнем?" / "Наравно, ту сам — како могу да те подржим?" / "Драго ми је што те чујем — шта желиш да истражимо?" / "Слушам те — шта ти треба?"',
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
