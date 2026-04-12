@@ -30,7 +30,8 @@ export type NavCategory =
   | 'memory'
   | 'ai'
   | 'inbox'
-  | 'settings';
+  | 'settings'
+  | 'sharing';
 
 export interface NavCatalogEntry {
   screen_id: string;
@@ -892,6 +893,219 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
         description: 'Verwalte deine Benachrichtigungspräferenzen.',
         when_to_visit: 'Wenn der Nutzer nach Benachrichtigungseinstellungen, Push-Benachrichtigungen, E-Mail-Hinweisen fragt oder Benachrichtigungen ein- oder ausschalten möchte.',
       },
+    },
+  },
+
+  // ── FULL COVERAGE EXPANSION (Phase 2) ───────────────────────────────────
+  // Every remaining community-user tab from vitana-v1/src/config/navigation.ts.
+
+  // ── HOME (missing tabs) ─────────────────────────────────────────────────
+  {
+    screen_id: 'HOME.CONTEXT', route: '/home/context', category: 'home',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Context', description: 'Your personal context — what Vitana knows about your current situation.', when_to_visit: 'When the user asks about their context, current situation, or what Vitana knows about them right now.' },
+      de: { title: 'Kontext', description: 'Dein persönlicher Kontext — was Vitana über deine aktuelle Situation weiß.', when_to_visit: 'Wenn der Nutzer nach seinem Kontext, seiner aktuellen Situation oder dem fragt, was Vitana gerade über ihn weiß.' },
+    },
+  },
+  {
+    screen_id: 'HOME.ACTIONS', route: '/home/actions', category: 'home',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Actions', description: 'Recommended actions and tasks for you today.', when_to_visit: 'When the user asks what they should do today, what actions are pending, or what tasks they have.' },
+      de: { title: 'Aktionen', description: 'Empfohlene Aktionen und Aufgaben für dich heute.', when_to_visit: 'Wenn der Nutzer fragt, was er heute tun sollte, welche Aktionen anstehen oder welche Aufgaben er hat.' },
+    },
+  },
+
+  // ── AI (missing tabs) ──────────────────────────────────────────────────
+  {
+    screen_id: 'AI.OVERVIEW', route: '/ai', category: 'ai',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'AI Assistant', description: 'Overview of your AI assistant features.', when_to_visit: 'When the user asks about the AI assistant, AI features, or wants to explore what the AI can do.' },
+      de: { title: 'KI-Assistent', description: 'Übersicht deiner KI-Assistenten-Funktionen.', when_to_visit: 'Wenn der Nutzer nach dem KI-Assistenten, KI-Funktionen fragt oder erkunden möchte, was die KI kann.' },
+    },
+  },
+  {
+    screen_id: 'AI.INSIGHTS', route: '/ai/insights', category: 'ai',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'AI Insights', description: 'Personalized insights derived from your health data and activity.', when_to_visit: 'When the user asks for insights, patterns, trends, or what the AI has learned about them.' },
+      de: { title: 'KI-Einblicke', description: 'Personalisierte Einblicke aus deinen Gesundheitsdaten und Aktivitäten.', when_to_visit: 'Wenn der Nutzer nach Einblicken, Mustern, Trends fragt oder wissen will, was die KI über ihn gelernt hat.' },
+    },
+  },
+  {
+    screen_id: 'AI.DAILY_SUMMARY', route: '/ai/daily-summary', category: 'ai',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Daily Summary', description: 'Your AI-generated daily summary of health, activity, and community highlights.', when_to_visit: 'When the user asks for their daily summary, daily briefing, daily report, or what happened today.' },
+      de: { title: 'Tägliche Zusammenfassung', description: 'Deine KI-generierte tägliche Zusammenfassung von Gesundheit, Aktivität und Community-Highlights.', when_to_visit: 'Wenn der Nutzer nach seiner täglichen Zusammenfassung, seinem Tagesbericht oder dem fragt, was heute passiert ist.' },
+    },
+  },
+
+  // ── DISCOVER (missing tabs) ─────────────────────────────────────────────
+  {
+    screen_id: 'DISCOVER.ORDERS', route: '/discover/orders', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'My Orders', description: 'Your order history and active orders.', when_to_visit: 'When the user asks about their orders, order history, order status, deliveries, or what they have bought.' },
+      de: { title: 'Meine Bestellungen', description: 'Deine Bestellhistorie und aktive Bestellungen.', when_to_visit: 'Wenn der Nutzer nach seinen Bestellungen, Bestellhistorie, Bestellstatus, Lieferungen oder dem fragt, was er gekauft hat.' },
+    },
+  },
+  {
+    screen_id: 'DISCOVER.AI_PICKS', route: '/discover/ai-picks', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'AI Picks', description: 'AI-curated product and service recommendations.', when_to_visit: 'When the user asks for AI recommendations, personalized picks, curated suggestions, or what the AI recommends for them.' },
+      de: { title: 'KI-Auswahl', description: 'KI-kuratierte Produkt- und Service-Empfehlungen.', when_to_visit: 'Wenn der Nutzer nach KI-Empfehlungen, personalisierten Vorschlägen, kuratierten Tipps fragt oder wissen will, was die KI für ihn empfiehlt.' },
+    },
+  },
+
+  // ── INBOX (missing tabs) ────────────────────────────────────────────────
+  {
+    screen_id: 'INBOX.INSPIRATION', route: '/inbox/inspiration', category: 'inbox',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Inspiration', description: 'Inspirational messages and wellness tips from Vitana.', when_to_visit: 'When the user asks for inspiration, motivational messages, wellness tips, or daily motivation.' },
+      de: { title: 'Inspiration', description: 'Inspirierende Nachrichten und Wellness-Tipps von Vitana.', when_to_visit: 'Wenn der Nutzer nach Inspiration, motivierenden Nachrichten, Wellness-Tipps oder täglicher Motivation fragt.' },
+    },
+  },
+  {
+    screen_id: 'INBOX.ARCHIVED', route: '/inbox/archived', category: 'inbox',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Archived Messages', description: 'Messages you have archived.', when_to_visit: 'When the user asks for archived messages, old messages, or messages they saved or dismissed.' },
+      de: { title: 'Archivierte Nachrichten', description: 'Nachrichten, die du archiviert hast.', when_to_visit: 'Wenn der Nutzer nach archivierten Nachrichten, alten Nachrichten oder Nachrichten fragt, die er gespeichert oder verworfen hat.' },
+    },
+  },
+
+  // ── SHARING (entire section missing) ────────────────────────────────────
+  {
+    screen_id: 'SHARING.OVERVIEW', route: '/sharing', category: 'sharing',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Sharing', description: 'Share the Maxina community with friends and earn rewards.', when_to_visit: 'When the user asks about sharing, referrals, inviting friends, or how to spread the word about the community.' },
+      de: { title: 'Teilen', description: 'Teile die Maxina Community mit Freunden und verdiene Belohnungen.', when_to_visit: 'Wenn der Nutzer nach Teilen, Empfehlungen, Freunde einladen oder dem fragt, wie man die Community weiterempfiehlt.' },
+    },
+  },
+  {
+    screen_id: 'SHARING.CAMPAIGNS', route: '/sharing/campaigns', category: 'sharing',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Campaigns', description: 'Your active sharing campaigns and their performance.', when_to_visit: 'When the user asks about their sharing campaigns, referral campaigns, campaign performance, or campaign results.' },
+      de: { title: 'Kampagnen', description: 'Deine aktiven Sharing-Kampagnen und deren Performance.', when_to_visit: 'Wenn der Nutzer nach seinen Sharing-Kampagnen, Empfehlungskampagnen, Kampagnen-Performance oder Kampagnen-Ergebnissen fragt.' },
+    },
+  },
+  {
+    screen_id: 'SHARING.DISTRIBUTION', route: '/sharing/distribution', category: 'sharing',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Distribution', description: 'Track how your shared content is distributed and received.', when_to_visit: 'When the user asks about distribution, how their content spreads, reach, or sharing analytics.' },
+      de: { title: 'Verteilung', description: 'Verfolge, wie deine geteilten Inhalte verteilt und empfangen werden.', when_to_visit: 'Wenn der Nutzer nach Verteilung, wie sich seine Inhalte verbreiten, Reichweite oder Sharing-Analysen fragt.' },
+    },
+  },
+  {
+    screen_id: 'SHARING.DATA_CONSENT', route: '/sharing/data-consent', category: 'sharing',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Data & Consent', description: 'Manage what data you share and your consent preferences.', when_to_visit: 'When the user asks about data sharing consent, what data is shared, data permissions, or consent settings.' },
+      de: { title: 'Daten & Einwilligung', description: 'Verwalte, welche Daten du teilst und deine Einwilligungspräferenzen.', when_to_visit: 'Wenn der Nutzer nach Datenfreigabe-Einwilligung, welche Daten geteilt werden, Datenberechtigungen oder Einwilligungseinstellungen fragt.' },
+    },
+  },
+
+  // ── MEMORY (missing tabs) ──────────────────────────────────────────────
+  {
+    screen_id: 'MEMORY.TIMELINE', route: '/memory/timeline', category: 'memory',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Timeline', description: 'A chronological timeline of your memories and interactions.', when_to_visit: 'When the user asks to see their timeline, memory timeline, history of interactions, or chronological memory view.' },
+      de: { title: 'Zeitleiste', description: 'Eine chronologische Zeitleiste deiner Erinnerungen und Interaktionen.', when_to_visit: 'Wenn der Nutzer seine Zeitleiste, Erinnerungstimeline, Verlauf der Interaktionen oder chronologische Gedächtnisansicht sehen möchte.' },
+    },
+  },
+  {
+    screen_id: 'MEMORY.RECALL', route: '/memory/recall', category: 'memory',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Recall & Search', description: 'Search through your memories and past conversations.', when_to_visit: 'When the user wants to search their memories, recall something they said, find a past conversation, or look up something Vitana remembers.' },
+      de: { title: 'Erinnern & Suchen', description: 'Durchsuche deine Erinnerungen und vergangenen Gespräche.', when_to_visit: 'Wenn der Nutzer seine Erinnerungen durchsuchen, etwas nachschlagen will, was er gesagt hat, ein vergangenes Gespräch finden oder etwas nachschlagen möchte, was Vitana sich merkt.' },
+    },
+  },
+  {
+    screen_id: 'MEMORY.PERMISSIONS', route: '/memory/permissions', category: 'memory',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Memory Permissions', description: 'Control what Vitana remembers and who can see your memories.', when_to_visit: 'When the user asks about memory permissions, what Vitana is allowed to remember, memory privacy, or who can access their memories.' },
+      de: { title: 'Speicher-Berechtigungen', description: 'Steuere, was Vitana sich merkt und wer deine Erinnerungen sehen kann.', when_to_visit: 'Wenn der Nutzer nach Speicher-Berechtigungen fragt, was Vitana sich merken darf, Gedächtnis-Privatsphäre oder wer Zugriff auf seine Erinnerungen hat.' },
+    },
+  },
+
+  // ── SETTINGS (missing tabs) ─────────────────────────────────────────────
+  {
+    screen_id: 'SETTINGS.PREFERENCES', route: '/settings/preferences', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Preferences', description: 'Your personal preferences for the app experience.', when_to_visit: 'When the user asks to change their preferences, customize the app, adjust settings, or personalize their experience.' },
+      de: { title: 'Präferenzen', description: 'Deine persönlichen Präferenzen für die App-Erfahrung.', when_to_visit: 'Wenn der Nutzer seine Präferenzen ändern, die App anpassen, Einstellungen justieren oder seine Erfahrung personalisieren möchte.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.CONNECTED_APPS', route: '/settings/connected-apps', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Connected Apps', description: 'Manage third-party app integrations connected to your account.', when_to_visit: 'When the user asks about connected apps, integrations, third-party connections, or linked services.' },
+      de: { title: 'Verbundene Apps', description: 'Verwalte Drittanbieter-App-Integrationen, die mit deinem Konto verbunden sind.', when_to_visit: 'Wenn der Nutzer nach verbundenen Apps, Integrationen, Drittanbieter-Verbindungen oder verknüpften Diensten fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SOCIAL', route: '/settings/social', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Social Accounts', description: 'Link and manage your social media accounts.', when_to_visit: 'When the user asks about social accounts, social media links, connecting Instagram, Facebook, or other social platforms.' },
+      de: { title: 'Soziale Konten', description: 'Verknüpfe und verwalte deine Social-Media-Konten.', when_to_visit: 'Wenn der Nutzer nach sozialen Konten, Social-Media-Verknüpfungen, Instagram, Facebook oder anderen sozialen Plattformen verbinden fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING', route: '/settings/billing', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Billing', description: 'Your billing information, payment methods, and invoices.', when_to_visit: 'When the user asks about billing, payment methods, invoices, payment history, credit card, or how to pay.' },
+      de: { title: 'Abrechnung', description: 'Deine Rechnungsinformationen, Zahlungsmethoden und Rechnungen.', when_to_visit: 'Wenn der Nutzer nach Abrechnung, Zahlungsmethoden, Rechnungen, Zahlungshistorie, Kreditkarte oder wie man bezahlt fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT', route: '/settings/support', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs assistance with something.' },
+      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung bei etwas braucht fragt.' },
+    },
+  },
+
+  // ── HEALTH (secondary tabs) ─────────────────────────────────────────────
+  {
+    screen_id: 'HEALTH.PILLARS', route: '/health/pillars', category: 'health',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Health Pillars', description: 'The foundational pillars of your longevity — nutrition, fitness, sleep, stress, and more.', when_to_visit: 'When the user asks about health pillars, the pillars of longevity, foundational health areas, nutrition pillar, fitness pillar, sleep pillar, or stress management.' },
+      de: { title: 'Gesundheitssäulen', description: 'Die Grundpfeiler deiner Longevity — Ernährung, Fitness, Schlaf, Stress und mehr.', when_to_visit: 'Wenn der Nutzer nach Gesundheitssäulen, den Grundpfeilern der Longevity, grundlegenden Gesundheitsbereichen, Ernährungssäule, Fitnesssäule, Schlafsäule oder Stressmanagement fragt.' },
+    },
+  },
+  {
+    screen_id: 'HEALTH.CONDITIONS', route: '/health/conditions', category: 'health',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, medical conditions, chronic conditions, diagnoses, or health issues they are managing.' },
+      de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, medizinischen Zuständen, chronischen Erkrankungen, Diagnosen oder Gesundheitsproblemen fragt, die er verwaltet.' },
+    },
+  },
+
+  // ── PUBLIC (secondary) ──────────────────────────────────────────────────
+  {
+    screen_id: 'PUBLIC.TERMS', route: '/terms', category: 'public',
+    access: 'public', anonymous_safe: true,
+    i18n: {
+      en: { title: 'Terms of Use', description: 'Terms of use and legal information.', when_to_visit: 'When the user asks about terms of use, terms and conditions, legal terms, or the user agreement.' },
+      de: { title: 'Nutzungsbedingungen', description: 'Nutzungsbedingungen und rechtliche Informationen.', when_to_visit: 'Wenn der Nutzer nach Nutzungsbedingungen, AGB, rechtlichen Bedingungen oder der Nutzervereinbarung fragt.' },
     },
   },
 ];

@@ -227,6 +227,64 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'I want to register for the community',      lang: 'en', expected_screen_id: 'AUTH.MAXINA_PORTAL' },
   { utterance: 'how do I sign up for maxina',               lang: 'en', expected_screen_id: 'AUTH.MAXINA_PORTAL' },
   { utterance: 'ich möchte mich registrieren',              lang: 'de', expected_screen_id: 'AUTH.MAXINA_PORTAL' },
+
+  // ── PHASE 2: FULL COVERAGE EXPANSION ──────────────────────────────────
+
+  // ── HOME expanded ──
+  { utterance: 'show me my pending actions',                  lang: 'en', expected_screen_id: 'HOME.ACTIONS' },
+  { utterance: 'what tasks are pending for me',              lang: 'en', expected_screen_id: 'HOME.ACTIONS' },
+  { utterance: 'show me my context',                         lang: 'en', expected_screen_id: 'HOME.CONTEXT' },
+
+  // ── AI expanded ──
+  { utterance: 'open the AI assistant',                      lang: 'en', expected_screen_id: 'AI.OVERVIEW' },
+  { utterance: 'show me AI insights',                        lang: 'en', expected_screen_id: 'AI.INSIGHTS' },
+  { utterance: 'zeig mir KI einblicke',                      lang: 'de', expected_screen_id: 'AI.INSIGHTS' },
+  { utterance: 'open my daily summary',                      lang: 'en', expected_screen_id: 'AI.DAILY_SUMMARY' },
+  { utterance: 'tägliche zusammenfassung',                   lang: 'de', expected_screen_id: 'AI.DAILY_SUMMARY' },
+
+  // ── DISCOVER expanded ──
+  { utterance: 'show me my orders',                          lang: 'en', expected_screen_id: 'DISCOVER.ORDERS' },
+  { utterance: 'meine bestellungen',                         lang: 'de', expected_screen_id: 'DISCOVER.ORDERS' },
+  { utterance: 'show me AI picks',                           lang: 'en', expected_screen_id: 'DISCOVER.AI_PICKS' },
+
+  // ── INBOX expanded ──
+  { utterance: 'show me inspiration messages',               lang: 'en', expected_screen_id: 'INBOX.INSPIRATION' },
+  { utterance: 'open archived messages',                     lang: 'en', expected_screen_id: 'INBOX.ARCHIVED' },
+  { utterance: 'archivierte nachrichten',                    lang: 'de', expected_screen_id: 'INBOX.ARCHIVED' },
+
+  // ── SHARING (entire new section) ──
+  { utterance: 'open sharing',                               lang: 'en', expected_screen_id: 'SHARING.OVERVIEW' },
+  { utterance: 'open the sharing referrals section',          lang: 'en', expected_screen_id: 'SHARING.OVERVIEW' },
+  { utterance: 'freunde einladen',                           lang: 'de', expected_screen_id: 'SHARING.OVERVIEW' },
+  { utterance: 'show my sharing campaigns',                  lang: 'en', expected_screen_id: 'SHARING.CAMPAIGNS' },
+  { utterance: 'open distribution',                          lang: 'en', expected_screen_id: 'SHARING.DISTRIBUTION' },
+  { utterance: 'data consent settings',                      lang: 'en', expected_screen_id: 'SHARING.DATA_CONSENT' },
+  { utterance: 'daten einwilligung',                         lang: 'de', expected_screen_id: 'SHARING.DATA_CONSENT' },
+
+  // ── MEMORY expanded ──
+  { utterance: 'open my timeline',                           lang: 'en', expected_screen_id: 'MEMORY.TIMELINE' },
+  { utterance: 'zeig mir die zeitleiste',                    lang: 'de', expected_screen_id: 'MEMORY.TIMELINE' },
+  { utterance: 'search my memories',                         lang: 'en', expected_screen_id: 'MEMORY.RECALL' },
+  { utterance: 'erinnerungen durchsuchen',                   lang: 'de', expected_screen_id: 'MEMORY.RECALL' },
+  { utterance: 'memory permissions',                         lang: 'en', expected_screen_id: 'MEMORY.PERMISSIONS' },
+
+  // ── SETTINGS expanded ──
+  { utterance: 'customize my app preferences',               lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
+  { utterance: 'connected apps settings',                    lang: 'en', expected_screen_id: 'SETTINGS.CONNECTED_APPS' },
+  { utterance: 'social accounts settings',                   lang: 'en', expected_screen_id: 'SETTINGS.SOCIAL' },
+  { utterance: 'open billing',                               lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
+  { utterance: 'abrechnung öffnen',                          lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
+  { utterance: 'I need help from support',                   lang: 'en', expected_screen_id: 'SETTINGS.SUPPORT' },
+  { utterance: 'hilfe und support',                          lang: 'de', expected_screen_id: 'SETTINGS.SUPPORT' },
+
+  // ── HEALTH expanded ──
+  { utterance: 'show me the health pillars',                 lang: 'en', expected_screen_id: 'HEALTH.PILLARS' },
+  { utterance: 'gesundheitssäulen anzeigen',                 lang: 'de', expected_screen_id: 'HEALTH.PILLARS' },
+  { utterance: 'show my health conditions',                  lang: 'en', expected_screen_id: 'HEALTH.CONDITIONS' },
+
+  // ── PUBLIC expanded ──
+  { utterance: 'show me the terms of use',                   lang: 'en', expected_screen_id: 'PUBLIC.TERMS' },
+  { utterance: 'nutzungsbedingungen',                        lang: 'de', expected_screen_id: 'PUBLIC.TERMS' },
 ];
 
 describe('navigation-catalog — routing quality', () => {
