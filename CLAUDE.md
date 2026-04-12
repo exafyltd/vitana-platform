@@ -1,249 +1,280 @@
-# Vitana Platform - Claude Code Deployment Guide
+# Vitana Platform — Backend, Gateway, Command Hub
+
+## What This Is
+
+Backend platform for the Vitana/MAXINA longevity ecosystem. Node.js/Express API gateway with 95+ routes, 110+ services, OASIS event system, VTID governance, and multiple microservices. This is the **backend** repo. The frontend is `exafyltd/vitana-v1` at `/home/user/vitana-v1/`.
 
 ## Multi-Repo Setup
 
-This project spans TWO repositories. Both must be available in every Claude Code session:
-
-- **`exafyltd/vitana-platform`** — Backend, Gateway, Command Hub, CI/CD pipelines
-- **`exafyltd/vitana-v1`** — Frontend community app (React/Vite SPA, formerly Lovable)
-
-### Claude Code Web Task Configuration
-When creating tasks in Claude Code Web (claude.ai/code), ALWAYS select BOTH repositories:
-1. `exafyltd/vitana-platform`
-2. `exafyltd/vitana-v1`
-
-### Filesystem Layout
+Both repos must be available in every session:
 ```
-/home/user/vitana-platform/   ← Backend (this repo)
-/home/user/vitana-v1/         ← Frontend (clone if not present)
+/home/user/vitana-platform/   <- Backend (this repo)
+/home/user/vitana-v1/         <- Frontend (React/Vite SPA)
 ```
 
-If `/home/user/vitana-v1` doesn't exist, clone it:
+## Commands
+
+### Gateway (main service)
 ```bash
-cd /home/user && git clone https://github.com/exafyltd/vitana-v1.git
+cd services/gateway
+npm run dev          # Dev server (tsx watch) → http://localhost:8080
+npm run build        # TypeScript compile + copy frontend assets → dist/
+npm run test         # Run tests
+npm run lint         # ESLint
+npx tsc              # TypeScript check (no emit)
 ```
 
-## Architecture Overview
+### Database
+```bash
+npx prisma migrate dev        # Run pending migrations
+npx prisma migrate deploy     # Deploy migrations (production)
+npx prisma generate           # Regenerate Prisma client
+npx prisma studio             # Visual DB browser
+```
 
-There are THREE deployable components across two repos:
+### Docker (local Postgres)
+```bash
+docker compose up -d                    # Start PostgreSQL 16
+docker compose --profile tools up -d    # Start PostgreSQL + pgAdmin
+```
 
-### 1. Backend + Command Hub (vitana-platform)
-- **Cloud Run service:** `gateway` in `us-central1`, project `lovable-vitana-vers1`
-- **Source:** `vitana-platform/services/gateway/`
-- **Includes:** Backend API routes + Command Hub frontend (operator/developer UI)
-- **URL:** `https://gateway-q74ibpv6ia-uc.a.run.app`
-- **Command Hub frontend:** `services/gateway/src/frontend/command-hub/app.js` (vanilla JS, served by gateway)
-- **Deploys via:** `.github/workflows/EXEC-DEPLOY.yml` (governed, with VTID tracking)
-- **Auto-deploys** on push to `main` via `.github/workflows/AUTO-DEPLOY.yml`
-- **One deploy = backend API + Command Hub frontend together** (same Docker image)
+### E2E Tests
+```bash
+cd e2e
+npx playwright test --project=desktop-community
+```
 
-### 2. Community App (vitana-v1) 
-- **Repo:** `exafyltd/vitana-v1` (filesystem: `/home/user/vitana-v1/`)
-- **Stack:** React/Vite SPA with TypeScript, Tailwind, Supabase Auth
-- **Cloud Run service:** `community-app` in `us-central1`, project `lovable-vitana-vers1`
-- **Deploys via:** `.github/workflows/DEPLOY.yml` (source deploy on push to `main`)
-- **Lovable CDN:** Still active as fallback at `vitana-lovable-vers1.lovable.app` (will be decommissioned after Cloud Run is verified)
-- **This is the end-user mobile/web app** (Events, Autopilot Actions popup, diary, matches, etc.)
-- **Supabase project:** `inmkhvwdcuyhnxkgfvsb`
-- **Auth:** Dual JWT — Platform + Lovable Supabase secrets
-- **CORS:** Configured in `vitana-platform/services/gateway/src/middleware/cors.ts`
+## Stack
 
-### Which frontend is which?
-| Feature | Command Hub (`vitana-platform`) | Community App (`vitana-v1`) |
-|---------|-------------------------------|---------------------------|
-| Users | Operators, developers, admins | Community users (end users) |
-| UI | "AUTOPILOT" pill, "OPERATOR" pill | "Autopilot Actions" popup, events, diary |
-| Tech | Vanilla JS (`app.js`) | React/Vite/TypeScript |
-| Deploy | With gateway (Cloud Run) | Push to `main` → Cloud Run `community-app` + Lovable CDN (dual) |
-| URL | `gateway-*.run.app/command-hub` | Cloud Run: `community-app-*.run.app` / Lovable: `vitana-lovable-vers1.lovable.app` |
+- **Runtime:** Node.js 20 + TypeScript 5.3 (strict mode)
+- **Framework:** Express 4.18
+- **ORM:** Prisma 6.18 → PostgreSQL 16
+- **Auth:** Supabase JWT (dual: Platform + Lovable)
+- **AI:** Google Gemini, Vertex AI, OpenAI (embeddings), Perplexity (search)
+- **State machines:** XState 5.26 (autopilot)
+- **Payments:** Stripe 20.3
+- **Video:** Daily.co SDK
+- **Real-time:** WebSockets (ws), Server-Sent Events
+- **Package manager:** pnpm 9.0
 
-- **Platform Supabase:** Secrets in GCP Secret Manager (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`)
-- **Lovable Supabase:** `https://inmkhvwdcuyhnxkgfvsb.supabase.co` (env: `LOVABLE_SUPABASE_URL`)
+## Directory Map
 
-## Deployment Process
+```
+vitana-platform/
+├── services/
+│   ├── gateway/                    # PRIMARY SERVICE — Express API + Command Hub frontend
+│   │   ├── src/
+│   │   │   ├── index.ts            # Express app setup, middleware, route mounting
+│   │   │   ├── routes/             # 95+ API route files
+│   │   │   ├── services/           # 110+ business logic services
+│   │   │   ├── middleware/         # Auth, CORS, VTID validation (3 files)
+│   │   │   ├── lib/                # Utilities — nav catalog, SPA routing, Supabase
+│   │   │   ├── frontend/
+│   │   │   │   ├── command-hub/    # Operator UI (vanilla JS — app.js + styles.css)
+│   │   │   │   └── voice-lab/     # Voice testing interface
+│   │   │   ├── types/             # TypeScript definitions
+│   │   │   ├── utils/             # Helper functions
+│   │   │   ├── constants/         # Static values
+│   │   │   ├── governance/        # VTID validation rules
+│   │   │   ├── kb/                # Knowledge base integration
+│   │   │   └── validator-core/    # Validator service
+│   │   ├── Dockerfile             # Multi-stage Node 20 Alpine build
+│   │   ├── package.json           # Express, Supabase, Stripe, AI deps
+│   │   └── tsconfig.json          # Strict mode, ES2022 target, CommonJS
+│   ├── oasis-operator/            # OASIS event operator service
+│   ├── oasis-projector/           # Event projection engine
+│   ├── agents/                    # CrewAI agent framework (8 sub-services)
+│   ├── mcp/                       # Model Context Protocol support
+│   ├── mcp-gateway/               # MCP gateway service
+│   ├── worker-runner/             # Task worker execution
+│   ├── openclaw-bridge/           # Connector bridge
+│   ├── deploy-watcher/            # Deployment monitoring
+│   └── validators/                # Validation services
+├── prisma/
+│   ├── schema.prisma              # 3 models: OasisEvent, VtidLedger, ProjectionOffset
+│   └── migrations/                # Prisma migrations
+├── database/
+│   ├── migrations/                # Raw SQL migrations (20+ files)
+│   └── policies/                  # RLS policies
+├── e2e/                           # Playwright E2E tests
+│   ├── playwright.config.ts       # 16 projects (desktop/mobile per role)
+│   ├── global-setup.ts            # Test user provisioning
+│   ├── auth/                      # Auth flow tests
+│   ├── command-hub/               # Command Hub tests
+│   ├── community-desktop/         # Desktop community tests
+│   ├── community-mobile/          # Mobile community tests
+│   └── fixtures/                  # Test data & users
+├── supabase/                      # Supabase edge functions & migrations
+├── docs/                          # Architecture docs, governance, deployment
+├── specs/                         # OASIS and gateway specifications (YAML + MD)
+├── config/
+│   ├── service-path-map.json      # Service → Cloud Run service mapping
+│   └── cicd-concurrency.json      # CI/CD concurrency limits
+├── scripts/                       # Deploy, CI, AI, backfill scripts
+├── kb/                            # Knowledge base documents (JSON, 280KB)
+├── cloudflare/                    # Cloudflare Workers (email intake, OG proxy)
+├── crew_template/                 # CrewAI agent templates
+├── .github/workflows/             # 11 CI/CD workflow files
+│   ├── AUTO-DEPLOY.yml            # Triggers EXEC-DEPLOY on push to main
+│   ├── EXEC-DEPLOY.yml            # Canonical governed deployment (32KB)
+│   ├── E2E-TEST-RUN.yml           # Playwright E2E tests
+│   ├── COMMAND-HUB-GUARDRAILS.yml # Layout rule enforcement
+│   └── ...                        # Linting, naming, migration, persistence
+├── docker-compose.yml             # Local PostgreSQL 16 + pgAdmin
+├── package.json                   # Root package (pnpm, Prisma)
+└── CLAUDE.md                      # This file
+```
 
-### Backend API + Command Hub changes (vitana-platform)
+## Key Files — Read These First
 
-1. Make changes in `services/gateway/src/` (API routes, middleware, services, OR Command Hub frontend)
-2. Verify TypeScript compiles: `cd services/gateway && npx tsc`
-3. Commit and push to feature branch
-4. Create PR to `main`, merge (squash)
-5. AUTO-DEPLOY triggers → dispatches EXEC-DEPLOY
-6. EXEC-DEPLOY: VTID check → Governance → `gcloud run deploy gateway` → Health check → Smoke tests
-7. If no VTID in commit, uses `BOOTSTRAP-AUTO-{sha}` fallback
-8. **Both backend API and Command Hub frontend deploy together** (same image)
+| File | What it does | When to read it |
+|------|-------------|-----------------|
+| `services/gateway/src/index.ts` | Express app setup, all middleware + route mounting | Understanding request flow |
+| `services/gateway/src/middleware/auth-supabase-jwt.ts` | Dual JWT validation (Platform + Lovable Supabase) | Auth issues |
+| `services/gateway/src/middleware/cors.ts` | CORS configuration | CORS issues |
+| `services/gateway/src/middleware/require-vtid.ts` | VTID validation middleware | VTID governance |
+| `prisma/schema.prisma` | Database schema (OasisEvent, VtidLedger, ProjectionOffset) | DB changes |
+| `config/service-path-map.json` | Service → Cloud Run mapping | Deployment |
+| `services/gateway/src/frontend/command-hub/app.js` | Command Hub frontend (vanilla JS) | Command Hub changes |
+| `services/gateway/src/frontend/command-hub/styles.css` | Command Hub styles | Command Hub styling |
+| `services/gateway/src/lib/navigation-catalog.ts` | Navigation catalog (47KB) | Nav structure |
+| `.github/workflows/EXEC-DEPLOY.yml` | Canonical deployment pipeline (32KB) | Deploy changes |
+| `.github/workflows/AUTO-DEPLOY.yml` | Auto-deploy trigger on push to main | Deploy triggers |
 
-### Community App changes (vitana-v1)
+## Three Deployable Components
 
-1. Source: `/home/user/vitana-v1/` (or clone from `exafyltd/vitana-v1`)
-2. Make changes in `src/` (React components, hooks, pages)
-3. Commit and push to feature branch, then merge to `main`
-4. On merge to `main`: Cloud Run `community-app` auto-deploys via `.github/workflows/DEPLOY.yml`
-5. Lovable CDN also auto-deploys on push to `main` (legacy fallback, will be removed)
+| Component | Service | Source | Deploy trigger |
+|-----------|---------|--------|---------------|
+| Backend API + Command Hub | `gateway` on Cloud Run | `services/gateway/` | Push to `main` → AUTO-DEPLOY → EXEC-DEPLOY |
+| Community App | `community-app` on Cloud Run | `vitana-v1/` (other repo) | Push to `main` → DEPLOY.yml |
+| (Plus standalone services) | `oasis-operator`, `worker-runner`, etc. | `services/{name}/` | EXEC-DEPLOY with service param |
 
-### Full-Stack Changes (both repos)
+## Deployable Services
 
-When a change spans backend + community app:
-1. Make backend changes in `vitana-platform/services/gateway/`
-2. Make frontend changes in `vitana-v1/src/`
-3. Deploy backend first (merge to `vitana-platform` main)
-4. Deploy frontend second (merge to `vitana-v1` main)
-5. Verify both are live before testing
+From `config/service-path-map.json`:
+- **Deployable:** gateway, oasis-operator, oasis-projector, vitana-verification-engine, openclaw-bridge, worker-runner
+- **Non-deployable** (support only): agents, mcp, mcp-gateway, deploy-watcher, oasis, validators
 
-### Command Hub + Community App (both frontends)
+## Database Schema (Prisma)
 
-When a feature affects BOTH frontends (e.g., autopilot):
-1. Backend/API changes + Command Hub in `vitana-platform` (one deploy)
-2. Community App UI in `vitana-v1` (separate deploy)
-3. Both call the same API endpoints — keep response format compatible
+Three models in `prisma/schema.prisma`:
 
-### Environment Variables (Gateway)
+1. **OasisEvent** → `oasis_events` table
+   - System-wide event log
+   - Fields: id, rid, service, event, tenant, status, notes, gitSha, metadata, vtid, topic, message, role, model, link, source, actor tracking fields
+   - Indexed by: projected/createdAt, service, tenant, status, vtid
 
-Key env vars set during deploy (see EXEC-DEPLOY.yml):
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` (GCP secrets)
-- `SUPABASE_JWT_SECRET`, `SUPABASE_ANON_KEY` (GCP secrets)
-- `GOOGLE_GEMINI_API_KEY` (GCP secret)
-- `LOVABLE_SUPABASE_URL`, `LOVABLE_SUPABASE_SERVICE_ROLE` (env vars)
-- `GCP_PROJECT_ID=lovable-vitana-vers1`
-- `ENVIRONMENT=dev-sandbox`
+2. **VtidLedger** → `vtid_ledger` table
+   - Central task tracking
+   - Fields: id, vtid (unique), taskFamily, taskType, description, status, assignedTo, tenant, metadata, parentVtid, layer, module, title, summary
+   - Indexed by: createdAt, taskFamily, status, tenant, vtid, lastEventAt, service
 
-## Key Services & Files
+3. **ProjectionOffset** → `projection_offsets` table
+   - Event projection tracking
+   - Fields: projectorName (unique), lastEventId, lastEventTime, lastProcessedAt, eventsProcessed
 
-- **Autopilot Recommendations:** `services/gateway/src/routes/autopilot-recommendations.ts`
-  - Community user recs: auto-replenishes when all are activated
-  - Scheduler: daily at 7 AM UTC for community users (`services/gateway/src/services/recommendation-engine/scheduler.ts`)
-  - Analyzer: `services/gateway/src/services/recommendation-engine/analyzers/community-user-analyzer.ts` (28 templates, 8 languages, 6 onboarding stages)
+## Environment Variables (Gateway)
 
-- **Auth Middleware:** `services/gateway/src/middleware/auth-supabase-jwt.ts` (dual JWT: Platform + Lovable)
-- **CORS:** `services/gateway/src/middleware/cors.ts`
-- **Command Hub Frontend:** `services/gateway/src/frontend/command-hub/app.js`
+Key env vars (set via GCP Secret Manager):
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` — Platform Supabase
+- `LOVABLE_SUPABASE_URL`, `LOVABLE_SUPABASE_SERVICE_ROLE` — Lovable Supabase (for community app auth)
+- `SUPABASE_JWT_SECRET`, `SUPABASE_ANON_KEY` — JWT validation
+- `DATABASE_URL` — PostgreSQL connection
+- `GOOGLE_GEMINI_API_KEY` — Gemini AI
+- `OPENAI_API_KEY` — Embeddings
+- `PERPLEXITY_API_KEY` — Web search
+- `DAILY_API_KEY` — Video rooms
+- `GCP_PROJECT_ID` — `lovable-vitana-vers1`
+- `STRIPE_SECRET_KEY` — Payments
+
+## Cross-Repo API Map
+
+The frontend (`vitana-v1`) calls this backend at `VITE_GATEWAY_URL`. Key mappings:
+
+| Frontend (vitana-v1) | Backend route | Backend service |
+|---|---|---|
+| `hooks/useChatApi.ts` | `routes/chat.ts` | `services/conversation-client.ts` |
+| `hooks/use-autopilot.ts` | `routes/autopilot.ts` | `services/autopilot-controller.ts` |
+| `hooks/useCommunityEvents.ts` | `routes/events.ts` | Supabase direct |
+| `hooks/useLiveRoom.ts` | `routes/live.ts` | `services/room-session-manager.ts` |
+| `hooks/useMessages.ts` | `routes/conversation.ts` | `services/conversation-client.ts` |
+| `hooks/useWallet.ts` | `routes/financial-monetization.ts` | `services/d36-financial-monetization-engine.ts` |
+| `hooks/useHealthPlans.ts` | `routes/health.ts` | `services/health-capacity-awareness-engine.ts` |
+| `hooks/useTaskStream.ts` | `routes/tasks.ts` | `services/task-intake-service.ts` |
+| `lib/commandHubApi.ts` | `routes/command-hub.ts` | `services/operator-service.ts` |
+
+## VTID Governance
+
+VTIDs (Vitana Task IDs) track all work across the platform:
+- Format: `VTID-XXXXX` (e.g., `VTID-01228`)
+- Every deploy requires a VTID (fallback: `BOOTSTRAP-AUTO-{sha}`)
+- VTID lifecycle: created → in-progress → completed → terminalized
+- Validation middleware: `services/gateway/src/middleware/require-vtid.ts`
+- Ledger: `vtid_ledger` table (Prisma model)
 
 ## Git Workflow
 
 - Feature branches: `claude/{feature}-{id}`
 - PRs merge to `main` via squash
-- AUTO-DEPLOY triggers on `main` push when `services/gateway/**` or `apps/web/**` changes
+- AUTO-DEPLOY triggers on `main` push when `services/gateway/**` changes
 - EXEC-DEPLOY is the canonical governed deploy pipeline
-- If push fails, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s)
+- VTID extracted from commit message for deploy tracking
 
-## GitHub Actions Access
+## Architecture Rules — Do Not Violate
 
-To check workflow runs and logs, use `gh` CLI (install if missing: download binary from GitHub releases):
-```bash
-# Install gh if not present
-gh --version || (curl -fsSL https://github.com/cli/cli/releases/download/v2.67.0/gh_2.67.0_linux_amd64.tar.gz -o /tmp/gh.tar.gz && tar -xzf /tmp/gh.tar.gz -C /tmp && cp /tmp/gh_2.67.0_linux_amd64/bin/gh /usr/local/bin/gh)
+1. **VTID governance**: Every significant change needs a VTID. Commits should reference VTIDs.
+2. **Dual JWT auth**: Both Platform and Lovable Supabase tokens must be validated. See `auth-supabase-jwt.ts`.
+3. **Command Hub layout rules**: No inline styles in `app.js`. All styles in `styles.css` using CSS classes and design tokens. See section below.
+4. **Deploy backend first**: For full-stack changes, deploy backend before frontend.
+5. **Service isolation**: Each service in `services/` is independently deployable. Don't create cross-service imports.
+6. **Event sourcing**: Use OASIS events for state changes that need audit trails. Don't mutate state without events.
+7. **TypeScript strict mode**: The gateway uses `strict: true`. Don't add `@ts-ignore` or weaken type safety.
 
-# Auth requires GH_TOKEN env var — set in Claude Code settings or export manually
-gh run list --repo exafyltd/vitana-v1 --limit 5
-gh run view <run-id> --repo exafyltd/vitana-v1 --log-failed
-```
+## Command Hub Layout Rules (DO NOT VIOLATE)
 
-**Note:** The `gh` CLI needs a `GH_TOKEN` environment variable. If not available, use MCP GitHub tools (`mcp__github__*`) for PR/issue/commit operations, but those don't cover Actions API.
+Layout, padding, font-size, color, border, and background styles MUST live in `styles.css` as class definitions using `:root` design tokens.
 
-## E2E Testing
+**In `app.js`, use:** `element.className = 'foo-class'`
+**Never use:** `element.style.cssText = 'padding:...; font-size:...; background:...'`
 
-- **Config:** `e2e/playwright.config.ts` — 16 projects (desktop/mobile per role + shared + hub)
-- **Auth:** API-based via Supabase REST (`POST /auth/v1/token`) — NOT browser form login
-- **Test user:** Auto-provisioned by `e2e/global-setup.ts` → `e2e-test@vitana.dev` with `exafy_admin: true`
-- **Service role key:** Lovable Supabase (in `EXEC-DEPLOY.yml:305` and `E2E-TEST-RUN.yml`)
-- **Anon key:** In `e2e/fixtures/test-users.ts` (public, same as `vitana-v1/.env`)
-- **Run:** `cd e2e && npx playwright test --project=desktop-community`
-- **CI:** `.github/workflows/E2E-TEST-RUN.yml` (manual dispatch or `repository_dispatch` from vitana-v1 deploy)
-- **Cloud Run E2E:** Set `COMMUNITY_URL=<cloud-run-url>` to test against Cloud Run instead of vitanaland.com
+**Allowed inline:** dynamic positioning (gridColumn), visibility toggles (display none/block), computed transforms
+**Forbidden inline:** padding, margin, gap, font-size, color, background, border, width/height, display flex/grid
 
-## Gateway URLs
+**Flexbox truncation:** `.x-row { display:flex }` with `.x-message { flex:1; overflow:hidden; text-overflow:ellipsis }` MUST have `min-width:0` on both row and message.
 
-- Primary: `https://gateway-q74ibpv6ia-uc.a.run.app`
-- Alt: `https://gateway-86804897789.us-central1.run.app`
-- Canonical (in code): `https://gateway-q74ibpv6ia-uc.a.run.app`
+**Card sizing:** Cards with `justify-content:center` MUST declare `min-height`.
 
-## Frontend Repo: vitana-v1
+## Common Tasks
 
-- **Repo:** `exafyltd/vitana-v1` (must be added to Claude Code Web task scope)
-- **Stack:** React, Vite, TypeScript, Tailwind, Supabase Auth
-- **Hosting:** Cloud Run `community-app` + Lovable CDN fallback (dual deploy on push to `main`)
-- **Cloud Run deploy:** `.github/workflows/DEPLOY.yml` (source deploy, nginx serving static Vite build)
-- **Supabase:** `https://inmkhvwdcuyhnxkgfvsb.supabase.co`
-- **All frontend changes happen in this repo** — no more Lovable web editor
-- **Claude Code is the ONLY development tool** for both backend and frontend
+### Add a new API route
+1. Create route file in `services/gateway/src/routes/`
+2. Create service file in `services/gateway/src/services/` if business logic is complex
+3. Mount route in `services/gateway/src/index.ts`
+4. Add auth middleware: `authMiddleware` for protected routes
+5. Validate input with Zod schemas
 
-## Preview & Publish Pipeline
+### Add a new service
+1. Create service file in `services/gateway/src/services/`
+2. Export functions, not classes (functional pattern)
+3. Use Prisma client for DB access, Supabase client for Supabase operations
+4. Add OASIS events for auditable operations
 
-### Current State (Phase 1 — Parallel Deployment)
+### Add a database migration
+1. Modify `prisma/schema.prisma`
+2. Run `npx prisma migrate dev --name <description>`
+3. For raw SQL: add file to `database/migrations/` with date prefix
 
-Community App deploys to **both** Cloud Run and Lovable CDN on push to `main`:
-- **Cloud Run:** `community-app` service → `DEPLOY.yml` workflow
-- **Lovable CDN:** Legacy auto-deploy (fallback, will be removed after Cloud Run verified)
+### Deploy a change
+1. Make changes in `services/gateway/src/`
+2. Verify: `cd services/gateway && npx tsc`
+3. Push to feature branch, create PR to `main`
+4. Merge triggers AUTO-DEPLOY → EXEC-DEPLOY with VTID tracking
 
-### Preview (feature branches)
+## Graphify Integration (Phase 2)
 
-| Component | Preview URL | How |
-|-----------|------------|-----|
-| **Community App** | `https://{branch}--vitana-v1.lovable.app` | Lovable CDN (current, until Cloud Run preview infra is built) |
-| **Gateway + Command Hub** | Cloud Run `--no-traffic` revision | Deploy via `gcloud run deploy --no-traffic` on branch push (planned) |
+When Graphify is available, use it to answer:
+- "What routes call this service?" — trace route → service → DB dependencies
+- "What will break if I change this Prisma model?" — follow the type through services and routes
+- "What frontend hooks hit this endpoint?" — cross-repo dependency chain
 
-### Publish (go live)
-
-The Command Hub **Publish** button (`renderPublishModal()` in `app.js`) is the single control point:
-- Currently: deploys gateway versions via `POST /api/v1/operator/deploy`
-- **Planned expansion:** Show preview URLs for both services, one-click merge to `main` on both repos
-- Gateway: AUTO-DEPLOY → EXEC-DEPLOY → Cloud Run routes traffic
-- Community App: Push to `main` → Cloud Run `community-app` deploy (+ Lovable CDN fallback)
-
-### Workflow
-
-```
-1. Claude Code creates feature branch on both repos
-2. Push changes → previews are live automatically
-3. Test via preview URLs
-4. Open Command Hub → click Publish → select branch → confirm
-5. Both repos merge to main → both deploy to production
-```
-
-### Key Rule: NEVER push directly to main for untested changes
-- Always use feature branches
-- Always preview before publishing
-- The Publish button is the single "go live" action
-
-### Migration Roadmap
-1. **Phase 1 (current):** Cloud Run `community-app` deploys alongside Lovable CDN
-2. **Phase 2:** Add preview deploy workflows (`--no-traffic --tag` on feature branches)
-3. **Phase 3:** Expand Command Hub Publish modal — preview panel, branch selector, multi-service publish
-4. **Phase 4:** Backend API — `GET /api/v1/preview/status`, `POST /api/v1/operator/publish`
-5. **Lovable cleanup:** Remove `lovable-tagger`, `.lovable/`, cut over DNS (after Cloud Run verified)
-
----
-
-## 19. Command Hub Frontend — Layout Rules (DO NOT VIOLATE)
-
-The Command Hub layout (`services/gateway/src/frontend/command-hub/`) has been broken multiple times by ad-hoc inline styles in `app.js`. Every regression has followed the same pattern: a developer hits a layout bug, reaches for `element.style.cssText = '...'` in JS, and silently overrides the design system in `styles.css`. **This stops here.**
-
-### The Rule
-**Layout, padding, font-size, color, border, and background styles MUST live in `styles.css` as class definitions.** Reference the `:root` design tokens (`--metric-card-min-height`, `--metric-card-padding`, `--health-card-padding`, `--health-card-font-size`, etc. — all defined at the top of `styles.css`).
-
-In `app.js`, use `element.className = 'foo-class'`. Do **not** write `element.style.cssText = 'padding:...; font-size:...; background:...'`.
-
-### What is allowed inline
-Only dynamic positioning that genuinely cannot live in CSS:
-- `element.style.gridColumn = '1 / -1'` (placement within a parent grid)
-- `element.style.display = 'none'` / `'block'` (visibility toggles)
-- Computed transforms, scroll offsets, drag positions
-
-### What is forbidden inline
-- `padding`, `margin`, `gap`
-- `font-size`, `font-weight`, `color`
-- `background`, `border`, `border-radius`
-- `display: flex/grid` + flex/grid layout properties
-- `width`, `min-width`, `max-width`, `min-height`, `max-height`
-
-### The flexbox text-truncation pattern
-Any `.x-row { display:flex }` row containing a `.x-message { flex:1; overflow:hidden; text-overflow:ellipsis }` MUST also have `min-width:0` on **both** the row and the message — without it the message expands to its natural width and overflows the parent. This is the most common Command Hub layout bug.
-
-### Card sizing
-Cards in CSS Grid that use `justify-content:center` MUST declare `min-height` (use `var(--metric-card-min-height)` or similar). Without it, content visually escapes the border because `justify-content` has nothing to center against.
-
-### Audit before adding new code
-Before adding a new panel/card/list to the overview, grep `services/gateway/src/frontend/command-hub/styles.css` for an existing class that fits (`.health-card`, `.health-pill`, `.overview-list-wrap`, `.overview-failed-services`, `.failure-row`, `.deploy-row`, `.overview-metric-card`, `.overview-health-group`). Reuse before reinventing.
-
-### Why this matters
-Inline styles have higher specificity than any class, so a single `style.cssText` line can silently break responsive media queries, hover states, and design tokens for the entire page. They are also invisible to anyone reading `styles.css`. Every "fix the layout" commit that uses inline JS styles makes the next regression more likely.
+Keep CLAUDE.md for rules and architecture. Use Graphify for dynamic relationships.
