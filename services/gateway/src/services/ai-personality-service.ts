@@ -459,6 +459,151 @@ export async function resetPersonalityConfig(
   }
 }
 
+// =============================================================================
+// Batch 1.B2: Tenant-aware effective config
+// =============================================================================
+
+/**
+ * Get the effective AI personality config for a surface + tenant.
+ *
+ * Merge order: hardcoded defaults ← global DB override ← tenant override.
+ * The tenant override is stored in `tenant_assistant_config` (new table).
+ * If tenant_id is null, returns the global config (existing behavior).
+ */
+export async function getEffectiveConfig(
+  surfaceKey: PersonalitySurfaceKey,
+  tenantId: string | null
+): Promise<Record<string, unknown>> {
+  // Layer 1: global config (defaults + any global DB override)
+  const globalConfig = await getPersonalityConfig(surfaceKey);
+  const merged = { ...globalConfig.config };
+
+  if (!tenantId || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return merged;
+  }
+
+  // Layer 2: tenant-specific override from tenant_assistant_config
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_assistant_config?tenant_id=eq.${tenantId}&surface_key=eq.${surfaceKey}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+      }
+    );
+
+    if (response.ok) {
+      const rows = (await response.json()) as any[];
+      if (rows.length > 0) {
+        const tenantConfig = rows[0];
+        // Merge tenant overrides on top of global config
+        if (tenantConfig.system_prompt_override) {
+          merged.base_identity = tenantConfig.system_prompt_override;
+        }
+        if (tenantConfig.voice_config_override) {
+          merged.voice_config = { ...(merged.voice_config as any || {}), ...tenantConfig.voice_config_override };
+        }
+        if (tenantConfig.tool_overrides) {
+          merged.tool_overrides = tenantConfig.tool_overrides;
+        }
+        if (tenantConfig.model_routing_override) {
+          merged.model_routing = tenantConfig.model_routing_override;
+        }
+        if (tenantConfig.extra_config && typeof tenantConfig.extra_config === 'object') {
+          Object.assign(merged, tenantConfig.extra_config);
+        }
+        merged._tenant_customized = true;
+        merged._tenant_id = tenantId;
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[AI-PERSONALITY] Failed to load tenant config for ${surfaceKey}/${tenantId}:`, err.message);
+    // Fall through to global config — tenant override is optional
+  }
+
+  return merged;
+}
+
+/**
+ * Get or update tenant-specific assistant config for a surface.
+ */
+export async function getTenantAssistantConfig(
+  tenantId: string,
+  surfaceKey: PersonalitySurfaceKey
+): Promise<Record<string, unknown> | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return null;
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_assistant_config?tenant_id=eq.${tenantId}&surface_key=eq.${surfaceKey}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+      }
+    );
+    if (!response.ok) return null;
+    const rows = (await response.json()) as any[];
+    return rows.length > 0 ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertTenantAssistantConfig(
+  tenantId: string,
+  surfaceKey: PersonalitySurfaceKey,
+  updates: Record<string, unknown>,
+  updatedBy: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_assistant_config`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          tenant_id: tenantId,
+          surface_key: surfaceKey,
+          ...updates,
+          updated_at: new Date().toISOString(),
+          updated_by: updatedBy,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `DB error: ${response.status} - ${errorText}` };
+    }
+
+    await emitOasisEvent({
+      vtid: 'AI-PERSONALITY',
+      type: 'personality.tenant_config.updated' as any,
+      source: 'ai-personality-service',
+      status: 'info',
+      message: `Tenant assistant config updated for ${surfaceKey} in tenant ${tenantId}`,
+      payload: { surface_key: surfaceKey, tenant_id: tenantId, updated_by: updatedBy },
+    }).catch(() => {});
+
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error.message };
+  }
+}
+
 /**
  * Pre-warm cache on startup
  */

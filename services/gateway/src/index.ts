@@ -226,6 +226,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Batch 1.B1: Tenant Invitations — create, list, revoke, accept
   const tenantInvitationsRouter = require('./routes/tenant-admin/invitations').default;
   const { acceptRouter: invitationAcceptRouter } = require('./routes/tenant-admin/invitations');
+  // Batch 1.B2: Tenant Assistant Config — per-tenant AI personality overrides
+  const tenantAssistantConfigRouter = require('./routes/tenant-admin/assistant-config').default;
+  // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, opt-outs, search
+  const tenantKnowledgeRouter = require('./routes/tenant-admin/knowledge').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
@@ -576,6 +580,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Batch 1.B1: Tenant Invitations — per-tenant invite/accept flow
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/invitations', tenantInvitationsRouter, { owner: 'tenant-invitations' });
   mountRouterSync(app, '/api/v1/admin/invitations', invitationAcceptRouter, { owner: 'invitation-accept' });
+  // Batch 1.B2: Tenant Assistant Config — per-tenant AI personality overrides
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/assistant', tenantAssistantConfigRouter, { owner: 'tenant-assistant-config' });
+  // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, search, opt-outs
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kb', tenantKnowledgeRouter, { owner: 'tenant-knowledge' });
 
   // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
   mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
