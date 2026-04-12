@@ -21,3 +21,11 @@ jobs:
           echo "Applying migration: ${{ inputs.migration_file }}"
           psql "$SUPABASE_DB_URL" -f "${{ inputs.migration_file }}"
           echo "Migration applied successfully"
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "Reloading PostgREST schema cache..."
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reload signal sent"
