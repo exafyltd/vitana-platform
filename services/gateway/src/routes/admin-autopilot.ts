@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { requireTenantAdmin } from '../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import { AUTOMATION_REGISTRY } from '../services/automation-registry';
 
 const router = Router();
 const VTID = 'VTID-AP-ADMIN';
@@ -503,12 +504,20 @@ router.get('/catalog', requireTenantAdmin, async (req: Request, res: Response) =
 
     if (bErr) throw bErr;
 
-    // Static catalog of available automations
-    const catalog = getAutomationCatalog();
+    // Real AP-XXXX catalog from automation-registry.ts (116 automations)
     const bindingMap = new Map((bindings || []).map(b => [b.automation_id, b]));
 
-    const items = catalog.map(entry => ({
-      ...entry,
+    const items = AUTOMATION_REGISTRY.map(entry => ({
+      id: entry.id,
+      name: entry.name,
+      domain: entry.domain,
+      status: entry.status,
+      priority: entry.priority,
+      trigger_type: entry.triggerType,
+      trigger_config: entry.triggerConfig || null,
+      target_roles: entry.targetRoles,
+      has_handler: !!entry.handler,
+      requires: entry.requires || [],
       binding: bindingMap.get(entry.id) || null,
       enabled: bindingMap.get(entry.id)?.enabled ?? false,
     }));
@@ -519,152 +528,5 @@ router.get('/catalog', requireTenantAdmin, async (req: Request, res: Response) =
     res.status(500).json({ ok: false, error: err.message });
   }
 });
-
-// ── Static automation catalog ────────────────────────────────────────────────
-
-interface AutomationCatalogEntry {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  risk_level: 'low' | 'medium' | 'high';
-  default_schedule: string;
-  requires_approval_default: boolean;
-}
-
-function getAutomationCatalog(): AutomationCatalogEntry[] {
-  return [
-    // ── Community health ──
-    {
-      id: 'AP-COMMUNITY-WELCOME',
-      name: 'Welcome New Members',
-      description: 'Automatically send personalized welcome messages and onboarding suggestions to new community members.',
-      category: 'community',
-      risk_level: 'low',
-      default_schedule: 'on_event',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-COMMUNITY-ENGAGEMENT',
-      name: 'Engagement Nudges',
-      description: 'Identify inactive members and send re-engagement prompts based on their interests and past activity.',
-      category: 'community',
-      risk_level: 'low',
-      default_schedule: 'daily',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-COMMUNITY-MODERATION',
-      name: 'Content Moderation',
-      description: 'Flag potentially inappropriate content for review based on community guidelines.',
-      category: 'community',
-      risk_level: 'medium',
-      default_schedule: 'realtime',
-      requires_approval_default: true,
-    },
-    {
-      id: 'AP-COMMUNITY-MATCHMAKING',
-      name: 'Member Matchmaking',
-      description: 'Suggest connections between members with complementary interests and goals.',
-      category: 'community',
-      risk_level: 'low',
-      default_schedule: 'weekly',
-      requires_approval_default: false,
-    },
-    // ── Health & longevity ──
-    {
-      id: 'AP-HEALTH-INSIGHTS',
-      name: 'Health Insights Digest',
-      description: 'Generate personalized health insights based on member biology data and community trends.',
-      category: 'health',
-      risk_level: 'medium',
-      default_schedule: 'weekly',
-      requires_approval_default: true,
-    },
-    {
-      id: 'AP-HEALTH-REMINDERS',
-      name: 'Wellness Reminders',
-      description: 'Schedule and send personalized wellness check-in reminders to members.',
-      category: 'health',
-      risk_level: 'low',
-      default_schedule: 'daily',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-LONGEVITY-TRENDS',
-      name: 'Longevity Trend Reports',
-      description: 'Compile and distribute community-wide longevity trend analyses.',
-      category: 'health',
-      risk_level: 'low',
-      default_schedule: 'monthly',
-      requires_approval_default: false,
-    },
-    // ── Content & events ──
-    {
-      id: 'AP-CONTENT-CURATION',
-      name: 'Content Curation',
-      description: 'Curate and recommend relevant content to members based on their interests and engagement patterns.',
-      category: 'professional',
-      risk_level: 'low',
-      default_schedule: 'daily',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-EVENT-RECOMMENDATIONS',
-      name: 'Event Recommendations',
-      description: 'Suggest upcoming events to members based on location, interests, and attendance history.',
-      category: 'community',
-      risk_level: 'low',
-      default_schedule: 'daily',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-EVENT-FOLLOWUP',
-      name: 'Post-Event Follow-up',
-      description: 'Send automated follow-up messages after events with feedback requests and connection suggestions.',
-      category: 'community',
-      risk_level: 'low',
-      default_schedule: 'on_event',
-      requires_approval_default: false,
-    },
-    // ── Intelligence & ops ──
-    {
-      id: 'AP-KNOWLEDGE-INDEXING',
-      name: 'Knowledge Base Indexing',
-      description: 'Periodically reindex community knowledge base and update embeddings for better search.',
-      category: 'general',
-      risk_level: 'low',
-      default_schedule: 'daily',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-ANALYTICS-DIGEST',
-      name: 'Analytics Digest',
-      description: 'Generate weekly analytics summaries for tenant admins with key metrics and actionable insights.',
-      category: 'general',
-      risk_level: 'low',
-      default_schedule: 'weekly',
-      requires_approval_default: false,
-    },
-    {
-      id: 'AP-ANOMALY-DETECTION',
-      name: 'Anomaly Detection',
-      description: 'Monitor community metrics for unusual patterns and alert admins of potential issues.',
-      category: 'general',
-      risk_level: 'medium',
-      default_schedule: 'hourly',
-      requires_approval_default: true,
-    },
-    {
-      id: 'AP-DATA-CLEANUP',
-      name: 'Data Hygiene',
-      description: 'Identify and flag stale data, orphaned records, and data quality issues for admin review.',
-      category: 'general',
-      risk_level: 'high',
-      default_schedule: 'weekly',
-      requires_approval_default: true,
-    },
-  ];
-}
 
 export default router;
