@@ -151,18 +151,33 @@ describe('handleNavigateToScreen — authenticated happy path', () => {
 });
 
 describe('handleNavigateToScreen — access control', () => {
-  test('unknown screen_id returns suggestions', async () => {
+  test('fuzzy screen_id auto-resolves to the closest match instead of failing', async () => {
     const session = buildAuthenticatedSession();
+    // VTID-NAV-FUZZY: Gemini frequently guesses partial ids. The handler
+    // now auto-resolves via suggestSimilar instead of returning an error.
     const result = await handleNavigateToScreen(session, {
-      screen_id: 'BOGUS.DOES_NOT_EXIST',
-      reason: 'test',
+      screen_id: 'MEDIA_HUB',
+      reason: 'User asked for media hub',
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Unknown screen_id/);
-    // pendingNavigation must NOT be set on a failed lookup
-    expect(session.pendingNavigation).toBeUndefined();
-    expect(session.navigationDispatched).toBeFalsy();
+    // Should succeed by resolving MEDIA_HUB → COMM.MEDIA_HUB
+    expect(result.success).toBe(true);
+    expect(session.pendingNavigation).toBeDefined();
+    expect(session.pendingNavigation.screen_id).toBe('COMM.MEDIA_HUB');
+    expect(session.pendingNavigation.route).toBe('/comm/media-hub');
+    expect(session.navigationDispatched).toBe(true);
+  });
+
+  test('BUSINESS_HUB fuzzy-resolves to BUSINESS.OVERVIEW', async () => {
+    const session = buildAuthenticatedSession();
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'BUSINESS_HUB',
+      reason: 'User asked for business hub',
+    });
+
+    expect(result.success).toBe(true);
+    expect(session.pendingNavigation.screen_id).toBe('BUSINESS.OVERVIEW');
+    expect(session.pendingNavigation.route).toBe('/business');
   });
 
   test('anonymous user cannot navigate to authenticated-only screen', async () => {
