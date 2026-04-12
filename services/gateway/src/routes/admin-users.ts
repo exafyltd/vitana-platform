@@ -6,8 +6,9 @@
  * - GET  /roles-summary  — Role distribution counts
  * - GET  /:userId        — Single user detail with all memberships
  *
- * Security:
- * - All endpoints require Bearer token + exafy_admin
+ * Security (Batch 1.B1 — dual-mode):
+ * - exafy_admin: full cross-tenant access (sees all users, all memberships)
+ * - tenant admin (active_role = 'admin'): scoped to their own tenant only
  */
 
 import { Router, Request, Response } from 'express';
@@ -17,7 +18,7 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 const router = Router();
 const VTID = 'ADMIN-USERS';
 
-// ── Auth Helper ─────────────────────────────────────────────
+// ── Auth Helper (Batch 1.B1: dual-mode — exafy_admin OR tenant admin) ───
 
 function getBearerToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
@@ -25,9 +26,24 @@ function getBearerToken(req: Request): string | null {
   return authHeader.slice(7);
 }
 
-async function verifyExafyAdmin(
+interface AdminAuthResult {
+  ok: true;
+  user_id: string;
+  email: string;
+  is_exafy_admin: boolean;
+  /** Non-null for tenant admins — queries must be scoped to this tenant. Null for exafy_admin (full access). */
+  scoped_tenant_id: string | null;
+}
+
+interface AdminAuthError {
+  ok: false;
+  status: number;
+  error: string;
+}
+
+async function verifyAdminAccess(
   req: Request
-): Promise<{ ok: true; user_id: string; email: string } | { ok: false; status: number; error: string }> {
+): Promise<AdminAuthResult | AdminAuthError> {
   const token = getBearerToken(req);
   if (!token) return { ok: false, status: 401, error: 'UNAUTHENTICATED' };
 
@@ -37,11 +53,45 @@ async function verifyExafyAdmin(
     if (authError || !authData?.user) return { ok: false, status: 401, error: 'INVALID_TOKEN' };
 
     const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
+    const isExafyAdmin = appMetadata.exafy_admin === true;
+
+    if (isExafyAdmin) {
+      return {
+        ok: true,
+        user_id: authData.user.id,
+        email: authData.user.email || 'unknown',
+        is_exafy_admin: true,
+        scoped_tenant_id: null, // full access
+      };
+    }
+
+    // Not exafy_admin — check if caller is a tenant admin via user_tenants
+    const tenantId = appMetadata.active_tenant_id as string | undefined;
+    if (!tenantId) {
       return { ok: false, status: 403, error: 'FORBIDDEN' };
     }
 
-    return { ok: true, user_id: authData.user.id, email: authData.user.email || 'unknown' };
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, status: 503, error: 'DB_UNAVAILABLE' };
+
+    const { data: membership } = await supabase
+      .from('user_tenants')
+      .select('active_role')
+      .eq('user_id', authData.user.id)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (!membership || membership.active_role !== 'admin') {
+      return { ok: false, status: 403, error: 'FORBIDDEN' };
+    }
+
+    return {
+      ok: true,
+      user_id: authData.user.id,
+      email: authData.user.email || 'unknown',
+      is_exafy_admin: false,
+      scoped_tenant_id: tenantId, // scoped to this tenant only
+    };
   } catch (err: any) {
     console.error(`[${VTID}] Auth error:`, err.message);
     return { ok: false, status: 500, error: 'INTERNAL_ERROR' };
@@ -64,7 +114,7 @@ async function getTenantMap(supabase: any): Promise<Record<string, { name: strin
 // ── GET / — List users with tenant/role info ────────────────
 
 router.get('/', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
+  const auth = await verifyAdminAccess(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
   try {
@@ -75,6 +125,21 @@ router.get('/', async (req: Request, res: Response) => {
     const role = (req.query.role as string || '').trim();
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const offset = parseInt(req.query.offset as string) || 0;
+
+    // Batch 1.B1: tenant admins only see users in their own tenant.
+    // For tenant-scoped requests, first get user_ids from user_tenants,
+    // then filter app_users to that set.
+    let scopedUserIds: string[] | null = null;
+    if (auth.scoped_tenant_id) {
+      const { data: tenantMembers } = await supabase
+        .from('user_tenants')
+        .select('user_id')
+        .eq('tenant_id', auth.scoped_tenant_id);
+      scopedUserIds = (tenantMembers || []).map((m: any) => m.user_id);
+      if (scopedUserIds.length === 0) {
+        return res.json({ ok: true, users: [] });
+      }
+    }
 
     // 1. Get users (flat query, no nested relations)
     let usersQuery = supabase
@@ -87,10 +152,19 @@ router.get('/', async (req: Request, res: Response) => {
       usersQuery = usersQuery.ilike('email', `%${query}%`);
     }
 
-    // 2. Get all memberships and tenants in parallel
+    if (scopedUserIds) {
+      usersQuery = usersQuery.in('user_id', scopedUserIds);
+    }
+
+    // 2. Get memberships (scoped if tenant admin) and tenants in parallel
+    let membershipsQuery = supabase.from('user_tenants').select('*');
+    if (auth.scoped_tenant_id) {
+      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
+    }
+
     const [usersResult, membershipsResult, tenantMap] = await Promise.all([
       usersQuery,
-      supabase.from('user_tenants').select('*'),
+      membershipsQuery,
       getTenantMap(supabase),
     ]);
 
@@ -139,7 +213,7 @@ router.get('/', async (req: Request, res: Response) => {
       ? flatUsers.filter((u: any) => u.memberships.some((m: any) => m.active_role === role))
       : flatUsers;
 
-    console.log(`[${VTID}] Listed ${filtered.length} users (query=${query}, role=${role})`);
+    console.log(`[${VTID}] Listed ${filtered.length} users (query=${query}, role=${role}, scoped=${auth.scoped_tenant_id || 'all'})`);
     return res.json({ ok: true, users: filtered });
   } catch (err: any) {
     console.error(`[${VTID}] Error:`, err.message);
@@ -150,16 +224,18 @@ router.get('/', async (req: Request, res: Response) => {
 // ── GET /roles-summary — Role distribution counts ───────────
 
 router.get('/roles-summary', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
+  const auth = await verifyAdminAccess(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data: memberships, error } = await supabase
-      .from('user_tenants')
-      .select('active_role');
+    let membershipsQuery = supabase.from('user_tenants').select('active_role');
+    if (auth.scoped_tenant_id) {
+      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
+    }
+    const { data: memberships, error } = await membershipsQuery;
 
     if (error) {
       console.error(`[${VTID}] Roles summary error:`, error.message);
@@ -189,7 +265,7 @@ router.get('/roles-summary', async (req: Request, res: Response) => {
 // ── GET /:userId — Single user detail ───────────────────────
 
 router.get('/:userId', async (req: Request, res: Response) => {
-  const auth = await verifyExafyAdmin(req);
+  const auth = await verifyAdminAccess(req);
   if (!auth.ok) return res.status(auth.status).json({ ok: false, error: auth.error });
 
   try {
@@ -198,10 +274,28 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
     const { userId } = req.params;
 
+    // Batch 1.B1: tenant admins can only view users who belong to their tenant
+    if (auth.scoped_tenant_id) {
+      const { data: memberCheck } = await supabase
+        .from('user_tenants')
+        .select('user_id')
+        .eq('user_id', userId)
+        .eq('tenant_id', auth.scoped_tenant_id)
+        .single();
+      if (!memberCheck) {
+        return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
+      }
+    }
+
     // Flat queries — no nested PostgREST relations
+    let membershipsQuery = supabase.from('user_tenants').select('*').eq('user_id', userId);
+    if (auth.scoped_tenant_id) {
+      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
+    }
+
     const [userResult, membershipsResult, tenantMap] = await Promise.all([
       supabase.from('app_users').select('*').eq('user_id', userId).single(),
-      supabase.from('user_tenants').select('*').eq('user_id', userId),
+      membershipsQuery,
       getTenantMap(supabase),
     ]);
 
