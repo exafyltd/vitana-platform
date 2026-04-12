@@ -228,6 +228,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { acceptRouter: invitationAcceptRouter } = require('./routes/tenant-admin/invitations');
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
+  // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
+  const adminAutopilotRouter = require('./routes/admin-autopilot').default;
   // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
   const { warmNavCatalogCache } = require('./lib/nav-catalog-db');
   // Voice Feedback — Test user bug reports & UX improvement suggestions
@@ -579,6 +581,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
   mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
+
+  // VTID-AP-ADMIN: Autopilot admin — settings, bindings, catalog, runs, recommendations
+  mountRouterSync(app, '/api/v1/admin/autopilot', adminAutopilotRouter, { owner: 'admin-autopilot' });
 
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
   mountRouterSync(app, '/api/v1/automations', automationsRouter, { owner: 'automations' });
