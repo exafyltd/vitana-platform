@@ -340,6 +340,14 @@ jobs:
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
           fi
 
+          # VTID-01175: Vitana Verification Engine — needs gateway URL for agents registry heartbeat
+          if [ "$CLOUD_RUN_SERVICE" = "vitana-verification-engine" ]; then
+            GATEWAY_URL=$(gcloud run services describe gateway --region=us-central1 --format='value(status.url)' 2>/dev/null || echo "")
+            if [ -n "$GATEWAY_URL" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=OASIS_GATEWAY_URL=$GATEWAY_URL)
+            fi
+          fi
+
           # Build deploy args
           DEPLOY_ARGS=(
             --source="$SOURCE_PATH"
