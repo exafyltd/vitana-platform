@@ -3134,12 +3134,13 @@ function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?:
     if (ctx.city && ctx.country) parts.push(`The user is located in ${ctx.city}, ${ctx.country}.`);
     else if (ctx.country) parts.push(`The user is in ${ctx.country}.`);
     if (ctx.localTime) parts.push(`Their local time is ${ctx.localTime}.`);
+    parts.push(`Current UTC time: ${new Date().toISOString()}.`);
     if (ctx.timeOfDay) parts.push(`Use an appropriate time-of-day greeting (good ${ctx.timeOfDay}).`);
     if (ctx.device && ctx.isMobile) parts.push(`They are on a ${ctx.device} (mobile).`);
     else if (ctx.device) parts.push(`They are on a ${ctx.device}.`);
     if (ctx.referrer) parts.push(`They arrived from ${ctx.referrer}.`);
     if (parts.length > 0) {
-      contextHints = `\nCONTEXT ABOUT THIS VISITOR:\n${parts.join('\n')}\nUse this context naturally in conversation — e.g. mention their city, use a time-appropriate greeting. Do NOT list these facts back robotically.`;
+      contextHints = `\nCONTEXT ABOUT THIS VISITOR:\n${parts.join('\n')}\nWhen asked about the time in any city or timezone, calculate from the UTC time above — do NOT guess UTC offsets from memory, as DST rules change.\nUse this context naturally in conversation — e.g. mention their city, use a time-appropriate greeting. Do NOT list these facts back robotically.`;
     }
   }
 
@@ -3281,10 +3282,12 @@ function formatClientContextForInstruction(ctx: ClientContext): string {
   else if (ctx.country) parts.push(`User location: ${ctx.country}`);
   if (ctx.timezone) parts.push(`Timezone: ${ctx.timezone}`);
   if (ctx.localTime) parts.push(`Local time: ${ctx.localTime}`);
+  // Always include UTC reference so the model can accurately calculate any timezone
+  parts.push(`Current UTC time: ${new Date().toISOString()}`);
   if (ctx.device) parts.push(`Device: ${ctx.device}`);
   if (ctx.os) parts.push(`OS: ${ctx.os}`);
   if (parts.length === 0) return '';
-  return `\nENVIRONMENT CONTEXT:\n${parts.join('\n')}\nUse this naturally — e.g. time-appropriate greetings, location-relevant suggestions.`;
+  return `\nENVIRONMENT CONTEXT:\n${parts.join('\n')}\nWhen asked about the time in any city or timezone, calculate from the UTC time above — do NOT guess UTC offsets from memory, as DST rules change. Use this context naturally — e.g. time-appropriate greetings, location-relevant suggestions.`;
 }
 
 /**
