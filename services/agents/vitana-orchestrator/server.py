@@ -10,12 +10,14 @@ results that the orchestrator uses to make decisions. OASIS remains the sole
 authority for terminal task status.
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -50,6 +52,75 @@ config = StageGateConfig(
     git_sha=os.getenv("GIT_SHA", "unknown"),
 )
 stage_gate = VerificationStageGate(config)
+
+
+# =============================================================================
+# Agents Registry self-registration (inlined — shared module not in Docker
+# build context, see services/agents/shared/agents_registry_client.py)
+# =============================================================================
+
+_AGENT_REG_TASK: Optional[asyncio.Task] = None  # type: ignore[type-arg]
+
+
+async def _agent_hb(gw: str, payload: Dict[str, Any]) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.post(f"{gw}/api/v1/agents/registry/heartbeat", json=payload)
+            if r.status_code >= 400:
+                logger.warning("[agents-registry] heartbeat failed: %d %s", r.status_code, r.text[:200])
+                return False
+            return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[agents-registry] heartbeat threw: %s", e)
+        return False
+
+
+async def _agent_hb_loop(gw: str) -> None:
+    p = {"agent_id": "vitana-orchestrator", "status": "healthy"}
+    while True:
+        try:
+            await asyncio.sleep(60)
+            await _agent_hb(gw, p)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@app.on_event("startup")
+async def _reg_startup() -> None:
+    global _AGENT_REG_TASK
+    gw = os.getenv("GATEWAY_URL") or os.getenv("OASIS_GATEWAY_URL")
+    if not gw:
+        logger.warning("[agents-registry] No GATEWAY_URL — self-registration disabled")
+        return
+    await _agent_hb(gw, {
+        "agent_id": "vitana-orchestrator", "status": "healthy",
+        "display_name": "Vitana Verification Engine",
+        "description": "Verification stage gate (VTID-01175). Verifies worker output before task completion.",
+        "tier": "service", "role": "verification",
+        "llm_provider": "claude", "llm_model": "claude-3-5-sonnet-20241022",
+        "source_path": "services/agents/vitana-orchestrator/",
+        "health_endpoint": "/health",
+        "metadata": {"vtid": __vtid__, "version": __version__, "fallback_provider": "gemini"},
+    })
+    logger.info("[agents-registry] Registered vitana-orchestrator")
+    _AGENT_REG_TASK = asyncio.create_task(_agent_hb_loop(gw))
+
+
+@app.on_event("shutdown")
+async def _reg_shutdown() -> None:
+    global _AGENT_REG_TASK
+    if _AGENT_REG_TASK:
+        _AGENT_REG_TASK.cancel()
+        try:
+            await _AGENT_REG_TASK
+        except asyncio.CancelledError:
+            pass
+        _AGENT_REG_TASK = None
+    gw = os.getenv("GATEWAY_URL") or os.getenv("OASIS_GATEWAY_URL")
+    if gw:
+        await _agent_hb(gw, {"agent_id": "vitana-orchestrator", "status": "down"})
 
 
 # --- Request/Response Models ---

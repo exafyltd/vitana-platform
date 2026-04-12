@@ -15,6 +15,7 @@
 import express, { Request, Response } from 'express';
 import { config as dotenvConfig } from 'dotenv';
 import { WorkerRunner, createRunnerFromEnv } from './services/runner-service';
+import { startAgentRegistration } from './lib/agents-registry-client';
 
 // Load environment variables
 dotenvConfig();
@@ -28,6 +29,7 @@ app.use(express.json());
 
 // Runner instance
 let runner: WorkerRunner | null = null;
+let stopAgentRegistration: (() => void) | null = null;
 
 // =============================================================================
 // Health Check Endpoints
@@ -192,9 +194,32 @@ async function main(): Promise<void> {
   console.log(`[${VTID}] Worker Runner Execution Plane started successfully`);
   console.log(`[${VTID}] Polling for tasks every ${process.env.POLL_INTERVAL_MS || '5000'}ms`);
 
+  // Self-register with the agents registry (fire-and-forget, non-blocking)
+  try {
+    stopAgentRegistration = startAgentRegistration({
+      gatewayUrl: process.env.GATEWAY_URL || '',
+      agentId: 'worker-runner',
+      displayName: 'Worker Runner',
+      description: 'Autonomous VTID execution plane (VTID-01200). Polls, claims, executes via LLM, terminalizes.',
+      tier: 'service',
+      role: 'executor',
+      llmProvider: 'gemini',
+      llmModel: process.env.VERTEX_MODEL || 'gemini-3.1-pro-preview',
+      sourcePath: 'services/worker-runner/',
+      healthEndpoint: '/alive',
+      metadata: { vtid: VTID },
+    });
+  } catch (err) {
+    console.warn(`[${VTID}] Agents registry self-registration failed (non-fatal):`, err);
+  }
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[${VTID}] Received ${signal}, shutting down...`);
+
+    if (stopAgentRegistration) {
+      try { stopAgentRegistration(); } catch { /* best-effort */ }
+    }
 
     if (runner) {
       await runner.stop();
