@@ -223,6 +223,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminTenantsRouter = require('./routes/admin-tenants').default;
   // Admin: Content Moderation
   const adminModerationRouter = require('./routes/admin-moderation').default;
+  // Batch 1.B1: Tenant Invitations — create, list, revoke, accept
+  const tenantInvitationsRouter = require('./routes/tenant-admin/invitations').default;
+  const { acceptRouter: invitationAcceptRouter } = require('./routes/tenant-admin/invitations');
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
@@ -569,6 +572,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Admin: Content Moderation
   mountRouterSync(app, '/api/v1/admin/moderation', adminModerationRouter, { owner: 'admin-moderation' });
+
+  // Batch 1.B1: Tenant Invitations — per-tenant invite/accept flow
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/invitations', tenantInvitationsRouter, { owner: 'tenant-invitations' });
+  mountRouterSync(app, '/api/v1/admin/invitations', invitationAcceptRouter, { owner: 'invitation-accept' });
 
   // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
   mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
