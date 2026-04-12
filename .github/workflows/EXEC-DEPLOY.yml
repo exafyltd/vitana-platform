@@ -314,12 +314,25 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=ENV=production)
             # Cognee SDK needs API key for Gemini LLM calls (not ADC)
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
+            # Agents registry self-registration
+            GATEWAY_URL=$(gcloud run services describe gateway --region=us-central1 --format='value(status.url)' 2>/dev/null || echo "")
+            if [ -n "$GATEWAY_URL" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_URL=$GATEWAY_URL)
+            fi
           fi
 
           # VTID-01250: OpenClaw bridge — Supabase secrets for heartbeat and OASIS events
           if [ "$CLOUD_RUN_SERVICE" = "openclaw-bridge" ]; then
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+          fi
+
+          # OASIS Projector — gateway URL for agents registry self-registration
+          if [ "$CLOUD_RUN_SERVICE" = "oasis-projector" ]; then
+            GATEWAY_URL=$(gcloud run services describe gateway --region=us-central1 --format='value(status.url)' 2>/dev/null || echo "")
+            if [ -n "$GATEWAY_URL" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_URL=$GATEWAY_URL)
+            fi
           fi
 
           # VTID-01200: Worker Runner — needs gateway URL, Supabase, and Vertex AI config

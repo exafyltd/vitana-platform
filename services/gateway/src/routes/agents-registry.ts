@@ -362,7 +362,9 @@ agentsRegistryRouter.post('/api/v1/agents/registry/heartbeat', async (req: Reque
 // Bootstrap helper for Tier 2 (embedded) agents
 // =============================================================================
 
-const EMBEDDED_AGENTS = [
+// Agents that live inside the gateway process — if the gateway is up, they are up.
+// Includes both "embedded" tier (LLM workloads) and "scheduled" tier (cron jobs).
+const GATEWAY_HOSTED_AGENTS = [
   'conversation-intelligence',
   'orb-live',
   'gemini-operator',
@@ -370,11 +372,13 @@ const EMBEDDED_AGENTS = [
   'llm-analyzer',
   'recommendation-generator',
   'embedding-service',
+  'recommendation-engine-scheduler',
+  'daily-recompute',
 ] as const;
 
 export async function bootstrapEmbeddedAgents(): Promise<void> {
   const now = new Date().toISOString();
-  for (const agentId of EMBEDDED_AGENTS) {
+  for (const agentId of GATEWAY_HOSTED_AGENTS) {
     const result = await supabaseRequest(
       `/rest/v1/agents_registry?agent_id=eq.${encodeURIComponent(agentId)}`,
       {
@@ -391,7 +395,7 @@ export async function bootstrapEmbeddedAgents(): Promise<void> {
       console.warn(`${LOG_PREFIX} bootstrap failed for ${agentId}: ${result.error}`);
     }
   }
-  console.log(`${LOG_PREFIX} bootstrapped ${EMBEDDED_AGENTS.length} embedded agents`);
+  console.log(`${LOG_PREFIX} bootstrapped ${GATEWAY_HOSTED_AGENTS.length} gateway-hosted agents`);
 }
 
 // =============================================================================
