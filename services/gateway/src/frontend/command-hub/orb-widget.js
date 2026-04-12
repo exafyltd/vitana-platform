@@ -646,6 +646,7 @@
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
     _stopWatchdog();
+    clearTimeout(_s._listeningIdleTimer);
 
     // Stop mic
     if (_s.captureStream) {
@@ -790,6 +791,7 @@
             _setOrbState('speaking');
             _s.voiceState = 'SPEAKING';
             _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+            clearTimeout(_s._listeningIdleTimer); // Cancel idle nudge — model is responding
             _updateUI();
           }
           _playAudio(msg.data_b64, msg.mime || 'audio/pcm;rate=24000');
@@ -857,6 +859,22 @@
               _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
               _playReadyBeep();
               _updateUI();
+
+              // VTID-NAV-IDLE: If the orb sits in LISTENING for 15 seconds
+              // without the user speaking, nudge them. This catches the
+              // "stuck/frozen" state where the user expected navigation but
+              // Gemini just answered verbally, and both sides wait in silence.
+              // The nudge updates the status text and plays the ready beep
+              // again so the user knows the orb is still alive and waiting.
+              clearTimeout(_s._listeningIdleTimer);
+              _s._listeningIdleTimer = setTimeout(function () {
+                if (_s.voiceState !== 'LISTENING' || !_s.active) return;
+                _setStatus(_cfg.lang.startsWith('de')
+                  ? 'Ich höre noch zu. Sag mir, was ich tun soll!'
+                  : "I'm still listening. Tell me what you'd like to do!");
+                _playReadyBeep();
+                _updateUI();
+              }, 15000);
             }
           }, 300);
         })();
