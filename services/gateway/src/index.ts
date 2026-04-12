@@ -236,6 +236,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const tenantSettingsRouter = require('./routes/tenant-admin/settings').default;
   // Audit & Compliance — admin action audit log, access log
   const tenantAuditRouter = require('./routes/tenant-admin/audit-log').default;
+  // Content Moderation — review queue for user-submitted content
+  const contentModerationRouter = require('./routes/tenant-admin/content-moderation').default;
+  // Community Admin — admin-scoped reads of meetups, groups, live rooms, creators
+  const communityAdminRouter = require('./routes/tenant-admin/community-admin').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
@@ -598,6 +602,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/settings', tenantSettingsRouter, { owner: 'tenant-settings' });
   // Audit & Compliance — admin action audit log
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/audit', tenantAuditRouter, { owner: 'tenant-audit' });
+  // Content Moderation — review queue for user-submitted content
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/content', contentModerationRouter, { owner: 'content-moderation' });
+  // Community Admin — admin-scoped reads of community data
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/community', communityAdminRouter, { owner: 'community-admin' });
 
   // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
   mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
