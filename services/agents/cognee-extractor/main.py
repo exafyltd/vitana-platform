@@ -20,6 +20,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 
+import httpx
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
@@ -462,7 +463,50 @@ async def lifespan(app: FastAPI):
         logger.warning(f'[{VTID}] Service will start but extraction requests will fail')
 
     logger.info(f'[{VTID}] {SERVICE_NAME} ready')
+
+    # Agents registry self-registration (fire-and-forget)
+    _reg_task = None
+    _gw = os.getenv('GATEWAY_URL') or os.getenv('OASIS_GATEWAY_URL')
+    if _gw:
+        async def _hb(payload):
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as c:
+                    r = await c.post(f'{_gw}/api/v1/agents/registry/heartbeat', json=payload)
+                    return r.status_code < 400
+            except Exception:
+                return False
+
+        await _hb({
+            'agent_id': 'cognee-extractor', 'status': 'healthy',
+            'display_name': 'Cognee Extractor',
+            'description': 'Extracts entities and relationships from ORB voice transcripts; writes to memory_facts.',
+            'tier': 'service', 'role': 'extraction', 'llm_provider': 'none',
+            'source_path': 'services/agents/cognee-extractor/', 'health_endpoint': '/health',
+            'metadata': {'vtid': VTID, 'language': 'python', 'framework': 'fastapi'},
+        })
+        logger.info(f'[{VTID}] Registered with agents registry')
+
+        async def _hb_loop():
+            while True:
+                try:
+                    await asyncio.sleep(60)
+                    await _hb({'agent_id': 'cognee-extractor', 'status': 'healthy'})
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+        _reg_task = asyncio.create_task(_hb_loop())
+
     yield
+
+    if _reg_task:
+        _reg_task.cancel()
+        try:
+            await _reg_task
+        except asyncio.CancelledError:
+            pass
+    if _gw:
+        await _hb({'agent_id': 'cognee-extractor', 'status': 'down'})
     logger.info(f'[{VTID}] Shutting down {SERVICE_NAME}')
 
 

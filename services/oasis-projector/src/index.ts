@@ -260,6 +260,30 @@ async function startServer() {
       logger.info(`  - VTID-0521: Ledger Writer`);
     });
 
+    // Agents registry self-registration (fire-and-forget)
+    const _gw = process.env.GATEWAY_URL || process.env.OASIS_GATEWAY_URL;
+    if (_gw) {
+      const _hb = async (body: Record<string, unknown>) => {
+        try {
+          await fetch(`${_gw}/api/v1/agents/registry/heartbeat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+        } catch { /* non-fatal */ }
+      };
+      _hb({
+        agent_id: 'oasis-projector', status: 'healthy',
+        display_name: 'OASIS Projector',
+        description: 'Streams OASIS events to Supabase / Prisma.',
+        tier: 'service', role: 'projector', llm_provider: 'none',
+        source_path: 'services/oasis-projector/', health_endpoint: '/health',
+        metadata: { vtid: VTID_LEDGER_WRITER, language: 'typescript' },
+      });
+      const _regInterval = setInterval(() => _hb({ agent_id: 'oasis-projector', status: 'healthy' }), 60_000);
+      if (typeof _regInterval.unref === 'function') _regInterval.unref();
+      logger.info('Registered with agents registry');
+    }
+
   } catch (error) {
     logger.error('Failed to start server', error);
     process.exit(1);
