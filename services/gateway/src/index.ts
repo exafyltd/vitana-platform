@@ -230,6 +230,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const tenantAssistantConfigRouter = require('./routes/tenant-admin/assistant-config').default;
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, opt-outs, search
   const tenantKnowledgeRouter = require('./routes/tenant-admin/knowledge').default;
+  // Overview Dashboard — KPI summary, at-risk, activity, alerts
+  const tenantOverviewRouter = require('./routes/tenant-admin/overview').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
@@ -586,6 +588,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/assistant', tenantAssistantConfigRouter, { owner: 'tenant-assistant-config' });
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, search, opt-outs
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kb', tenantKnowledgeRouter, { owner: 'tenant-knowledge' });
+  // Overview Dashboard — KPI summary, at-risk, activity, alerts
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/overview', tenantOverviewRouter, { owner: 'tenant-overview' });
 
   // VTID-NAV-02: Admin Navigator — catalog/simulate/coverage/telemetry
   mountRouterSync(app, '/api/v1/admin/navigator', adminNavigatorRouter, { owner: 'admin-navigator' });
