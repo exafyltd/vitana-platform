@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.git/
+*.lock
+package-lock.json
+kb/
+scripts/kb-seed.sql
+supabase/
+cloudflare/
+crew_template/
+database/migrations/
+prisma/migrations/
