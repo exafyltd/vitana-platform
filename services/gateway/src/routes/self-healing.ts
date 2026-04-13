@@ -263,44 +263,9 @@ async function processFailingService(
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
   }
 
-  // For auto-approved tasks: directly dispatch to worker orchestrator
-  // with bounded retry (autopilot event loop is the backup, but a single
-  // transient 5xx / network blip used to leave rows pending until the
-  // reconciler tombstoned them).
-  if (diagnosis.confidence >= 0.8 && diagnosis.auto_fixable) {
-    const dispatch = await dispatchToWorkerWithRetry(
-      vtid,
-      `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
-      spec,
-    );
-    if (!dispatch.ok) {
-      console.error(`[self-healing] ${vtid} dispatch failed after retries: ${dispatch.lastError}`);
-      await emitOasisEvent({
-        type: 'self-healing.dispatch.failed',
-        vtid,
-        source: 'self-healing',
-        status: 'error',
-        message: `Worker orchestrator dispatch failed after retries: ${dispatch.lastError}`,
-        payload: {
-          last_error: dispatch.lastError,
-          confidence: diagnosis.confidence,
-          service: diagnosis.service_name,
-        },
-      });
-      // Real-time Gchat alert — autopilot couldn't dispatch, team needs
-      // to investigate or manually approve.
-      await notifyGChat(
-        `🚨 *Self-Healing Dispatch FAILED*\n` +
-        `Task: ${vtid}\n` +
-        `Service: ${diagnosis.service_name}\n` +
-        `Endpoint: ${diagnosis.endpoint}\n` +
-        `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%\n` +
-        `Error: ${dispatch.lastError}\n` +
-        `Autopilot exhausted retries. Reconciler will attempt redispatch within 1h.\n` +
-        `Act now: ${COMMAND_HUB_SH_URL}`,
-      );
-    }
-  }
+  // No direct dispatch — the injector emits autopilot.task.spec.created
+  // which the autopilot event loop picks up and dispatches through the
+  // standard pipeline (enforceSpecRequirement → worker-runner → completion).
 
   // Gchat notification ONLY when a human decision is required.
   // Auto-approved tasks run silently — the team sees them in the
@@ -661,51 +626,6 @@ router.get('/pending-approval', async (req: Request, res: Response) => {
 });
 
 /**
- * Helper: dispatch a self-healing VTID to the worker orchestrator with
- * bounded retry. Used by both the auto-approved direct-dispatch path
- * (in runHealing) and the human-approve path below. Returns true on
- * success, false after maxAttempts failures.
- */
-async function dispatchToWorkerWithRetry(
-  vtid: string,
-  title: string,
-  spec: string,
-  maxAttempts = 3,
-): Promise<{ ok: boolean; lastError?: string }> {
-  const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
-  let lastError: string | undefined;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`[self-healing] ${vtid} dispatch attempt ${attempt}/${maxAttempts}`);
-      const resp = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vtid,
-          title,
-          spec: spec.substring(0, 8000),
-          source: 'self-healing',
-          priority: 'critical',
-        }),
-      });
-
-      if (resp.ok) {
-        console.log(`[self-healing] ${vtid} dispatch ok on attempt ${attempt}`);
-        return { ok: true };
-      }
-      lastError = `HTTP ${resp.status}`;
-    } catch (err: any) {
-      lastError = err.message;
-    }
-    if (attempt < maxAttempts) {
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
-    }
-  }
-  return { ok: false, lastError };
-}
-
-/**
  * POST /approve — Human approves a sub-0.8 row from pending-approval.
  * Body: { id: number, operator?: string }
  *
@@ -766,22 +686,12 @@ router.post('/approve', async (req: Request, res: Response) => {
       body: JSON.stringify({ spec_status: 'approved', updated_at: new Date().toISOString() }),
     });
 
-    // 4. Dispatch with bounded retry
-    const dispatch = await dispatchToWorkerWithRetry(
-      vtid,
-      ledgerRow.title || `SELF-HEAL: ${vtid}`,
-      ledgerRow.summary || '',
-    );
-
-    // 5. Mark self_healing_log row as human-approved (regardless of dispatch outcome —
-    //    the OASIS event captures the dispatch failure separately)
+    // 4. Mark self_healing_log row as human-approved
     const newDiagnosis = {
       ...(logRow.diagnosis || {}),
       human_decision: 'approved',
       human_decision_at: new Date().toISOString(),
       human_decision_by: operator || 'command-hub',
-      human_dispatch_ok: dispatch.ok,
-      human_dispatch_error: dispatch.lastError,
     };
     await fetch(`${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${id}`, {
       method: 'PATCH',
@@ -789,37 +699,25 @@ router.post('/approve', async (req: Request, res: Response) => {
       body: JSON.stringify({ diagnosis: newDiagnosis }),
     });
 
-    // 6. Emit OASIS event
+    // 5. Emit execution_approved OASIS event — the autopilot event loop
+    // picks this up and dispatches through the standard pipeline (worker
+    // orchestrator → worker-runner), just like any other approved task.
+    // NO direct dispatch — same path as every other task.
     await emitOasisEvent({
-      type: dispatch.ok ? 'self-healing.approved' : 'self-healing.dispatch.failed',
+      type: 'vtid.lifecycle.execution_approved',
       vtid,
       source: 'self-healing',
-      status: dispatch.ok ? 'info' : 'error',
-      message: dispatch.ok
-        ? `Self-healing ${vtid} approved by ${operator || 'command-hub'} and dispatched`
-        : `Self-healing ${vtid} approved but dispatch failed: ${dispatch.lastError}`,
+      status: 'info',
+      message: `Self-healing ${vtid} approved by ${operator || 'command-hub'}`,
       payload: {
+        auto_approved: true,
+        source: 'self-healing',
         operator: operator || 'command-hub',
         confidence: logRow.confidence,
-        dispatch_ok: dispatch.ok,
-        dispatch_error: dispatch.lastError,
       },
     });
 
-    // Gchat notification ONLY on failure — a successful approve is a
-    // "done" state the operator who clicked the button already knows
-    // about. If the dispatch failed, manual retry is needed.
-    if (!dispatch.ok) {
-      await notifyGChat(
-        `🚨 *Self-Healing Approved but Dispatch FAILED*\n` +
-        `Task: ${vtid}\n` +
-        `Operator: ${operator || 'command-hub'}\n` +
-        `Error: ${dispatch.lastError}\n` +
-        `Manual retry needed: ${COMMAND_HUB_SH_URL}`,
-      );
-    }
-
-    return res.json({ ok: true, vtid, dispatched: dispatch.ok, error: dispatch.lastError });
+    return res.json({ ok: true, vtid });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }
