@@ -491,6 +491,39 @@ jobs:
           echo "==========================================="
 
       # =========================================================================
+      # VTID-01917: Post-Deploy Visual Verification (Playwright Screenshots)
+      # Hard gate: page load failures FAIL the deploy.
+      # Screenshots are uploaded as artifacts for human review.
+      # =========================================================================
+      - name: Visual Verification — Playwright Screenshots (VTID-01917)
+        id: visual_verify
+        if: success() && github.event.inputs.service == 'gateway'
+        env:
+          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          SCREENSHOT_DIR: /tmp/visual-verify
+        run: |
+          set -e
+          echo "VTID-01917: Running post-deploy visual verification"
+
+          # Install Playwright + Chromium in the runner
+          cd e2e
+          npm ci --ignore-scripts 2>/dev/null || npm install 2>/dev/null
+          npx playwright install chromium --with-deps 2>/dev/null
+
+          # Run visual verification script
+          mkdir -p "$SCREENSHOT_DIR"
+          npx tsx ci-visual-verify.ts
+
+      - name: Upload Visual Verification Screenshots
+        uses: actions/upload-artifact@v4
+        if: always() && steps.visual_verify.outcome != 'skipped'
+        with:
+          name: visual-verify-screenshots
+          path: /tmp/visual-verify/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # =========================================================================
       # VTID-0510: Record Software Version
       # =========================================================================
       - name: Record Software Version (VTID-0510)

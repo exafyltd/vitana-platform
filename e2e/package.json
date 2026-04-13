@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "@supabase/supabase-js": "^2.80.0"
+    "@supabase/supabase-js": "^2.80.0",
+    "tsx": "^4.21.0"
   }
 }
