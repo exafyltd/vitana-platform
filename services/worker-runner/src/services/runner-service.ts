@@ -200,9 +200,9 @@ export class WorkerRunner {
    * Check if a task is eligible for execution
    */
   private isTaskEligible(task: PendingTask): boolean {
-    // Must be in a claimable status — 'in_progress' (legacy) or 'scheduled'
-    // (self-healing injector sets 'scheduled'; claim_vtid_task transitions
-    // to 'in_progress' on claim)
+    // Accept scheduled (ready for pickup) or in_progress (already transitioned).
+    // Self-healing injector sets 'scheduled'; worker-runner is the reliable
+    // pickup mechanism — claim + route transitions status to in_progress.
     if (task.status !== 'in_progress' && task.status !== 'scheduled') {
       return false;
     }
