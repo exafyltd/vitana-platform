@@ -19,7 +19,10 @@ export type AutomationDomain =
   | 'platform-operations'      // AP-1000
   | 'business-hub-marketplace' // AP-1100
   | 'live-rooms-commerce'      // AP-1200
-  | 'onboarding-growth';       // AP-1300
+  | 'onboarding-growth'          // AP-1300
+  | 'event-meetup-initiative'    // AP-1400
+  | 'business-opportunity'       // AP-1500
+  | 'health-action-initiative';  // AP-1600
 
 export type AutomationStatus = 'PLANNED' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'LIVE' | 'DEPRECATED';
 export type AutomationPriority = 'P0' | 'P1' | 'P2' | 'P3';

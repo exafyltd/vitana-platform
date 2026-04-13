@@ -25,6 +25,7 @@ import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
+import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
 
 const router = Router();
 
@@ -412,11 +413,44 @@ router.get('/', async (req: Request, res: Response) => {
       const hasMore = recommendations.length > limit;
       if (hasMore) recommendations.pop();
 
+      // Enrich community recommendations with wave metadata
+      let waves: any[] | undefined;
+      if (role === 'community') {
+        const templateToWave = buildTemplateToWaveMap();
+        for (const rec of recommendations) {
+          if (rec.source_ref) {
+            const waveId = templateToWave.get(rec.source_ref);
+            if (waveId) {
+              rec.wave_id = waveId;
+              const waveDef = DEFAULT_WAVE_CONFIG.find(w => w.id === waveId);
+              rec.wave_order = waveDef?.order ?? 99;
+            }
+          }
+          if (!rec.wave_id) {
+            rec.wave_id = 'wave-1';
+            rec.wave_order = 1;
+          }
+        }
+        // Include enabled waves in response
+        waves = DEFAULT_WAVE_CONFIG
+          .filter(w => w.enabled)
+          .map(w => ({
+            id: w.id,
+            name: w.name,
+            description: w.description,
+            icon: w.icon,
+            order: w.order,
+            is_initiative: w.is_initiative,
+            timeline: w.timeline,
+          }));
+      }
+
       return res.status(200).json({
         ok: true,
         recommendations,
         count: recommendations.length,
         has_more: hasMore,
+        ...(waves ? { waves } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
         _debug: {

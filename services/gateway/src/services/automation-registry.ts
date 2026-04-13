@@ -833,6 +833,114 @@ const ONBOARDING_GROWTH: AutomationDefinition[] = [
 ];
 
 // =============================================================================
+// AP-1400: Event & Meetup Initiative
+// =============================================================================
+const EVENT_MEETUP_INITIATIVE: AutomationDefinition[] = [
+  {
+    id: 'AP-1401', name: 'Smart Event Creation', domain: 'event-meetup-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1402', name: 'Calendar Availability Check', domain: 'event-meetup-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'event.suggestion.created' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1403', name: 'Auto-Invitation Sender', domain: 'event-meetup-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'event.created' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1404', name: 'Event Discovery Recommendation', domain: 'event-meetup-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 9 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1405', name: 'Social Meetup Organizer', domain: 'event-meetup-initiative',
+    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+  },
+];
+
+// =============================================================================
+// AP-1500: Business Opportunity
+// =============================================================================
+const BUSINESS_OPPORTUNITY: AutomationDefinition[] = [
+  {
+    id: 'AP-1501', name: 'Marketplace Gap Detection', domain: 'business-opportunity',
+    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+  },
+  {
+    id: 'AP-1502', name: 'Revenue Opportunity Alert', domain: 'business-opportunity',
+    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CREATOR_ROLES],
+  },
+  {
+    id: 'AP-1503', name: 'Service Demand Matching', domain: 'business-opportunity',
+    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 11 * * 3' },
+    targetRoles: [...CREATOR_ROLES],
+  },
+  {
+    id: 'AP-1504', name: 'Business Setup Coach', domain: 'business-opportunity',
+    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.business.started' },
+    targetRoles: [...CREATOR_ROLES],
+  },
+  {
+    id: 'AP-1505', name: 'Income Growth Tips', domain: 'business-opportunity',
+    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+  },
+];
+
+// =============================================================================
+// AP-1600: Health Action Initiative
+// =============================================================================
+const HEALTH_ACTION_INITIATIVE: AutomationDefinition[] = [
+  {
+    id: 'AP-1601', name: 'Lab Test Kit Ordering', domain: 'health-action-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+  },
+  {
+    id: 'AP-1602', name: 'Health Screening Scheduler', domain: 'health-action-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 1 * *' },
+    targetRoles: [...CONSUMER_ROLES],
+  },
+  {
+    id: 'AP-1603', name: 'Motivational Health Nudge', domain: 'health-action-initiative',
+    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...CONSUMER_ROLES],
+  },
+  {
+    id: 'AP-1604', name: 'Exercise Initiation', domain: 'health-action-initiative',
+    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+  },
+  {
+    id: 'AP-1605', name: 'Supplement Reorder Reminder', domain: 'health-action-initiative',
+    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+  },
+];
+
+// =============================================================================
 // Full Registry
 // =============================================================================
 export const AUTOMATION_REGISTRY: AutomationDefinition[] = [
@@ -849,6 +957,9 @@ export const AUTOMATION_REGISTRY: AutomationDefinition[] = [
   ...BUSINESS_MARKETPLACE,
   ...LIVE_ROOMS_COMMERCE,
   ...ONBOARDING_GROWTH,
+  ...EVENT_MEETUP_INITIATIVE,
+  ...BUSINESS_OPPORTUNITY,
+  ...HEALTH_ACTION_INITIATIVE,
 ];
 
 // ── Lookup helpers ──────────────────────────────────────────
