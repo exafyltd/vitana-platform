@@ -300,6 +300,8 @@ jobs:
             # Appilix native push (Maxina Android app)
             EXTRA_ENV_ARGS+=(--update-env-vars=APPILIX_API_KEY=u9p6gt2iqnbrod7kmshy)
             EXTRA_ENV_ARGS+=(--update-env-vars=APPILIX_APP_KEY=8kwa81zf6ye64b0j42unyk7j9wgbr3u35pfidvn9)
+            # Incident Triage Agent — Claude Managed Agents API key
+            EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Lovable Supabase connection for events/community data
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_URL=https://inmkhvwdcuyhnxkgfvsb.supabase.co)
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M)
