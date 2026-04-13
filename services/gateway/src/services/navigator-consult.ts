@@ -28,6 +28,8 @@ import {
   getContent,
   searchCatalog,
   lookupScreen,
+  areCatalogEmbeddingsReady,
+  semanticSearchCatalog,
 } from '../lib/navigation-catalog';
 import {
   getCatalogForTenant,
@@ -476,18 +478,86 @@ export async function consultNavigator(
       };
     }
   }
-  // ── End fast path — fall through to full consult with memory + KB ──────
+  // ── End keyword fast path ──────────────────────────────────────────────
 
-  // Run memory hints + KB search in parallel — they're the slow parts.
-  const [hints, runtimeKbExcerpts] = await Promise.all([
+  // ── VTID-NAV-SEMANTIC: Try semantic search when keyword scoring wasn't
+  // confident. This handles synonyms, different languages, and phrasings
+  // we never anticipated — "Messenger", "wo kann ich schreiben", etc.
+  // Runs in parallel with memory/KB for zero extra latency.
+  const semanticPromise = areCatalogEmbeddingsReady()
+    ? semanticSearchCatalog(input.question, {
+        anonymous_only: input.is_anonymous,
+        exclude_routes: excludeRoutes,
+      })
+    : Promise.resolve([]);
+
+  // Run memory hints + KB search + semantic search in parallel
+  const [hints, runtimeKbExcerpts, semanticResults] = await Promise.all([
     fetchMemoryHints(input),
     fetchKnowledgeExcerpts(input.question),
+    semanticPromise,
   ]);
 
-  // Score catalog with memory bias applied
-  const scored = scoreCatalogWithMemory(input, hints);
+  // Score catalog with memory bias applied (keyword-based)
+  const keywordScored = scoreCatalogWithMemory(input, hints);
+
+  // ── Hybrid scoring: merge keyword + semantic results ──────────────────
+  // Build a map of screen_id → hybrid score combining both signals.
+  // Weight: 70% semantic similarity + 30% normalized keyword score.
+  // When semantic embeddings aren't ready, falls back to pure keyword.
+  const hybridMap = new Map<string, { entry: NavCatalogEntry; hybridScore: number; keywordScore: number; semanticScore: number }>();
+
+  // Seed with keyword results
+  const maxKeywordScore = keywordScored[0]?.score || 1;
+  for (const k of keywordScored) {
+    hybridMap.set(k.entry.screen_id, {
+      entry: k.entry,
+      hybridScore: k.score / maxKeywordScore, // normalized 0-1
+      keywordScore: k.score,
+      semanticScore: 0,
+    });
+  }
+
+  // Merge semantic results
+  if (semanticResults.length > 0) {
+    for (const s of semanticResults) {
+      const existing = hybridMap.get(s.entry.screen_id);
+      const semanticNorm = s.similarity; // already 0-1
+      if (existing) {
+        const keywordNorm = existing.keywordScore / maxKeywordScore;
+        existing.semanticScore = semanticNorm;
+        existing.hybridScore = 0.7 * semanticNorm + 0.3 * keywordNorm;
+      } else {
+        // Semantic-only match — keyword scorer missed it entirely.
+        // This is the whole point: "Messenger" has no keyword match
+        // but the embedding knows it means "inbox/chat".
+        hybridMap.set(s.entry.screen_id, {
+          entry: s.entry,
+          hybridScore: 0.7 * semanticNorm,
+          keywordScore: 0,
+          semanticScore: semanticNorm,
+        });
+      }
+    }
+  }
+
+  // Sort by hybrid score descending
+  const hybridRanked = [...hybridMap.values()].sort((a, b) => b.hybridScore - a.hybridScore);
+
+  // Convert to the format the rest of the function expects
+  // Map hybrid 0-1 scores back to a pseudo-score compatible with the
+  // existing confidence thresholds (HIGH_CONFIDENCE_MIN=30, MEDIUM=12)
+  const scored = hybridRanked.map(h => ({
+    entry: h.entry,
+    score: Math.round(h.hybridScore * 100), // 0-100 scale
+  }));
   const top = scored[0];
   const second = scored[1];
+
+  if (semanticResults.length > 0 && top) {
+    const topH = hybridMap.get(top.entry.screen_id)!;
+    console.log(`[VTID-NAV-SEMANTIC] Hybrid winner: ${top.entry.screen_id} (hybrid=${top.score}, keyword=${topH.keywordScore}, semantic=${topH.semanticScore.toFixed(3)})`);
+  }
 
   // VTID-NAV-02: build the top-3 picks payload for telemetry. Attach the raw
   // score so the admin Telemetry view can surface near-misses and the admin

@@ -42,6 +42,129 @@ export interface NavCatalogEntry {
   i18n: Record<LangCode, NavCatalogContent>;
   related_kb_topics?: string[];
   priority?: number;
+  /** VTID-NAV-SEMANTIC: Pre-computed embedding vector for semantic search.
+   *  Generated at gateway startup from combined EN+DE title+description+when_to_visit. */
+  embedding?: number[];
+}
+
+// =============================================================================
+// Semantic search state
+// =============================================================================
+
+let _embeddingsReady = false;
+
+/** True once all catalog entries have pre-computed embeddings. */
+export function areCatalogEmbeddingsReady(): boolean {
+  return _embeddingsReady;
+}
+
+/**
+ * VTID-NAV-SEMANTIC: Pre-compute embedding vectors for every catalog entry.
+ * Called once at gateway startup. Each entry's embedding is generated from
+ * its combined multilingual content (title + description + when_to_visit
+ * across all available languages). Uses the batch embedding API for speed.
+ *
+ * Non-blocking, non-fatal: if it fails, the keyword scorer is the fallback.
+ */
+export async function warmCatalogEmbeddings(): Promise<void> {
+  try {
+    const { generateBatchEmbeddings } = await import('../services/embedding-service');
+
+    // Build a text block per entry combining all languages
+    const texts: string[] = [];
+    for (const entry of NAVIGATION_CATALOG) {
+      const parts: string[] = [];
+      for (const [, content] of Object.entries(entry.i18n)) {
+        parts.push(content.title, content.description, content.when_to_visit);
+      }
+      texts.push(parts.join(' '));
+    }
+
+    const result = await generateBatchEmbeddings(texts);
+    if (!result.ok || !result.embeddings || result.embeddings.length !== NAVIGATION_CATALOG.length) {
+      console.warn(`[VTID-NAV-SEMANTIC] warmCatalogEmbeddings failed: ${result.error || 'length mismatch'}`);
+      return;
+    }
+
+    // Assign embeddings to each entry (mutating the readonly array entries is
+    // safe here because we only write the embedding field, not structural data)
+    for (let i = 0; i < NAVIGATION_CATALOG.length; i++) {
+      (NAVIGATION_CATALOG[i] as any).embedding = result.embeddings[i];
+    }
+
+    _embeddingsReady = true;
+    console.log(`[VTID-NAV-SEMANTIC] ${NAVIGATION_CATALOG.length} catalog embeddings warmed in ${result.latency_ms}ms`);
+  } catch (err: any) {
+    console.warn(`[VTID-NAV-SEMANTIC] warmCatalogEmbeddings exception: ${err.message}`);
+  }
+}
+
+/**
+ * VTID-NAV-SEMANTIC: Cosine similarity between two vectors.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * VTID-NAV-SEMANTIC: Semantic search against pre-computed catalog embeddings.
+ * Returns entries ranked by cosine similarity with hierarchy-aware boosts.
+ *
+ * Returns empty array if embeddings aren't ready (falls back to keyword scorer).
+ */
+export async function semanticSearchCatalog(
+  query: string,
+  opts: {
+    anonymous_only?: boolean;
+    exclude_routes?: string[];
+  } = {}
+): Promise<Array<{ entry: NavCatalogEntry; similarity: number }>> {
+  if (!_embeddingsReady) return [];
+
+  try {
+    const { generateEmbedding } = await import('../services/embedding-service');
+    const embResult = await generateEmbedding(query);
+    if (!embResult.ok || !embResult.embedding) return [];
+
+    const queryEmb = embResult.embedding;
+    const excluded = new Set(opts.exclude_routes || []);
+    const results: Array<{ entry: NavCatalogEntry; similarity: number }> = [];
+
+    for (const entry of NAVIGATION_CATALOG) {
+      if (!entry.embedding) continue;
+      if (opts.anonymous_only && !entry.anonymous_safe) continue;
+      if (excluded.has(entry.route)) continue;
+
+      let sim = cosineSimilarity(queryEmb, entry.embedding);
+
+      // Hierarchy rule 1: Parent boost. Overview/root entries get a bonus
+      // so generic queries ("Chat", "Gesundheit") land on the parent, not
+      // a random child page.
+      const isParent = entry.screen_id.endsWith('.OVERVIEW')
+        || entry.screen_id === 'PUBLIC.LANDING'
+        || entry.screen_id === 'PROFILE.ME'
+        || entry.route.split('/').filter(Boolean).length <= 1;
+      if (isParent) {
+        sim += 0.05;
+      }
+
+      results.push({ entry, similarity: sim });
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results;
+  } catch (err: any) {
+    console.warn(`[VTID-NAV-SEMANTIC] semanticSearchCatalog failed: ${err.message}`);
+    return [];
+  }
 }
 
 const FALLBACK_LANG: LangCode = 'en';

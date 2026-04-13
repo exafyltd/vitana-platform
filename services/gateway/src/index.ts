@@ -875,6 +875,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       try {
         warmNavCatalogCache();
         console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
+
+        // VTID-NAV-SEMANTIC: Pre-compute embedding vectors for semantic search.
+        // Non-blocking — runs in the background, keyword scorer is the fallback
+        // until embeddings are ready.
+        const { warmCatalogEmbeddings } = require('./lib/navigation-catalog');
+        warmCatalogEmbeddings()
+          .then(() => console.log('🧠 Navigator semantic embeddings warmed'))
+          .catch((err: any) => console.warn('⚠️ Semantic embedding warm failed (non-fatal):', err.message));
       } catch (error) {
         console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
       }
