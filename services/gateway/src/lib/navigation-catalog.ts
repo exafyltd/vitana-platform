@@ -769,13 +769,13 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'AI Companion',
-        description: 'Chat with Vitana in a focused companion view.',
-        when_to_visit: 'When the user wants to open the dedicated Vitana chat, the AI companion view, or have an extended conversation outside the orb.',
+        description: 'Talk to Vitana in a focused companion view.',
+        when_to_visit: 'When the user wants to open the AI companion, the Vitana companion view, talk to Vitana in text mode, or have an extended conversation outside the orb.',
       },
       de: {
         title: 'KI-Begleiter',
-        description: 'Chatte mit Vitana in einer fokussierten Begleiter-Ansicht.',
-        when_to_visit: 'Wenn der Nutzer den dedizierten Vitana-Chat, die KI-Begleiter-Ansicht öffnen oder eine längere Unterhaltung außerhalb des Orbs führen möchte.',
+        description: 'Sprich mit Vitana in einer fokussierten Begleiter-Ansicht.',
+        when_to_visit: 'Wenn der Nutzer den KI-Begleiter, die Vitana-Begleiter-Ansicht öffnen, im Textmodus mit Vitana sprechen oder eine längere Unterhaltung außerhalb des Orbs führen möchte.',
       },
     },
   },
@@ -809,13 +809,13 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'Inbox',
-        description: 'Messages, reminders, and inspiration delivered to you.',
-        when_to_visit: 'When the user asks about their inbox, messages, chat, chat history, conversations, message history, DMs, direct messages, notifications, or wants to check what has been sent to them.',
+        description: 'Messages, chat history, and conversations with community members.',
+        when_to_visit: 'When the user asks about their inbox, messages, chat, chats, chat history, messenger, text messages, conversations, message history, DMs, direct messages, texting, writing to someone, communicating with members, or wants to check what has been sent to them.',
       },
       de: {
-        title: 'Posteingang',
-        description: 'Nachrichten, Erinnerungen und Inspiration, die dir zugestellt wurden.',
-        when_to_visit: 'Wenn der Nutzer nach seinem Posteingang, Nachrichten, Chat, Chat-Verlauf, Konversationen, Nachrichtenverlauf, Direktnachrichten, Benachrichtigungen fragt oder sehen möchte, was ihm gesendet wurde.',
+        title: 'Posteingang — Chat & Nachrichten',
+        description: 'Nachrichten, Chats und Konversationen mit Community-Mitgliedern.',
+        when_to_visit: 'Wenn der Nutzer nach Posteingang, Inbox, Nachrichten, Chat, Chats, Chat-Verlauf, Chat-Historie, Messenger, Textnachrichten, Konversationen, Nachrichtenverlauf, Direktnachrichten, mit Mitgliedern schreiben, mit Community kommunizieren, Benachrichtigungen fragt oder seine Nachrichten lesen möchte.',
       },
     },
   },
