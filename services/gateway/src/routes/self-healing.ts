@@ -34,6 +34,7 @@ import {
   ServiceStatus,
   SelfHealingReportResponse,
   AutonomyLevel,
+  ENDPOINT_FILE_MAP,
 } from '../types/self-healing';
 
 const router = Router();
@@ -374,7 +375,26 @@ router.post('/report', async (req: Request, res: Response) => {
     let vtidsCreated = 0;
     let skipped = 0;
 
+    // Known-endpoint allowlist: only process endpoints that exist in the
+    // gateway route map. Test/phantom endpoints (e.g. /api/v1/final-test/health,
+    // /api/v1/orb-v2/health) from E2E runs are rejected immediately.
+    const knownEndpoints = new Set(Object.keys(ENDPOINT_FILE_MAP));
+    // Also allow /alive (gateway root health) and /api/v1/self-healing/health
+    knownEndpoints.add('/alive');
+    knownEndpoints.add('/api/v1/self-healing/health');
+
     for (const failure of downServices) {
+      if (!knownEndpoints.has(failure.endpoint)) {
+        console.log(`[self-healing] Rejecting unknown endpoint: ${failure.endpoint}`);
+        details.push({
+          service: failure.name,
+          endpoint: failure.endpoint,
+          action: 'skipped' as const,
+          reason: `Unknown endpoint — not in gateway route map`,
+        });
+        skipped++;
+        continue;
+      }
       try {
         const result = await processFailingService(failure, autonomyLevel);
         details.push({
