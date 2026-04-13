@@ -305,8 +305,9 @@ jobs:
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Lovable Supabase connection for events/community data
-            SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_URL=LOVABLE_SUPABASE_URL:latest)
-            SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_SERVICE_ROLE=LOVABLE_SUPABASE_SERVICE_ROLE:latest)
+            # Secrets not in GCP Secret Manager — use GitHub Secrets as plain env vars
+            EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_URL=${{ secrets.LOVABLE_SUPABASE_URL }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE=${{ secrets.LOVABLE_SUPABASE_SERVICE_ROLE }})
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
@@ -369,12 +370,13 @@ jobs:
           # Cloud Run cannot --remove-env-vars and --update-secrets for the same key
           # in a single deploy command, so we clean up first.
           if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
-            echo "Cleaning stale plain env vars before secret binding..."
+            echo "Cleaning stale env vars and secret refs before deploy..."
+            # Remove stale secret refs (LOVABLE_SUPABASE was never created in GCP SM)
             gcloud run services update "$CLOUD_RUN_SERVICE" \
               --region=us-central1 \
               --project=lovable-vitana-vers1 \
-              --remove-env-vars=LOVABLE_SUPABASE_URL,LOVABLE_SUPABASE_SERVICE_ROLE \
-              --quiet 2>/dev/null || echo "No stale env vars to remove (already clean)"
+              --remove-secrets=LOVABLE_SUPABASE_URL,LOVABLE_SUPABASE_SERVICE_ROLE \
+              --quiet 2>/dev/null || echo "No stale secret refs to remove (already clean)"
           fi
 
           # Build deploy args
