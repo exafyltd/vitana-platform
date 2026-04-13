@@ -852,14 +852,30 @@ function synthesize(
   }
 
   // --- Confidence adjustments ---
+
+  // E2E test failures: cap confidence at 0.6 to FORCE triage agent investigation.
+  // The deterministic classifier matches against the health endpoint, but E2E
+  // failures are about frontend rendering (CSS, DOM, widget lifecycle) — a
+  // fundamentally different failure surface. Letting the classifier auto-approve
+  // at 0.85 produces wrong fixes that pass health checks but don't fix the
+  // actual test failures, creating an infinite loop.
+  const errorStr = ((failure as any).error_message || '') + ((failure as any).response_body || '');
+  const isE2eSource = /e2e|playwright|E2E|Playwright|orb.widget.test/i.test(errorStr);
+  if (isE2eSource) {
+    finalConfidence = Math.min(finalConfidence, 0.6);
+    evidence.push('E2E test failure detected — confidence capped at 0.6 to force triage agent deep analysis');
+  }
+
   // Boost if codebase evidence confirms
-  if (codebase.route_file_exists && codebase.health_handler_exists) {
+  if (codebase.route_file_exists && codebase.health_handler_exists && !isE2eSource) {
     finalConfidence = Math.min(finalConfidence + 0.05, 1.0);
   }
-  // Penalize if prior attempts exist (recurring issue)
-  if (priorAttempts > 2) {
-    finalConfidence = Math.max(finalConfidence - 0.1, 0.1);
-    evidence.push(`Recurring issue: ${priorAttempts} prior self-healing attempts — confidence reduced`);
+
+  // Penalize if prior attempts exist (recurring issue) — scales with attempts
+  if (priorAttempts > 0) {
+    const penalty = Math.min(priorAttempts * 0.08, 0.4);
+    finalConfidence = Math.max(finalConfidence - penalty, 0.1);
+    evidence.push(`Recurring issue: ${priorAttempts} prior attempt(s) — confidence reduced by ${(penalty * 100).toFixed(0)}%`);
   }
 
   // Populate files to modify if not yet set
