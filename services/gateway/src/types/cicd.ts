@@ -193,6 +193,7 @@ export type CicdEventType =
   // VTID-01005: Terminal Lifecycle Events (MANDATORY for governance compliance)
   | 'vtid.lifecycle.completed'
   | 'vtid.lifecycle.failed'
+  | 'vtid.lifecycle.execution_approved'
   // VTID-01018: Operator Action Lifecycle Events (MANDATORY for hard contract)
   | 'operator.action.started'
   | 'operator.action.completed'

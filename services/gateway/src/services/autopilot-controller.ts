@@ -43,6 +43,7 @@ import {
  */
 export type AutopilotState =
   | 'allocated'       // VTID allocated, not yet started
+  | 'scheduled'       // Ready for worker pickup (e.g. self-healing injected tasks)
   | 'in_progress'     // Work dispatched to worker
   | 'building'        // Worker actively building
   | 'pr_created'      // PR created, awaiting CI
@@ -392,7 +393,8 @@ export async function verifySpecIntegrity(vtid: string): Promise<boolean> {
  * VTID-01208: Added recovery transition from failed → completed for terminalization success
  */
 const VALID_TRANSITIONS: Record<AutopilotState, AutopilotState[]> = {
-  'allocated': ['in_progress', 'failed', 'completed'],
+  'allocated': ['in_progress', 'scheduled', 'failed', 'completed'],
+  'scheduled': ['in_progress', 'failed', 'completed'],
   'in_progress': ['building', 'failed', 'completed'],
   'building': ['pr_created', 'failed', 'completed'],
   'pr_created': ['reviewing', 'failed', 'completed'],
@@ -896,6 +898,7 @@ export function getAutopilotStatus(): {
 
   const runsByState: Record<AutopilotState, number> = {
     allocated: 0,
+    scheduled: 0,
     in_progress: 0,
     building: 0,
     pr_created: 0,

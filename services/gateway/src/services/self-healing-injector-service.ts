@@ -70,7 +70,7 @@ export async function injectIntoAutopilotPipeline(
           summary: spec.substring(0, 2000),
           layer: 'INFRA',
           module: mapServiceToModule(diagnosis.service_name),
-          status: 'allocated',  // must stay 'allocated' for autopilot event loop to pick up
+          status: 'scheduled',  // 'scheduled' is what worker-runner polls for and the standard pipeline expects
           spec_status: autoApproved ? 'approved' : 'validated',  // approved = auto-exec, validated = awaiting human
           assigned_to: 'autopilot',
           metadata: {

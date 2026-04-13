@@ -90,6 +90,7 @@ export interface MappingResult {
 
 const STATE_ORDER: Record<AutopilotState, number> = {
   'allocated': 0,
+  'scheduled': 0,  // Same level as allocated — ready for pickup
   'in_progress': 1,
   'building': 2,
   'pr_created': 3,
@@ -158,7 +159,7 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'self-healing.task.injected',             // Self-healing pipeline injected task
       'autopilot.task.spec.created',            // Also fires on spec creation (shared trigger)
     ],
-    fromStates: ['allocated'],
+    fromStates: ['allocated', 'scheduled'],
     toState: 'in_progress',
     triggerAction: 'dispatch',
     condition: (event) => {
@@ -178,7 +179,7 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'vtid.lifecycle.execution_approved',  // VTID-01194: NEW - Explicit human approval
       'vtid.lifecycle.in_progress',         // VTID-01194: Status-based trigger
     ],
-    fromStates: ['allocated'],
+    fromStates: ['allocated', 'scheduled'],
     toState: 'in_progress',
     triggerAction: 'dispatch',
     description: 'VTID-01194: Human approved execution - dispatch to worker',

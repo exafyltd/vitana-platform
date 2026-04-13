@@ -12,6 +12,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { Diagnosis, FailureClass } from '../types/self-healing';
 import { emitOasisEvent } from './oasis-event-service';
 import { runFullQualityCheck } from './spec-quality-agent';
+import { createVtidSpec } from './vtid-spec-service';
 
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -584,6 +585,39 @@ export async function generateAndStoreFixSpec(
 
   await storeSpec(diagnosis.vtid, spec, specHash, qualityScore, supabaseUrl, svcKey);
   await updateLedgerSpecStatus(diagnosis.vtid, supabaseUrl, svcKey);
+
+  // Persist to vtid_specs — the authoritative spec table that the working
+  // execution pipeline (enforceSpecRequirement → autopilot event loop →
+  // worker-runner) reads from. Without this row, governance blocks execution.
+  try {
+    const vtidSpecResult = await createVtidSpec({
+      vtid: diagnosis.vtid,
+      title: `SELF-HEAL: ${diagnosis.service_name} — ${diagnosis.failure_class}`,
+      spec_text: spec,
+      primary_domain: 'INFRA',
+      system_surface: diagnosis.files_to_modify,
+      layer: 'INFRA',
+      module: 'GATEWAY',
+      execution_mode: 'Autonomous',
+      creativity: 'FORBIDDEN',
+      target_paths: diagnosis.files_to_modify,
+      acceptance_criteria: [`Endpoint ${diagnosis.endpoint} returns HTTP 200`],
+      created_by: 'self-healing',
+      metadata: {
+        source: 'self-healing',
+        failure_class: diagnosis.failure_class,
+        confidence: diagnosis.confidence,
+        spec_hash: specHash,
+      },
+    });
+    if (!vtidSpecResult.ok) {
+      console.warn(`[SelfHealingSpec] createVtidSpec failed for ${diagnosis.vtid}: ${vtidSpecResult.error}`);
+    } else {
+      console.log(`[SelfHealingSpec] Spec persisted to vtid_specs for ${diagnosis.vtid}`);
+    }
+  } catch (err: any) {
+    console.warn(`[SelfHealingSpec] createVtidSpec threw for ${diagnosis.vtid}: ${err.message}`);
+  }
 
   await emitOasisEvent({
     vtid: diagnosis.vtid,
