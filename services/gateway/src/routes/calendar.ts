@@ -439,6 +439,52 @@ router.get('/journey/debug', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /journey/check?user_id=UUID — Check if user has journey events + force init
+// =============================================================================
+router.get('/journey/check', async (req: Request, res: Response) => {
+  try {
+    const userId = (req.query.user_id as string) || getUserId(req);
+    if (!userId) return res.json({ ok: false, error: 'Pass ?user_id=UUID' });
+
+    const { getSupabaseConfig, headers: sbHeaders } = await import('../services/calendar-service');
+    const config = getSupabaseConfig();
+    if (!config) return res.json({ ok: false, error: 'No Supabase config' });
+
+    // Count all events for this user
+    const countResp = await fetch(
+      `${config.url}/rest/v1/calendar_events?user_id=eq.${userId}&select=id,title,event_type,source_type,status,start_time&order=start_time.asc&limit=50`,
+      { headers: sbHeaders(config.key) },
+    );
+    const events = countResp.ok ? await countResp.json() as any[] : [];
+
+    const journeyEvents = events.filter((e: any) => e.source_type === 'journey');
+    const todayEvents = events.filter((e: any) => {
+      const d = new Date(e.start_time);
+      const now = new Date();
+      return d.toDateString() === now.toDateString();
+    });
+
+    // If no journey events, force init
+    let initResult = null;
+    if (journeyEvents.length === 0) {
+      const { initializeJourneyCalendar } = await import('../services/journey-calendar-mapper');
+      initResult = await initializeJourneyCalendar(userId, 'default', new Date(), 'en');
+    }
+
+    return res.json({
+      ok: true,
+      user_id: userId,
+      total_events: events.length,
+      journey_events: journeyEvents.length,
+      today_events: todayEvents.length,
+      sample_events: events.slice(0, 5).map((e: any) => ({ title: e.title, type: e.event_type, source: e.source_type, status: e.status, start: e.start_time })),
+      init_triggered: initResult,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // POST /journey/initialize — Pre-populate 90-day journey calendar
 // =============================================================================
 router.post('/journey/initialize', async (req: Request, res: Response) => {
