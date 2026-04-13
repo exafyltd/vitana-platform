@@ -1293,81 +1293,54 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
       },
     },
     {
-      name: 'navigator_consult',
+      name: 'navigate',
       description: [
-        'Consult the Vitana Navigator. This is a composite backend service that',
-        'combines the navigation catalog, the knowledge base, and the user\'s',
-        'current page + recent navigation history to recommend where to send',
-        'the user next.',
+        'Guide the user to the right screen in the Vitana platform. Call this',
+        'tool whenever the user wants to go somewhere, find a feature, learn',
+        'how to do something, or mentions any screen, page, section, or area',
+        'of the app — even indirectly.',
+        '',
+        'You do NOT need to know which screen to send them to. Just pass the',
+        'user\'s words and the backend will find the right destination, search',
+        'the knowledge base for how-to guidance, and handle the redirect.',
         '',
         'WHEN TO CALL:',
-        '- Exploratory or open-ended questions where you are not 100% sure',
-        '  exactly which screen the user wants ("how do I track my biology?",',
-        '  "where do I find dance events?", "I want to make money with the community").',
-        '- First-time visitor questions about how features work.',
-        '- Any case where a brief explanation would help the user understand',
-        '  what they are about to see.',
+        '- "open my profile" / "open my wallet" / "open my inbox"',
+        '- "where are the podcasts" / "show me my health data"',
+        '- "I want to set up a business" / "how do I track my biology?"',
+        '- "open the screen with music" / "where is my diary"',
+        '- Any request where the user wants to SEE or DO something on a screen',
         '',
         'WHEN NOT TO CALL:',
-        '- Direct task requests with an obvious destination ("open my wallet",',
-        '  "take me to events"). Call navigate_to_screen directly instead.',
-        '- Quick factual questions answerable in 1-2 sentences of speech.',
+        '- Pure small talk with no screen destination ("how are you", "thank you")',
+        '- Quick factual questions ("what is longevity?")',
         '',
         'WHAT YOU GET BACK:',
-        '- A primary screen recommendation (or null if confidence is too low)',
-        '- An optional alternative if two candidates are close',
-        '- An explanation text in the user\'s language you can speak naturally',
-        '- KB excerpts you may quote',
-        '- A confirmation_needed flag — if true, ask the user the suggested_question',
-        '  instead of navigating immediately, then call navigate_to_screen with',
-        '  their chosen screen_id on the next turn.',
+        '- GUIDANCE: a short explanation you should speak naturally to the user,',
+        '  telling them about the feature and what they can do there.',
+        '- NAVIGATING_TO: the screen the user is being taken to (or null if no',
+        '  match was found).',
+        '- If a redirect is happening, the orb will close automatically after',
+        '  you finish speaking. Just speak the guidance naturally — do not add',
+        '  a separate transition sentence.',
+        '- If NAVIGATING_TO is null, ask the user to clarify what they are',
+        '  looking for.',
+        '',
+        'IMPORTANT: When you speak the guidance, be helpful and warm. Explain',
+        'the feature briefly, tell them what they can do on that screen, and',
+        'let them know you are taking them there. Example: "The Business Hub',
+        'is where you can set up your services and start earning. You\'ll find',
+        'a Create button to get started. Let me take you there."',
       ].join('\n'),
       parameters: {
         type: 'object',
         properties: {
           question: {
             type: 'string',
-            description: 'The user\'s question or intent in natural language. Pass it as the user expressed it.',
+            description: 'The user\'s question, request, or intent in their own words. Pass exactly what they said — the backend handles all matching and routing.',
           },
         },
         required: ['question'],
-      },
-    },
-    {
-      name: 'navigate_to_screen',
-      description: [
-        'Close the ORB and send the user to a specific screen in the Vitana platform.',
-        '',
-        'WHEN TO CALL:',
-        '- AFTER navigator_consult returned a high-confidence recommendation, OR',
-        '- Directly for unambiguous task requests like "open my wallet",',
-        '  "take me to events", "go to my settings".',
-        '',
-        'IMPORTANT speech rules after calling this tool:',
-        '- Speak ONLY a brief transition sentence ("heading there now",',
-        '  "let me take you there"). Do NOT describe what the user will see.',
-        '- Do NOT claim the user has arrived ("you\'re on the X page now") —',
-        '  the widget takes 1-3 seconds to actually navigate.',
-        '- Never speak raw URLs or route paths.',
-        '',
-        'If the tool returns "Unknown screen_id", retry with one of the suggested',
-        'ids on the next turn. If it returns "requires_auth", tell the user',
-        'briefly that the feature needs them to join the community and offer to',
-        'take them to registration instead.',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          screen_id: {
-            type: 'string',
-            description: 'Canonical screen id from the Vitana Navigator catalog. Format is CATEGORY.NAME using dots. Examples: PROFILE.ME, INBOX.OVERVIEW, INBOX.ARCHIVED, COMM.EVENTS, COMM.MEDIA_HUB, COMM.LIVE_ROOMS, HEALTH.MY_BIOLOGY, HEALTH.PLANS, HEALTH.PILLARS, HEALTH.CONDITIONS, WALLET.OVERVIEW, WALLET.REWARDS, WALLET.SUBSCRIPTIONS, BUSINESS.OVERVIEW, BUSINESS.SELL_EARN, BUSINESS.SERVICES, BUSINESS.CLIENTS, DISCOVER.SUPPLEMENTS, DISCOVER.ORDERS, DISCOVER.AI_PICKS, MEMORY.DIARY, MEMORY.TIMELINE, MEMORY.RECALL, SETTINGS.PRIVACY, SETTINGS.BILLING, SETTINGS.SUPPORT, SETTINGS.PREFERENCES, SHARING.OVERVIEW, SHARING.CAMPAIGNS, HOME.MATCHES, HOME.ACTIONS, AI.COMPANION, AI.INSIGHTS, AI.DAILY_SUMMARY. Always use the full dotted form (e.g. COMM.MEDIA_HUB not MEDIA_HUB, PROFILE.ME not PROFILE).',
-          },
-          reason: {
-            type: 'string',
-            description: 'One short sentence explaining why this screen is the right destination, for telemetry.',
-          },
-        },
-        required: ['screen_id', 'reason'],
       },
     },
   ];
@@ -1565,8 +1538,7 @@ async function executeLiveApiTool(
 // VTID-NAV-TIMEJOURNEY: get_current_screen is identity-free — it just reads
 // session.current_route — so it's safe for anonymous sessions too.
 const ANONYMOUS_SAFE_TOOLS = new Set<string>([
-  'navigator_consult',
-  'navigate_to_screen',
+  'navigate',
   'get_current_screen',
 ]);
 
@@ -1575,6 +1547,175 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
  * require an authenticated identity (anonymous sessions can still consult,
  * just with empty memory hints).
  */
+/**
+ * VTID-NAV-UNIFIED: Single unified navigate tool handler.
+ *
+ * Replaces the old two-tool dance (navigator_consult → navigate_to_screen).
+ * The LLM just passes the user's words. This function:
+ * 1. Runs the consult (catalog scoring + KB search + memory hints)
+ * 2. If a match is found: queues the orb_directive AND returns guidance text
+ * 3. If no match: returns a clarification prompt
+ *
+ * Gemini never sees screen_ids. Never guesses. Just speaks the guidance.
+ */
+async function handleNavigate(
+  session: GeminiLiveSession,
+  args: Record<string, unknown>
+): Promise<{ success: boolean; result: string; error?: string }> {
+  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
+  const question = String(args.question || '').trim();
+  if (!question) {
+    return { success: false, result: '', error: 'navigate requires a non-empty question.' };
+  }
+
+  // Step 1: Run the consult service (catalog + KB + memory)
+  const consultInput: NavigatorConsultInput = {
+    question,
+    lang: session.lang || 'en',
+    identity: hasIdentity
+      ? {
+          user_id: session.identity!.user_id,
+          tenant_id: session.identity!.tenant_id as string,
+          role: session.identity!.role || session.active_role || undefined,
+        }
+      : null,
+    is_anonymous: !!session.isAnonymous || !hasIdentity,
+    current_route: session.current_route,
+    recent_routes: session.recent_routes,
+    transcript_excerpt: session.inputTranscriptBuffer,
+    session_id: session.sessionId,
+    turn_number: session.turn_count,
+    conversation_start: session.createdAt.toISOString(),
+  };
+
+  const consultResult = await consultNavigator(consultInput);
+
+  // Telemetry
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.consulted',
+    source: 'orb-live-ws',
+    status: consultResult.confidence === 'low' ? 'warning' : 'info',
+    message: `navigate: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
+    payload: {
+      session_id: session.sessionId,
+      question,
+      primary_screen_id: consultResult.primary?.screen_id || null,
+      confidence: consultResult.confidence,
+      kb_excerpt_count: consultResult.kb_excerpt_count,
+      memory_hint_count: consultResult.memory_hint_count,
+      ms_elapsed: consultResult.ms_elapsed,
+      is_anonymous: consultInput.is_anonymous,
+    },
+  }).catch(() => {});
+
+  // Step 2: If we found a match with sufficient confidence, auto-navigate
+  if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
+    const entry = lookupNavScreen(consultResult.primary.screen_id);
+    if (entry) {
+      const lang = session.lang || 'en';
+      const content = getNavContent(entry, lang);
+
+      // Queue the navigation — same as handleNavigateToScreen did
+      session.pendingNavigation = {
+        screen_id: entry.screen_id,
+        route: entry.route,
+        title: content.title,
+        reason: question,
+        decision_source: 'direct',
+        requested_at: Date.now(),
+      };
+      session.navigationDispatched = true;
+
+      // Eagerly update route for get_current_screen
+      const previousRoute = session.current_route;
+      session.current_route = entry.route;
+      if (previousRoute && previousRoute !== entry.route) {
+        const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+        const deduped = trail.filter(r => r !== previousRoute);
+        session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+      }
+
+      // Persist navigator action memory (authenticated only)
+      if (hasIdentity) {
+        writeNavigatorActionMemory({
+          identity: {
+            user_id: session.identity!.user_id,
+            tenant_id: session.identity!.tenant_id as string,
+            role: session.identity!.role || session.active_role || undefined,
+          },
+          screen: {
+            screen_id: entry.screen_id,
+            route: entry.route,
+            title: content.title,
+          },
+          reason: question,
+          decision_source: 'direct',
+          orb_session_id: session.sessionId,
+          conversation_id: session.conversation_id,
+          lang,
+        }).catch(() => {});
+      }
+
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.requested',
+        source: 'orb-live-ws',
+        status: 'info',
+        message: `navigate auto-redirect to ${entry.screen_id} (${entry.route})`,
+        payload: {
+          session_id: session.sessionId,
+          screen_id: entry.screen_id,
+          route: entry.route,
+          reason: question,
+          is_anonymous: consultInput.is_anonymous,
+        },
+      }).catch(() => {});
+
+      // Build the guidance response for Gemini to speak
+      const lines: string[] = [];
+      lines.push(`NAVIGATING_TO: ${content.title}`);
+      lines.push(`GUIDANCE: ${consultResult.explanation}`);
+      if (consultResult.kb_excerpts.length > 0) {
+        lines.push('ADDITIONAL_CONTEXT:');
+        consultResult.kb_excerpts.forEach((x, i) => lines.push(`  [${i + 1}] ${x}`));
+      }
+      lines.push('');
+      lines.push('Speak the GUIDANCE naturally to the user. Be helpful and warm —');
+      lines.push('explain the feature, tell them what they can do on that screen,');
+      lines.push('and let them know you are taking them there. The redirect happens');
+      lines.push('automatically when you finish speaking.');
+
+      return { success: true, result: lines.join('\n') };
+    }
+  }
+
+  // Step 3: No confident match or blocked — ask the user to clarify
+  if (consultResult.blocked_reason === 'requires_auth') {
+    return {
+      success: true,
+      result: 'NAVIGATING_TO: null\nGUIDANCE: ' + consultResult.explanation +
+        '\nTell the user this feature requires joining the community and offer to take them to registration.',
+    };
+  }
+
+  if (consultResult.confirmation_needed && consultResult.primary && consultResult.alternative) {
+    return {
+      success: true,
+      result: `NAVIGATING_TO: null (waiting for user choice)\nGUIDANCE: ${consultResult.explanation}\n` +
+        `ASK_USER: ${consultResult.suggested_question || `Would you like to go to ${consultResult.primary.title} or ${consultResult.alternative.title}?`}\n` +
+        'Ask the user to choose, then call navigate again with their answer.',
+    };
+  }
+
+  return {
+    success: true,
+    result: 'NAVIGATING_TO: null\nGUIDANCE: ' + consultResult.explanation +
+      '\nAsk the user to clarify what they are looking for so you can help them find it.',
+  };
+}
+
+// Legacy handler — kept for test imports but no longer called by the tool path
 async function handleNavigatorConsult(
   session: GeminiLiveSession,
   args: Record<string, unknown>
@@ -1908,11 +2049,16 @@ async function executeLiveApiToolInner(
   if (toolName === 'get_current_screen') {
     return handleGetCurrentScreen(session);
   }
-  if (toolName === 'navigator_consult') {
-    return await handleNavigatorConsult(session, args);
+  // VTID-NAV-UNIFIED: Single tool replaces navigator_consult + navigate_to_screen.
+  // The LLM just passes the user's words. The backend does all the matching,
+  // KB lookup, and auto-dispatches the redirect.
+  if (toolName === 'navigate') {
+    return await handleNavigate(session, args);
   }
-  if (toolName === 'navigate_to_screen') {
-    return await handleNavigateToScreen(session, args);
+  // Legacy tool names — route to the unified handler for backward compatibility
+  // in case an in-flight session still has the old tool declarations cached.
+  if (toolName === 'navigator_consult' || toolName === 'navigate_to_screen') {
+    return await handleNavigate(session, { question: args.question || args.screen_id || args.reason || '' });
   }
 
   // Validate identity for tool execution (everything below requires auth)
@@ -2467,80 +2613,44 @@ eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
     "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
     hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
 
-  • navigator_consult(question) — kombiniert den Navigationskatalog, die
-    Wissensdatenbank und den aktuellen Bildschirm + Verlauf des Nutzers, um zu
-    empfehlen wohin geleitet werden soll. Nutze es für offene oder explorative
-    Fragen, bei denen du nicht 100% sicher bist welcher Bildschirm gemeint ist.
+  • navigate(question) — das Haupt-Navigations-Tool. Rufe es mit den Worten
+    des Nutzers auf und es erledigt ALLES: findet den richtigen Bildschirm,
+    durchsucht die Wissensdatenbank nach Anleitungen und leitet den Nutzer
+    automatisch weiter. Du musst keine Bildschirmnamen oder IDs kennen —
+    gib einfach die Frage weiter.
 
-  • navigate_to_screen(screen_id) — schließt das ORB und navigiert. Rufe es
-    NACH navigator_consult auf, ODER direkt für eindeutige Aufgaben wie "öffne
-    mein Wallet", "zeig mir die Events".
+WANN navigate() AUFRUFEN:
 
-WANN NAVIGATOR-TOOLS VERWENDEN:
+Rufe navigate() auf wenn der Nutzer irgendwohin GEHEN möchte, ein Feature
+FINDEN will, LERNEN möchte wie etwas funktioniert, oder irgendeinen
+Bildschirm, eine Seite, einen Bereich oder eine Funktion der App erwähnt —
+auch indirekt. Beispiele:
+   • "öffne mein Profil" → rufe navigate auf
+   • "öffne mein Wallet" → rufe navigate auf
+   • "wo sind die Podcasts" → rufe navigate auf
+   • "ich möchte ein Business aufbauen" → rufe navigate auf
+   • "zeig mir meine Gesundheitsdaten" → rufe navigate auf
+   • "öffne meinen Posteingang" → rufe navigate auf
+   • "wie verfolge ich meine Biologie?" → rufe navigate auf
 
-Immer wenn der Nutzer IRGENDEINEN Bildschirm, eine Seite, einen Bereich,
-eine Funktion oder ein Feature der App erwähnt — auch indirekt — MUSST du
-navigator_consult oder navigate_to_screen aufrufen.
-Beispiele für indirekte Anfragen die einen Tool-Aufruf ERFORDERN:
-   • "wo sind die Podcasts" → rufe navigator_consult auf
-   • "zeig mir den Bildschirm mit der Musik" → rufe navigator_consult auf
-   • "ich möchte meine Gesundheitsdaten sehen" → rufe navigator_consult auf
-   • "wo finde ich mein Tagebuch" → rufe navigator_consult auf
-   • "bring mich zur Abrechnung" → rufe navigate_to_screen direkt auf
+Im Zweifel rufe navigate() auf. Es ist billig, schnell und gibt immer
+etwas Nützliches zurück. Wenn du es nicht aufrufst und der Nutzer
+navigieren wollte, bleibt er stumm wartend im Hörmodus hängen.
 
-Der EINZIGE Fall in dem du OHNE Navigator-Tool antworten solltest:
+Der EINZIGE Fall in dem du navigate() NICHT aufrufen solltest:
    • Reiner Smalltalk ("wie geht es dir", "danke")
    • Schnelle Faktenfragen ohne Bildschirm-Bezug ("was ist Longevity?")
-   • Der Nutzer sagt ausdrücklich dass er NICHT navigieren möchte
 
-Im Zweifel rufe navigator_consult auf. Es ist billig und schnell. Wenn du
-es nicht aufrufst und der Nutzer navigieren wollte, bleibt er stumm wartend
-im Hörmodus hängen.
-
-ENTSCHEIDUNGSREGELN:
-
-1. DIREKT NAVIGIEREN (für offensichtliche Ziele):
-   • "öffne mein Wallet", "öffne mein Profil", "öffne meinen Posteingang",
-     "zeig mir die Events", "gehe zu Einstellungen", "öffne mein Tagebuch"
-   • Sprich einen kurzen Übergangssatz, dann rufe navigate_to_screen auf.
-
-2. KONSULTIEREN DANN NAVIGIEREN (für alles andere das ein Feature erwähnt):
-   • "wo sind die Podcasts", "zeig mir die Gesundheitsverfolgung",
-     "ich möchte meine Sharing-Kampagnen verwalten", "öffne den Bildschirm
-     mit der Musik"
-   • Rufe navigator_consult zuerst auf. Es findet den richtigen Bildschirm.
-   • Bei hoher Konfidenz: sprich eine kurze Antwort, dann rufe
-     navigate_to_screen mit der primären screen_id auf.
-   • Bei confirmation_needed: frage den Nutzer, dann navigiere.
-   • Bei niedriger Konfidenz: bitte um Klarstellung.
-
-3. NUR ERKLÄREN (keine Navigations-Tools):
-   • Nur für reine Konversation ohne implizierten Bildschirm-Bezug.
-
-Du musst immer navigate_to_screen aufrufen wenn der Nutzer irgendwohin
-gebracht werden möchte. Dieser Tool-Aufruf ist was das Orb tatsächlich
-schließt und den Nutzer zum Ziel bringt. Ohne den Tool-Aufruf passiert
-nichts — der Nutzer bleibt im Hörmodus hängen.
-
-PRIORITÄTSZIELE (Maxina-Wachstumsfokus):
-   • Events & Meetups — die meistgenutzte Funktion heute
-   • Business & Verkaufen-Verdienen / Wallet & Belohnungen — der nächste große
-     Anwendungsfall, bei dem Nutzer neue Einkommensquellen in der Maxina
-     Community aufbauen. Behandle Fragen zu Verdienen, Monetarisieren,
-     Geschäftsaufbau oder Service-Verkauf als hochwertige Navigationsmomente.
-
-REGELN BEIM NAVIGIEREN:
-   • Verwende nur kanonische screen_ids. Wenn das Tool "Unknown screen_id"
-     mit Vorschlägen zurückgibt, versuche es im nächsten Turn mit einer der
-     vorgeschlagenen ids erneut.
-   • Nach dem Aufruf von navigate_to_screen sprich NUR einen Übergangssatz
-     ("ich bringe dich gleich dort hin"). Sage NICHT "du bist jetzt auf der
-     X-Seite" — das Widget braucht ein paar Sekunden zum tatsächlichen
-     Navigieren.
-   • Wenn ein Bildschirm Anmeldung erfordert und der Nutzer anonym ist, gibt
-     das Tool einen Zugriffsfehler zurück. Sage dem Nutzer kurz dass die
-     Funktion das Beitreten zur Community erfordert und biete an ihn zur
-     Registrierung zu bringen.
+WAS DU VON navigate() ZURÜCKBEKOMMST:
+   • GUIDANCE: eine hilfreiche Erklärung die du dem Nutzer vorsprechen
+     sollst. Beschreibe die Funktion, erkläre was er dort tun kann, und
+     lass ihn wissen dass du ihn dorthin bringst. Sei warm und hilfreich —
+     du bist sein persönlicher Begleiter.
+   • NAVIGATING_TO: der Bildschirm wohin er gebracht wird. Wenn das gesetzt
+     ist, schließt sich das Orb automatisch und leitet weiter nachdem du
+     fertig gesprochen hast. Sprich einfach die Anleitung natürlich.
+   • Wenn NAVIGATING_TO null ist, konnte das Backend keinen Treffer finden.
+     Frage den Nutzer was er sucht.
 
 NIEMALS rohe URLs oder Routenpfade aussprechen.`;
   }
@@ -2550,7 +2660,7 @@ NIEMALS rohe URLs oder Routenpfade aussprechen.`;
 === VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
 You are the navigation guide for the Maxina community. The community has many
 screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have three tools:
+your most important jobs. You have two tools:
 
   • get_current_screen() — returns the screen the user is looking at RIGHT
     NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
@@ -2559,75 +2669,41 @@ your most important jobs. You have three tools:
     also the right call after you\'ve navigated, if the user asks about
     "this page". It is cheap and always returns the fresh answer.
 
-  • navigator_consult(question) — composes the navigation catalog, the
-    knowledge base, and the user's current page + history to recommend a
-    destination. Use this for exploratory questions, "where can I find X",
-    or anything you're not 100% sure about.
+  • navigate(question) — the main navigation tool. Call it with the user's
+    words and it handles EVERYTHING: finds the right screen, searches the
+    knowledge base for guidance, and redirects the user automatically.
+    You do not need to know screen names or IDs — just pass the question.
 
-  • navigate_to_screen(screen_id) — closes the ORB and navigates. Call this
-    AFTER navigator_consult, OR directly for unambiguous task requests
-    ("open my wallet", "take me to events").
+WHEN TO CALL navigate():
 
-WHEN TO USE NAVIGATOR TOOLS:
+Call navigate() whenever the user wants to GO somewhere, FIND a feature,
+LEARN how to do something, or mentions any screen, page, section, or
+area of the app — even indirectly. Examples:
+   • "open my profile" → call navigate
+   • "open my wallet" → call navigate
+   • "where are the podcasts" → call navigate
+   • "I want to set up a business" → call navigate
+   • "show me my health data" → call navigate
+   • "open my inbox" → call navigate
+   • "how do I track my biology?" → call navigate
 
-Whenever the user mentions ANY screen, page, section, feature, or area of the
-app — even indirectly — you MUST call navigator_consult or navigate_to_screen.
-Examples of indirect requests that REQUIRE a tool call:
-   • "where are the podcasts" → call navigator_consult
-   • "show me the screen with music" → call navigator_consult
-   • "I want to see my health data" → call navigator_consult
-   • "where can I find my diary" → call navigator_consult
-   • "take me to billing" → call navigate_to_screen directly
+When in doubt, call navigate(). It is cheap, fast, and always returns
+something useful. Not calling it when the user wanted to go somewhere
+leaves them stuck in silence.
 
-The ONLY time you should answer WITHOUT calling a navigator tool is:
+The ONLY time you should NOT call navigate():
    • Pure small talk ("how are you", "thank you")
    • Quick factual questions with no screen destination ("what is longevity?")
-   • The user explicitly says they do NOT want to navigate
 
-When in doubt, call navigator_consult. It is cheap and fast. Not calling
-it when the user wanted navigation leaves them stuck waiting in silence.
-
-DECISION RULES:
-
-1. NAVIGATE DIRECTLY (for obvious destinations):
-   • "open my wallet", "open my profile", "open my inbox", "take me to
-     events", "go to settings", "open billing", "show me my diary"
-   • Speak a brief transition, then call navigate_to_screen.
-
-2. CONSULT THEN NAVIGATE (for everything else that mentions a feature):
-   • "where are the podcasts", "show me health tracking", "I want to
-     manage my sharing campaigns", "open the screen with music"
-   • Call navigator_consult first. It will match the right screen.
-   • If confidence is high: speak a short response, then call
-     navigate_to_screen with the primary screen_id.
-   • If confirmation_needed: ask the user to choose, then navigate.
-   • If confidence is low: ask the user to clarify.
-
-3. EXPLAIN ONLY (no navigation tools):
-   • Only for pure conversation with no screen destination implied.
-
-You must always call navigate_to_screen when the user wants to be taken
-somewhere. That tool call is what actually closes the orb and moves
-them to the destination. Without the tool call nothing happens — the
-user will be stuck waiting in listening mode.
-
-PRIORITY DESTINATIONS (Maxina growth focus):
-   • Events & Meetups — the most-used feature today
-   • Business & Sell-Earn / Wallet & Rewards — the next big use case where
-     users build new income streams in the Maxina community. Treat questions
-     about earning, monetizing, building a business, or selling services as
-     high-value navigation moments.
-
-RULES WHEN NAVIGATING:
-   • Use canonical screen_ids only. If the tool returns "Unknown screen_id"
-     with suggestions, retry with one of them on the next turn.
-   • After calling navigate_to_screen, speak ONLY a transition sentence
-     ("heading there now"). Do NOT say "you're on the X page" — the widget
-     takes a few seconds to actually navigate.
-   • If a screen requires sign-in and the user is anonymous, the tool returns
-     an access error. Tell the user briefly that the feature requires joining
-     the community and offer to take them to registration — they can say
-     "yes" and the existing signup flow takes over.
+WHAT YOU GET BACK from navigate():
+   • GUIDANCE: a helpful explanation you should speak to the user. Describe
+     the feature, explain what they can do there, and let them know you are
+     taking them there. Be warm and helpful — you are their personal guide.
+   • NAVIGATING_TO: the screen they are being taken to. If this is set,
+     the orb will close and redirect automatically after you finish speaking.
+     Just speak the guidance naturally.
+   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
+     user to clarify what they are looking for.
 
 NEVER speak raw URLs or route paths.`;
 }
