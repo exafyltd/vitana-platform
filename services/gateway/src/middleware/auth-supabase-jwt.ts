@@ -15,6 +15,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import * as jose from 'jose';
+import { getSupabase } from '../lib/supabase';
 
 /**
  * Identity claims extracted from a validated Supabase JWT
@@ -232,11 +233,11 @@ export function requireExafyAdmin(
  * Must be used AFTER requireAuth middleware.
  * Returns 400 if tenant_id is null/missing in JWT app_metadata.
  */
-export function requireTenant(
+export async function requireTenant(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   if (!req.identity) {
     res.status(401).json({
       ok: false,
@@ -244,6 +245,32 @@ export function requireTenant(
       message: 'Authentication required',
     });
     return;
+  }
+
+  // If tenant_id missing from JWT, resolve from user_tenants table
+  if (!req.identity.tenant_id) {
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const { data: tenantRow } = await supabase
+          .from('user_tenants')
+          .select('tenant_id')
+          .eq('user_id', req.identity.user_id)
+          .eq('is_primary', true)
+          .single();
+
+        if (tenantRow?.tenant_id) {
+          req.identity.tenant_id = tenantRow.tenant_id;
+          console.log(
+            `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity.user_id}: ${tenantRow.tenant_id}`
+          );
+        }
+      } catch (err: any) {
+        console.warn(
+          `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity.user_id}: ${err.message}`
+        );
+      }
+    }
   }
 
   if (!req.identity.tenant_id) {
@@ -296,7 +323,33 @@ export async function requireAuthWithTenant(
   req.auth_raw_claims = result.claims;
   req.auth_source = result.auth_source;
 
-  // Require tenant_id
+  // If tenant_id missing from JWT, resolve from user_tenants table
+  if (!req.identity.tenant_id) {
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const { data: tenantRow } = await supabase
+          .from('user_tenants')
+          .select('tenant_id')
+          .eq('user_id', req.identity.user_id)
+          .eq('is_primary', true)
+          .single();
+
+        if (tenantRow?.tenant_id) {
+          req.identity.tenant_id = tenantRow.tenant_id;
+          console.log(
+            `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity.user_id}: ${tenantRow.tenant_id}`
+          );
+        }
+      } catch (err: any) {
+        console.warn(
+          `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity.user_id}: ${err.message}`
+        );
+      }
+    }
+  }
+
+  // Still no tenant after DB lookup → reject
   if (!req.identity.tenant_id) {
     console.warn(
       `[VTID-01186] Tenant required: user ${req.identity.user_id} has no active_tenant_id`
