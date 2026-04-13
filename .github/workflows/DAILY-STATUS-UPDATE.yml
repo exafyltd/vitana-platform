@@ -1,7 +1,8 @@
-name: Daily Status Update
+name: Hourly Status Check
 on:
   schedule:
-    - cron: '0 8 * * *'
+    # Run every hour at :00 (was daily at 08:00 — too slow for self-healing)
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
