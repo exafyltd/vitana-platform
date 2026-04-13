@@ -298,6 +298,9 @@ jobs:
             SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest)
             # Appilix native push (Maxina Android app)
+            # Remove stale plain env-var binding so secret ref can take over
+            EXTRA_ENV_ARGS+=(--remove-env-vars=APPILIX_API_KEY)
+            EXTRA_ENV_ARGS+=(--remove-env-vars=APPILIX_APP_KEY)
             SECRETS_ARGS+=(--update-secrets=APPILIX_API_KEY=APPILIX_API_KEY:latest)
             SECRETS_ARGS+=(--update-secrets=APPILIX_APP_KEY=APPILIX_APP_KEY:latest)
             # Incident Triage Agent — Claude Managed Agents API key
