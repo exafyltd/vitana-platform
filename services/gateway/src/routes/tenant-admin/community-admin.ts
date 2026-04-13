@@ -18,26 +18,83 @@ import { getSupabase } from '../../lib/supabase';
 
 const router = Router({ mergeParams: true });
 
-// GET /meetups — community meetups/events
+// GET /meetups — community events from global_community_events
+// Includes organizer profile + ticket pricing from related tables
 router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
-    const { data, error } = await supabase
-      .from('community_meetups')
+    // Get events sorted by start_time (next upcoming first)
+    const { data: events, error } = await supabase
+      .from('global_community_events')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('start_time', { ascending: true })
       .limit(limit);
 
     if (error) {
-      console.warn('[COMMUNITY-ADMIN] community_meetups query error:', error.message);
+      console.warn('[COMMUNITY-ADMIN] global_community_events query error:', error.message);
       return res.json({ ok: true, meetups: [], error: error.message });
     }
 
-    return res.json({ ok: true, meetups: data || [], count: (data || []).length });
+    if (!events || events.length === 0) {
+      return res.json({ ok: true, meetups: [], count: 0 });
+    }
+
+    // Get organizer profiles
+    const organizerIds = [...new Set(events.map((e: any) => e.created_by).filter(Boolean))];
+    const { data: profiles } = await supabase
+      .from('app_users')
+      .select('user_id, email, display_name, avatar_url')
+      .in('user_id', organizerIds);
+
+    const profileMap: Record<string, any> = {};
+    (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
+
+    // Get ticket info per event
+    const eventIds = events.map((e: any) => e.id);
+    const { data: tickets } = await supabase
+      .from('event_ticket_types')
+      .select('event_id, name, price, currency, quantity_available, quantity_sold')
+      .in('event_id', eventIds);
+
+    const ticketMap: Record<string, any[]> = {};
+    (tickets || []).forEach((t: any) => {
+      if (!ticketMap[t.event_id]) ticketMap[t.event_id] = [];
+      ticketMap[t.event_id].push(t);
+    });
+
+    // Enrich events
+    const enriched = events.map((e: any) => ({
+      ...e,
+      organizer: profileMap[e.created_by] || { display_name: 'Unknown', email: null },
+      tickets: ticketMap[e.id] || [],
+      price: ticketMap[e.id]?.[0]?.price ?? null,
+      currency: ticketMap[e.id]?.[0]?.currency ?? 'EUR',
+    }));
+
+    return res.json({ ok: true, meetups: enriched, count: enriched.length });
+  } catch (err: any) {
+    console.error('[COMMUNITY-ADMIN] meetups error:', err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// DELETE /meetups/:id — delete an event
+router.delete('/meetups/:id', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const { error } = await supabase
+      .from('global_community_events')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    return res.json({ ok: true });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
@@ -52,13 +109,13 @@ router.get('/groups', requireTenantAdmin, async (req: AuthenticatedRequest, res:
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
     const { data, error } = await supabase
-      .from('community_groups')
+      .from('global_community_groups')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {
-      console.warn('[COMMUNITY-ADMIN] community_groups query error:', error.message);
+      console.warn('[COMMUNITY-ADMIN] global_community_groups query error:', error.message);
       return res.json({ ok: true, groups: [], error: error.message });
     }
 
@@ -101,28 +158,18 @@ router.get('/creators', requireTenantAdmin, async (req: AuthenticatedRequest, re
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    // Try services_catalog first (creator services), then products_catalog
-    const { data: services, error: sErr } = await supabase
-      .from('services_catalog')
+    const { data, error } = await supabase
+      .from('creator_profiles')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (!sErr && services && services.length > 0) {
-      return res.json({ ok: true, creators: services, count: services.length, source: 'services_catalog' });
+    if (error) {
+      console.warn('[COMMUNITY-ADMIN] creator_profiles query error:', error.message);
+      return res.json({ ok: true, creators: [], error: error.message });
     }
 
-    const { data: products, error: pErr } = await supabase
-      .from('products_catalog')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (!pErr && products && products.length > 0) {
-      return res.json({ ok: true, creators: products, count: products.length, source: 'products_catalog' });
-    }
-
-    return res.json({ ok: true, creators: [], count: 0 });
+    return res.json({ ok: true, creators: data || [], count: (data || []).length });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
@@ -159,10 +206,10 @@ router.get('/stats', requireTenantAdmin, async (req: AuthenticatedRequest, res: 
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     const [meetups, groups, rooms, memberships] = await Promise.all([
-      supabase.from('community_meetups').select('id', { count: 'exact', head: true }),
-      supabase.from('community_groups').select('id', { count: 'exact', head: true }),
+      supabase.from('global_community_events').select('id', { count: 'exact', head: true }),
+      supabase.from('global_community_groups').select('id', { count: 'exact', head: true }),
       supabase.from('live_rooms').select('id', { count: 'exact', head: true }),
-      supabase.from('community_memberships').select('id', { count: 'exact', head: true }),
+      supabase.from('global_community_group_members').select('id', { count: 'exact', head: true }),
     ]);
 
     return res.json({
