@@ -1261,7 +1261,7 @@ async function buildBootstrapContextPack(
  * guided to public destinations like the Maxina portal. Authenticated
  * sessions get the full set including memory/knowledge/event search.
  */
-function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'): object[] {
+function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated', currentRoute?: string): object[] {
   const navigatorTools: any[] = [
     {
       name: 'get_current_screen',
@@ -1373,12 +1373,23 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
   ];
 
   if (mode === 'anonymous') {
-    // VTID-NAV-ANON-FIX: Anonymous sessions get NO tools. The Navigator tools
-    // were competing with the transcript-based signup intent flow, causing
-    // Gemini to both say the goodbye AND call navigate_to_screen, which
-    // triggered a second function-response turn and overlapping audio.
-    // Anonymous nav is handled entirely by detectAuthIntent + session_limit_reached.
-    return [];
+    // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO
+    // tools — the signup-intent regex flow (detectAuthIntent + session_limit_reached)
+    // handles navigation there, and Navigator tools competed with it causing
+    // double responses.
+    //
+    // VTID-NAV-TOKEN-FIX: On community pages (any route that isn't / or a
+    // portal), an "anonymous" session is almost certainly an authenticated user
+    // whose JWT expired mid-session (common on mobile Appilix WebView). Give
+    // them the navigator tools so "open my profile" / "open my inbox" still
+    // work even if the token refresh hasn't reached the orb widget yet.
+    const landingRoutes = ['/', '/maxina', '/alkalma', '/earthlinks', '/auth'];
+    const isLandingPage = !currentRoute || landingRoutes.includes(currentRoute);
+    if (isLandingPage) {
+      return [];
+    }
+    // Community page with expired token — give navigator tools only
+    return [{ function_declarations: navigatorTools }];
   }
 
   return [
@@ -3429,7 +3440,8 @@ async function connectToLiveAPI(
           // destinations during onboarding. Authenticated sessions get the full set.
           // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
           tools: buildLiveApiTools(
-            session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous'
+            session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
+            session.current_route
           )
         }
       };
