@@ -200,6 +200,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
+  // Intelligent Calendar — Phase 1: Backend Calendar API
+  const calendarRouter = require('./routes/calendar').default;
   // VTID-01188: Unified "Generate Spec" Pipeline Routes
   const { specsRouter } = require('./routes/specs');
   // Email Intake — Receives emails from Cloudflare Email Worker, creates tasks
@@ -478,6 +480,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring (legacy - kept for backwards compatibility)
   mountRouterSync(app, '/api/v1/recommendations', recommendationInboxRouter, { owner: 'recommendation-inbox' });
+
+  // Intelligent Calendar — role-aware calendar API (Phase 1)
+  mountRouterSync(app, '/api/v1/calendar', calendarRouter, { owner: 'calendar' });
 
   // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
   mountRouterSync(app, '/api/v1/assistant', assistantRouter, { owner: 'assistant' });

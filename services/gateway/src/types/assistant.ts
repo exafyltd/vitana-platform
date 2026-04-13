@@ -36,6 +36,13 @@ export interface AssistantChatResponse {
     latency_ms: number;
   };
   error?: string;
+  /** Intelligent Calendar: structured actions the assistant proposes */
+  calendar_actions?: Array<{
+    type: 'create_event' | 'reschedule_event' | 'cancel_event' | 'complete_event';
+    payload: Record<string, unknown>;
+    requires_confirmation: boolean;
+    natural_language_summary: string;
+  }>;
 }
 
 /**

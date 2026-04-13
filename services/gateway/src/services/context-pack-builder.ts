@@ -1047,11 +1047,13 @@ export async function buildContextPack(
     memory_garden: 0,
     knowledge_hub: 0,
     web_search: 0,
+    calendar: 0,
   };
   const latencies: Record<RetrievalSource, number> = {
     memory_garden: 0,
     knowledge_hub: 0,
     web_search: 0,
+    calendar: 0,
   };
 
   // Execute retrievals based on router decision
@@ -1127,6 +1129,35 @@ export async function buildContextPack(
         .then(result => {
           diaryHits = result.hits;
         })
+    );
+  }
+
+  // Intelligent Calendar: fetch calendar context in parallel
+  let calendarContext: ContextPack['calendar_context'] | undefined;
+  if (input.lens.user_id) {
+    retrievalPromises.push(
+      (async () => {
+        try {
+          const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps, toSummary } = await import('./calendar-service');
+          const { getJourneyStage } = await import('./journey-calendar-mapper');
+          const role = input.role || 'community';
+          const [today, upcoming, gaps] = await Promise.all([
+            getUserTodayEvents(input.lens.user_id, role),
+            getUserUpcomingEvents(input.lens.user_id, role, 10),
+            getCalendarGaps(input.lens.user_id, role, new Date()),
+          ]);
+          calendarContext = {
+            today_events: today.map(e => ({ id: e.id, title: e.title, start_time: e.start_time, end_time: e.end_time, event_type: e.event_type, status: e.status })),
+            upcoming_events: upcoming.map(e => ({ id: e.id, title: e.title, start_time: e.start_time, end_time: e.end_time, event_type: e.event_type, status: e.status })),
+            gaps_today: gaps,
+            active_role: role,
+            journey_stage: getJourneyStage(new Date(input.conversation_start)) ?? undefined,
+            patterns: [],
+          };
+        } catch (calErr: any) {
+          console.warn(`[Calendar] Context fetch failed (non-fatal): ${calErr.message}`);
+        }
+      })()
     );
   }
 
@@ -1222,6 +1253,7 @@ export async function buildContextPack(
     tool_health: toolHealth,
     ui_context: input.ui_context,
     relationship_context: relationshipContext.length > 0 ? relationshipContext : undefined,
+    calendar_context: calendarContext,
     session_buffer: sessionBufferData,
 
     retrieval_trace: {
@@ -1352,6 +1384,58 @@ export function formatContextPackForLLM(pack: ContextPack): string {
       context += `- ${vtid.vtid}: ${vtid.title} (${vtid.status})\n`;
     }
     context += `</active_tasks>\n\n`;
+  }
+
+  // Intelligent Calendar section — the 4th pillar of infinite memory
+  if (pack.calendar_context) {
+    const cal = pack.calendar_context;
+    context += `<calendar_memory>\n`;
+
+    if (cal.today_events.length > 0) {
+      context += `Today's schedule:\n`;
+      for (const ev of cal.today_events) {
+        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        context += `- ${time}: ${ev.title} (${ev.event_type})\n`;
+      }
+      context += `\n`;
+    } else {
+      context += `Today's schedule: No events scheduled.\n\n`;
+    }
+
+    if (cal.upcoming_events.length > 0) {
+      context += `Upcoming (next 7 days):\n`;
+      for (const ev of cal.upcoming_events.slice(0, 5)) {
+        const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        context += `- ${date} ${time}: ${ev.title}\n`;
+      }
+      context += `\n`;
+    }
+
+    if (cal.gaps_today.length > 0) {
+      context += `Free time today:\n`;
+      for (const gap of cal.gaps_today.slice(0, 3)) {
+        const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        context += `- ${start}–${end} (${gap.duration_minutes} min free)\n`;
+      }
+      context += `\n`;
+    }
+
+    if (cal.journey_stage) {
+      context += `Journey: Day ${cal.journey_stage.day_number} of ${cal.journey_stage.total_days} — "${cal.journey_stage.wave_name}"\n\n`;
+    }
+
+    if (cal.patterns.length > 0) {
+      context += `Calendar patterns:\n`;
+      for (const p of cal.patterns) {
+        context += `- ${p}\n`;
+      }
+      context += `\n`;
+    }
+
+    context += `When the user asks about their schedule, reference these events. Suggest activities for free time slots. When they ask to change, add, or cancel events, include calendar_actions in your response.\n`;
+    context += `</calendar_memory>\n\n`;
   }
 
   return context;
