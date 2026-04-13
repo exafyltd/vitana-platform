@@ -30,6 +30,41 @@ import {
 import { runPreflightChain, listSkills, getPreflightChains } from '../services/skills/preflight-runner';
 import { fetchServiceTierAgents } from './agents-registry';
 
+// ---------------------------------------------------------------------------
+// Self-healing log sync: when a self-healing VTID completes or fails in the
+// worker pipeline, update self_healing_log.outcome immediately so the
+// Command Hub panel shows the real status instead of waiting for the reconciler.
+// ---------------------------------------------------------------------------
+const SH_SUPABASE_URL = process.env.SUPABASE_URL;
+const SH_SUPABASE_SVC = process.env.SUPABASE_SERVICE_ROLE;
+
+async function syncSelfHealingLog(vtid: string, success: boolean): Promise<void> {
+  if (!SH_SUPABASE_URL || !SH_SUPABASE_SVC) return;
+  try {
+    const resp = await fetch(
+      `${SH_SUPABASE_URL}/rest/v1/self_healing_log?vtid=eq.${vtid}&outcome=eq.pending`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: SH_SUPABASE_SVC,
+          Authorization: `Bearer ${SH_SUPABASE_SVC}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          outcome: success ? 'fixed' : 'failed',
+          resolved_at: new Date().toISOString(),
+        }),
+      },
+    );
+    if (resp.ok) {
+      console.log(`[self-healing-sync] ${vtid}: outcome=${success ? 'fixed' : 'failed'}`);
+    }
+  } catch {
+    // Non-fatal — reconciler catches it eventually
+  }
+}
+
 export const workerOrchestratorRouter = Router();
 
 // =============================================================================
@@ -498,6 +533,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
 
         // Legacy mode - skip verification (governance approved)
         await markOrchestratorSuccess(vtid, run_id, summary || 'Orchestrator completed successfully');
+        syncSelfHealingLog(vtid, true).catch(() => {});
         console.log(`[VTID-01175] Orchestrator succeeded for ${vtid} (verification skipped: ${governanceCheck.reason}:${skipReason})`);
         return res.status(200).json({
           ok: true,
@@ -527,6 +563,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
       );
 
       if (verificationResult.ok) {
+        syncSelfHealingLog(vtid, true).catch(() => {});
         console.log(`[VTID-01175] Orchestrator verified and succeeded for ${vtid}`);
         return res.status(200).json({
           ok: true,
@@ -563,6 +600,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
     } else {
       // Marked as failure - no verification needed
       await markOrchestratorFailed(vtid, run_id, error || 'Unknown error');
+      syncSelfHealingLog(vtid, false).catch(() => {});
       console.log(`[VTID-01163] Orchestrator failed for ${vtid}: ${error}`);
       return res.status(200).json({
         ok: true,
