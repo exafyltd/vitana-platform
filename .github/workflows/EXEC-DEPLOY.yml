@@ -297,9 +297,11 @@ jobs:
             # VTID-01184: JWT verification and frontend auth
             SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest)
-            # Appilix native push (Maxina Android app)
-            SECRETS_ARGS+=(--update-secrets=APPILIX_API_KEY=APPILIX_API_KEY:latest)
-            SECRETS_ARGS+=(--update-secrets=APPILIX_APP_KEY=APPILIX_APP_KEY:latest)
+            # Appilix native push — API is down (522), secrets not in GCP Secret Manager.
+            # Re-enable when Appilix API is restored and secrets are created.
+            # Remove stale secret bindings from previous revisions (secrets don't exist in GCP)
+            SECRETS_ARGS+=(--remove-secrets=APPILIX_API_KEY)
+            SECRETS_ARGS+=(--remove-secrets=APPILIX_APP_KEY)
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Lovable Supabase connection for events/community data
@@ -371,7 +373,7 @@ jobs:
             gcloud run services update "$CLOUD_RUN_SERVICE" \
               --region=us-central1 \
               --project=lovable-vitana-vers1 \
-              --remove-env-vars=APPILIX_API_KEY,APPILIX_APP_KEY,LOVABLE_SUPABASE_URL,LOVABLE_SUPABASE_SERVICE_ROLE \
+              --remove-env-vars=LOVABLE_SUPABASE_URL,LOVABLE_SUPABASE_SERVICE_ROLE \
               --quiet 2>/dev/null || echo "No stale env vars to remove (already clean)"
           fi
 
