@@ -1,88 +1,46 @@
 /**
  * VTID-01200: Worker Runner - Execution Service
  * VTID-01229: Added execution timeout to prevent hanging tasks
- * VTID-01230: Reads model config from crew.yaml (no more hardcoded model strings)
  * VTID-01231: Contract validation on LLM outputs before action execution
  *
- * Executes actual work via LLM (Gemini/Claude).
- * Uses Vertex AI for Gemini execution on Cloud Run.
+ * Executes work via Claude Opus 4.6 (Anthropic API).
+ * Replaced Gemini/Vertex AI which was returning 404 errors on Cloud Run.
  */
 
-import { VertexAI, GenerativeModel, Content, Part } from '@google-cloud/vertexai';
+import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { RunnerConfig, TaskDomain, ExecutionResult, PendingTask, RoutingResult } from '../types';
-import { resolveModelForRole } from './crew-config';
 import { validateLLMResponse, formatViolationsForReprompt } from './contract-validator';
 
 const VTID = 'VTID-01200';
 
-// VTID-01229: Execution timeout configuration (30 minutes default)
-const EXECUTION_TIMEOUT_MS = parseInt(process.env.WORKER_EXECUTION_TIMEOUT_MS || '1800000', 10);
+// VTID-01229: Execution timeout configuration (10 minutes — Claude is faster than Gemini)
+const EXECUTION_TIMEOUT_MS = parseInt(process.env.WORKER_EXECUTION_TIMEOUT_MS || '600000', 10);
 
 // VTID-01231: Max contract validation retries
 const MAX_CONTRACT_RETRIES = parseInt(process.env.WORKER_CONTRACT_RETRIES || '2', 10);
 
-/**
- * VTID-01229: Promise timeout wrapper
- * Wraps a promise with a timeout, rejecting if the promise takes too long
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
-  let timeoutId: NodeJS.Timeout;
+const CLAUDE_MODEL = 'claude-opus-4-6';
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`${operationName} timed out after ${timeoutMs}ms (${Math.round(timeoutMs / 60000)} minutes)`));
-    }, timeoutMs);
-  });
+// Anthropic client (initialized lazily)
+let anthropic: Anthropic | null = null;
 
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    clearTimeout(timeoutId);
-  });
-}
+function initClaude(): boolean {
+  if (anthropic) return true;
 
-// Vertex AI client (initialized lazily)
-let vertexAI: VertexAI | null = null;
-let generativeModel: GenerativeModel | null = null;
-let resolvedModelId: string | null = null;
-
-/**
- * VTID-01230: Initialize Vertex AI client using crew.yaml config
- */
-function initVertexAI(config: RunnerConfig): boolean {
-  const workerModel = resolveModelForRole('worker');
-
-  // Env overrides still work, but default comes from crew.yaml
-  const project = config.vertexProject || process.env.GOOGLE_CLOUD_PROJECT || 'lovable-vitana-vers1';
-  const location = config.vertexLocation || process.env.VERTEX_LOCATION || 'us-central1';
-  const model = config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId;
-
-  // Skip re-init if already initialized with same model
-  if (vertexAI && generativeModel && resolvedModelId === model) {
-    return true;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error(`[${VTID}] ANTHROPIC_API_KEY not set`);
+    return false;
   }
 
   try {
-    vertexAI = new VertexAI({
-      project,
-      location,
-    });
-
-    generativeModel = vertexAI.getGenerativeModel({
-      model,
-      generationConfig: {
-        temperature: 0.2, // Lower temperature for code generation
-        maxOutputTokens: 8192,
-        topP: 0.95,
-        topK: 40,
-      },
-    });
-
-    resolvedModelId = model;
-    console.log(`[${VTID}] Vertex AI initialized: project=${project}, location=${location}, model=${model} (crew.yaml worker.primary=${workerModel.modelId})`);
+    anthropic = new Anthropic({ apiKey });
+    console.log(`[${VTID}] Anthropic client initialized (model: ${CLAUDE_MODEL})`);
     return true;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[${VTID}] Failed to initialize Vertex AI: ${errorMessage}`);
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[${VTID}] Failed to initialize Anthropic client: ${msg}`);
     return false;
   }
 }
@@ -113,117 +71,37 @@ function buildSystemPrompt(domain: TaskDomain): string {
   const domainPrompts: Record<TaskDomain, string> = {
     frontend: `
 ## FRONTEND DOMAIN RULES
-
-You are the frontend worker. You handle UI, CSS, SPA, and frontend component changes.
-
-ALLOWED PATHS:
-- services/gateway/src/frontend/**
-- services/gateway/dist/frontend/**
-- *.html, *.css, *.tsx, *.jsx files in frontend directories
-
-FORBIDDEN:
-- Backend routes or services
-- Database migrations
-- API endpoints
-
-PATTERNS TO FOLLOW:
-- React/TypeScript patterns
-- Tailwind CSS for styling
-- CSP compliance (no inline scripts)
-- Accessibility standards`,
+You handle UI, CSS, SPA, and frontend component changes.
+ALLOWED PATHS: services/gateway/src/frontend/**, *.html, *.css, *.tsx, *.jsx
+FORBIDDEN: Backend routes, database migrations, API endpoints`,
 
     backend: `
 ## BACKEND DOMAIN RULES
-
-You are the backend worker. You handle API endpoints, services, and backend logic.
-
-ALLOWED PATHS:
-- services/gateway/src/** (excluding frontend)
-- services/**/src/**
-- config/**
-
-FORBIDDEN:
-- Frontend files (html, css in frontend directories)
-- Database migrations (use memory worker)
-
-PATTERNS TO FOLLOW:
-- Express Router for route modules
-- Zod for request validation
-- OASIS events for observability
-- Service layer pattern
-- Keep routes thin`,
+You handle API endpoints, services, and backend logic.
+ALLOWED PATHS: services/gateway/src/** (excluding frontend), services/**/src/**
+FORBIDDEN: Frontend files, database migrations`,
 
     memory: `
 ## MEMORY DOMAIN RULES
-
-You are the memory worker. You handle database, migrations, and data layer changes.
-
-ALLOWED PATHS:
-- supabase/migrations/**
-- services/agents/memory-indexer/**
-- *.sql files
-
-FORBIDDEN:
-- Frontend files
-- API routes (use backend worker)
-
-PATTERNS TO FOLLOW:
-- Supabase migrations
-- RLS policies
-- Tenant context awareness
-- Safe migration practices`,
+You handle database, migrations, and data layer changes.
+ALLOWED PATHS: supabase/migrations/**, services/agents/memory-indexer/**, *.sql
+FORBIDDEN: Frontend files, API routes`,
 
     infra: `
 ## INFRASTRUCTURE DOMAIN RULES
-
-You are the infra worker. You handle CI/CD, deployment, configuration, and DevOps changes.
-
-ALLOWED PATHS:
-- .github/workflows/**
-- Dockerfile, docker-compose.yml
-- *.yaml, *.yml (CI/CD configs)
-- .eslintrc.*, .prettierrc.*, tsconfig.json, jest.config.*
-- config/**
-
-FORBIDDEN:
-- Application logic (routes, services, components)
-- Database migrations (use memory worker)
-
-PATTERNS TO FOLLOW:
-- GitHub Actions workflow syntax
-- Docker best practices
-- Configuration file conventions`,
+You handle CI/CD, deployment, configuration, and DevOps changes.
+ALLOWED PATHS: .github/workflows/**, Dockerfile, *.yaml, *.yml, config/**
+FORBIDDEN: Application logic, database migrations`,
 
     ai: `
 ## AI DOMAIN RULES
-
-You are the AI worker. You handle LLM integrations, agents, intelligence engines, and AI processing.
-
-ALLOWED PATHS:
-- services/agents/**
-- services/gateway/src/services/*intelligence*
-- services/gateway/src/services/*agent*
-- services/gateway/src/routes/orb*
-
-FORBIDDEN:
-- Frontend files (use frontend worker)
-- Database migrations (use memory worker)
-
-PATTERNS TO FOLLOW:
-- Vertex AI / Gemini API conventions
-- Agent orchestration patterns
-- Prompt engineering best practices`,
+You handle LLM integrations, agents, intelligence engines, and AI processing.
+ALLOWED PATHS: services/agents/**, services/gateway/src/services/*agent*, services/gateway/src/routes/orb*
+FORBIDDEN: Frontend files, database migrations`,
 
     mixed: `
 ## MIXED DOMAIN RULES
-
-This task spans multiple domains. Analyze carefully and describe changes for each domain:
-- Frontend (UI, CSS, components)
-- Backend (API, services, routes)
-- Memory (database, migrations)
-- Infrastructure (CI/CD, config)
-- AI (agents, intelligence engines)
-
+This task spans multiple domains. Analyze carefully and describe changes for each domain.
 Be explicit about which changes belong to which domain.`,
   };
 
@@ -279,53 +157,39 @@ IMPORTANT: Only describe changes within your domain boundaries. If changes are n
 }
 
 /**
- * VTID-01231: Call LLM and validate response against contract.
+ * VTID-01231: Call Claude and validate response against contract.
  * Retries with violation feedback if contract check fails.
  */
 async function callAndValidate(
-  model: GenerativeModel,
   systemPrompt: string,
   taskPrompt: string,
   vtid: string,
   maxRetries: number = MAX_CONTRACT_RETRIES
 ): Promise<{ responseText: string; attempt: number }> {
+  if (!anthropic) throw new Error('Anthropic client not initialized');
+
   let currentPrompt = taskPrompt;
 
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-    const contents: Content[] = [
-      {
-        role: 'user',
-        parts: [{ text: currentPrompt }] as Part[],
-      },
-    ];
+    console.log(`[${VTID}] Claude call for ${vtid} (attempt ${attempt}/${maxRetries + 1}, model: ${CLAUDE_MODEL})`);
 
-    console.log(`[${VTID}] LLM call for ${vtid} (attempt ${attempt}/${maxRetries + 1}, timeout: ${EXECUTION_TIMEOUT_MS}ms)`);
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: currentPrompt }],
+    });
 
-    const response = await withTimeout(
-      model.generateContent({
-        contents,
-        systemInstruction: {
-          role: 'system',
-          parts: [{ text: systemPrompt }] as Part[],
-        },
-      }),
-      EXECUTION_TIMEOUT_MS,
-      `LLM generation for ${vtid}`
-    );
+    const textBlock = response.content.find(b => b.type === 'text');
+    const responseText = textBlock ? textBlock.text : '';
 
-    const candidate = response.response?.candidates?.[0];
-    const content = candidate?.content;
-
-    if (!content || !content.parts) {
+    if (!responseText) {
       if (attempt <= maxRetries) {
         currentPrompt = taskPrompt + '\n\n## RETRY\nPrevious attempt returned no content. Please try again.';
         continue;
       }
       return { responseText: '', attempt };
     }
-
-    const textPart = content.parts.find((part: Part) => 'text' in part);
-    const responseText = textPart ? (textPart as { text: string }).text : '';
 
     // VTID-01231: Validate against contract
     const validation = validateLLMResponse(responseText);
@@ -337,7 +201,6 @@ async function callAndValidate(
       return { responseText, attempt };
     }
 
-    // If we have retries left, re-prompt with violation feedback
     if (attempt <= maxRetries) {
       const repromptContext = formatViolationsForReprompt(validation.violations);
       console.warn(
@@ -357,7 +220,6 @@ async function callAndValidate(
 
 /**
  * Parse the LLM response into an ExecutionResult
- * VTID-01231: Now uses contract validator for structured parsing
  */
 function parseExecutionResult(
   response: string,
@@ -377,7 +239,6 @@ function parseExecutionResult(
     };
   }
 
-  // Contract validation failed even after retries — return as failure
   const violationSummary = validation.violations
     .map((v) => `${v.field}: ${v.message}`)
     .join('; ');
@@ -394,7 +255,7 @@ function parseExecutionResult(
 }
 
 /**
- * Execute task using Vertex AI (Gemini)
+ * Execute task using Claude Opus 4.6
  */
 export async function executeTask(
   config: RunnerConfig,
@@ -404,28 +265,15 @@ export async function executeTask(
 ): Promise<ExecutionResult> {
   const runId = routing.run_id || `run_${randomUUID().slice(0, 8)}`;
   const startTime = Date.now();
-  // VTID-01230: Model comes from crew.yaml via resolveModelForRole
-  const workerModel = resolveModelForRole('worker');
-  const modelName = config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId;
-  const provider = 'vertex-ai';
+  const modelName = CLAUDE_MODEL;
+  const provider = 'anthropic';
 
   console.log(`[${VTID}] Executing task ${task.vtid} (domain=${domain}, run_id=${runId}, model=${modelName})`);
 
-  // Initialize Vertex AI if not already done
-  if (!initVertexAI(config)) {
+  if (!initClaude()) {
     return {
       ok: false,
-      error: 'Failed to initialize Vertex AI',
-      duration_ms: Date.now() - startTime,
-      model: modelName,
-      provider,
-    };
-  }
-
-  if (!generativeModel) {
-    return {
-      ok: false,
-      error: 'Generative model not initialized',
+      error: 'Failed to initialize Anthropic client — ANTHROPIC_API_KEY may be missing',
       duration_ms: Date.now() - startTime,
       model: modelName,
       provider,
@@ -436,9 +284,7 @@ export async function executeTask(
     const systemPrompt = buildSystemPrompt(domain);
     const taskPrompt = buildTaskPrompt(task, routing, domain);
 
-    // VTID-01231: Call with contract validation and retry
     const { responseText, attempt } = await callAndValidate(
-      generativeModel,
       systemPrompt,
       taskPrompt,
       task.vtid
@@ -446,7 +292,6 @@ export async function executeTask(
 
     console.log(`[${VTID}] Received response for ${task.vtid} (${responseText.length} chars, attempt ${attempt})`);
 
-    // Parse and return result (uses contract validator internally)
     return parseExecutionResult(responseText, Date.now() - startTime, modelName, provider, attempt);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -464,12 +309,10 @@ export async function executeTask(
 
 /**
  * Get model info for metrics
- * VTID-01230: Now reads from crew.yaml
  */
-export function getModelInfo(config: RunnerConfig): { model: string; provider: string } {
-  const workerModel = resolveModelForRole('worker');
+export function getModelInfo(_config: RunnerConfig): { model: string; provider: string } {
   return {
-    model: config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId,
-    provider: 'vertex-ai',
+    model: CLAUDE_MODEL,
+    provider: 'anthropic',
   };
 }

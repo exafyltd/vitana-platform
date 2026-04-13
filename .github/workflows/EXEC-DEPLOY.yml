@@ -339,7 +339,7 @@ jobs:
             fi
           fi
 
-          # VTID-01200: Worker Runner — needs gateway URL, Supabase, and Vertex AI config
+          # VTID-01200: Worker Runner — needs gateway URL, Supabase, and Claude API config
           if [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
             # Resolve gateway URL dynamically from Cloud Run
             GATEWAY_URL=$(gcloud run services describe gateway --region=us-central1 --format='value(status.url)' 2>/dev/null || echo "")
@@ -349,12 +349,11 @@ jobs:
             fi
             EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_URL=$GATEWAY_URL)
             EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1)
-            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_LOCATION=us-central1)
-            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_MODEL=gemini-3.1-pro-preview)
             EXTRA_ENV_ARGS+=(--update-env-vars=AUTOPILOT_LOOP_ENABLED=true)
             EXTRA_ENV_ARGS+=(--update-env-vars=POLL_INTERVAL_MS=5000)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+            SECRETS_ARGS+=(--update-secrets=ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest)
           fi
 
           # VTID-01175: Vitana Verification Engine — needs gateway URL for agents registry heartbeat
