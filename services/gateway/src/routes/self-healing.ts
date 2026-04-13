@@ -130,7 +130,10 @@ async function shouldBeginDiagnosis(endpoint: string): Promise<{ proceed: boolea
     if (countResp.ok) {
       const countHeader = countResp.headers.get('content-range');
       const total = countHeader ? parseInt(countHeader.split('/')[1] || '0', 10) : 0;
-      if (total >= 2) {
+      // Circuit breaker cap: allow up to 5 attempts per endpoint per 24h.
+      // Raised from 2 to 5 to accommodate the triage agent feedback loop
+      // which may create 2-3 fresh VTIDs per original failure.
+      if (total >= 5) {
         return {
           proceed: false,
           reason: `Circuit breaker: ${total} attempts in 24h for ${endpoint}`,
