@@ -184,7 +184,7 @@ async function attemptRedispatch(
 
 async function markEscalated(
   row: StaleRow,
-  reason: 'recovered_externally' | 'stale_no_progress',
+  reason: 'recovered_externally' | 'stale_no_progress' | 'stale_agent_exhausted',
   httpStatus: number | null,
 ): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
@@ -195,6 +195,8 @@ async function markEscalated(
     reconciled_reason: reason,
     reconciled_probe_http_status: httpStatus,
   };
+
+  // 1. Update self_healing_log
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${row.id}`,
     {
@@ -207,6 +209,26 @@ async function markEscalated(
       }),
     },
   );
+
+  // 2. ALSO terminalize the vtid_ledger row so the dedup check stops
+  //    seeing this VTID as "active". Without this, the ledger stays at
+  //    status=allocated and blocks new self-healing VTIDs for the same
+  //    endpoint forever.
+  const terminalStatus = reason === 'recovered_externally' ? 'completed' : 'failed';
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(row.vtid)}`,
+    {
+      method: 'PATCH',
+      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: terminalStatus,
+        updated_at: now,
+      }),
+    },
+  ).catch((err) => {
+    console.warn(`${LOG_PREFIX} Failed to terminalize ledger for ${row.vtid}: ${err.message}`);
+  });
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     console.warn(
