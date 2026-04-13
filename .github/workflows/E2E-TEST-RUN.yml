@@ -76,7 +76,7 @@ jobs:
           COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://vitanaland.com' }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          LOVABLE_SUPABASE_SERVICE_ROLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M
+          LOVABLE_SUPABASE_SERVICE_ROLE: ${{ secrets.LOVABLE_SUPABASE_SERVICE_ROLE }}
 
       - name: Report failure to self-healing
         if: failure()

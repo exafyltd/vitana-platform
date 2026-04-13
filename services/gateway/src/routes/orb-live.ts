@@ -2287,8 +2287,8 @@ async function executeLiveApiToolInner(
         const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
 
         // VTID-01270A: Events live in the Lovable Supabase (global_community_events table)
-        const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
-        const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M';
+        const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || '';
+        const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || '';
         const PLATFORM_SUPABASE_URL = process.env.SUPABASE_URL;
         const PLATFORM_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
 
