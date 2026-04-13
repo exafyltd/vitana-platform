@@ -306,6 +306,9 @@ jobs:
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Lovable Supabase connection for events/community data
+            # Remove stale plain env-var bindings so secret refs can take over
+            EXTRA_ENV_ARGS+=(--remove-env-vars=LOVABLE_SUPABASE_URL)
+            EXTRA_ENV_ARGS+=(--remove-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE)
             SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_URL=LOVABLE_SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_SERVICE_ROLE=LOVABLE_SUPABASE_SERVICE_ROLE:latest)
           fi
