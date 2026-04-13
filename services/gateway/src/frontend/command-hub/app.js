@@ -34758,7 +34758,7 @@ function renderSelfHealingView() {
             if (s < 60) return 'just now';
             var m = Math.floor(s / 60);
             if (m < 60) return m + 'm ago';
-            var h = Math.floor(m / 3600);
+            var h = Math.floor(m / 60);
             if (h < 24) return h + 'h ago';
             var dys = Math.floor(s / 86400);
             if (dys < 30) return dys + 'd ago';
@@ -34836,7 +34836,8 @@ function renderSelfHealingView() {
                 resolvedTitle = 'Resolved (outcome committed)\nISO: ' + item.resolved_at +
                     (durStr ? '\nDuration pending\u2192resolved: ' + durStr : '');
             } else {
-                resolvedCell = '<span style="color:#facc15;">\u23f3 still pending</span>';
+                resolvedCell = '<span style="color:#facc15;">\u23f3 still pending</span>' +
+                    '<div style="font-size:11px;color:#888;">created ' + escapeHtml(shFmtRel(item.created_at)) + '</div>';
                 resolvedTitle = 'Row is still in pending state.\nReconciler runs every 10 min on rows older than 1 h.';
             }
 

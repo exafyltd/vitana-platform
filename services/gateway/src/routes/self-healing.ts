@@ -211,15 +211,18 @@ async function processFailingService(
       (diagnosis as any).triage_agent = triageResult.report;
       // If triage upgraded confidence above 0.5, fall through to spec generation
       // instead of escalating
+    } else if (!triageResult.ok) {
+      console.warn(`[self-healing] ${vtid} triage failed: ${triageResult.error ?? 'unknown'}`);
     }
 
     // Still too low after triage — escalate with the agent's enriched context
     if (diagnosis.confidence < 0.5) {
+      const triageFailed = !triageResult.ok;
       await notifyGChat(
         `🚨 *Self-Healing Escalation*\n` +
         `Task: ${vtid}\n` +
         `Service: ${diagnosis.service_name}\n` +
-        `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%${(diagnosis as any).triage_agent ? ' (after deep triage)' : ''}\n` +
+        `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%${(diagnosis as any).triage_agent ? ' (after deep triage)' : triageFailed ? ' (triage unavailable)' : ''}\n` +
         `Root cause: ${diagnosis.root_cause.substring(0, 200)}\n` +
         `Action required: Manual investigation needed`,
       );
