@@ -28,6 +28,7 @@ import {
   executeRollback,
   notifyGChat,
 } from '../services/self-healing-snapshot-service';
+import { spawnTriageAgent } from '../services/self-healing-triage-service';
 import {
   HealthReport,
   ServiceStatus,
@@ -190,17 +191,54 @@ async function processFailingService(
     return { action: 'created', vtid, reason: 'Diagnosed only (autonomy level 1)' };
   }
 
-  // If not auto-fixable and low confidence, escalate
+  // If not auto-fixable and low confidence, try deep triage before escalating
   if (!diagnosis.auto_fixable && diagnosis.confidence < 0.5) {
-    await notifyGChat(
-      `🚨 *Self-Healing Escalation*\n` +
-      `Task: ${vtid}\n` +
-      `Service: ${diagnosis.service_name}\n` +
-      `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}% — too low for autonomous fix\n` +
-      `Root cause: ${diagnosis.root_cause.substring(0, 200)}\n` +
-      `Action required: Manual investigation needed`,
-    );
-    return { action: 'escalated', vtid, reason: `Low confidence (${(diagnosis.confidence * 100).toFixed(0)}%)` };
+    // Attempt deep triage with Claude Managed Agents — may upgrade confidence
+    const triageResult = await spawnTriageAgent({
+      mode: 'pre_fix',
+      vtid,
+      diagnosis: diagnosis as any,
+      failure,
+    });
+    if (triageResult.ok && triageResult.report) {
+      console.log(`[self-healing] ${vtid} deep triage: confidence ${(diagnosis.confidence * 100).toFixed(0)}% → ${(triageResult.report.confidence_numeric * 100).toFixed(0)}%`);
+      diagnosis.root_cause = triageResult.report.root_cause_hypothesis || diagnosis.root_cause;
+      diagnosis.confidence = triageResult.report.confidence_numeric;
+      diagnosis.auto_fixable = triageResult.report.confidence_numeric >= 0.8;
+      (diagnosis as any).triage_agent = triageResult.report;
+      // If triage upgraded confidence above 0.5, fall through to spec generation
+      // instead of escalating
+    }
+
+    // Still too low after triage — escalate with the agent's enriched context
+    if (diagnosis.confidence < 0.5) {
+      await notifyGChat(
+        `🚨 *Self-Healing Escalation*\n` +
+        `Task: ${vtid}\n` +
+        `Service: ${diagnosis.service_name}\n` +
+        `Confidence: ${(diagnosis.confidence * 100).toFixed(0)}%${(diagnosis as any).triage_agent ? ' (after deep triage)' : ''}\n` +
+        `Root cause: ${diagnosis.root_cause.substring(0, 200)}\n` +
+        `Action required: Manual investigation needed`,
+      );
+      return { action: 'escalated', vtid, reason: `Low confidence (${(diagnosis.confidence * 100).toFixed(0)}%)` };
+    }
+  }
+
+  // Mid-range confidence (0.5-0.79) — also try deep triage to potentially upgrade
+  if (diagnosis.confidence >= 0.5 && diagnosis.confidence < 0.8 && !(diagnosis as any).triage_agent) {
+    const triageResult = await spawnTriageAgent({
+      mode: 'pre_fix',
+      vtid,
+      diagnosis: diagnosis as any,
+      failure,
+    });
+    if (triageResult.ok && triageResult.report) {
+      console.log(`[self-healing] ${vtid} deep triage: confidence ${(diagnosis.confidence * 100).toFixed(0)}% → ${(triageResult.report.confidence_numeric * 100).toFixed(0)}%`);
+      diagnosis.root_cause = triageResult.report.root_cause_hypothesis || diagnosis.root_cause;
+      diagnosis.confidence = triageResult.report.confidence_numeric;
+      diagnosis.auto_fixable = triageResult.report.confidence_numeric >= 0.8;
+      (diagnosis as any).triage_agent = triageResult.report;
+    }
   }
 
   // Generate fix spec

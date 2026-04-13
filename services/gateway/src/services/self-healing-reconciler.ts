@@ -21,6 +21,11 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { notifyGChat } from './self-healing-snapshot-service';
+import {
+  spawnTriageAgent,
+  createFreshVtidFromTriageReport,
+  MAX_TRIAGE_ATTEMPTS,
+} from './self-healing-triage-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -288,9 +293,82 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
         continue;
       }
 
-      // Path C: redispatch was capped, infeasible (no spec), or failed →
-      // tombstone as stale_no_progress so it leaves the pending list.
-      const ok = await markEscalated(row, 'stale_no_progress', http_status);
+      // Path C: redispatch was capped, infeasible, or failed.
+      // Before tombstoning, try a deep triage agent investigation — it may
+      // produce a DIFFERENT approach that feeds a fresh self-healing cycle.
+      const agentAttempts = Number((row.diagnosis || {} as any).triage_agent_attempts || 0);
+
+      if (agentAttempts < MAX_TRIAGE_ATTEMPTS) {
+        console.log(`${LOG_PREFIX} Spawning triage agent for ${row.vtid} (attempt ${agentAttempts + 1}/${MAX_TRIAGE_ATTEMPTS})`);
+        try {
+          const triageResult = await spawnTriageAgent({
+            mode: 'post_failure',
+            vtid: row.vtid,
+            original_diagnosis: row.diagnosis || undefined,
+            failure_class: row.failure_class,
+            endpoint: row.endpoint,
+            all_attempts: agentAttempts,
+            reconciler_history: {
+              redispatch_count: (row.diagnosis || {} as any).reconciler_redispatch_count,
+              age_hours: ageHours,
+              redispatch_status: redispatch.status,
+              redispatch_reason: redispatch.reason,
+            },
+          });
+
+          if (triageResult.ok && triageResult.report && triageResult.report.confidence_numeric >= 0.5) {
+            // Agent produced a viable new approach — create a fresh VTID
+            const newVtid = await createFreshVtidFromTriageReport(
+              row.vtid,
+              triageResult.report,
+              row.endpoint,
+            );
+
+            if (newVtid) {
+              // Update the original row to record the agent attempt
+              const updatedDiagnosis = {
+                ...(row.diagnosis || {}),
+                triage_agent_attempts: agentAttempts + 1,
+                triage_spawned_vtid: newVtid,
+                triage_report: triageResult.report,
+              };
+              await fetch(`${SUPABASE_URL}/rest/v1/self_healing_log?id=eq.${row.id}`, {
+                method: 'PATCH',
+                headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+                body: JSON.stringify({ diagnosis: updatedDiagnosis }),
+              }).catch(() => {});
+
+              await emitOasisEvent({
+                vtid: row.vtid,
+                type: 'self-healing.triage.loop' as any,
+                source: 'self-healing-reconciler',
+                status: 'info',
+                message: `Triage agent produced new approach → spawned ${newVtid} (parent: ${row.vtid})`,
+                payload: {
+                  parent_vtid: row.vtid,
+                  child_vtid: newVtid,
+                  triage_confidence: triageResult.report.confidence,
+                  agent_attempt: agentAttempts + 1,
+                },
+                actor_role: 'system',
+                surface: 'system',
+              }).catch(() => {});
+
+              console.log(`${LOG_PREFIX} Triage loop: ${row.vtid} → ${newVtid} (confidence: ${triageResult.report.confidence})`);
+              // Mark original as escalated now that a child has taken over
+              await markEscalated(row, 'stale_no_progress', http_status);
+              continue;
+            }
+          }
+        } catch (triageErr) {
+          console.warn(`${LOG_PREFIX} Triage agent error for ${row.vtid}:`, triageErr);
+        }
+      }
+
+      // Tombstone: either agent budget exhausted or agent couldn't produce a viable approach
+      const tombstoneReason = agentAttempts >= MAX_TRIAGE_ATTEMPTS
+        ? 'stale_agent_exhausted' : 'stale_no_progress';
+      const ok = await markEscalated(row, tombstoneReason as any, http_status);
       if (!ok) continue;
       try {
         await emitOasisEvent({
@@ -298,15 +376,16 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
           type: 'self-healing.reconciled',
           source: 'self-healing-reconciler',
           status: 'warning',
-          message: `Reconciler tombstoned ${row.vtid} as stale_no_progress (redispatch ${redispatch.status}: ${redispatch.reason || 'n/a'})`,
+          message: `Reconciler tombstoned ${row.vtid} as ${tombstoneReason}`,
           payload: {
             endpoint: row.endpoint,
             failure_class: row.failure_class,
-            reason: 'stale_no_progress',
+            reason: tombstoneReason,
             http_status,
             age_hours: Number(ageHours.toFixed(2)),
             redispatch_status: redispatch.status,
             redispatch_reason: redispatch.reason,
+            triage_agent_attempts: agentAttempts,
           },
           actor_role: 'system',
           surface: 'system',
@@ -314,14 +393,13 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
       } catch (emitErr) {
         console.warn(`${LOG_PREFIX} Failed to emit OASIS event for ${row.vtid}:`, emitErr);
       }
-      // Real-time Gchat — this is a GIVE-UP signal, team must act.
       try {
         await notifyGChat(
-          `🚨 *Self-Healing GAVE UP — stale_no_progress*\n` +
+          `🚨 *Self-Healing GAVE UP — ${tombstoneReason}*\n` +
           `Task: ${row.vtid}\n` +
           `Endpoint: ${row.endpoint} (HTTP ${http_status ?? 'err'})\n` +
           `Age: ${ageHours.toFixed(1)}h\n` +
-          `Reason: Reconciler exhausted redispatch attempts (${redispatch.status}: ${redispatch.reason || 'n/a'}).\n` +
+          `Triage attempts: ${agentAttempts}/${MAX_TRIAGE_ATTEMPTS}\n` +
           `Endpoint still down. Manual investigation required.\n` +
           `Act now: ${COMMAND_HUB_SH_URL}`,
         );
@@ -329,7 +407,7 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
         console.warn(`${LOG_PREFIX} Failed to send Gchat tombstone notification:`, notifyErr);
       }
       console.log(
-        `${LOG_PREFIX} Tombstoned ${row.vtid} as stale_no_progress (age=${ageHours.toFixed(1)}h, redispatch=${redispatch.status}/${redispatch.reason || 'n/a'})`,
+        `${LOG_PREFIX} Tombstoned ${row.vtid} as ${tombstoneReason} (age=${ageHours.toFixed(1)}h, triage_attempts=${agentAttempts})`,
       );
     }
   } catch (err) {
