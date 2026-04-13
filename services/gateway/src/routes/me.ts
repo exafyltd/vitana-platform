@@ -176,10 +176,13 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Intelligent Calendar: auto-initialize 90-day journey on login (fire-and-forget)
     const meCtx = normalizeToMeContext(data);
-    if (meCtx?.user_id && meCtx?.tenant_id) {
+    if (meCtx?.user_id) {
       import('../services/journey-calendar-mapper').then(({ initializeJourneyCalendar }) => {
-        initializeJourneyCalendar(meCtx.user_id!, meCtx.tenant_id!, new Date(), 'en')
-          .then(r => { if (r.events_created > 0) console.log(`[Calendar] Journey initialized for ${meCtx.user_id!.slice(0, 8)}... (${r.events_created} events)`); })
+        initializeJourneyCalendar(meCtx.user_id!, meCtx.tenant_id || 'default', new Date(), 'en')
+          .then(r => {
+            if (r.events_created > 0) console.log(`[Calendar] Journey initialized for ${meCtx.user_id!.slice(0, 8)}... (${r.events_created} events)`);
+            else console.log(`[Calendar] Journey init for ${meCtx.user_id!.slice(0, 8)}...: ${r.events_created} events (already initialized or empty)`);
+          })
           .catch(err => console.warn(`[Calendar] Journey init failed (non-fatal): ${err.message}`));
       }).catch(err => console.error('[Calendar] Module import failed:', err.message));
     }
