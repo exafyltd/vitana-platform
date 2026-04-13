@@ -2725,6 +2725,7 @@ function buildTemporalJourneyContextSection(
   currentRoute: string | null | undefined,
   recentRoutes: string[] | null | undefined,
   isReconnect: boolean,
+  timeOfDay?: string,
 ): string {
   const temporal = describeTimeSince(lastSessionInfo);
   const current = describeRoute(currentRoute, lang);
@@ -2788,101 +2789,110 @@ function buildTemporalJourneyContextSection(
   lines.push('Pick your opening line based on the bucket below. Follow it literally.');
   lines.push('');
 
+  // Map 'night' to 'evening' for greetings ("Good night" is a farewell, not a greeting)
+  const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
+
   const bucket = isReconnect ? 'reconnect' : temporal.bucket;
   switch (bucket) {
     case 'reconnect':
       lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
-      lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name as a salutation. Do NOT introduce yourself.');
-      lines.push('  • Open with a WARM, POLITE, KIND continuation line — the user was just talking to you seconds ago, so acknowledge that gently.');
+      lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name. Do NOT introduce yourself.');
+      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
       lines.push('  • Pick ONE of these example phrasings (vary them, do not always pick the same one):');
-      lines.push('      "Yes, of course — how can I help?"');
-      lines.push('      "Of course — what would you like to know?"');
-      lines.push('      "Sure, I\'m listening — tell me more."');
-      lines.push('      "Happy to — go ahead."');
-      lines.push('      "Of course — what can I do for you?"');
-      lines.push('      "Yes, I\'m here — what else?"');
-      lines.push('  • Max ONE short sentence. Warm and polite, never curt.');
+      lines.push('      "How can I help?"');
+      lines.push('      "What would you like to know?"');
+      lines.push('      "I am listening."');
+      lines.push('      "What can I do for you?"');
+      lines.push('      "What\'s on your mind?"');
+      lines.push('      "Ready for you."');
+      lines.push('  • Max ONE short phrase. Warm but direct — no filler like "of course", "happy to", "sure".');
       break;
     case 'recent':
       lines.push('- BUCKET = recent (2–15 min since last session).');
-      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction.');
-      lines.push('  • Acknowledge gently and kindly that you were just talking, then ask how you can help.');
+      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.');
+      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
       lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "Happy to help again — what\'s on your mind?"');
-      lines.push('      "Of course, I\'m here — how can I assist?"');
-      lines.push('      "Glad you\'re back — what would you like to talk about?"');
-      lines.push('      "Sure, tell me more — I\'m listening."');
-      lines.push('      "Absolutely — what do you need?"');
-      lines.push('      "Of course — how can I support you?"');
-      lines.push('  • Max ONE short sentence. Warm, polite, never cold.');
+      lines.push('      "What\'s on your mind?"');
+      lines.push('      "How can I help?"');
+      lines.push('      "I am listening."');
+      lines.push('      "What do you need?"');
+      lines.push('      "What can I do for you?"');
+      lines.push('      "How can I support you?"');
+      lines.push('  • Max ONE short phrase. Warm but direct.');
       break;
     case 'same_day':
       lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
-      lines.push('  • Light, warm re-engagement. NOT a formal greeting. NEVER "Hello <name>!" as if you\'ve never met.');
+      lines.push('  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you\'ve never met.');
+      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
       lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "Lovely to hear from you again — how can I help?"');
-      lines.push('      "Happy to help — what\'s on your mind?"');
-      lines.push('      "I\'m here for you — what do you need?"');
-      lines.push('      "Of course — what would you like to explore?"');
-      lines.push('      "Glad you\'re back — how can I assist?"');
-      lines.push('      "So nice that you\'re here — what can I do for you?"');
-      lines.push('  • Max ONE short sentence. Warm and polite.');
+      lines.push('      "How can I help?"');
+      lines.push('      "What\'s on your mind?"');
+      lines.push('      "What do you need?"');
+      lines.push('      "What would you like to explore?"');
+      lines.push('      "What can I do for you?"');
+      lines.push('      "I am listening."');
+      lines.push('  • Max ONE short phrase. Warm and direct.');
       break;
     case 'today':
-      lines.push('- BUCKET = today (8–24 h since last session).');
-      lines.push('  • Warm re-engagement. You may use the user\'s name ONCE if it flows naturally, but never as the first word.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "Wonderful to hear from you — how can I help?"');
-      lines.push('      "Happy you stopped by — what would you like to do?"');
-      lines.push('      "Of course, I\'m here — what\'s on your mind?"');
-      lines.push('      "Lovely to see you — how can I support you?"');
-      lines.push('      "Glad you came back — what can I help with?"');
-      lines.push('  • Max ONE short sentence. Genuine warmth, never robotic.');
+      lines.push('- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).');
+      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
+      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
+      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
+      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('      "What can I do for you?"');
+      lines.push('      "How can I help?"');
+      lines.push('      "What\'s on your mind?"');
+      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'yesterday':
-      lines.push('- BUCKET = yesterday.');
-      lines.push('  • Warm, kind greeting. Name is optional and only mid-sentence.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "So nice to hear from you again — what would you like to explore today?"');
-      lines.push('      "Lovely to have you back — how can I help?"');
-      lines.push('      "Wonderful to see you — what\'s on your mind today?"');
-      lines.push('      "Happy you came by — what can I do for you?"');
-      lines.push('  • Max ONE short sentence. Warm, polite, kind.');
+      lines.push('- BUCKET = yesterday (this is a NEW-DAY greeting).');
+      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
+      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
+      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
+      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('      "What would you like to explore today?"');
+      lines.push('      "How can I help?"');
+      lines.push('      "What can I do for you?"');
+      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'week':
-      lines.push('- BUCKET = week (2–7 days since last session).');
-      lines.push('  • Warmer greeting that gently acknowledges the short gap. Polite and kind.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "It\'s been a little while — lovely to have you back. How can I help?"');
-      lines.push('      "So nice to see you again — what would you like to explore today?"');
-      lines.push('      "Welcome back — I\'m happy you\'re here. What can I help with?"');
-      lines.push('  • Max 1–2 short sentences. Always warm, never cold.');
+      lines.push('- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).');
+      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
+      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
+      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
+      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('      "How can I help?"');
+      lines.push('      "What would you like to explore today?"');
+      lines.push('      "What can I do for you?"');
+      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'long':
-      lines.push('- BUCKET = long (> 7 days since last session).');
-      lines.push('  • Genuine, warm welcome-back. You may use the user\'s name mid-sentence.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "It\'s so nice to see you again — I\'ve missed our chats. What can I help with today?"');
-      lines.push('      "Welcome back! I\'m happy you\'re here — how can I support you today?"');
-      lines.push('      "Wonderful to have you back — what would you like to explore today?"');
-      lines.push('  • Max 1–2 short sentences. Sincere and kind, never performative.');
+      lines.push('- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).');
+      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
+      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
+      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
+      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('      "What can I help with today?"');
+      lines.push('      "How can I support you today?"');
+      lines.push('      "What would you like to explore today?"');
+      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'first':
     default:
       // VTID-NAV-TIMEJOURNEY: 'first' here is the "no telemetry found"
       // fallback, NOT a genuine first meeting. For authenticated users
       // (everyone who reaches this code path) we treat it as a returning
-      // user with unknown recency — a light re-engagement, NOT an intro.
-      lines.push('- BUCKET = first (telemetry lookup found no prior session — treat as RETURNING user with unknown recency).');
-      lines.push('  • Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself.');
-      lines.push('  • The user is authenticated — they already know who you are.');
-      lines.push('  • Pick ONE of these WARM example phrasings:');
-      lines.push('      "Happy to help — what would you like to do?"');
-      lines.push('      "I\'m here for you — what\'s on your mind?"');
-      lines.push('      "Of course — how can I assist you?"');
-      lines.push('      "Sure, I\'m listening — what can I help with?"');
-      lines.push('      "Lovely to have you here — what can I do for you?"');
-      lines.push('  • Max ONE short sentence. Warm, polite, kind — never cold or curt.');
+      // user with unknown recency — treat as new-day greeting.
+      lines.push('- BUCKET = first (telemetry lookup found no prior session — treat as RETURNING user, use NEW-DAY greeting).');
+      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
+      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
+      lines.push('  • The user is authenticated — they already know who you are. Do NOT introduce yourself.');
+      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
+      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('      "What can I do for you?"');
+      lines.push('      "What\'s on your mind?"');
+      lines.push('      "How can I help?"');
+      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
   }
 
@@ -2893,18 +2903,20 @@ function buildTemporalJourneyContextSection(
   lines.push('');
   lines.push('## TONE RULES (CRITICAL)');
   lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-  lines.push('- Words like "of course", "happy to help", "lovely", "I\'m here for you", "what\'s on your mind", "how can I support you" are your baseline register.');
-  lines.push('- Avoid clipped or blunt openers like "Yes?", "What?", "Go.", "Ready." — they sound rude even when brief.');
-  lines.push('- Even your shortest responses must feel genuinely kind. A one-sentence answer can still be warm.');
+  lines.push('- Baseline register: "how can I help", "what\'s on your mind", "what can I do for you", "I am listening", "how can I support you".');
+  lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
+  lines.push('- NEVER use two-part sentences in greetings. NO dashes, NO "X — Y" patterns. Each greeting is ONE single direct phrase or sentence.');
+  lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
 
   lines.push('');
-  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE — unconditional, overrides every other greeting rule)');
-  lines.push('- NEVER open with "Hello <name>!" or "Hi <name>!" on authenticated sessions. This is the single most important rule — it makes you sound like a goldfish that forgot the last conversation.');
+  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
+  lines.push('- For SHORT-GAP sessions (reconnect, recent, same_day): NEVER open with "Hello <name>!" or "Hi <name>!" or the user\'s name at all. They were just here — using their name sounds like a goldfish that forgot the last conversation.');
+  lines.push('- For NEW-DAY sessions (today, yesterday, week, long, first): ALWAYS open with "Good [morning/afternoon/evening], [Name]." — this is the ONLY greeting pattern allowed. Use the user\'s name from memory context. If no name is available, just say "Good [morning/afternoon/evening]."');
   lines.push('- NEVER introduce yourself ("My name is Vitana...", "I\'m Vitana...") on authenticated sessions. The user is logged in and already knows who you are.');
-  lines.push('- NEVER use the user\'s name as the FIRST word of your opening line. You may use it later in the sentence if it flows naturally, but never as a salutation.');
   lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
   lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
   lines.push('- NEVER deliver a "first impression" introduction on an authenticated session. Authenticated users are returning users, regardless of what the telemetry lookup found.');
+  lines.push('- NEVER use two-part compound sentences in greetings. NO "Yes, of course — how can I help?" NO "Happy to help — what\'s on your mind?" Just say the question directly.');
   lines.push('');
   lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
   lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
@@ -2937,6 +2949,7 @@ function buildLiveSystemInstruction(
   lastSessionInfo?: { time: string; wasFailure: boolean } | null,
   currentRoute?: string | null,
   recentRoutes?: string[] | null,
+  clientContext?: ClientContext,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -3038,6 +3051,7 @@ ${trimmedHistory}
     currentRoute,
     recentRoutes,
     !!isReconnect,
+    clientContext?.timeOfDay,
   );
 
   return instruction;
@@ -3406,6 +3420,7 @@ async function connectToLiveAPI(
                     session.lastSessionInfo || null,
                     session.current_route || null,
                     session.recent_routes || null,
+                    session.clientContext || undefined,
                   )
             }]
           },
@@ -4588,14 +4603,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // to sound clipped. Each language is independently written so nothing
   // depends on Gemini translating cold English cues into warmer German.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE warm, polite, kind sentence. Do NOT say "Hello", "Hi", or the user\'s name as a salutation. Do NOT introduce yourself. Do NOT sound clipped, curt, or cold. Pick ONE of: "Happy to help — what\'s on your mind?" / "Of course, I\'m here — how can I assist?" / "Lovely to hear from you — how can I help?" / "I\'m here for you — what do you need?" / "Sure, I\'m listening — what can I help with?". Vary across sessions.',
-    'de': 'Beginne mit EINEM warmen, höflichen, freundlichen Satz. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers als Begrüßung. Stelle dich NICHT vor. Sei NICHT kurz angebunden, kalt oder schroff. Wähle EINE dieser Formulierungen: "Gerne — womit kann ich helfen?" / "Natürlich, ich bin da — wie kann ich dich unterstützen?" / "Schön, dass du da bist — was möchtest du wissen?" / "Ich höre dir zu — was brauchst du?" / "Freut mich, dass du da bist — wie kann ich dir helfen?". Variiere zwischen Sitzungen.',
-    'fr': 'Commence par UNE phrase chaleureuse, polie et bienveillante. Ne dis PAS "Bonjour", ni le prénom de l\'utilisateur comme salutation. Ne te présente PAS. Ne sois PAS sec ou froid. Choisis UNE de ces formulations : "Avec plaisir — en quoi puis-je aider ?" / "Bien sûr, je suis là — comment puis-je vous assister ?" / "Ravie de vous entendre — que puis-je faire pour vous ?" / "Je vous écoute — qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
-    'es': 'Comienza con UNA frase cálida, amable y educada. NO digas "Hola" ni el nombre del usuario como saludo. NO te presentes. NO suenes seco ni frío. Elige UNA de estas frases: "Con mucho gusto — ¿en qué puedo ayudar?" / "Claro, estoy aquí — ¿cómo puedo asistirte?" / "Qué bueno verte de nuevo — ¿qué te gustaría explorar?" / "Te escucho — ¿qué necesitas?". Varía entre sesiones.',
-    'ar': 'ابدأ بجملة واحدة دافئة ومهذبة ولطيفة. لا تقل "مرحبا" أو اسم المستخدم كتحية. لا تقدم نفسك. لا تكن جافًا أو باردًا. اختر واحدة من هذه: "بكل سرور — كيف يمكنني المساعدة؟" / "بالتأكيد، أنا هنا — كيف يمكنني مساعدتك؟" / "سعيدة بسماعك — ماذا تود أن تفعل؟"',
-    'zh': '用一句温暖、礼貌、友善的话开场。不要说"你好"或用用户的名字作为问候。不要自我介绍。不要听起来生硬或冷淡。从这些中选一个:"很乐意帮忙,有什么我可以为你做的?" / "当然,我在这里,怎么协助你?" / "很高兴听到你,你想聊什么?"',
-    'ru': 'Начни с ОДНОЙ тёплой, вежливой и доброжелательной фразы. НЕ говори "Здравствуйте", "Привет" или имя пользователя как приветствие. НЕ представляйся. НЕ звучи резко или холодно. Выбери одну из: "С удовольствием — чем могу помочь?" / "Конечно, я здесь — как я могу помочь?" / "Рада вас слышать — что бы вы хотели узнать?" / "Я вас слушаю — что вам нужно?"',
-    'sr': 'Почни са ЈЕДНОМ топлом, љубазном и пријатном реченицом. НЕ говори "Здраво", "Хеј" или име корисника као поздрав. НЕ представљај се. НЕ звучи кратко, хладно ни грубо. Изабери једну од: "Радо — како могу да помогнем?" / "Наравно, ту сам — како могу да те подржим?" / "Драго ми је што те чујем — шта желиш да истражимо?" / "Слушам те — шта ти треба?"',
+    'en': 'Open with ONE single short phrase. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. Pick ONE of: "How can I help?" / "What\'s on your mind?" / "What can I do for you?" / "I am listening." / "What would you like to know?". Vary across sessions.',
+    'de': 'Beginne mit EINER einzelnen kurzen Frage. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wähle EINE: "Womit kann ich helfen?" / "Was möchtest du wissen?" / "Was kann ich für dich tun?" / "Ich höre dir zu." / "Was brauchst du?". Variiere zwischen Sitzungen.',
+    'fr': 'Commence par UNE seule courte phrase. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Choisis UNE : "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?" / "Je vous écoute." / "Qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
+    'es': 'Comienza con UNA sola frase corta. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Elige UNA: "¿En qué puedo ayudar?" / "¿Qué necesitas?" / "Te escucho." / "¿Qué te gustaría saber?". Varía entre sesiones.',
+    'ar': 'ابدأ بعبارة واحدة قصيرة. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. اختر واحدة: "كيف يمكنني المساعدة؟" / "ماذا تود أن تعرف؟" / "أنا أستمع." / "ماذا يمكنني أن أفعل لك؟"',
+    'zh': '用一个简短的短语开场。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。选一个："有什么我可以帮忙的？" / "你想知道什么？" / "我在听。" / "我能为你做什么？"',
+    'ru': 'Начни с ОДНОЙ короткой фразы. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Выбери одну: "Чем могу помочь?" / "Что вас интересует?" / "Я слушаю." / "Что я могу для вас сделать?"',
+    'sr': 'Почни са ЈЕДНОМ кратком фразом. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Изабери једну: "Како могу да помогнем?" / "Шта те занима?" / "Слушам те." / "Шта могу да урадим за тебе?"',
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
@@ -4629,39 +4644,40 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       ? ` The user is currently on the "${currentScreen.title}" screen.`
       : '';
 
+    // Map 'night' to 'evening' for greetings ("Good night" is a farewell)
+    const tod = session.clientContext?.timeOfDay === 'night' ? 'evening' : (session.clientContext?.timeOfDay || 'day');
+
     // VTID-WATCHDOG: If the previous session failed (no audio delivered) and
     // the user comes back within 10 minutes, acknowledge it explicitly.
     if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about earlier — I'm here now. What can I help with?" ONE short sentence only. Do NOT say "Hello" or the user's name.${screenHint}`;
+      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
     } else {
       switch (temporal.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with a short continuation cue in ONE sentence only — e.g. "Yes?" or "Still here — what's next?" or reference the current screen briefly.${screenHint}`;
+          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with ONE single short phrase like "How can I help?" or "What can I do for you?" NEVER use two-part sentences.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say "Hello <name>!". Acknowledge briefly that you were just together and ask what's next — ONE short sentence only.${screenHint}`;
+          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with ONE single short phrase like "What's on your mind?" or "How can I help?" NEVER use two-part sentences.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${temporal.timeAgo}. Light re-engagement, NOT a formal greeting. Do NOT say "Hello <name>!" as if you've never met. ONE short sentence only.${screenHint}`;
+          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with ONE single short phrase like "How can I help?" or "What can I do for you?" NEVER use two-part sentences.${screenHint}`;
           break;
         case 'today':
-          prompt = `The user was here ${temporal.timeAgo}. Warm short re-engagement in ONE short sentence only. Use the user's name at most once, and never as the first word.${screenHint}`;
+          prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question like "What can I do for you?" Max TWO short sentences.${screenHint}`;
           break;
         case 'yesterday':
-          prompt = `The user was last here yesterday. Warm greeting in ONE short sentence only. Name is optional.${screenHint}`;
+          prompt = `The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
           break;
         case 'week':
-          prompt = `The user was last here ${temporal.timeAgo}. Warmer greeting acknowledging the gap — 1 short sentence only.${screenHint}`;
+          prompt = `The user was last here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
           break;
         case 'long':
-          prompt = `The user hasn't been here in ${temporal.timeAgo}. Genuine welcome-back greeting — 1 short sentence only. You may use their name.${screenHint}`;
+          prompt = `The user hasn't been here in ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
           break;
         case 'first':
         default:
-          // Leave default generic greeting (1–2 sentences, friendly intro).
-          if (screenHint) {
-            prompt = `${prompt} The user is currently on the "${currentScreen?.title || 'app'}" screen — you may reference it if it flows naturally.`;
-          }
+          // Treat as new-day greeting since we don't know when they were last here.
+          prompt = `Open with "Good ${tod}, [Name]." using the user's name from your memory context. If no name is available, just say "Good ${tod}." Optionally follow with ONE short question like "What can I do for you?" Max TWO short sentences.${screenHint}`;
           break;
       }
     }
