@@ -1360,7 +1360,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
         properties: {
           screen_id: {
             type: 'string',
-            description: 'Canonical screen id from the Vitana Navigator catalog. Format is CATEGORY.NAME using dots. Examples: COMM.EVENTS, COMM.MEDIA_HUB, COMM.LIVE_ROOMS, HEALTH.MY_BIOLOGY, HEALTH.PLANS, WALLET.OVERVIEW, WALLET.REWARDS, BUSINESS.OVERVIEW, BUSINESS.SELL_EARN, BUSINESS.SERVICES, DISCOVER.SUPPLEMENTS, MEMORY.DIARY, SETTINGS.PRIVACY, HOME.MATCHES, AI.COMPANION. Always use the full dotted form (e.g. COMM.MEDIA_HUB not MEDIA_HUB).',
+            description: 'Canonical screen id from the Vitana Navigator catalog. Format is CATEGORY.NAME using dots. Examples: PROFILE.ME, INBOX.OVERVIEW, INBOX.ARCHIVED, COMM.EVENTS, COMM.MEDIA_HUB, COMM.LIVE_ROOMS, HEALTH.MY_BIOLOGY, HEALTH.PLANS, HEALTH.PILLARS, HEALTH.CONDITIONS, WALLET.OVERVIEW, WALLET.REWARDS, WALLET.SUBSCRIPTIONS, BUSINESS.OVERVIEW, BUSINESS.SELL_EARN, BUSINESS.SERVICES, BUSINESS.CLIENTS, DISCOVER.SUPPLEMENTS, DISCOVER.ORDERS, DISCOVER.AI_PICKS, MEMORY.DIARY, MEMORY.TIMELINE, MEMORY.RECALL, SETTINGS.PRIVACY, SETTINGS.BILLING, SETTINGS.SUPPORT, SETTINGS.PREFERENCES, SHARING.OVERVIEW, SHARING.CAMPAIGNS, HOME.MATCHES, HOME.ACTIONS, AI.COMPANION, AI.INSIGHTS, AI.DAILY_SUMMARY. Always use the full dotted form (e.g. COMM.MEDIA_HUB not MEDIA_HUB, PROFILE.ME not PROFILE).',
           },
           reason: {
             type: 'string',
@@ -2500,7 +2500,8 @@ im Hörmodus hängen.
 ENTSCHEIDUNGSREGELN:
 
 1. DIREKT NAVIGIEREN (für offensichtliche Ziele):
-   • "öffne mein Wallet", "zeig mir die Events", "gehe zu Einstellungen"
+   • "öffne mein Wallet", "öffne mein Profil", "öffne meinen Posteingang",
+     "zeig mir die Events", "gehe zu Einstellungen", "öffne mein Tagebuch"
    • Sprich einen kurzen Übergangssatz, dann rufe navigate_to_screen auf.
 
 2. KONSULTIEREN DANN NAVIGIEREN (für alles andere das ein Feature erwähnt):
@@ -2589,7 +2590,8 @@ it when the user wanted navigation leaves them stuck waiting in silence.
 DECISION RULES:
 
 1. NAVIGATE DIRECTLY (for obvious destinations):
-   • "open my wallet", "take me to events", "go to settings"
+   • "open my wallet", "open my profile", "open my inbox", "take me to
+     events", "go to settings", "open billing", "show me my diary"
    • Speak a brief transition, then call navigate_to_screen.
 
 2. CONSULT THEN NAVIGATE (for everything else that mentions a feature):
