@@ -33,7 +33,7 @@ export type MessageType = typeof MESSAGE_TYPES[number];
  * Retrieval sources available
  * NOTE: Defined here before ConversationTurnRequestSchema to avoid forward reference
  */
-export const RETRIEVAL_SOURCES = ['memory_garden', 'knowledge_hub', 'web_search'] as const;
+export const RETRIEVAL_SOURCES = ['memory_garden', 'knowledge_hub', 'web_search', 'calendar'] as const;
 export type RetrievalSource = typeof RETRIEVAL_SOURCES[number];
 
 // =============================================================================
@@ -270,6 +270,16 @@ export interface ContextPack {
 
   /** Relationship graph context from cognee extraction (human-readable strings) */
   relationship_context?: string[];
+
+  /** Intelligent Calendar: calendar memory context */
+  calendar_context?: {
+    today_events: Array<{ id: string; title: string; start_time: string; end_time: string | null; event_type: string; status: string }>;
+    upcoming_events: Array<{ id: string; title: string; start_time: string; end_time: string | null; event_type: string; status: string }>;
+    gaps_today: Array<{ start: string; end: string; duration_minutes: number }>;
+    active_role: string;
+    journey_stage?: { wave_name: string; day_number: number; total_days: number };
+    patterns: string[];
+  };
 
   /** VTID-01230: Session buffer — recent turns from the current conversation */
   session_buffer?: {

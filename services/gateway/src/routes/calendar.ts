@@ -345,13 +345,62 @@ router.delete('/events/:id', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// POST /journey/initialize — Pre-populate 90-day journey calendar
+// =============================================================================
+router.post('/journey/initialize', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const tenantId = req.get('X-Vitana-Tenant') || 'default';
+    const language = (req.body.language as string) || 'en';
+
+    const { initializeJourneyCalendar } = await import('../services/journey-calendar-mapper');
+    const result = await initializeJourneyCalendar(userId, tenantId, new Date(), language);
+
+    return res.status(result.ok ? 201 : 500).json(result);
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /journey/initialize error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /reschedule — Run smart rescheduler (called by Cloud Scheduler)
+// =============================================================================
+router.post('/reschedule', async (_req: Request, res: Response) => {
+  try {
+    const { rescheduleUnactivatedTasks } = await import('../services/calendar-rescheduler');
+    const result = await rescheduleUnactivatedTasks();
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /reschedule error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /reprioritize — Run dynamic prioritizer (called by Cloud Scheduler)
+// =============================================================================
+router.post('/reprioritize', async (_req: Request, res: Response) => {
+  try {
+    const { reprioritizeAllUsers } = await import('../services/calendar-prioritizer');
+    const result = await reprioritizeAllUsers();
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /reprioritize error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
 // GET /health — Health check
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {
   res.json({
     ok: true,
     service: 'intelligent-calendar',
-    phase: 1,
+    phases: [1, 2, 3, 4, 5, 6, 7, 8],
     features: [
       'role-aware-filtering',
       'crud-operations',
@@ -360,6 +409,13 @@ router.get('/health', (_req: Request, res: Response) => {
       'bulk-create',
       'completion-tracking',
       'rsvp-sync-triggers',
+      'autopilot-calendar-bridge',
+      '90-day-journey-package',
+      'd-layer-memory-integration',
+      'conversational-nl-parser',
+      'smart-rescheduler',
+      'dynamic-prioritizer',
+      'pattern-evolution',
     ],
   });
 });

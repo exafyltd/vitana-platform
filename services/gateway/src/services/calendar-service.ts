@@ -460,3 +460,102 @@ export function toSummary(event: CalendarEvent): CalendarEventSummary {
     wellness_tags: event.wellness_tags,
   };
 }
+
+// =============================================================================
+// Phase 8: Calendar Pattern Extraction
+// =============================================================================
+
+export interface CalendarPattern {
+  description: string;
+  confidence: number;
+  domain: string;
+  pattern_type: 'habit' | 'pattern' | 'signal';
+}
+
+/**
+ * Analyze calendar history to extract behavioral patterns.
+ * These patterns feed into garden nodes and the assistant context.
+ */
+export async function extractCalendarPatterns(
+  userId: string,
+  role: string | null = 'community',
+  daysBack: number = 30,
+): Promise<CalendarPattern[]> {
+  const history = await getUserCalendarHistory(userId, role, daysBack, 500);
+  if (history.length < 5) return []; // Not enough data
+
+  const patterns: CalendarPattern[] = [];
+  const completed = history.filter(e => e.completion_status === 'completed');
+  const skipped = history.filter(e => e.completion_status === 'skipped');
+
+  // 1. Time-of-day preference
+  const completionHours = completed.map(e => new Date(e.start_time).getHours());
+  if (completionHours.length >= 5) {
+    const morningCount = completionHours.filter(h => h >= 6 && h < 12).length;
+    const afternoonCount = completionHours.filter(h => h >= 12 && h < 18).length;
+    const eveningCount = completionHours.filter(h => h >= 18 && h < 23).length;
+    const total = completionHours.length;
+
+    if (morningCount / total > 0.6) {
+      patterns.push({ description: 'User prefers completing tasks in the morning', confidence: Math.round((morningCount / total) * 100), domain: 'lifestyle', pattern_type: 'pattern' });
+    } else if (afternoonCount / total > 0.6) {
+      patterns.push({ description: 'User prefers completing tasks in the afternoon', confidence: Math.round((afternoonCount / total) * 100), domain: 'lifestyle', pattern_type: 'pattern' });
+    } else if (eveningCount / total > 0.6) {
+      patterns.push({ description: 'User prefers completing tasks in the evening', confidence: Math.round((eveningCount / total) * 100), domain: 'lifestyle', pattern_type: 'pattern' });
+    }
+  }
+
+  // 2. Category completion rates
+  const byType: Record<string, { completed: number; total: number }> = {};
+  for (const e of history) {
+    if (!byType[e.event_type]) byType[e.event_type] = { completed: 0, total: 0 };
+    byType[e.event_type].total++;
+    if (e.completion_status === 'completed') byType[e.event_type].completed++;
+  }
+
+  for (const [type, stats] of Object.entries(byType)) {
+    if (stats.total >= 3) {
+      const rate = stats.completed / stats.total;
+      if (rate > 0.8) {
+        patterns.push({ description: `User consistently completes ${type} events (${Math.round(rate * 100)}%)`, confidence: Math.round(rate * 100), domain: 'lifestyle', pattern_type: 'habit' });
+      } else if (rate < 0.3) {
+        patterns.push({ description: `User frequently skips ${type} events (${Math.round((1 - rate) * 100)}% skip rate)`, confidence: Math.round((1 - rate) * 100), domain: 'lifestyle', pattern_type: 'signal' });
+      }
+    }
+  }
+
+  // 3. Duration preference
+  const completedDurations = completed
+    .filter(e => e.end_time)
+    .map(e => (new Date(e.end_time!).getTime() - new Date(e.start_time).getTime()) / 60000);
+  if (completedDurations.length >= 5) {
+    const shortCount = completedDurations.filter(d => d <= 15).length;
+    const longCount = completedDurations.filter(d => d > 30).length;
+    if (shortCount / completedDurations.length > 0.7) {
+      patterns.push({ description: 'User prefers short tasks (15 min or less)', confidence: Math.round((shortCount / completedDurations.length) * 100), domain: 'lifestyle', pattern_type: 'pattern' });
+    } else if (longCount / completedDurations.length > 0.5) {
+      patterns.push({ description: 'User handles longer tasks well (30+ min)', confidence: Math.round((longCount / completedDurations.length) * 100), domain: 'lifestyle', pattern_type: 'pattern' });
+    }
+  }
+
+  // 4. Wellness tag affinity
+  const tagCounts: Record<string, { completed: number; total: number }> = {};
+  for (const e of history) {
+    for (const tag of e.wellness_tags || []) {
+      if (!tagCounts[tag]) tagCounts[tag] = { completed: 0, total: 0 };
+      tagCounts[tag].total++;
+      if (e.completion_status === 'completed') tagCounts[tag].completed++;
+    }
+  }
+
+  for (const [tag, stats] of Object.entries(tagCounts)) {
+    if (stats.total >= 3) {
+      const rate = stats.completed / stats.total;
+      if (rate > 0.8) {
+        patterns.push({ description: `User engages well with "${tag}" activities`, confidence: Math.round(rate * 100), domain: 'health', pattern_type: 'habit' });
+      }
+    }
+  }
+
+  return patterns;
+}

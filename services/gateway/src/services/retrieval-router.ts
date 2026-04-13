@@ -243,6 +243,7 @@ export function computeRetrievalRouterDecision(
     memory_garden: options?.limit_overrides?.memory_garden ?? RETRIEVAL_CONFIG.DEFAULT_LIMITS.memory_garden,
     knowledge_hub: options?.limit_overrides?.knowledge_hub ?? RETRIEVAL_CONFIG.DEFAULT_LIMITS.knowledge_hub,
     web_search: options?.limit_overrides?.web_search ?? RETRIEVAL_CONFIG.DEFAULT_LIMITS.web_search,
+    calendar: 20, // Calendar events are always fetched, limit 20
   };
 
   // Enforce min/max limits

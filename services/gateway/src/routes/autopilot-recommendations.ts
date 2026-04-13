@@ -38,6 +38,13 @@ interface CommunityAction {
   action_type: 'navigate' | 'notify';
   target?: string;
   completion_message: string;
+  /** Intelligent Calendar: optional calendar event metadata for schedulable actions */
+  calendar_event?: {
+    title_template: string;
+    duration_minutes: number;
+    event_type: string;
+    wellness_tags: string[];
+  };
 }
 
 const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
@@ -55,21 +62,21 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   onboarding_group:             { action_type: 'navigate', target: '/groups', completion_message: 'Find a group that fits you!' },
   // Engagement
   engage_matches:       { action_type: 'navigate', target: '/matches', completion_message: 'Your matches are waiting!' },
-  engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!' },
-  engage_health:        { action_type: 'navigate', target: '/health', completion_message: 'Check your health scores!' },
-  deepen_connection:    { action_type: 'navigate', target: '/connections', completion_message: 'Reach out to a connection!' },
-  set_goal:             { action_type: 'navigate', target: '/health', completion_message: 'Set a health goal with Maxina!' },
+  engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!', calendar_event: { title_template: 'Attend a meetup', duration_minutes: 60, event_type: 'community', wellness_tags: ['social'] } },
+  engage_health:        { action_type: 'navigate', target: '/health', completion_message: 'Check your health scores!', calendar_event: { title_template: 'Check health scores', duration_minutes: 15, event_type: 'health', wellness_tags: ['health-check'] } },
+  deepen_connection:    { action_type: 'navigate', target: '/connections', completion_message: 'Reach out to a connection!', calendar_event: { title_template: 'Deepen a connection', duration_minutes: 30, event_type: 'personal', wellness_tags: ['social'] } },
+  set_goal:             { action_type: 'navigate', target: '/health', completion_message: 'Set a health goal with Maxina!', calendar_event: { title_template: 'Set a health goal', duration_minutes: 15, event_type: 'health', wellness_tags: ['health', 'mindfulness'] } },
   invite_friend:        { action_type: 'navigate', target: '/invite', completion_message: 'Share Vitana with a friend!' },
   // Advanced
   share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
-  start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!' },
+  start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!', calendar_event: { title_template: 'Start a wellness streak', duration_minutes: 15, event_type: 'health', wellness_tags: ['wellness'] } },
   // mentor_new and organize_meetup removed — not automatable by autopilot
   // Weakness-driven
-  weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!' },
-  weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!' },
-  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!' },
-  weakness_nutrition:   { action_type: 'navigate', target: '/health', completion_message: 'Track what you eat today!' },
-  weakness_sleep:       { action_type: 'navigate', target: '/health', completion_message: 'Set up your evening routine!' },
+  weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!', calendar_event: { title_template: 'Exercise session', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
+  weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!', calendar_event: { title_template: 'Breathing exercise', duration_minutes: 15, event_type: 'health', wellness_tags: ['mindfulness', 'stress'] } },
+  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!', calendar_event: { title_template: 'Social connection', duration_minutes: 15, event_type: 'personal', wellness_tags: ['social'] } },
+  weakness_nutrition:   { action_type: 'navigate', target: '/health', completion_message: 'Track what you eat today!', calendar_event: { title_template: 'Track your meals', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
+  weakness_sleep:       { action_type: 'navigate', target: '/health', completion_message: 'Set up your evening routine!', calendar_event: { title_template: 'Evening routine', duration_minutes: 15, event_type: 'health', wellness_tags: ['sleep'] } },
   // Mood-driven
   mood_support:         { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is here to listen.' },
   mood_energy:          { action_type: 'navigate', target: '/events', completion_message: 'Use your energy on an activity!' },
@@ -738,6 +745,37 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         return res.status(500).json({ ok: false, error: 'Failed to update recommendation status' });
       }
 
+      // Intelligent Calendar: create calendar event for schedulable actions
+      let calendarEvent = null;
+      if (action.calendar_event && userId) {
+        try {
+          const { computeNextAvailableSlot, createCalendarEvent } = await import('../services/calendar-service');
+          const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
+          const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
+          calendarEvent = await createCalendarEvent(userId, {
+            title: action.calendar_event.title_template || rec.title,
+            description: rec.summary || action.completion_message,
+            start_time: slot.toISOString(),
+            end_time: endSlot.toISOString(),
+            event_type: action.calendar_event.event_type,
+            status: 'confirmed',
+            priority: 'medium',
+            role_context: 'community',
+            source_type: 'autopilot',
+            source_ref_id: id,
+            source_ref_type: 'autopilot_recommendation',
+            priority_score: 60,
+            wellness_tags: action.calendar_event.wellness_tags,
+            metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
+          } as any);
+          if (calendarEvent) {
+            console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
+          }
+        } catch (calErr: any) {
+          console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
+        }
+      }
+
       // Emit OASIS event
       await emitOasisEvent({
         vtid: 'SYSTEM',
@@ -752,6 +790,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
           action_type: action.action_type,
           target: action.target || null,
           source_ref: rec.source_ref,
+          calendar_event_id: calendarEvent?.id || null,
         },
       });
 
