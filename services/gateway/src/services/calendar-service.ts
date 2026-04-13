@@ -303,7 +303,7 @@ export async function bulkCreateCalendarEvents(
 
   const resp = await fetch(`${config.url}/rest/v1/calendar_events`, {
     method: 'POST',
-    headers: headers(config.key, { Prefer: 'return=representation,resolution=ignore-duplicates' }),
+    headers: headers(config.key, { Prefer: 'return=representation' }),
     body: JSON.stringify(bodies),
   });
 
