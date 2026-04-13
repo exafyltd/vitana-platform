@@ -67,7 +67,9 @@ const STOPWORDS = new Set<string>([
   'now', 'then', 'than', 'there', 'here', 'about', 'over', 'under',
   'want', 'wants', 'wanted', 'need', 'needs', 'needed', 'like', 'likes', 'liked',
   'get', 'got', 'getting', 'take', 'taken', 'taking',
-  'show', 'shows', 'showed',
+  'show', 'shows', 'showed', 'open', 'opens', 'opened', 'close', 'closed', 'go', 'goes', 'going', 'went',
+  // German navigation verbs
+  'öffne', 'öffnen', 'öffnet', 'schließen', 'schließe',
   // German
   'ich', 'mich', 'mir', 'mein', 'meine', 'meinen', 'meinem', 'meiner', 'meines',
   'du', 'dich', 'dir', 'dein', 'deine', 'deinen',
@@ -808,12 +810,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Inbox',
         description: 'Messages, reminders, and inspiration delivered to you.',
-        when_to_visit: 'When the user asks about their inbox, messages, notifications, or wants to check what has been sent to them.',
+        when_to_visit: 'When the user asks about their inbox, messages, chat, chat history, conversations, message history, DMs, direct messages, notifications, or wants to check what has been sent to them.',
       },
       de: {
         title: 'Posteingang',
         description: 'Nachrichten, Erinnerungen und Inspiration, die dir zugestellt wurden.',
-        when_to_visit: 'Wenn der Nutzer nach seinem Posteingang, Nachrichten, Benachrichtigungen fragt oder sehen möchte, was ihm gesendet wurde.',
+        when_to_visit: 'Wenn der Nutzer nach seinem Posteingang, Nachrichten, Chat, Chat-Verlauf, Konversationen, Nachrichtenverlauf, Direktnachrichten, Benachrichtigungen fragt oder sehen möchte, was ihm gesendet wurde.',
       },
     },
   },
@@ -1096,6 +1098,16 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, medical conditions, chronic conditions, diagnoses, or health issues they are managing.' },
       de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, medizinischen Zuständen, chronischen Erkrankungen, Diagnosen oder Gesundheitsproblemen fragt, die er verwaltet.' },
+    },
+  },
+
+  // ── PROFILE ──────────────────────────────────────────────────────────────
+  {
+    screen_id: 'PROFILE.ME', route: '/me/profile', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'My Profile', description: 'Your personal profile — name, photo, bio, and account details.', when_to_visit: 'When the user asks to open their profile, see their profile, edit their profile, view their account, personal information, about me, or user profile.' },
+      de: { title: 'Mein Profil', description: 'Dein persönliches Profil — Name, Foto, Bio und Kontodetails.', when_to_visit: 'Wenn der Nutzer sein Profil öffnen, sein Profil sehen, sein Profil bearbeiten, sein Konto ansehen, persönliche Informationen, über mich oder Nutzerprofil fragt.' },
     },
   },
 

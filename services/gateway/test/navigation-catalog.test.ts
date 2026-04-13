@@ -285,6 +285,16 @@ const ROUTING_CASES: RoutingCase[] = [
   // ── PUBLIC expanded ──
   { utterance: 'show me the terms of use',                   lang: 'en', expected_screen_id: 'PUBLIC.TERMS' },
   { utterance: 'nutzungsbedingungen',                        lang: 'de', expected_screen_id: 'PUBLIC.TERMS' },
+
+  // ── PROFILE ──
+  { utterance: 'open my profile',                            lang: 'en', expected_screen_id: 'PROFILE.ME' },
+  { utterance: 'show me my profile',                         lang: 'en', expected_screen_id: 'PROFILE.ME' },
+  { utterance: 'mein profil öffnen',                         lang: 'de', expected_screen_id: 'PROFILE.ME' },
+
+  // ── INBOX with chat keywords ──
+  { utterance: 'open my chat history',                       lang: 'en', expected_screen_id: 'INBOX.OVERVIEW' },
+  { utterance: 'show my message history and conversations',   lang: 'en', expected_screen_id: 'INBOX.OVERVIEW' },
+  { utterance: 'öffne meinen chat verlauf',                  lang: 'de', expected_screen_id: 'INBOX.OVERVIEW' },
 ];
 
 describe('navigation-catalog — routing quality', () => {
