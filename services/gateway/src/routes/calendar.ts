@@ -348,63 +348,94 @@ router.delete('/events/:id', async (req: Request, res: Response) => {
 // GET /journey/debug — Diagnose why journey init fails (temporary)
 // =============================================================================
 router.get('/journey/debug', async (_req: Request, res: Response) => {
-  try {
-    const { getSupabaseConfig, headers: sbHeaders } = await import('../services/calendar-service');
+  const testUserId = '00000000-debug-0000-0000-' + Date.now().toString().slice(-12);
+  const steps: Record<string, any> = {};
 
-    // 1. Check Supabase config
+  try {
+    const { getSupabaseConfig, headers: sbHeaders, bulkCreateCalendarEvents, getEventsBySourceRef } = await import('../services/calendar-service');
+
+    // 1. Config check
     const config = getSupabaseConfig();
     if (!config) {
-      return res.json({ ok: false, step: 'config', error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE missing', env: { url: !!process.env.SUPABASE_URL, key: !!process.env.SUPABASE_SERVICE_ROLE } });
+      return res.json({ ok: false, step: 'config', error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE' });
     }
+    steps.config = 'ok';
 
-    // 2. Check if new columns exist
-    const schemaResp = await fetch(`${config.url}/rest/v1/calendar_events?select=source_ref_id,role_context,wellness_tags,priority_score&limit=1`, {
-      headers: sbHeaders(config.key),
-    });
-    if (!schemaResp.ok) {
-      const errText = await schemaResp.text();
-      return res.json({ ok: false, step: 'schema_check', status: schemaResp.status, error: errText });
-    }
+    // 2. Test getEventsBySourceRef (idempotency check)
+    const existing = await getEventsBySourceRef(testUserId, 'journey-calendar-init');
+    steps.idempotency_check = { existing_count: existing.length };
 
-    // 3. Try inserting a test event with journey source_type
-    const testEvent = {
-      user_id: '00000000-0000-0000-0000-000000000000',
-      title: '__DEBUG_TEST__',
-      start_time: new Date().toISOString(),
-      event_type: 'autopilot',
-      source_type: 'journey',
-      status: 'pending',
-      priority: 'low',
-      role_context: 'community',
-      source_ref_id: '__debug_test__',
-      source_ref_type: 'debug',
-      priority_score: 0,
-      wellness_tags: ['test'],
-    };
+    // 3. Test bulkCreateCalendarEvents with 2 events (the exact function journey uses)
+    const testEvents = [
+      {
+        title: '__DEBUG_BULK_1__',
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 3600000).toISOString(),
+        event_type: 'autopilot' as const,
+        source_type: 'journey' as const,
+        status: 'pending' as const,
+        priority: 'low' as const,
+        role_context: 'community' as const,
+        source_ref_id: '__debug_bulk_1__',
+        source_ref_type: 'debug',
+        priority_score: 0,
+        wellness_tags: ['test'],
+        metadata: { debug: true },
+      },
+      {
+        title: '__DEBUG_BULK_2__',
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 3600000).toISOString(),
+        event_type: 'journey_milestone' as const,
+        source_type: 'journey' as const,
+        status: 'confirmed' as const,
+        priority: 'medium' as const,
+        role_context: 'community' as const,
+        source_ref_id: 'journey-calendar-init',
+        source_ref_type: 'journey_sentinel',
+        priority_score: 100,
+        wellness_tags: ['onboarding'],
+        metadata: { debug: true },
+      },
+    ];
 
-    const insertResp = await fetch(`${config.url}/rest/v1/calendar_events`, {
-      method: 'POST',
-      headers: sbHeaders(config.key, { Prefer: 'return=representation' }),
-      body: JSON.stringify(testEvent),
-    });
+    const created = await bulkCreateCalendarEvents(testUserId, testEvents as any);
+    steps.bulk_insert = { sent: testEvents.length, created: created.length, ids: created.map((e: any) => e.id) };
 
-    if (!insertResp.ok) {
-      const errText = await insertResp.text();
-      return res.json({ ok: false, step: 'test_insert', status: insertResp.status, error: errText, payload: testEvent });
-    }
-
-    // 4. Clean up test event
-    const inserted = await insertResp.json() as any[];
-    if (inserted?.[0]?.id) {
-      await fetch(`${config.url}/rest/v1/calendar_events?id=eq.${inserted[0].id}`, {
-        method: 'DELETE',
-        headers: sbHeaders(config.key),
+    // 4. Also try raw fetch to see exact error
+    if (created.length === 0) {
+      const rawResp = await fetch(`${config.url}/rest/v1/calendar_events`, {
+        method: 'POST',
+        headers: sbHeaders(config.key, { Prefer: 'return=representation' }),
+        body: JSON.stringify(testEvents.map(e => ({ user_id: testUserId, ...e }))),
       });
+      const rawBody = await rawResp.text();
+      steps.raw_insert = { status: rawResp.status, ok: rawResp.ok, body: rawBody.slice(0, 1000) };
     }
 
-    return res.json({ ok: true, steps: { config: 'ok', schema: 'ok', insert: 'ok', cleanup: 'ok' }, message: 'All checks passed — journey insert should work' });
+    // 5. Cleanup
+    if (created.length > 0) {
+      for (const e of created) {
+        await fetch(`${config.url}/rest/v1/calendar_events?id=eq.${(e as any).id}`, {
+          method: 'DELETE', headers: sbHeaders(config.key),
+        });
+      }
+      steps.cleanup = 'ok';
+    }
+
+    // 6. Also try full initializeJourneyCalendar with another test user
+    const { initializeJourneyCalendar } = await import('../services/journey-calendar-mapper');
+    const initResult = await initializeJourneyCalendar(testUserId + 'b', 'default', new Date(), 'en');
+    steps.full_init = initResult;
+
+    // Cleanup full init events
+    await fetch(`${config.url}/rest/v1/calendar_events?user_id=eq.${testUserId}b`, {
+      method: 'DELETE', headers: sbHeaders(config.key),
+    });
+
+    return res.json({ ok: steps.bulk_insert?.created > 0 && steps.full_init?.events_created > 0, steps });
   } catch (err: any) {
-    return res.status(500).json({ ok: false, step: 'exception', error: err.message });
+    return res.status(500).json({ ok: false, steps, error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
   }
 });
 
