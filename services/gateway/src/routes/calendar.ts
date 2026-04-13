@@ -345,6 +345,69 @@ router.delete('/events/:id', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// GET /journey/debug — Diagnose why journey init fails (temporary)
+// =============================================================================
+router.get('/journey/debug', async (_req: Request, res: Response) => {
+  try {
+    const { getSupabaseConfig, headers: sbHeaders } = await import('../services/calendar-service');
+
+    // 1. Check Supabase config
+    const config = getSupabaseConfig();
+    if (!config) {
+      return res.json({ ok: false, step: 'config', error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE missing', env: { url: !!process.env.SUPABASE_URL, key: !!process.env.SUPABASE_SERVICE_ROLE } });
+    }
+
+    // 2. Check if new columns exist
+    const schemaResp = await fetch(`${config.url}/rest/v1/calendar_events?select=source_ref_id,role_context,wellness_tags,priority_score&limit=1`, {
+      headers: sbHeaders(config.key),
+    });
+    if (!schemaResp.ok) {
+      const errText = await schemaResp.text();
+      return res.json({ ok: false, step: 'schema_check', status: schemaResp.status, error: errText });
+    }
+
+    // 3. Try inserting a test event with journey source_type
+    const testEvent = {
+      user_id: '00000000-0000-0000-0000-000000000000',
+      title: '__DEBUG_TEST__',
+      start_time: new Date().toISOString(),
+      event_type: 'autopilot',
+      source_type: 'journey',
+      status: 'pending',
+      priority: 'low',
+      role_context: 'community',
+      source_ref_id: '__debug_test__',
+      source_ref_type: 'debug',
+      priority_score: 0,
+      wellness_tags: ['test'],
+    };
+
+    const insertResp = await fetch(`${config.url}/rest/v1/calendar_events`, {
+      method: 'POST',
+      headers: sbHeaders(config.key, { Prefer: 'return=representation' }),
+      body: JSON.stringify(testEvent),
+    });
+
+    if (!insertResp.ok) {
+      const errText = await insertResp.text();
+      return res.json({ ok: false, step: 'test_insert', status: insertResp.status, error: errText, payload: testEvent });
+    }
+
+    // 4. Clean up test event
+    const inserted = await insertResp.json() as any[];
+    if (inserted?.[0]?.id) {
+      await fetch(`${config.url}/rest/v1/calendar_events?id=eq.${inserted[0].id}`, {
+        method: 'DELETE',
+        headers: sbHeaders(config.key),
+      });
+    }
+
+    return res.json({ ok: true, steps: { config: 'ok', schema: 'ok', insert: 'ok', cleanup: 'ok' }, message: 'All checks passed — journey insert should work' });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, step: 'exception', error: err.message });
+  }
+});
+
 // POST /journey/initialize — Pre-populate 90-day journey calendar
 // =============================================================================
 router.post('/journey/initialize', async (req: Request, res: Response) => {

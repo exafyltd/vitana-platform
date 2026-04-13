@@ -23,7 +23,7 @@ const LOG_PREFIX = '[Calendar]';
 // Supabase helpers
 // =============================================================================
 
-function getSupabaseConfig(): { url: string; key: string } | null {
+export function getSupabaseConfig(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) {
@@ -33,7 +33,7 @@ function getSupabaseConfig(): { url: string; key: string } | null {
   return { url, key };
 }
 
-function headers(key: string, extra?: Record<string, string>): Record<string, string> {
+export function headers(key: string, extra?: Record<string, string>): Record<string, string> {
   return {
     apikey: key,
     Authorization: `Bearer ${key}`,
@@ -144,7 +144,11 @@ export async function getEventsBySourceRef(
 
   const url = `${config.url}/rest/v1/calendar_events?user_id=eq.${userId}&source_ref_id=eq.${sourceRefId}&limit=5`;
   const resp = await fetch(url, { headers: headers(config.key) });
-  if (!resp.ok) return [];
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    console.error(`${LOG_PREFIX} getEventsBySourceRef failed (${resp.status}):`, errText);
+    return [];
+  }
   return resp.json() as Promise<any>;
 }
 
@@ -305,7 +309,8 @@ export async function bulkCreateCalendarEvents(
 
   if (!resp.ok) {
     const errText = await resp.text();
-    console.error(`${LOG_PREFIX} bulkCreateCalendarEvents failed:`, errText);
+    console.error(`${LOG_PREFIX} bulkCreateCalendarEvents failed (${resp.status}): ${errText}`);
+    console.error(`${LOG_PREFIX} First event payload:`, JSON.stringify(bodies[0]).slice(0, 500));
     return [];
   }
 

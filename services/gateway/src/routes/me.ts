@@ -181,7 +181,7 @@ router.get('/', async (req: Request, res: Response) => {
         initializeJourneyCalendar(meCtx.user_id!, meCtx.tenant_id!, new Date(), 'en')
           .then(r => { if (r.events_created > 0) console.log(`[Calendar] Journey initialized for ${meCtx.user_id!.slice(0, 8)}... (${r.events_created} events)`); })
           .catch(err => console.warn(`[Calendar] Journey init failed (non-fatal): ${err.message}`));
-      }).catch(() => {});
+      }).catch(err => console.error('[Calendar] Module import failed:', err.message));
     }
 
     return res.status(200).json({
