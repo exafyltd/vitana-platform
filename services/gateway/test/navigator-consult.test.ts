@@ -214,11 +214,12 @@ describe('consultNavigator — memory bias', () => {
     mockMemoryHits([
       { category_key: 'notes', content: 'Vitana navigated to Events & Meetups (/comm/events-meetups) — User asked' },
     ]);
-    // Ask the same question again — the consult should be aware of the prior nav
+    // Use an ambiguous query so the fast path doesn't short-circuit and
+    // the full memory-enhanced path runs (including buildContextPack).
     const result = await consultNavigator(authedInput({
-      question: 'show me upcoming events',
+      question: 'what should I do with the community',
     }));
-    // Soft penalty applied; primary may shift away or score may decrease.
+    // Memory hints should have been fetched via the slow path.
     // We don't assert exact ranking here, just that the memory was processed.
     expect(mockBuildContextPack).toHaveBeenCalled();
     expect(result.primary).not.toBeNull();

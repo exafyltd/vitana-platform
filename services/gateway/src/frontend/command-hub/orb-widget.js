@@ -986,16 +986,11 @@
                 _waitForNavReady();
                 return;
               }
-              // Grace period so the very last audio sample plays out cleanly
+              // VTID-NAV-FAST: Short grace period (200ms instead of 600ms).
+              // The aggressive source cleanup below catches any late audio,
+              // so 200ms is enough for the last buffer to finish cleanly.
               setTimeout(function () {
-                // VTID-NAV: Aggressive audio kill right before hide. The
-                // drain check above waits for the queue to empty, but a
-                // late audio chunk could still slip into scheduledSources
-                // between the check and the hide. This cleanup matches
-                // what the 'interrupted' handler does — clear the queue
-                // and stop every scheduled source so no tail fragment
-                // plays after navigation. Without this, the user hears
-                // a half-word fragment right after the redirect.
+                // Kill any remaining scheduled sources before hide
                 _s.audioQueue = [];
                 if (_s.scheduledSources && _s.scheduledSources.length > 0) {
                   for (var _si = 0; _si < _s.scheduledSources.length; _si++) {
@@ -1011,12 +1006,10 @@
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
                   catch (e) { console.error('[VTOrb] onNavigationRequest failed:', e); }
                 } else {
-                  // Fallback: hard navigation. Works in Command Hub and as a
-                  // last resort when the host app didn't register a callback.
                   try { window.location.href = navRoute; }
                   catch (e) { console.error('[VTOrb] navigation fallback failed:', e); }
                 }
-              }, 600);
+              }, 200);
             }, 300);
           })();
         } else {

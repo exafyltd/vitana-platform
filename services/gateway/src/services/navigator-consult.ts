@@ -406,6 +406,78 @@ export async function consultNavigator(
   // an authenticated-only screen to unauthenticated sessions).
   const decisionSource: ConsultDecisionSource = isNavCatalogLoaded() ? 'scoring' : 'static_fallback';
 
+  // ── VTID-NAV-FAST: Fast path for high-confidence direct matches ────────
+  // Score the catalog FIRST (instant, in-memory) WITHOUT memory hints.
+  // If the top result is a clear high-confidence winner, return immediately
+  // and skip the 1-2s memory + KB network calls entirely. Only fall through
+  // to the slow path for ambiguous or low-confidence queries where richer
+  // context actually helps.
+  const excludeRoutes: string[] = [];
+  if (input.current_route) excludeRoutes.push(input.current_route);
+  const fastScored = searchCatalog(input.question, input.lang, {
+    anonymous_only: input.is_anonymous,
+    exclude_routes: excludeRoutes,
+  });
+  const fastTop = fastScored[0];
+  const fastSecond = fastScored[1];
+
+  if (fastTop && fastTop.score >= CONSULT_CONFIG.HIGH_CONFIDENCE_MIN) {
+    const ratio = fastSecond ? fastSecond.score / fastTop.score : 0;
+    if (ratio < CONSULT_CONFIG.AMBIGUITY_RATIO) {
+      // Clear winner — skip memory/KB, return instantly
+      const pick = entryToPick(fastTop.entry, input.lang);
+      const topPicks = fastScored.slice(0, 3).map(s => ({
+        ...entryToPick(s.entry, input.lang),
+        score: s.score,
+      }));
+
+      // Anonymous gating
+      if (input.is_anonymous) {
+        const entry = lookupScreen(pick.screen_id);
+        if (entry && !entry.anonymous_safe) {
+          return {
+            confidence: 'low',
+            primary: null,
+            explanation: buildExplanation({ primary: null, confidence: 'low', blockedReason: 'requires_auth', hints: EMPTY_HINTS, lang: input.lang }),
+            confirmation_needed: false,
+            kb_excerpts: [],
+            blocked_reason: 'requires_auth',
+            top_picks: topPicks,
+            decision_source: decisionSource,
+            ms_elapsed: Date.now() - startTime,
+            catalog_match_count: fastScored.length,
+            memory_hint_count: 0,
+            kb_excerpt_count: 0,
+          };
+        }
+      }
+
+      const explanation = buildExplanation({
+        primary: pick,
+        confidence: 'high',
+        hints: EMPTY_HINTS,
+        lang: input.lang,
+      });
+
+      console.log(`[VTID-NAV-FAST] Fast path: ${pick.screen_id} (score ${fastTop.score}) in ${Date.now() - startTime}ms — skipped memory/KB`);
+
+      return {
+        confidence: 'high',
+        primary: pick,
+        explanation,
+        confirmation_needed: false,
+        kb_excerpts: staticKbAnchors(fastTop.entry),
+        top_picks: topPicks,
+        decision_source: decisionSource,
+        ms_elapsed: Date.now() - startTime,
+        catalog_match_count: fastScored.length,
+        memory_hint_count: 0,
+        kb_excerpt_count: 0,
+      };
+    }
+  }
+  // ── End fast path — fall through to full consult with memory + KB ──────
+
   // Run memory hints + KB search in parallel — they're the slow parts.
   const [hints, runtimeKbExcerpts] = await Promise.all([
     fetchMemoryHints(input),

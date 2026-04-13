@@ -1616,7 +1616,7 @@ async function handleNavigate(
       const lang = session.lang || 'en';
       const content = getNavContent(entry, lang);
 
-      // Queue the navigation — same as handleNavigateToScreen did
+      // Queue the navigation
       session.pendingNavigation = {
         screen_id: entry.screen_id,
         route: entry.route,
@@ -1626,6 +1626,46 @@ async function handleNavigate(
         requested_at: Date.now(),
       };
       session.navigationDispatched = true;
+
+      // VTID-NAV-FAST: Dispatch orb_directive IMMEDIATELY — don't wait for
+      // turn_complete. The widget starts its audio-drain-and-close loop in
+      // parallel while Gemini is still generating the guidance speech. By
+      // the time the user hears the full guidance, the drain is already
+      // complete and navigation fires instantly. The turn_complete handler
+      // will see pendingNavigation=undefined (cleared below) and skip its
+      // own dispatch, avoiding double-send.
+      const directive = {
+        type: 'orb_directive',
+        directive: 'navigate',
+        screen_id: entry.screen_id,
+        route: entry.route,
+        title: content.title,
+        reason: question,
+        vtid: 'VTID-NAV-01',
+      };
+      const directiveJson = JSON.stringify(directive);
+      if (session.sseResponse) {
+        try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+      }
+      if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
+        try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+      }
+      console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${entry.screen_id} (${entry.route})`);
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.dispatched',
+        source: 'orb-live-ws',
+        status: 'info',
+        message: `immediate dispatch to ${entry.screen_id}`,
+        payload: {
+          session_id: session.sessionId,
+          screen_id: entry.screen_id,
+          route: entry.route,
+          drain_wait_ms: 0,
+        },
+      }).catch(() => {});
+      // Clear pending so turn_complete won't re-dispatch.
+      session.pendingNavigation = undefined;
 
       // Eagerly update route for get_current_screen
       const previousRoute = session.current_route;
