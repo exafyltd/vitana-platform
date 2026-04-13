@@ -51,6 +51,35 @@ jobs:
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
 
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          if [ -z "$SERVICE_TOKEN" ]; then
+            echo "::warning::GATEWAY_SERVICE_TOKEN not set — self-healing report skipped"
+            exit 0
+          fi
+          ENDPOINT="/api/v1/orb/health"
+          curl -sS -X POST "$GATEWAY_URL/api/v1/self-healing/report" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+              "total": 1,
+              "live": 0,
+              "services": [{
+                "name": "orb-widget-${{ matrix.screen }}",
+                "endpoint": "'"$ENDPOINT"'",
+                "status": "down",
+                "http_status": 0,
+                "response_body": "E2E ORB Widget test failed for ${{ matrix.screen }} screen (project: ${{ matrix.project }})",
+                "response_time_ms": 0,
+                "error_message": "Playwright test ${{ matrix.spec }} failed — ORB widget not loading or not functional"
+              }]
+            }' || echo "::warning::Self-healing report POST failed (non-fatal)"
+
       - name: Upload test results on failure
         uses: actions/upload-artifact@v4
         if: failure()

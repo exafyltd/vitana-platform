@@ -78,6 +78,36 @@ jobs:
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           LOVABLE_SUPABASE_SERVICE_ROLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M
 
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          if [ -z "$SERVICE_TOKEN" ]; then
+            echo "::warning::GATEWAY_SERVICE_TOKEN not set — self-healing report skipped"
+            exit 0
+          fi
+          # Determine which projects failed from the input
+          PROJECTS="${{ github.event_name == 'repository_dispatch' && github.event.client_payload.projects || inputs.projects }}"
+          curl -sS -X POST "$GATEWAY_URL/api/v1/self-healing/report" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+              "total": 1,
+              "live": 0,
+              "services": [{
+                "name": "e2e-test-run",
+                "endpoint": "/api/v1/e2e/health",
+                "status": "down",
+                "http_status": 0,
+                "response_body": "E2E tests failed for projects: '"$PROJECTS"'",
+                "response_time_ms": 0,
+                "error_message": "Playwright E2E test suite failed — user-facing flows are broken"
+              }]
+            }' || echo "::warning::Self-healing report POST failed (non-fatal)"
+
       - name: Upload test results on failure
         uses: actions/upload-artifact@v4
         if: failure()
