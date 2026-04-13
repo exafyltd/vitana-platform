@@ -14255,6 +14255,134 @@ function renderVoiceLabSessionDrawer() {
             });
 
             drawerContent.appendChild(diagSection);
+
+            // "Investigate with Claude" button — triggers Managed Agents triage
+            var investigateBtn = document.createElement('button');
+            investigateBtn.className = 'btn btn-primary triage-investigate-btn';
+            investigateBtn.textContent = 'Investigate with Claude';
+            investigateBtn.onclick = function () {
+                investigateBtn.disabled = true;
+                investigateBtn.textContent = 'Starting investigation...';
+
+                // Collect diagnostic flags
+                var flagTexts = diagnostics.map(function (d) { return d.title; });
+
+                fetch('/api/v1/agents/triage/investigate', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders({})),
+                    body: JSON.stringify({
+                        session_id: state.voiceLab.selectedSession,
+                        diagnostic_summary: diagnostics.map(function (d) {
+                            return d.severity + ': ' + d.title + ' — ' + d.detail;
+                        }).join('\n'),
+                        flags: flagTexts,
+                        metrics: {
+                            duration_ms: details.duration_ms,
+                            audio_in_chunks: details.audio_in_chunks,
+                            audio_out_chunks: details.audio_out_chunks,
+                            turn_count: details.turn_count,
+                            error_count: details.error_count,
+                            interrupted_count: details.interrupted_count
+                        }
+                    })
+                }).then(function (r) { return r.json(); }).then(function (result) {
+                    if (!result.ok) {
+                        investigateBtn.textContent = 'Investigation failed';
+                        investigateBtn.disabled = false;
+                        showToast(result.error || 'Failed to start investigation', 'error');
+                        return;
+                    }
+                    investigateBtn.textContent = 'Investigation running...';
+
+                    // Create the streaming panel
+                    var panel = document.createElement('div');
+                    panel.className = 'triage-panel';
+                    panel.innerHTML = '<div class="triage-panel-header">Claude Investigation — ' +
+                        escapeHtml(state.voiceLab.selectedSession) + '</div>' +
+                        '<div class="triage-panel-body" id="triage-output"></div>';
+                    investigateBtn.parentNode.insertBefore(panel, investigateBtn.nextSibling);
+
+                    var outputEl = document.getElementById('triage-output');
+
+                    // Connect to the SSE stream
+                    var eventSource = new EventSource(result.stream_url);
+
+                    eventSource.addEventListener('agent.message', function (e) {
+                        var data = JSON.parse(e.data);
+                        if (data.content) {
+                            data.content.forEach(function (block) {
+                                if (block.type === 'text') {
+                                    var p = document.createElement('div');
+                                    p.className = 'triage-message';
+                                    p.textContent = block.text;
+                                    outputEl.appendChild(p);
+                                    outputEl.scrollTop = outputEl.scrollHeight;
+                                }
+                            });
+                        }
+                    });
+
+                    eventSource.addEventListener('agent.thinking', function (e) {
+                        var data = JSON.parse(e.data);
+                        var div = document.createElement('div');
+                        div.className = 'triage-thinking';
+                        div.textContent = '[thinking] ' + (data.thinking || '').substring(0, 200) + '...';
+                        outputEl.appendChild(div);
+                    });
+
+                    eventSource.addEventListener('agent.custom_tool_use', function (e) {
+                        var data = JSON.parse(e.data);
+                        var div = document.createElement('div');
+                        div.className = 'triage-tool-call';
+                        div.textContent = 'Calling: ' + data.tool_name + '(' + JSON.stringify(data.input || {}) + ')';
+                        outputEl.appendChild(div);
+                    });
+
+                    eventSource.addEventListener('agent.tool_use', function (e) {
+                        var data = JSON.parse(e.data);
+                        var div = document.createElement('div');
+                        div.className = 'triage-tool-call';
+                        div.textContent = 'Using: ' + (data.name || 'tool');
+                        outputEl.appendChild(div);
+                    });
+
+                    eventSource.addEventListener('session.idle', function () {
+                        investigateBtn.textContent = 'Investigation complete';
+                        eventSource.close();
+                    });
+
+                    eventSource.addEventListener('session.terminated', function () {
+                        investigateBtn.textContent = 'Investigation ended';
+                        eventSource.close();
+                    });
+
+                    eventSource.addEventListener('session.error', function (e) {
+                        var data = JSON.parse(e.data);
+                        var div = document.createElement('div');
+                        div.className = 'triage-error';
+                        div.textContent = 'Error: ' + (data.error || 'unknown');
+                        outputEl.appendChild(div);
+                    });
+
+                    eventSource.addEventListener('done', function () {
+                        investigateBtn.textContent = 'Investigation complete';
+                        investigateBtn.disabled = false;
+                        eventSource.close();
+                    });
+
+                    eventSource.onerror = function () {
+                        investigateBtn.textContent = 'Investigate with Claude';
+                        investigateBtn.disabled = false;
+                        eventSource.close();
+                    };
+                }).catch(function (err) {
+                    investigateBtn.textContent = 'Investigate with Claude';
+                    investigateBtn.disabled = false;
+                    showToast('Failed: ' + err.message, 'error');
+                });
+            };
+            diagSection.appendChild(investigateBtn);
+
         } else if (details.status === 'ended') {
             var healthySection = document.createElement('div');
             healthySection.className = 'session-diagnostics session-diagnostics-healthy';
