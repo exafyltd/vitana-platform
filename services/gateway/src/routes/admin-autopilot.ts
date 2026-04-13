@@ -12,6 +12,7 @@ import { requireTenantAdmin } from '../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { AUTOMATION_REGISTRY } from '../services/automation-registry';
+import { DEFAULT_WAVE_CONFIG, WaveDefinition } from '../services/wave-defaults';
 
 const router = Router();
 const VTID = 'VTID-AP-ADMIN';
@@ -78,7 +79,7 @@ router.patch('/settings', requireTenantAdmin, async (req: Request, res: Response
     const allowed = [
       'enabled', 'max_recommendations_per_day', 'max_activations_per_day',
       'allowed_domains', 'allowed_risk_levels', 'auto_activate_threshold',
-      'recommendation_retention_days', 'generation_schedule',
+      'recommendation_retention_days', 'generation_schedule', 'wave_config',
     ];
     const updates: Record<string, unknown> = {};
     for (const key of allowed) {
@@ -479,6 +480,132 @@ router.get('/recommendations/summary', requireTenantAdmin, async (req: Request, 
     res.json({ ok: true, data: counts });
   } catch (err: any) {
     console.error(`[${VTID}] GET /recommendations/summary error:`, err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Waves (Planning tab) ────────────────────────────────────────────────────
+
+/**
+ * GET /waves
+ * Returns wave definitions enriched with automation binding data for this tenant.
+ */
+router.get('/waves', requireTenantAdmin, async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    // Get tenant wave_config overrides
+    const { data: settings } = await supabase
+      .from('tenant_autopilot_settings')
+      .select('wave_config')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    const overrides: Record<string, Partial<WaveDefinition>> = settings?.wave_config || {};
+
+    // Get tenant bindings for automation status
+    const { data: bindings } = await supabase
+      .from('tenant_autopilot_bindings')
+      .select('automation_id, enabled')
+      .eq('tenant_id', tenantId);
+
+    const bindingMap = new Map((bindings || []).map((b: any) => [b.automation_id, b.enabled]));
+    const registryMap = new Map(AUTOMATION_REGISTRY.map(a => [a.id, a]));
+
+    // Merge defaults with tenant overrides
+    const waves = DEFAULT_WAVE_CONFIG.map(wave => {
+      const override = overrides[wave.id] || {};
+      const merged = { ...wave, ...override };
+
+      // Compute automation stats
+      const automations = wave.automation_ids.map(id => {
+        const reg = registryMap.get(id);
+        return {
+          id,
+          name: reg?.name || id,
+          status: reg?.status || 'PLANNED',
+          enabled: bindingMap.get(id) ?? false,
+        };
+      });
+
+      return {
+        ...merged,
+        automations,
+        total_automations: automations.length,
+        enabled_automations: automations.filter(a => a.enabled).length,
+        implemented_automations: automations.filter(a => a.status === 'IMPLEMENTED' || a.status === 'LIVE').length,
+        total_templates: wave.recommendation_templates.length,
+      };
+    });
+
+    res.json({ ok: true, data: waves });
+  } catch (err: any) {
+    console.error(`[${VTID}] GET /waves error:`, err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * PATCH /waves/:waveId
+ * Toggle a wave ON/OFF for this tenant. Also batch-updates bindings for its automations.
+ */
+router.patch('/waves/:waveId', requireTenantAdmin, async (req: Request, res: Response) => {
+  try {
+    const tenantId = getTenantId(req);
+    const userId = getUserId(req);
+    const { waveId } = req.params;
+    const { enabled } = req.body;
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const wave = DEFAULT_WAVE_CONFIG.find(w => w.id === waveId);
+    if (!wave) return res.status(404).json({ ok: false, error: 'WAVE_NOT_FOUND' });
+    if (typeof enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'MISSING_ENABLED' });
+
+    // Get or create settings
+    let { data: settings } = await supabase
+      .from('tenant_autopilot_settings')
+      .select('wave_config')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (!settings) {
+      await supabase.from('tenant_autopilot_settings').insert({ tenant_id: tenantId });
+      settings = { wave_config: {} };
+    }
+
+    const waveConfig = settings.wave_config || {};
+    waveConfig[waveId] = { ...(waveConfig[waveId] || {}), enabled };
+
+    // Save wave_config
+    const { error: updateErr } = await supabase
+      .from('tenant_autopilot_settings')
+      .update({ wave_config: waveConfig, updated_by: userId })
+      .eq('tenant_id', tenantId);
+
+    if (updateErr) throw updateErr;
+
+    // Batch update automation bindings for this wave
+    if (wave.automation_ids.length > 0) {
+      const rows = wave.automation_ids.map(automation_id => ({
+        tenant_id: tenantId,
+        automation_id,
+        enabled,
+        updated_by: userId,
+      }));
+
+      for (const row of rows) {
+        await supabase
+          .from('tenant_autopilot_bindings')
+          .upsert(row, { onConflict: 'tenant_id,automation_id' });
+      }
+    }
+
+    res.json({ ok: true, data: { wave_id: waveId, enabled } });
+  } catch (err: any) {
+    console.error(`[${VTID}] PATCH /waves/:waveId error:`, err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });

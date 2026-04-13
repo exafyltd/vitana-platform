@@ -25,7 +25,11 @@ Example: AP-0101 = "Daily match delivery"
 | AP-1000 – AP-1099 | Platform Operations | [10-platform-operations.md](./10-platform-operations.md) |
 | AP-1100 – AP-1199 | Business Hub & Marketplace | [11-business-hub-marketplace.md](./11-business-hub-marketplace.md) |
 | AP-1200 – AP-1299 | Live Rooms Commerce | [12-live-rooms-commerce.md](./12-live-rooms-commerce.md) |
-| AP-1300+ | Reserved for future domains | — |
+| AP-1300 – AP-1399 | Onboarding & Viral Growth | [13-onboarding-growth.md](./13-onboarding-growth.md) |
+| AP-1400 – AP-1499 | Event & Meetup Initiative | [14-event-meetup-initiative.md](./14-event-meetup-initiative.md) |
+| AP-1500 – AP-1599 | Business Opportunity | [15-business-opportunity-initiative.md](./15-business-opportunity-initiative.md) |
+| AP-1600 – AP-1699 | Health Action Initiative | [16-health-action-initiative.md](./16-health-action-initiative.md) |
+| AP-1700+ | Reserved for future domains | — |
 
 ## Statuses
 
@@ -53,7 +57,10 @@ Example: AP-0101 = "Daily match delivery"
 | Platform Operations | 5 | 3 | 0 | 2 | 0 |
 | Business Hub & Marketplace | 10 | 10 | 0 | 0 | 0 |
 | Live Rooms Commerce | 10 | 10 | 0 | 0 | 0 |
-| **TOTAL** | **108** | **90** | **0** | **18** | **0** |
+| Event & Meetup Initiative | 5 | 5 | 0 | 0 | 0 |
+| Business Opportunity | 5 | 5 | 0 | 0 | 0 |
+| Health Action Initiative | 5 | 5 | 0 | 0 | 0 |
+| **TOTAL** | **123** | **105** | **0** | **18** | **0** |
 
 ## How to Add a New Automation
 
