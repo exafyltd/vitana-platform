@@ -298,17 +298,11 @@ jobs:
             SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest)
             # Appilix native push (Maxina Android app)
-            # Remove stale plain env-var binding so secret ref can take over
-            EXTRA_ENV_ARGS+=(--remove-env-vars=APPILIX_API_KEY)
-            EXTRA_ENV_ARGS+=(--remove-env-vars=APPILIX_APP_KEY)
             SECRETS_ARGS+=(--update-secrets=APPILIX_API_KEY=APPILIX_API_KEY:latest)
             SECRETS_ARGS+=(--update-secrets=APPILIX_APP_KEY=APPILIX_APP_KEY:latest)
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Lovable Supabase connection for events/community data
-            # Remove stale plain env-var bindings so secret refs can take over
-            EXTRA_ENV_ARGS+=(--remove-env-vars=LOVABLE_SUPABASE_URL)
-            EXTRA_ENV_ARGS+=(--remove-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE)
             SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_URL=LOVABLE_SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=LOVABLE_SUPABASE_SERVICE_ROLE=LOVABLE_SUPABASE_SERVICE_ROLE:latest)
           fi
@@ -367,6 +361,18 @@ jobs:
             if [ -n "$GATEWAY_URL" ]; then
               EXTRA_ENV_ARGS+=(--update-env-vars=OASIS_GATEWAY_URL=$GATEWAY_URL)
             fi
+          fi
+
+          # Pre-deploy: remove stale plain env vars that are migrating to secret refs.
+          # Cloud Run cannot --remove-env-vars and --update-secrets for the same key
+          # in a single deploy command, so we clean up first.
+          if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
+            echo "Cleaning stale plain env vars before secret binding..."
+            gcloud run services update "$CLOUD_RUN_SERVICE" \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --remove-env-vars=APPILIX_API_KEY,APPILIX_APP_KEY,LOVABLE_SUPABASE_URL,LOVABLE_SUPABASE_SERVICE_ROLE \
+              --quiet 2>/dev/null || echo "No stale env vars to remove (already clean)"
           fi
 
           # Build deploy args
