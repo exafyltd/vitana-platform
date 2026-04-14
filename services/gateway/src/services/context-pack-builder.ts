@@ -1172,7 +1172,76 @@ export async function buildContextPack(
     fetchActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
   );
 
-  // Execute ALL retrievals in parallel (memory, knowledge, web, facts, relationships, tool health, VTIDs)
+  // VITANA-BRAIN: Fetch OASIS system awareness context (role-gated)
+  let oasisContext: ContextPack['oasis_context'] | undefined;
+  const oasisRole = input.role || 'community';
+  if (oasisRole === 'developer' || oasisRole === 'admin' || oasisRole === 'super_admin' || oasisRole === 'DEV' || oasisRole === 'infra') {
+    retrievalPromises.push(
+      (async () => {
+        try {
+          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!SUPABASE_URL_ENV || !SUPABASE_KEY) return;
+          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+
+          // Parallel: active tasks, recent deploys, pending approvals, self-healing alerts
+          const [tasksResp, deploysResp, approvalsResp, healingResp] = await Promise.all([
+            // Active VTIDs from ledger (in_progress + scheduled, limit 5)
+            fetch(`${SUPABASE_URL_ENV}/rest/v1/vtid_ledger?select=vtid,title,status&status=in.(in_progress,scheduled,allocated)&is_terminal=is.false&order=updated_at.desc&limit=5`, { headers }),
+            // Recent deploys (last 3 from oasis_events)
+            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=service,status,created_at&topic=like.cicd.deploy.service.*&order=created_at.desc&limit=3`, { headers }),
+            // Pending approvals count
+            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=eq.cicd.github.safe_merge.evaluated&status=eq.info&order=created_at.desc&limit=20`, { headers }),
+            // Self-healing alerts (last 24h)
+            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=like.self-healing.*&status=eq.error&created_at=gte.${new Date(Date.now() - 86400000).toISOString()}&limit=50`, { headers }),
+          ]);
+
+          const tasks = tasksResp.ok ? await tasksResp.json() as Array<{ vtid: string; title: string; status: string }> : [];
+          const deploys = deploysResp.ok ? await deploysResp.json() as Array<{ service: string; status: string; created_at: string }> : [];
+          const approvals = approvalsResp.ok ? await approvalsResp.json() as Array<{ id: string }> : [];
+          const healing = healingResp.ok ? await healingResp.json() as Array<{ id: string }> : [];
+
+          oasisContext = {
+            active_tasks: tasks.map(t => ({ vtid: t.vtid, title: t.title, status: t.status })),
+            recent_deploys: deploys.map(d => ({ service: d.service || 'unknown', status: d.status, created_at: d.created_at })),
+            pending_approvals_count: approvals.length,
+            self_healing_alerts: healing.length,
+            recent_recommendations: [],
+          };
+          console.log(`[OASIS-CTX] Fetched: ${tasks.length} tasks, ${deploys.length} deploys, ${approvals.length} approvals, ${healing.length} healing alerts`);
+        } catch (oasisErr: any) {
+          console.warn(`[OASIS-CTX] OASIS context fetch failed (non-fatal): ${oasisErr.message}`);
+        }
+      })()
+    );
+  } else {
+    // Community role: fetch recent recommendation activations only
+    retrievalPromises.push(
+      (async () => {
+        try {
+          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!SUPABASE_URL_ENV || !SUPABASE_KEY || !input.lens.user_id) return;
+          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+          const recsResp = await fetch(`${SUPABASE_URL_ENV}/rest/v1/autopilot_recommendations?select=title,status&user_id=eq.${input.lens.user_id}&status=in.(activated,completed)&order=updated_at.desc&limit=3`, { headers });
+          if (recsResp.ok) {
+            const recs = await recsResp.json() as Array<{ title: string; status: string }>;
+            if (recs.length > 0) {
+              oasisContext = {
+                active_tasks: [],
+                recent_deploys: [],
+                pending_approvals_count: 0,
+                self_healing_alerts: 0,
+                recent_recommendations: recs,
+              };
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // Execute ALL retrievals in parallel (memory, knowledge, web, facts, relationships, tool health, VTIDs, OASIS)
   await Promise.all(retrievalPromises);
 
   // Merge structured facts + diary hits into memory hits (prepend - higher priority)
@@ -1254,6 +1323,7 @@ export async function buildContextPack(
     ui_context: input.ui_context,
     relationship_context: relationshipContext.length > 0 ? relationshipContext : undefined,
     calendar_context: calendarContext,
+    oasis_context: oasisContext,
     session_buffer: sessionBufferData,
 
     retrieval_trace: {
@@ -1436,6 +1506,53 @@ export function formatContextPackForLLM(pack: ContextPack): string {
 
     context += `When the user asks about their schedule, reference these events. Suggest activities for free time slots. When they ask to change, add, or cancel events, include calendar_actions in your response.\n`;
     context += `</calendar_memory>\n\n`;
+  }
+
+  // VITANA-BRAIN: OASIS system awareness (role-gated — only for developer/admin)
+  if (pack.oasis_context) {
+    const oasis = pack.oasis_context;
+    const hasContent = oasis.active_tasks.length > 0 || oasis.recent_deploys.length > 0 || oasis.pending_approvals_count > 0 || oasis.self_healing_alerts > 0 || oasis.recent_recommendations.length > 0;
+
+    if (hasContent) {
+      context += `<system_awareness>\n`;
+
+      if (oasis.active_tasks.length > 0) {
+        context += `Active tasks:\n`;
+        for (const task of oasis.active_tasks) {
+          context += `- ${task.vtid}: ${task.title} (${task.status})\n`;
+        }
+        context += `\n`;
+      }
+
+      if (oasis.recent_deploys.length > 0) {
+        context += `Recent deployments:\n`;
+        for (const deploy of oasis.recent_deploys) {
+          const ago = Math.round((Date.now() - new Date(deploy.created_at).getTime()) / 60000);
+          const agoText = ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`;
+          context += `- ${deploy.service}: ${deploy.status} (${agoText})\n`;
+        }
+        context += `\n`;
+      }
+
+      if (oasis.pending_approvals_count > 0) {
+        context += `Pending approvals: ${oasis.pending_approvals_count}\n\n`;
+      }
+
+      if (oasis.self_healing_alerts > 0) {
+        context += `Self-healing alerts (last 24h): ${oasis.self_healing_alerts}\n\n`;
+      }
+
+      if (oasis.recent_recommendations.length > 0) {
+        context += `Recent recommendations:\n`;
+        for (const rec of oasis.recent_recommendations) {
+          context += `- ${rec.title} (${rec.status})\n`;
+        }
+        context += `\n`;
+      }
+
+      context += `When the user asks about tasks, deployments, or system health, reference this data. For community users, reference recommendations only.\n`;
+      context += `</system_awareness>\n\n`;
+    }
   }
 
   return context;

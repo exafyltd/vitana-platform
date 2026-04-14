@@ -288,6 +288,15 @@ export interface ContextPack {
     formatted_context: string;
   };
 
+  /** VITANA-BRAIN: OASIS system awareness context (role-gated) */
+  oasis_context?: {
+    active_tasks: Array<{ vtid: string; title: string; status: string; stage?: string }>;
+    recent_deploys: Array<{ service: string; status: string; created_at: string }>;
+    pending_approvals_count: number;
+    self_healing_alerts: number;
+    recent_recommendations: Array<{ title: string; status: string }>;
+  };
+
   /** Retrieval trace for debugging */
   retrieval_trace: {
     router_decision: RetrievalRouterDecision;
