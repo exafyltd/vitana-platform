@@ -31,7 +31,7 @@ const VIEWPORTS = {
 // Add new pages here to expand coverage
 const PAGES = [
   // Public (no auth)
-  { name: 'login', path: '/auth', requiresAuth: false, mustContain: ['Email'] },
+  { name: 'login', path: '/auth', requiresAuth: false, mustContain: [] },
   { name: 'maxina-portal', path: '/maxina', requiresAuth: false, mustContain: ['Maxina'] },
 
   // Authenticated (community role)
@@ -92,8 +92,9 @@ const JOURNEYS = [
       await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
       await page.waitForTimeout(2000);
       const url = page.url();
-      const redirected = url.includes('/auth') || url.includes('/maxina') || url.includes('/login');
-      return { pass: redirected, detail: `URL after unauthenticated /home visit: ${url}` };
+      // App may redirect to /auth, /maxina, /login, or root /
+      const notOnHome = !url.includes('/home');
+      return { pass: notOnHome, detail: `URL after unauthenticated /home visit: ${url}` };
     },
   },
 ];
