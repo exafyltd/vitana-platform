@@ -1,0 +1,52 @@
+name: Visual Verify — Frontend
+
+# Fires automatically after every community app deploy (dispatched by vitana-v1/DEPLOY.yml)
+# Also supports manual trigger for testing
+on:
+  repository_dispatch:
+    types: [community-app-deployed]
+  workflow_dispatch:
+    inputs:
+      community_url:
+        description: 'Community app URL to verify'
+        required: false
+        default: 'https://community-app-q74ibpv6ia-uc.a.run.app'
+
+concurrency:
+  group: visual-verify-frontend
+  cancel-in-progress: true
+
+jobs:
+  visual-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Frontend Visual Verification
+        working-directory: e2e
+        env:
+          COMMUNITY_URL: ${{ github.event.client_payload.community_url || github.event.inputs.community_url || 'https://community-app-q74ibpv6ia-uc.a.run.app' }}
+          SCREENSHOT_DIR: /tmp/visual-verify-frontend
+        run: npx tsx ci-visual-verify-frontend.ts
+
+      - name: Upload Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-visual-screenshots
+          path: /tmp/visual-verify-frontend/
+          retention-days: 7
+          if-no-files-found: ignore
