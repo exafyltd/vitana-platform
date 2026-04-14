@@ -1416,6 +1416,21 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['query'],
           },
         },
+        // Calendar tool — search user's personal calendar
+        {
+          name: 'search_calendar',
+          description: 'Search the user\'s personal calendar for events, appointments, and scheduled activities. Use this when the user asks about their schedule, upcoming events, free time, availability, or wants to know what\'s planned for a specific day or week.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'What to search for in the calendar (e.g., "tomorrow", "this week", "yoga sessions", "free time")',
+              },
+            },
+            required: ['query'],
+          },
+        },
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
@@ -1492,7 +1507,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
 
 /**
  * VTID-01224: Execute a Live API tool call
- * Handles search_memory, search_knowledge, and search_web tools
+ * Handles search_memory, search_knowledge, search_web, and search_calendar tools
  *
  * @param session - The Live session (for identity access)
  * @param toolName - Name of the tool to execute
@@ -2271,6 +2286,79 @@ async function executeLiveApiToolInner(
           success: true,
           result: `Found ${webHits.length} relevant web results:\n${formatted}`,
         };
+      }
+
+      // =====================================================================
+      // Calendar tool — user's personal calendar
+      // =====================================================================
+
+      case 'search_calendar': {
+        const query = (args.query as string) || '';
+        const role = session.identity.role || 'community';
+        const userId = session.identity.user_id;
+
+        try {
+          const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps } = await import('../services/calendar-service');
+          const [todayEvents, upcomingEvents, gaps] = await Promise.all([
+            getUserTodayEvents(userId, role),
+            getUserUpcomingEvents(userId, role, 10),
+            getCalendarGaps(userId, role, new Date()),
+          ]);
+
+          const MAX_TOOL_RESPONSE_CHARS = 4000;
+          let formatted = '';
+
+          if (todayEvents.length > 0) {
+            formatted += 'Today\'s schedule:\n';
+            for (const ev of todayEvents) {
+              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              formatted += `- ${time}: ${ev.title} (${ev.event_type})\n`;
+            }
+            formatted += '\n';
+          } else {
+            formatted += 'Today\'s schedule: No events scheduled.\n\n';
+          }
+
+          if (upcomingEvents.length > 0) {
+            formatted += 'Upcoming (next 7 days):\n';
+            for (const ev of upcomingEvents.slice(0, 5)) {
+              const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              formatted += `- ${date} ${time}: ${ev.title} (${ev.event_type})\n`;
+            }
+            formatted += '\n';
+          }
+
+          if (gaps.length > 0) {
+            formatted += 'Free time today:\n';
+            for (const gap of gaps.slice(0, 3)) {
+              const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              formatted += `- ${start}\u2013${end} (${gap.duration_minutes} min free)\n`;
+            }
+          }
+
+          if (!formatted.trim()) {
+            formatted = 'Your calendar is currently empty. No events are scheduled.';
+          }
+
+          if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+            formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+          }
+
+          console.log(`[Calendar] search_calendar executed: ${todayEvents.length} today, ${upcomingEvents.length} upcoming, ${gaps.length} gaps, ${Date.now() - startTime}ms`);
+          return {
+            success: true,
+            result: formatted,
+          };
+        } catch (calErr: any) {
+          console.warn(`[Calendar] search_calendar failed: ${calErr.message}`);
+          return {
+            success: false,
+            result: 'Calendar is temporarily unavailable. Please try again in a moment.',
+            error: calErr.message,
+          };
+        }
       }
 
       // =====================================================================
@@ -3127,6 +3215,7 @@ ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response ver
 
 TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
+- Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -5403,6 +5492,68 @@ async function generateMemoryEnhancedSystemInstruction(
     console.warn(`[VTID-01225-READ-FIX] memory_facts direct fetch failed (non-fatal): ${factsErr.message}`);
   }
 
+  // Calendar as 4th pillar of infinite memory — always inject calendar awareness
+  let calendarSection = '';
+  try {
+    if (effectiveIdentity.user_id) {
+      const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps } = await import('../services/calendar-service');
+      const { getJourneyStage } = await import('../services/journey-calendar-mapper');
+      const calRole = session.role || 'community';
+      const [todayEvents, upcomingEvents, gaps] = await Promise.all([
+        getUserTodayEvents(effectiveIdentity.user_id, calRole),
+        getUserUpcomingEvents(effectiveIdentity.user_id, calRole, 10),
+        getCalendarGaps(effectiveIdentity.user_id, calRole, new Date()),
+      ]);
+
+      let calLines = '\n\n## Your Calendar Awareness\nYou have access to this user\'s calendar. This is part of your core memory. ALWAYS reference this when asked about schedule, calendar, events, or availability.\n';
+
+      if (todayEvents.length > 0) {
+        calLines += '\nToday\'s schedule:\n';
+        for (const ev of todayEvents) {
+          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          calLines += `- ${time}: ${ev.title} (${ev.event_type})\n`;
+        }
+      } else {
+        calLines += '\nToday\'s schedule: No events scheduled.\n';
+      }
+
+      if (upcomingEvents.length > 0) {
+        calLines += '\nUpcoming (next 7 days):\n';
+        for (const ev of upcomingEvents.slice(0, 5)) {
+          const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          calLines += `- ${date} ${time}: ${ev.title}\n`;
+        }
+      }
+
+      if (gaps.length > 0) {
+        calLines += '\nFree time today:\n';
+        for (const gap of gaps.slice(0, 3)) {
+          const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          calLines += `- ${start}\u2013${end} (${gap.duration_minutes} min free)\n`;
+        }
+      }
+
+      // Journey stage
+      try {
+        const journeyStage = getJourneyStage(new Date());
+        if (journeyStage) {
+          calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
+        }
+      } catch {}
+
+      calLines += '\nWhen the user asks about their schedule, reference these events. Suggest activities for free time slots. When they ask to change, add, or cancel events, use the search_calendar tool for more details.';
+
+      calendarSection = calLines;
+      console.log(`[Calendar] Injected calendar context: ${todayEvents.length} today, ${upcomingEvents.length} upcoming, ${gaps.length} gaps`);
+    }
+  } catch (calErr: any) {
+    // Calendar unavailable — still inform the LLM it should have calendar awareness
+    calendarSection = '\n\n## Your Calendar Awareness\nYou have access to this user\'s calendar but it is temporarily unavailable. If the user asks about their calendar, let them know you\'re having a brief issue loading it and suggest they try again in a moment.';
+    console.warn(`[Calendar] Calendar context fetch failed (non-fatal): ${calErr.message}`);
+  }
+
   // Load text_chat personality config
   const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
 
@@ -5417,7 +5568,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
@@ -5431,7 +5582,7 @@ Context:
 Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
