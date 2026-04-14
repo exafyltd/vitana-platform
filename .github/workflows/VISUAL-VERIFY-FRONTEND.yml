@@ -45,6 +45,7 @@ jobs:
       - name: Upload Screenshots
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: frontend-visual-screenshots
           path: /tmp/visual-verify-frontend/
