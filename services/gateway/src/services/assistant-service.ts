@@ -302,6 +302,37 @@ export async function processAssistantMessage(
   console.log(`[VTID-0150-B] Processing assistant message, session=${finalSessionId}, new=${isNewSession}`);
 
   try {
+    // VITANA-BRAIN: Route through brain when flag is enabled
+    const { isVitanaBrainEnabled } = await import('./system-controls-service');
+    const useBrain = await isVitanaBrainEnabled();
+
+    if (useBrain) {
+      console.log(`[VITANA-BRAIN] Routing assistant message through brain`);
+      const { processBrainTurn } = await import('./vitana-brain');
+      const brainResult = await processBrainTurn({
+        channel: 'developer_assistant',
+        tenant_id: tenant,
+        user_id: finalSessionId, // assistant doesn't have user_id, use session as fallback
+        role,
+        message,
+      });
+
+      const latency_ms = Date.now() - startTime;
+      return {
+        ok: brainResult.ok,
+        reply: brainResult.reply || 'I could not generate a response.',
+        sessionId: finalSessionId,
+        oasis_ref: brainResult.oasis_ref,
+        meta: {
+          model: brainResult.meta.model_used,
+          tokens_in: brainResult.meta.tokens_used?.prompt || 0,
+          tokens_out: brainResult.meta.tokens_used?.completion || 0,
+          latency_ms,
+        },
+        error: brainResult.error,
+      };
+    }
+
     // Log session started if this is a new session
     if (isNewSession) {
       activeSessions.add(finalSessionId);

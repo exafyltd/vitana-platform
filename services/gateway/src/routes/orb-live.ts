@@ -8228,9 +8228,32 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
 
+    // VITANA-BRAIN: If ORB brain flag is enabled, use brain context assembly instead
+    const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
+    const useOrbBrain = await isVitanaBrainOrbEnabled();
+
     // Fetch role, context, and last session info in parallel for minimal latency
     const [bootstrapResult, fetchedSseRole, fetchedSessionInfo] = await Promise.all([
-      buildBootstrapContextPack(bootstrapIdentity, sessionId),
+      useOrbBrain
+        ? (async () => {
+            const brainStart = Date.now();
+            try {
+              const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
+                user_id: bootstrapIdentity.user_id,
+                tenant_id: bootstrapIdentity.tenant_id || 'default',
+                role: (bootstrapIdentity as any).active_role || 'community',
+                channel: 'orb',
+                thread_id: sessionId,
+              });
+              console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
+              return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
+            } catch (err: any) {
+              console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
+              return buildBootstrapContextPack(bootstrapIdentity, sessionId);
+            }
+          })()
+        : buildBootstrapContextPack(bootstrapIdentity, sessionId),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
