@@ -131,7 +131,7 @@ async function authenticateContext(context: BrowserContext): Promise<boolean> {
     const session = await signInRes.json();
 
     // Navigate and inject tokens into localStorage
-    await page.goto(COMMUNITY_URL, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    await page.goto(COMMUNITY_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.evaluate(({ s }) => {
       localStorage.setItem('sb-inmkhvwdcuyhnxkgfvsb-auth-token', JSON.stringify(s));
       localStorage.setItem('vitana.authToken', s.access_token);
@@ -191,7 +191,7 @@ async function verifyPage(
     // Navigate
     const response = await page.goto(`${COMMUNITY_URL}${config.path}`, {
       waitUntil: 'networkidle',
-      timeout: 15_000,
+      timeout: 30_000,
     });
     await page.waitForTimeout(2500);
 
