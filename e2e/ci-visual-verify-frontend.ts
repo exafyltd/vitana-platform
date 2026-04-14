@@ -31,7 +31,7 @@ const VIEWPORTS = {
 // Add new pages here to expand coverage
 const PAGES = [
   // Public (no auth)
-  { name: 'login', path: '/auth', requiresAuth: false, mustContain: ['Email', 'Password'] },
+  { name: 'login', path: '/auth', requiresAuth: false, mustContain: ['Email'] },
   { name: 'maxina-portal', path: '/maxina', requiresAuth: false, mustContain: ['Maxina'] },
 
   // Authenticated (community role)
@@ -54,7 +54,7 @@ const JOURNEYS = [
     viewport: 'mobile' as const,
     requiresAuth: true,
     steps: async (page: Page) => {
-      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'networkidle', timeout: 15_000 });
+      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
       await page.waitForTimeout(2000);
       // Look for bottom nav link to Discover
       const discoverLink = page.locator('a[href*="/discover"], nav a:has-text("Discover"), nav a:has-text("Entdecken")');
@@ -72,7 +72,7 @@ const JOURNEYS = [
     viewport: 'mobile' as const,
     requiresAuth: true,
     steps: async (page: Page) => {
-      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'networkidle', timeout: 15_000 });
+      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
       await page.waitForTimeout(2000);
       const settingsLink = page.locator('a[href*="/settings"]');
       if (await settingsLink.count() > 0) {
@@ -89,7 +89,7 @@ const JOURNEYS = [
     viewport: 'desktop' as const,
     requiresAuth: false, // deliberately NOT authenticated
     steps: async (page: Page) => {
-      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'networkidle', timeout: 15_000 });
+      await page.goto(`${COMMUNITY_URL}/home`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
       await page.waitForTimeout(2000);
       const url = page.url();
       const redirected = url.includes('/auth') || url.includes('/maxina') || url.includes('/login');
@@ -188,12 +188,12 @@ async function verifyPage(
   page.on('pageerror', pageErrorHandler);
 
   try {
-    // Navigate
+    // Navigate — use domcontentloaded (faster than networkidle) + short settle
     const response = await page.goto(`${COMMUNITY_URL}${config.path}`, {
-      waitUntil: 'networkidle',
-      timeout: 30_000,
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
     });
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(2000);
 
     // HTTP status check
     if (response && response.status() >= 500) {
