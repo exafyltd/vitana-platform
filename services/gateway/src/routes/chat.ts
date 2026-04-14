@@ -263,15 +263,35 @@ async function handleVitanaTextReply(
   const startTime = Date.now();
 
   try {
-    const result = await processConversationTurn({
-      channel: 'orb',
-      tenant_id: tenantId,
-      user_id: userId,
-      role: 'user',
-      message: userContent,
-      message_type: 'text',
-      vtid: 'VTID-CHAT-BRIDGE',
-    });
+    // VITANA-BRAIN: Route through brain when flag is enabled, else legacy path
+    const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
+    const useBrain = await isVitanaBrainEnabled();
+
+    let result: { ok: boolean; reply: string; error?: string; thread_id: string; turn_number: number; meta: { model_used: string; latency_ms: number } };
+
+    if (useBrain) {
+      console.log('[Chat] Using Vitana Brain path');
+      const { processBrainTurn } = await import('../services/vitana-brain');
+      result = await processBrainTurn({
+        channel: 'orb',
+        tenant_id: tenantId,
+        user_id: userId,
+        role: 'user',
+        message: userContent,
+        message_type: 'text',
+        vtid: 'VTID-CHAT-BRIDGE',
+      });
+    } else {
+      result = await processConversationTurn({
+        channel: 'orb',
+        tenant_id: tenantId,
+        user_id: userId,
+        role: 'user',
+        message: userContent,
+        message_type: 'text',
+        vtid: 'VTID-CHAT-BRIDGE',
+      });
+    }
 
     if (!result.ok || !result.reply) {
       console.warn(`[Chat] Vitana reply failed: ${result.error || 'empty reply'}`);
@@ -288,11 +308,12 @@ async function handleVitanaTextReply(
         content: result.reply,
         message_type: 'text',
         metadata: {
-          source: 'text_dm',
+          source: useBrain ? 'brain_text_dm' : 'text_dm',
           model_used: result.meta.model_used,
           latency_ms: result.meta.latency_ms,
           thread_id: result.thread_id,
           turn_number: result.turn_number,
+          brain_enabled: useBrain,
         },
       });
 

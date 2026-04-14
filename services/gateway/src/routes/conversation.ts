@@ -252,6 +252,37 @@ router.post('/turn', async (req: Request, res: Response) => {
       console.log(`[VTID-DEV-ASSIST] Access granted: user=${user_id} verified_role=${verifiedRole}`);
     }
 
+    // VITANA-BRAIN: If brain flag is enabled, delegate entirely to brain and return early
+    const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
+    const useBrain = await isVitanaBrainEnabled();
+    if (useBrain) {
+      console.log(`[VITANA-BRAIN] Routing conversation turn ${requestId} through brain`);
+      const { processBrainTurn } = await import('../services/vitana-brain');
+      const brainResult = await processBrainTurn({
+        channel,
+        tenant_id,
+        user_id,
+        role,
+        message: message.text,
+        message_type: message.type === 'voice_transcript' ? 'voice_transcript' : 'text',
+        thread_id: input.thread_id,
+        ui_context: ui_context ? { surface: ui_context.surface as any, screen: ui_context.screen, selection: ui_context.selection, metadata: ui_context.metadata } : undefined,
+        vtid,
+        display_name: (input as any).display_name,
+      });
+      return res.status(brainResult.ok ? 200 : 500).json({
+        ok: brainResult.ok,
+        response: brainResult.reply,
+        thread_id: brainResult.thread_id,
+        turn_number: brainResult.turn_number,
+        context_pack: channel === 'operator' ? brainResult.context_pack : undefined,
+        tool_calls: brainResult.tool_calls,
+        meta: brainResult.meta,
+        oasis_ref: brainResult.oasis_ref,
+        error: brainResult.error,
+      });
+    }
+
     // VTID-01260: Generate conversation turn ID for event grouping
     const conversationTurnId = `turn-${requestId}`;
 
