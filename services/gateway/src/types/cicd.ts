@@ -553,7 +553,13 @@ export type CicdEventType =
   | 'dev_assist.approval.rejected'
   | 'dev_assist.pr.created'
   | 'dev_assist.pr.merged'
-  | 'dev_assist.deploy.triggered';
+  | 'dev_assist.deploy.triggered'
+  // VITANA-BRAIN: Unified Brain Events
+  | 'brain.turn.received'
+  | 'brain.turn.processed'
+  | 'brain.turn.error'
+  | 'brain.context.assembled'
+  | 'brain.tool.executed';
 
 export interface CicdOasisEvent {
   vtid: string;

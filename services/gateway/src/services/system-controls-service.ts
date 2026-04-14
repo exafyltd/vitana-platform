@@ -470,3 +470,37 @@ export async function isUnifiedConversationEnabled(): Promise<boolean> {
 
   return true;
 }
+
+/**
+ * VITANA-BRAIN: Check if Vitana Brain unified inference is enabled
+ * for text-based surfaces (chat DM, conversation, assistant).
+ *
+ * When enabled, text surfaces route through processBrainTurn()
+ * instead of their legacy LLM paths.
+ *
+ * Default: false (disabled) — old paths continue working.
+ */
+export async function isVitanaBrainEnabled(): Promise<boolean> {
+  const control = await getSystemControl('vitana_brain_enabled');
+  if (!control || !control.enabled) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * VITANA-BRAIN: Check if Vitana Brain is enabled for ORB voice.
+ *
+ * Separate flag from text surfaces because ORB voice is
+ * latency-sensitive (real-time bidirectional audio) and
+ * highest-risk to change.
+ *
+ * Default: false (disabled) — old orb-live.ts paths continue working.
+ */
+export async function isVitanaBrainOrbEnabled(): Promise<boolean> {
+  const control = await getSystemControl('vitana_brain_orb_enabled');
+  if (!control || !control.enabled) {
+    return false;
+  }
+  return true;
+}

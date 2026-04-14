@@ -499,6 +499,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
+  // VITANA-BRAIN: Temporary test endpoint for brain integration testing (Phase 1)
+  app.post('/api/v1/brain/test', async (req, res) => {
+    try {
+      const { processBrainTurn } = require('./services/vitana-brain');
+      const { message, user_id, tenant_id, role, channel } = req.body;
+      if (!message || !user_id || !tenant_id) {
+        return res.status(400).json({ ok: false, error: 'message, user_id, tenant_id required' });
+      }
+      const result = await processBrainTurn({
+        channel: channel || 'orb',
+        tenant_id,
+        user_id,
+        role: role || 'community',
+        message,
+      });
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
 
