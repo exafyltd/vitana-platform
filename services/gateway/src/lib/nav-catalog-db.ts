@@ -378,7 +378,9 @@ const SCORER_STOPWORDS = new Set<string>([
   'now', 'then', 'than', 'there', 'here', 'about', 'over', 'under',
   'want', 'wants', 'wanted', 'need', 'needs', 'needed', 'like', 'likes', 'liked',
   'get', 'got', 'getting', 'take', 'taken', 'taking',
-  'show', 'shows', 'showed',
+  'show', 'shows', 'showed', 'open', 'opens', 'opened', 'close', 'closed', 'go', 'goes', 'going', 'went',
+  // German navigation verbs
+  'öffne', 'öffnen', 'öffnet', 'schließen', 'schließe',
   // German
   'ich', 'mich', 'mir', 'mein', 'meine', 'meinen', 'meinem', 'meiner', 'meines',
   'du', 'dich', 'dir', 'dein', 'deine', 'deinen',
