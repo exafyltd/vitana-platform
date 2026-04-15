@@ -559,7 +559,10 @@ export type CicdEventType =
   | 'brain.turn.processed'
   | 'brain.turn.error'
   | 'brain.context.assembled'
-  | 'brain.tool.executed';
+  | 'brain.tool.executed'
+  // VTID-01900: Longevity News Feed Events
+  | 'news.feed.error'
+  | 'news.feed.cycle_complete';
 
 export interface CicdOasisEvent {
   vtid: string;

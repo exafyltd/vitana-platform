@@ -126,6 +126,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const matchmakingRouter = require('./routes/matchmaking').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   const longevityRouter = require('./routes/longevity').default;
+  // VTID-01900: Longevity News Feed — curated RSS sources
+  const longevityNewsRouter = require('./routes/longevity-news').default;
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   const emotionalCognitiveRouter = require('./routes/emotional-cognitive').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
@@ -580,6 +582,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
 
+  // VTID-01900: Longevity News Feed — curated RSS sources
+  mountRouterSync(app, '/api/v1/longevity-news', longevityNewsRouter, { owner: 'longevity-news' });
+
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   mountRouterSync(app, '/api/v1/signals', emotionalCognitiveRouter, { owner: 'emotional-cognitive' });
 
@@ -915,6 +920,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('📒 Agents registry: embedded agents bootstrapped');
       } catch (error) {
         console.warn('⚠️ Agents registry bootstrap failed (non-fatal):', error);
+      }
+
+      // VTID-01900: Longevity News Feed — background RSS fetcher
+      try {
+        const fetcherEnabled = process.env.LONGEVITY_NEWS_FETCHER_ENABLED !== 'false';
+        if (fetcherEnabled) {
+          const { startNewsFetcher } = require('./services/longevity-news-fetcher');
+          startNewsFetcher();
+        } else {
+          console.log('⏸️ Longevity news fetcher disabled (LONGEVITY_NEWS_FETCHER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Longevity news fetcher initialization failed (non-fatal):', error);
       }
     });
   }
