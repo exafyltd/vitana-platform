@@ -1,0 +1,30 @@
+name: VTID-01900 Clear + Refetch News With Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-01900-REFETCH-WITH-IMAGES.yml'
+  workflow_dispatch:
+
+jobs:
+  clear-and-refetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clear existing news_items (will be re-fetched with image_url)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Clearing news_items table for fresh re-fetch with image extraction..."
+          psql "$SUPABASE_DB_URL" -c "TRUNCATE news_items;"
+          echo "Table cleared. Gateway fetcher will re-populate within 60s of next deploy."
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reloaded"
