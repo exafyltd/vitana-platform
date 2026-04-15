@@ -91,12 +91,13 @@ router.get('/items', async (req: Request, res: Response) => {
 
     const tag = req.query.tag as string | undefined;
     const source = req.query.source as string | undefined;
+    const language = req.query.language as string | undefined;
     const from = req.query.from as string | undefined;
     const to = req.query.to as string | undefined;
 
     // Build PostgREST filter params
     const params: Record<string, string> = {
-      select: 'id,source_name,source_url,title,link,summary,image_url,published_at,tags,source_type,created_at',
+      select: 'id,source_name,source_url,title,link,summary,image_url,published_at,tags,source_type,language,created_at',
       order: 'published_at.desc',
       offset: String(offset),
       limit: String(limit),
@@ -110,6 +111,11 @@ router.get('/items', async (req: Request, res: Response) => {
     // Source filter
     if (source) {
       params['source_name'] = `eq.${source}`;
+    }
+
+    // Language filter (e.g., 'en', 'de')
+    if (language) {
+      params['language'] = `eq.${language}`;
     }
 
     // Date range filters
