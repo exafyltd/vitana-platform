@@ -1529,18 +1529,16 @@ function captureAllScrollPositions() {
     var containers = discoverScrollContainers();
     containers.forEach(function (container, index) {
         var key = getContainerKey(container, index);
-        if (container.scrollTop > 0) {
-            positions.set(key, container.scrollTop);
-        }
+        // Always capture scroll position, including 0.
+        // Previously scrollTop=0 was skipped, which caused stale non-zero
+        // positions to persist and snap users back to old locations.
+        positions.set(key, container.scrollTop);
     });
 
-    // Save to persistent storage for tab-switching
-    if (!scrollPositions.has(routeKey)) {
-        scrollPositions.set(routeKey, new Map());
-    }
-    positions.forEach(function (value, key) {
-        scrollPositions.get(routeKey).set(key, value);
-    });
+    // Save to persistent storage for tab-switching.
+    // Replace the entire route map so that removed containers don't leave
+    // stale entries that get restored to the wrong element later.
+    scrollPositions.set(routeKey, new Map(positions));
 
     return positions;
 }
@@ -4863,7 +4861,23 @@ function showToast(message, type = 'info', duration = 4000) {
 
 // --- DOM Elements & Rendering ---
 
+/**
+ * Coalesced render: multiple renderApp() calls within the same animation frame
+ * are collapsed into a single actual render. This prevents rapid-fire DOM
+ * rebuilds when several polling fetchers complete near-simultaneously, which
+ * was a major cause of scroll position loss.
+ */
+var _renderAppScheduled = false;
 function renderApp() {
+    if (_renderAppScheduled) return;
+    _renderAppScheduled = true;
+    requestAnimationFrame(function () {
+        _renderAppScheduled = false;
+        _renderAppCore();
+    });
+}
+
+function _renderAppCore() {
     const root = document.getElementById('root');
 
     // VTID-01230: Auth Gate - Block all access if not authenticated
@@ -5776,6 +5790,8 @@ function renderSplitScreen() {
 
     const leftContent = document.createElement('div');
     leftContent.className = 'split-pane-content';
+    leftContent.dataset.scrollRetain = 'true';
+    leftContent.dataset.scrollKey = 'split-left';
     leftContent.appendChild(renderModuleContent(state.leftPane.module, state.leftPane.tab));
     left.appendChild(leftContent);
 
@@ -5795,6 +5811,8 @@ function renderSplitScreen() {
 
     const rightContent = document.createElement('div');
     rightContent.className = 'split-pane-content';
+    rightContent.dataset.scrollRetain = 'true';
+    rightContent.dataset.scrollKey = 'split-right';
     rightContent.appendChild(renderModuleContent(state.rightPane.module, state.rightPane.tab));
     right.appendChild(rightContent);
 
@@ -6062,6 +6080,8 @@ function renderModuleContent(moduleKey, tab) {
 function renderTasksView() {
     const container = document.createElement('div');
     container.className = 'tasks-container';
+    container.dataset.scrollRetain = 'true';
+    container.dataset.scrollKey = 'tasks-container';
 
     // Toolbar
     const toolbar = document.createElement('div');
@@ -6816,6 +6836,8 @@ function renderTaskDrawer() {
 
     const content = document.createElement('div');
     content.className = 'drawer-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'task-drawer';
 
     // VTID-01006: Add final mode class for styling
     if (isFinalMode) {
@@ -15281,6 +15303,8 @@ function renderGovernanceRuleDetailDrawer() {
     // Content
     const content = document.createElement('div');
     content.className = 'drawer-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'governance-rule-drawer';
 
     // Rule metadata
     const metaSection = document.createElement('div');
@@ -16028,6 +16052,8 @@ function renderGovernanceHistoryDrawer(event) {
     // Drawer content
     var content = document.createElement('div');
     content.className = 'gov-history-drawer-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'gov-history-drawer';
 
     // Timestamp
     var timestampSection = document.createElement('div');
@@ -17467,6 +17493,8 @@ function renderOasisEventDrawer() {
     // Content
     var content = document.createElement('div');
     content.className = 'drawer-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'oasis-event-drawer';
 
     // VTID-01039: Special rendering for ORB session summary
     if (isOrbSummary) {
@@ -18548,6 +18576,8 @@ function renderOasisVtidLedgerDrawer() {
     // Content
     var content = document.createElement('div');
     content.className = 'drawer-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'vtid-ledger-drawer';
 
     if (oasisVtidDetail.loading) {
         content.innerHTML = '<div class="drawer-loading">Loading VTID details...</div>';
@@ -21357,6 +21387,8 @@ function renderHeartbeatOverlay() {
     // Content
     const content = document.createElement('div');
     content.className = 'overlay-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'heartbeat-overlay';
 
     // Current Status Section
     const statusSection = document.createElement('div');
@@ -21973,6 +22005,8 @@ async function sendChatMessage() {
 function renderOperatorTicker() {
     const container = document.createElement('div');
     container.className = 'ticker-container';
+    container.dataset.scrollRetain = 'true';
+    container.dataset.scrollKey = 'ticker-container';
 
     // Heartbeat status banner
     // VTID-0526-D: Show LIVE status and stage counters as soon as telemetry loads (no heartbeat required)
@@ -22098,6 +22132,8 @@ function renderOperatorTicker() {
     // Events list
     const eventsList = document.createElement('div');
     eventsList.className = 'ticker-events-list';
+    eventsList.dataset.scrollRetain = 'true';
+    eventsList.dataset.scrollKey = 'ticker-events';
 
     if (state.tickerEvents.length === 0) {
         const empty = document.createElement('div');
@@ -22290,6 +22326,8 @@ function renderOperatorHistory() {
     // Content
     const content = document.createElement('div');
     content.className = 'history-content';
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'operator-history';
 
     if (state.historyLoading) {
         content.innerHTML = '<div class="history-loading">Loading deployment history...</div>';
@@ -26580,9 +26618,10 @@ function fetchWT(url, opts, timeoutMs) {
 // ---------------------------------------------------------------------------
 async function fetchOverviewDashboard() {
     if (state.overviewDashboard.loading) return;
+    var isInitialLoad = !state.overviewDashboard.fetched;
     state.overviewDashboard.loading = true;
     state.overviewDashboard.error = null;
-    renderApp();
+    if (isInitialLoad) renderApp();
 
     // Reuse shared serviceHealth data if fresh (< 90s), otherwise fetch fresh
     var useSharedHealth = state.serviceHealth.fetched && state.serviceHealth.lastRefreshed &&
@@ -26757,7 +26796,12 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.error = error.message;
     } finally {
         state.overviewDashboard.loading = false;
-        renderApp();
+        // Only full render on initial load; subsequent poll refreshes update
+        // state in place and the next user-driven renderApp() picks it up.
+        // This prevents DOM rebuilds every 60s that destroy scroll positions.
+        if (isInitialLoad) {
+            renderApp();
+        }
     }
 }
 
@@ -27753,9 +27797,10 @@ function renderOverviewSystemView() {
 // ---------------------------------------------------------------------------
 async function fetchPipelineSummary() {
     if (state.overviewPipelineSummary.loading) return;
+    var isInitialLoad = !state.overviewPipelineSummary.fetched;
     state.overviewPipelineSummary.loading = true;
     state.overviewPipelineSummary.error = null;
-    renderApp();
+    if (isInitialLoad) renderApp();
 
     try {
         var response = await fetchWT('/api/v1/autopilot/pipeline/summary', {}, 12000);
@@ -27771,7 +27816,9 @@ async function fetchPipelineSummary() {
         state.overviewPipelineSummary.error = error.message;
     } finally {
         state.overviewPipelineSummary.loading = false;
-        renderApp();
+        if (isInitialLoad) {
+            renderApp();
+        }
     }
 }
 
@@ -27780,9 +27827,10 @@ async function fetchPipelineSummary() {
 // ---------------------------------------------------------------------------
 async function fetchOverviewMetrics() {
     if (state.overviewMetrics.loading) return;
+    var isInitialLoad = !state.overviewMetrics.fetched;
     state.overviewMetrics.loading = true;
     state.overviewMetrics.error = null;
-    renderApp();
+    if (isInitialLoad) renderApp();
 
     try {
         var response = await fetch('/api/v1/operator/heartbeat');
@@ -27798,7 +27846,9 @@ async function fetchOverviewMetrics() {
         state.overviewMetrics.error = error.message;
     } finally {
         state.overviewMetrics.loading = false;
-        renderApp();
+        if (isInitialLoad) {
+            renderApp();
+        }
     }
 }
 
@@ -28452,9 +28502,10 @@ function renderOverviewErrorsViolationsView() {
 // ---------------------------------------------------------------------------
 async function fetchOverviewReleases() {
     if (state.overviewReleases.loading) return;
+    var isInitialLoad = !state.overviewReleases.fetched;
     state.overviewReleases.loading = true;
     state.overviewReleases.error = null;
-    renderApp();
+    if (isInitialLoad) renderApp();
 
     try {
         var response = await fetch('/api/v1/operator/deployments?limit=30');
@@ -28471,7 +28522,9 @@ async function fetchOverviewReleases() {
         state.overviewReleases.error = error.message;
     } finally {
         state.overviewReleases.loading = false;
-        renderApp();
+        if (isInitialLoad) {
+            renderApp();
+        }
     }
 }
 
@@ -29216,9 +29269,10 @@ var _operatorEventStreamInterval = null;
 
 async function fetchOperatorEventStream() {
     if (state.operatorEventStream.loading) return;
+    var isInitialLoad = !state.operatorEventStream.fetched;
     state.operatorEventStream.loading = true;
     state.operatorEventStream.error = null;
-    if (!state.operatorEventStream.fetched) renderApp();
+    if (isInitialLoad) renderApp();
 
     try {
         var response = await fetch('/api/v1/oasis/events?limit=100');
@@ -29235,7 +29289,11 @@ async function fetchOperatorEventStream() {
         state.operatorEventStream.error = error.message;
     } finally {
         state.operatorEventStream.loading = false;
-        renderApp();
+        if (isInitialLoad) {
+            renderApp();
+        } else {
+            refreshOperatorContent();
+        }
     }
 }
 
@@ -31171,12 +31229,12 @@ function fetchModelsRegistry(silentRefresh) {
             state.modelsRegistry.fetched = true;
             state.modelsRegistry.loading = false;
             state.modelsRegistry.error = null;
-            renderApp();
+            if (!silentRefresh) renderApp();
         }).catch(function (err) {
             state.modelsRegistry.error = err.message;
             state.modelsRegistry.loading = false;
             state.modelsRegistry.fetched = true;
-            renderApp();
+            if (!silentRefresh) renderApp();
         });
 }
 
@@ -31199,14 +31257,14 @@ function fetchModelsTelemetry(silentRefresh) {
             state.modelsBenchmarks.aggregated = aggregateBenchmarksFromTelemetry(events);
             state.modelsBenchmarks.fetched = true;
             state.modelsBenchmarks.loading = false;
-            renderApp();
+            if (!silentRefresh) renderApp();
         }).catch(function (err) {
             state.modelsTelemetry.error = err.message;
             state.modelsTelemetry.loading = false;
             state.modelsTelemetry.fetched = true;
             state.modelsBenchmarks.fetched = true;
             state.modelsBenchmarks.loading = false;
-            renderApp();
+            if (!silentRefresh) renderApp();
         });
 }
 
@@ -31228,12 +31286,12 @@ function fetchModelsRouting(silentRefresh) {
             state.modelsRouting.fetched = true;
             state.modelsRouting.loading = false;
             state.modelsRouting.error = null;
-            renderApp();
+            if (!silentRefresh) renderApp();
         }).catch(function (err) {
             state.modelsRouting.error = err.message;
             state.modelsRouting.loading = false;
             state.modelsRouting.fetched = true;
-            renderApp();
+            if (!silentRefresh) renderApp();
         });
 }
 
@@ -35925,8 +35983,9 @@ function renderAutopilotRunsView() {
 
 async function fetchAutopilotLive() {
     if (state.autopilot.live.loading) return;
+    var isInitialLoad = !state.autopilot.live.engineStatus;
     state.autopilot.live.loading = true;
-    renderApp();
+    if (isInitialLoad) renderApp();
     try {
         var [activeRes, runsRes, healthRes] = await Promise.all([
             fetch('/api/v1/automations/runs/active', { headers: buildContextHeaders({}) }),
@@ -35954,7 +36013,11 @@ async function fetchAutopilotLive() {
         state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
     } finally {
         state.autopilot.live.loading = false;
-        renderApp();
+        // Only full render on initial load; subsequent 10s polls update state
+        // silently. The view refreshes on next user-driven render or tab switch.
+        if (isInitialLoad) {
+            renderApp();
+        }
     }
 }
 
