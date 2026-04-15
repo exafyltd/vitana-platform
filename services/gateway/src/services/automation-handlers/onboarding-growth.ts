@@ -68,14 +68,19 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
     nextUrl = '/profile/edit';
   }
 
-  // Send welcome message via ORB (Maxina)
+  // Send welcome message via ORB (Maxina).
+  // NOTE: The frontend now delivers a richer onboarding speech via OnboardingWelcome page
+  // (post-registration orb-style message bubbles + name/handle form). This backend
+  // notification serves as a complementary nudge for users who skip or bypass the
+  // frontend flow (e.g. email-confirmed users who land on a deep link).
   ctx.notify(userId, 'orb_proactive_message', {
     title: `Welcome to Vitana, ${firstName}!`,
-    body: `I'm Maxina, your companion here. I've prepared some things to help you get started. First, let's ${nextStep}.`,
+    body: `I'm Vitana, your companion here. I've prepared some things to help you get started. First, let's ${nextStep}.`,
     data: {
       url: nextUrl,
       action: 'onboarding_welcome',
       orb_conversation_starter: 'true',
+      onboarding_source: 'backend_ap1301',
     },
   });
   actionsTaken++;
