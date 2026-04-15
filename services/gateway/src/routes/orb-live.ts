@@ -2340,7 +2340,7 @@ async function executeLiveApiToolInner(
 
       case 'search_calendar': {
         const query = (args.query as string) || '';
-        const role = session.identity.role || 'community';
+        const role = session.active_role || 'community';
         const userId = session.identity.user_id;
 
         try {
@@ -2418,7 +2418,7 @@ async function executeLiveApiToolInner(
         const description = (args.description as string) || '';
         const location = (args.location as string) || '';
         const eventType = (args.event_type as string) || 'personal';
-        const role = session.identity.role || 'community';
+        const role = session.active_role || 'community';
         const userId = session.identity.user_id;
 
         if (!title || !eventStart) {
@@ -7248,6 +7248,8 @@ router.post('/end-session', async (req: Request, res: Response) => {
       // VTID-01225: Use identity from transcript if available, fall back to env vars
       const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
       const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+      // VTID-ROLE-CMD-HUB: Look up active_role from session if available
+      const endSessionRole = liveSessions.get(orb_session_id)?.active_role || 'community';
 
       if (cogneeExtractorClient.isEnabled()) {
         cogneeExtractorClient.extractAsync({
@@ -7255,7 +7257,7 @@ router.post('/end-session', async (req: Request, res: Response) => {
           tenant_id: tenantId,
           user_id: userId,
           session_id: orb_session_id,
-          active_role: 'community'
+          active_role: endSessionRole
         });
         console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
       }
@@ -7525,6 +7527,8 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 
     const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
     const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+    // VTID-ROLE-CMD-HUB: Look up active_role from session if available
+    const finalizeSessionRole = liveSessions.get(orb_session_id)?.active_role || 'community';
 
     if (cogneeExtractorClient.isEnabled()) {
       const extractionRequest: CogneeExtractionRequest = {
@@ -7532,7 +7536,7 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
         tenant_id: tenantId,
         user_id: userId,
         session_id: orb_session_id,
-        active_role: 'community'
+        active_role: finalizeSessionRole
       };
       cogneeExtractorClient.extractAsync(extractionRequest);
       console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
@@ -8381,10 +8385,14 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
             const brainStart = Date.now();
             try {
               const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+              // VTID-ROLE-CMD-HUB: Infer developer role from Command Hub route
+              const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+              const brainRole = bodyRoute.startsWith('/command-hub') ? 'developer'
+                : ((bootstrapIdentity as any).active_role || 'community');
               const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
-                role: (bootstrapIdentity as any).active_role || 'community',
+                role: brainRole,
                 channel: 'orb',
                 thread_id: sessionId,
               });
@@ -8403,6 +8411,13 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     ]);
     sseActiveRole = fetchedSseRole;
     lastSessionInfo = fetchedSessionInfo;
+
+    // VTID-ROLE-CMD-HUB: Command Hub is developer-only — override role
+    const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+    if (sseRoute.startsWith('/command-hub') && (!sseActiveRole || sseActiveRole === 'community')) {
+      console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${sseActiveRole || 'null'})`);
+      sseActiveRole = 'developer';
+    }
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -8646,7 +8661,7 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
             tenant_id: tenantId,
             user_id: userId,
             session_id: session_id,
-            active_role: 'community'
+            active_role: session.active_role || 'community'
           });
           console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
         }
@@ -8671,7 +8686,7 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
                 tenant_id: tenantId,
                 user_id: userId,
                 session_id: session_id,
-                active_role: 'community'
+                active_role: session.active_role || 'community'
               });
               console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
             }
@@ -10093,6 +10108,13 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     ]);
     activeRole = fetchedRole;
     wsLastSessionInfo = fetchedWsSessionInfo;
+
+    // VTID-ROLE-CMD-HUB: Command Hub is developer-only — override role
+    const wsRoute = typeof (message as any).current_route === 'string' ? (message as any).current_route : '';
+    if (wsRoute.startsWith('/command-hub') && (!activeRole || activeRole === 'community')) {
+      console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub WS session (was: ${activeRole || 'null'})`);
+      activeRole = 'developer';
+    }
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;

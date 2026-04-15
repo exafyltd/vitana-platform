@@ -33106,6 +33106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.VitanaOrb.init({
                 authToken: state.authToken || '',
                 showFab: false, // Command Hub has its own sidebar trigger
+                initialContext: { current_route: '/command-hub' },
                 onClose: function () {
                     state.orb.overlayVisible = false;
                     renderApp();
