@@ -5046,6 +5046,17 @@ function _renderAppCore() {
     // VTID-01002: Restore scroll positions after DOM rebuild and attach listeners
     restoreAllScrollPositions(savedScrollPositions);
     attachScrollListeners();
+
+    // Ensure the active sidebar nav item is visible after render.
+    // The sidebar .nav-section is rebuilt on every render, so we scroll the
+    // active item into view rather than trying to restore an exact offset
+    // that becomes stale across route changes.
+    requestAnimationFrame(function () {
+        var activeNav = document.querySelector('.nav-section .nav-item.active');
+        if (activeNav) {
+            activeNav.scrollIntoView({ block: 'nearest' });
+        }
+    });
 }
 
 function renderSidebar() {
@@ -5080,6 +5091,8 @@ function renderSidebar() {
     // Modules
     const navSection = document.createElement('div');
     navSection.className = 'nav-section';
+    navSection.dataset.scrollRetain = 'true';
+    navSection.dataset.scrollKey = 'sidebar-nav';
 
     NAVIGATION_CONFIG.forEach(mod => {
         const label = SECTION_LABELS[mod.section] || mod.section;
