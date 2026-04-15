@@ -1431,6 +1431,52 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['query'],
           },
         },
+        // Calendar write tool — create events via voice
+        {
+          name: 'create_calendar_event',
+          description: [
+            'Create a new event in the user\'s personal calendar. Use this when the',
+            'user asks you to schedule, add, create, or book a meeting, appointment,',
+            'activity, or any calendar event.',
+            '',
+            'IMPORTANT:',
+            '- Always confirm the event details with the user BEFORE calling this tool.',
+            '- If the user does not specify an end time, default to 1 hour after start.',
+            '- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").',
+            '- After creating, confirm the event title and time back to the user.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              title: {
+                type: 'string',
+                description: 'The title or name of the event (e.g., "Dinner meeting", "Yoga class", "Doctor appointment")',
+              },
+              start_time: {
+                type: 'string',
+                description: 'Start time in ISO 8601 format (e.g. "2026-04-15T18:00:00Z")',
+              },
+              end_time: {
+                type: 'string',
+                description: 'End time in ISO 8601 format. If not specified by the user, default to 1 hour after start_time.',
+              },
+              description: {
+                type: 'string',
+                description: 'Optional description or notes for the event.',
+              },
+              location: {
+                type: 'string',
+                description: 'Optional location of the event.',
+              },
+              event_type: {
+                type: 'string',
+                enum: ['personal', 'community', 'professional', 'health', 'workout', 'nutrition'],
+                description: 'Type of event. Default to "personal" if unclear.',
+              },
+            },
+            required: ['title', 'start_time'],
+          },
+        },
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
@@ -1507,7 +1553,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
 
 /**
  * VTID-01224: Execute a Live API tool call
- * Handles search_memory, search_knowledge, search_web, and search_calendar tools
+ * Handles search_memory, search_knowledge, search_web, search_calendar, and create_calendar_event tools
  *
  * @param session - The Live session (for identity access)
  * @param toolName - Name of the tool to execute
@@ -2356,6 +2402,101 @@ async function executeLiveApiToolInner(
           return {
             success: false,
             result: 'Calendar is temporarily unavailable. Please try again in a moment.',
+            error: calErr.message,
+          };
+        }
+      }
+
+      // =====================================================================
+      // Calendar write tool — create events via voice
+      // =====================================================================
+
+      case 'create_calendar_event': {
+        const title = (args.title as string) || '';
+        const eventStart = (args.start_time as string) || '';
+        const eventEnd = (args.end_time as string) || '';
+        const description = (args.description as string) || '';
+        const location = (args.location as string) || '';
+        const eventType = (args.event_type as string) || 'personal';
+        const role = session.identity.role || 'community';
+        const userId = session.identity.user_id;
+
+        if (!title || !eventStart) {
+          return {
+            success: false,
+            result: 'I need at least a title and start time to create a calendar event.',
+            error: 'Missing required fields: title and start_time',
+          };
+        }
+
+        try {
+          const { createCalendarEvent, checkConflicts } = await import('../services/calendar-service');
+
+          // Check for conflicts first
+          const effectiveEndTime = eventEnd || new Date(new Date(eventStart).getTime() + 60 * 60 * 1000).toISOString();
+          const conflicts = await checkConflicts(userId, role, eventStart, effectiveEndTime);
+
+          const event = await createCalendarEvent(userId, {
+            title,
+            start_time: eventStart,
+            end_time: effectiveEndTime,
+            description: description || undefined,
+            location: location || undefined,
+            event_type: eventType as any,
+            status: 'confirmed',
+            priority: 'medium',
+            role_context: role === 'developer' ? 'developer' : role === 'admin' ? 'admin' : 'community',
+            source_type: 'assistant',
+            priority_score: 50,
+            wellness_tags: [],
+            metadata: { created_via: 'orb_voice' },
+            is_recurring: false,
+          });
+
+          if (!event) {
+            return {
+              success: false,
+              result: 'I wasn\'t able to save the event to your calendar. Please try again.',
+              error: 'createCalendarEvent returned null',
+            };
+          }
+
+          // Emit OASIS event
+          emitOasisEvent({
+            vtid: 'VTID-01155',
+            type: 'calendar.event.created' as any,
+            source: 'orb-live-voice',
+            status: 'info',
+            message: `Voice-created calendar event: ${event.title}`,
+            payload: {
+              event_id: event.id,
+              user_id: userId,
+              event_type: event.event_type,
+              session_id: session.sessionId,
+            },
+          }).catch(() => {});
+
+          const startFormatted = new Date(eventStart).toLocaleString('en-US', {
+            weekday: 'short', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true,
+          });
+          const endFormatted = new Date(effectiveEndTime).toLocaleTimeString('en-US', {
+            hour: '2-digit', minute: '2-digit', hour12: true,
+          });
+
+          let result = `Event created successfully!\n- Title: ${event.title}\n- When: ${startFormatted} – ${endFormatted}`;
+          if (event.location) result += `\n- Where: ${event.location}`;
+          if (conflicts.length > 0) {
+            result += `\n\nNote: There ${conflicts.length === 1 ? 'is 1 existing event' : `are ${conflicts.length} existing events`} during this time slot.`;
+          }
+
+          console.log(`[Calendar] create_calendar_event executed: "${event.title}" at ${eventStart}, ${Date.now() - startTime}ms`);
+          return { success: true, result };
+        } catch (calErr: any) {
+          console.warn(`[Calendar] create_calendar_event failed: ${calErr.message}`);
+          return {
+            success: false,
+            result: 'I had trouble creating the event. Please try again in a moment.',
             error: calErr.message,
           };
         }
@@ -3216,6 +3357,7 @@ ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response ver
 TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
 - Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
+- Use create_calendar_event to add, schedule, or book new events in the user's calendar
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -5543,7 +5685,7 @@ async function generateMemoryEnhancedSystemInstruction(
         }
       } catch {}
 
-      calLines += '\nWhen the user asks about their schedule, reference these events. Suggest activities for free time slots. When they ask to change, add, or cancel events, use the search_calendar tool for more details.';
+      calLines += '\nWhen the user asks about their schedule, reference these events. Suggest activities for free time slots. When they ask to ADD or SCHEDULE a new event, use the create_calendar_event tool. When they ask to CHECK their schedule or availability, use the search_calendar tool.';
 
       calendarSection = calLines;
       console.log(`[Calendar] Injected calendar context: ${todayEvents.length} today, ${upcomingEvents.length} upcoming, ${gaps.length} gaps`);

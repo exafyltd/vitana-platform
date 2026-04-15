@@ -881,6 +881,27 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  {
+    screen_id: 'CALENDAR.OVERVIEW',
+    route: '/home',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    priority: 1,
+    i18n: {
+      en: {
+        title: 'Calendar',
+        description: 'Your personal calendar — view upcoming events, appointments, and scheduled activities. The calendar opens as an overlay from the Calendar button in the header.',
+        when_to_visit: 'When the user asks to open their calendar, see their schedule, check their appointments, view upcoming events, check availability, or manage their personal calendar.',
+      },
+      de: {
+        title: 'Kalender',
+        description: 'Dein persönlicher Kalender — sieh anstehende Termine, Verabredungen und geplante Aktivitäten. Der Kalender öffnet sich als Overlay über den Kalender-Button in der Kopfzeile.',
+        when_to_visit: 'Wenn der Nutzer seinen Kalender öffnen, seinen Zeitplan sehen, Termine prüfen, anstehende Events ansehen, Verfügbarkeit prüfen oder seinen persönlichen Kalender verwalten möchte.',
+      },
+    },
+    related_kb_topics: ['calendar', 'schedule', 'appointments', 'events'],
+  },
 
   // ── AI ──────────────────────────────────────────────────────────────────
   {
