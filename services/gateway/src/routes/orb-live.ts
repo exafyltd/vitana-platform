@@ -1637,7 +1637,7 @@ async function handleNavigate(
       ? {
           user_id: session.identity!.user_id,
           tenant_id: session.identity!.tenant_id as string,
-          role: session.identity!.role || session.active_role || undefined,
+          role: session.active_role || session.identity!.role || undefined,
         }
       : null,
     is_anonymous: !!session.isAnonymous || !hasIdentity,
@@ -1743,7 +1743,7 @@ async function handleNavigate(
           identity: {
             user_id: session.identity!.user_id,
             tenant_id: session.identity!.tenant_id as string,
-            role: session.identity!.role || session.active_role || undefined,
+            role: session.active_role || session.identity!.role || undefined,
           },
           screen: {
             screen_id: entry.screen_id,
@@ -1834,7 +1834,7 @@ async function handleNavigatorConsult(
       ? {
           user_id: session.identity!.user_id,
           tenant_id: session.identity!.tenant_id as string,
-          role: session.identity!.role || session.active_role || undefined,
+          role: session.active_role || session.identity!.role || undefined,
         }
       : null,
     is_anonymous: !!session.isAnonymous || !hasIdentity,
