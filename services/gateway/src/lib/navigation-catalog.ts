@@ -883,7 +883,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'CALENDAR.OVERVIEW',
-    route: '/home',
+    route: '/home?open=calendar',
     category: 'home',
     access: 'authenticated',
     anonymous_safe: false,
