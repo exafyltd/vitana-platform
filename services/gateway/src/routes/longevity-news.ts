@@ -188,6 +188,7 @@ router.get('/tags', async (_req: Request, res: Response) => {
     tags: [
       { key: 'supplements', label: 'Supplements', keywords: ['nmn', 'nad', 'resveratrol', 'rapamycin', 'fisetin', 'quercetin', 'spermidine', 'berberine', 'metformin'] },
       { key: 'functional', label: 'Functional', keywords: ['mitochondria', 'autophagy', 'sirtuins', 'senolytic', 'telomere'] },
+      { key: 'mental_health', label: 'Mental Health', keywords: ['mental health', 'anxiety', 'depression', 'stress', 'mindfulness', 'meditation', 'cognitive', 'brain health', 'neuroplasticity', 'dementia', 'alzheimer', 'mood', 'psycholog', 'wellbeing', 'well-being', 'therapy'] },
       { key: 'natural', label: 'Natural', keywords: ['polyphenol', 'flavonoid', 'curcumin', 'egcg'] },
       { key: 'general', label: 'General', keywords: ['sleep', 'exercise', 'nutrition', 'hydration', 'metabolic', 'prevention', 'fasting', 'longevity', 'aging', 'healthspan', 'lifespan'] },
     ],

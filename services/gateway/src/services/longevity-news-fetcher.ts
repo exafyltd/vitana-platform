@@ -62,6 +62,11 @@ const TAG_KEYWORDS: Record<string, string[]> = {
   natural: [
     'polyphenol', 'flavonoid', 'curcumin', 'egcg',
   ],
+  mental_health: [
+    'mental health', 'anxiety', 'depression', 'stress', 'mindfulness',
+    'meditation', 'cognitive', 'brain health', 'neuroplasticity', 'dementia',
+    'alzheimer', 'mood', 'psycholog', 'wellbeing', 'well-being', 'therapy',
+  ],
   general: [
     'sleep', 'exercise', 'nutrition', 'hydration', 'metabolic', 'prevention',
     'fasting', 'longevity', 'aging', 'healthspan', 'lifespan',
