@@ -1,0 +1,33 @@
+name: VTID-01900 Language Column Migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-01900-LANGUAGE-MIGRATION.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply language column migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Applying VTID-01900 migration: language column + indexes"
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260415200000_vtid_01900_news_items_language.sql"
+          echo "Migration applied successfully"
+          echo "Clearing news_items for fresh re-fetch with language tags..."
+          psql "$SUPABASE_DB_URL" -c "TRUNCATE news_items;"
+          echo "Table cleared — fetcher will re-populate with language-tagged articles."
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reloaded"
