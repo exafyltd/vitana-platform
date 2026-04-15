@@ -288,12 +288,20 @@ export async function buildBrainSystemInstruction(input: {
     active_role: input.role,
   });
 
-  // Compute retrieval router for broad context
+  // Compute retrieval router — for session bootstrap, force memory-only
+  // to minimize latency. Skip knowledge_hub and web_search (not needed
+  // for greeting). Calendar + OASIS are fetched separately by buildContextPack.
   const routerDecision = computeRetrievalRouterDecision('general conversation context', {
     channel: input.channel,
+    force_sources: ['memory_garden'],
+    limit_overrides: {
+      memory_garden: 8,
+      knowledge_hub: 0,
+      web_search: 0,
+    },
   });
 
-  // Build context pack (memory, calendar, knowledge, relationships, etc.)
+  // Build context pack — memory + calendar + OASIS (no knowledge/web for speed)
   const contextPackInput: BuildContextPackInput = {
     lens,
     query: 'general conversation context',
