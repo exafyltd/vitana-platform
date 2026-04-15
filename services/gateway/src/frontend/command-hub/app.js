@@ -33100,6 +33100,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
+        // VTID-AUTH-GUARD: Active session health monitor.
+        // The JWT in state.authToken can expire while the user is idle.
+        // Without this, the user stays on the Command Hub looking logged in
+        // but every action will 401. Poll every 30s by decoding the JWT exp
+        // claim — if expired, force logout to show the auth gate.
+        // Also check immediately when the tab/WebView returns to foreground.
+        function checkTokenExpiry() {
+            if (!state.authToken) return;
+            try {
+                var parts = state.authToken.split('.');
+                if (parts.length !== 3) return;
+                var payload = JSON.parse(atob(parts[1]));
+                if (payload.exp && payload.exp * 1000 < Date.now()) {
+                    console.warn('[VTID-AUTH-GUARD] JWT expired — logging out');
+                    doLogout();
+                }
+            } catch (e) {
+                // Malformed token — force logout
+                console.warn('[VTID-AUTH-GUARD] Cannot parse JWT — logging out');
+                doLogout();
+            }
+        }
+        setInterval(checkTokenExpiry, 30000);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') checkTokenExpiry();
+        });
+
         // Initialize unified VitanaOrb widget (voice overlay handled by orb-widget.js)
         if (window.VitanaOrb) {
             // VTID-AUTH-FIX: Pass auth token explicitly — init() disables auto-detection.
