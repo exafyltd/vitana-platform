@@ -1,0 +1,30 @@
+name: VTID-01900 Image URL Column Migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-01900-IMAGE-URL-MIGRATION.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply image_url column migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Applying VTID-01900 migration: image_url column"
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260415100000_vtid_01900_news_items_image_url.sql"
+          echo "Migration applied successfully"
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reloaded"
