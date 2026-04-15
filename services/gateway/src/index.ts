@@ -223,6 +223,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
+  // Admin: Notification Category Management (CRUD + Test)
+  const adminNotificationCategoriesRouter = require('./routes/admin-notification-categories').default;
+  // User: Notification Category Preferences (toggle categories on/off)
+  const userCategoryPreferencesRouter = require('./routes/user-category-preferences').default;
   // Admin: User Management & Role Distribution
   const adminUsersRouter = require('./routes/admin-users').default;
   // Admin: Tenant Management
@@ -615,6 +619,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Admin: Notification Compose & Tracking
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
+
+  // Admin: Notification Category Management
+  mountRouterSync(app, '/api/v1/admin/notification-categories', adminNotificationCategoriesRouter, { owner: 'admin-notification-categories' });
+
+  // User: Notification Category Preferences
+  mountRouterSync(app, '/api/v1/notifications/category-preferences', userCategoryPreferencesRouter, { owner: 'user-category-preferences' });
 
   // Admin: User Management & Role Distribution
   mountRouterSync(app, '/api/v1/admin/users', adminUsersRouter, { owner: 'admin-users' });

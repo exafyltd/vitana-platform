@@ -288,6 +288,90 @@ export async function sendAppilixPush(
   }
 }
 
+// ── Dynamic Category Preference Check ────────────────────────
+// In-memory cache for notification_categories (avoids DB hit per notification)
+
+interface CategoryCacheEntry {
+  categoryId: string;
+  defaultEnabled: boolean;
+  isActive: boolean;
+}
+
+let categoryCache: Map<string, CategoryCacheEntry> | null = null;
+let categoryCacheExpiry = 0;
+const CATEGORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getCategoryCache(
+  supabase: SupabaseClient<any, any, any>
+): Promise<Map<string, CategoryCacheEntry>> {
+  if (categoryCache && Date.now() < categoryCacheExpiry) {
+    return categoryCache;
+  }
+
+  const { data, error } = await supabase
+    .from('notification_categories')
+    .select('id, mapped_types, default_enabled, is_active')
+    .eq('is_active', true);
+
+  const cache = new Map<string, CategoryCacheEntry>();
+  if (!error && data) {
+    for (const cat of data) {
+      const mappedTypes = (cat.mapped_types as string[]) || [];
+      for (const typeKey of mappedTypes) {
+        cache.set(typeKey, {
+          categoryId: cat.id,
+          defaultEnabled: cat.default_enabled,
+          isActive: cat.is_active,
+        });
+      }
+    }
+  }
+
+  categoryCache = cache;
+  categoryCacheExpiry = Date.now() + CATEGORY_CACHE_TTL_MS;
+  return cache;
+}
+
+/**
+ * Check dynamic category preference for a notification type.
+ * Returns { suppressed: false } if no category mapping exists or user has not disabled it.
+ * Returns { suppressed: true, reason: string } if user has disabled this category.
+ */
+async function checkDynamicCategoryPreference(
+  userId: string,
+  tenantId: string,
+  type: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<{ suppressed: boolean; reason?: string }> {
+  try {
+    const cache = await getCategoryCache(supabase);
+    const entry = cache.get(type);
+
+    // No mapping → pass through (unmapped types are never suppressed by the new system)
+    if (!entry) return { suppressed: false };
+
+    // Check user's preference for this category
+    const { data: userPref } = await supabase
+      .from('user_category_preferences')
+      .select('enabled')
+      .eq('user_id', userId)
+      .eq('category_id', entry.categoryId)
+      .maybeSingle();
+
+    const enabled = userPref ? userPref.enabled : entry.defaultEnabled;
+
+    if (!enabled) {
+      return { suppressed: true, reason: `category_${type}_disabled` };
+    }
+
+    return { suppressed: false };
+  } catch (err: any) {
+    // On error, don't suppress — fail open to avoid blocking notifications
+    console.error('[Notifications] Dynamic category check error:', err.message);
+    return { suppressed: false };
+  }
+}
+
 // ── Preference & DND Check ───────────────────────────────────
 
 interface UserPrefs {
@@ -359,11 +443,19 @@ export async function notifyUser(
       // push_and_inapp → inapp only (handled below by not sending push)
     }
 
-    // Category-specific gate
+    // Category-specific gate (legacy boolean columns)
     const prefCol = CATEGORY_PREF[meta.category];
     if (prefCol && prefCol !== 'push_enabled' && prefs[prefCol] === false) {
       return { pushed: 0, inapp: false, suppressed: `pref_${prefCol}_off` };
     }
+  }
+
+  // ── 1b. Check dynamic category preferences (new system) ──
+  const categoryCheckResult = await checkDynamicCategoryPreference(
+    userId, tenantId, type, supabase
+  );
+  if (categoryCheckResult.suppressed) {
+    return { pushed: 0, inapp: false, suppressed: categoryCheckResult.reason };
   }
 
   // ── 2. DND check (only blocks push, not inapp) ──────────
