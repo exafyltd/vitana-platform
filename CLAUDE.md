@@ -211,6 +211,9 @@ Claude must apply the following **conditional logic**:
 29. **IF** Playwright deps are missing on WSL2 → set `LD_LIBRARY_PATH="/tmp/chromium-libs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"` or install via `apt download` + `dpkg-deb -x`.
 30. **IF** you cannot run Playwright at all → use `curl` to fetch the page HTML and verify the changed element exists in the DOM. This is a fallback, not the standard.
 
+**Test user UUID:** `a27552a3-0257-4305-8ed0-351a80fd3701`
+Use this user when an authenticated user is needed for testing (e.g., Playwright screenshots, API calls, profile checks).
+
 **Auth for frontend screenshots (Supabase REST):**
 ```typescript
 // Sign in via API, inject into localStorage — no brittle form selectors
