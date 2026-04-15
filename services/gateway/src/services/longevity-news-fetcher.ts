@@ -93,6 +93,36 @@ function contentHash(title: string, link: string): string {
   return createHash('sha256').update(`${title}${link}`).digest('hex');
 }
 
+/**
+ * Extract the best image URL from an RSS item.
+ * Checks: enclosure, media:content, media:thumbnail, og:image in content, first <img> in content.
+ */
+function extractImageUrl(item: any): string | null {
+  // 1. Enclosure (most common for featured images)
+  if (item.enclosure?.url) return item.enclosure.url;
+
+  // 2. Media RSS extensions
+  if (item['media:content']?.$?.url) return item['media:content'].$.url;
+  if (item['media:thumbnail']?.$?.url) return item['media:thumbnail'].$.url;
+
+  // 3. itunes:image (some podcast-style feeds)
+  if (item['itunes:image']?.$?.href) return item['itunes:image'].$.href;
+
+  // 4. First <img src="..."> in content/description HTML
+  const htmlContent = item.content || item['content:encoded'] || item.description || '';
+  if (htmlContent) {
+    const imgMatch = htmlContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (imgMatch?.[1]) {
+      const src = imgMatch[1];
+      // Skip tiny tracking pixels and icons
+      if (!src.includes('gravatar') && !src.includes('1x1') && !src.includes('pixel'))
+        return src;
+    }
+  }
+
+  return null;
+}
+
 // ── Supabase service-role helper ─────────────────────────────────
 async function supabaseInsert(
   items: Array<{
@@ -101,6 +131,7 @@ async function supabaseInsert(
     title: string;
     link: string;
     summary: string | null;
+    image_url: string | null;
     published_at: string;
     fetched_at: string;
     tags: string[];
@@ -151,6 +182,13 @@ async function runFetchCycle(): Promise<void> {
     headers: {
       'User-Agent': 'VitanaNewsFetcher/1.0 (+https://vitana.dev)',
     },
+    customFields: {
+      item: [
+        ['media:content', 'media:content'],
+        ['media:thumbnail', 'media:thumbnail'],
+        ['content:encoded', 'content:encoded'],
+      ],
+    },
   });
 
   const now = new Date().toISOString();
@@ -175,6 +213,7 @@ async function runFetchCycle(): Promise<void> {
         title: string;
         link: string;
         summary: string | null;
+        image_url: string | null;
         published_at: string;
         fetched_at: string;
         tags: string[];
@@ -199,6 +238,7 @@ async function runFetchCycle(): Promise<void> {
           title: item.title,
           link: item.link,
           summary: cleanSummary,
+          image_url: extractImageUrl(item),
           published_at: publishedAt,
           fetched_at: now,
           tags: autoTag(item.title, cleanSummary || undefined),

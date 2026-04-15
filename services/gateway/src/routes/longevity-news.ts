@@ -96,7 +96,7 @@ router.get('/items', async (req: Request, res: Response) => {
 
     // Build PostgREST filter params
     const params: Record<string, string> = {
-      select: 'id,source_name,source_url,title,link,summary,published_at,tags,source_type,created_at',
+      select: 'id,source_name,source_url,title,link,summary,image_url,published_at,tags,source_type,created_at',
       order: 'published_at.desc',
       offset: String(offset),
       limit: String(limit),
