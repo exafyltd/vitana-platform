@@ -327,6 +327,7 @@ function scoreCatalogWithMemory(
       : searchCatalog(input.question, input.lang, {
           anonymous_only: input.is_anonymous,
           exclude_routes: excludeRoutes,
+          role: input.identity?.role || undefined,
         });
 
   if (baseResults.length === 0) return baseResults;
@@ -419,6 +420,7 @@ export async function consultNavigator(
   const fastScored = searchCatalog(input.question, input.lang, {
     anonymous_only: input.is_anonymous,
     exclude_routes: excludeRoutes,
+    role: input.identity?.role || undefined,
   });
   const fastTop = fastScored[0];
   const fastSecond = fastScored[1];
@@ -488,6 +490,7 @@ export async function consultNavigator(
     ? semanticSearchCatalog(input.question, {
         anonymous_only: input.is_anonymous,
         exclude_routes: excludeRoutes,
+        role: input.identity?.role || undefined,
       })
     : Promise.resolve([]);
 

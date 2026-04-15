@@ -33106,10 +33106,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.VitanaOrb.init({
                 authToken: state.authToken || '',
                 showFab: false, // Command Hub has its own sidebar trigger
-                initialContext: { current_route: '/command-hub' },
+                initialContext: { current_route: window.location.pathname },
                 onClose: function () {
                     state.orb.overlayVisible = false;
                     renderApp();
+                },
+                // VITANA-BRAIN: Handle ORB navigation directives with SPA routing
+                onNavigationRequest: function (route, ctx) {
+                    console.log('[VTOrb-Nav] Navigation requested: ' + route + ' (screen=' + (ctx && ctx.screen_id || 'unknown') + ')');
+                    var parsed = getRouteFromPath(route);
+                    if (parsed) {
+                        handleModuleClick(parsed.section);
+                        if (parsed.tab) {
+                            handleTabClick(parsed.tab);
+                        }
+                        console.log('[VTOrb-Nav] SPA navigated to ' + parsed.section + '/' + parsed.tab);
+                    } else {
+                        // Route not in Command Hub — full page redirect (community route etc.)
+                        console.log('[VTOrb-Nav] Route not in Command Hub, full redirect: ' + route);
+                        window.location.href = route;
+                    }
                 }
             });
         }
