@@ -1,0 +1,22 @@
+name: VTID-01900 Clear + Re-fetch With OG-Image Scraping
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-01900-OG-IMAGE-REFETCH.yml'
+  workflow_dispatch:
+
+jobs:
+  refetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clear existing news_items
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Clearing news_items table — new fetcher will scrape og:image on re-fetch"
+          psql "$SUPABASE_DB_URL" -c "TRUNCATE news_items;"
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Cleared. Gateway fetcher will re-populate within ~5 minutes with og:image-enhanced articles."
