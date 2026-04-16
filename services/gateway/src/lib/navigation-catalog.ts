@@ -339,6 +339,9 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
 
   // ── HOME (authenticated) ────────────────────────────────────────────────
+  // VTID-01900: /home is the standalone News Feed — longevity news, latest
+  // articles, research highlights. The i18n copy reflects that so the
+  // navigator maps "news", "longevity news", "latest news" here.
   {
     screen_id: 'HOME.OVERVIEW',
     route: '/home',
@@ -347,14 +350,14 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     anonymous_safe: false,
     i18n: {
       en: {
-        title: 'Home',
-        description: 'Your personal home dashboard with everything tailored for you.',
-        when_to_visit: 'When the user wants to go to their home page, the main dashboard, the start of the app after signing in.',
+        title: 'Longevity News',
+        description: 'Your home News Feed — the latest longevity news, research, and articles curated for you.',
+        when_to_visit: 'When the user wants news, longevity news, the latest news, the news feed, what is new in longevity, articles, research updates, or simply the home screen.',
       },
       de: {
-        title: 'Startseite',
-        description: 'Dein persönliches Dashboard mit allem, was auf dich zugeschnitten ist.',
-        when_to_visit: 'Wenn der Nutzer zur eigenen Startseite, zum Hauptdashboard oder zum App-Start nach der Anmeldung möchte.',
+        title: 'Longevity News',
+        description: 'Dein News-Feed zu Hause — aktuelle Longevity-Nachrichten, Forschung und Artikel, für dich kuratiert.',
+        when_to_visit: 'Wenn der Nutzer Nachrichten, Longevity-News, neueste Nachrichten, den News-Feed, Neuigkeiten zu Longevity, Artikel, Forschungs-Updates oder einfach die Startseite möchte.',
       },
     },
   },
@@ -393,6 +396,31 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
         title: 'KI-Feed',
         description: 'Ein personalisierter Stream KI-kuratierter Inhalte, Empfehlungen und Einblicke.',
         when_to_visit: 'Wenn der Nutzer fragt, was neu ist, was passiert, oder seinen personalisierten KI-Feed sehen möchte.',
+      },
+    },
+  },
+
+  // ── AUTOPILOT (authenticated) ───────────────────────────────────────────
+  // The Autopilot Dashboard is the user-facing "My Journey" screen: the
+  // 90-day journey (waves, milestones, recommendations) prepared by
+  // Autopilot and aligned to the Calendar. Keywords steer "open my journey"
+  // here instead of /me/profile.
+  {
+    screen_id: 'AUTOPILOT.MY_JOURNEY',
+    route: '/autopilot',
+    category: 'autopilot',
+    access: 'authenticated',
+    anonymous_safe: false,
+    i18n: {
+      en: {
+        title: 'My Journey',
+        description: 'Your Autopilot Dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions aligned to your calendar.',
+        when_to_visit: 'When the user asks to open my journey, see my journey, show my journey, the autopilot journey, my 90-day journey, the 90-day plan, the autopilot dashboard, my plan, or what is on their journey today. This is NOT the user profile — "my journey" means the Autopilot Dashboard.',
+      },
+      de: {
+        title: 'Meine Reise',
+        description: 'Dein Autopilot-Dashboard — die 90-Tage-Reise, die für dich vorbereitet wurde: Wellen, Meilensteine und empfohlene Aktionen, abgestimmt auf deinen Kalender.',
+        when_to_visit: 'Wenn der Nutzer meine Reise öffnen, meine Reise sehen, die Autopilot-Reise, meine 90-Tage-Reise, den 90-Tage-Plan, das Autopilot-Dashboard, meinen Plan, oder was heute auf seiner Reise ansteht, anfragt. Das ist NICHT das Nutzerprofil — "meine Reise" bedeutet das Autopilot-Dashboard.',
       },
     },
   },
