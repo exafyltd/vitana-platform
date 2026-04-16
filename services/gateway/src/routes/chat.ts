@@ -75,6 +75,9 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
   } else {
     // Fire-and-forget push notification to the receiver (not for Vitana bot)
+    // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox?thread=<sender_id> so the Messages
+    // page deep-links into the conversation. The legacy `/messages/<id>` URL
+    // was redirected to `/inbox` by App.tsx, stripping the thread parameter.
     notifyUserAsync(
       receiver_id,
       identity.tenant_id!,
@@ -86,7 +89,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
           type: 'new_chat_message',
           sender_id: identity.user_id,
           message_id: data.id,
-          url: `/messages/${identity.user_id}`,
+          thread_id: identity.user_id,
+          url: `/inbox?thread=${identity.user_id}`,
         },
       },
       supabase,
