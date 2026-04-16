@@ -74,6 +74,25 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       supabase,
     ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
   } else {
+    // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
+    // push notification looks like a classic chat notification ("John Doe" as
+    // the title, message body as the preview) rather than a generic "New message".
+    // We query `app_users` (the profile table used across the platform).
+    let senderName = 'New message';
+    try {
+      const { data: senderProfile } = await supabase
+        .from('app_users')
+        .select('display_name, email')
+        .eq('user_id', identity.user_id)
+        .maybeSingle();
+      if (senderProfile) {
+        senderName = senderProfile.display_name
+          || (senderProfile.email ? senderProfile.email.split('@')[0] : 'New message');
+      }
+    } catch (err: any) {
+      console.warn('[Chat] Failed to resolve sender name, falling back to generic:', err?.message);
+    }
+
     // Fire-and-forget push notification to the receiver (not for Vitana bot)
     // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox?thread=<sender_id> so the Messages
     // page deep-links into the conversation. The legacy `/messages/<id>` URL
@@ -83,11 +102,12 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       identity.tenant_id!,
       'new_chat_message',
       {
-        title: 'New message',
+        title: senderName,
         body: content.trim().length > 100 ? content.trim().slice(0, 97) + '...' : content.trim(),
         data: {
           type: 'new_chat_message',
           sender_id: identity.user_id,
+          sender_name: senderName,
           message_id: data.id,
           thread_id: identity.user_id,
           url: `/inbox?thread=${identity.user_id}`,
