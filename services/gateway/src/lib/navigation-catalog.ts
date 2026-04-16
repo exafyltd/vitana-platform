@@ -29,6 +29,7 @@ export type NavCategory =
   | 'home'
   | 'memory'
   | 'ai'
+  | 'autopilot'
   | 'inbox'
   | 'settings'
   | 'sharing'
