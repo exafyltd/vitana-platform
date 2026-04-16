@@ -200,6 +200,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
+  // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
+  const devAutopilotRouter = require('./routes/dev-autopilot').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -480,6 +482,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
+
+  // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
+  mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
