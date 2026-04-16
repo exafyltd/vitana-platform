@@ -134,13 +134,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
   const wearablesWaitlistRouter = require('./routes/wearables-waitlist').default;
   // VTID-02100: Phase 1 — connector framework + wearable routes + webhook receiver
-  // TEMPORARY: isolate boot crash — disabled until root-caused
-  // const wearablesRouter = require('./routes/wearables').default;
-  // const connectorWebhooksRouter = require('./routes/connector-webhooks').default;
-  // const { initializeAllConnectors } = require('./connectors');
-  // initializeAllConnectors().catch((err: unknown) => {
-  //   console.error('[connectors] initialization error:', err);
-  // });
+  // Re-enabled after PR #661 removed the duplicate /waitlist route that was
+  // crashing routeGuard at startup.
+  const wearablesRouter = require('./routes/wearables').default;
+  const connectorWebhooksRouter = require('./routes/connector-webhooks').default;
+  const { initializeAllConnectors } = require('./connectors');
+  initializeAllConnectors().catch((err: unknown) => {
+    console.error('[connectors] initialization error:', err);
+  });
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -608,9 +609,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/wearables/waitlist', wearablesWaitlistRouter, { owner: 'wearables-waitlist' });
 
   // VTID-02100: Phase 1 wearables routes + connector webhook receiver
-  // TEMPORARY: disabled until boot crash root-caused
-  // mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
-  // mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
+  // Order matters: /api/v1/wearables/waitlist is mounted above on wearablesWaitlistRouter.
+  // PR #661 removed the duplicate /waitlist route from wearablesRouter so this mount is safe.
+  mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
+  mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
 
   // VTID-01091: Locations Memory + Discovery + Preferences
   mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });
