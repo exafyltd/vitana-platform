@@ -297,6 +297,24 @@ export interface ContextPack {
     recent_recommendations: Array<{ title: string; status: string }>;
   };
 
+  /** VTID-02000: Marketplace context — limitations, past purchases, curated picks, feed stage. */
+  marketplace_context?: {
+    lifecycle_stage: 'onboarding' | 'early' | 'established' | 'mature' | null;
+    region_group: string | null;
+    scope_preference: 'local' | 'regional' | 'friendly' | 'international';
+    budget_max_per_product_cents: number | null;
+    hard_limitations: {
+      allergies: string[];
+      dietary_restrictions: string[];
+      contraindications: string[];
+      current_medications: string[];
+    };
+    active_conditions: Array<{ key: string; source: string }>;
+    recent_purchases_count: number;
+    upcoming_events_hints: string[]; // e.g. ['travel next week', 'race in 3 weeks']
+    marketplace_picks: Array<{ product_id: string; title: string; match_reason: string }>;
+  };
+
   /** Retrieval trace for debugging */
   retrieval_trace: {
     router_decision: RetrievalRouterDecision;

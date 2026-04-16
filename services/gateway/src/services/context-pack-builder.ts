@@ -45,6 +45,8 @@ import { generateEmbedding } from './embedding-service';
 import { ContextLens } from '../types/context-lens';
 // VTID-01230: Session buffer for Tier 0 short-term memory
 import { formatSessionBufferForLLM, getSessionContext } from './session-memory-buffer';
+// VTID-02000: Marketplace context primitive
+import { getUserHealthContext } from './user-health-context';
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -1242,6 +1244,50 @@ export async function buildContextPack(
   }
 
   // Execute ALL retrievals in parallel (memory, knowledge, web, facts, relationships, tool health, VTIDs, OASIS)
+  // VTID-02000: Load marketplace context (limitations + past purchases + upcoming events + feed stage)
+  let marketplaceContext: ContextPack['marketplace_context'] | undefined;
+  retrievalPromises.push(
+    (async () => {
+      try {
+        if (!input.lens.user_id) return;
+        const hc = await getUserHealthContext(input.lens.user_id, {
+          include_calendar: true,
+          include_past_purchases: true,
+        });
+        const upcomingHints: string[] = [];
+        for (const e of hc.upcoming_events.slice(0, 5)) {
+          const daysOut = Math.max(
+            0,
+            Math.round((Date.parse(e.start) - Date.now()) / (1000 * 60 * 60 * 24))
+          );
+          const tags = e.shifts_recommendations.length
+            ? e.shifts_recommendations.join(',')
+            : e.event_type;
+          upcomingHints.push(`${tags} in ${daysOut}d${e.title ? ` (${e.title})` : ''}`);
+        }
+        marketplaceContext = {
+          lifecycle_stage: hc.lifecycle_stage,
+          region_group: hc.region_group,
+          scope_preference: hc.scope_preference,
+          budget_max_per_product_cents: hc.budget_max_per_product_cents,
+          hard_limitations: {
+            allergies: hc.allergies,
+            dietary_restrictions: hc.dietary_restrictions,
+            contraindications: hc.contraindications,
+            current_medications: hc.current_medications,
+          },
+          active_conditions: hc.active_conditions.map((c) => ({ key: c.key, source: c.source })),
+          recent_purchases_count: hc.past_purchases.length,
+          upcoming_events_hints: upcomingHints,
+          marketplace_picks: [], // populated by marketplace-analyzer daily; Phase 0 leaves empty
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[VTID-02000] Marketplace context fetch failed (non-fatal): ${message}`);
+      }
+    })()
+  );
+
   await Promise.all(retrievalPromises);
 
   // Merge structured facts + diary hits into memory hits (prepend - higher priority)
@@ -1324,6 +1370,7 @@ export async function buildContextPack(
     relationship_context: relationshipContext.length > 0 ? relationshipContext : undefined,
     calendar_context: calendarContext,
     oasis_context: oasisContext,
+    marketplace_context: marketplaceContext,
     session_buffer: sessionBufferData,
 
     retrieval_trace: {
@@ -1553,6 +1600,44 @@ export function formatContextPackForLLM(pack: ContextPack): string {
       context += `When the user asks about tasks, deployments, or system health, reference this data. For community users, reference recommendations only.\n`;
       context += `</system_awareness>\n\n`;
     }
+  }
+
+  // VTID-02000: Marketplace context — limitations + upcoming events + feed stage
+  if (pack.marketplace_context) {
+    const m = pack.marketplace_context;
+    context += `<marketplace_context>\n`;
+    if (m.lifecycle_stage) context += `Lifecycle stage: ${m.lifecycle_stage}\n`;
+    if (m.region_group) context += `Region: ${m.region_group}\n`;
+    context += `Product scope preference: ${m.scope_preference}\n`;
+    if (m.budget_max_per_product_cents) {
+      context += `Budget ceiling per product: ${(m.budget_max_per_product_cents / 100).toFixed(0)}\n`;
+    }
+    const limits = m.hard_limitations;
+    const hardParts: string[] = [];
+    if (limits.allergies.length) hardParts.push(`allergies: ${limits.allergies.join(', ')}`);
+    if (limits.dietary_restrictions.length) hardParts.push(`dietary: ${limits.dietary_restrictions.join(', ')}`);
+    if (limits.contraindications.length) hardParts.push(`conditions: ${limits.contraindications.join(', ')}`);
+    if (limits.current_medications.length) hardParts.push(`medications: ${limits.current_medications.join(', ')}`);
+    if (hardParts.length) {
+      context += `Hard limitations (NEVER recommend products that violate): ${hardParts.join('; ')}\n`;
+    }
+    if (m.active_conditions.length) {
+      context += `Active conditions: ${m.active_conditions.map((c) => c.key).join(', ')}\n`;
+    }
+    if (m.upcoming_events_hints.length) {
+      context += `Upcoming events: ${m.upcoming_events_hints.join('; ')}\n`;
+    }
+    if (m.recent_purchases_count > 0) {
+      context += `Past purchases: ${m.recent_purchases_count} (avoid re-recommending recently purchased items)\n`;
+    }
+    if (m.marketplace_picks.length) {
+      context += `Top marketplace picks for this user:\n`;
+      for (const p of m.marketplace_picks.slice(0, 5)) {
+        context += `- ${p.title} (${p.product_id}): ${p.match_reason}\n`;
+      }
+    }
+    context += `When the user asks about products or shopping, use search_marketplace_products or open_discover_feed. Never surface products that violate hard limitations.\n`;
+    context += `</marketplace_context>\n\n`;
   }
 
   return context;

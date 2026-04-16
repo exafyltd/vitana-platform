@@ -119,6 +119,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const topicsRouter = require('./routes/topics').default;
   // VTID-01092: Services + Products as Relationship Memory
   const offersRouter = require('./routes/offers').default;
+  // VTID-02000: Marketplace catalog ingestion API (Claude Code scraping, cron, curator agent)
+  const catalogIngestRouter = require('./routes/catalog-ingest').default;
+  // VTID-02000: Affiliate click redirect with geo-guard + click log + reward event
+  const clickRedirectRouter = require('./routes/click-redirect').default;
+  // VTID-02000: Discover search (query-driven, used by UI search bar + assistant tool)
+  const discoverSearchRouter = require('./routes/discover-search').default;
+  // VTID-02000: Discover feed (lifecycle-aware default browse)
+  const discoverFeedRouter = require('./routes/discover-feed').default;
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -561,6 +569,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01092: Services + Products as Relationship Memory (catalog + offers)
   mountRouterSync(app, '/api/v1', offersRouter, { owner: 'offers' });
+
+  // VTID-02000: Marketplace catalog ingestion API
+  mountRouterSync(app, '/api/v1/catalog/ingest', catalogIngestRouter, { owner: 'catalog-ingest' });
+
+  // VTID-02000: Affiliate click redirect (public user-facing link, no /api/v1 prefix)
+  mountRouterSync(app, '/r', clickRedirectRouter, { owner: 'click-redirect' });
+
+  // VTID-02000: Discover search + feed (unified marketplace query surface)
+  mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
+  mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
 
   // VTID-01091: Locations Memory + Discovery + Preferences
   mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });
