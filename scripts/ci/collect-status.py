@@ -2,7 +2,8 @@
 """
 VTID-01176: Cloud Run Status Collector
 Checks health of ALL canonical Cloud Run gateway services.
-Posts summary to Google Chat Command HUB space.
+Posts summary to Google Chat Command HUB space ONLY when one or more
+services are down (all-green runs are silent by design).
 """
 import os, requests, json
 from datetime import datetime
@@ -162,23 +163,24 @@ with open('docs/STATUS.md', 'w') as f:
     f.write(md)
 print(f'Updated docs/STATUS.md — {live_count}/{total} live')
 
-# ── Post to Google Chat ──
+# ── Post to Google Chat (only when one or more checks are failing) ──
+# Rationale: all-green pings create noise; we only want to hear from the
+# DevOps bot when something actually needs attention.
 webhook = os.getenv('WEBHOOK_URL', '')
 if webhook:
-    summary = f'*Vitana: {live_count}/{total} live*'
     if down_services:
+        summary = f'*Vitana: {live_count}/{total} live*'
         down_list = ', '.join(down_services[:10])
         if len(down_services) > 10:
             down_list += f' (+{len(down_services) - 10} more)'
         text = f'{summary}\n⚠️ Down: {down_list}'
+        try:
+            requests.post(webhook, json={'text': text}, timeout=10)
+            print('Posted to Chat (failures detected)')
+        except Exception as e:
+            print(f'Chat error: {e}')
     else:
-        text = f'{summary}\n✅ All systems operational'
-
-    try:
-        requests.post(webhook, json={'text': text}, timeout=10)
-        print('Posted to Chat')
-    except Exception as e:
-        print(f'Chat error: {e}')
+        print(f'All {total} services live — Chat notification suppressed (all-green rule)')
 
 # ── POST structured failure data to Gateway self-healing endpoint ──
 service_token = os.getenv('SERVICE_TOKEN', '')
