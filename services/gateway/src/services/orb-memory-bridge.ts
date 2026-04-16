@@ -309,6 +309,78 @@ export async function fetchRecentConversationForCognee(
 }
 
 // =============================================================================
+// VTID-RECENT-TURNS: Fetch the last N user utterances from ORB sessions.
+// =============================================================================
+// Used by the bootstrap context builder so a new ORB session can answer
+// "what did I ask you last?" with the actual last thing the user said —
+// instead of hallucinating from aggregated facts. The old flow discarded
+// `session.transcriptTurns` on session close and the new session started
+// with an empty transcript, so Gemini had no recent-conversation grounding.
+export async function fetchRecentOrbUserTurns(
+  identity: { user_id: string; tenant_id: string },
+  limit: number = 3
+): Promise<Array<{ content: string; occurred_at: string }>> {
+  const client = createMemoryClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await client
+      .from('memory_items')
+      .select('content, content_json, occurred_at')
+      .eq('tenant_id', identity.tenant_id)
+      .eq('user_id', identity.user_id)
+      .in('source', ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'])
+      .order('occurred_at', { ascending: false })
+      .limit(Math.max(limit * 4, 12)); // over-fetch; then filter to user-direction
+
+    if (error || !data) return [];
+
+    const out: Array<{ content: string; occurred_at: string }> = [];
+    for (const row of data) {
+      const direction = (row.content_json as any)?.direction;
+      if (direction !== 'user') continue;
+      const content = (row.content || '').trim();
+      if (!content) continue;
+      out.push({ content, occurred_at: row.occurred_at as string });
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch (err: any) {
+    console.warn('[VTID-RECENT-TURNS] fetchRecentOrbUserTurns error:', err.message);
+    return [];
+  }
+}
+
+// Format recent turns as a compact prompt block. Returns empty string if no
+// turns — caller can concatenate unconditionally.
+export function formatRecentTurnsBlock(
+  turns: Array<{ content: string; occurred_at: string }>,
+  lang: string = 'en'
+): string {
+  if (!turns || turns.length === 0) return '';
+  const now = Date.now();
+  const isDe = lang.startsWith('de');
+  const header = isDe
+    ? '## LETZTE GESPRÄCHSPUNKTE (wirkliche Aussagen des Nutzers, nicht halluzinieren)'
+    : '## RECENT CONVERSATION (actual user statements — never hallucinate)';
+  const lines: string[] = [header];
+  lines.push(isDe
+    ? 'Dies sind die letzten Dinge, die der Nutzer dir in einer vorigen ORB-Sitzung gesagt hat (neueste zuerst). Wenn er fragt "was habe ich zuletzt gesagt / gefragt?" — zitiere diese wörtlich. Wenn keine davon passt, sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal", NICHT halluzinieren.'
+    : 'These are the most recent things the user said to you in a prior ORB session (newest first). If they ask "what did I last say / ask?" — quote these verbatim. If none are relevant, say honestly "I\'m not quite sure — could you remind me?" — do NOT make something up.');
+  for (const t of turns) {
+    const ts = Date.parse(t.occurred_at);
+    const mins = Math.max(0, Math.round((now - ts) / 60000));
+    const ago = mins < 1 ? (isDe ? 'gerade eben' : 'just now')
+      : mins < 60 ? (isDe ? `vor ${mins} min` : `${mins} min ago`)
+      : mins < 60 * 24 ? (isDe ? `vor ${Math.round(mins / 60)} h` : `${Math.round(mins / 60)} h ago`)
+      : (isDe ? `vor ${Math.round(mins / (60 * 24))} Tagen` : `${Math.round(mins / (60 * 24))} days ago`);
+    const content = t.content.length > 300 ? t.content.substring(0, 297) + '…' : t.content;
+    lines.push(`  - [${ago}] ${isDe ? 'Nutzer' : 'User'}: "${content}"`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// =============================================================================
 // VTID-01106: Memory Context Fetching
 // =============================================================================
 
