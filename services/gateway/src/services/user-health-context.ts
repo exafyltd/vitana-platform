@@ -347,6 +347,30 @@ export async function getUserHealthContext(
       }
     }
 
+    // VTID-02100: wearable 7-day rollup
+    if (opts.include_wearable !== false) {
+      try {
+        const { data: rollup } = await supabase
+          .from('wearable_rollup_7d')
+          .select('sleep_avg_minutes, sleep_deep_pct, hrv_avg_ms, resting_hr, activity_minutes, workout_count, days_with_data, latest_date')
+          .eq('user_id', user_id)
+          .maybeSingle();
+        if (rollup && rollup.days_with_data && rollup.days_with_data > 0) {
+          ctx.wearable_summary_7d = {
+            sleep_avg_minutes: rollup.sleep_avg_minutes,
+            sleep_deep_pct: rollup.sleep_deep_pct,
+            hrv_avg_ms: rollup.hrv_avg_ms,
+            resting_hr: rollup.resting_hr,
+            activity_minutes: rollup.activity_minutes,
+            workout_count: rollup.workout_count,
+          };
+          sources_queried.push('wearable_rollup_7d');
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
     // calendar — upcoming relevant events (next 21 days)
     if (opts.include_calendar !== false) {
       try {

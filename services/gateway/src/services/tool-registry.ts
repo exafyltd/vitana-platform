@@ -421,6 +421,36 @@ The response includes feed_context.rationale — speak this verbatim to the user
     },
   ],
 
+  // ===== VTID-02100: Wearable tools =====
+  [
+    'get_wearable_metrics',
+    {
+      name: 'get_wearable_metrics',
+      description: `Fetch the user's recent wearable metrics (sleep, activity, HRV, resting heart rate, workouts).
+Call this tool when:
+- User asks about their sleep, recovery, energy, workouts, HRV, resting heart rate
+- User says things like "how did I sleep this week?", "am I recovering?", "why am I tired?"
+- The assistant needs wearable signal to ground a recommendation (insomnia, low-hrv, etc.)
+
+Returns:
+- rollup_7d: averages over the last 7 days (sleep_avg_minutes, sleep_deep_pct, hrv_avg_ms, resting_hr, activity_minutes, workout_count, days_with_data, latest_date)
+- recent_daily: last 30 days of daily rows per provider
+
+If rollup_7d is null, the user has not connected a wearable yet — suggest /ecosystem/preferences or the Terra widget flow instead of fabricating numbers.`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          days: { type: 'integer', description: 'How many recent days of detail to include. Default 7, max 30.' },
+        },
+        required: [],
+      },
+      allowed_roles: ['user', 'operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'matchmaking',
+      vtid: 'VTID-02100',
+    },
+  ],
+
   // ===== VTID-DEV-ASSIST: Developer Assistant Tools (Task & Spec Lifecycle) =====
   [
     'dev_list_tasks',

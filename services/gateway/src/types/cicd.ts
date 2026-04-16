@@ -606,7 +606,15 @@ export type CicdEventType =
   // VTID-02000: Marketplace geo mismatch + limitation safety events
   | 'marketplace.offer.geo_mismatch'
   | 'marketplace.limitation.violation'
-  | 'marketplace.limitation.bypass';
+  | 'marketplace.limitation.bypass'
+  // VTID-02100: Phase 1 connector / wearable events
+  | 'connector.wearable.auth.completed'
+  | 'connector.wearable.auth.revoked'
+  | 'connector.wearable.sleep.recorded'
+  | 'connector.wearable.activity.recorded'
+  | 'connector.wearable.workout.recorded'
+  | 'connector.wearable.other'
+  | 'wearable.metrics.read';
 
 export interface CicdOasisEvent {
   vtid: string;

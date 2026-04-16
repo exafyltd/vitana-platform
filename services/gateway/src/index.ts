@@ -131,8 +131,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
-  // VTID-02000: Wearables waitlist (Phase 0 stub until Phase 1 ships Terra + iOS companion)
+  // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
   const wearablesWaitlistRouter = require('./routes/wearables-waitlist').default;
+  // VTID-02100: Phase 1 — connector framework + wearable routes + webhook receiver
+  const wearablesRouter = require('./routes/wearables').default;
+  const connectorWebhooksRouter = require('./routes/connector-webhooks').default;
+  const { initializeAllConnectors } = require('./connectors');
+  initializeAllConnectors().catch((err: unknown) => {
+    console.error('[connectors] initialization error:', err);
+  });
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -598,6 +605,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02000: Wearables waitlist (Phase 0 stub — real connectors ship in Phase 1)
   mountRouterSync(app, '/api/v1/wearables/waitlist', wearablesWaitlistRouter, { owner: 'wearables-waitlist' });
+
+  // VTID-02100: Phase 1 wearables routes + connector webhook receiver
+  mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
+  mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
 
   // VTID-01091: Locations Memory + Discovery + Preferences
   mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });
