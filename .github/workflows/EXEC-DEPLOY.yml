@@ -514,16 +514,10 @@ jobs:
           mkdir -p "$SCREENSHOT_DIR"
           npx tsx ci-visual-verify.ts
 
-      - name: Upload Visual Verification Screenshots
-        uses: actions/upload-artifact@v4
-        if: always() && steps.visual_verify.outcome != 'skipped'
-        continue-on-error: true  # Artifact quota issues must not fail a successful deploy
-        with:
-          name: visual-verify-screenshots-${{ github.run_id }}
-          path: /tmp/visual-verify/
-          retention-days: 2
-          if-no-files-found: ignore
-          overwrite: true
+      # Screenshot artifact upload removed — never used for debugging and was
+      # the primary consumer of the private-repo artifact storage quota.
+      # Workflow logs show pass/fail and the exact failure message; re-add
+      # this step temporarily if a specific deploy ever needs deep debugging.
 
       # =========================================================================
       # VTID-0510: Record Software Version

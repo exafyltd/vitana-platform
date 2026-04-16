@@ -108,14 +108,5 @@ jobs:
               }]
             }' || echo "::warning::Self-healing report POST failed (non-fatal)"
 
-      - name: Upload test results on failure
-        uses: actions/upload-artifact@v4
-        if: failure()
-        continue-on-error: true
-        with:
-          name: e2e-results-${{ github.run_id }}
-          path: |
-            e2e/test-results/
-            e2e/playwright-report/
-          retention-days: 2
-          overwrite: true
+      # Playwright trace/video artifact upload removed — never used for
+      # debugging. Re-add temporarily if investigating a specific failure.
