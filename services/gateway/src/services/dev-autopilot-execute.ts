@@ -562,6 +562,22 @@ export async function backgroundExecutorTick(): Promise<void> {
           message: `Execution ${exec.id.slice(0, 8)} failed: ${result.error || 'unknown'}`,
           payload: { execution_id: exec.id, error: result.error },
         });
+
+        // Bridge: route the failure through self-healing triage + auto-revert.
+        // Fire-and-forget so one slow triage doesn't block the executor tick.
+        // Loaded lazily to avoid a module-level circular import.
+        try {
+          const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+          bridgeFailureToSelfHealing({
+            execution_id: exec.id,
+            failure_stage: 'ci',
+            error: result.error,
+          }).catch((err: unknown) => {
+            console.error(`${LOG_PREFIX} bridge error for ${exec.id}:`, err);
+          });
+        } catch (err) {
+          console.error(`${LOG_PREFIX} bridge load error for ${exec.id}:`, err);
+        }
       }
     }).catch((err) => {
       console.error(`${LOG_PREFIX} unhandled executor error for ${exec.id}:`, err);

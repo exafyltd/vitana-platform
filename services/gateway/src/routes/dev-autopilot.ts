@@ -15,6 +15,7 @@ import { Router, Request, Response } from 'express';
 import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
+import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
@@ -380,6 +381,63 @@ router.post('/findings/batch-approve-auto-execute', requireDevRole, async (req: 
 router.post('/executions/:id/cancel', requireDevRole, async (req: Request, res: Response) => {
   const r = await cancelExecution(req.params.id);
   return res.status(r.ok ? 200 : 400).json(r);
+});
+
+// POST /executions/:id/bridge — manually route a failed execution through the
+// self-healing bridge. Useful for re-running the bridge after a fix, or for
+// testing from Command Hub. Valid stages: ci | deploy | verification.
+router.post('/executions/:id/bridge', requireDevRole, async (req: Request, res: Response) => {
+  const stage = String(req.body?.failure_stage || 'ci') as FailureStage;
+  if (!['ci', 'deploy', 'verification'].includes(stage)) {
+    return res.status(400).json({ ok: false, error: 'failure_stage must be ci | deploy | verification' });
+  }
+  try {
+    const result = await bridgeFailureToSelfHealing({
+      execution_id: req.params.id,
+      failure_stage: stage,
+      error: req.body?.error,
+      verification_result: req.body?.verification_result,
+      blast_radius: req.body?.blast_radius,
+    });
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} bridge route error:`, err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// GET /executions/:id/lineage — returns the self-heal chain (parent + children)
+// so the UI can draw the retry lineage inline with the execution detail.
+router.get('/executions/:id/lineage', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const rootId = req.params.id;
+
+  // Walk up to the root (parent_execution_id === null), then fetch all
+  // descendants whose finding_id matches. Most lineages are shallow (<= 3)
+  // so this is cheap; we cap at 20 hops defensively.
+  type LineageRow = { id: string; finding_id: string; parent_execution_id: string | null };
+  const visited = new Set<string>();
+  let currentId: string | null = rootId;
+  let root: LineageRow | null = null;
+  for (let i = 0; i < 20 && currentId && !visited.has(currentId); i++) {
+    visited.add(currentId);
+    const hop: { ok: boolean; data?: LineageRow[]; error?: string } = await supaGet<LineageRow[]>(
+      supa,
+      `/rest/v1/dev_autopilot_executions?id=eq.${currentId}&select=id,finding_id,parent_execution_id&limit=1`,
+    );
+    if (!hop.ok || !hop.data || hop.data.length === 0) break;
+    root = hop.data[0];
+    currentId = root.parent_execution_id;
+  }
+  if (!root) return res.status(404).json({ ok: false, error: 'execution not found' });
+
+  const all = await supaGet<unknown[]>(
+    supa,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${root.finding_id}&order=created_at.asc`,
+  );
+  if (!all.ok) return res.status(500).json({ ok: false, error: all.error });
+  return res.json({ ok: true, root_id: root.id, lineage: all.data || [] });
 });
 
 router.get('/executions', requireDevRole, async (req: Request, res: Response) => {
