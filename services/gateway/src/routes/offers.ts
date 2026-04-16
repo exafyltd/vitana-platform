@@ -21,6 +21,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { emitOutcomeReported } from '../services/reward-events';
 
 const router = Router();
 
@@ -506,6 +507,28 @@ router.post('/offers/outcome', async (req: Request, res: Response) => {
         perceived_impact
       }
     );
+
+    // VTID-02000: Reward-system-facing event — only for products (services handled separately)
+    if (target_type === 'product') {
+      // Best-effort identity extraction for reward-events payload
+      try {
+        const { data: userRow } = await supabase.auth.getUser();
+        const userId = userRow?.user?.id;
+        const tenantId = (userRow?.user?.app_metadata as { active_tenant_id?: string } | undefined)?.active_tenant_id;
+        if (userId && tenantId) {
+          await emitOutcomeReported({
+            user_id: userId,
+            tenant_id: tenantId,
+            product_id: target_id,
+            outcome_type,
+            perceived_impact,
+            reported_at: new Date().toISOString(),
+          });
+        }
+      } catch (emitErr) {
+        console.warn('[VTID-02000] marketplace.outcome.reported emit failed (non-fatal):', emitErr);
+      }
+    }
 
     console.log(`[VTID-01092] Outcome recorded: ${data.id} (${outcome_type} -> ${perceived_impact})`);
 

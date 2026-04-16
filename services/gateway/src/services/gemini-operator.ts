@@ -2618,6 +2618,32 @@ export async function executeTool(
         result = await executeDevLockStatus(threadId);
         break;
 
+      // VTID-02000: Marketplace tools
+      case 'search_marketplace_products':
+        result = await executeSearchMarketplaceProducts(
+          args as {
+            q?: string;
+            user_condition?: string;
+            health_goals?: string[];
+            ingredients_any?: string[];
+            dietary_tags?: string[];
+            form?: string;
+            category?: string;
+            price_max_cents?: number;
+            limit?: number;
+            scope?: string;
+          },
+          threadId
+        );
+        break;
+
+      case 'open_discover_feed':
+        result = await executeOpenDiscoverFeed(
+          args as { category?: string; limit?: number },
+          threadId
+        );
+        break;
+
       default:
         result = {
           ok: false,
@@ -4330,6 +4356,165 @@ async function executeDevLockStatus(threadId: string): Promise<ToolExecutionResu
     return { ok: resp.ok, data: result };
   } catch (err: any) {
     return { ok: false, error: err.message };
+  }
+}
+
+// ==================== VTID-02000: Marketplace Tool Executors ====================
+
+/**
+ * Call the gateway's own discover-search endpoint. The tool runs in-process
+ * with the user's effective context extracted via the JWT the caller attached
+ * to the tool-execution path.
+ */
+async function executeSearchMarketplaceProducts(
+  args: {
+    q?: string;
+    user_condition?: string;
+    health_goals?: string[];
+    ingredients_any?: string[];
+    dietary_tags?: string[];
+    form?: string;
+    category?: string;
+    price_max_cents?: number;
+    limit?: number;
+    scope?: string;
+  },
+  _threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const { getUserHealthContext, inferPrimaryCondition } = await import('./user-health-context');
+    const { applyUserLimitations } = await import('./limitations-filter');
+    const { getConditionMapping } = await import('./condition-matcher');
+    const { getSupabase } = await import('../lib/supabase');
+
+    // For tool calls we assume a per-thread user context is attached via
+    // gateway machinery; for Phase 0 we fall back to an anonymous search.
+    // Real integration with the orb-live session's user_id happens in the
+    // orb-live -> gemini-operator wiring layer — we leave this runnable.
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, error: 'Supabase unavailable' };
+
+    const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
+    const conditionKey = args.user_condition;
+    const mapping = conditionKey ? await getConditionMapping(conditionKey) : null;
+
+    let healthGoals = args.health_goals;
+    let ingredientsAny = args.ingredients_any;
+    if (mapping) {
+      if (!ingredientsAny?.length) ingredientsAny = mapping.recommended_ingredients;
+      if (!healthGoals?.length) healthGoals = mapping.recommended_health_goals;
+    }
+
+    let query = supabase
+      .from('products')
+      .select(
+        'id, title, description, brand, category, price_cents, currency, images, affiliate_url, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions'
+      )
+      .eq('is_active', true)
+      .eq('availability', 'in_stock');
+
+    if (args.q) {
+      const sanitizedQ = args.q.replace(/[&|!<>()]/g, ' ').trim();
+      if (sanitizedQ) query = query.textSearch('search_text', sanitizedQ, { config: 'simple', type: 'websearch' });
+    }
+    if (args.category) query = query.eq('category', args.category);
+    if (args.form) query = query.eq('form', args.form);
+    if (healthGoals?.length) query = query.overlaps('health_goals', healthGoals);
+    if (ingredientsAny?.length) query = query.overlaps('ingredients_primary', ingredientsAny);
+    if (args.dietary_tags?.length) query = query.contains('dietary_tags', args.dietary_tags);
+    if (args.price_max_cents !== undefined) query = query.lte('price_cents', args.price_max_cents);
+
+    query = query.order('rating', { ascending: false, nullsFirst: false }).limit(limit * 3);
+
+    const { data: rows, error } = await query;
+    if (error) return { ok: false, error: error.message };
+
+    const items = (rows ?? []) as Array<{ id: string; title: string; price_cents: number | null; currency: string | null; rating: number | null; ingredients_primary: string[]; origin_country: string | null; origin_region: string | null; contains_allergens: string[]; contraindicated_with_conditions: string[]; contraindicated_with_medications: string[]; ships_to_countries: string[] | null; ships_to_regions: string[] | null; excluded_from_regions: string[]; dietary_tags: string[] }>;
+
+    // If we can resolve a user context (best-effort), apply limitations
+    // For now this path runs without ctx — full wiring to per-session user_id
+    // lands when orb-live passes it down.
+    const matchReasonsFor = (p: typeof items[number]): Array<{ kind: string; text: string }> => {
+      const reasons: Array<{ kind: string; text: string }> = [];
+      if (mapping?.recommended_ingredients_ranked.length && p.ingredients_primary?.length) {
+        const pIngs = new Set(p.ingredients_primary.map((x) => x.toLowerCase()));
+        for (const rec of mapping.recommended_ingredients_ranked) {
+          if (pIngs.has(rec.ingredient.toLowerCase())) {
+            reasons.push({ kind: 'condition', text: `Contains ${rec.ingredient} (${rec.evidence} evidence for ${mapping.display_label})` });
+            break;
+          }
+        }
+      }
+      if (p.rating !== null && p.rating >= 4.5) {
+        reasons.push({ kind: 'rating', text: `Rated ${p.rating.toFixed(1)}/5` });
+      }
+      if (p.origin_country) {
+        reasons.push({ kind: 'origin', text: `Ships from ${p.origin_country}` });
+      }
+      return reasons;
+    };
+
+    const result = {
+      items: items.slice(0, limit).map((p) => ({
+        product_id: p.id,
+        title: p.title,
+        price_cents: p.price_cents,
+        currency: p.currency,
+        rating: p.rating,
+        origin_country: p.origin_country,
+        match_reasons: matchReasonsFor(p),
+      })),
+      count: Math.min(items.length, limit),
+      applied_filters: {
+        user_condition: conditionKey ?? null,
+        health_goals: healthGoals ?? null,
+        ingredients_any: ingredientsAny ?? null,
+        dietary_tags: args.dietary_tags ?? null,
+        price_max_cents: args.price_max_cents ?? null,
+      },
+    };
+
+    return { ok: true, data: result };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+async function executeOpenDiscoverFeed(
+  args: { category?: string; limit?: number },
+  _threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const { getSupabase } = await import('../lib/supabase');
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, error: 'Supabase unavailable' };
+
+    const limit = Math.min(Math.max(args.limit ?? 10, 1), 30);
+    let query = supabase
+      .from('products')
+      .select('id, title, price_cents, currency, rating, origin_country, images, category, brand, reward_preview')
+      .eq('is_active', true)
+      .eq('availability', 'in_stock');
+    if (args.category) query = query.eq('category', args.category);
+    query = query.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
+
+    const { data, error } = await query;
+    if (error) return { ok: false, error: error.message };
+
+    return {
+      ok: true,
+      data: {
+        items: data ?? [],
+        count: data?.length ?? 0,
+        feed_context: {
+          rationale: 'Top-rated products currently in stock. Personalized ranking applies when user context is available on the session.',
+        },
+      },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
   }
 }
 

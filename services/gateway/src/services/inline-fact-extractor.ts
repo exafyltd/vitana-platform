@@ -220,6 +220,42 @@ async function persistFact(
 ): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
 
+  // VTID-02000: Canonical fact key check. Non-canonical keys for health/dietary
+  // data land in the review queue so an admin can canonicalize. For identity
+  // and preference keys (where the taxonomy is more forgiving), we still persist
+  // using the original key regardless of canonical match — memory stays useful
+  // even while taxonomy catches up.
+  let effectiveFactKey = fact.fact_key;
+  try {
+    const checkResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_canonical_fact_key`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({ p_key: fact.fact_key, p_sample_value: fact.fact_value }),
+    });
+    if (checkResp.ok) {
+      const result = (await checkResp.json()) as {
+        ok?: boolean;
+        mapped?: boolean;
+        canonical_key?: string;
+        logged_for_review?: boolean;
+      };
+      if (result?.ok && result.mapped && typeof result.canonical_key === 'string') {
+        // Admin has canonicalized this observed key — use their mapping.
+        effectiveFactKey = result.canonical_key;
+      }
+      // If logged_for_review=true, the RPC has already recorded it in the
+      // review queue. We still persist under the original key so the fact
+      // isn't lost; admin will promote non-canonical keys retroactively.
+    }
+  } catch (checkErr) {
+    // Non-fatal — canonical check is advisory
+    console.warn(`[VTID-02000] canonical fact check failed (non-fatal):`, checkErr);
+  }
+
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
       method: 'POST',
@@ -231,7 +267,7 @@ async function persistFact(
       body: JSON.stringify({
         p_tenant_id: tenant_id,
         p_user_id: user_id,
-        p_fact_key: fact.fact_key,
+        p_fact_key: effectiveFactKey,
         p_fact_value: fact.fact_value,
         p_entity: fact.entity,
         p_fact_value_type: fact.fact_value_type,

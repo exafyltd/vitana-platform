@@ -41,6 +41,11 @@ import {
   CommunityUserSignal,
   generateCommunityUserFingerprint,
 } from './analyzers/community-user-analyzer';
+import {
+  analyzeMarketplace,
+  MarketplaceSignal,
+  generateMarketplaceFingerprint,
+} from './analyzers/marketplace-analyzer';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -48,7 +53,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -288,6 +293,33 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
   };
 }
 
+function convertMarketplaceSignal(signal: MarketplaceSignal): GeneratedRecommendation {
+  const priceText =
+    signal.price_cents !== null && signal.currency
+      ? ` (${(signal.price_cents / 100).toFixed(2)} ${signal.currency})`
+      : '';
+  const conditionText = signal.condition_key ? ` for ${signal.condition_key.replace(/-/g, ' ')}` : '';
+  const reasonsText = signal.match_reasons
+    .slice(0, 3)
+    .map((r) => r.text)
+    .join('. ');
+  return {
+    title: `Try: ${signal.product_title}${priceText}`.substring(0, 100),
+    summary: `Recommended${conditionText}. ${reasonsText}`,
+    domain: 'marketplace',
+    impact_score: signal.match_score > 0.7 ? 8 : signal.match_score > 0.5 ? 6 : 4,
+    effort_score: 2, // easy to act on — just review + click
+    risk_level: signal.severity,
+    source_type: 'marketplace',
+    source_ref: `product:${signal.product_id}|condition:${signal.condition_key ?? 'none'}`,
+    fingerprint: generateMarketplaceFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
 function convertUserBehaviorSignal(signal: UserBehaviorSignal): GeneratedRecommendation {
   const impactMap: Record<string, number> = {
     unmet_need: 7,
@@ -514,6 +546,31 @@ export async function generateRecommendations(
             }
           } catch (err) {
             errors.push({ source: 'llm', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // VTID-02000: Marketplace analyzer (per-user product recommendations)
+    if (fullConfig.sources.includes('marketplace')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeMarketplace({});
+            analysisSummary.marketplace = result.summary;
+
+            if (result.ok) {
+              // Marketplace signals are per-user; allow more than 1/4 share of limit
+              // because each signal is user-scoped not system-wide.
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertMarketplaceSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'marketplace', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'marketplace', error: String(err) });
           }
         })()
       );

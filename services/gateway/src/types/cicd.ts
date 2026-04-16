@@ -562,7 +562,22 @@ export type CicdEventType =
   | 'brain.tool.executed'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
-  | 'news.feed.cycle_complete';
+  | 'news.feed.cycle_complete'
+  // VTID-02000: Marketplace ingestion events
+  | 'marketplace.ingest.run.started'
+  | 'marketplace.ingest.run.finished'
+  | 'marketplace.ingest.run.failed'
+  // VTID-02000: Marketplace commerce events (reward-system contract — DO NOT RENAME)
+  | 'marketplace.click.outbound'
+  | 'marketplace.order.conversion'
+  | 'marketplace.outcome.reported'
+  | 'marketplace.share.initiated'
+  | 'marketplace.recommendation.accepted'
+  | 'marketplace.preferences.updated'
+  // VTID-02000: Marketplace geo mismatch + limitation safety events
+  | 'marketplace.offer.geo_mismatch'
+  | 'marketplace.limitation.violation'
+  | 'marketplace.limitation.bypass';
 
 export interface CicdOasisEvent {
   vtid: string;

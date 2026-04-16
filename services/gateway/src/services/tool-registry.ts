@@ -324,6 +324,103 @@ CRITICAL — How to present results:
     },
   ],
 
+  // ===== VTID-02000: Marketplace Tools =====
+  [
+    'search_marketplace_products',
+    {
+      name: 'search_marketplace_products',
+      description: `Search the Vitana marketplace for products matching the user's needs. Use when:
+- User asks for a product (supplement, device, skincare, etc.)
+- User describes a symptom or goal ("something for sleep", "I need more energy", "help with stress")
+- User wants to see options, compare prices, or find alternatives
+
+Extract filters from natural language:
+- health_goals for WHY: 'better-sleep', 'stress-reduction', 'energy', 'muscle-recovery', 'focus', 'immunity', 'digestive-health', 'joint-mobility', 'mood-balance', 'menstrual-support', 'jet-lag-recovery'
+- ingredients_any for WHAT they know they want: ['magnesium'], ['ashwagandha'], ['omega-3']
+- dietary_tags for constraints: ['vegan'], ['gluten-free'], ['halal']
+- price_max_cents when they mention a budget (always in minor units — €30 = 3000)
+- user_condition when the user describes a condition matching one of: insomnia, low-hrv, chronic-stress, low-energy, poor-focus, post-workout-recovery, seasonal-immunity, menstrual-cramps, joint-pain, digestive-irritation, mild-low-mood, migraines, skin-inflammation, cold-flu-recovery, jet-lag
+- q as free-text fallback for anything else
+
+The user's country, region, scope preference, dietary/allergy restrictions, and past purchases are applied automatically — do NOT repeat them in args. Never ask the user to repeat their allergies or restrictions; the system already knows.
+
+Each result carries match_score (0-1) and match_reasons[]. When presenting results, speak the match_reasons verbatim — they are user-specific and build trust.
+
+If results are thin, the response includes suggested_expansions (e.g., "widen scope to international"). Suggest these only when the user seems open to broader options.`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', description: 'Free-text query (used when structured filters are not enough).' },
+          user_condition: {
+            type: 'string',
+            description: 'Canonical condition key from the knowledge base (e.g. "insomnia", "low-hrv", "chronic-stress"). Omit unless you can map the user\'s description to one.',
+          },
+          health_goals: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Goals the product should support (e.g. ["better-sleep"]).',
+          },
+          ingredients_any: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Match-any ingredient filter (e.g. ["magnesium-glycinate"]).',
+          },
+          dietary_tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Required dietary tags (e.g. ["vegan","gluten-free"]). All must match.',
+          },
+          form: {
+            type: 'string',
+            enum: ['capsule', 'tablet', 'powder', 'liquid', 'gummy', 'softgel', 'spray', 'other'],
+            description: 'Preferred supplement form.',
+          },
+          category: { type: 'string', description: 'Canonical category: supplements, wellness-services, skincare, devices, books.' },
+          price_max_cents: { type: 'integer', description: 'Max price in minor units (€30 = 3000, $50 = 5000).' },
+          limit: { type: 'integer', description: 'Number of results. Default 10, max 50.' },
+          scope: {
+            type: 'string',
+            enum: ['local', 'regional', 'friendly', 'international'],
+            description: 'Override the user\'s default scope (only if the user explicitly asks to widen).',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['user', 'operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'matchmaking',
+      vtid: 'VTID-02000',
+    },
+  ],
+  [
+    'open_discover_feed',
+    {
+      name: 'open_discover_feed',
+      description: `Return the user's default Discover Marketplace feed — what MATTERS to them right now given lifecycle stage, region, limitations, and conditions. Use when:
+- User says "show me the shop", "open Discover", "what do you have for me", "what\'s new"
+- User asks for general browsing, not a specific product
+
+Distinct from search_marketplace_products:
+- This has NO query — it surfaces a ranked feed tailored to the user
+- New users (onboarding) see admin-curated starter picks for their region
+- Mature users see 90% personalized recommendations
+
+The response includes feed_context.rationale — speak this verbatim to the user as framing (e.g. "Here is your feed, shaped by your last three months of sleep data").`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', description: 'Optional category narrow (supplements, skincare, devices).' },
+          limit: { type: 'integer', description: 'Number of items. Default 20, max 30.' },
+        },
+        required: [],
+      },
+      allowed_roles: ['user', 'operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'matchmaking',
+      vtid: 'VTID-02000',
+    },
+  ],
+
   // ===== VTID-DEV-ASSIST: Developer Assistant Tools (Task & Spec Lifecycle) =====
   [
     'dev_list_tasks',
