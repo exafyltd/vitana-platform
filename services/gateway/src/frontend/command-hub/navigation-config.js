@@ -52,7 +52,8 @@ export const NAVIGATION_CONFIG = [
       { key: 'live-console', label: 'Live Console' },
       { key: 'events', label: 'Events' },
       { key: 'vtids', label: 'VTIDs' },
-      { key: 'approvals', label: 'Approvals' }
+      { key: 'approvals', label: 'Approvals' },
+      { key: 'dev-autopilot', label: 'Dev Autopilot' }
     ]
   },
   {

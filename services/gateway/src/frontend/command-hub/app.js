@@ -5849,6 +5849,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'command-hub' && tab === 'approvals') {
         // VTID-0600: Approvals UI Scaffolding
         container.appendChild(renderApprovalsView());
+    } else if (moduleKey === 'command-hub' && tab === 'dev-autopilot') {
+        // Dev Autopilot — self-improving queue (plan: .claude/plans/quirky-jumping-fairy.md)
+        container.appendChild(renderDevAutopilotView());
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
         container.appendChild(renderOasisEventsView());
@@ -34487,6 +34490,156 @@ function fetchSelfHealingData() {
         state.selfHealing.loading = false;
         renderApp();
     });
+}
+
+// =============================================================================
+// Dev Autopilot — self-improving queue (plan: .claude/plans/quirky-jumping-fairy.md)
+// PR-4 lands the shell; PR-5 wires the findings list; PR-8 adds action buttons
+// and live trace. Live polling is set up once the panel is mounted so state
+// survives the destructive renderApp() cycle.
+// =============================================================================
+
+if (!state.devAutopilot) {
+    state.devAutopilot = {
+        fetched: false,
+        loading: false,
+        error: null,
+        runs: [],
+        queue: [],
+        config: null,
+        pollerId: null,
+        // Filters (URL-synced in PR-5)
+        filterRisk: 'all',
+        filterDomain: 'all',
+        sort: 'impact',
+        // Selection for batch actions (PR-8)
+        selectedIds: {},
+    };
+}
+
+function fetchDevAutopilotState() {
+    state.devAutopilot.loading = true;
+    var headers = buildContextHeaders({});
+    return Promise.all([
+        fetch('/api/v1/dev-autopilot/runs?limit=10', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, runs: [] }; }),
+        fetch('/api/v1/dev-autopilot/queue?status=new&limit=200', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, findings: [] }; }),
+        fetch('/api/v1/dev-autopilot/config', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, config: null }; }),
+    ]).then(function (results) {
+        state.devAutopilot.runs = (results[0] && results[0].runs) || [];
+        state.devAutopilot.queue = (results[1] && results[1].findings) || [];
+        state.devAutopilot.config = (results[2] && results[2].config) || null;
+        state.devAutopilot.fetched = true;
+        state.devAutopilot.loading = false;
+        state.devAutopilot.error = null;
+        renderApp();
+    }).catch(function (err) {
+        state.devAutopilot.error = err && err.message ? err.message : String(err);
+        state.devAutopilot.loading = false;
+        renderApp();
+    });
+}
+
+function renderDevAutopilotView() {
+    var container = document.createElement('div');
+    container.className = 'dev-autopilot-container';
+    container.style.cssText = 'padding: 16px;';
+
+    // Auto-fetch on first render
+    if (!state.devAutopilot.fetched && !state.devAutopilot.loading) {
+        fetchDevAutopilotState();
+    }
+
+    // Live polling: 10s interval while this tab is the active content.
+    // Cleared in renderApp() preamble when the tab changes (see teardown hook below).
+    if (!state.devAutopilot.pollerId) {
+        state.devAutopilot.pollerId = setInterval(function () {
+            if (state.activeTab === 'dev-autopilot' && state.activeModule === 'command-hub') {
+                fetchDevAutopilotState();
+            }
+        }, 10000);
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Dev Autopilot';
+    title.style.cssText = 'margin: 0; font-size: 20px; color: var(--text-color, #fff);';
+    titleWrap.appendChild(title);
+
+    var subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888); margin-top: 4px;';
+    subtitle.textContent = 'Self-improving queue — twice-daily scan, plan, approve, execute';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.devAutopilot.loading ? 'Loading…' : 'Refresh';
+    refreshBtn.style.cssText = 'padding: 6px 14px; font-size: 13px;';
+    refreshBtn.disabled = !!state.devAutopilot.loading;
+    refreshBtn.onclick = function () { fetchDevAutopilotState(); };
+    header.appendChild(refreshBtn);
+
+    container.appendChild(header);
+
+    if (state.devAutopilot.error) {
+        var errorEl = document.createElement('div');
+        errorEl.style.cssText = 'padding: 12px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; color: #ef4444; margin-bottom: 16px;';
+        errorEl.textContent = 'Error loading Dev Autopilot: ' + state.devAutopilot.error;
+        container.appendChild(errorEl);
+    }
+
+    // PR-4 shell: shows status strip placeholder + "coming soon" for sections
+    // that PR-5 / PR-8 will fill in. Panel is fully wired into routing + polling
+    // now so the rest of the plan can iterate without further plumbing changes.
+    var statusStrip = document.createElement('div');
+    statusStrip.style.cssText = 'display: flex; gap: 16px; padding: 12px 16px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 6px; margin-bottom: 16px; font-size: 13px;';
+
+    var cfg = state.devAutopilot.config || {};
+    var queueCount = (state.devAutopilot.queue || []).length;
+    var chips = [
+        { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
+        { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
+        { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
+        { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
+        { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },
+    ];
+    chips.forEach(function (c) {
+        var el = document.createElement('div');
+        el.innerHTML = '<span style="color: var(--text-secondary, #888); margin-right: 6px;">' + c.label + ':</span><strong style="color: ' + c.color + ';">' + c.value + '</strong>';
+        statusStrip.appendChild(el);
+    });
+    container.appendChild(statusStrip);
+
+    var runsSection = document.createElement('details');
+    runsSection.style.cssText = 'margin-bottom: 16px;';
+    var runsSummary = document.createElement('summary');
+    runsSummary.style.cssText = 'cursor: pointer; padding: 8px 12px; background: var(--card-bg, rgba(255,255,255,0.04)); border-radius: 4px; font-size: 13px; color: var(--text-color, #fff);';
+    runsSummary.textContent = 'Scan runs (' + (state.devAutopilot.runs || []).length + ')';
+    runsSection.appendChild(runsSummary);
+    var runsBody = document.createElement('div');
+    runsBody.style.cssText = 'padding: 12px; font-size: 12px; color: var(--text-secondary, #aaa);';
+    if ((state.devAutopilot.runs || []).length === 0) {
+        runsBody.textContent = 'No scans yet.';
+    } else {
+        state.devAutopilot.runs.forEach(function (run) {
+            var line = document.createElement('div');
+            line.style.cssText = 'margin-bottom: 4px;';
+            line.textContent = (run.started_at ? new Date(run.started_at).toLocaleString() : '—') + ' · ' + run.status + ' · signals: ' + (run.signal_count || 0) + ' · new: ' + (run.new_finding_count || 0) + ' · updated: ' + (run.updated_finding_count || 0);
+            runsBody.appendChild(line);
+        });
+    }
+    runsSection.appendChild(runsBody);
+    container.appendChild(runsSection);
+
+    var placeholder = document.createElement('div');
+    placeholder.style.cssText = 'padding: 20px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px dashed var(--border-color, rgba(255,255,255,0.12)); border-radius: 6px; color: var(--text-secondary, #888); text-align: center;';
+    placeholder.innerHTML = 'Findings queue + plan viewer land in the next iteration.<br><br>Plumbing: <code>GET /api/v1/dev-autopilot/queue</code> → ' + queueCount + ' findings loaded.';
+    container.appendChild(placeholder);
+
+    return container;
 }
 
 function renderSelfHealingView() {
