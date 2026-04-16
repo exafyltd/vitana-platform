@@ -42,13 +42,5 @@ jobs:
           SCREENSHOT_DIR: /tmp/visual-verify-frontend
         run: npx tsx ci-visual-verify-frontend.ts
 
-      - name: Upload Screenshots
-        uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
-        with:
-          name: frontend-visual-screenshots-${{ github.run_id }}
-          path: /tmp/visual-verify-frontend/
-          retention-days: 2
-          if-no-files-found: ignore
-          overwrite: true
+      # Screenshot artifact upload removed — never used for debugging.
+      # Re-add temporarily if investigating a specific failure.
