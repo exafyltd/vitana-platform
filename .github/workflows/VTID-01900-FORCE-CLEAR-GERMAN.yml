@@ -1,0 +1,41 @@
+name: VTID-01900 Force-clear non-whitelisted German news
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-01900-FORCE-CLEAR-GERMAN.yml'
+  workflow_dispatch:
+
+jobs:
+  force-clear:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete ALL German articles not in approved consumer wellness whitelist
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Force-clearing all German articles not in the consumer wellness whitelist..."
+          psql "$SUPABASE_DB_URL" <<'SQL'
+          DELETE FROM news_items
+          WHERE language = 'de'
+          AND source_name NOT IN (
+            'Zentrum der Gesundheit',
+            'Heilpraxis',
+            'Spiegel Gesundheit',
+            'Women''s Health DE',
+            'Men''s Health DE',
+            'Verbraucherzentrale Gesundheit',
+            'Verbraucherzentrale Lebensmittel',
+            'stern Gesundheit',
+            'FIT FOR FUN',
+            'EAT SMARTER',
+            'DGE Ernährungsgesellschaft',
+            'Lifeline Gesundheit',
+            'Brigitte Gesundheit'
+          );
+          SQL
+          echo "Remaining German articles by source:"
+          psql "$SUPABASE_DB_URL" -c "SELECT source_name, COUNT(*) FROM news_items WHERE language='de' GROUP BY source_name ORDER BY COUNT(*) DESC;"
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
