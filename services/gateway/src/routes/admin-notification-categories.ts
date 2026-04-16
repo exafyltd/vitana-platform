@@ -1,5 +1,5 @@
 /**
- * Admin Notification Categories API — CRUD + Test
+ * Admin Notification Categories API — CRUD + Test (BOOTSTRAP-NOTIF-CATEGORIES)
  *
  * Endpoints:
  * - GET    /              — List all categories (supports ?type=chat&tenant_id=...)
