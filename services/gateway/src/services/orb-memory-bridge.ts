@@ -351,22 +351,48 @@ export async function fetchRecentOrbUserTurns(
   }
 }
 
-// Format recent turns as a compact prompt block. Returns empty string if no
-// turns — caller can concatenate unconditionally.
+// Format recent turns as a HIGH-PRIORITY prompt block. Returns a header +
+// "no data" block even when the list is empty, so Gemini always sees the
+// anchor and the rules.
+//
+// VTID-RECENT-TURNS-V2: v1 was ignored — Gemini saw "what did I ask last?"
+// and reflexively called search_memory, which returns semantic matches
+// against memory_facts (Cognee-extracted birthday, fiancée name, etc.) and
+// produced hallucinations. This revision (a) uses strong === banners so the
+// block can't be confused with the category-organized memory context below,
+// and (b) includes explicit rules forbidding search_memory for recency
+// questions.
 export function formatRecentTurnsBlock(
   turns: Array<{ content: string; occurred_at: string }>,
   lang: string = 'en'
 ): string {
-  if (!turns || turns.length === 0) return '';
-  const now = Date.now();
   const isDe = lang.startsWith('de');
-  const header = isDe
-    ? '## LETZTE GESPRÄCHSPUNKTE (wirkliche Aussagen des Nutzers, nicht halluzinieren)'
-    : '## RECENT CONVERSATION (actual user statements — never hallucinate)';
-  const lines: string[] = [header];
+  const now = Date.now();
+  const lines: string[] = [];
+  lines.push('============================================================');
   lines.push(isDe
-    ? 'Dies sind die letzten Dinge, die der Nutzer dir in einer vorigen ORB-Sitzung gesagt hat (neueste zuerst). Wenn er fragt "was habe ich zuletzt gesagt / gefragt?" — zitiere diese wörtlich. Wenn keine davon passt, sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal", NICHT halluzinieren.'
-    : 'These are the most recent things the user said to you in a prior ORB session (newest first). If they ask "what did I last say / ask?" — quote these verbatim. If none are relevant, say honestly "I\'m not quite sure — could you remind me?" — do NOT make something up.');
+    ? '## LETZTE ECHTE NUTZER-AUSSAGEN (wörtliche Transkripte — HÖCHSTE PRIORITÄT)'
+    : '## MOST RECENT USER UTTERANCES (verbatim transcripts — HIGHEST PRIORITY)');
+  lines.push('============================================================');
+
+  if (!turns || turns.length === 0) {
+    lines.push(isDe
+      ? 'Noch keine vorigen Nutzer-Äußerungen für diese Nutzer-ID gespeichert.'
+      : 'No prior user utterances stored for this user yet.');
+    lines.push('');
+    lines.push(isDe
+      ? '**REGEL:** Wenn der Nutzer fragt "was habe ich zuletzt gesagt / gefragt?" oder "erinnerst du dich an meine letzte Frage?" — sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal." Rufe KEINE Tools auf (kein search_memory, kein search_knowledge) — diese liefern semantische Treffer, nicht die chronologisch letzte Äußerung, und halluzinieren.'
+      : '**RULE:** If the user asks "what did I last say / ask?" or "do you remember my previous question?" — say honestly "I\'m not quite sure — could you remind me?" Do NOT call any tools (no search_memory, no search_knowledge) — those return semantic matches, not the most recent chronological utterance, and will hallucinate.');
+    lines.push('============================================================');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  lines.push(isDe
+    ? 'Dies sind die letzten Dinge, die der Nutzer in einer vorigen oder dieser ORB-Sitzung tatsächlich gesagt hat (neueste zuerst). Sie sind die EINZIGE verlässliche Quelle für "was habe ich gerade / zuletzt gefragt?". Die "## Verified Facts" und "## User Context" weiter unten enthalten AGGREGIERTE, extrahierte Fakten (Geburtstag, Beziehungen, Interessen) — sie sind NICHT die letzte gesprochene Frage.'
+    : 'These are the actual things the user said in a prior or current ORB session (newest first). They are the ONLY reliable source for "what did I just / last ask?". The "## Verified Facts" and "## User Context" sections further down hold AGGREGATED, extracted facts (birthday, relationships, interests) — they are NOT the most recent spoken utterance.');
+  lines.push('');
+
   for (const t of turns) {
     const ts = Date.parse(t.occurred_at);
     const mins = Math.max(0, Math.round((now - ts) / 60000));
@@ -377,7 +403,28 @@ export function formatRecentTurnsBlock(
     const content = t.content.length > 300 ? t.content.substring(0, 297) + '…' : t.content;
     lines.push(`  - [${ago}] ${isDe ? 'Nutzer' : 'User'}: "${content}"`);
   }
-  return lines.join('\n') + '\n';
+  lines.push('');
+  lines.push(isDe
+    ? '**REGELN für Fragen zu vergangenen Aussagen:**'
+    : '**RULES for questions about past utterances:**');
+  lines.push(isDe
+    ? '1. "Was habe ich zuletzt gesagt / gefragt?" / "Erinnerst du dich an meine letzte Frage?" → zitiere den OBERSTEN Eintrag oben wörtlich. Rufe KEINE Tools auf.'
+    : '1. "What did I last say / ask?" / "Do you remember my previous question?" → quote the TOP entry above verbatim. Do NOT call any tools.');
+  lines.push(isDe
+    ? '2. "Was habe ich vorher gefragt / davor gesagt?" → zitiere den ZWEITEN Eintrag.'
+    : '2. "What did I ask before that / say earlier?" → quote the SECOND entry.');
+  lines.push(isDe
+    ? '3. "Erinnerst du dich noch?" / "Was haben wir besprochen?" → fasse die Einträge oben kurz zusammen (eine Zeile pro Eintrag, neueste zuerst).'
+    : '3. "Do you remember?" / "What did we talk about?" → summarize the entries above briefly (one line each, newest first).');
+  lines.push(isDe
+    ? '4. NIEMALS search_memory für diese Fragen aufrufen. search_memory liefert semantische Treffer aus memory_facts / Cognee-extrahierten Entitäten — das ist NICHT die gesprochene Frage. Nur search_memory aufrufen, wenn der Nutzer nach einem FAKT fragt, den er irgendwann erwähnt hat ("was weißt du über meine Gesundheit?").'
+    : '4. NEVER call search_memory for these questions. search_memory returns semantic hits from memory_facts / Cognee-extracted entities — that is NOT the spoken utterance. Only call search_memory when the user asks about a FACT they mentioned sometime ("what do you know about my health?").');
+  lines.push(isDe
+    ? '5. Wenn keiner der obigen Einträge zur Frage passt, sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal." NICHT halluzinieren. NICHT aus den "Verified Facts" unten raten.'
+    : '5. If none of the entries above match the question, say honestly "I\'m not quite sure — could you remind me?" Do NOT hallucinate. Do NOT guess from the "Verified Facts" below.');
+  lines.push('============================================================');
+  lines.push('');
+  return lines.join('\n');
 }
 
 // =============================================================================
