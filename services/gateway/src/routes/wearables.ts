@@ -233,29 +233,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
   });
 });
 
-// ==================== POST /waitlist — Phase 0 compat (still works) ====================
-
-router.post('/waitlist', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  const supabase = getSupabase();
-  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id));
-  if (!tenantId) return res.status(400).json({ ok: false, error: 'Tenant not found' });
-
-  const provider = typeof req.body?.provider === 'string' ? (req.body.provider as string) : null;
-  if (!provider) return res.status(400).json({ ok: false, error: 'provider required' });
-
-  const { data, error } = await supabase
-    .from('wearable_waitlist')
-    .upsert(
-      { user_id: user.user_id, tenant_id: tenantId, provider, notify_via: 'email' },
-      { onConflict: 'user_id,provider' }
-    )
-    .select('*')
-    .single();
-  if (error) return res.status(500).json({ ok: false, error: error.message });
-  res.json({ ok: true, waitlist_entry: data });
-});
+// POST /api/v1/wearables/waitlist is owned by routes/wearables-waitlist.ts
+// (mounted separately in index.ts). Kept there to avoid a duplicate-route
+// registration that blocks gateway startup.
 
 export default router;
