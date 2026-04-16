@@ -517,11 +517,13 @@ jobs:
       - name: Upload Visual Verification Screenshots
         uses: actions/upload-artifact@v4
         if: always() && steps.visual_verify.outcome != 'skipped'
+        continue-on-error: true  # Artifact quota issues must not fail a successful deploy
         with:
-          name: visual-verify-screenshots
+          name: visual-verify-screenshots-${{ github.run_id }}
           path: /tmp/visual-verify/
-          retention-days: 7
+          retention-days: 2
           if-no-files-found: ignore
+          overwrite: true
 
       # =========================================================================
       # VTID-0510: Record Software Version
