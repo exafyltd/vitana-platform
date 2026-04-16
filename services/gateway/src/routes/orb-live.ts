@@ -1122,6 +1122,129 @@ const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
 const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
 
 // =============================================================================
+// SHORT-GAP GREETING PHRASE POOL (VTID-GREETING-VARIETY)
+// =============================================================================
+// Gemini tends to converge on a single translation ("What can I do for you?"
+// → "Was kann ich für dich tun?") every short-gap reopening. To avoid the
+// same phrase every time the user reopens the orb after seconds or minutes,
+// we maintain a per-language pool of short, warm openers and inject a random
+// subset into the greeting prompt each turn. Applies ONLY to the short-gap
+// buckets (reconnect, recent, same_day) — new-day greetings keep the polite
+// "Good morning, [Name]" pattern untouched.
+const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
+  en: [
+    "I'm listening.",
+    "I'm all ears.",
+    "Go ahead.",
+    "Ready for you.",
+    "How can I help?",
+    "What's on your mind?",
+    "What would you like to know?",
+    "What do you need?",
+    "How can I support you?",
+    "Yes?",
+    "I'm here.",
+    "At your service.",
+  ],
+  de: [
+    "Ich bin ganz Ohr!",
+    "Ich höre!",
+    "Ich höre dir zu.",
+    "Ja bitte?",
+    "Was gibt's Neues?",
+    "Stets zu Diensten!",
+    "Womit kann ich helfen?",
+    "Was möchtest du wissen?",
+    "Worum geht's?",
+    "Was liegt an?",
+    "Bereit.",
+    "Ich bin da.",
+    "Was brauchst du?",
+  ],
+  fr: [
+    "Je t'écoute.",
+    "Je suis tout ouïe.",
+    "À ton service.",
+    "Oui ?",
+    "Quoi de neuf ?",
+    "Comment puis-je aider ?",
+    "De quoi as-tu besoin ?",
+    "Que veux-tu savoir ?",
+    "Je suis là.",
+    "Prête.",
+  ],
+  es: [
+    "Te escucho.",
+    "Soy toda oídos.",
+    "A tu servicio.",
+    "¿Sí?",
+    "¿Qué hay?",
+    "¿En qué puedo ayudar?",
+    "¿Qué necesitas?",
+    "¿Qué quieres saber?",
+    "Aquí estoy.",
+    "Lista.",
+  ],
+  ar: [
+    "أنا أسمعك.",
+    "تفضل.",
+    "في خدمتك.",
+    "نعم؟",
+    "كيف يمكنني المساعدة؟",
+    "ماذا تحتاج؟",
+    "ماذا تريد أن تعرف؟",
+    "أنا هنا.",
+  ],
+  zh: [
+    "我在听。",
+    "请说。",
+    "为你服务。",
+    "嗯？",
+    "有什么新鲜事？",
+    "有什么我可以帮忙的？",
+    "你需要什么？",
+    "你想知道什么？",
+    "我在这里。",
+  ],
+  ru: [
+    "Я слушаю.",
+    "Я вся внимание.",
+    "К твоим услугам.",
+    "Да?",
+    "Что нового?",
+    "Чем могу помочь?",
+    "Что вас интересует?",
+    "Что тебе нужно?",
+    "Я здесь.",
+  ],
+  sr: [
+    "Слушам те.",
+    "Сва сам уши.",
+    "На услузи.",
+    "Да?",
+    "Шта има ново?",
+    "Како могу да помогнем?",
+    "Шта ти треба?",
+    "Шта те занима?",
+    "Ту сам.",
+  ],
+};
+
+// Pick N phrases from the lang pool without replacement. Randomized per call
+// so the system instruction and the turn-start prompt each see a fresh
+// ordering — Gemini strongly biases toward the first option in a list, so
+// rotating the order is the cheapest effective variety lever.
+function pickShortGapGreetings(lang: string, count: number): string[] {
+  const pool = SHORT_GAP_GREETING_PHRASES[lang] || SHORT_GAP_GREETING_PHRASES.en;
+  const copy = pool.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(count, copy.length));
+}
+
+// =============================================================================
 // VTID-FORWARDING-WATCHDOG: Detect zombie upstream WebSocket connections
 // =============================================================================
 // After turn_complete, the response watchdog is cleared. When the user speaks
@@ -3151,44 +3274,37 @@ function buildTemporalJourneyContextSection(
   const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
 
   const bucket = isReconnect ? 'reconnect' : temporal.bucket;
+  // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
+  // subset of the language-specific phrase pool so Gemini rotates openers
+  // instead of converging on the same translation every time.
+  const shortGapExamples = pickShortGapGreetings(lang, 6);
+  const appendShortGapPhraseMenu = () => {
+    lines.push('  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):');
+    for (const p of shortGapExamples) {
+      lines.push(`      "${p}"`);
+    }
+    lines.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
+  };
   switch (bucket) {
     case 'reconnect':
       lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
       lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name. Do NOT introduce yourself.');
       lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Pick ONE of these example phrasings (vary them, do not always pick the same one):');
-      lines.push('      "How can I help?"');
-      lines.push('      "What would you like to know?"');
-      lines.push('      "I am listening."');
-      lines.push('      "What can I do for you?"');
-      lines.push('      "What\'s on your mind?"');
-      lines.push('      "Ready for you."');
+      appendShortGapPhraseMenu();
       lines.push('  • Max ONE short phrase. Warm but direct — no filler like "of course", "happy to", "sure".');
       break;
     case 'recent':
       lines.push('- BUCKET = recent (2–15 min since last session).');
       lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.');
       lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "What\'s on your mind?"');
-      lines.push('      "How can I help?"');
-      lines.push('      "I am listening."');
-      lines.push('      "What do you need?"');
-      lines.push('      "What can I do for you?"');
-      lines.push('      "How can I support you?"');
+      appendShortGapPhraseMenu();
       lines.push('  • Max ONE short phrase. Warm but direct.');
       break;
     case 'same_day':
       lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
       lines.push('  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you\'ve never met.');
       lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Pick ONE of these example phrasings:');
-      lines.push('      "How can I help?"');
-      lines.push('      "What\'s on your mind?"');
-      lines.push('      "What do you need?"');
-      lines.push('      "What would you like to explore?"');
-      lines.push('      "What can I do for you?"');
-      lines.push('      "I am listening."');
+      appendShortGapPhraseMenu();
       lines.push('  • Max ONE short phrase. Warm and direct.');
       break;
     case 'today':
@@ -5010,18 +5126,26 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
     // VTID-WATCHDOG: If the previous session failed (no audio delivered) and
     // the user comes back within 10 minutes, acknowledge it explicitly.
+    // VTID-GREETING-VARIETY: For short-gap buckets (reconnect, recent,
+    // same_day) inject a freshly-shuffled menu of openers IN THE USER'S
+    // LANGUAGE. Without this, Gemini consistently picks the first English
+    // example and literal-translates it, producing the same German line
+    // every single reopen ("Was kann ich für dich tun?").
+    const shortGapMenu = pickShortGapGreetings(lang, 6);
+    const menuList = shortGapMenu.map(p => `"${p}"`).join(', ');
+
     if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
       prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
     } else {
       switch (temporal.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with ONE single short phrase like "How can I help?" or "What can I do for you?" NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with ONE single short phrase like "What's on your mind?" or "How can I help?" NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with ONE single short phrase like "How can I help?" or "What can I do for you?" NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
           break;
         case 'today':
           prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question like "What can I do for you?" Max TWO short sentences.${screenHint}`;
