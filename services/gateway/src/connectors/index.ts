@@ -11,6 +11,10 @@
 
 import type { Connector, ConnectorMetadata } from './types';
 import terraConnector from './wearable/terra';
+import vitalConnector from './wearable/vital';
+import fitbitConnector from './wearable/fitbit';
+import ouraConnector from './wearable/oura';
+import stravaConnector from './wearable/strava';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -24,10 +28,10 @@ function register(c: Connector): void {
 
 // ---- Register each connector here ----
 register(terraConnector);
-// Future additions:
-// register(fitbitConnector);
-// register(ouraConnector);
-// ...
+register(vitalConnector);
+register(fitbitConnector);
+register(ouraConnector);
+register(stravaConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);

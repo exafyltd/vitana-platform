@@ -157,6 +157,85 @@ router.post('/connect/:connector', async (req: Request, res: Response) => {
   return res.status(501).json({ ok: false, error: `${connector.display_name} does not expose a connect flow yet` });
 });
 
+// ==================== GET /callback/:connector ====================
+// OAuth2 redirect target. Provider sends the user back here with `code` + `state`.
+// We exchange the code for tokens and persist a user_connections row.
+
+router.get('/callback/:connector', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const connectorId = req.params.connector;
+  const connector = getConnector(connectorId);
+  if (!connector || !connector.exchangeCode) {
+    return res.status(404).json({ ok: false, error: `Unknown connector: ${connectorId}` });
+  }
+
+  const code = typeof req.query.code === 'string' ? req.query.code : null;
+  const state = typeof req.query.state === 'string' ? req.query.state : null;
+  const error_param = typeof req.query.error === 'string' ? req.query.error : null;
+
+  if (error_param) {
+    // User denied or provider errored — redirect to frontend with error flag
+    const redirectUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=error&provider=${connectorId}&reason=${encodeURIComponent(error_param)}`;
+    return res.redirect(302, redirectUrl);
+  }
+  if (!code || !state) {
+    return res.status(400).json({ ok: false, error: 'Missing code or state' });
+  }
+
+  // State was encoded as base64(JSON({ u: user_id, t: tenant_id, c: connector_id }))
+  let stateData: { u: string; t: string; c: string };
+  try {
+    stateData = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+  } catch {
+    return res.status(400).json({ ok: false, error: 'Invalid state' });
+  }
+  if (stateData.c !== connectorId) {
+    return res.status(400).json({ ok: false, error: 'State/connector mismatch' });
+  }
+
+  const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? 'https://gateway-q74ibpv6ia-uc.a.run.app'}/api/v1/wearables/callback/${connectorId}`;
+
+  try {
+    const result = await connector.exchangeCode(code, redirectUri);
+
+    // Persist user_connections row
+    await supabase.from('user_connections').upsert(
+      {
+        tenant_id: stateData.t,
+        user_id: stateData.u,
+        connector_id: connector.id,
+        category: connector.category,
+        provider_user_id: result.provider_user_id ?? null,
+        provider_username: result.profile?.provider_username ?? null,
+        display_name: result.profile?.display_name ?? null,
+        avatar_url: result.profile?.avatar_url ?? null,
+        profile_url: result.profile?.profile_url ?? null,
+        access_token: result.tokens.access_token,
+        refresh_token: result.tokens.refresh_token ?? null,
+        token_expires_at: result.tokens.expires_at ?? null,
+        scopes_granted: result.tokens.scopes_granted ?? [],
+        capabilities_granted: connector.capabilities,
+        profile_data: (result.profile?.raw ?? {}) as object,
+        enrichment_status: 'pending',
+        is_active: true,
+        connected_at: new Date().toISOString(),
+      },
+      { onConflict: 'tenant_id,user_id,connector_id,provider_user_id' }
+    );
+
+    // Redirect user to frontend success page
+    const successUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=success&provider=${connectorId}`;
+    return res.redirect(302, successUrl);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[wearables/callback/${connectorId}]`, message);
+    const errorUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=error&provider=${connectorId}&reason=${encodeURIComponent(message)}`;
+    return res.redirect(302, errorUrl);
+  }
+});
+
 // ==================== POST /disconnect/:connector ====================
 
 router.post('/disconnect/:connector', async (req: Request, res: Response) => {
