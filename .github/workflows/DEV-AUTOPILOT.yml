@@ -1,0 +1,56 @@
+name: Dev Autopilot Scan
+
+# Twice-daily scan that walks the repo for TODO / large-file / missing-test
+# signals, POSTs them to the gateway's /api/v1/dev-autopilot/scan endpoint,
+# and lets the gateway synthesize findings + rank them for the Dev Autopilot
+# queue in Command Hub. The gateway's dev_autopilot_config.kill_switch row
+# gates whether any downstream planning or execution happens.
+
+on:
+  schedule:
+    # 07:00 and 19:00 UTC — avoids the main deploy windows.
+    - cron: "0 7,19 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "If true, produce signals.json but skip POSTing to gateway"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: dev-autopilot-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+      DEV_AUTOPILOT_SCAN_TOKEN: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+      DEV_AUTOPILOT_SCAN_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run scanner + POST to gateway
+        run: node scripts/ci/dev-autopilot-scan.mjs
+
+      - name: Upload signals artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-autopilot-signals
+          path: dev-autopilot-signals.json
+          retention-days: 7
+          if-no-files-found: warn
