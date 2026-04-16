@@ -297,7 +297,7 @@ export interface ContextPack {
     recent_recommendations: Array<{ title: string; status: string }>;
   };
 
-  /** VTID-02000: Marketplace context — limitations, past purchases, curated picks, feed stage. */
+  /** VTID-02000 / VTID-02100: Marketplace + wearable context. */
   marketplace_context?: {
     lifecycle_stage: 'onboarding' | 'early' | 'established' | 'mature' | null;
     region_group: string | null;
@@ -311,8 +311,17 @@ export interface ContextPack {
     };
     active_conditions: Array<{ key: string; source: string }>;
     recent_purchases_count: number;
-    upcoming_events_hints: string[]; // e.g. ['travel next week', 'race in 3 weeks']
+    upcoming_events_hints: string[];
     marketplace_picks: Array<{ product_id: string; title: string; match_reason: string }>;
+    /** VTID-02100: wearable 7-day summary if a wearable is connected. */
+    wearable_summary_7d?: {
+      sleep_avg_minutes?: number | null;
+      sleep_deep_pct?: number | null;
+      hrv_avg_ms?: number | null;
+      resting_hr?: number | null;
+      activity_minutes?: number | null;
+      workout_count?: number | null;
+    } | null;
   };
 
   /** Retrieval trace for debugging */

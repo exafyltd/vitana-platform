@@ -2644,6 +2644,11 @@ export async function executeTool(
         );
         break;
 
+      // VTID-02100: Wearable metrics
+      case 'get_wearable_metrics':
+        result = await executeGetWearableMetrics(args as { days?: number }, threadId);
+        break;
+
       default:
         result = {
           ok: false,
@@ -4515,6 +4520,77 @@ async function executeOpenDiscoverFeed(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };
+  }
+}
+
+// ==================== VTID-02100: Wearable Metrics Executor ====================
+
+async function executeGetWearableMetrics(
+  args: { days?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  try {
+    const { getSupabase } = await import('../lib/supabase');
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, error: 'Supabase unavailable' };
+
+    // For tool calls we don't have per-thread user context attached at this
+    // layer yet — we use the thread -> user map the orb maintains. For Phase 1
+    // we fall back to returning aggregate shape so tests can exercise.
+    // Real integration is completed when orb-live's session attaches user_id
+    // to the tool-execution context.
+    const threadUserId = await resolveThreadUserId(threadId);
+    if (!threadUserId) {
+      return {
+        ok: true,
+        data: {
+          rollup_7d: null,
+          recent_daily: [],
+          note: 'No user context attached to this session — connect a wearable via /ecosystem to see your metrics.',
+        },
+      };
+    }
+
+    const limit = Math.min(Math.max(args.days ?? 7, 1), 30);
+
+    const [rollupResp, recentResp] = await Promise.all([
+      supabase.from('wearable_rollup_7d').select('*').eq('user_id', threadUserId).maybeSingle(),
+      supabase
+        .from('wearable_daily_metrics')
+        .select('metric_date, provider, sleep_minutes, sleep_deep_minutes, hrv_avg_ms, resting_hr, active_minutes, workout_count, steps')
+        .eq('user_id', threadUserId)
+        .order('metric_date', { ascending: false })
+        .limit(limit),
+    ]);
+
+    if (rollupResp.error) return { ok: false, error: rollupResp.error.message };
+
+    return {
+      ok: true,
+      data: {
+        rollup_7d: rollupResp.data ?? null,
+        recent_daily: recentResp.data ?? [],
+      },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+async function resolveThreadUserId(threadId: string): Promise<string | null> {
+  try {
+    const { getSupabase } = await import('../lib/supabase');
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data } = await supabase
+      .from('conversation_threads')
+      .select('user_id')
+      .eq('thread_id', threadId)
+      .maybeSingle();
+    return (data?.user_id as string | undefined) ?? null;
+  } catch {
+    return null;
   }
 }
 

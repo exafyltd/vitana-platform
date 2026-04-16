@@ -46,6 +46,11 @@ import {
   MarketplaceSignal,
   generateMarketplaceFingerprint,
 } from './analyzers/marketplace-analyzer';
+import {
+  analyzeWearables,
+  WearableSignal,
+  generateWearableFingerprint,
+} from './analyzers/wearable-analyzer';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -53,7 +58,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -290,6 +295,25 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
     suggested_files: signal.suggested_files || [],
     suggested_endpoints: [],
     suggested_tests: ['integration'],
+  };
+}
+
+function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation {
+  const impact = signal.severity === 'high' ? 8 : signal.severity === 'medium' ? 6 : 4;
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: impact,
+    effort_score: 2,
+    risk_level: signal.severity,
+    source_type: 'wearable',
+    source_ref: `wearable:${signal.condition_key}:${signal.user_id}`,
+    fingerprint: generateWearableFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
   };
 }
 
@@ -546,6 +570,27 @@ export async function generateRecommendations(
             }
           } catch (err) {
             errors.push({ source: 'llm', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // VTID-02100: Wearable analyzer (reads wearable_rollup_7d, emits condition signals)
+    if (fullConfig.sources.includes('wearable')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeWearables({});
+            analysisSummary.wearable = result.summary;
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 2))) {
+                recommendations.push(convertWearableSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'wearable', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'wearable', error: String(err) });
           }
         })()
       );

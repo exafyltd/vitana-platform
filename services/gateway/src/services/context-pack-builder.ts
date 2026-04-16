@@ -1253,6 +1253,7 @@ export async function buildContextPack(
         const hc = await getUserHealthContext(input.lens.user_id, {
           include_calendar: true,
           include_past_purchases: true,
+          include_wearable: true,
         });
         const upcomingHints: string[] = [];
         for (const e of hc.upcoming_events.slice(0, 5)) {
@@ -1280,6 +1281,7 @@ export async function buildContextPack(
           recent_purchases_count: hc.past_purchases.length,
           upcoming_events_hints: upcomingHints,
           marketplace_picks: [], // populated by marketplace-analyzer daily; Phase 0 leaves empty
+          wearable_summary_7d: hc.wearable_summary_7d,
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1626,6 +1628,20 @@ export function formatContextPackForLLM(pack: ContextPack): string {
     }
     if (m.upcoming_events_hints.length) {
       context += `Upcoming events: ${m.upcoming_events_hints.join('; ')}\n`;
+    }
+    // VTID-02100: wearable signal if present
+    const w = m.wearable_summary_7d;
+    if (w) {
+      const parts: string[] = [];
+      if (w.sleep_avg_minutes) parts.push(`sleep avg ${(w.sleep_avg_minutes / 60).toFixed(1)}h`);
+      if (w.sleep_deep_pct) parts.push(`deep sleep ${w.sleep_deep_pct.toFixed(1)}%`);
+      if (w.hrv_avg_ms) parts.push(`HRV ${w.hrv_avg_ms.toFixed(0)}ms`);
+      if (w.resting_hr) parts.push(`resting HR ${w.resting_hr}`);
+      if (w.activity_minutes) parts.push(`${w.activity_minutes} min active/day`);
+      if (w.workout_count) parts.push(`${w.workout_count} workouts/7d`);
+      if (parts.length) {
+        context += `Wearable 7-day: ${parts.join(', ')}\n`;
+      }
     }
     if (m.recent_purchases_count > 0) {
       context += `Past purchases: ${m.recent_purchases_count} (avoid re-recommending recently purchased items)\n`;
