@@ -1,7 +1,7 @@
 /**
  * VTID-01900: Longevity News Feed — Background RSS Fetcher
  *
- * Pulls from curated longevity sources every 12 hours.
+ * Pulls from curated longevity + wellness sources every 12 hours.
  * Supports multiple languages (en, de, extensible).
  *
  * Image extraction pipeline (per article):
@@ -9,8 +9,6 @@
  *   2. Try first <img> in RSS content HTML
  *   3. Scrape og:image / twitter:image from article URL (HTML head)
  *   4. Leave null (frontend falls back to category pool)
- *
- * Result: every article ends up with its own unique, content-matched image.
  */
 
 import { createHash } from 'crypto';
@@ -25,7 +23,7 @@ const DEFAULT_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const INITIAL_DELAY_MS = 60_000;
 const FEED_TIMEOUT_MS = 10_000;
 const OG_SCRAPE_TIMEOUT_MS = 6_000;
-const OG_SCRAPE_CONCURRENCY = 5; // max parallel og:image scrapes
+const OG_SCRAPE_CONCURRENCY = 5;
 
 let fetcherTimer: NodeJS.Timeout | null = null;
 let running = false;
@@ -34,7 +32,7 @@ let cycleInFlight = false;
 interface FeedSource { name: string; url: string; language: string; }
 
 const FEEDS: FeedSource[] = [
-  // English
+  // ── English (15) ──
   { name: 'Fight Aging!', url: 'https://www.fightaging.org/feed/', language: 'en' },
   { name: 'Lifespan.io', url: 'https://www.lifespan.io/feed/', language: 'en' },
   { name: 'Longevity.Technology', url: 'https://longevity.technology/feed/', language: 'en' },
@@ -50,28 +48,28 @@ const FEEDS: FeedSource[] = [
   { name: 'Rapamycin News', url: 'https://rapamycin.news/feed/', language: 'en' },
   { name: 'Longevity Advice', url: 'https://longevityadvice.com/feed/', language: 'en' },
   { name: 'Mitosynergy', url: 'https://mitosynergy.com/feed/', language: 'en' },
-  // German
-  { name: 'Deutsches Ärzteblatt', url: 'https://www.aerzteblatt.de/rss/news.asp', language: 'de' },
-  { name: 'Ärzte Zeitung', url: 'https://www.aerztezeitung.de/extras/rss/', language: 'de' },
-  { name: 'Pharmazeutische Zeitung', url: 'https://www.pharmazeutische-zeitung.de/fileadmin/rss/pz_online_rss.php', language: 'de' },
+  // ── German consumer wellness (13) — no medical/pharmacy trade press ──
   { name: 'Zentrum der Gesundheit', url: 'https://www.zentrum-der-gesundheit.de/rss', language: 'de' },
   { name: 'Heilpraxis', url: 'https://www.heilpraxisnet.de/feed/', language: 'de' },
-  { name: 'Lifeline Gesundheit', url: 'https://www.lifeline.de/rss', language: 'de' },
   { name: 'Spiegel Gesundheit', url: 'https://www.spiegel.de/gesundheit/index.rss', language: 'de' },
-  { name: 'NDR Ratgeber Gesundheit', url: 'https://www.ndr.de/ratgeber/gesundheit/index-rss.xml', language: 'de' },
-  { name: 'Quarks', url: 'https://www.quarks.de/feed/', language: 'de' },
-  { name: 'Scinexx', url: 'https://feeds.feedburner.com/scinexx', language: 'de' },
-  { name: 'Apotheken Umschau', url: 'https://www.apotheken-umschau.de/feed/', language: 'de' },
-  { name: 'Focus Gesundheit', url: 'https://www.focus.de/gesundheit/rss', language: 'de' },
-  { name: 'Apotheke Adhoc', url: 'https://www.apotheke-adhoc.de/nachrichten/apothekenpraxis/rss.xml', language: 'de' },
+  { name: "Women's Health DE", url: 'https://www.womenshealth.de/feed/', language: 'de' },
+  { name: "Men's Health DE", url: 'https://www.menshealth.de/feed/', language: 'de' },
+  { name: 'Verbraucherzentrale Gesundheit', url: 'https://www.verbraucherzentrale.de/wissen/gesundheit-pflege/feed', language: 'de' },
+  { name: 'Verbraucherzentrale Lebensmittel', url: 'https://www.verbraucherzentrale.de/wissen/lebensmittel/feed', language: 'de' },
+  { name: 'stern Gesundheit', url: 'https://www.stern.de/feed/standard/gesundheit/', language: 'de' },
+  { name: 'FIT FOR FUN', url: 'https://www.fitforfun.de/fff/XML/rss_fffnews_sport.xml', language: 'de' },
+  { name: 'EAT SMARTER', url: 'https://eatsmarter.de/index.php?type=100', language: 'de' },
+  { name: 'DGE Ernährungsgesellschaft', url: 'https://www.dge.de/rss-feed/', language: 'de' },
+  { name: 'Lifeline Gesundheit', url: 'https://www.lifeline.de/rss', language: 'de' },
+  { name: 'Brigitte Gesundheit', url: 'https://www.brigitte.de/feed.rss', language: 'de' },
 ];
 
 const TAG_KEYWORDS: Record<string, string[]> = {
-  supplements: ['nmn', 'nad', 'resveratrol', 'rapamycin', 'fisetin', 'quercetin', 'spermidine', 'berberine', 'metformin', 'nahrungsergänzung', 'supplement'],
+  supplements: ['nmn', 'nad', 'resveratrol', 'rapamycin', 'fisetin', 'quercetin', 'spermidine', 'berberine', 'metformin', 'nahrungsergänzung', 'supplement', 'vitamin'],
   functional: ['mitochondria', 'autophagy', 'sirtuins', 'senolytic', 'telomere', 'mitochondrien', 'autophagie', 'zellalterung'],
-  natural: ['polyphenol', 'flavonoid', 'curcumin', 'egcg', 'heilpflanze', 'naturheilkunde', 'phytotherapie'],
+  natural: ['polyphenol', 'flavonoid', 'curcumin', 'egcg', 'heilpflanze', 'naturheilkunde', 'phytotherapie', 'heilpraxis'],
   mental_health: ['mental health', 'anxiety', 'depression', 'stress', 'mindfulness', 'meditation', 'cognitive', 'brain health', 'neuroplasticity', 'dementia', 'alzheimer', 'mood', 'psycholog', 'wellbeing', 'well-being', 'therapy', 'psyche', 'burnout', 'achtsamkeit', 'demenz'],
-  general: ['sleep', 'exercise', 'nutrition', 'hydration', 'metabolic', 'prevention', 'fasting', 'longevity', 'aging', 'healthspan', 'lifespan', 'schlaf', 'ernährung', 'bewegung', 'prävention', 'langlebigkeit', 'altern', 'gesundheit', 'fasten'],
+  general: ['sleep', 'exercise', 'nutrition', 'hydration', 'metabolic', 'prevention', 'fasting', 'longevity', 'aging', 'healthspan', 'lifespan', 'schlaf', 'ernährung', 'bewegung', 'prävention', 'langlebigkeit', 'altern', 'gesundheit', 'fasten', 'fitness', 'training'],
 };
 
 function autoTag(title: string, summary: string | undefined): string[] {
@@ -89,7 +87,6 @@ function contentHash(title: string, link: string): string {
   return createHash('sha256').update(`${title}${link}`).digest('hex');
 }
 
-/** Extract image URL from RSS item's own fields (first-pass). */
 function extractImageFromRss(item: any): string | null {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.$?.url) return item['media:content'].$.url;
@@ -106,10 +103,6 @@ function extractImageFromRss(item: any): string | null {
   return null;
 }
 
-/**
- * Scrape og:image / twitter:image from an article URL's HTML head.
- * Every mainstream news site includes this for social sharing.
- */
 async function scrapeOgImage(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -125,7 +118,6 @@ async function scrapeOgImage(url: string): Promise<string | null> {
     clearTimeout(timeoutId);
     if (!response.ok) return null;
 
-    // Only read the first ~256KB to find <head> meta tags (avoids full page download)
     const reader = response.body?.getReader();
     if (!reader) {
       const html = await response.text();
@@ -141,7 +133,6 @@ async function scrapeOgImage(url: string): Promise<string | null> {
       if (done) break;
       totalBytes += value.length;
       html += decoder.decode(value, { stream: true });
-      // Stop as soon as we've seen </head> or enough bytes
       if (html.includes('</head>') || totalBytes >= maxBytes) break;
     }
     reader.cancel().catch(() => {});
@@ -151,7 +142,6 @@ async function scrapeOgImage(url: string): Promise<string | null> {
   }
 }
 
-/** Parse og:image / twitter:image from HTML string, resolve relative URLs. */
 function extractOgFromHtml(html: string, pageUrl: string): string | null {
   const patterns = [
     /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
@@ -164,9 +154,7 @@ function extractOgFromHtml(html: string, pageUrl: string): string | null {
     const match = html.match(pattern);
     if (match?.[1]) {
       let src = match[1].trim();
-      // Decode HTML entities
       src = src.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#47;/g, '/');
-      // Resolve relative / protocol-relative URLs
       if (src.startsWith('//')) src = 'https:' + src;
       else if (src.startsWith('/')) {
         try {
@@ -184,7 +172,6 @@ function extractOgFromHtml(html: string, pageUrl: string): string | null {
   return null;
 }
 
-/** Run scrapers in parallel with bounded concurrency. */
 async function batchScrapeImages(
   items: Array<{ link: string; imageUrl: string | null }>,
   concurrency: number
@@ -249,8 +236,6 @@ async function runFetchCycle(): Promise<void> {
       try { rssData = await parser.parseURL(feed.url); } catch (e) { throw e; }
 
       const items = (rssData.items || []).slice(0, 20);
-
-      // Prepare items with initial RSS image extraction
       const preItems = items
         .filter((item: any) => item.title && item.link)
         .map((item: any) => {
@@ -266,7 +251,6 @@ async function runFetchCycle(): Promise<void> {
           };
         });
 
-      // Second pass: scrape og:image for items without an image (parallel)
       const beforeScrape = preItems.filter((p: any) => p.imageUrl).length;
       await batchScrapeImages(preItems, OG_SCRAPE_CONCURRENCY);
       const afterScrape = preItems.filter((p: any) => p.imageUrl).length;
