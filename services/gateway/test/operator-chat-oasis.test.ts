@@ -105,6 +105,17 @@ jest.mock('../src/services/deploy-orchestrator', () => ({
   },
 }));
 
+// Mock Gemini operator — the real processWithGemini in the chat path makes
+// long-running network calls that hang unit tests (and aren't the unit
+// under test here).
+jest.mock('../src/services/gemini-operator', () => ({
+  processWithGemini: jest.fn().mockResolvedValue({
+    reply: 'mocked gemini response',
+    meta: { model: 'test-gemini', stub: true },
+    toolResults: [],
+  }),
+}));
+
 // Import app AFTER all mocks are set up
 import app from '../src/index';
 import { processMessage } from '../src/services/ai-orchestrator';

@@ -106,6 +106,31 @@ jest.mock('../src/services/deploy-orchestrator', () => ({
   },
 }));
 
+// Mock event loop so /health reports 'healthy' — the event loop is a real
+// background runner that isn't booted in unit tests.
+jest.mock('../src/services/autopilot-event-loop', () => ({
+  startEventLoop: jest.fn(),
+  stopEventLoop: jest.fn(),
+  getEventLoopStatus: jest.fn().mockResolvedValue({
+    ok: true,
+    is_running: true,
+    execution_armed: true,
+  }),
+  getEventLoopHistory: jest.fn().mockResolvedValue([]),
+  resetEventLoopCursor: jest.fn().mockResolvedValue({ ok: true }),
+}));
+
+// Mock Gemini operator — the real processWithGemini in the chat path makes
+// long-running network calls that hang in unit tests (and aren't the unit
+// under test here).
+jest.mock('../src/services/gemini-operator', () => ({
+  processWithGemini: jest.fn().mockResolvedValue({
+    reply: 'mocked gemini response',
+    meta: { model: 'test-gemini', stub: true },
+    toolResults: [],
+  }),
+}));
+
 // Import app AFTER all mocks are set up
 import app from '../src/index';
 import { processMessage } from '../src/services/ai-orchestrator';
