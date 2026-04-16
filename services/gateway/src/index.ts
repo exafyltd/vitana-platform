@@ -916,6 +916,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Dev Autopilot executor initialization failed (non-fatal):', error);
       }
 
+      // Dev Autopilot watchers (PR-9): ci → merging → deploying → verifying → completed
+      // Each watcher is a setInterval; they share the executor's kill switch.
+      // Disabled when DEV_AUTOPILOT_WATCHERS_ENABLED=false.
+      try {
+        if (process.env.DEV_AUTOPILOT_WATCHERS_ENABLED !== 'false') {
+          const { startWatchers } = require('./services/dev-autopilot-watcher');
+          startWatchers();
+        } else {
+          console.log('⏸️ Dev Autopilot watchers disabled (DEV_AUTOPILOT_WATCHERS_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Dev Autopilot watchers initialization failed (non-fatal):', error);
+      }
+
       // AI Personality: Pre-warm config cache from Supabase
       try {
         const { warmPersonalityCache } = require('./services/ai-personality-service');
