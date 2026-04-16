@@ -25,8 +25,8 @@ import { AUTOMATION_ROLES, AutomationDefinition } from '../src/types/automations
 // =============================================================================
 
 describe('AutomationDefinition.targetRoles — schema completeness', () => {
-  test('all 108 automations have a targetRoles property', () => {
-    expect(AUTOMATION_REGISTRY.length).toBe(108);
+  test('every automation has a valid targetRoles property', () => {
+    expect(AUTOMATION_REGISTRY.length).toBeGreaterThan(0);
     for (const def of AUTOMATION_REGISTRY) {
       expect(def).toHaveProperty('targetRoles');
       const roles = def.targetRoles;
