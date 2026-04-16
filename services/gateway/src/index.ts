@@ -127,6 +127,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverSearchRouter = require('./routes/discover-search').default;
   // VTID-02000: Discover feed (lifecycle-aware default browse)
   const discoverFeedRouter = require('./routes/discover-feed').default;
+  // VTID-02000: Maxina admin marketplace routes
+  const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // VTID-02000: User limitations CRUD + impact counter
+  const userLimitationsRouter = require('./routes/user-limitations').default;
+  // VTID-02000: Wearables waitlist (Phase 0 stub until Phase 1 ships Terra + iOS companion)
+  const wearablesWaitlistRouter = require('./routes/wearables-waitlist').default;
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -579,6 +585,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02000: Discover search + feed (unified marketplace query surface)
   mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
+  // VTID-02000: Maxina admin marketplace
+  mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+
+  // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
+  mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });
+
+  // VTID-02000: Wearables waitlist (Phase 0 stub — real connectors ship in Phase 1)
+  mountRouterSync(app, '/api/v1/wearables/waitlist', wearablesWaitlistRouter, { owner: 'wearables-waitlist' });
 
   // VTID-01091: Locations Memory + Discovery + Preferences
   mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });

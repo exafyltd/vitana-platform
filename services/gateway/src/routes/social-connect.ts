@@ -284,6 +284,60 @@ router.put('/share-prefs', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-02000: GET /:provider/profile-summary — Enrichment snapshot for the
+// "Vitana knows you now" success modal shown after connecting a social account.
+//
+// Returns: extracted interests + topics + display summary, sourced from
+// enrichment_data and the user's topic profile / memory facts.
+// =============================================================================
+router.get('/:provider/profile-summary', async (req: Request, res: Response) => {
+  const user = extractUserFromJwt(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supabase = await getServiceClient();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
+
+  const provider = req.params.provider;
+  const { data: connection, error } = await supabase
+    .from('social_connections')
+    .select('provider, provider_username, display_name, avatar_url, profile_url, enrichment_data, enrichment_status, last_enriched_at')
+    .eq('user_id', user.userId)
+    .eq('provider', provider)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  if (!connection) return res.status(404).json({ ok: false, error: 'Connection not found' });
+
+  // Derive interests + topic hints from enrichment_data (shape varies by provider)
+  const enrichment = (connection.enrichment_data as Record<string, unknown>) ?? {};
+  const interests = Array.isArray(enrichment.interests) ? (enrichment.interests as string[]).slice(0, 12) : [];
+  const topics = Array.isArray(enrichment.topics) ? (enrichment.topics as string[]).slice(0, 12) : [];
+  const bio = typeof enrichment.bio === 'string' ? enrichment.bio : null;
+  const follower_count = typeof enrichment.follower_count === 'number' ? enrichment.follower_count : null;
+
+  return res.json({
+    ok: true,
+    summary: {
+      provider: connection.provider,
+      display_name: connection.display_name,
+      provider_username: connection.provider_username,
+      avatar_url: connection.avatar_url,
+      profile_url: connection.profile_url,
+      bio,
+      follower_count,
+      interests,
+      topics,
+      enrichment_status: connection.enrichment_status,
+      last_enriched_at: connection.last_enriched_at,
+      headline: interests.length
+        ? `Vitana picked up ${interests.length} interests from your ${provider} profile — we'll use them to shape your experience.`
+        : `Connected to ${provider}. Enrichment is still processing.`,
+    },
+  });
+});
+
+// =============================================================================
 // Health
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {
