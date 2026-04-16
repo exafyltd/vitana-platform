@@ -1,5 +1,6 @@
 /**
  * Admin Notification Categories API — CRUD + Test (BOOTSTRAP-NOTIF-CATEGORIES)
+ * Deploy timestamp: 2026-04-16T08:00Z
  *
  * Endpoints:
  * - GET    /              — List all categories (supports ?type=chat&tenant_id=...)
