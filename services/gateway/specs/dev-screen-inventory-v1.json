@@ -37,10 +37,10 @@
       "analytics"
     ],
     "operator": [
+      "dashboard",
       "task-queue",
-      "task-details",
-      "execution-logs",
-      "pipelines",
+      "event-stream",
+      "deployments",
       "runbook"
     ],
     "command-hub": [
@@ -48,7 +48,8 @@
       "live-console",
       "events",
       "vtids",
-      "approvals"
+      "approvals",
+      "dev-autopilot"
     ],
     "governance": [
       "rules",
@@ -89,6 +90,7 @@
     "infrastructure": [
       "services",
       "health",
+      "self-healing",
       "deployments",
       "logs",
       "config"
@@ -105,6 +107,7 @@
       "llm-providers",
       "apis",
       "tools",
+      "plugins",
       "service-mesh"
     ],
     "diagnostics": [
@@ -145,6 +148,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 88
+    "total_screens": 91
   }
 }

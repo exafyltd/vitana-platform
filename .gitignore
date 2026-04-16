@@ -8,6 +8,9 @@ temp_*
 *.tmp
 *.temp
 
+# Dev Autopilot scanner output (produced by scripts/ci/dev-autopilot-scan.mjs)
+dev-autopilot-signals.json
+
 # Editor files
 .vscode/
 .idea/

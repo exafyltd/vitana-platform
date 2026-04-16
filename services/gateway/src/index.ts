@@ -214,6 +214,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
+  // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
+  const devAutopilotRouter = require('./routes/dev-autopilot').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -494,6 +496,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
+
+  // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
+  mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
@@ -928,6 +933,33 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // Dev Autopilot background executor (cooling→running→ci loop).
+      // Disabled when DEV_AUTOPILOT_EXECUTOR_ENABLED=false.
+      try {
+        if (process.env.DEV_AUTOPILOT_EXECUTOR_ENABLED !== 'false') {
+          const { startBackgroundExecutor } = require('./services/dev-autopilot-execute');
+          startBackgroundExecutor();
+        } else {
+          console.log('⏸️ Dev Autopilot executor disabled (DEV_AUTOPILOT_EXECUTOR_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Dev Autopilot executor initialization failed (non-fatal):', error);
+      }
+
+      // Dev Autopilot watchers (PR-9): ci → merging → deploying → verifying → completed
+      // Each watcher is a setInterval; they share the executor's kill switch.
+      // Disabled when DEV_AUTOPILOT_WATCHERS_ENABLED=false.
+      try {
+        if (process.env.DEV_AUTOPILOT_WATCHERS_ENABLED !== 'false') {
+          const { startWatchers } = require('./services/dev-autopilot-watcher');
+          startWatchers();
+        } else {
+          console.log('⏸️ Dev Autopilot watchers disabled (DEV_AUTOPILOT_WATCHERS_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Dev Autopilot watchers initialization failed (non-fatal):', error);
       }
 
       // AI Personality: Pre-warm config cache from Supabase
