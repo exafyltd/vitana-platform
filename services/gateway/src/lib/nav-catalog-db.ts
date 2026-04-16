@@ -289,6 +289,21 @@ export async function refreshNavCatalogCache(): Promise<void> {
         }
       }
 
+      // VTID-NAV-GAPFILL: Gap-fill from the compile-time NAVIGATION_CATALOG.
+      // The SQL seed file is known to lag behind the TS catalog (41 rows in
+      // the seed vs 130+ entries in NAVIGATION_CATALOG as of 2026-04-16).
+      // Before this guard, any screen present in TS but absent from the DB
+      // was invisible to the navigator — e.g. PROFILE.ME had no DB row, so
+      // "open my profile" fell through to the next-best scoring entry and
+      // mis-routed. DB rows always win on conflict; TS entries fill gaps.
+      const sharedByScreenId = new Set(sharedBuilt.map(e => e.screen_id));
+      let gapFilled = 0;
+      for (const tsEntry of NAVIGATION_CATALOG as NavCatalogEntryWithRules[]) {
+        if (sharedByScreenId.has(tsEntry.screen_id)) continue;
+        sharedBuilt.push(tsEntry);
+        gapFilled++;
+      }
+
       // Rebuild cache: shared list + per-tenant merged lists.
       catalogCache.clear();
       catalogCache.set(SHARED_KEY, sharedBuilt);
@@ -310,7 +325,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
       lastRefreshAt = Date.now();
 
       console.log(
-        `[VTID-NAV-02] nav_catalog cache refreshed: ${sharedBuilt.length} shared + ${perTenantDelta.size} tenant overlay(s) in ${Date.now() - t0}ms`
+        `[VTID-NAV-02] nav_catalog cache refreshed: ${sharedBuilt.length} shared (${gapFilled} gap-filled from TS) + ${perTenantDelta.size} tenant overlay(s) in ${Date.now() - t0}ms`
       );
     } catch (err: any) {
       console.warn(`[VTID-NAV-02] refreshNavCatalogCache exception: ${err.message}`);

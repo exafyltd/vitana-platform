@@ -82,6 +82,8 @@ import {
   writeDevMemoryItem,
   writeMemoryItemWithIdentity,
   fetchRecentConversationForCognee,  // VTID-01225: For Cognee extraction
+  fetchRecentOrbUserTurns,           // VTID-RECENT-TURNS: grounding for "what did I last say?"
+  formatRecentTurnsBlock,            // VTID-RECENT-TURNS: pretty-print helper
   DEV_IDENTITY,
   MEMORY_CONFIG,
   OrbMemoryContext,
@@ -1332,20 +1334,33 @@ async function buildBootstrapContextPack(
   }
 
   try {
-    // VTID-01224: Use identity-scoped memory fetch so each user gets their own memory
-    const memoryContext = await fetchMemoryContextWithIdentity(
-      { user_id: identity.user_id, tenant_id: identity.tenant_id },
-      LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
-    );
+    // VTID-01224: identity-scoped memory fetch so each user gets their own memory.
+    // VTID-RECENT-TURNS: fetch the 3 most recent raw user utterances in parallel
+    // so Gemini can answer "what did I ask you last?" accurately instead of
+    // hallucinating from aggregated facts.
+    const [memoryContext, recentTurns] = await Promise.all([
+      fetchMemoryContextWithIdentity(
+        { user_id: identity.user_id, tenant_id: identity.tenant_id },
+        LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+      ),
+      fetchRecentOrbUserTurns(
+        { user_id: identity.user_id, tenant_id: identity.tenant_id },
+        3
+      ),
+    ]);
 
     const latencyMs = Date.now() - startTime;
+    const recentTurnsBlock = formatRecentTurnsBlock(recentTurns);
 
     if (!memoryContext.ok || memoryContext.items.length === 0) {
       console.warn(`[VTID-01225] Memory context fetch returned ${memoryContext.items.length} items for session ${sessionId}`);
-      // Still return the formatted context even if no items (contains user info)
-      if (memoryContext.formatted_context) {
+      // Still return the formatted context even if no items (contains user info).
+      // Prepend recent turns so the model still has grounding.
+      const base = memoryContext.formatted_context || '';
+      const combined = recentTurnsBlock ? `${recentTurnsBlock}\n${base}` : base;
+      if (combined) {
         return {
-          contextInstruction: memoryContext.formatted_context,
+          contextInstruction: combined,
           latencyMs,
         };
       }
@@ -1355,12 +1370,16 @@ async function buildBootstrapContextPack(
       };
     }
 
-    // Format the memory context for injection
-    const contextInstruction = memoryContext.formatted_context.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
-      ? memoryContext.formatted_context.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
+    // Format the memory context for injection. Prepend the recent-turns block
+    // BEFORE truncation so it survives long fact-context sessions.
+    const full = recentTurnsBlock
+      ? `${recentTurnsBlock}\n${memoryContext.formatted_context}`
       : memoryContext.formatted_context;
+    const contextInstruction = full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
+      ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
+      : full;
 
-    console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}`);
+    console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}`);
 
     return {
       contextInstruction,
