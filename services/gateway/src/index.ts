@@ -903,6 +903,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
       }
 
+      // Dev Autopilot background executor (cooling→running→ci loop).
+      // Disabled when DEV_AUTOPILOT_EXECUTOR_ENABLED=false.
+      try {
+        if (process.env.DEV_AUTOPILOT_EXECUTOR_ENABLED !== 'false') {
+          const { startBackgroundExecutor } = require('./services/dev-autopilot-execute');
+          startBackgroundExecutor();
+        } else {
+          console.log('⏸️ Dev Autopilot executor disabled (DEV_AUTOPILOT_EXECUTOR_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Dev Autopilot executor initialization failed (non-fatal):', error);
+      }
+
       // AI Personality: Pre-warm config cache from Supabase
       try {
         const { warmPersonalityCache } = require('./services/ai-personality-service');

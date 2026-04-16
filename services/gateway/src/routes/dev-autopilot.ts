@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
+import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
@@ -327,6 +328,77 @@ router.post('/findings/batch-snooze', requireDevRole, async (req: Request, res: 
     snoozed: results.filter(r => r.ok).map(r => r.id),
     failed: results.filter(r => !r.ok).map(r => ({ id: r.id, reason: r.error })),
   });
+});
+
+// =============================================================================
+// POST /findings/:id/approve-auto-execute and batch variant
+// POST /executions/:id/cancel
+// GET  /executions?status=active (UI tracing)
+// =============================================================================
+
+router.post('/findings/:id/approve-auto-execute', requireDevRole, async (req: Request, res: Response) => {
+  try {
+    const approvedBy = (req as unknown as { user?: { id?: string } }).user?.id;
+    const result = await approveAutoExecute({ finding_id: req.params.id, approved_by: approvedBy });
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} approve-auto-execute failed:`, err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+router.post('/findings/batch-approve-auto-execute', requireDevRole, async (req: Request, res: Response) => {
+  const ids = (req.body?.ids || []) as string[];
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ ok: false, error: 'ids[] required' });
+  }
+  const approvedBy = (req as unknown as { user?: { id?: string } }).user?.id;
+  const approved: unknown[] = [];
+  const failed: unknown[] = [];
+  let firstFailureEmitted = false;
+  for (const id of ids) {
+    const r = await approveAutoExecute({ finding_id: id, approved_by: approvedBy });
+    if (r.ok) approved.push({ id, execution: r.execution });
+    else {
+      failed.push({ id, reason: r.error, violations: r.decision?.violations });
+      if (!firstFailureEmitted) {
+        firstFailureEmitted = true;
+        await emitOasisEvent({
+          vtid: SCAN_VTID,
+          type: 'dev_autopilot.batch.first_failure',
+          source: 'dev-autopilot',
+          status: 'warning',
+          message: `Batch approval partial fail on finding ${id}`,
+          payload: { finding_id: id, error: r.error, violations: r.decision?.violations },
+        });
+      }
+    }
+  }
+  return res.json({ ok: true, approved, failed });
+});
+
+router.post('/executions/:id/cancel', requireDevRole, async (req: Request, res: Response) => {
+  const r = await cancelExecution(req.params.id);
+  return res.status(r.ok ? 200 : 400).json(r);
+});
+
+router.get('/executions', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const filter = String(req.query.status || 'active');
+  let statusClause: string;
+  if (filter === 'active') {
+    statusClause = 'status=in.(cooling,running,ci,merging,deploying,verifying)';
+  } else if (filter === 'all') {
+    statusClause = '';
+  } else {
+    statusClause = `status=eq.${filter}`;
+  }
+  const limit = Math.min(parseInt(String(req.query.limit || '100'), 10), 500);
+  const qs = [statusClause, `order=created_at.desc`, `limit=${limit}`].filter(Boolean).join('&');
+  const r = await supaGet<unknown[]>(supa, `/rest/v1/dev_autopilot_executions?${qs}`);
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  return res.json({ ok: true, executions: r.data || [] });
 });
 
 // =============================================================================
