@@ -350,6 +350,25 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     payload: { run_id: runId, new: newCount, updated: updatedCount, total_signals: input.signals.length },
   });
 
+  // 5. Eager Stage B — plan the top K new findings so the UI has actionable
+  //    cards immediately. Remaining findings get lazy planning on expand/approve.
+  //    Uses a dynamic require to avoid a circular import chain (synthesis
+  //    is imported by planning for its scoring helpers).
+  if (newCount > 0) {
+    try {
+      const eagerK = parseInt(process.env.DEV_AUTOPILOT_EAGER_PLAN_TOP_K || '5', 10);
+      if (eagerK > 0) {
+        const planning = (await import('./dev-autopilot-planning')) as {
+          eagerlyPlanTopK: (runId: string, k: number) => Promise<{ planned: number; errors: number }>;
+        };
+        const eagerResult = await planning.eagerlyPlanTopK(runId, eagerK);
+        console.log(`${LOG_PREFIX} eager plan: ${eagerResult.planned} planned, ${eagerResult.errors} errors`);
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} eager planning failed (non-fatal):`, err);
+    }
+  }
+
   return {
     ok: true,
     run_id: runId,

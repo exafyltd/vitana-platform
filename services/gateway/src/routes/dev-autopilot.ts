@@ -13,6 +13,7 @@
 
 import { Router, Request, Response } from 'express';
 import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
+import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
@@ -197,6 +198,38 @@ router.get('/findings/:id', requireDevRole, async (req: Request, res: Response) 
     `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${id}&order=version.desc`,
   );
   return res.json({ ok: true, finding: rec, plan_versions: plansR.data || [] });
+});
+
+// =============================================================================
+// POST /findings/:id/generate-plan (lazy Stage B)
+// POST /findings/:id/continue-planning (feedback → plan v2+)
+// =============================================================================
+
+router.post('/findings/:id/generate-plan', requireDevRole, async (req: Request, res: Response) => {
+  try {
+    const result = await generatePlanVersion(req.params.id);
+    return res.status(result.ok ? 200 : 500).json(result);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} generate-plan failed:`, err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+router.post('/findings/:id/continue-planning', requireDevRole, async (req: Request, res: Response) => {
+  const feedback = String(req.body?.feedback || '').trim();
+  if (!feedback) {
+    return res.status(400).json({ ok: false, error: 'feedback required' });
+  }
+  if (feedback.length > 4000) {
+    return res.status(400).json({ ok: false, error: 'feedback must be ≤ 4000 chars' });
+  }
+  try {
+    const result = await generatePlanVersion(req.params.id, { feedback_note: feedback });
+    return res.status(result.ok ? 200 : 500).json(result);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} continue-planning failed:`, err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 // =============================================================================
