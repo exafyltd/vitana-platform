@@ -24,6 +24,8 @@ export interface SchedulerConfig {
   codebaseMinute: number;       // Default: 0
   communityHour: number;        // Default: 7 (7 AM UTC) — daily community user regeneration
   communityMinute: number;      // Default: 0
+  marketplaceHour: number;      // Default: 3 (3 AM UTC) — daily marketplace catalog sync
+  marketplaceMinute: number;    // Default: 0
 }
 
 export interface SchedulerState {
@@ -31,12 +33,15 @@ export interface SchedulerState {
   lastOasisRun?: Date;
   lastCodebaseRun?: Date;
   lastCommunityRun?: Date;
+  lastMarketplaceRun?: Date;
   nextOasisRun?: Date;
   nextCodebaseRun?: Date;
   nextCommunityRun?: Date;
+  nextMarketplaceRun?: Date;
   oasisIntervalId?: NodeJS.Timeout;
   codebaseIntervalId?: NodeJS.Timeout;
   communityIntervalId?: NodeJS.Timeout;
+  marketplaceIntervalId?: NodeJS.Timeout;
 }
 
 // =============================================================================
@@ -51,6 +56,8 @@ const DEFAULT_CONFIG: SchedulerConfig = {
   codebaseMinute: 0,
   communityHour: 7,
   communityMinute: 0,
+  marketplaceHour: 3,
+  marketplaceMinute: 0,
 };
 
 // =============================================================================
@@ -173,6 +180,22 @@ async function runFullCodebaseScan(basePath: string): Promise<void> {
 // =============================================================================
 // Community User Daily Regeneration
 // =============================================================================
+
+// VTID-02200: Daily marketplace catalog sync (Shopify + CJ + future Amazon/Awin)
+async function runMarketplaceSync(): Promise<void> {
+  console.log(`${LOG_PREFIX} Running daily marketplace catalog sync...`);
+  try {
+    const { runAllMarketplaceSync } = await import('../marketplace-sync');
+    const result = await runAllMarketplaceSync('scheduler');
+    state.lastMarketplaceRun = new Date();
+    console.log(
+      `${LOG_PREFIX} Marketplace sync done: shopify=${result.shopify.totals.inserted}+ cj=${result.cj.totals.inserted}+ in ${result.duration_ms}ms`
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`${LOG_PREFIX} Marketplace sync failed:`, message);
+  }
+}
 
 async function runCommunityUserRegeneration(): Promise<void> {
   console.log(`${LOG_PREFIX} Running daily community user recommendation regeneration...`);
@@ -486,10 +509,27 @@ export function startScheduler(config: Partial<SchedulerConfig> = {}): void {
 
   scheduleNextCommunityRun();
 
+  // VTID-02200: Schedule daily marketplace sync
+  const scheduleNextMarketplaceRun = () => {
+    const nextRun = getNextDailyRunTime(fullConfig.marketplaceHour, fullConfig.marketplaceMinute);
+    state.nextMarketplaceRun = nextRun;
+    const msUntilRun = getMillisecondsUntil(nextRun);
+    console.log(
+      `${LOG_PREFIX} Next marketplace sync scheduled for ${nextRun.toISOString()} (in ${Math.round(msUntilRun / 1000 / 60)} minutes)`
+    );
+    state.marketplaceIntervalId = setTimeout(() => {
+      runMarketplaceSync();
+      scheduleNextMarketplaceRun();
+    }, msUntilRun);
+  };
+
+  scheduleNextMarketplaceRun();
+
   console.log(`${LOG_PREFIX} Scheduler started`);
   console.log(`${LOG_PREFIX} - OASIS analysis: every ${fullConfig.oasisIntervalMs / 1000 / 60 / 60}h`);
   console.log(`${LOG_PREFIX} - Daily scan: ${fullConfig.codebaseHour}:${String(fullConfig.codebaseMinute).padStart(2, '0')} UTC`);
   console.log(`${LOG_PREFIX} - Community regen: ${fullConfig.communityHour}:${String(fullConfig.communityMinute).padStart(2, '0')} UTC`);
+  console.log(`${LOG_PREFIX} - Marketplace sync: ${fullConfig.marketplaceHour}:${String(fullConfig.marketplaceMinute).padStart(2, '0')} UTC`);
 }
 
 export function stopScheduler(): void {
@@ -503,6 +543,11 @@ export function stopScheduler(): void {
   if (state.oasisIntervalId) {
     clearInterval(state.oasisIntervalId);
     state.oasisIntervalId = undefined;
+  }
+
+  if (state.marketplaceIntervalId) {
+    clearTimeout(state.marketplaceIntervalId);
+    state.marketplaceIntervalId = undefined;
   }
 
   if (state.codebaseIntervalId) {
