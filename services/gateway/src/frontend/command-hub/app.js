@@ -34508,10 +34508,16 @@ if (!state.devAutopilot) {
         queue: [],
         config: null,
         pollerId: null,
-        // Filters (URL-synced in PR-5)
+        // Filters
         filterRisk: 'all',
         filterDomain: 'all',
+        filterSource: 'all',
         sort: 'impact',
+        search: '',
+        // Expand state: map of findingId → true
+        expandedIds: {},
+        // Per-finding plan details cache (finding_id → { loading, versions, activeVersion })
+        plans: {},
         // Selection for batch actions (PR-8)
         selectedIds: {},
     };
@@ -34634,12 +34640,379 @@ function renderDevAutopilotView() {
     runsSection.appendChild(runsBody);
     container.appendChild(runsSection);
 
-    var placeholder = document.createElement('div');
-    placeholder.style.cssText = 'padding: 20px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px dashed var(--border-color, rgba(255,255,255,0.12)); border-radius: 6px; color: var(--text-secondary, #888); text-align: center;';
-    placeholder.innerHTML = 'Findings queue + plan viewer land in the next iteration.<br><br>Plumbing: <code>GET /api/v1/dev-autopilot/queue</code> → ' + queueCount + ' findings loaded.';
-    container.appendChild(placeholder);
+    // Filter toolbar
+    container.appendChild(renderDevAutopilotToolbar());
+
+    // Findings queue
+    container.appendChild(renderDevAutopilotQueue());
 
     return container;
+}
+
+// Toolbar with filter / sort / search controls. Updates state and triggers
+// renderApp() — the findings query re-filters client-side from the loaded
+// queue (≤200 rows) so toolbar interactions feel instant.
+function renderDevAutopilotToolbar() {
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 6px; margin-bottom: 12px;';
+
+    function makeSelect(label, stateKey, options) {
+        var wrap = document.createElement('label');
+        wrap.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary, #888);';
+        wrap.textContent = label;
+        var sel = document.createElement('select');
+        sel.style.cssText = 'padding: 4px 8px; background: var(--bg-color, #111); color: var(--text-color, #fff); border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 4px; font-size: 12px;';
+        options.forEach(function (o) {
+            var opt = document.createElement('option');
+            opt.value = o.value;
+            opt.textContent = o.label;
+            if (state.devAutopilot[stateKey] === o.value) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = function () {
+            state.devAutopilot[stateKey] = sel.value;
+            renderApp();
+        };
+        wrap.appendChild(sel);
+        return wrap;
+    }
+
+    bar.appendChild(makeSelect('Risk', 'filterRisk', [
+        { value: 'all', label: 'All risks' },
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+    ]));
+
+    // Build domain options from the currently loaded queue
+    var domainSet = {};
+    (state.devAutopilot.queue || []).forEach(function (f) {
+        if (f.domain) domainSet[f.domain] = true;
+    });
+    var domainOpts = [{ value: 'all', label: 'All domains' }];
+    Object.keys(domainSet).sort().forEach(function (d) {
+        domainOpts.push({ value: d, label: d });
+    });
+    bar.appendChild(makeSelect('Domain', 'filterDomain', domainOpts));
+
+    bar.appendChild(makeSelect('Sort', 'sort', [
+        { value: 'impact', label: 'Impact ↓' },
+        { value: 'effort', label: 'Effort ↑' },
+        { value: 'age', label: 'Newest' },
+        { value: 'seen', label: 'Seen count ↓' },
+    ]));
+
+    var searchWrap = document.createElement('label');
+    searchWrap.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary, #888); margin-left: auto;';
+    searchWrap.textContent = 'Search';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'title or file path';
+    searchInput.value = state.devAutopilot.search || '';
+    searchInput.style.cssText = 'padding: 4px 8px; background: var(--bg-color, #111); color: var(--text-color, #fff); border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 4px; font-size: 12px; width: 240px;';
+    searchInput.oninput = function () {
+        state.devAutopilot.search = searchInput.value;
+        renderApp();
+    };
+    searchWrap.appendChild(searchInput);
+    bar.appendChild(searchWrap);
+
+    return bar;
+}
+
+// Apply filters + sort + search to the loaded queue
+function filterDevAutopilotQueue() {
+    var q = (state.devAutopilot.queue || []).slice();
+    var filter = state.devAutopilot;
+
+    if (filter.filterRisk && filter.filterRisk !== 'all') {
+        q = q.filter(function (f) { return f.risk_class === filter.filterRisk; });
+    }
+    if (filter.filterDomain && filter.filterDomain !== 'all') {
+        q = q.filter(function (f) { return f.domain === filter.filterDomain; });
+    }
+    if (filter.search) {
+        var s = filter.search.toLowerCase();
+        q = q.filter(function (f) {
+            var file = (f.spec_snapshot && f.spec_snapshot.file_path) || '';
+            return (f.title || '').toLowerCase().indexOf(s) >= 0
+                || file.toLowerCase().indexOf(s) >= 0;
+        });
+    }
+
+    // Sort
+    switch (filter.sort) {
+        case 'effort':
+            q.sort(function (a, b) { return (a.effort_score || 0) - (b.effort_score || 0); });
+            break;
+        case 'age':
+            q.sort(function (a, b) { return new Date(b.last_seen_at || 0) - new Date(a.last_seen_at || 0); });
+            break;
+        case 'seen':
+            q.sort(function (a, b) { return (b.seen_count || 0) - (a.seen_count || 0); });
+            break;
+        case 'impact':
+        default:
+            q.sort(function (a, b) { return (b.impact_score || 0) - (a.impact_score || 0); });
+    }
+    return q;
+}
+
+function renderDevAutopilotQueue() {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+
+    var filtered = filterDevAutopilotQueue();
+    if (filtered.length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding: 40px; text-align: center; color: var(--text-secondary, #888); background: var(--card-bg, rgba(255,255,255,0.03)); border: 1px dashed var(--border-color, rgba(255,255,255,0.12)); border-radius: 6px;';
+        if ((state.devAutopilot.queue || []).length === 0) {
+            empty.innerHTML = '<div style="font-size: 48px; margin-bottom: 12px;">✅</div><div>No findings yet — waiting for the first scan.</div>';
+        } else {
+            empty.textContent = 'No findings match the current filters.';
+        }
+        wrap.appendChild(empty);
+        return wrap;
+    }
+
+    filtered.forEach(function (f) {
+        wrap.appendChild(renderDevAutopilotFindingCard(f));
+    });
+
+    return wrap;
+}
+
+function renderDevAutopilotFindingCard(finding) {
+    var card = document.createElement('div');
+    card.className = 'dev-autopilot-card';
+    card.style.cssText = 'background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; padding: 14px 16px;';
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; gap: 12px; align-items: flex-start;';
+
+    // Checkbox (selection used in PR-8 batch actions)
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!state.devAutopilot.selectedIds[finding.id];
+    checkbox.style.cssText = 'margin-top: 4px; cursor: pointer;';
+    checkbox.onchange = function () {
+        if (checkbox.checked) {
+            state.devAutopilot.selectedIds[finding.id] = true;
+        } else {
+            delete state.devAutopilot.selectedIds[finding.id];
+        }
+        renderApp();
+    };
+    topRow.appendChild(checkbox);
+
+    // Main content
+    var main = document.createElement('div');
+    main.style.cssText = 'flex: 1;';
+
+    var titleLine = document.createElement('div');
+    titleLine.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;';
+
+    var titleEl = document.createElement('span');
+    titleEl.textContent = finding.title;
+    titleEl.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-color, #fff);';
+    titleLine.appendChild(titleEl);
+
+    var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316' };
+    var riskBadge = document.createElement('span');
+    riskBadge.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(255,255,255,0.06); color: ' + (riskColors[finding.risk_class] || '#888') + ';';
+    riskBadge.textContent = (finding.risk_class || 'low') + ' risk';
+    titleLine.appendChild(riskBadge);
+
+    if (finding.auto_exec_eligible) {
+        var eligibleBadge = document.createElement('span');
+        eligibleBadge.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(59,130,246,0.15); color: #3b82f6;';
+        eligibleBadge.textContent = 'auto-exec';
+        titleLine.appendChild(eligibleBadge);
+    }
+    main.appendChild(titleLine);
+
+    var metaLine = document.createElement('div');
+    metaLine.style.cssText = 'display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary, #888); margin-bottom: 6px;';
+    var spec = finding.spec_snapshot || {};
+    var filePart = spec.file_path ? (spec.file_path + (spec.line_number ? ':' + spec.line_number : '')) : '(no file)';
+    metaLine.innerHTML =
+        '<span>Impact: <strong style="color: #22c55e;">' + (finding.impact_score || '?') + '/10</strong></span>' +
+        '<span>Effort: <strong style="color: #eab308;">' + (finding.effort_score || '?') + '/10</strong></span>' +
+        '<span>Seen ' + (finding.seen_count || 1) + '×</span>' +
+        '<span>Scanner: ' + devAutopilotEscape(spec.scanner || '—') + '</span>' +
+        '<span>Domain: ' + devAutopilotEscape(finding.domain || '—') + '</span>' +
+        '<span style="font-family: monospace;">' + devAutopilotEscape(filePart) + '</span>';
+    main.appendChild(metaLine);
+
+    var summaryEl = document.createElement('div');
+    summaryEl.style.cssText = 'font-size: 13px; color: var(--text-color, #ddd); line-height: 1.4; margin-bottom: 10px;';
+    summaryEl.textContent = finding.summary || '';
+    main.appendChild(summaryEl);
+
+    var expanded = !!state.devAutopilot.expandedIds[finding.id];
+    var toggleBtn = document.createElement('button');
+    toggleBtn.className = 'btn btn-secondary';
+    toggleBtn.textContent = expanded ? '▾ Hide plan' : '▸ Expand plan';
+    toggleBtn.style.cssText = 'padding: 4px 10px; font-size: 12px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.15)); color: var(--text-color, #fff); border-radius: 3px; cursor: pointer;';
+    toggleBtn.onclick = function () {
+        if (expanded) {
+            delete state.devAutopilot.expandedIds[finding.id];
+            renderApp();
+        } else {
+            state.devAutopilot.expandedIds[finding.id] = true;
+            ensurePlanLoaded(finding.id);
+            renderApp();
+        }
+    };
+    main.appendChild(toggleBtn);
+
+    if (expanded) {
+        main.appendChild(renderDevAutopilotPlanBlock(finding.id));
+    }
+
+    topRow.appendChild(main);
+    card.appendChild(topRow);
+    return card;
+}
+
+// Ensure we've fetched the full finding (including plan_versions) for this id.
+// Kicks off fetch + plan generation if no versions exist yet.
+function ensurePlanLoaded(findingId) {
+    if (!state.devAutopilot.plans[findingId]) {
+        state.devAutopilot.plans[findingId] = { loading: true, versions: [], activeVersion: null, generating: false };
+    }
+    var slot = state.devAutopilot.plans[findingId];
+    if (slot.versions && slot.versions.length > 0) return;
+    if (slot.fetching) return;
+    slot.fetching = true;
+
+    fetch('/api/v1/dev-autopilot/findings/' + findingId, { headers: buildContextHeaders({}) })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            slot.loading = false;
+            slot.fetching = false;
+            if (!data.ok) {
+                slot.error = data.error || 'Failed to load';
+                renderApp();
+                return;
+            }
+            slot.versions = data.plan_versions || [];
+            slot.activeVersion = slot.versions.length > 0 ? slot.versions[0].version : null;
+            // No plan yet → trigger lazy generation
+            if (slot.versions.length === 0 && !slot.generating) {
+                slot.generating = true;
+                renderApp();
+                fetch('/api/v1/dev-autopilot/findings/' + findingId + '/generate-plan', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: '{}',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (planData) {
+                        slot.generating = false;
+                        if (planData.ok && planData.plan) {
+                            slot.versions = [planData.plan];
+                            slot.activeVersion = planData.plan.version;
+                        } else {
+                            slot.error = planData.error || 'Plan generation failed';
+                        }
+                        renderApp();
+                    })
+                    .catch(function (err) {
+                        slot.generating = false;
+                        slot.error = err.message || String(err);
+                        renderApp();
+                    });
+            } else {
+                renderApp();
+            }
+        })
+        .catch(function (err) {
+            slot.loading = false;
+            slot.fetching = false;
+            slot.error = err.message || String(err);
+            renderApp();
+        });
+}
+
+function renderDevAutopilotPlanBlock(findingId) {
+    var slot = state.devAutopilot.plans[findingId] || {};
+    var block = document.createElement('div');
+    block.style.cssText = 'margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 4px;';
+
+    if (slot.loading) {
+        block.textContent = 'Loading plan…';
+        block.style.color = 'var(--text-secondary, #888)';
+        return block;
+    }
+
+    if (slot.generating) {
+        block.innerHTML = '<div style="color: var(--text-secondary, #888); margin-bottom: 6px;">Generating plan via Managed Agent…</div><div style="font-size: 11px; color: var(--text-secondary, #666);">This usually takes under 2 minutes. You can leave this card expanded and come back.</div>';
+        return block;
+    }
+
+    if (slot.error) {
+        block.style.color = '#ef4444';
+        block.textContent = 'Error: ' + slot.error;
+        return block;
+    }
+
+    if (!slot.versions || slot.versions.length === 0) {
+        block.textContent = 'No plan yet.';
+        return block;
+    }
+
+    // Version tabs
+    if (slot.versions.length > 1) {
+        var tabs = document.createElement('div');
+        tabs.style.cssText = 'display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1)); padding-bottom: 6px;';
+        slot.versions.slice().sort(function (a, b) { return a.version - b.version; }).forEach(function (v) {
+            var tab = document.createElement('button');
+            tab.textContent = 'v' + v.version;
+            var isActive = slot.activeVersion === v.version;
+            tab.style.cssText = 'padding: 3px 10px; border-radius: 3px; border: 1px solid transparent; font-size: 12px; cursor: pointer; background: ' + (isActive ? 'rgba(59,130,246,0.2)' : 'transparent') + '; color: ' + (isActive ? '#3b82f6' : 'var(--text-secondary, #888)') + ';';
+            tab.onclick = function () {
+                slot.activeVersion = v.version;
+                renderApp();
+            };
+            tabs.appendChild(tab);
+        });
+        block.appendChild(tabs);
+    }
+
+    var active = slot.versions.find(function (v) { return v.version === slot.activeVersion; }) || slot.versions[0];
+    if (active.feedback_note) {
+        var note = document.createElement('div');
+        note.style.cssText = 'padding: 6px 10px; margin-bottom: 10px; background: rgba(59,130,246,0.08); border-left: 3px solid #3b82f6; font-size: 12px; color: var(--text-secondary, #aaa);';
+        note.innerHTML = '<strong>Reviewer feedback for v' + active.version + ':</strong> ' + devAutopilotEscape(active.feedback_note);
+        block.appendChild(note);
+    }
+
+    var planBody = document.createElement('div');
+    planBody.className = 'dev-autopilot-plan-body';
+    planBody.style.cssText = 'font-size: 13px; line-height: 1.55; color: var(--text-color, #ddd);';
+    if (active.plan_html) {
+        planBody.innerHTML = active.plan_html;
+    } else if (active.plan_markdown) {
+        // Fallback if server didn't populate plan_html — render as <pre>
+        var pre = document.createElement('pre');
+        pre.style.cssText = 'white-space: pre-wrap; font-family: inherit;';
+        pre.textContent = active.plan_markdown;
+        planBody.appendChild(pre);
+    }
+    block.appendChild(planBody);
+
+    return block;
+}
+
+function devAutopilotEscape(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function renderSelfHealingView() {
