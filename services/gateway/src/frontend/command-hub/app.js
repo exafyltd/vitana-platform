@@ -34520,6 +34520,18 @@ if (!state.devAutopilot) {
         plans: {},
         // Selection for batch actions (PR-8)
         selectedIds: {},
+        // Active executions polled alongside queue (PR-8)
+        executions: [],
+        // findingId being annotated with continue-planning feedback (PR-8)
+        continuePlanningId: null,
+        continuePlanningDraft: '',
+        // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
+        lineages: {},
+        expandedExecIds: {},
+        // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
+        // themselves cleanly via state instead of touching detached DOM after
+        // showToast() (which re-renders and invalidates refs).
+        actionInFlight: {},
     };
 }
 
@@ -34530,10 +34542,12 @@ function fetchDevAutopilotState() {
         fetch('/api/v1/dev-autopilot/runs?limit=10', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, runs: [] }; }),
         fetch('/api/v1/dev-autopilot/queue?status=new&limit=200', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, findings: [] }; }),
         fetch('/api/v1/dev-autopilot/config', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, config: null }; }),
+        fetch('/api/v1/dev-autopilot/executions?status=active&limit=100', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, executions: [] }; }),
     ]).then(function (results) {
         state.devAutopilot.runs = (results[0] && results[0].runs) || [];
         state.devAutopilot.queue = (results[1] && results[1].findings) || [];
         state.devAutopilot.config = (results[2] && results[2].config) || null;
+        state.devAutopilot.executions = (results[3] && results[3].executions) || [];
         state.devAutopilot.fetched = true;
         state.devAutopilot.loading = false;
         state.devAutopilot.error = null;
@@ -34643,8 +34657,15 @@ function renderDevAutopilotView() {
     // Filter toolbar
     container.appendChild(renderDevAutopilotToolbar());
 
+    // Batch action bar — visible only when 1+ findings selected (PR-8)
+    var batchBar = renderDevAutopilotBatchBar();
+    if (batchBar) container.appendChild(batchBar);
+
     // Findings queue
     container.appendChild(renderDevAutopilotQueue());
+
+    // Live trace — active executions panel below the queue (PR-8)
+    container.appendChild(renderDevAutopilotLiveTrace());
 
     return container;
 }
@@ -34829,6 +34850,25 @@ function renderDevAutopilotFindingCard(finding) {
         eligibleBadge.textContent = 'auto-exec';
         titleLine.appendChild(eligibleBadge);
     }
+
+    // Cross-link: if an active execution exists for this finding, show a
+    // badge that scrolls to the live trace section. (PR-8)
+    var activeExec = (state.devAutopilot.executions || []).find(function (e) {
+        return e.finding_id === finding.id;
+    });
+    if (activeExec) {
+        var execBadge = document.createElement('a');
+        execBadge.href = '#';
+        execBadge.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(34,197,94,0.15); color: #22c55e; text-decoration: none;';
+        execBadge.textContent = '▶ ' + activeExec.status + ' ' + activeExec.id.slice(0, 8);
+        execBadge.onclick = function (e) {
+            e.preventDefault();
+            var el = document.getElementById('dev-autopilot-exec-' + activeExec.id);
+            if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+        titleLine.appendChild(execBadge);
+    }
+
     main.appendChild(titleLine);
 
     var metaLine = document.createElement('div');
@@ -35002,7 +35042,571 @@ function renderDevAutopilotPlanBlock(findingId) {
     }
     block.appendChild(planBody);
 
+    // Per-card action row (PR-8) — only when at least one plan version exists.
+    block.appendChild(renderDevAutopilotActions(findingId));
+
     return block;
+}
+
+// =============================================================================
+// PR-8: Action handlers + batch bar + live trace
+// =============================================================================
+//
+// Action handlers follow the showToast safety pattern documented in
+// MEMORY.md: showToast() triggers renderApp() which clears root.innerHTML,
+// so we drive button state from state.devAutopilot.actionInFlight rather
+// than touching DOM refs after the fetch resolves. State mutation happens
+// BEFORE showToast() so the next render reflects the new world.
+
+function devAutopilotInFlight(key) {
+    return !!state.devAutopilot.actionInFlight[key];
+}
+
+function devAutopilotMarkFlight(key, on) {
+    if (on) state.devAutopilot.actionInFlight[key] = true;
+    else delete state.devAutopilot.actionInFlight[key];
+}
+
+function devAutopilotApi(path, method, body) {
+    return fetch('/api/v1/dev-autopilot' + path, {
+        method: method || 'GET',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+        body: body ? JSON.stringify(body) : undefined,
+    }).then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Bad JSON ' + r.status }; }); });
+}
+
+function devAutopilotApproveOne(findingId) {
+    var key = 'approve:' + findingId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/findings/' + findingId + '/approve-auto-execute', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            // Remove from queue, drop selection, prepend execution to live trace
+            state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
+            delete state.devAutopilot.selectedIds[findingId];
+            delete state.devAutopilot.expandedIds[findingId];
+            if (data.execution) {
+                state.devAutopilot.executions = [data.execution].concat(state.devAutopilot.executions || []);
+            }
+            showToast('Approved — execution cooling: ' + (data.execution && data.execution.id ? data.execution.id.slice(0, 8) : '?'), 'success');
+        } else {
+            var msg = data.error || 'Approval failed';
+            if (data.decision && Array.isArray(data.decision.violations) && data.decision.violations.length) {
+                msg += ' (' + data.decision.violations.map(function (v) { return v.code; }).join(', ') + ')';
+            }
+            showToast(msg, 'error');
+        }
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function devAutopilotRejectOne(findingId) {
+    var key = 'reject:' + findingId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/findings/' + findingId + '/reject', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
+            delete state.devAutopilot.selectedIds[findingId];
+            delete state.devAutopilot.expandedIds[findingId];
+            showToast('Finding rejected', 'success');
+        } else {
+            showToast(data.error || 'Reject failed', 'error');
+        }
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function devAutopilotSnoozeOne(findingId, hours) {
+    var key = 'snooze:' + findingId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/findings/' + findingId + '/snooze', 'POST', { hours: hours || 24 }).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
+            delete state.devAutopilot.selectedIds[findingId];
+            delete state.devAutopilot.expandedIds[findingId];
+            showToast('Snoozed ' + (hours || 24) + 'h', 'success');
+        } else {
+            showToast(data.error || 'Snooze failed', 'error');
+        }
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function devAutopilotContinuePlanning(findingId, feedback) {
+    var key = 'continue:' + findingId;
+    if (devAutopilotInFlight(key)) return;
+    if (!feedback || !feedback.trim()) {
+        showToast('Feedback required to continue planning', 'error');
+        return;
+    }
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/findings/' + findingId + '/continue-planning', 'POST', { feedback: feedback.trim() }).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok && data.plan) {
+            // Append the new plan version to the local cache and switch to it
+            var slot = state.devAutopilot.plans[findingId] || { versions: [] };
+            slot.versions = (slot.versions || []).concat([data.plan]);
+            slot.activeVersion = data.plan.version;
+            state.devAutopilot.plans[findingId] = slot;
+            state.devAutopilot.continuePlanningId = null;
+            state.devAutopilot.continuePlanningDraft = '';
+            showToast('Plan v' + data.plan.version + ' generated', 'success');
+        } else {
+            showToast(data.error || 'Continue planning failed', 'error');
+        }
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function devAutopilotBatchAction(action, hours) {
+    var ids = Object.keys(state.devAutopilot.selectedIds || {});
+    if (ids.length === 0) return;
+    var key = 'batch:' + action;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+
+    var path, body;
+    if (action === 'approve') {
+        path = '/findings/batch-approve-auto-execute'; body = { ids: ids };
+    } else if (action === 'reject') {
+        path = '/findings/batch-reject'; body = { ids: ids };
+    } else if (action === 'snooze') {
+        path = '/findings/batch-snooze'; body = { ids: ids, hours: hours || 24 };
+    } else {
+        devAutopilotMarkFlight(key, false);
+        return;
+    }
+
+    devAutopilotApi(path, 'POST', body).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (!data.ok) {
+            showToast('Batch ' + action + ' failed: ' + (data.error || 'unknown'), 'error');
+            return;
+        }
+        // Drop processed ids from the queue + selection, splice in any new
+        // executions returned by approve.
+        var doneIds = action === 'approve'
+            ? (data.approved || []).map(function (a) { return a.id; })
+            : action === 'reject'
+                ? (data.rejected || [])
+                : (data.snoozed || []);
+        state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return doneIds.indexOf(f.id) < 0; });
+        doneIds.forEach(function (id) {
+            delete state.devAutopilot.selectedIds[id];
+            delete state.devAutopilot.expandedIds[id];
+        });
+        if (action === 'approve') {
+            var newExecs = (data.approved || []).map(function (a) { return a.execution; }).filter(Boolean);
+            state.devAutopilot.executions = newExecs.concat(state.devAutopilot.executions || []);
+        }
+        var failedCount = (data.failed || []).length;
+        var doneCount = doneIds.length;
+        var msg = action.charAt(0).toUpperCase() + action.slice(1) + ' ' + doneCount + ' finding' + (doneCount === 1 ? '' : 's');
+        if (failedCount > 0) msg += ' (' + failedCount + ' failed — see live trace)';
+        showToast(msg, failedCount > 0 ? 'warning' : 'success');
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function devAutopilotCancelExecution(execId) {
+    var key = 'cancel:' + execId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/executions/' + execId + '/cancel', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            // Drop from active executions list — server will surface it under
+            // status=cancelled on the next poll if user wants to see it.
+            state.devAutopilot.executions = (state.devAutopilot.executions || []).filter(function (e) { return e.id !== execId; });
+            showToast('Execution cancelled', 'success');
+        } else {
+            showToast(data.error || 'Cancel failed (may have left cooldown)', 'error');
+        }
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+    });
+}
+
+function ensureLineageLoaded(execId) {
+    if (!state.devAutopilot.lineages[execId]) {
+        state.devAutopilot.lineages[execId] = { loading: true, lineage: [] };
+    }
+    var slot = state.devAutopilot.lineages[execId];
+    if (slot.fetching || (slot.lineage && slot.lineage.length > 0)) return;
+    slot.fetching = true;
+
+    devAutopilotApi('/executions/' + execId + '/lineage', 'GET').then(function (data) {
+        slot.fetching = false;
+        slot.loading = false;
+        if (data.ok) {
+            slot.root_id = data.root_id;
+            slot.lineage = data.lineage || [];
+            slot.error = null;
+        } else {
+            slot.error = data.error || 'lineage fetch failed';
+        }
+        renderApp();
+    }).catch(function (err) {
+        slot.fetching = false;
+        slot.loading = false;
+        slot.error = err.message || String(err);
+        renderApp();
+    });
+}
+
+// -----------------------------------------------------------------------------
+// Renderers
+// -----------------------------------------------------------------------------
+
+function renderDevAutopilotBatchBar() {
+    var ids = Object.keys(state.devAutopilot.selectedIds || {});
+    if (ids.length === 0) return null;
+
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3); border-radius: 6px; margin-bottom: 12px;';
+
+    var label = document.createElement('span');
+    label.style.cssText = 'font-size: 13px; color: #3b82f6; font-weight: 600; margin-right: auto;';
+    label.textContent = ids.length + ' selected';
+    bar.appendChild(label);
+
+    function mkBtn(text, color, onClick, flightKey) {
+        var btn = document.createElement('button');
+        btn.textContent = text;
+        var disabled = devAutopilotInFlight(flightKey);
+        btn.disabled = disabled;
+        btn.style.cssText = 'padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: ' + (disabled ? 'wait' : 'pointer') + '; border: 1px solid ' + color + '; background: transparent; color: ' + color + '; opacity: ' + (disabled ? '0.6' : '1') + ';';
+        btn.onclick = onClick;
+        return btn;
+    }
+
+    bar.appendChild(mkBtn('Approve & execute (' + ids.length + ')', '#22c55e', function () {
+        if (window.confirm('Approve and queue auto-execution for ' + ids.length + ' finding(s)?\n\nEach will enter a 10-min cooldown before the execution agent runs.')) {
+            devAutopilotBatchAction('approve');
+        }
+    }, 'batch:approve'));
+
+    bar.appendChild(mkBtn('Snooze 24h (' + ids.length + ')', '#eab308', function () {
+        devAutopilotBatchAction('snooze', 24);
+    }, 'batch:snooze'));
+
+    bar.appendChild(mkBtn('Reject (' + ids.length + ')', '#ef4444', function () {
+        if (window.confirm('Reject ' + ids.length + ' finding(s)? They will not appear again unless re-detected.')) {
+            devAutopilotBatchAction('reject');
+        }
+    }, 'batch:reject'));
+
+    var clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear selection';
+    clearBtn.style.cssText = 'padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-secondary, #888);';
+    clearBtn.onclick = function () {
+        state.devAutopilot.selectedIds = {};
+        renderApp();
+    };
+    bar.appendChild(clearBtn);
+
+    return bar;
+}
+
+function renderDevAutopilotActions(findingId) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));';
+
+    function mkBtn(text, color, onClick, flightKey) {
+        var btn = document.createElement('button');
+        btn.textContent = text;
+        var disabled = devAutopilotInFlight(flightKey);
+        btn.disabled = disabled;
+        btn.style.cssText = 'padding: 5px 12px; border-radius: 3px; font-size: 12px; cursor: ' + (disabled ? 'wait' : 'pointer') + '; border: 1px solid ' + color + '; background: transparent; color: ' + color + '; opacity: ' + (disabled ? '0.6' : '1') + ';';
+        btn.onclick = onClick;
+        return btn;
+    }
+
+    row.appendChild(mkBtn('Approve & execute', '#22c55e', function () {
+        if (window.confirm('Approve and queue auto-execution? Cooldown ~10 min.')) {
+            devAutopilotApproveOne(findingId);
+        }
+    }, 'approve:' + findingId));
+
+    row.appendChild(mkBtn(state.devAutopilot.continuePlanningId === findingId ? 'Cancel' : 'Continue planning…', '#3b82f6', function () {
+        if (state.devAutopilot.continuePlanningId === findingId) {
+            state.devAutopilot.continuePlanningId = null;
+            state.devAutopilot.continuePlanningDraft = '';
+        } else {
+            state.devAutopilot.continuePlanningId = findingId;
+            state.devAutopilot.continuePlanningDraft = '';
+        }
+        renderApp();
+    }, 'continue:' + findingId));
+
+    row.appendChild(mkBtn('Snooze 24h', '#eab308', function () {
+        devAutopilotSnoozeOne(findingId, 24);
+    }, 'snooze:' + findingId));
+
+    row.appendChild(mkBtn('Reject', '#ef4444', function () {
+        if (window.confirm('Reject this finding?')) {
+            devAutopilotRejectOne(findingId);
+        }
+    }, 'reject:' + findingId));
+
+    var wrap = document.createElement('div');
+    wrap.appendChild(row);
+
+    if (state.devAutopilot.continuePlanningId === findingId) {
+        var feedbackBox = document.createElement('div');
+        feedbackBox.style.cssText = 'margin-top: 10px; display: flex; flex-direction: column; gap: 6px;';
+        var ta = document.createElement('textarea');
+        ta.placeholder = 'Reviewer feedback for the next plan version (max 4000 chars). e.g. "Avoid touching auth-supabase-jwt.ts; do the migration in two steps instead."';
+        ta.value = state.devAutopilot.continuePlanningDraft || '';
+        ta.style.cssText = 'min-height: 90px; padding: 8px 10px; background: var(--bg-color, #111); color: var(--text-color, #fff); border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical;';
+        ta.maxLength = 4000;
+        ta.oninput = function () { state.devAutopilot.continuePlanningDraft = ta.value; };
+        feedbackBox.appendChild(ta);
+        var submitRow = document.createElement('div');
+        submitRow.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+        var submitBtn = document.createElement('button');
+        var submitting = devAutopilotInFlight('continue:' + findingId);
+        submitBtn.textContent = submitting ? 'Generating…' : 'Generate next plan version';
+        submitBtn.disabled = submitting;
+        submitBtn.style.cssText = 'padding: 6px 14px; border-radius: 3px; font-size: 12px; cursor: ' + (submitting ? 'wait' : 'pointer') + '; border: 1px solid #3b82f6; background: rgba(59,130,246,0.15); color: #3b82f6;';
+        submitBtn.onclick = function () {
+            devAutopilotContinuePlanning(findingId, ta.value);
+        };
+        submitRow.appendChild(submitBtn);
+        feedbackBox.appendChild(submitRow);
+        wrap.appendChild(feedbackBox);
+    }
+
+    return wrap;
+}
+
+function renderDevAutopilotLiveTrace() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-top: 24px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 6px; padding: 14px 16px;';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+    var title = document.createElement('h3');
+    title.textContent = 'Live execution trace';
+    title.style.cssText = 'margin: 0; font-size: 14px; color: var(--text-color, #fff);';
+    header.appendChild(title);
+    var count = document.createElement('span');
+    count.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    var execs = state.devAutopilot.executions || [];
+    count.textContent = execs.length + ' active';
+    header.appendChild(count);
+    section.appendChild(header);
+
+    if (execs.length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding: 20px; text-align: center; color: var(--text-secondary, #888); font-size: 13px;';
+        empty.textContent = 'No executions in flight. Approve a finding to start one.';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    execs.forEach(function (exec) {
+        list.appendChild(renderDevAutopilotExecutionCard(exec));
+    });
+    section.appendChild(list);
+
+    return section;
+}
+
+function renderDevAutopilotExecutionCard(exec) {
+    var statusColors = {
+        cooling: '#eab308',
+        running: '#3b82f6',
+        ci: '#3b82f6',
+        merging: '#3b82f6',
+        deploying: '#a855f7',
+        verifying: '#a855f7',
+        completed: '#22c55e',
+        failed: '#ef4444',
+        reverted: '#f97316',
+        self_healed: '#22c55e',
+        failed_escalated: '#ef4444',
+        cancelled: '#888',
+    };
+    var card = document.createElement('div');
+    card.id = 'dev-autopilot-exec-' + exec.id;
+    card.style.cssText = 'padding: 10px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 4px; font-size: 12px;';
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; gap: 12px; align-items: center; flex-wrap: wrap;';
+
+    var statusEl = document.createElement('span');
+    statusEl.style.cssText = 'padding: 2px 8px; border-radius: 3px; font-size: 11px; text-transform: uppercase; font-weight: 600; background: rgba(255,255,255,0.06); color: ' + (statusColors[exec.status] || '#888') + ';';
+    statusEl.textContent = exec.status;
+    topRow.appendChild(statusEl);
+
+    var idEl = document.createElement('span');
+    idEl.style.cssText = 'font-family: monospace; color: var(--text-secondary, #888);';
+    idEl.textContent = exec.id.slice(0, 8);
+    topRow.appendChild(idEl);
+
+    if (exec.parent_execution_id) {
+        var depthBadge = document.createElement('span');
+        depthBadge.style.cssText = 'padding: 1px 6px; border-radius: 3px; font-size: 10px; background: rgba(168,85,247,0.15); color: #a855f7;';
+        depthBadge.textContent = 'self-heal d' + (exec.auto_fix_depth || 1);
+        topRow.appendChild(depthBadge);
+    }
+
+    if (exec.pr_url) {
+        var prLink = document.createElement('a');
+        prLink.href = exec.pr_url;
+        prLink.target = '_blank';
+        prLink.rel = 'noopener';
+        prLink.style.cssText = 'color: #3b82f6; text-decoration: none;';
+        prLink.textContent = 'PR ' + (exec.pr_number ? '#' + exec.pr_number : '↗');
+        topRow.appendChild(prLink);
+    }
+
+    if (exec.self_healing_vtid) {
+        var vtidEl = document.createElement('span');
+        vtidEl.style.cssText = 'font-family: monospace; color: var(--text-secondary, #888); font-size: 11px;';
+        vtidEl.textContent = exec.self_healing_vtid;
+        topRow.appendChild(vtidEl);
+    }
+
+    if (exec.execute_after && exec.status === 'cooling') {
+        var ms = new Date(exec.execute_after) - new Date();
+        if (ms > 0) {
+            var coolEl = document.createElement('span');
+            coolEl.style.cssText = 'color: #eab308;';
+            coolEl.textContent = 'fires in ' + Math.round(ms / 60000) + 'm';
+            topRow.appendChild(coolEl);
+        }
+    }
+
+    var spacer = document.createElement('span');
+    spacer.style.cssText = 'flex: 1;';
+    topRow.appendChild(spacer);
+
+    if (exec.status === 'cooling') {
+        var cancelBtn = document.createElement('button');
+        var cancelling = devAutopilotInFlight('cancel:' + exec.id);
+        cancelBtn.textContent = cancelling ? 'Cancelling…' : 'Cancel';
+        cancelBtn.disabled = cancelling;
+        cancelBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (cancelling ? 'wait' : 'pointer') + '; border: 1px solid #ef4444; background: transparent; color: #ef4444;';
+        cancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
+        topRow.appendChild(cancelBtn);
+    }
+
+    var lineageOpen = !!state.devAutopilot.expandedExecIds[exec.id];
+    var lineageBtn = document.createElement('button');
+    lineageBtn.textContent = lineageOpen ? '▾ Lineage' : '▸ Lineage';
+    lineageBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: pointer; border: 1px solid var(--border-color, rgba(255,255,255,0.15)); background: transparent; color: var(--text-secondary, #aaa);';
+    lineageBtn.onclick = function () {
+        if (lineageOpen) {
+            delete state.devAutopilot.expandedExecIds[exec.id];
+        } else {
+            state.devAutopilot.expandedExecIds[exec.id] = true;
+            ensureLineageLoaded(exec.id);
+        }
+        renderApp();
+    };
+    topRow.appendChild(lineageBtn);
+
+    card.appendChild(topRow);
+
+    if (exec.branch) {
+        var branchRow = document.createElement('div');
+        branchRow.style.cssText = 'margin-top: 4px; font-family: monospace; font-size: 11px; color: var(--text-secondary, #888);';
+        branchRow.textContent = exec.branch;
+        card.appendChild(branchRow);
+    }
+
+    if (lineageOpen) {
+        card.appendChild(renderDevAutopilotLineageView(exec.id));
+    }
+
+    return card;
+}
+
+function renderDevAutopilotLineageView(execId) {
+    var slot = state.devAutopilot.lineages[execId] || {};
+    var box = document.createElement('div');
+    box.style.cssText = 'margin-top: 10px; padding: 10px; background: rgba(168,85,247,0.04); border: 1px solid rgba(168,85,247,0.2); border-radius: 4px;';
+
+    if (slot.loading || slot.fetching) {
+        box.textContent = 'Loading lineage…';
+        box.style.color = 'var(--text-secondary, #888)';
+        return box;
+    }
+    if (slot.error) {
+        box.style.color = '#ef4444';
+        box.textContent = 'Lineage error: ' + slot.error;
+        return box;
+    }
+    if (!slot.lineage || slot.lineage.length === 0) {
+        box.textContent = 'No lineage data.';
+        return box;
+    }
+
+    var heading = document.createElement('div');
+    heading.style.cssText = 'font-size: 11px; color: #a855f7; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.05em;';
+    heading.textContent = 'Self-heal lineage (' + slot.lineage.length + ')';
+    box.appendChild(heading);
+
+    slot.lineage.forEach(function (row, idx) {
+        var line = document.createElement('div');
+        line.style.cssText = 'font-size: 12px; padding: 4px 0; display: flex; gap: 8px; align-items: center;';
+        var prefix = idx === 0 ? '┌' : (idx === slot.lineage.length - 1 ? '└' : '├');
+        var prefixEl = document.createElement('span');
+        prefixEl.style.cssText = 'font-family: monospace; color: #a855f7;';
+        prefixEl.textContent = prefix + '─ d' + (row.auto_fix_depth || 0);
+        line.appendChild(prefixEl);
+        var idEl = document.createElement('span');
+        idEl.style.cssText = 'font-family: monospace; color: var(--text-secondary, #888);';
+        idEl.textContent = row.id.slice(0, 8);
+        line.appendChild(idEl);
+        var statusEl = document.createElement('span');
+        statusEl.textContent = row.status;
+        line.appendChild(statusEl);
+        if (row.pr_url) {
+            var prLink = document.createElement('a');
+            prLink.href = row.pr_url;
+            prLink.target = '_blank';
+            prLink.rel = 'noopener';
+            prLink.style.cssText = 'color: #3b82f6; text-decoration: none;';
+            prLink.textContent = 'PR↗';
+            line.appendChild(prLink);
+        }
+        if (row.id === execId) {
+            var hereEl = document.createElement('span');
+            hereEl.style.cssText = 'color: #22c55e; font-weight: 600;';
+            hereEl.textContent = '← here';
+            line.appendChild(hereEl);
+        }
+        box.appendChild(line);
+    });
+
+    return box;
 }
 
 function devAutopilotEscape(s) {
