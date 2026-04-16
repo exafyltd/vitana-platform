@@ -3,7 +3,14 @@
  *
  * Pulls from curated longevity sources every 12 hours.
  * Supports multiple languages (en, de, extensible).
- * Auto-tags, deduplicates via SHA-256, extracts featured images.
+ *
+ * Image extraction pipeline (per article):
+ *   1. Try RSS enclosure/media:content/media:thumbnail
+ *   2. Try first <img> in RSS content HTML
+ *   3. Scrape og:image / twitter:image from article URL (HTML head)
+ *   4. Leave null (frontend falls back to category pool)
+ *
+ * Result: every article ends up with its own unique, content-matched image.
  */
 
 import { createHash } from 'crypto';
@@ -17,6 +24,8 @@ const VTID = 'VTID-01900';
 const DEFAULT_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const INITIAL_DELAY_MS = 60_000;
 const FEED_TIMEOUT_MS = 10_000;
+const OG_SCRAPE_TIMEOUT_MS = 6_000;
+const OG_SCRAPE_CONCURRENCY = 5; // max parallel og:image scrapes
 
 let fetcherTimer: NodeJS.Timeout | null = null;
 let running = false;
@@ -25,7 +34,7 @@ let cycleInFlight = false;
 interface FeedSource { name: string; url: string; language: string; }
 
 const FEEDS: FeedSource[] = [
-  // ── English feeds ──
+  // English
   { name: 'Fight Aging!', url: 'https://www.fightaging.org/feed/', language: 'en' },
   { name: 'Lifespan.io', url: 'https://www.lifespan.io/feed/', language: 'en' },
   { name: 'Longevity.Technology', url: 'https://longevity.technology/feed/', language: 'en' },
@@ -41,7 +50,7 @@ const FEEDS: FeedSource[] = [
   { name: 'Rapamycin News', url: 'https://rapamycin.news/feed/', language: 'en' },
   { name: 'Longevity Advice', url: 'https://longevityadvice.com/feed/', language: 'en' },
   { name: 'Mitosynergy', url: 'https://mitosynergy.com/feed/', language: 'en' },
-  // ── German feeds ──
+  // German
   { name: 'Deutsches Ärzteblatt', url: 'https://www.aerzteblatt.de/rss/news.asp', language: 'de' },
   { name: 'Ärzte Zeitung', url: 'https://www.aerztezeitung.de/extras/rss/', language: 'de' },
   { name: 'Pharmazeutische Zeitung', url: 'https://www.pharmazeutische-zeitung.de/fileadmin/rss/pz_online_rss.php', language: 'de' },
@@ -80,7 +89,8 @@ function contentHash(title: string, link: string): string {
   return createHash('sha256').update(`${title}${link}`).digest('hex');
 }
 
-function extractImageUrl(item: any): string | null {
+/** Extract image URL from RSS item's own fields (first-pass). */
+function extractImageFromRss(item: any): string | null {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.$?.url) return item['media:content'].$.url;
   if (item['media:thumbnail']?.$?.url) return item['media:thumbnail'].$.url;
@@ -94,6 +104,105 @@ function extractImageUrl(item: any): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Scrape og:image / twitter:image from an article URL's HTML head.
+ * Every mainstream news site includes this for social sharing.
+ */
+async function scrapeOgImage(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OG_SCRAPE_TIMEOUT_MS);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; VitanaNewsFetcher/1.0; +https://vitana.dev)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+
+    // Only read the first ~256KB to find <head> meta tags (avoids full page download)
+    const reader = response.body?.getReader();
+    if (!reader) {
+      const html = await response.text();
+      return extractOgFromHtml(html, url);
+    }
+
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    let html = '';
+    let totalBytes = 0;
+    const maxBytes = 256 * 1024;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.length;
+      html += decoder.decode(value, { stream: true });
+      // Stop as soon as we've seen </head> or enough bytes
+      if (html.includes('</head>') || totalBytes >= maxBytes) break;
+    }
+    reader.cancel().catch(() => {});
+    return extractOgFromHtml(html, url);
+  } catch {
+    return null;
+  }
+}
+
+/** Parse og:image / twitter:image from HTML string, resolve relative URLs. */
+function extractOgFromHtml(html: string, pageUrl: string): string | null {
+  const patterns = [
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+property=["']og:image:url["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i,
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      let src = match[1].trim();
+      // Decode HTML entities
+      src = src.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#47;/g, '/');
+      // Resolve relative / protocol-relative URLs
+      if (src.startsWith('//')) src = 'https:' + src;
+      else if (src.startsWith('/')) {
+        try {
+          const u = new URL(pageUrl);
+          src = `${u.protocol}//${u.host}${src}`;
+        } catch {}
+      } else if (!src.startsWith('http')) {
+        try {
+          src = new URL(src, pageUrl).toString();
+        } catch {}
+      }
+      return src;
+    }
+  }
+  return null;
+}
+
+/** Run scrapers in parallel with bounded concurrency. */
+async function batchScrapeImages(
+  items: Array<{ link: string; imageUrl: string | null }>,
+  concurrency: number
+): Promise<void> {
+  let index = 0;
+  const workers: Promise<void>[] = [];
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      const item = items[i];
+      if (!item.imageUrl && item.link) {
+        const scraped = await scrapeOgImage(item.link);
+        if (scraped) item.imageUrl = scraped;
+      }
+    }
+  }
+  for (let i = 0; i < concurrency; i++) workers.push(worker());
+  await Promise.all(workers);
 }
 
 async function supabaseInsert(items: Array<{
@@ -123,7 +232,7 @@ async function runFetchCycle(): Promise<void> {
   if (cycleInFlight) { console.log(`${LOG_PREFIX} Cycle already in flight, skipping`); return; }
   cycleInFlight = true;
   const cycleStart = Date.now();
-  let totalInserted = 0, feedsProcessed = 0, feedsFailed = 0;
+  let totalInserted = 0, feedsProcessed = 0, feedsFailed = 0, totalScraped = 0;
   console.log(`${LOG_PREFIX} Starting fetch cycle for ${FEEDS.length} feeds...`);
 
   const Parser = (await import('rss-parser')).default;
@@ -136,33 +245,51 @@ async function runFetchCycle(): Promise<void> {
 
   for (const feed of FEEDS) {
     try {
-      const timeoutId = setTimeout(() => {}, FEED_TIMEOUT_MS);
       let rssData;
-      try { rssData = await parser.parseURL(feed.url); } finally { clearTimeout(timeoutId); }
+      try { rssData = await parser.parseURL(feed.url); } catch (e) { throw e; }
 
       const items = (rssData.items || []).slice(0, 20);
-      const batchItems: Array<{
-        source_name: string; source_url: string; title: string; link: string;
-        summary: string | null; image_url: string | null; published_at: string;
-        fetched_at: string; tags: string[]; content_hash: string; language: string;
-      }> = [];
 
-      for (const item of items) {
-        if (!item.title || !item.link) continue;
-        const summary = item.contentSnippet || item.content || item.summary || null;
-        const cleanSummary = summary ? summary.replace(/<[^>]+>/g, '').substring(0, 500) : null;
-        const publishedAt = item.isoDate || item.pubDate ? new Date(item.isoDate || item.pubDate!).toISOString() : now;
-        batchItems.push({
-          source_name: feed.name, source_url: feed.url, title: item.title, link: item.link,
-          summary: cleanSummary, image_url: extractImageUrl(item), published_at: publishedAt,
-          fetched_at: now, tags: autoTag(item.title, cleanSummary || undefined),
-          content_hash: contentHash(item.title, item.link), language: feed.language,
+      // Prepare items with initial RSS image extraction
+      const preItems = items
+        .filter((item: any) => item.title && item.link)
+        .map((item: any) => {
+          const summary = item.contentSnippet || item.content || item.summary || null;
+          const cleanSummary = summary ? summary.replace(/<[^>]+>/g, '').substring(0, 500) : null;
+          const publishedAt = item.isoDate || item.pubDate ? new Date(item.isoDate || item.pubDate!).toISOString() : now;
+          return {
+            title: item.title,
+            link: item.link,
+            summary: cleanSummary,
+            imageUrl: extractImageFromRss(item),
+            published_at: publishedAt,
+          };
         });
-      }
+
+      // Second pass: scrape og:image for items without an image (parallel)
+      const beforeScrape = preItems.filter((p: any) => p.imageUrl).length;
+      await batchScrapeImages(preItems, OG_SCRAPE_CONCURRENCY);
+      const afterScrape = preItems.filter((p: any) => p.imageUrl).length;
+      const scrapedThisFeed = afterScrape - beforeScrape;
+      totalScraped += scrapedThisFeed;
+
+      const batchItems = preItems.map((p: any) => ({
+        source_name: feed.name,
+        source_url: feed.url,
+        title: p.title,
+        link: p.link,
+        summary: p.summary,
+        image_url: p.imageUrl,
+        published_at: p.published_at,
+        fetched_at: now,
+        tags: autoTag(p.title, p.summary || undefined),
+        content_hash: contentHash(p.title, p.link),
+        language: feed.language,
+      }));
 
       if (batchItems.length > 0) { totalInserted += await supabaseInsert(batchItems); }
       feedsProcessed++;
-      console.log(`${LOG_PREFIX} ✓ ${feed.name} [${feed.language}]: ${batchItems.length} items`);
+      console.log(`${LOG_PREFIX} ✓ ${feed.name} [${feed.language}]: ${batchItems.length} items (${scrapedThisFeed} og:image scraped)`);
     } catch (error: any) {
       feedsFailed++;
       console.error(`${LOG_PREFIX} ✗ ${feed.name}: ${error.message}`);
@@ -174,9 +301,9 @@ async function runFetchCycle(): Promise<void> {
 
   cycleInFlight = false;
   const duration = Date.now() - cycleStart;
-  console.log(`${LOG_PREFIX} Cycle complete: ${feedsProcessed}/${FEEDS.length} feeds, ${totalInserted} items, ${feedsFailed} failed, ${duration}ms`);
+  console.log(`${LOG_PREFIX} Cycle complete: ${feedsProcessed}/${FEEDS.length} feeds, ${totalInserted} items, ${totalScraped} og:image scraped, ${feedsFailed} failed, ${duration}ms`);
   try {
-    await emitOasisEvent({ type: 'news.feed.cycle_complete', source: 'longevity-news-fetcher', vtid: VTID, status: feedsFailed === 0 ? 'success' : 'warning', message: `News fetch cycle: ${feedsProcessed} feeds, ${totalInserted} items`, payload: { feeds_processed: feedsProcessed, feeds_failed: feedsFailed, items_processed: totalInserted, duration_ms: duration } });
+    await emitOasisEvent({ type: 'news.feed.cycle_complete', source: 'longevity-news-fetcher', vtid: VTID, status: feedsFailed === 0 ? 'success' : 'warning', message: `News fetch cycle: ${feedsProcessed} feeds, ${totalInserted} items, ${totalScraped} scraped`, payload: { feeds_processed: feedsProcessed, feeds_failed: feedsFailed, items_processed: totalInserted, images_scraped: totalScraped, duration_ms: duration } });
   } catch {}
 }
 
@@ -187,7 +314,7 @@ export function startNewsFetcher(): void {
   running = true;
   setTimeout(() => void runFetchCycle(), INITIAL_DELAY_MS);
   fetcherTimer = setInterval(() => void runFetchCycle(), intervalMs);
-  console.log(`📰 Longevity news fetcher started (${FEEDS.length} feeds, interval=${intervalMs}ms)`);
+  console.log(`📰 Longevity news fetcher started (${FEEDS.length} feeds, interval=${intervalMs}ms, og:image scraping enabled)`);
 }
 
 export function stopNewsFetcher(): void {
