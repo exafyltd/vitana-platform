@@ -614,7 +614,13 @@ export type CicdEventType =
   | 'connector.wearable.activity.recorded'
   | 'connector.wearable.workout.recorded'
   | 'connector.wearable.other'
-  | 'wearable.metrics.read';
+  | 'wearable.metrics.read'
+  // VTID-02300: Phase 3 outbound action consent events
+  | 'connector.action.requested'
+  | 'connector.action.executed'
+  | 'connector.action.failed'
+  | 'connector.action.denied'
+  | 'connector.action.expired';
 
 export interface CicdOasisEvent {
   vtid: string;
