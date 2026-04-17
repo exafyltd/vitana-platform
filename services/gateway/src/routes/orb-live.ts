@@ -1544,20 +1544,6 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['query'],
           },
         },
-        {
-          name: 'search_web',
-          description: 'Search the web for current information about health topics, news, research, and general questions. Use this for time-sensitive or external information.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'The web search query',
-              },
-            },
-            required: ['query'],
-          },
-        },
         // Calendar tool — search user's personal calendar
         {
           name: 'search_calendar',
@@ -1690,6 +1676,14 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
         },
       ],
     },
+    // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
+    // Google Search directly and returns results with citations — no
+    // function_response needed from our side. Replaces the broken
+    // search_web custom function (which required PERPLEXITY_API_KEY, a
+    // secret that was never wired into the deploy). With this, factual
+    // questions like "how many calories in an apple" or "latest research
+    // on sleep" get real web-grounded answers automatically.
+    { google_search: {} },
   ];
 }
 
@@ -3518,7 +3512,7 @@ REPETITION PREVENTION (CRITICAL):
 ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response verbatim'}
 
 TOOLS:
-${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
+${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
 - Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
 - Use create_calendar_event to add, schedule, or book new events in the user's calendar
 
