@@ -142,6 +142,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   initializeAllConnectors().catch((err: unknown) => {
     console.error('[connectors] initialization error:', err);
   });
+  // VTID-02300: Phase 3 — outbound action executors + consent actions route
+  const consentActionsRouter = require('./routes/consent-actions').default;
+  const { registerAllActionExecutors } = require('./services/action-executors');
+  registerAllActionExecutors();
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -607,6 +611,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02000: Wearables waitlist (Phase 0 stub — real connectors ship in Phase 1)
   mountRouterSync(app, '/api/v1/wearables/waitlist', wearablesWaitlistRouter, { owner: 'wearables-waitlist' });
+
+  // VTID-02300: Phase 3 consent actions (approve/deny pending outbound actions)
+  mountRouterSync(app, '/api/v1/actions', consentActionsRouter, { owner: 'consent-actions' });
 
   // VTID-02100: Phase 1 wearables routes + connector webhook receiver
   // Order matters: /api/v1/wearables/waitlist is mounted above on wearablesWaitlistRouter.
