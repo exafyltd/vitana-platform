@@ -295,7 +295,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
-  app.use(express.json());
+  app.use(express.json({ limit: '2mb' }));
 
   // Health check
   app.get('/health', (req, res) => {
