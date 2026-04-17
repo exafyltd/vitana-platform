@@ -10,12 +10,12 @@ const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!';
  * - Creates user if not exists (provision_platform_user trigger handles app_users + user_tenants)
  * - Updates password + app_metadata if user already exists
  * - Sets exafy_admin: true so the user can switch to any role
- * - Skips gracefully if LOVABLE_SUPABASE_SERVICE_ROLE is not set (local dev fallback)
+ * - Skips gracefully if SUPABASE_SERVICE_ROLE is not set (local dev fallback)
  */
 export default async function globalSetup() {
-  const serviceRoleKey = process.env.LOVABLE_SUPABASE_SERVICE_ROLE;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!serviceRoleKey) {
-    console.log('[global-setup] LOVABLE_SUPABASE_SERVICE_ROLE not set — skipping test user provisioning');
+    console.log('[global-setup] SUPABASE_SERVICE_ROLE not set — skipping test user provisioning');
     return;
   }
 

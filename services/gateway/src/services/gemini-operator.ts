@@ -2111,8 +2111,8 @@ async function executeCommunitySearchEvents(
 ): Promise<ToolExecutionResult> {
   const identity = threadIdentityMap.get(threadId);
 
-  const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || '';
-  const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || '';
+  const EVENTS_SUPABASE_URL = process.env.SUPABASE_URL || '';
+  const EVENTS_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE || '';
 
   const query = args.query || '';
   const typeFilter = args.type_filter || 'all';
@@ -2124,21 +2124,21 @@ async function executeCommunitySearchEvents(
   const now = new Date().toISOString();
   const liveRoomResults: string[] = [];
 
-  // Scoring engine result (populated by Lovable fetch)
+  // Scoring engine result (populated by events fetch)
   let scoredResult: ScoredEventResults | null = null;
 
-  // Primary: Fetch events from Lovable Supabase (global_community_events)
+  // Primary: Fetch events from platform Supabase (global_community_events)
   // VTID-01270A Scoring: Fetch broadly (no query ilike filter) so scoring engine
   // can rank ALL events — no event is pre-excluded at the DB level.
-  if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
-    const lovableHeaders = {
+  if (EVENTS_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
+    const eventsHeaders = {
       'Content-Type': 'application/json',
-      apikey: LOVABLE_SUPABASE_KEY,
-      Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
+      apikey: EVENTS_SUPABASE_KEY,
+      Authorization: `Bearer ${EVENTS_SUPABASE_KEY}`,
     };
 
     const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,slug,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
+    let eventsUrl = `${EVENTS_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,slug,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
     if (dateTo) {
       eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
@@ -2150,7 +2150,7 @@ async function executeCommunitySearchEvents(
     try {
       const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
       console.log(`[VTID-01270A] search_events (text): ${filterSummary}`);
-      const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
+      const resp = await fetch(eventsUrl, { method: 'GET', headers: eventsHeaders });
       if (resp.ok) {
         const events = await resp.json() as EventRecord[];
         console.log(`[VTID-01270A] search_events (text): ${events.length} raw results`);
@@ -2184,10 +2184,10 @@ async function executeCommunitySearchEvents(
         console.log(`[VTID-01270A] search_events (text) scored: ${scoredResult.best.length} best, ${scoredResult.alternatives.length} alternatives, homeCity=${userHomeCity || 'none'}`);
       } else {
         const body = await resp.text();
-        console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status} — ${body.substring(0, 200)}`);
+        console.warn(`[VTID-01270A] events query failed: ${resp.status} — ${body.substring(0, 200)}`);
       }
     } catch (e: any) {
-      console.warn(`[VTID-01270A] Lovable events query error: ${e.message}`);
+      console.warn(`[VTID-01270A] events query error: ${e.message}`);
     }
   }
 
