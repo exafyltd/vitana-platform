@@ -282,6 +282,65 @@ router.patch('/geo-policy/:id', requireTenantAdmin, async (req: Request, res: Re
   res.json({ ok: true, policy: data });
 });
 
+// ==================== VTID-02200: Sources (Shopify + CJ + etc) ====================
+
+router.get('/sources', requireTenantAdmin, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const { source_network } = req.query;
+  let q = supabase.from('marketplace_sources_config').select('*').order('created_at', { ascending: false });
+  if (source_network) q = q.eq('source_network', String(source_network));
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  res.json({ ok: true, sources: data ?? [] });
+});
+
+router.post('/sources', requireTenantAdmin, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const allowed = ['source_network', 'display_name', 'config', 'tenant_id', 'is_active', 'notes'];
+  const payload: Record<string, unknown> = {};
+  for (const k of allowed) if (k in req.body) payload[k] = req.body[k];
+  if (!payload.source_network || !payload.display_name || !payload.config) {
+    return res.status(400).json({ ok: false, error: 'source_network, display_name, config required' });
+  }
+  payload.created_by = getUserId(req) ?? null;
+  const { data, error } = await supabase.from('marketplace_sources_config').insert(payload).select().single();
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_source.created', { source_id: data.id, source_network: data.source_network });
+  res.json({ ok: true, source: data });
+});
+
+router.patch('/sources/:id', requireTenantAdmin, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const allowed = ['display_name', 'config', 'is_active', 'notes'];
+  const patch: Record<string, unknown> = {};
+  for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
+  if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
+  const { data, error } = await supabase.from('marketplace_sources_config').update(patch).eq('id', req.params.id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_source.updated', { source_id: req.params.id, patch });
+  res.json({ ok: true, source: data });
+});
+
+// Manual sync trigger — runs in-process, returns the result once done.
+router.post('/sync/:network', requireTenantAdmin, async (req: Request, res: Response) => {
+  const network = req.params.network;
+  if (!['shopify', 'cj'].includes(network)) {
+    return res.status(400).json({ ok: false, error: `Unsupported network: ${network}. Use shopify or cj.` });
+  }
+  try {
+    const { runMarketplaceSyncSource } = await import('../services/marketplace-sync');
+    const result = await runMarketplaceSyncSource(network as 'shopify' | 'cj', `admin:${getUserId(req) ?? 'unknown'}`);
+    await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_sync.triggered', { network, totals: result.totals });
+    res.json({ ok: true, network, result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
 router.post('/geo-policy', requireTenantAdmin, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
