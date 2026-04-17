@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-03-30-v2';
+  var _WIDGET_VERSION = '2026-04-17-reconnect-memory-v3';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -151,6 +151,8 @@
     thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
     thinkingProgressTimer: null, // Progress updates during long thinking
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
+    speakingStuckTimer: null, // VTID-SPEAKING-STUCK: Fires if SPEAKING persists with no audio activity
+    lastAudioArrivedAt: 0,   // VTID-SPEAKING-STUCK: Timestamp of last audio chunk — used to detect stuck SPEAKING
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
 
@@ -535,6 +537,12 @@
     _s._audioSendErrorLogged = false;
     _s._inputTranscriptBuffer = '';
     _s._outputTranscriptBuffer = '';
+    // VTID-SPEAKING-STUCK: Clear any stale guard/timestamp from previous session.
+    clearTimeout(_s.speakingStuckTimer);
+    _s.speakingStuckTimer = null;
+    _s.lastAudioArrivedAt = 0;
+    // VTID-LISTENING-STUCK: Reset mic retry flag so a new session can retry.
+    _s._micRetryPending = false;
     // VTID-NAV-HOTFIX2: Reset close-pending flags from any previous session.
     // The widget IIFE persists across SPA navigations (the script loads once
     // and _s is module-scoped), so if the previous session ended by firing
@@ -581,6 +589,14 @@
       };
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
+      // VTID-RECONNECT-MEMORY: Pass a compact transcript summary on reconnect so the
+      // new upstream session resumes with context. Without this, any client-side
+      // reconnect (network blip, watchdog, SSE error) starts Vitana blank — user
+      // reports "disconnected and didn't remember what I asked before".
+      if (_s._pendingReconnectSummary) {
+        startPayload.conversation_summary = _s._pendingReconnectSummary;
+        _s._pendingReconnectSummary = null;
+      }
 
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
@@ -689,6 +705,8 @@
     clearTimeout(_s.audioEndGraceTimer);
     clearTimeout(_s.thinkingDelayTimer);
     clearInterval(_s.thinkingProgressTimer);
+    clearTimeout(_s.speakingStuckTimer);
+    _s.speakingStuckTimer = null;
     // Stop scheduled audio
     if (_s.scheduledSources) {
       for (var i = 0; i < _s.scheduledSources.length; i++) {
@@ -782,6 +800,10 @@
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
           }
+          // VTID-SPEAKING-STUCK: Track audio arrival and re-arm the speaking-stuck
+          // guard so a dropped turn_complete doesn't leave the UI in SPEAKING forever.
+          _s.lastAudioArrivedAt = Date.now();
+          _armSpeakingStuckGuard();
           // Update to SPEAKING when audio arrives — but respect MUTED state.
           // If muted, keep visual state as muted but track that model is speaking
           // so unmute restores to SPEAKING (not LISTENING).
@@ -813,6 +835,9 @@
         // Clear thinking progress if running
         clearInterval(_s.thinkingProgressTimer);
         _s.thinkingProgressTimer = null;
+        // VTID-SPEAKING-STUCK: Clear the stuck-SPEAKING guard — server confirmed turn end.
+        clearTimeout(_s.speakingStuckTimer);
+        _s.speakingStuckTimer = null;
 
         // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single entries
         if (_s._inputTranscriptBuffer.trim()) {
@@ -830,6 +855,14 @@
         // Check all three signals: audioPlaying flag, scheduled sources, and queue.
         // audioPlaying has a 1s grace period, but we also directly check sources/queue
         // to catch edge cases where the flag lags behind reality.
+        //
+        // VTID-SPEAKING-STUCK: Hard cap the drain loop. If a BufferSource.onended
+        // is dropped (AudioContext suspend race, GC, mobile backgrounding), the
+        // old loop ran forever and the orb stayed "Vitana speaking..." with no
+        // actual audio. After _WAIT_AUDIO_END_MAX_MS, force-drain the scheduled
+        // sources and proceed to LISTENING so the session stays responsive.
+        var _waitAudioEndStart = Date.now();
+        var _WAIT_AUDIO_END_MAX_MS = 10000;
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
@@ -840,14 +873,33 @@
               (_s.scheduledSources && _s.scheduledSources.length > 0) ||
               (_s.audioQueue && _s.audioQueue.length > 0);
             if (stillPlaying) {
-              _waitForAudioEnd(); // Still playing — check again in 300ms
-              return;
+              if (Date.now() - _waitAudioEndStart > _WAIT_AUDIO_END_MAX_MS) {
+                console.warn('[VTOrb] _waitForAudioEnd exceeded ' + _WAIT_AUDIO_END_MAX_MS + 'ms — force-draining to unstick SPEAKING state');
+                _s.audioQueue = [];
+                if (_s.scheduledSources && _s.scheduledSources.length > 0) {
+                  for (var _fdi = 0; _fdi < _s.scheduledSources.length; _fdi++) {
+                    try { _s.scheduledSources[_fdi].stop(); } catch (_fde) { /* ok */ }
+                  }
+                  _s.scheduledSources = [];
+                }
+                _s.lastScheduledEnd = 0;
+                _s.audioPlaying = false;
+                clearTimeout(_s.audioEndGraceTimer);
+                // Fall through to the LISTENING transition below
+              } else {
+                _waitForAudioEnd(); // Still playing — check again in 300ms
+                return;
+              }
             }
             // Start mic on first turn_complete (greeting done) — not before.
             if (!_s.greetingComplete) {
               _s.greetingComplete = true;
               _startAudioCapture().catch(function (err) {
                 console.error('[VTOrb] Mic capture failed after greeting:', err);
+                // VTID-LISTENING-STUCK: getUserMedia failed — without mic capture
+                // the orb shows LISTENING forever with no way for the user to speak.
+                // Surface the error and offer a retry instead of silently failing.
+                _handleMicCaptureFailure(err);
               });
             }
             if (_s.voiceState === 'MUTED') {
@@ -892,6 +944,9 @@
         _s.audioPlaying = false;
         clearTimeout(_s.audioEndGraceTimer);
         _s.interruptPending = false;
+        // VTID-SPEAKING-STUCK: Clear guard — audio stream was cut short cleanly.
+        clearTimeout(_s.speakingStuckTimer);
+        _s.speakingStuckTimer = null;
         break;
 
       case 'error':
@@ -1058,6 +1113,51 @@
   // 8. AUDIO CAPTURE (getUserMedia + PCM + VAD + Barge-in)
   // ============================================================
 
+  // VTID-LISTENING-STUCK: When getUserMedia fails (permission denied, no device,
+  // browser blocked), show a real error status and try once more after a short
+  // delay. Without this, the orb sits in LISTENING, Vitana never hears the user,
+  // and the 15s idle nudge loops — matching the "frozen" screenshots users see.
+  function _handleMicCaptureFailure(err) {
+    var isGerman = _cfg.lang.startsWith('de');
+    var isPermission = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || /permission/i.test(err.message || ''));
+    var msg = isPermission
+      ? (isGerman ? 'Mikrofon blockiert. Bitte in den Browser-Einstellungen erlauben.' : 'Microphone blocked. Please allow mic access in your browser settings.')
+      : (isGerman ? 'Mikrofon nicht verfügbar. Ich versuche es erneut...' : 'Microphone unavailable. Retrying...');
+    _setStatus(msg);
+    _setOrbState('error');
+    _playErrorTone();
+    _updateUI();
+
+    if (isPermission) {
+      // Permission errors won't resolve on retry — keep the error state so the
+      // user notices and can fix it. Re-open attempt will fire on next session.
+      return;
+    }
+
+    // Transient error — one retry after a short delay
+    if (_s._micRetryPending) return;
+    _s._micRetryPending = true;
+    setTimeout(function () {
+      _s._micRetryPending = false;
+      if (!_s.active) return;
+      _startAudioCapture().then(function () {
+        if (!_s.active) return;
+        _setOrbState('listening');
+        _s.voiceState = 'LISTENING';
+        _setStatus(isGerman ? 'Ich höre zu...' : 'Listening...');
+        _updateUI();
+      }).catch(function (err2) {
+        console.error('[VTOrb] Mic capture retry failed:', err2);
+        var finalMsg = isGerman
+          ? 'Mikrofon konnte nicht gestartet werden. Bitte Sitzung neu öffnen.'
+          : 'Could not start microphone. Please reopen the session.';
+        _setStatus(finalMsg);
+        _setOrbState('error');
+        _updateUI();
+      });
+    }, 1500);
+  }
+
   async function _startAudioCapture() {
     var stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 16000 }
@@ -1216,6 +1316,44 @@
       if (elapsed >= 10) text += ' (' + elapsed + 's)';
       _setStatus(text);
     }, 3000);
+  }
+
+  // VTID-SPEAKING-STUCK: If audio stops arriving but no turn_complete fires,
+  // the UI stays in SPEAKING indefinitely. After SPEAKING_STUCK_TIMEOUT_MS with
+  // no new audio chunk and the scheduling queue idle, force-drain and transition
+  // back to LISTENING so the session stays responsive.
+  var SPEAKING_STUCK_TIMEOUT_MS = 8000;
+
+  function _armSpeakingStuckGuard() {
+    clearTimeout(_s.speakingStuckTimer);
+    _s.speakingStuckTimer = setTimeout(function () {
+      if (!_s.active) return;
+      if (_s.voiceState !== 'SPEAKING' && _s.preMuteState !== 'SPEAKING') return;
+      // Still fresh audio? Re-arm.
+      if (_s.lastAudioArrivedAt && (Date.now() - _s.lastAudioArrivedAt) < SPEAKING_STUCK_TIMEOUT_MS - 500) {
+        _armSpeakingStuckGuard();
+        return;
+      }
+      console.warn('[VTOrb] SPEAKING stuck — no audio or turn_complete for ' + SPEAKING_STUCK_TIMEOUT_MS + 'ms. Force-draining.');
+      _s.audioQueue = [];
+      if (_s.scheduledSources && _s.scheduledSources.length > 0) {
+        for (var _si = 0; _si < _s.scheduledSources.length; _si++) {
+          try { _s.scheduledSources[_si].stop(); } catch (_e) { /* ok */ }
+        }
+        _s.scheduledSources = [];
+      }
+      _s.lastScheduledEnd = 0;
+      _s.audioPlaying = false;
+      clearTimeout(_s.audioEndGraceTimer);
+      if (_s.voiceState === 'MUTED') {
+        _s.preMuteState = 'LISTENING';
+      } else {
+        _setOrbState('listening');
+        _s.voiceState = 'LISTENING';
+        _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+        _updateUI();
+      }
+    }, SPEAKING_STUCK_TIMEOUT_MS);
   }
 
   // VTID-HEARTBEAT-FIX: Increased from 12s to 30s. Server now sends data
@@ -1618,6 +1756,20 @@
         _s.liveError = null;
         _s._audioSendErrorLogged = false;
         _s.greetingAudioReceived = false;
+
+        // VTID-RECONNECT-MEMORY: Build a compact transcript summary so Vitana
+        // resumes with memory of what was said. Keep the last 8 turns and cap
+        // total length — the backend trims to 4000 chars anyway.
+        if (_s._transcriptHistory && _s._transcriptHistory.length > 0) {
+          var recentTurns = _s._transcriptHistory.slice(-8);
+          var summary = recentTurns.map(function (t) {
+            var roleName = t.role === 'user' ? 'User' : 'Vitana';
+            var body = (t.text || '').replace(/\s+/g, ' ').trim();
+            return body ? roleName + ': ' + body : '';
+          }).filter(Boolean).join('\n');
+          if (summary.length > 3500) summary = '...' + summary.slice(-3500);
+          if (summary) _s._pendingReconnectSummary = summary;
+        }
 
         // Restart session
         await _sessionStart();
