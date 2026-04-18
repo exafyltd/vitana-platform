@@ -355,7 +355,7 @@ async function runPlanningSession(
   }
   const sessionId = sessionResult.data.id;
 
-  await anthropicRequest(`/v1/sessions/${sessionId}/events`, {
+  const userMsgPost = await anthropicRequest(`/v1/sessions/${sessionId}/events`, {
     method: 'POST',
     body: {
       events: [
@@ -366,11 +366,20 @@ async function runPlanningSession(
       ],
     },
   });
+  if (!userMsgPost.ok) {
+    return {
+      ok: false,
+      error: `user.message post failed: ${userMsgPost.error}`,
+      session_id: sessionId,
+    };
+  }
 
   const seenIds = new Set<string>();
   const textParts: string[] = [];
   const deadline = Date.now() + SESSION_TIMEOUT_MS;
   let done = false;
+  let sawAgentMessage = false;
+  let sawUserMessage = false;
 
   while (!done && Date.now() < deadline) {
     const eventsResult = await anthropicRequest<{ data?: Array<{ id: string; type: string; content?: Array<{ type: string; text?: string }>; stop_reason?: { type?: string } }> }>(
@@ -383,12 +392,20 @@ async function runPlanningSession(
     for (const event of events) {
       if (seenIds.has(event.id)) continue;
       seenIds.add(event.id);
-      if (event.type === 'agent.message' && event.content) {
+      if (event.type === 'user.message') {
+        sawUserMessage = true;
+      } else if (event.type === 'agent.message' && event.content) {
+        sawAgentMessage = true;
         for (const block of event.content) {
           if (block.type === 'text' && block.text) textParts.push(block.text);
         }
       } else if (event.type === 'session.status_idle') {
-        if (event.stop_reason?.type !== 'requires_action') done = true;
+        // Only treat idle as "done" once the agent has had a turn. Sessions
+        // enter idle state between the create-session call and the user's
+        // first message — exiting then would miss all output.
+        if (event.stop_reason?.type !== 'requires_action' && sawAgentMessage && sawUserMessage) {
+          done = true;
+        }
       } else if (event.type === 'session.status_terminated') {
         done = true;
       }
