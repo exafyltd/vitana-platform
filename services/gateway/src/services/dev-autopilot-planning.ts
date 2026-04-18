@@ -134,7 +134,14 @@ async function supaRequest<T>(
       },
     });
     if (!res.ok) return { ok: false, status: res.status, error: `${res.status}: ${await res.text()}` };
-    if (res.status === 204) return { ok: true, status: 204 };
+    if (res.status === 204 || res.status === 201) {
+      // Prefer: return=minimal produces 201 with an empty body — don't parse.
+      const text = await res.text();
+      if (!text) return { ok: true, status: res.status };
+      try {
+        return { ok: true, status: res.status, data: JSON.parse(text) as T };
+      } catch { return { ok: true, status: res.status }; }
+    }
     const data = (await res.json()) as T;
     return { ok: true, status: res.status, data };
   } catch (err) {
