@@ -1,0 +1,54 @@
+{
+  "name": "vaea",
+  "vtid": "VTID-02400",
+  "version": "0.1.0",
+  "description": "Vitana Autonomous Economic Actor — machine-to-machine referral agent. Phase 0 scaffold.",
+  "layer": "PLATFORM",
+  "module": "VAEA",
+  "type": "service",
+  "runtime": "nodejs",
+  "port": 8080,
+  "healthcheck": {
+    "path": "/alive",
+    "interval": "30s",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "dependencies": [
+    "@supabase/supabase-js",
+    "express",
+    "zod",
+    "typescript"
+  ],
+  "environment": {
+    "required": [
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE"
+    ],
+    "optional": [
+      "PORT",
+      "GATEWAY_URL",
+      "LOG_LEVEL",
+      "VAEA_ENABLED",
+      "VAEA_AUTO_EXECUTE_ENABLED",
+      "VAEA_MESH_BOUNDED_NETWORK"
+    ]
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "minInstances": 0,
+    "maxInstances": 2
+  },
+  "labels": {
+    "app": "vaea",
+    "component": "economic-actor",
+    "managed-by": "vitana-platform"
+  },
+  "governance": {
+    "respect_execution_gate": true,
+    "phase": 0,
+    "loops_enabled": false,
+    "auto_execute_default": false
+  }
+}
