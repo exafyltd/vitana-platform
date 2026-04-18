@@ -114,6 +114,11 @@ interface ProductSearchRow extends FilterableProduct {
   health_goals: string[];
   dietary_tags: string[];
   reward_preview: Record<string, unknown> | null;
+  dosage: string | null;
+  serving_size: string | null;
+  servings_per_container: number | null;
+  evidence_links: Array<{ title?: string; url?: string; source_type?: string }>;
+  safety_notes: string | null;
 }
 
 // ==================== GET /search ====================
@@ -205,7 +210,7 @@ router.get('/search', async (req: Request, res: Response) => {
   let query = supabase
     .from('products')
     .select(
-      'id, title, description, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions',
+      'id, title, description, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
       { count: 'exact' }
     )
     .eq('is_active', true);
@@ -398,6 +403,11 @@ router.get('/search', async (req: Request, res: Response) => {
       health_goals: p.health_goals,
       dietary_tags: p.dietary_tags,
       reward_preview: p.reward_preview,
+      dosage: p.dosage ?? null,
+      serving_size: p.serving_size ?? null,
+      servings_per_container: p.servings_per_container ?? null,
+      evidence_links: Array.isArray(p.evidence_links) ? p.evidence_links : [],
+      safety_notes: p.safety_notes ?? null,
       match_score: Math.min(1, score),
       match_reasons: reasons,
     };
