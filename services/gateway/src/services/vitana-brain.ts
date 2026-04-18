@@ -279,6 +279,7 @@ export async function buildBrainSystemInstruction(input: {
   turn_number?: number;
   conversation_start?: string;
   display_name?: string;
+  user_timezone?: string;
 }): Promise<{ instruction: string; contextPack: ContextPack }> {
   const startTime = Date.now();
 
@@ -315,7 +316,7 @@ export async function buildBrainSystemInstruction(input: {
   };
 
   const contextPack = await buildContextPack(contextPackInput);
-  const contextForLLM = formatContextPackForLLM(contextPack);
+  const contextForLLM = formatContextPackForLLM(contextPack, { userTimezone: input.user_timezone });
 
   // Build personality-driven instruction
   const preferredLanguage = extractLanguageFromContextPack(contextPack);
@@ -398,9 +399,10 @@ export function buildBrainToolDefinitions(role: string): object[] {
 export async function executeBrainTool(
   toolName: string,
   args: Record<string, unknown>,
-  context: { user_id: string; tenant_id: string; role: string },
+  context: { user_id: string; tenant_id: string; role: string; user_timezone?: string },
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
+  const userTz = context.user_timezone || 'UTC';
 
   try {
     switch (toolName) {
@@ -414,27 +416,27 @@ export async function executeBrainTool(
 
         let formatted = '';
         if (today.length > 0) {
-          formatted += 'Today\'s schedule:\n';
+          formatted += `Today's schedule (times in ${userTz}):\n`;
           for (const ev of today) {
-            const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
             formatted += `- ${time}: ${ev.title} (${ev.event_type})\n`;
           }
         } else {
           formatted += 'Today\'s schedule: No events scheduled.\n';
         }
         if (upcoming.length > 0) {
-          formatted += '\nUpcoming (next 7 days):\n';
+          formatted += `\nUpcoming (next 7 days, times in ${userTz}):\n`;
           for (const ev of upcoming.slice(0, 5)) {
-            const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: userTz });
+            const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
             formatted += `- ${date} ${time}: ${ev.title}\n`;
           }
         }
         if (gaps.length > 0) {
-          formatted += '\nFree time today:\n';
+          formatted += `\nFree time today (in ${userTz}):\n`;
           for (const gap of gaps.slice(0, 3)) {
-            const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
+            const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
             formatted += `- ${start}\u2013${end} (${gap.duration_minutes} min free)\n`;
           }
         }

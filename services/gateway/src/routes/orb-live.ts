@@ -2478,6 +2478,7 @@ async function executeLiveApiToolInner(
         const query = (args.query as string) || '';
         const role = session.active_role || 'community';
         const userId = session.identity.user_id;
+        const userTz = session.clientContext?.timezone || 'UTC';
 
         try {
           const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps } = await import('../services/calendar-service');
@@ -2491,9 +2492,9 @@ async function executeLiveApiToolInner(
           let formatted = '';
 
           if (todayEvents.length > 0) {
-            formatted += 'Today\'s schedule:\n';
+            formatted += `Today's schedule (times in ${userTz}):\n`;
             for (const ev of todayEvents) {
-              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
               formatted += `- ${time}: ${ev.title} (${ev.event_type})\n`;
             }
             formatted += '\n';
@@ -2502,20 +2503,20 @@ async function executeLiveApiToolInner(
           }
 
           if (upcomingEvents.length > 0) {
-            formatted += 'Upcoming (next 7 days):\n';
+            formatted += `Upcoming (next 7 days, times in ${userTz}):\n`;
             for (const ev of upcomingEvents.slice(0, 5)) {
-              const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: userTz });
+              const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
               formatted += `- ${date} ${time}: ${ev.title} (${ev.event_type})\n`;
             }
             formatted += '\n';
           }
 
           if (gaps.length > 0) {
-            formatted += 'Free time today:\n';
+            formatted += `Free time today (in ${userTz}):\n`;
             for (const gap of gaps.slice(0, 3)) {
-              const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-              const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
+              const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
               formatted += `- ${start}\u2013${end} (${gap.duration_minutes} min free)\n`;
             }
           }
@@ -2612,12 +2613,15 @@ async function executeLiveApiToolInner(
             },
           }).catch(() => {});
 
+          const userTz = session.clientContext?.timezone || 'UTC';
           const startFormatted = new Date(eventStart).toLocaleString('en-US', {
             weekday: 'short', month: 'short', day: 'numeric',
             hour: '2-digit', minute: '2-digit', hour12: true,
+            timeZone: userTz,
           });
           const endFormatted = new Date(effectiveEndTime).toLocaleTimeString('en-US', {
             hour: '2-digit', minute: '2-digit', hour12: true,
+            timeZone: userTz,
           });
 
           let result = `Event created successfully!\n- Title: ${event.title}\n- When: ${startFormatted} – ${endFormatted}`;
@@ -5750,9 +5754,10 @@ Operating mode:
  * VTID-01186: Now accepts optional identity parameter to use authenticated user's memory.
  */
 async function generateMemoryEnhancedSystemInstruction(
-  session: { tenant: string; role: string; route?: string; selectedId?: string },
+  session: { tenant: string; role: string; route?: string; selectedId?: string; userTimezone?: string },
   identity?: MemoryIdentity | null
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null; contextBundle?: ContextBundle }> {
+  const userTz = session.userTimezone || 'UTC';
   // VTID-01186: Determine effective identity (authenticated or DEV_IDENTITY fallback)
   const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
     ? identity
@@ -5812,12 +5817,12 @@ async function generateMemoryEnhancedSystemInstruction(
         getCalendarGaps(effectiveIdentity.user_id, calRole, new Date()),
       ]);
 
-      let calLines = '\n\n## Your Calendar Awareness\nYou have access to this user\'s calendar. This is part of your core memory. ALWAYS reference this when asked about schedule, calendar, events, or availability.\n';
+      let calLines = `\n\n## Your Calendar Awareness\nYou have access to this user's calendar. This is part of your core memory. ALWAYS reference this when asked about schedule, calendar, events, or availability.\nAll times below are in the user's local timezone (${userTz}). When speaking to the user, state these times verbatim — do NOT convert to UTC or another timezone.\n`;
 
       if (todayEvents.length > 0) {
-        calLines += '\nToday\'s schedule:\n';
+        calLines += `\nToday's schedule (${userTz}):\n`;
         for (const ev of todayEvents) {
-          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
           calLines += `- ${time}: ${ev.title} (${ev.event_type})\n`;
         }
       } else {
@@ -5825,19 +5830,19 @@ async function generateMemoryEnhancedSystemInstruction(
       }
 
       if (upcomingEvents.length > 0) {
-        calLines += '\nUpcoming (next 7 days):\n';
+        calLines += `\nUpcoming (next 7 days, ${userTz}):\n`;
         for (const ev of upcomingEvents.slice(0, 5)) {
-          const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: userTz });
+          const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
           calLines += `- ${date} ${time}: ${ev.title}\n`;
         }
       }
 
       if (gaps.length > 0) {
-        calLines += '\nFree time today:\n';
+        calLines += `\nFree time today (${userTz}):\n`;
         for (const gap of gaps.slice(0, 3)) {
-          const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-          const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
+          const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
           calLines += `- ${start}\u2013${end} (${gap.duration_minutes} min free)\n`;
         }
       }
@@ -8560,6 +8565,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
                 role: brainRole,
                 channel: 'orb',
                 thread_id: sessionId,
+                user_timezone: clientContext?.timezone,
               });
               console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
               return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };

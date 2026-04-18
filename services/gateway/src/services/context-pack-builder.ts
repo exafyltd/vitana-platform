@@ -1417,7 +1417,8 @@ export async function buildContextPack(
 /**
  * Format Context Pack for LLM system instruction injection
  */
-export function formatContextPackForLLM(pack: ContextPack): string {
+export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone?: string }): string {
+  const userTz = opts?.userTimezone || 'UTC';
   let context = '';
 
   // VTID-01230: Session buffer FIRST — highest priority, most recent context
@@ -1509,11 +1510,12 @@ export function formatContextPackForLLM(pack: ContextPack): string {
   if (pack.calendar_context) {
     const cal = pack.calendar_context;
     context += `<calendar_memory>\n`;
+    context += `All calendar times below are in the user's local timezone (${userTz}). When speaking to the user, state these times verbatim — do NOT convert to UTC or any other timezone.\n\n`;
 
     if (cal.today_events.length > 0) {
-      context += `Today's schedule:\n`;
+      context += `Today's schedule (${userTz}):\n`;
       for (const ev of cal.today_events) {
-        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
         context += `- ${time}: ${ev.title} (${ev.event_type})\n`;
       }
       context += `\n`;
@@ -1522,20 +1524,20 @@ export function formatContextPackForLLM(pack: ContextPack): string {
     }
 
     if (cal.upcoming_events.length > 0) {
-      context += `Upcoming (next 7 days):\n`;
+      context += `Upcoming (next 7 days, ${userTz}):\n`;
       for (const ev of cal.upcoming_events.slice(0, 5)) {
-        const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const date = new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: userTz });
+        const time = new Date(ev.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
         context += `- ${date} ${time}: ${ev.title}\n`;
       }
       context += `\n`;
     }
 
     if (cal.gaps_today.length > 0) {
-      context += `Free time today:\n`;
+      context += `Free time today (${userTz}):\n`;
       for (const gap of cal.gaps_today.slice(0, 3)) {
-        const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const start = new Date(gap.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
+        const end = new Date(gap.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: userTz });
         context += `- ${start}–${end} (${gap.duration_minutes} min free)\n`;
       }
       context += `\n`;
