@@ -86,6 +86,14 @@
       ],
       "cloud_run_service": "worker-runner",
       "deployable": true
+    },
+    "vaea": {
+      "paths": [
+        "services/vaea/"
+      ],
+      "cloud_run_service": "vaea",
+      "deployable": false,
+      "notes": "VTID-02400 Phase 0 scaffold — flip deployable to true in Phase 1 when loops land"
     }
   },
   "shared": {
