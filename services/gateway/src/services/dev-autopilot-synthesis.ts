@@ -359,20 +359,21 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
 
   // 5. Eager Stage B — plan the top K new findings so the UI has actionable
   //    cards immediately. Remaining findings get lazy planning on expand/approve.
-  //    Uses a dynamic require to avoid a circular import chain (synthesis
-  //    is imported by planning for its scoring helpers).
+  //    FIRE-AND-FORGET: each Managed Agent session takes 30-120s. Awaiting K
+  //    of them sequentially pushes the /scan POST over Cloud Run's 5-min
+  //    request timeout (BOOTSTRAP-SCAN-TIMEOUT). The UI's lazy planner
+  //    already handles the case where a finding has no plan yet.
   if (newCount > 0) {
-    try {
-      const eagerK = parseInt(process.env.DEV_AUTOPILOT_EAGER_PLAN_TOP_K || '5', 10);
-      if (eagerK > 0) {
-        const planning = (await import('./dev-autopilot-planning')) as {
-          eagerlyPlanTopK: (runId: string, k: number) => Promise<{ planned: number; errors: number }>;
-        };
-        const eagerResult = await planning.eagerlyPlanTopK(runId, eagerK);
+    const eagerK = parseInt(process.env.DEV_AUTOPILOT_EAGER_PLAN_TOP_K || '5', 10);
+    if (eagerK > 0) {
+      import('./dev-autopilot-planning').then((planning) => {
+        return (planning as { eagerlyPlanTopK: (runId: string, k: number) => Promise<{ planned: number; errors: number }> })
+          .eagerlyPlanTopK(runId, eagerK);
+      }).then((eagerResult) => {
         console.log(`${LOG_PREFIX} eager plan: ${eagerResult.planned} planned, ${eagerResult.errors} errors`);
-      }
-    } catch (err) {
-      console.warn(`${LOG_PREFIX} eager planning failed (non-fatal):`, err);
+      }).catch((err) => {
+        console.warn(`${LOG_PREFIX} eager planning failed (non-fatal):`, err);
+      });
     }
   }
 
