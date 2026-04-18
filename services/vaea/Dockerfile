@@ -14,7 +14,7 @@ RUN npm prune --production
 FROM node:20-alpine AS production
 
 LABEL maintainer="Vitana Platform"
-LABEL vtid="VTID-02400"
+LABEL vtid="VTID-02401"
 LABEL component="vaea-economic-actor"
 
 RUN addgroup -g 1001 -S nodejs && \
@@ -34,6 +34,8 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV VAEA_ENABLED=false
 ENV VAEA_AUTO_EXECUTE_ENABLED=false
+ENV VAEA_PHASE_1_OBSERVE_ENABLED=false
+ENV VAEA_OBSERVE_INTERVAL_MS=300000
 
 EXPOSE 8080
 

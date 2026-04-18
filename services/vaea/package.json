@@ -1,7 +1,7 @@
 {
   "name": "vaea",
-  "version": "0.1.0",
-  "description": "VTID-02400: Vitana Autonomous Economic Actor — referral agent (Phase 0 scaffold)",
+  "version": "0.2.0",
+  "description": "VTID-02401: Vitana Autonomous Economic Actor — Phase 1 observe-mode (classifier + matcher + shadow drafts)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

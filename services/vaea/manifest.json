@@ -1,8 +1,8 @@
 {
   "name": "vaea",
-  "vtid": "VTID-02400",
-  "version": "0.1.0",
-  "description": "Vitana Autonomous Economic Actor — machine-to-machine referral agent. Phase 0 scaffold.",
+  "vtid": "VTID-02401",
+  "version": "0.2.0",
+  "description": "Vitana Autonomous Economic Actor — Phase 1 observe-mode (detect buying intent, match catalog, shadow drafts; no posting).",
   "layer": "PLATFORM",
   "module": "VAEA",
   "type": "service",
@@ -31,7 +31,9 @@
       "LOG_LEVEL",
       "VAEA_ENABLED",
       "VAEA_AUTO_EXECUTE_ENABLED",
-      "VAEA_MESH_BOUNDED_NETWORK"
+      "VAEA_MESH_BOUNDED_NETWORK",
+      "VAEA_PHASE_1_OBSERVE_ENABLED",
+      "VAEA_OBSERVE_INTERVAL_MS"
     ]
   },
   "resources": {
@@ -47,8 +49,9 @@
   },
   "governance": {
     "respect_execution_gate": true,
-    "phase": 0,
-    "loops_enabled": false,
+    "phase": 1,
+    "loops_enabled": true,
+    "loops_default_off": true,
     "auto_execute_default": false
   }
 }
