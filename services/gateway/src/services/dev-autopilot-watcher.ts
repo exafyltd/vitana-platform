@@ -67,7 +67,13 @@ async function supa<T>(
       },
     });
     if (!res.ok) return { ok: false, status: res.status, error: `${res.status}: ${await res.text()}` };
-    if (res.status === 204) return { ok: true, status: 204 };
+    if (res.status === 204 || res.status === 201) {
+      const text = await res.text();
+      if (!text) return { ok: true, status: res.status };
+      try {
+        return { ok: true, status: res.status, data: JSON.parse(text) as T };
+      } catch { return { ok: true, status: res.status }; }
+    }
     return { ok: true, status: res.status, data: (await res.json()) as T };
   } catch (err) {
     return { ok: false, status: 500, error: String(err) };
