@@ -1,0 +1,15 @@
+name = "vitanaland-og-proxy"
+main = "worker.js"
+compatibility_date = "2024-10-01"
+
+# Worker is currently deployed manually via the Cloudflare dashboard and bound
+# to the e.vitanaland.com route. Running `wrangler deploy` from this folder
+# after `wrangler login` will update the same worker in place.
+#
+# Route binding (configure in the Cloudflare dashboard for the Worker):
+#   e.vitanaland.com/*   →   vitanaland-og-proxy
+#
+# The worker reads:
+#   - Supabase Edge Functions at inmkhvwdcuyhnxkgfvsb.supabase.co  (events/profiles/rooms/matches OG)
+#   - Gateway at gateway-q74ibpv6ia-uc.a.run.app  (marketplace product OG, inline)
+# Both are constants in worker.js; no secrets required.
