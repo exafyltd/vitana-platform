@@ -442,6 +442,8 @@ async function runExecutionSession(
   const texts: string[] = [];
   const deadline = Date.now() + SESSION_TIMEOUT_MS;
   let done = false;
+  let sawAgentMessage = false;
+  let sawUserMessage = false;
   while (!done && Date.now() < deadline) {
     const ev = await anthropicRequest<{ data?: Array<{ id: string; type: string; content?: Array<{ type: string; text?: string }>; stop_reason?: { type?: string } }> }>(
       `/v1/sessions/${sessionId}/events`,
@@ -451,12 +453,17 @@ async function runExecutionSession(
     for (const e of events) {
       if (seen.has(e.id)) continue;
       seen.add(e.id);
-      if (e.type === 'agent.message' && e.content) {
+      if (e.type === 'user.message') {
+        sawUserMessage = true;
+      } else if (e.type === 'agent.message' && e.content) {
+        sawAgentMessage = true;
         for (const b of e.content) {
           if (b.type === 'text' && b.text) texts.push(b.text);
         }
       } else if (e.type === 'session.status_idle' && e.stop_reason?.type !== 'requires_action') {
-        done = true;
+        // Don't exit on the pre-user-message idle state — session is idle
+        // between create and user.message arrival.
+        if (sawAgentMessage && sawUserMessage) done = true;
       } else if (e.type === 'session.status_terminated') {
         done = true;
       }
