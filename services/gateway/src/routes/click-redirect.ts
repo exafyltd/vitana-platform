@@ -142,6 +142,64 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 }
 
+/**
+ * Landing page served when the Buy button on a demo_seed product is clicked.
+ * The seed data intentionally has placeholder affiliate_urls (demo.vitanaland.com)
+ * that don't resolve; when real merchants onboard via Shopify/CJ, they ship
+ * real affiliate_urls and this branch is skipped.
+ */
+function renderDemoLanding(productTitle: string, productId: string, brand: string | null): string {
+  const safeTitle = escapeHtml(productTitle);
+  const safeBrand = brand ? escapeHtml(brand) : '';
+  const safeId = escapeHtml(productId);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Demo product — ${safeTitle}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #faf5ff 0%, #eff6ff 50%, #fdf2f8 100%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+    .card { background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border-radius: 16px;
+      max-width: 520px; width: 100%; padding: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
+    h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+    .brand { color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    p { color: #4b5563; line-height: 1.6; margin: 0.5rem 0; }
+    .tag { display: inline-block; background: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem;
+      border-radius: 999px; font-size: 0.75rem; font-weight: 600; margin-bottom: 1rem; }
+    .actions { margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    a.btn { text-decoration: none; padding: 0.625rem 1.25rem; border-radius: 8px; font-weight: 500;
+      display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.875rem; }
+    a.primary { background: #111827; color: white; }
+    a.outline { border: 1px solid #d1d5db; color: #374151; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0b0f1a; }
+      .card { background: rgba(20,24,36,0.9); }
+      h1 { color: #f9fafb; }
+      p { color: #d1d5db; }
+      a.outline { border-color: #374151; color: #e5e7eb; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="tag">Demo product</div>
+    ${safeBrand ? `<div class="brand">${safeBrand}</div>` : ''}
+    <h1>${safeTitle}</h1>
+    <p>This is a demo catalog row. In production, this button routes to the merchant&rsquo;s real checkout page with affiliate attribution attached.</p>
+    <p>Your click was still logged for analytics, so click-tracking and reward event wiring are fully exercisable against this button.</p>
+    <div class="actions">
+      <a class="btn primary" href="/discover/product/${safeId}">Back to product</a>
+      <a class="btn outline" href="/discover">Discover more</a>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 // ==================== GET /r/:product_id ====================
 
 router.get('/:product_id', async (req: Request, res: Response) => {
@@ -159,7 +217,7 @@ router.get('/:product_id', async (req: Request, res: Response) => {
   const { data: product, error: productErr } = await supabase
     .from('products')
     .select(
-      'id, title, merchant_id, affiliate_url, origin_country, ships_to_countries, ships_to_regions, is_active'
+      'id, title, brand, merchant_id, affiliate_url, source_network, origin_country, ships_to_countries, ships_to_regions, is_active'
     )
     .eq('id', productId)
     .eq('is_active', true)
@@ -268,6 +326,17 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     ships_to_countries: product.ships_to_countries,
     target_url: stampedUrl,
   }).catch(() => {});
+
+  // Demo_seed products intentionally have placeholder affiliate_urls that
+  // don't resolve (demo.vitanaland.com never existed). Serve a landing page
+  // instead of 302'ing into a dead DNS response.
+  if (product.source_network === 'demo_seed') {
+    res
+      .status(200)
+      .set('Content-Type', 'text/html; charset=utf-8')
+      .send(renderDemoLanding(product.title, product.id, product.brand ?? null));
+    return;
+  }
 
   res.redirect(302, stampedUrl);
 });
