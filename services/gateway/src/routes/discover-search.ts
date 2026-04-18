@@ -457,4 +457,50 @@ router.get('/search', async (req: Request, res: Response) => {
   });
 });
 
+// ==================== GET /product/:id ====================
+//
+// Single-product fetch for the /discover/product/:id page.
+// Same row shape as /search items but with no match_score / match_reasons
+// (there's no query context to rank against — this is a direct lookup).
+// Applies the same hard-filter for is_active; hidden-by-limitations is NOT
+// enforced here so shared/deep-linked URLs still resolve (caller can choose
+// whether to surface warnings separately).
+router.get('/product/:id', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    res.status(500).json({ ok: false, error: 'Supabase unavailable' });
+    return;
+  }
+  const id = String(req.params.id ?? '').trim();
+  if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+    res.status(400).json({ ok: false, error: 'invalid product id' });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('products')
+    .select(
+      'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, dosage, serving_size, servings_per_container, evidence_links, safety_notes'
+    )
+    .eq('id', id)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    res.status(500).json({ ok: false, error: error.message });
+    return;
+  }
+  if (!data) {
+    res.status(404).json({ ok: false, error: 'product not found' });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    product: {
+      ...data,
+      evidence_links: Array.isArray(data.evidence_links) ? data.evidence_links : [],
+    },
+  });
+});
+
 export default router;
