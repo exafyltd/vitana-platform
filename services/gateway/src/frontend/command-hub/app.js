@@ -2610,7 +2610,10 @@ const NAVIGATION_CONFIG = [
             { "key": "live-console", "path": "/command-hub/live-console/" },
             { "key": "events", "path": "/command-hub/events/" },
             { "key": "vtids", "path": "/command-hub/vtids/" },
-            { "key": "approvals", "path": "/command-hub/approvals/" }
+            { "key": "approvals", "path": "/command-hub/approvals/" },
+            { "key": "autonomy-pulse", "path": "/command-hub/autonomy-pulse/" },
+            { "key": "autonomy-trace", "path": "/command-hub/autonomy-trace/" },
+            { "key": "dev-autopilot", "path": "/command-hub/dev-autopilot/" }
         ]
     },
     {
