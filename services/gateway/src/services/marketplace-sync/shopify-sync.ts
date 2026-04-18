@@ -29,6 +29,7 @@ import {
   deriveRegionGroup,
   type ProductUpsert,
 } from './shared';
+import { inferSupplementAttributes } from './supplement-inference';
 
 interface ShopifyShopConfig {
   domain: string;
@@ -229,6 +230,20 @@ function normalizeShopifyProduct(
     if (tagsLower.includes(d) || tagsLower.includes(d.replace('-', ''))) dietaryTags.add(d);
   }
 
+  // Free-text inference over title + description + tags + productType.
+  // This augments (does not replace) the collection / tag mappings above.
+  // Ingredients / form / certifications have no prior source on Shopify today
+  // and come entirely from inference.
+  const inferText = [
+    node.title,
+    stripHtml(node.descriptionHtml) ?? '',
+    (node.tags ?? []).join(' '),
+    node.productType ?? '',
+  ].join(' ');
+  const inferred = inferSupplementAttributes(inferText);
+  for (const g of inferred.health_goals) healthGoals.add(g);
+  for (const d of inferred.dietary_tags) dietaryTags.add(d);
+
   const affiliateUrl = shop.affiliate_url_template
     ? shop.affiliate_url_template.replace('{handle}', node.handle)
     : node.onlineStoreUrl ?? `https://${shop.domain}/products/${node.handle}`;
@@ -256,6 +271,9 @@ function normalizeShopifyProduct(
     ships_to_regions: shop.ships_to_regions,
     health_goals: Array.from(healthGoals),
     dietary_tags: Array.from(dietaryTags),
+    ingredients_primary: inferred.ingredients_primary,
+    form: inferred.form,
+    certifications: inferred.certifications,
     raw: node as unknown as Record<string, unknown>,
   };
 }
