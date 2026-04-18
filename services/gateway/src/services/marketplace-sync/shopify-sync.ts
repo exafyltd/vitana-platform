@@ -167,6 +167,34 @@ function stripHtml(html: string | undefined): string | undefined {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || undefined;
 }
 
+/**
+ * Convert Shopify descriptionHtml to readable multi-paragraph plain text.
+ * Preserves paragraph breaks from <p>, <br>, <div>, <li>; strips everything else.
+ * Used for the product-detail drawer's "About this product" section.
+ */
+function htmlToFormattedText(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+  const withBreaks = html
+    // Treat closing block tags as a paragraph break
+    .replace(/<\/(p|div|section|article|h[1-6]|li|tr)>/gi, '\n\n')
+    // Treat <br> and <li> openings as a line break
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    // Drop everything else
+    .replace(/<[^>]+>/g, '')
+    // Decode a few common entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  // Normalise whitespace: collapse runs of spaces, trim each line, collapse 3+ blank lines
+  const lines = withBreaks.split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim());
+  const joined = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return joined || undefined;
+}
+
 function normalizeShopifyProduct(
   node: ShopifyProductNode,
   shop: ShopifyShopConfig,
@@ -212,6 +240,7 @@ function normalizeShopifyProduct(
     sku: node.handle,
     title: node.title,
     description: stripHtml(node.descriptionHtml),
+    description_long: htmlToFormattedText(node.descriptionHtml),
     brand: node.vendor,
     category: 'supplements', // Phase 2 MVP assumption — admin can override in review queue
     subcategory: node.productType,

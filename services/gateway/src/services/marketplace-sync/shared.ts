@@ -120,6 +120,8 @@ export interface ProductUpsert {
   asin?: string;
   title: string;
   description?: string;
+  /** Multi-paragraph readable version of description (for the product-detail drawer). */
+  description_long?: string;
   brand?: string;
   category?: string;
   subcategory?: string;
@@ -148,6 +150,7 @@ export function computeProductContentHash(p: ProductUpsert): string {
   const canonical = {
     title: p.title ?? '',
     description: p.description ?? '',
+    description_long: p.description_long ?? '',
     brand: p.brand ?? '',
     price_cents: p.price_cents,
     currency: p.currency,
@@ -229,6 +232,7 @@ export async function upsertProducts(
       asin: p.asin ?? null,
       title: p.title,
       description: p.description ?? null,
+      description_long: p.description_long ?? null,
       brand: p.brand ?? null,
       category: p.category ?? null,
       subcategory: p.subcategory ?? null,
