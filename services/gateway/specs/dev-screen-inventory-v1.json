@@ -49,6 +49,7 @@
       "events",
       "vtids",
       "approvals",
+      "autonomy-pulse",
       "dev-autopilot"
     ],
     "governance": [
@@ -148,6 +149,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 91
+    "total_screens": 92
   }
 }

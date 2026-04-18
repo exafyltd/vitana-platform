@@ -5852,6 +5852,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'command-hub' && tab === 'dev-autopilot') {
         // Dev Autopilot — self-improving queue (plan: .claude/plans/quirky-jumping-fairy.md)
         container.appendChild(renderDevAutopilotView());
+    } else if (moduleKey === 'command-hub' && tab === 'autonomy-pulse') {
+        // Autonomy Pulse — unified supervisor feed across self-healing + dev-autopilot
+        container.appendChild(renderAutonomyPulseView());
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
         container.appendChild(renderOasisEventsView());
@@ -35617,6 +35620,310 @@ function devAutopilotEscape(s) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// =============================================================================
+// Autonomy Pulse — unified supervisor feed (PR-11)
+// =============================================================================
+//
+// One scrollable feed across dev-autopilot findings, pending self-heal rows,
+// and active autonomous executions. Each card surfaces the available actions
+// for that row and cross-links to the canonical source tab (dev-autopilot
+// or infrastructure/self-healing). No new editing logic here — actions
+// delegate to the existing endpoints so we don't duplicate business logic.
+
+if (!state.autonomyPulse) {
+    state.autonomyPulse = {
+        fetched: false,
+        loading: false,
+        error: null,
+        items: [],
+        counts: null,
+        filter: 'all',
+        pollerId: null,
+        actionInFlight: {},
+    };
+}
+
+function fetchAutonomyPulse() {
+    state.autonomyPulse.loading = true;
+    var headers = buildContextHeaders({});
+    var filter = state.autonomyPulse.filter || 'all';
+    return fetch('/api/v1/autonomy/pulse?filter=' + encodeURIComponent(filter) + '&limit=100', { headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.autonomyPulse.loading = false;
+            if (data && data.ok) {
+                state.autonomyPulse.items = data.items || [];
+                state.autonomyPulse.counts = data.counts || null;
+                state.autonomyPulse.error = null;
+                state.autonomyPulse.fetched = true;
+            } else {
+                state.autonomyPulse.error = (data && data.error) || 'Unknown error';
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            state.autonomyPulse.loading = false;
+            state.autonomyPulse.error = err.message || String(err);
+            renderApp();
+        });
+}
+
+function renderAutonomyPulseView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding: 16px;';
+
+    if (!state.autonomyPulse.fetched && !state.autonomyPulse.loading) fetchAutonomyPulse();
+
+    // 30s poller while the tab is active
+    if (!state.autonomyPulse.pollerId) {
+        state.autonomyPulse.pollerId = setInterval(function () {
+            if (state.activeTab === 'autonomy-pulse' && state.activeModule === 'command-hub') {
+                fetchAutonomyPulse();
+            }
+        }, 30000);
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Autonomy Pulse';
+    title.style.cssText = 'margin: 0; font-size: 20px; color: var(--text-color, #fff);';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888); margin-top: 4px;';
+    subtitle.textContent = 'Every pending decision + in-flight autonomous action, in one feed';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.autonomyPulse.loading ? 'Loading…' : 'Refresh';
+    refreshBtn.disabled = !!state.autonomyPulse.loading;
+    refreshBtn.style.cssText = 'padding: 6px 14px; font-size: 13px;';
+    refreshBtn.onclick = function () { fetchAutonomyPulse(); };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    if (state.autonomyPulse.error) {
+        var errorEl = document.createElement('div');
+        errorEl.style.cssText = 'padding: 12px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; color: #ef4444; margin-bottom: 16px;';
+        errorEl.textContent = 'Error: ' + state.autonomyPulse.error;
+        container.appendChild(errorEl);
+    }
+
+    // Counts strip
+    var counts = state.autonomyPulse.counts || { total: 0, critical: 0, warning: 0, info: 0, findings: 0, heals: 0, executions: 0 };
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;';
+    var chips = [
+        { label: 'Total', value: counts.total, color: '#aaa' },
+        { label: 'Critical', value: counts.critical, color: '#ef4444' },
+        { label: 'Warning', value: counts.warning, color: '#eab308' },
+        { label: 'Info', value: counts.info, color: '#3b82f6' },
+        { label: 'Findings', value: counts.findings, color: '#a855f7' },
+        { label: 'Heals', value: counts.heals, color: '#f97316' },
+        { label: 'Executions', value: counts.executions, color: '#22c55e' },
+    ];
+    chips.forEach(function (c) {
+        var chip = document.createElement('div');
+        chip.style.cssText = 'padding: 8px 12px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 6px; min-width: 90px;';
+        chip.innerHTML = '<div style="font-size: 11px; color: var(--text-secondary, #888); text-transform: uppercase;">' + c.label + '</div>' +
+            '<div style="font-size: 20px; font-weight: 600; color: ' + c.color + ';">' + (c.value || 0) + '</div>';
+        strip.appendChild(chip);
+    });
+    container.appendChild(strip);
+
+    // Filter toolbar
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 12px;';
+    var filterLabel = document.createElement('span');
+    filterLabel.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    filterLabel.textContent = 'Filter:';
+    toolbar.appendChild(filterLabel);
+    var filterOpts = [
+        { value: 'all', label: 'All' },
+        { value: 'findings', label: 'Dev Autopilot' },
+        { value: 'heals', label: 'Self-Healing' },
+        { value: 'executions', label: 'Executions' },
+    ];
+    filterOpts.forEach(function (o) {
+        var btn = document.createElement('button');
+        btn.textContent = o.label;
+        var active = state.autonomyPulse.filter === o.value;
+        btn.style.cssText = 'padding: 5px 12px; border-radius: 3px; font-size: 12px; cursor: pointer; border: 1px solid ' + (active ? '#3b82f6' : 'var(--border-color, rgba(255,255,255,0.15))') + '; background: ' + (active ? 'rgba(59,130,246,0.15)' : 'transparent') + '; color: ' + (active ? '#3b82f6' : 'var(--text-color, #fff)') + ';';
+        btn.onclick = function () {
+            state.autonomyPulse.filter = o.value;
+            fetchAutonomyPulse();
+        };
+        toolbar.appendChild(btn);
+    });
+    container.appendChild(toolbar);
+
+    // Feed
+    var feed = document.createElement('div');
+    feed.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+    if ((state.autonomyPulse.items || []).length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding: 40px; text-align: center; color: var(--text-secondary, #888); background: var(--card-bg, rgba(255,255,255,0.03)); border: 1px dashed var(--border-color, rgba(255,255,255,0.12)); border-radius: 6px;';
+        empty.innerHTML = '<div style="font-size: 48px; margin-bottom: 12px;">✓</div><div>Nothing pending. The system is quiet.</div>';
+        feed.appendChild(empty);
+    } else {
+        state.autonomyPulse.items.forEach(function (item) {
+            feed.appendChild(renderAutonomyPulseCard(item));
+        });
+    }
+    container.appendChild(feed);
+    return container;
+}
+
+function renderAutonomyPulseCard(item) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-left: 3px solid ' + autonomyPulseSeverityColor(item.severity) + '; border-radius: 6px; padding: 12px 14px;';
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;';
+
+    var sourceBadge = document.createElement('span');
+    sourceBadge.style.cssText = 'padding: 2px 8px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(255,255,255,0.06); color: ' + autonomyPulseSourceColor(item.source) + ';';
+    sourceBadge.textContent = autonomyPulseSourceLabel(item.source);
+    topRow.appendChild(sourceBadge);
+
+    var titleEl = document.createElement('span');
+    titleEl.textContent = item.title;
+    titleEl.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-color, #fff);';
+    topRow.appendChild(titleEl);
+
+    var ageEl = document.createElement('span');
+    ageEl.style.cssText = 'margin-left: auto; font-size: 11px; color: var(--text-secondary, #888);';
+    ageEl.textContent = (item.age_minutes < 60 ? item.age_minutes + 'm' : Math.round(item.age_minutes / 60) + 'h') + ' ago';
+    topRow.appendChild(ageEl);
+
+    card.appendChild(topRow);
+
+    if (item.description) {
+        var desc = document.createElement('div');
+        desc.textContent = item.description;
+        desc.style.cssText = 'font-size: 13px; color: var(--text-color, #ddd); line-height: 1.4; margin-bottom: 8px;';
+        card.appendChild(desc);
+    }
+
+    var actionRow = document.createElement('div');
+    actionRow.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: center;';
+
+    (item.actions || []).forEach(function (a) {
+        var btn = document.createElement('button');
+        var spec = autonomyPulseActionSpec(a);
+        btn.textContent = spec.label;
+        var inFlight = !!state.autonomyPulse.actionInFlight[item.id + ':' + a];
+        btn.disabled = inFlight;
+        btn.style.cssText = 'padding: 4px 10px; border-radius: 3px; font-size: 12px; cursor: ' + (inFlight ? 'wait' : 'pointer') + '; border: 1px solid ' + spec.color + '; background: transparent; color: ' + spec.color + '; opacity: ' + (inFlight ? '0.6' : '1') + ';';
+        btn.onclick = function () { autonomyPulseDoAction(item, a); };
+        actionRow.appendChild(btn);
+    });
+
+    if (item.source_url) {
+        var link = document.createElement('a');
+        link.textContent = 'Open in source →';
+        link.href = item.source_url;
+        link.style.cssText = 'margin-left: auto; font-size: 12px; color: var(--text-secondary, #aaa); text-decoration: none;';
+        actionRow.appendChild(link);
+    }
+
+    card.appendChild(actionRow);
+    return card;
+}
+
+function autonomyPulseSeverityColor(s) {
+    return s === 'critical' ? '#ef4444' : s === 'warning' ? '#eab308' : '#3b82f6';
+}
+function autonomyPulseSourceColor(s) {
+    return s === 'dev_autopilot_finding' ? '#a855f7' : s === 'self_healing' ? '#f97316' : '#22c55e';
+}
+function autonomyPulseSourceLabel(s) {
+    return s === 'dev_autopilot_finding' ? 'DEV AUTOPILOT' : s === 'self_healing' ? 'SELF-HEAL' : 'EXECUTION';
+}
+function autonomyPulseActionSpec(action) {
+    switch (action) {
+        case 'approve':        return { label: 'Approve & execute', color: '#22c55e' };
+        case 'reject':         return { label: 'Reject', color: '#ef4444' };
+        case 'snooze':         return { label: 'Snooze 24h', color: '#eab308' };
+        case 'view_plan':      return { label: 'View plan', color: '#3b82f6' };
+        case 'investigate':    return { label: 'Investigate', color: '#3b82f6' };
+        case 'apply_heal':     return { label: 'Apply heal', color: '#22c55e' };
+        case 'discard_heal':   return { label: 'Discard', color: '#ef4444' };
+        case 'cancel':         return { label: 'Cancel', color: '#ef4444' };
+        case 'view_trace':     return { label: 'View trace', color: '#3b82f6' };
+        default:               return { label: action, color: 'var(--text-secondary, #aaa)' };
+    }
+}
+
+function autonomyPulseDoAction(item, action) {
+    var key = item.id + ':' + action;
+    if (state.autonomyPulse.actionInFlight[key]) return;
+
+    // Navigation-only actions — just route to source
+    if (action === 'view_plan' || action === 'view_trace' || action === 'investigate') {
+        window.location.href = item.source_url;
+        return;
+    }
+
+    // All mutating actions route through the existing endpoints. Pulse doesn't
+    // duplicate business logic — it's a forwarder.
+    state.autonomyPulse.actionInFlight[key] = true;
+    renderApp();
+    var headers = buildContextHeaders({ 'Content-Type': 'application/json' });
+    var promise;
+    if (item.source === 'dev_autopilot_finding') {
+        var findingId = item.metadata.finding_id;
+        if (action === 'approve') {
+            promise = fetch('/api/v1/dev-autopilot/findings/' + findingId + '/approve-auto-execute', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'reject') {
+            promise = fetch('/api/v1/dev-autopilot/findings/' + findingId + '/reject', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'snooze') {
+            promise = fetch('/api/v1/dev-autopilot/findings/' + findingId + '/snooze', { method: 'POST', headers, body: JSON.stringify({ hours: 24 }) });
+        }
+    } else if (item.source === 'autonomous_execution') {
+        var execId = item.metadata.execution_id;
+        if (action === 'cancel') {
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/cancel', { method: 'POST', headers, body: '{}' });
+        }
+    }
+    // self_healing apply_heal / discard_heal — Self-Healing endpoints live
+    // under /api/v1/self-healing; route there.
+    if (item.source === 'self_healing') {
+        var vtid = item.metadata.vtid;
+        if (action === 'apply_heal') {
+            promise = fetch('/api/v1/self-healing/approve', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
+        } else if (action === 'discard_heal') {
+            promise = fetch('/api/v1/self-healing/reject', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
+        }
+    }
+
+    if (!promise) {
+        delete state.autonomyPulse.actionInFlight[key];
+        showToast('Unsupported action: ' + action, 'error');
+        return;
+    }
+
+    promise
+        .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Bad JSON ' + r.status }; }); })
+        .then(function (data) {
+            delete state.autonomyPulse.actionInFlight[key];
+            if (data && data.ok) {
+                // Drop the item locally for snappy UX; poller will confirm.
+                state.autonomyPulse.items = (state.autonomyPulse.items || []).filter(function (i) { return i.id !== item.id; });
+                showToast(autonomyPulseActionSpec(action).label + ' ✓', 'success');
+            } else {
+                showToast((data && data.error) || 'Action failed', 'error');
+            }
+        })
+        .catch(function (err) {
+            delete state.autonomyPulse.actionInFlight[key];
+            showToast('Network error: ' + (err.message || err), 'error');
+        });
 }
 
 function renderSelfHealingView() {
