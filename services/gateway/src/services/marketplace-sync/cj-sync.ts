@@ -25,6 +25,7 @@ import {
   deriveRegionGroup,
   type ProductUpsert,
 } from './shared';
+import { inferSupplementAttributes } from './supplement-inference';
 
 function cjCreds(): { developer_key: string; website_id: string } | null {
   const developer_key = process.env.CJ_DEVELOPER_KEY;
@@ -139,6 +140,18 @@ function normalizeCjProduct(raw: CjProductRaw, merchantMap: Map<string, string>)
     }
   }
 
+  // Supplement-attribute inference from free text. CJ ships no structured
+  // metadata for health_goals / dietary_tags / ingredients / form, so we
+  // derive them heuristically from title + description + keywords + category.
+  const inferText = [
+    raw['name'],
+    raw['description'],
+    raw['keywords'],
+    raw['advertiser-category'],
+    raw['third-party-category'],
+  ].filter(Boolean).join(' ');
+  const inferred = inferSupplementAttributes(inferText);
+
   return {
     merchant_id: merchantId,
     source_network: 'cj',
@@ -147,6 +160,7 @@ function normalizeCjProduct(raw: CjProductRaw, merchantMap: Map<string, string>)
     sku: raw['manufacturer-sku'],
     title: raw['name'] ?? 'Untitled product',
     description: raw['description'],
+    description_long: raw['description'], // CJ descriptions are typically plain text already
     brand: raw['manufacturer-name'],
     category: raw['advertiser-category'] ?? raw['third-party-category'],
     topic_keys: tags.slice(0, 20),
@@ -157,6 +171,11 @@ function normalizeCjProduct(raw: CjProductRaw, merchantMap: Map<string, string>)
     affiliate_url: raw['buy-url'] ?? '',
     availability: boolish(raw['in-stock']) ? 'in_stock' : 'out_of_stock',
     origin_country,
+    health_goals: inferred.health_goals,
+    dietary_tags: inferred.dietary_tags,
+    ingredients_primary: inferred.ingredients_primary,
+    form: inferred.form,
+    certifications: inferred.certifications,
     raw: raw as unknown as Record<string, unknown>,
   };
 }
