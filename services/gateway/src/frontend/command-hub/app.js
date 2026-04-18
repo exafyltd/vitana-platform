@@ -35659,11 +35659,11 @@ function fetchAutonomyPulse() {
         .then(function (r) { return r.json(); })
         .then(function (data) {
             state.autonomyPulse.loading = false;
+            state.autonomyPulse.fetched = true;  // always set so we don't re-fetch in a loop on error
             if (data && data.ok) {
                 state.autonomyPulse.items = data.items || [];
                 state.autonomyPulse.counts = data.counts || null;
                 state.autonomyPulse.error = null;
-                state.autonomyPulse.fetched = true;
             } else {
                 state.autonomyPulse.error = (data && data.error) || 'Unknown error';
             }
@@ -35671,6 +35671,7 @@ function fetchAutonomyPulse() {
         })
         .catch(function (err) {
             state.autonomyPulse.loading = false;
+            state.autonomyPulse.fetched = true;  // stop the retry loop; user can click Refresh
             state.autonomyPulse.error = err.message || String(err);
             renderApp();
         });
@@ -35958,12 +35959,12 @@ function fetchAutonomyTrace() {
         .then(function (r) { return r.json(); })
         .then(function (data) {
             state.autonomyTrace.loading = false;
+            state.autonomyTrace.fetched = true;  // always set so we don't re-fetch in a loop on error
             if (data && data.ok) {
                 state.autonomyTrace.nodes = data.nodes || [];
                 state.autonomyTrace.groups = data.groups || {};
                 state.autonomyTrace.counts = data.counts || null;
                 state.autonomyTrace.error = null;
-                state.autonomyTrace.fetched = true;
             } else {
                 state.autonomyTrace.error = (data && data.error) || 'Unknown error';
             }
@@ -35971,6 +35972,7 @@ function fetchAutonomyTrace() {
         })
         .catch(function (err) {
             state.autonomyTrace.loading = false;
+            state.autonomyTrace.fetched = true;  // stop the retry loop; user can click Refresh
             state.autonomyTrace.error = err.message || String(err);
             renderApp();
         });
