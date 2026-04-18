@@ -24,26 +24,34 @@
  * approve → ci → deploy → verify → done timeline shows as one lane.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const LOG_PREFIX = '[autonomy-trace]';
 
 // =============================================================================
-// Auth (aligned with dev-autopilot + autonomy-pulse)
+// Auth — dev-only (requires app_metadata.exafy_admin === true)
 // =============================================================================
 
-function requireDevRole(req: Request, res: Response, next: () => void) {
-  // Matches dev-autopilot.ts — auth middleware populates req.user.role
-  // (singular). Accept internal gateway calls via X-Gateway-Internal too.
-  const user = (req as unknown as { user?: { role?: string } }).user;
-  const role = user?.role;
-  if (role === 'developer' || role === 'admin') return next();
+async function requireDevRole(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.get('X-Gateway-Internal') === (process.env.GATEWAY_INTERNAL_TOKEN || '__dev__') &&
       process.env.GATEWAY_INTERNAL_TOKEN) {
     return next();
   }
-  return res.status(403).json({ ok: false, error: 'Autonomy Trace requires developer role' });
+  let authFailed = false;
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    const identity = (req as AuthenticatedRequest).identity;
+    if (!identity) {
+      authFailed = true;
+      res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      return;
+    }
+    if (identity.exafy_admin === true) return next();
+    authFailed = true;
+    res.status(403).json({ ok: false, error: 'Autonomy Trace requires developer access (exafy_admin)' });
+  });
+  if (authFailed) return;
 }
 
 // =============================================================================
