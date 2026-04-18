@@ -5855,6 +5855,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'command-hub' && tab === 'autonomy-pulse') {
         // Autonomy Pulse — unified supervisor feed across self-healing + dev-autopilot
         container.appendChild(renderAutonomyPulseView());
+    } else if (moduleKey === 'command-hub' && tab === 'autonomy-trace') {
+        // Autonomy Trace — unified timeline of all autonomous work
+        container.appendChild(renderAutonomyTraceView());
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
         container.appendChild(renderOasisEventsView());
@@ -35924,6 +35927,236 @@ function autonomyPulseDoAction(item, action) {
             delete state.autonomyPulse.actionInFlight[key];
             showToast('Network error: ' + (err.message || err), 'error');
         });
+}
+
+// =============================================================================
+// Autonomy Trace — unified timeline of autonomous work (PR-12)
+// =============================================================================
+
+if (!state.autonomyTrace) {
+    state.autonomyTrace = {
+        fetched: false,
+        loading: false,
+        error: null,
+        nodes: [],
+        groups: {},
+        counts: null,
+        hours: 24,
+        pollerId: null,
+        viewMode: 'lanes',  // 'lanes' or 'timeline'
+    };
+}
+
+function fetchAutonomyTrace() {
+    state.autonomyTrace.loading = true;
+    var headers = buildContextHeaders({});
+    var hours = state.autonomyTrace.hours || 24;
+    return fetch('/api/v1/autonomy/trace?hours=' + hours + '&limit=200', { headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.autonomyTrace.loading = false;
+            if (data && data.ok) {
+                state.autonomyTrace.nodes = data.nodes || [];
+                state.autonomyTrace.groups = data.groups || {};
+                state.autonomyTrace.counts = data.counts || null;
+                state.autonomyTrace.error = null;
+                state.autonomyTrace.fetched = true;
+            } else {
+                state.autonomyTrace.error = (data && data.error) || 'Unknown error';
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            state.autonomyTrace.loading = false;
+            state.autonomyTrace.error = err.message || String(err);
+            renderApp();
+        });
+}
+
+function renderAutonomyTraceView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding: 16px;';
+
+    if (!state.autonomyTrace.fetched && !state.autonomyTrace.loading) fetchAutonomyTrace();
+    if (!state.autonomyTrace.pollerId) {
+        state.autonomyTrace.pollerId = setInterval(function () {
+            if (state.activeTab === 'autonomy-trace' && state.activeModule === 'command-hub') fetchAutonomyTrace();
+        }, 30000);
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Autonomy Trace';
+    title.style.cssText = 'margin: 0; font-size: 20px; color: var(--text-color, #fff);';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888); margin-top: 4px;';
+    subtitle.textContent = 'Everything autonomous — executions, self-heals, deploys, verifications — on one timeline';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.autonomyTrace.loading ? 'Loading…' : 'Refresh';
+    refreshBtn.disabled = !!state.autonomyTrace.loading;
+    refreshBtn.style.cssText = 'padding: 6px 14px; font-size: 13px;';
+    refreshBtn.onclick = function () { fetchAutonomyTrace(); };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    if (state.autonomyTrace.error) {
+        var errorEl = document.createElement('div');
+        errorEl.style.cssText = 'padding: 12px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; color: #ef4444; margin-bottom: 16px;';
+        errorEl.textContent = 'Error: ' + state.autonomyTrace.error;
+        container.appendChild(errorEl);
+    }
+
+    // Counts strip
+    var counts = state.autonomyTrace.counts || { total_nodes: 0, total_groups: 0, executions: 0, heals: 0, oasis_events: 0 };
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;';
+    [
+        { label: 'Events', value: counts.total_nodes, color: '#aaa' },
+        { label: 'Lanes', value: counts.total_groups, color: '#aaa' },
+        { label: 'Executions', value: counts.executions, color: '#22c55e' },
+        { label: 'Heals', value: counts.heals, color: '#f97316' },
+        { label: 'Deploys/Verify', value: counts.oasis_events, color: '#3b82f6' },
+    ].forEach(function (c) {
+        var chip = document.createElement('div');
+        chip.style.cssText = 'padding: 8px 12px; background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 6px; min-width: 90px;';
+        chip.innerHTML = '<div style="font-size: 11px; color: var(--text-secondary, #888); text-transform: uppercase;">' + c.label + '</div>' +
+            '<div style="font-size: 20px; font-weight: 600; color: ' + c.color + ';">' + (c.value || 0) + '</div>';
+        strip.appendChild(chip);
+    });
+    container.appendChild(strip);
+
+    // Controls: window + view mode
+    var controls = document.createElement('div');
+    controls.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 12px;';
+    var windowLabel = document.createElement('span');
+    windowLabel.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    windowLabel.textContent = 'Window:';
+    controls.appendChild(windowLabel);
+    [1, 6, 24, 168].forEach(function (h) {
+        var btn = document.createElement('button');
+        btn.textContent = h >= 24 ? (h / 24) + 'd' : h + 'h';
+        var active = state.autonomyTrace.hours === h;
+        btn.style.cssText = 'padding: 5px 12px; border-radius: 3px; font-size: 12px; cursor: pointer; border: 1px solid ' + (active ? '#3b82f6' : 'var(--border-color, rgba(255,255,255,0.15))') + '; background: ' + (active ? 'rgba(59,130,246,0.15)' : 'transparent') + '; color: ' + (active ? '#3b82f6' : 'var(--text-color, #fff)') + ';';
+        btn.onclick = function () { state.autonomyTrace.hours = h; fetchAutonomyTrace(); };
+        controls.appendChild(btn);
+    });
+    var spacer = document.createElement('span');
+    spacer.style.cssText = 'flex: 1;';
+    controls.appendChild(spacer);
+    var viewLabel = document.createElement('span');
+    viewLabel.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    viewLabel.textContent = 'View:';
+    controls.appendChild(viewLabel);
+    ['lanes', 'timeline'].forEach(function (v) {
+        var btn = document.createElement('button');
+        btn.textContent = v;
+        var active = state.autonomyTrace.viewMode === v;
+        btn.style.cssText = 'padding: 5px 12px; border-radius: 3px; font-size: 12px; cursor: pointer; border: 1px solid ' + (active ? '#3b82f6' : 'var(--border-color, rgba(255,255,255,0.15))') + '; background: ' + (active ? 'rgba(59,130,246,0.15)' : 'transparent') + '; color: ' + (active ? '#3b82f6' : 'var(--text-color, #fff)') + ';';
+        btn.onclick = function () { state.autonomyTrace.viewMode = v; renderApp(); };
+        controls.appendChild(btn);
+    });
+    container.appendChild(controls);
+
+    // Body
+    if ((state.autonomyTrace.nodes || []).length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding: 40px; text-align: center; color: var(--text-secondary, #888); background: var(--card-bg, rgba(255,255,255,0.03)); border: 1px dashed var(--border-color, rgba(255,255,255,0.12)); border-radius: 6px;';
+        empty.innerHTML = '<div style="font-size: 48px; margin-bottom: 12px;">∅</div><div>Nothing autonomous happened in this window.</div>';
+        container.appendChild(empty);
+    } else if (state.autonomyTrace.viewMode === 'lanes') {
+        container.appendChild(renderAutonomyTraceLanes());
+    } else {
+        container.appendChild(renderAutonomyTraceTimeline());
+    }
+    return container;
+}
+
+function renderAutonomyTraceLanes() {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
+    var groups = state.autonomyTrace.groups || {};
+    // Sort groups by most-recent node desc
+    var groupKeys = Object.keys(groups).sort(function (a, b) {
+        var la = groups[a][groups[a].length - 1];
+        var lb = groups[b][groups[b].length - 1];
+        return new Date(lb.ts).getTime() - new Date(la.ts).getTime();
+    });
+    groupKeys.forEach(function (gk) {
+        wrap.appendChild(renderAutonomyTraceLane(gk, groups[gk]));
+    });
+    return wrap;
+}
+
+function renderAutonomyTraceLane(groupId, nodes) {
+    var lane = document.createElement('div');
+    lane.style.cssText = 'background: var(--card-bg, rgba(255,255,255,0.04)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; padding: 12px 14px;';
+    var heading = document.createElement('div');
+    heading.style.cssText = 'display: flex; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--text-secondary, #aaa);';
+    var groupLabel = groupId.replace('execution:', 'Execution ').replace('heal:', 'Self-heal ').replace('vtid:', 'VTID ').replace('oasis:', 'Event ');
+    heading.innerHTML = '<span style="font-family: monospace; color: var(--text-color, #fff);">' + devAutopilotEscape(groupLabel) + '</span><span>·</span><span>' + nodes.length + ' step' + (nodes.length === 1 ? '' : 's') + '</span>';
+    lane.appendChild(heading);
+
+    var track = document.createElement('div');
+    track.style.cssText = 'display: flex; flex-direction: column; gap: 6px; border-left: 2px solid var(--border-color, rgba(255,255,255,0.1)); padding-left: 14px; margin-left: 6px;';
+    nodes.forEach(function (n) { track.appendChild(renderAutonomyTraceNode(n, true)); });
+    lane.appendChild(track);
+    return lane;
+}
+
+function renderAutonomyTraceTimeline() {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    (state.autonomyTrace.nodes || []).forEach(function (n) { wrap.appendChild(renderAutonomyTraceNode(n, false)); });
+    return wrap;
+}
+
+function renderAutonomyTraceNode(node, inLane) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display: flex; gap: 10px; align-items: baseline; padding: ' + (inLane ? '4px 0' : '6px 10px') + '; ' + (inLane ? '' : 'background: var(--card-bg, rgba(255,255,255,0.02)); border: 1px solid var(--border-color, rgba(255,255,255,0.06)); border-radius: 4px;');
+    var dot = document.createElement('span');
+    dot.style.cssText = 'display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ' + autonomyTraceStatusColor(node.status) + '; flex-shrink: 0;';
+    row.appendChild(dot);
+    var tsEl = document.createElement('span');
+    tsEl.style.cssText = 'font-size: 11px; color: var(--text-secondary, #888); font-family: monospace; min-width: 100px;';
+    tsEl.textContent = autonomyTraceFormatTs(node.ts);
+    row.appendChild(tsEl);
+    var kindEl = document.createElement('span');
+    kindEl.style.cssText = 'font-size: 10px; text-transform: uppercase; padding: 1px 6px; border-radius: 2px; background: rgba(255,255,255,0.05); color: ' + autonomyTraceSourceColor(node.source) + '; min-width: 110px; text-align: center;';
+    kindEl.textContent = node.kind.replace(/_/g, ' ');
+    row.appendChild(kindEl);
+    var headlineEl = document.createElement('span');
+    headlineEl.style.cssText = 'font-size: 13px; color: var(--text-color, #ddd); flex: 1;';
+    headlineEl.textContent = node.headline;
+    row.appendChild(headlineEl);
+    (node.links || []).forEach(function (l) {
+        var a = document.createElement('a');
+        a.textContent = l.label;
+        a.href = l.url;
+        a.target = l.url.startsWith('http') ? '_blank' : '_self';
+        a.rel = 'noopener';
+        a.style.cssText = 'font-size: 11px; color: #3b82f6; text-decoration: none;';
+        row.appendChild(a);
+    });
+    return row;
+}
+
+function autonomyTraceStatusColor(s) {
+    return s === 'success' ? '#22c55e' : s === 'failure' ? '#ef4444' : s === 'started' ? '#eab308' : s === 'progress' ? '#3b82f6' : '#888';
+}
+function autonomyTraceSourceColor(s) {
+    return s === 'execution' ? '#22c55e' : s === 'self_healing' ? '#f97316' : s === 'verification' ? '#a855f7' : '#3b82f6';
+}
+function autonomyTraceFormatTs(iso) {
+    try {
+        var d = new Date(iso);
+        return d.toTimeString().substring(0, 8) + ' ' + ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2);
+    } catch (_e) { return iso; }
 }
 
 function renderSelfHealingView() {
