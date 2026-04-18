@@ -11,12 +11,13 @@
  * GitHub Actions workflow).
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -76,18 +77,29 @@ async function supaPatch(supa: SupaConfig, path: string, body: unknown): Promise
 // Auth guard
 // =============================================================================
 
-function requireDevRole(req: Request, res: Response, next: () => void) {
-  // Dev-assistant RBAC — reuse the populated req.user from upstream auth
-  // middleware if present. For the MVP we accept a service-role header too
-  // so local/internal callers (the watcher, the workflow) can hit the API.
-  const user = (req as unknown as { user?: { role?: string } }).user;
-  const role = user?.role;
-  if (role === 'developer' || role === 'admin') return next();
+/** Dev-only guard. Runs requireAuth (verifies Supabase JWT + populates
+ *  req.identity) then requires app_metadata.exafy_admin === true. The
+ *  Supabase JWT's `role` claim is always 'authenticated' for logged-in
+ *  users; dev access is granted via exafy_admin. Internal calls can
+ *  bypass via X-Gateway-Internal + GATEWAY_INTERNAL_TOKEN. */
+async function requireDevRole(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.get('X-Gateway-Internal') === (process.env.GATEWAY_INTERNAL_TOKEN || '__dev__') &&
       process.env.GATEWAY_INTERNAL_TOKEN) {
     return next();
   }
-  return res.status(403).json({ ok: false, error: 'Dev Autopilot requires developer role' });
+  let authFailed = false;
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    const identity = (req as AuthenticatedRequest).identity;
+    if (!identity) {
+      authFailed = true;
+      res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      return;
+    }
+    if (identity.exafy_admin === true) return next();
+    authFailed = true;
+    res.status(403).json({ ok: false, error: 'Dev Autopilot requires developer access (exafy_admin)' });
+  });
+  if (authFailed) return;
 }
 
 function requireScanToken(req: Request, res: Response, next: () => void) {
