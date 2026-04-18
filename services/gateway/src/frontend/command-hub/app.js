@@ -34541,6 +34541,10 @@ if (!state.devAutopilot) {
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
         actionInFlight: {},
+        // Per-finding last action error — shown inline in the plan block so
+        // safety-gate rejections (high risk, depth cap, etc.) don't only live
+        // in a fleeting toast that's easy to miss.
+        actionErrors: {},
     };
 }
 
@@ -35088,28 +35092,36 @@ function devAutopilotApproveOne(findingId) {
     var key = 'approve:' + findingId;
     if (devAutopilotInFlight(key)) return;
     devAutopilotMarkFlight(key, true);
+    delete state.devAutopilot.actionErrors[findingId];
     renderApp();
     devAutopilotApi('/findings/' + findingId + '/approve-auto-execute', 'POST', {}).then(function (data) {
         devAutopilotMarkFlight(key, false);
         if (data.ok) {
-            // Remove from queue, drop selection, prepend execution to live trace
             state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
             delete state.devAutopilot.selectedIds[findingId];
             delete state.devAutopilot.expandedIds[findingId];
+            delete state.devAutopilot.actionErrors[findingId];
             if (data.execution) {
                 state.devAutopilot.executions = [data.execution].concat(state.devAutopilot.executions || []);
             }
             showToast('Approved — execution cooling: ' + (data.execution && data.execution.id ? data.execution.id.slice(0, 8) : '?'), 'success');
         } else {
+            // Persist the error inline in the plan block — toasts are easy to miss.
             var msg = data.error || 'Approval failed';
-            if (data.decision && Array.isArray(data.decision.violations) && data.decision.violations.length) {
-                msg += ' (' + data.decision.violations.map(function (v) { return v.code; }).join(', ') + ')';
+            var violations = (data.decision && Array.isArray(data.decision.violations)) ? data.decision.violations : [];
+            state.devAutopilot.actionErrors[findingId] = { message: msg, violations: violations };
+            if (violations.length) {
+                msg += ' (' + violations.map(function (v) { return v.code; }).join(', ') + ')';
             }
             showToast(msg, 'error');
+            renderApp();
         }
     }).catch(function (err) {
         devAutopilotMarkFlight(key, false);
-        showToast('Network error: ' + (err.message || err), 'error');
+        var emsg = 'Network error: ' + (err.message || err);
+        state.devAutopilot.actionErrors[findingId] = { message: emsg, violations: [] };
+        showToast(emsg, 'error');
+        renderApp();
     });
 }
 
@@ -35340,6 +35352,34 @@ function renderDevAutopilotBatchBar() {
 }
 
 function renderDevAutopilotActions(findingId) {
+    var wrap = document.createElement('div');
+
+    // Inline error banner — persists until the next approve attempt so the
+    // supervisor isn't left wondering why nothing happened (especially for
+    // safety-gate rejections on high-risk findings).
+    var err = state.devAutopilot.actionErrors && state.devAutopilot.actionErrors[findingId];
+    if (err) {
+        var banner = document.createElement('div');
+        banner.style.cssText = 'margin-top: 10px; padding: 10px 12px; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 4px; color: #ef4444; font-size: 13px; line-height: 1.45;';
+        var line1 = document.createElement('div');
+        line1.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+        line1.textContent = '✗ ' + err.message;
+        banner.appendChild(line1);
+        if (err.violations && err.violations.length) {
+            var vlist = document.createElement('div');
+            vlist.style.cssText = 'font-size: 12px; color: #fca5a5;';
+            vlist.textContent = 'Blocked by safety gate: ' + err.violations.map(function (v) {
+                return (v.code || 'unknown') + (v.detail ? ' — ' + JSON.stringify(v.detail) : '');
+            }).join(' · ');
+            banner.appendChild(vlist);
+            var hint = document.createElement('div');
+            hint.style.cssText = 'font-size: 11px; color: var(--text-secondary, #aaa); margin-top: 6px;';
+            hint.textContent = 'Tip: lower-risk findings (TODOs, missing tests) pass the gate by default. High-risk refactors require raising the risk cap in dev_autopilot_config.';
+            banner.appendChild(hint);
+        }
+        wrap.appendChild(banner);
+    }
+
     var row = document.createElement('div');
     row.style.cssText = 'display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));';
 
@@ -35380,7 +35420,6 @@ function renderDevAutopilotActions(findingId) {
         }
     }, 'reject:' + findingId));
 
-    var wrap = document.createElement('div');
     wrap.appendChild(row);
 
     if (state.devAutopilot.continuePlanningId === findingId) {
