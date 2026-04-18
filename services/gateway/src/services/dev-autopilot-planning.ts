@@ -35,7 +35,7 @@ const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_BASE = 'https://api.anthropic.com';
 const BETA_HEADER = 'managed-agents-2026-04-01';
-const SESSION_TIMEOUT_MS = 180_000; // 3 minutes per planning session
+const SESSION_TIMEOUT_MS = 360_000; // 6 minutes per planning session — large-file findings take time
 
 function getAgentIds(): { agent_id: string; environment_id: string } {
   return {
@@ -199,13 +199,22 @@ function buildPlanningPrompt(
 
   lines.push(
     `## Your task`,
-    `1. Open /workspace/repo and read the file(s) referenced by the finding.`,
+    `1. Open /workspace/repo. Skim the referenced file strategically — read`,
+    `   only what you need to understand structure. For large files (>1000`,
+    `   lines), read the top 200 lines (imports + top-level exports) and`,
+    `   grep/search for key symbols rather than reading the whole thing.`,
+    `   Do NOT try to read multi-thousand-line files end-to-end.`,
     `2. Verify the signal — is it genuine, what is the root cause, what else is`,
-    `   affected?`,
+    `   affected? You can answer this from structure + grep alone for most`,
+    `   signals.`,
     `3. Identify any tests, types, or callers that a fix must touch.`,
     `4. Write a complete plan using the canonical structure below. Cite every`,
     `   file you propose to modify by its repo-relative path. A plan that cites`,
     `   a file that doesn't exist will be rejected by validation.`,
+    ``,
+    `Budget: produce the final plan within 4 minutes. If you are still`,
+    `reading files at the 3-minute mark, stop and write the plan with the`,
+    `information you have.`,
     ``,
     `## Output format — raw markdown, no code fences around the whole document`,
     ``,
@@ -389,7 +398,12 @@ async function runPlanningSession(
 
   const planMarkdown = textParts.join('\n').trim();
   if (!planMarkdown) {
-    return { ok: false, error: 'Agent produced no plan output', session_id: sessionId };
+    const elapsed = Math.round((Date.now() - (deadline - SESSION_TIMEOUT_MS)) / 1000);
+    return {
+      ok: false,
+      error: `Agent produced no plan output after ${elapsed}s (timeout ${SESSION_TIMEOUT_MS / 1000}s). The file may be too large to plan without deeper context — try again, or regenerate after raising the planning timeout.`,
+      session_id: sessionId,
+    };
   }
   return { ok: true, plan_markdown: planMarkdown, session_id: sessionId };
 }
