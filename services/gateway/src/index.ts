@@ -225,6 +225,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const authRouter = require('./routes/auth').default;
   // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring (legacy)
   const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
+  // VTID-02402: VAEA Phase 1.5 — config / catalog / channels / detected / drafts API
+  const vaeaRouter = require('./routes/vaea').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
   // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
@@ -513,6 +515,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
+
+  // VTID-02402: VAEA Phase 1.5 — read + CRUD for Business Hub panel
+  mountRouterSync(app, '/api/v1/vaea', vaeaRouter, { owner: 'vaea' });
 
   // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
