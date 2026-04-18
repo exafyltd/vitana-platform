@@ -50,6 +50,7 @@
       "vtids",
       "approvals",
       "autonomy-pulse",
+      "autonomy-trace",
       "dev-autopilot"
     ],
     "governance": [
@@ -149,6 +150,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 92
+    "total_screens": 93
   }
 }

@@ -54,6 +54,7 @@ export const NAVIGATION_CONFIG = [
       { key: 'vtids', label: 'VTIDs' },
       { key: 'approvals', label: 'Approvals' },
       { key: 'autonomy-pulse', label: 'Autonomy Pulse' },
+      { key: 'autonomy-trace', label: 'Autonomy Trace' },
       { key: 'dev-autopilot', label: 'Dev Autopilot' }
     ]
   },
