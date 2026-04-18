@@ -29,12 +29,16 @@ const LOG_PREFIX = '[autonomy-pulse]';
 // =============================================================================
 
 function requireDevRole(req: Request, res: Response, next: () => void) {
-  const user = (req as unknown as { user?: { role?: string; roles?: string[] } }).user;
-  const roles: string[] = user?.roles || (user?.role ? [user.role] : []);
-  if (!roles.includes('developer') && !roles.includes('admin')) {
-    return res.status(403).json({ ok: false, error: 'Autonomy Pulse requires developer role' });
+  // Matches dev-autopilot.ts — auth middleware populates req.user.role
+  // (singular). Accept internal gateway calls via X-Gateway-Internal too.
+  const user = (req as unknown as { user?: { role?: string } }).user;
+  const role = user?.role;
+  if (role === 'developer' || role === 'admin') return next();
+  if (req.get('X-Gateway-Internal') === (process.env.GATEWAY_INTERNAL_TOKEN || '__dev__') &&
+      process.env.GATEWAY_INTERNAL_TOKEN) {
+    return next();
   }
-  next();
+  return res.status(403).json({ ok: false, error: 'Autonomy Pulse requires developer role' });
 }
 
 // =============================================================================
