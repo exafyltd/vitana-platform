@@ -76,7 +76,13 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
     return { candidate: null, suppressed_by_pause: false };
   }
 
-  // Active goal (Life Compass) — frames every opener
+  // Active goal (Life Compass) — frames every opener.
+  // Auto-seeds the default longevity goal when the user has none, so every
+  // user always has a "starting focus" the system can reference. The user
+  // can change it any time (the LLM is briefed to honor "change my goals").
+  let goal: LifeCompassRow | null = null;
+  let goalIsSystemSeeded = false;
+
   const { data: compassRows } = await supabase
     .from('life_compass')
     .select('id, primary_goal, category')
@@ -85,8 +91,40 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
     .order('created_at', { ascending: false })
     .limit(1);
 
-  const goal: LifeCompassRow | null = compassRows && compassRows.length ? (compassRows[0] as LifeCompassRow) : null;
-  const goalLink = goal ? { primary_goal: goal.primary_goal, category: goal.category } : undefined;
+  if (compassRows && compassRows.length) {
+    goal = compassRows[0] as LifeCompassRow;
+  } else {
+    // Lazy seed — Vitana's default focus is the platform's mission itself:
+    // improve quality of life and extend lifespan. The user can swap this
+    // for any catalog goal anytime.
+    const { data: seeded, error: seedErr } = await supabase
+      .from('life_compass')
+      .insert({
+        user_id: input.user_id,
+        primary_goal: 'Improve quality of life and extend lifespan',
+        category: 'longevity',
+        is_active: true,
+        version: 1,
+      })
+      .select('id, primary_goal, category')
+      .single();
+
+    if (seedErr) {
+      console.warn(`${LOG_PREFIX} default-goal seed failed for user ${input.user_id}:`, seedErr.message);
+    } else if (seeded) {
+      goal = seeded as LifeCompassRow;
+      goalIsSystemSeeded = true;
+      console.log(`${LOG_PREFIX} seeded default longevity goal for user ${input.user_id}`);
+    }
+  }
+
+  const goalLink = goal
+    ? {
+        primary_goal: goal.primary_goal,
+        category: goal.category,
+        is_system_seeded: goalIsSystemSeeded,
+      }
+    : undefined;
 
   const nowIso = new Date().toISOString();
   const in24hIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
