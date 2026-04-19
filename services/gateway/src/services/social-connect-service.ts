@@ -26,10 +26,17 @@ const GATEWAY_URL = process.env.GATEWAY_PUBLIC_URL || process.env.APP_URL || 'ht
 // Provider Configuration
 // =============================================================================
 
-export type SocialProvider = 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'linkedin' | 'twitter';
+// VTID-01928: `google` covers Gmail + Calendar + Contacts + YouTube data access.
+// Distinct from the `youtube` social-enrichment provider which shares the same
+// OAuth client but only requests the youtube.readonly scope and is surfaced in
+// the Social Media section, not Mail/Calendar/Music.
+export type SocialProvider =
+  | 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'linkedin' | 'twitter'
+  | 'google';
 
 export const SUPPORTED_PROVIDERS: SocialProvider[] = [
   'instagram', 'facebook', 'tiktok', 'youtube', 'linkedin', 'twitter',
+  'google',
 ];
 
 interface ProviderConfig {
@@ -97,6 +104,26 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
     clientIdEnv: 'TWITTER_CLIENT_ID',
     clientSecretEnv: 'TWITTER_CLIENT_SECRET',
   },
+  // VTID-01928: Google covers Gmail, Google Calendar, Google Contacts (People API),
+  // YouTube data and YouTube Music. All routed through a single OAuth consent so
+  // the user grants once and every Google-based connector activates together.
+  google: {
+    name: 'Google',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    profileUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+    scopes: [
+      'openid',
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/contacts.readonly',
+      'https://www.googleapis.com/auth/youtube.readonly',
+    ],
+    clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
+  },
 };
 
 // =============================================================================
@@ -139,6 +166,13 @@ export function getOAuthUrl(
   if (provider === 'twitter') {
     params.set('code_challenge', 'challenge'); // PKCE simplified
     params.set('code_challenge_method', 'plain');
+  }
+  if (provider === 'google') {
+    // offline + consent so Google actually returns a refresh_token on every consent,
+    // not just the very first one — required for long-lived background access.
+    params.set('access_type', 'offline');
+    params.set('prompt', 'consent');
+    params.set('include_granted_scopes', 'true');
   }
 
   return { url: `${config.authUrl}?${params.toString()}` };
@@ -362,6 +396,23 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         profile_url: '',
         bio: data.headline || '',
         location: data.locale ? `${data.locale.language}-${data.locale.country}` : '',
+        website: '',
+        followers_count: 0,
+        following_count: 0,
+        posts_count: 0,
+        interests: [],
+        raw: data,
+      };
+    case 'google':
+      // Google userinfo (OpenID Connect) returns sub/email/name/picture.
+      return {
+        provider_user_id: data.sub || '',
+        username: data.email || '',
+        display_name: data.name || data.email || '',
+        avatar_url: data.picture || '',
+        profile_url: '',
+        bio: '',
+        location: data.locale || '',
         website: '',
         followers_count: 0,
         following_count: 0,

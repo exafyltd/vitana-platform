@@ -305,6 +305,13 @@ jobs:
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
             # VTID-01270A: Events/community data now uses platform SUPABASE_URL/SUPABASE_SERVICE_ROLE (already bound as GCP secrets above)
+            # VTID-01928: Google OAuth for Gmail / Calendar / Contacts / YouTube connectors.
+            # Client ID is public; secret lives in GSM as google-oauth-client-secret.
+            EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_OAUTH_CLIENT_ID=86804897789-hej1ferhlfnjcjtn5hd899r07ssld7en.apps.googleusercontent.com)
+            SECRETS_ARGS+=(--update-secrets=GOOGLE_OAUTH_CLIENT_SECRET=google-oauth-client-secret:latest)
+            # Callback base URL (gateway) and post-OAuth redirect base (community-app).
+            EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_PUBLIC_URL=https://gateway-q74ibpv6ia-uc.a.run.app)
+            EXTRA_ENV_ARGS+=(--update-env-vars=APP_URL=https://community-app-q74ibpv6ia-uc.a.run.app)
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
