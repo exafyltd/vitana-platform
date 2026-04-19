@@ -15,6 +15,14 @@ export {
 export { emitGuideTelemetry } from './guide-telemetry';
 export { getAwarenessContext, clearAwarenessCache } from './awareness-context';
 export {
+  getFeatureIntroductions,
+  recordFeatureIntroduction,
+  RECORD_FEATURE_INTRODUCTION_TOOL,
+  KNOWN_FEATURE_KEYS,
+  type FeatureIntroduction,
+  type FeatureKey,
+} from './feature-introductions';
+export {
   describeTimeSince,
   fetchLastSessionInfo,
   deriveMotivationSignal,

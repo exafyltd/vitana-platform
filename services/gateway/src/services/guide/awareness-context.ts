@@ -23,6 +23,7 @@ import {
 } from '../recommendation-engine/analyzers/community-user-analyzer';
 import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
 import { describeTimeSince, fetchLastSessionInfo, type LastInteraction } from './temporal-bucket';
+import { getFeatureIntroductions } from './feature-introductions';
 import type {
   UserAwareness,
   TenureStage,
@@ -71,11 +72,13 @@ export async function getAwarenessContext(
     lastSessionInfo,
     goal,
     recentActivity,
+    featureIntros,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
     fetchActiveGoal(userId, supabase),
     fetchRecentActivitySummary(userId, supabase),
+    getFeatureIntroductions(userId).catch(() => []),
   ]);
 
   const tenure = buildTenure(userContext);
@@ -92,6 +95,7 @@ export async function getAwarenessContext(
     community_signals,
     recent_activity: recentActivity,
     last_interaction,
+    feature_introductions: (featureIntros || []).map((f) => f.feature_key),
     routines: null,
     tastes_preferences: null,
     adaptation_plans: null,
@@ -296,6 +300,7 @@ function skeletalAwareness(): UserAwareness {
     },
     recent_activity: emptyRecentActivity(),
     last_interaction: describeTimeSince(null),
+    feature_introductions: [],
     routines: null,
     tastes_preferences: null,
     adaptation_plans: null,

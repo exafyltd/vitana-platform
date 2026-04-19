@@ -17,7 +17,9 @@ export type GuideEventType =
   | 'guide.opener.no_candidate'
   | 'guide.dismissal.pause_created'
   | 'guide.dismissal.pause_cleared'
-  | 'guide.flag.disabled';
+  | 'guide.flag.disabled'
+  // Phase G — VTID-01932
+  | 'guide.feature_introduction.recorded';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,
