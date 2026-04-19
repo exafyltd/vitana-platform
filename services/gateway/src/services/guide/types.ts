@@ -66,6 +66,9 @@ export interface UserAwareness {
   recent_activity: RecentActivitySummary;
   last_interaction: LastInteraction | null;
 
+  // Phase G — feature-introduction tracking (VTID-01932)
+  feature_introductions: string[];
+
   // Reserved for future companion pillars (null until those phases ship)
   routines: null;
   tastes_preferences: null;

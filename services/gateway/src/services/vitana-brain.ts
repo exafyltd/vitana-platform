@@ -39,12 +39,15 @@ import { getPersonalityConfigSync } from './ai-personality-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { getSupabase } from '../lib/supabase';
 // Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
+// + Phase B personality config (VTID-01931) + Phase G feature introductions (VTID-01932)
 import { getSystemControl } from './system-controls-service';
 import {
   pickOpenerCandidate,
   getAwarenessContext,
+  recordFeatureIntroduction,
   PAUSE_PROACTIVE_GUIDANCE_TOOL,
   CLEAR_PROACTIVE_PAUSES_TOOL,
+  RECORD_FEATURE_INTRODUCTION_TOOL,
   executePauseProactiveGuidance,
   executeClearProactivePauses,
   emitGuideTelemetry,
@@ -852,6 +855,17 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     lines.push(`Recent activity: ${raParts.join('; ')}`);
   }
 
+  // Phase G — feature introductions already given to this user
+  if (awareness.feature_introductions && awareness.feature_introductions.length > 0) {
+    lines.push(
+      `Features already introduced to this user (DO NOT re-explain): ${awareness.feature_introductions.join(', ')}. Reference them by name only. If the user asks about one explicitly, you may give a brief refresher.`,
+    );
+  } else if (awareness.feature_introductions) {
+    lines.push(
+      `Features already introduced: NONE. When you explain any platform feature (life_compass, vitana_index, autopilot, memory_garden, calendar, business_hub, marketplace, journey_90day, voice_chat_basics, dismissal_phrases, goal_changing, navigator, community), call the record_feature_introduction tool with the feature_key so we don't re-explain next session.`,
+    );
+  }
+
   lines.push('');
   lines.push('Use this awareness to personalize EVERY response — not just the opener.');
   lines.push('Reference these signals naturally when relevant ("your diary streak is at 5 days",');
@@ -893,6 +907,10 @@ export function buildBrainToolDefinitions(role: string): object[] {
     // Proactive Opener Rules are present (i.e., flag is on).
     PAUSE_PROACTIVE_GUIDANCE_TOOL,
     CLEAR_PROACTIVE_PAUSES_TOOL,
+    // Companion Phase G (VTID-01932) — feature-introduction tracking.
+    // The LLM calls this after explaining a feature so we know not to
+    // re-introduce it in future sessions.
+    RECORD_FEATURE_INTRODUCTION_TOOL,
   ];
 
   // Merge: registry tools + ORB tools (avoid duplicates)
@@ -997,6 +1015,20 @@ export async function executeBrainTool(
           success: true,
           result: `Cleared ${result.cleared_count} active pause${result.cleared_count === 1 ? '' : 's'}.`,
         };
+      }
+
+      // Companion Phase G — VTID-01932
+      case 'record_feature_introduction': {
+        const featureKey = String(args.feature_key || '').trim();
+        if (!featureKey) {
+          return { success: false, result: 'feature_key required', error: 'missing_feature_key' };
+        }
+        const channel: 'voice' | 'text' = 'voice';
+        const result = await recordFeatureIntroduction(context.user_id, featureKey, channel);
+        if (!result.success) {
+          return { success: false, result: `record failed: ${result.error}`, error: result.error };
+        }
+        return { success: true, result: `Recorded introduction of ${featureKey}.` };
       }
 
       default: {
