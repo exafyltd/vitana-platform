@@ -35,7 +35,10 @@ const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_BASE = 'https://api.anthropic.com';
 const BETA_HEADER = 'managed-agents-2026-04-01';
-const SESSION_TIMEOUT_MS = 360_000; // 6 minutes per planning session — large-file findings take time
+// Cloud Run request timeout is 300s. If the agent session exceeds that,
+// the HTTP connection dies and the client sees plaintext
+// "upstream request timeout" (not JSON). Keep well below that ceiling.
+const SESSION_TIMEOUT_MS = 270_000; // 4m 30s — leaves margin for Cloud Run response flush
 
 function getAgentIds(): { agent_id: string; environment_id: string } {
   return {

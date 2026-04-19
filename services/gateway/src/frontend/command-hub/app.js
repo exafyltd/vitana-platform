@@ -4874,9 +4874,23 @@ var _renderAppScheduled = false;
 function renderApp() {
     if (_renderAppScheduled) return;
     _renderAppScheduled = true;
+    // Preserve window scroll position across the destructive
+    // root.innerHTML = '' re-render so clicking Expand/Approve/etc.
+    // doesn't yank the user back to the top of the page.
+    var _preservedScrollY = (typeof window !== 'undefined' && typeof window.scrollY === 'number')
+        ? window.scrollY : 0;
+    var _preservedScrollX = (typeof window !== 'undefined' && typeof window.scrollX === 'number')
+        ? window.scrollX : 0;
     requestAnimationFrame(function () {
         _renderAppScheduled = false;
         _renderAppCore();
+        // Restore after the DOM is re-attached. rAF-inside-rAF to run after
+        // the browser paints the new tree (prevents a flash at top).
+        if (_preservedScrollY > 0 || _preservedScrollX > 0) {
+            requestAnimationFrame(function () {
+                window.scrollTo(_preservedScrollX, _preservedScrollY);
+            });
+        }
     });
 }
 
@@ -35376,7 +35390,7 @@ function renderDevAutopilotView() {
     // Cleared in renderApp() preamble when the tab changes (see teardown hook below).
     if (!state.devAutopilot.pollerId) {
         state.devAutopilot.pollerId = setInterval(function () {
-            if (state.activeTab === 'dev-autopilot' && state.activeModule === 'command-hub') {
+            if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
                 fetchDevAutopilotState();
             }
         }, 10000);
@@ -35743,16 +35757,45 @@ function ensurePlanLoaded(findingId) {
             slot.activeVersion = slot.versions.length > 0 ? slot.versions[0].version : null;
             // No plan yet → trigger lazy generation
             if (slot.versions.length === 0 && !slot.generating) {
+                // Seed the progress-card state + start the 1-second re-render
+                // ticker so elapsed counter + stage label + progress bar animate.
                 slot.generating = true;
+                slot.generatingFor = 1;
+                slot.generatingStartedAt = Date.now();
+                if (!state.devAutopilot.generationTimers) state.devAutopilot.generationTimers = {};
+                if (state.devAutopilot.generationTimers[findingId]) {
+                    clearInterval(state.devAutopilot.generationTimers[findingId]);
+                }
+                state.devAutopilot.generationTimers[findingId] = setInterval(function () {
+                    if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
+                        renderApp();
+                    }
+                }, 1000);
                 renderApp();
                 fetch('/api/v1/dev-autopilot/findings/' + findingId + '/generate-plan', {
                     method: 'POST',
                     headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: '{}',
                 })
-                    .then(function (r) { return r.json(); })
+                    .then(function (r) {
+                        return r.text().then(function (txt) {
+                            try { return JSON.parse(txt); }
+                            catch (_e) {
+                                if (r.status === 504 || /upstream.*timeout/i.test(txt)) {
+                                    return { ok: false, error: 'Gateway timed out (>5 min). Plan generation ran too long — click Refresh and try again.' };
+                                }
+                                return { ok: false, error: 'Unexpected response (' + r.status + ')' };
+                            }
+                        });
+                    })
                     .then(function (planData) {
                         slot.generating = false;
+                        delete slot.generatingFor;
+                        delete slot.generatingStartedAt;
+                        if (state.devAutopilot.generationTimers[findingId]) {
+                            clearInterval(state.devAutopilot.generationTimers[findingId]);
+                            delete state.devAutopilot.generationTimers[findingId];
+                        }
                         if (planData.ok && planData.plan) {
                             slot.versions = [planData.plan];
                             slot.activeVersion = planData.plan.version;
@@ -35763,6 +35806,12 @@ function ensurePlanLoaded(findingId) {
                     })
                     .catch(function (err) {
                         slot.generating = false;
+                        delete slot.generatingFor;
+                        delete slot.generatingStartedAt;
+                        if (state.devAutopilot.generationTimers[findingId]) {
+                            clearInterval(state.devAutopilot.generationTimers[findingId]);
+                            delete state.devAutopilot.generationTimers[findingId];
+                        }
                         slot.error = err.message || String(err);
                         renderApp();
                     });
@@ -35884,7 +35933,23 @@ function devAutopilotApi(path, method, body) {
         method: method || 'GET',
         headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
         body: body ? JSON.stringify(body) : undefined,
-    }).then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Bad JSON ' + r.status }; }); });
+    }).then(function (r) {
+        return r.text().then(function (txt) {
+            // Human-readable fallback for plaintext error pages (Cloud Run
+            // 'upstream request timeout', 502 gateways, etc.) so the UI
+            // doesn't leak 'Unexpected token' JSON-parse errors.
+            try { return JSON.parse(txt); }
+            catch (_e) {
+                if (r.status === 504 || /upstream.*timeout/i.test(txt)) {
+                    return { ok: false, error: 'Gateway timed out (>5 min). The agent took too long — try a smaller finding or regenerate.' };
+                }
+                if (r.status >= 500) {
+                    return { ok: false, error: 'Server error ' + r.status + ' — see server logs.' };
+                }
+                return { ok: false, error: 'Unexpected response (' + r.status + '): ' + txt.slice(0, 120) };
+            }
+        });
+    });
 }
 
 function devAutopilotApproveOne(findingId) {
@@ -36006,7 +36071,7 @@ function devAutopilotContinuePlanning(findingId, feedback) {
     if (!state.devAutopilot.generationTimers) state.devAutopilot.generationTimers = {};
     state.devAutopilot.generationTimers[findingId] = setInterval(function () {
         // Triggers the progress bar to advance + the elapsed counter to tick.
-        if (state.activeTab === 'dev-autopilot' && state.activeModule === 'command-hub') {
+        if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
             renderApp();
         }
     }, 1000);
@@ -36706,7 +36771,7 @@ function renderAutonomyPulseView() {
     // 30s poller while the tab is active
     if (!state.autonomyPulse.pollerId) {
         state.autonomyPulse.pollerId = setInterval(function () {
-            if (state.activeTab === 'autonomy-pulse' && state.activeModule === 'command-hub') {
+            if (state.currentTab === 'autonomy-pulse' && state.currentModuleKey === 'command-hub') {
                 fetchAutonomyPulse();
             }
         }, 30000);
@@ -37005,7 +37070,7 @@ function renderAutonomyTraceView() {
     if (!state.autonomyTrace.fetched && !state.autonomyTrace.loading) fetchAutonomyTrace();
     if (!state.autonomyTrace.pollerId) {
         state.autonomyTrace.pollerId = setInterval(function () {
-            if (state.activeTab === 'autonomy-trace' && state.activeModule === 'command-hub') fetchAutonomyTrace();
+            if (state.currentTab === 'autonomy-trace' && state.currentModuleKey === 'command-hub') fetchAutonomyTrace();
         }, 30000);
     }
 
