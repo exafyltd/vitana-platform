@@ -332,7 +332,24 @@ export async function buildBrainSystemInstruction(input: {
     router_decision: routerDecision,
   };
 
-  const contextPack = await buildContextPack(contextPackInput);
+  // BOOTSTRAP-ORB-GREETING-LATENCY: fire the three blocking context queries
+  // in parallel. Previously serialized (contextPack -> lifeCompass ->
+  // proactiveGuide) which stacked ~2-3s of DB latency on top of the upstream
+  // WS handshake and pushed the time-to-greeting on the orb from instant to
+  // 4-5s. These three queries are independent — contextPack builds from
+  // memory/calendar/OASIS, Life Compass reads life_compass, and the
+  // proactive guide block reads its own awareness tables — so a single
+  // Promise.all is safe.
+  const [contextPack, lifeCompassBlock, proactiveGuideBlock] = await Promise.all([
+    buildContextPack(contextPackInput),
+    buildLifeCompassGoalBlock({ user_id: input.user_id }),
+    buildProactiveGuideBlock({
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      role: input.role,
+      channel: input.channel,
+    }),
+  ]);
   const contextForLLM = formatContextPackForLLM(contextPack, { userTimezone: input.user_timezone });
 
   // Build personality-driven instruction
@@ -343,27 +360,6 @@ export async function buildBrainSystemInstruction(input: {
   const baseInstruction = input.channel === 'orb'
     ? (ucConfig.orb_instruction || 'You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.')
     : (ucConfig.operator_instruction || 'You are Vitana, an intelligent assistant. You can be detailed and use formatting when helpful.');
-
-  // -------------------------------------------------------------------------
-  // Always-on Life Compass goal block — runs BEFORE any recommendation so
-  // every suggestion is framed through the user's active primary goal,
-  // independent of the proactive-opener feature flag. This is non-negotiable
-  // (see GOAL-GROUNDED RECOMMENDATIONS rule in Proactive Guide).
-  // -------------------------------------------------------------------------
-  const lifeCompassBlock = await buildLifeCompassGoalBlock({ user_id: input.user_id });
-
-  // -------------------------------------------------------------------------
-  // Proactive Guide Phase 0.5 — opener + dismissal honor rules
-  // Gated on `vitana_proactive_opener_enabled` (default FALSE).
-  // Always appends the Silent Honor Rules when guide is on so the LLM knows
-  // it has the dismissal tools and how to behave when called.
-  // -------------------------------------------------------------------------
-  const proactiveGuideBlock = await buildProactiveGuideBlock({
-    user_id: input.user_id,
-    tenant_id: input.tenant_id,
-    role: input.role,
-    channel: input.channel,
-  });
 
   // PROMPT ORDER MATTERS: the proactive guide block goes LAST so it has
   // recency primacy in Gemini's attention. Putting it before the brevity
