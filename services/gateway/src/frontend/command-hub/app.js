@@ -5914,6 +5914,12 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'identity-access') {
         // VTID-01195: Admin Identity Access v1 - Auth status + access logs
         container.appendChild(renderAdminIdentityAccessView());
+    } else if (moduleKey === 'admin' && tab === 'marketplace-shops') {
+        // VTID-02000: Admin Marketplace Shops - list + add sources (Shopify/CJ)
+        container.appendChild(renderAdminMarketplaceShopsView());
+    } else if (moduleKey === 'admin' && tab === 'marketplace-review') {
+        // VTID-02000: Admin Marketplace Review Queue - approve/reject flagged products
+        container.appendChild(renderAdminMarketplaceReviewView());
     } else if (moduleKey === 'agents' && tab === 'registered-agents') {
         // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
         container.appendChild(renderRegisteredAgentsView());
@@ -10897,6 +10903,466 @@ function renderAdminContentModerationView() {
     container.appendChild(contentArea);
     return container;
 }
+
+// ==================== VTID-02000: Admin Marketplace Shops ====================
+
+async function fetchAdminMarketplaceShops() {
+    state.adminMpShopsLoading = true;
+    state.adminMpShopsError = null;
+    renderApp();
+    try {
+        var url = '/api/v1/admin/marketplace/sources';
+        var filter = state.adminMpShopsNetworkFilter;
+        if (filter) url += '?source_network=' + encodeURIComponent(filter);
+        var resp = await fetch(url, { method: 'GET', headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) {
+            if (resp.status === 401) throw new Error('Unauthenticated — sign in as a tenant admin');
+            if (resp.status === 403) throw new Error('Access denied — tenant admin role required');
+            throw new Error(json.error || 'Failed to fetch marketplace sources');
+        }
+        state.adminMpShops = json.sources || [];
+        state.adminMpShopsFetched = true;
+    } catch (err) {
+        console.error('[VTID-02000] fetch shops failed:', err);
+        state.adminMpShopsError = err.message;
+    } finally {
+        state.adminMpShopsLoading = false;
+        renderApp();
+    }
+}
+
+async function submitAdminMarketplaceShopCreate(payload) {
+    state.adminMpShopsCreating = true;
+    state.adminMpShopsCreateError = null;
+    renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/marketplace/sources', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify(payload),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) {
+            throw new Error(json.error || ('HTTP ' + resp.status));
+        }
+        showToast('Shop added. Trigger a sync to ingest products.', 'success');
+        state.adminMpShopsShowCreateForm = false;
+        await fetchAdminMarketplaceShops();
+    } catch (err) {
+        console.error('[VTID-02000] create shop failed:', err);
+        state.adminMpShopsCreateError = err.message;
+    } finally {
+        state.adminMpShopsCreating = false;
+        renderApp();
+    }
+}
+
+async function submitAdminMarketplaceShopToggle(sourceId, isActive) {
+    try {
+        var resp = await fetch('/api/v1/admin/marketplace/sources/' + encodeURIComponent(sourceId), {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ is_active: isActive }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('Shop ' + (isActive ? 'enabled' : 'paused'), 'success');
+        await fetchAdminMarketplaceShops();
+    } catch (err) {
+        console.error('[VTID-02000] toggle shop failed:', err);
+        showToast('Failed to toggle: ' + err.message, 'error');
+    }
+}
+
+async function triggerMarketplaceSync(network) {
+    try {
+        showToast('Triggering ' + network + ' sync…', 'info');
+        var resp = await fetch('/api/v1/admin/marketplace/sync/' + encodeURIComponent(network), {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        var t = (json.result && json.result.totals) || {};
+        showToast(
+            network + ' sync done — inserted ' + (t.inserted||0) + ', updated ' + (t.updated||0) + ', errors ' + (t.errors||0),
+            'success'
+        );
+    } catch (err) {
+        console.error('[VTID-02000] sync failed:', err);
+        showToast('Sync failed: ' + err.message, 'error');
+    }
+}
+
+function renderAdminMarketplaceShopsView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+    if (!state.adminMpShopsFetched && !state.adminMpShopsLoading && !state.adminMpShopsError) {
+        fetchAdminMarketplaceShops();
+    }
+
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Marketplace Shops</h2>' +
+        '<p class="admin-screen-subtitle">Shopify + CJ Affiliate sources that feed the Discover catalog. '
+      + 'Daily sync runs at 03:00 UTC; use the Sync buttons below to force-run.</p>';
+    container.appendChild(header);
+
+    // Toolbar: filter + "Add shop" + "Sync all"
+    var toolbar = document.createElement('div');
+    toolbar.className = 'admin-filters-row';
+    toolbar.style.gap = '0.5rem';
+
+    var networkFilter = document.createElement('select');
+    networkFilter.className = 'admin-filter-select';
+    networkFilter.innerHTML = '<option value="">All networks</option><option value="shopify">Shopify</option><option value="cj">CJ Affiliate</option>';
+    networkFilter.value = state.adminMpShopsNetworkFilter || '';
+    networkFilter.onchange = function (e) {
+        state.adminMpShopsNetworkFilter = e.target.value;
+        fetchAdminMarketplaceShops();
+    };
+    toolbar.appendChild(networkFilter);
+
+    var addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-primary btn-sm';
+    addBtn.textContent = state.adminMpShopsShowCreateForm ? 'Close form' : '+ Add shop';
+    addBtn.onclick = function () {
+        state.adminMpShopsShowCreateForm = !state.adminMpShopsShowCreateForm;
+        renderApp();
+    };
+    toolbar.appendChild(addBtn);
+
+    var syncShopifyBtn = document.createElement('button');
+    syncShopifyBtn.className = 'btn btn-secondary btn-sm';
+    syncShopifyBtn.textContent = 'Sync Shopify now';
+    syncShopifyBtn.onclick = function () { triggerMarketplaceSync('shopify'); };
+    toolbar.appendChild(syncShopifyBtn);
+
+    var syncCjBtn = document.createElement('button');
+    syncCjBtn.className = 'btn btn-secondary btn-sm';
+    syncCjBtn.textContent = 'Sync CJ now';
+    syncCjBtn.onclick = function () { triggerMarketplaceSync('cj'); };
+    toolbar.appendChild(syncCjBtn);
+
+    container.appendChild(toolbar);
+
+    // Create form (collapsible)
+    if (state.adminMpShopsShowCreateForm) {
+        container.appendChild(renderAdminMarketplaceShopCreateForm());
+    }
+
+    // Table
+    var listWrap = document.createElement('div');
+    listWrap.className = 'admin-list-container';
+
+    if (state.adminMpShopsLoading) {
+        listWrap.innerHTML = '<div class="admin-loading">Loading shops…</div>';
+    } else if (state.adminMpShopsError) {
+        listWrap.innerHTML = '<div class="admin-error">' + state.adminMpShopsError +
+            '<br><button class="btn btn-secondary btn-sm" onclick="state.adminMpShopsError=null;fetchAdminMarketplaceShops();">Retry</button></div>';
+    } else if (!state.adminMpShops || state.adminMpShops.length === 0) {
+        listWrap.innerHTML = '<div class="admin-empty-list" style="padding:3rem;text-align:center;">' +
+            '<span style="font-size:2.5rem;display:block;margin-bottom:0.75rem;">&#128722;</span>' +
+            '<p style="font-size:1.1rem;margin-bottom:0.5rem;">No marketplace sources configured yet</p>' +
+            '<p class="admin-detail-note">Click <strong>+ Add shop</strong> above to onboard the first Shopify merchant or CJ publisher account.</p>' +
+            '</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'admin-table';
+        table.style.width = '100%';
+        var thead = '<thead><tr>'
+            + '<th>Display name</th><th>Network</th><th>Key config</th>'
+            + '<th>Active</th><th>Last sync</th><th>Actions</th>'
+            + '</tr></thead>';
+        table.innerHTML = thead;
+        var tbody = document.createElement('tbody');
+        state.adminMpShops.forEach(function (s) {
+            var tr = document.createElement('tr');
+            var cfg = s.config || {};
+            var keyInfo = '';
+            if (s.source_network === 'shopify') {
+                keyInfo = cfg.domain ? cfg.domain : '<em>no domain</em>';
+            } else if (s.source_network === 'cj') {
+                keyInfo = cfg.advertiser_ids ? ('advertisers: ' + (cfg.advertiser_ids.length || '?'))
+                  : (cfg.keywords ? ('kw: ' + cfg.keywords) : '<em>no filter</em>');
+            } else {
+                keyInfo = JSON.stringify(cfg).slice(0, 60);
+            }
+            tr.innerHTML = ''
+                + '<td><strong>' + escapeHtml(s.display_name || s.id) + '</strong>'
+                + (s.notes ? '<br><small class="admin-detail-note">' + escapeHtml(s.notes) + '</small>' : '')
+                + '</td>'
+                + '<td>' + escapeHtml(s.source_network) + '</td>'
+                + '<td>' + keyInfo + '</td>'
+                + '<td>' + (s.is_active ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--warning)">Paused</span>') + '</td>'
+                + '<td>' + (s.last_synced_at ? new Date(s.last_synced_at).toLocaleString() : '<em>never</em>') + '</td>';
+
+            var actionsTd = document.createElement('td');
+            var toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-secondary btn-xs';
+            toggleBtn.textContent = s.is_active ? 'Pause' : 'Enable';
+            toggleBtn.onclick = function () { submitAdminMarketplaceShopToggle(s.id, !s.is_active); };
+            actionsTd.appendChild(toggleBtn);
+            tr.appendChild(actionsTd);
+
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        listWrap.appendChild(table);
+    }
+
+    container.appendChild(listWrap);
+    return container;
+}
+
+function renderAdminMarketplaceShopCreateForm() {
+    var wrap = document.createElement('div');
+    wrap.className = 'admin-card';
+    wrap.style.padding = '1rem';
+    wrap.style.marginBottom = '1rem';
+
+    var network = state.adminMpShopsCreateNetwork || 'shopify';
+
+    var h = document.createElement('h3');
+    h.textContent = 'Add marketplace source';
+    wrap.appendChild(h);
+
+    var note = document.createElement('p');
+    note.className = 'admin-detail-note';
+    note.textContent = network === 'shopify'
+        ? 'For a Shopify shop, you need the Storefront access token (Admin → Apps → Develop apps → Configure Storefront API).'
+        : 'For CJ Affiliate, you need a publisher developer key + website id from https://developers.cj.com.';
+    wrap.appendChild(note);
+
+    function input(id, label, placeholder, type) {
+        var row = document.createElement('div');
+        row.style.marginBottom = '0.5rem';
+        row.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">' + label + '</label>'
+            + '<input id="' + id + '" type="' + (type || 'text') + '" placeholder="' + (placeholder || '') + '" class="admin-input" style="width:100%;padding:0.5rem;" />';
+        return row;
+    }
+
+    // Network selector
+    var netSel = document.createElement('select');
+    netSel.className = 'admin-filter-select';
+    netSel.innerHTML = '<option value="shopify">Shopify</option><option value="cj">CJ Affiliate</option>';
+    netSel.value = network;
+    netSel.onchange = function (e) {
+        state.adminMpShopsCreateNetwork = e.target.value;
+        renderApp();
+    };
+    var netRow = document.createElement('div');
+    netRow.style.marginBottom = '0.75rem';
+    netRow.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.appendChild(netSel);
+    wrap.appendChild(netRow);
+
+    wrap.appendChild(input('mp-displayname', 'Display name', network === 'shopify' ? 'Acme Supplements' : 'CJ Publisher Vitana'));
+    wrap.appendChild(input('mp-country', 'Merchant country (ISO-2, optional)', 'DE'));
+    wrap.appendChild(input('mp-notes', 'Internal notes (optional)', 'Commission 12%, contact jane@acme.com'));
+
+    if (network === 'shopify') {
+        wrap.appendChild(input('mp-sh-domain', 'Shopify domain', 'acme-supplements.myshopify.com'));
+        wrap.appendChild(input('mp-sh-token', 'Storefront access token', 'shpat_…', 'password'));
+        wrap.appendChild(input('mp-sh-affiliate', 'Affiliate URL template (optional)', 'https://{domain}/products/{handle}?ref=vitana'));
+    } else {
+        wrap.appendChild(input('mp-cj-key', 'CJ developer key', '', 'password'));
+        wrap.appendChild(input('mp-cj-website', 'CJ website id', '12345678'));
+        wrap.appendChild(input('mp-cj-advertisers', 'Advertiser IDs (comma-separated, optional)', '1234,5678'));
+        wrap.appendChild(input('mp-cj-keywords', 'Keyword filter (optional)', 'supplement,vitamin'));
+    }
+
+    if (state.adminMpShopsCreateError) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'admin-error';
+        errDiv.textContent = state.adminMpShopsCreateError;
+        wrap.appendChild(errDiv);
+    }
+
+    var submitBtn = document.createElement('button');
+    submitBtn.className = 'btn btn-primary btn-sm';
+    submitBtn.style.marginTop = '0.5rem';
+    submitBtn.textContent = state.adminMpShopsCreating ? 'Saving…' : 'Save shop';
+    submitBtn.disabled = !!state.adminMpShopsCreating;
+    submitBtn.onclick = function () {
+        var displayName = (document.getElementById('mp-displayname') || {}).value || '';
+        var country = (document.getElementById('mp-country') || {}).value || '';
+        var notes = (document.getElementById('mp-notes') || {}).value || '';
+        var config = {};
+        if (network === 'shopify') {
+            var dom = (document.getElementById('mp-sh-domain') || {}).value || '';
+            var tok = (document.getElementById('mp-sh-token') || {}).value || '';
+            var aff = (document.getElementById('mp-sh-affiliate') || {}).value || '';
+            if (!dom || !tok) { state.adminMpShopsCreateError = 'Shopify requires domain + token'; renderApp(); return; }
+            config.domain = dom.trim();
+            config.storefront_access_token = tok.trim();
+            if (aff) config.affiliate_url_template = aff.trim();
+            if (country) config.merchant_country = country.trim().toUpperCase();
+        } else {
+            var key = (document.getElementById('mp-cj-key') || {}).value || '';
+            var wid = (document.getElementById('mp-cj-website') || {}).value || '';
+            var advs = (document.getElementById('mp-cj-advertisers') || {}).value || '';
+            var kws = (document.getElementById('mp-cj-keywords') || {}).value || '';
+            if (!key || !wid) { state.adminMpShopsCreateError = 'CJ requires developer key + website id'; renderApp(); return; }
+            config.developer_key = key.trim();
+            config.website_id = wid.trim();
+            if (advs.trim()) config.advertiser_ids = advs.split(',').map(function (x){return x.trim();}).filter(Boolean);
+            if (kws.trim()) config.keywords = kws.trim();
+            if (country) config.merchant_country = country.trim().toUpperCase();
+        }
+        if (!displayName) { state.adminMpShopsCreateError = 'display_name is required'; renderApp(); return; }
+        submitAdminMarketplaceShopCreate({
+            source_network: network,
+            display_name: displayName.trim(),
+            config: config,
+            notes: notes.trim() || undefined,
+        });
+    };
+    wrap.appendChild(submitBtn);
+
+    return wrap;
+}
+
+
+// ==================== VTID-02000: Admin Marketplace Review Queue ====================
+
+async function fetchAdminMarketplaceReview() {
+    state.adminMpReviewLoading = true;
+    state.adminMpReviewError = null;
+    renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/marketplace/products?requires_admin_review=true&limit=100', {
+            method: 'GET', headers: buildContextHeaders(),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) {
+            if (resp.status === 401) throw new Error('Unauthenticated — sign in as tenant admin');
+            if (resp.status === 403) throw new Error('Access denied — tenant admin role required');
+            throw new Error(json.error || 'Failed to fetch review queue');
+        }
+        state.adminMpReviewProducts = json.items || json.products || [];
+        state.adminMpReviewFetched = true;
+    } catch (err) {
+        console.error('[VTID-02000] fetch review queue failed:', err);
+        state.adminMpReviewError = err.message;
+    } finally {
+        state.adminMpReviewLoading = false;
+        renderApp();
+    }
+}
+
+async function submitAdminMarketplaceReviewAction(action, productIds) {
+    try {
+        var resp = await fetch('/api/v1/admin/marketplace/products/bulk-action', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ action: action, product_ids: productIds }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('Applied ' + action + ' to ' + productIds.length + ' product(s)', 'success');
+        await fetchAdminMarketplaceReview();
+    } catch (err) {
+        console.error('[VTID-02000] bulk-action failed:', err);
+        showToast('Action failed: ' + err.message, 'error');
+    }
+}
+
+function renderAdminMarketplaceReviewView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+    if (!state.adminMpReviewFetched && !state.adminMpReviewLoading && !state.adminMpReviewError) {
+        fetchAdminMarketplaceReview();
+    }
+
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Marketplace Review Queue</h2>'
+        + '<p class="admin-screen-subtitle">Products the ingestion pipeline flagged for manual review — typically newly-added SKUs with unusual data. '
+        + 'Approve to surface in Discover, or reject to deactivate.</p>';
+    container.appendChild(header);
+
+    var listWrap = document.createElement('div');
+    listWrap.className = 'admin-list-container';
+
+    if (state.adminMpReviewLoading) {
+        listWrap.innerHTML = '<div class="admin-loading">Loading queue…</div>';
+    } else if (state.adminMpReviewError) {
+        listWrap.innerHTML = '<div class="admin-error">' + state.adminMpReviewError +
+            '<br><button class="btn btn-secondary btn-sm" onclick="state.adminMpReviewError=null;fetchAdminMarketplaceReview();">Retry</button></div>';
+    } else if (!state.adminMpReviewProducts || state.adminMpReviewProducts.length === 0) {
+        listWrap.innerHTML = '<div class="admin-empty-list" style="padding:3rem;text-align:center;">' +
+            '<span style="font-size:2.5rem;display:block;margin-bottom:0.75rem;">&#10004;&#65039;</span>' +
+            '<p style="font-size:1.1rem;margin-bottom:0.5rem;">Review queue is clear</p>' +
+            '<p class="admin-detail-note">New products from the next sync will appear here if they trip auto-QA checks.</p>' +
+            '</div>';
+    } else {
+        state.adminMpReviewProducts.forEach(function (p) {
+            var card = document.createElement('div');
+            card.className = 'admin-card';
+            card.style.padding = '1rem';
+            card.style.marginBottom = '0.75rem';
+            card.style.display = 'flex';
+            card.style.gap = '1rem';
+            card.style.alignItems = 'flex-start';
+
+            var img = document.createElement('div');
+            img.style.width = '80px';
+            img.style.height = '80px';
+            img.style.flexShrink = '0';
+            img.style.background = '#f3f4f6';
+            img.style.borderRadius = '8px';
+            img.style.backgroundSize = 'cover';
+            img.style.backgroundPosition = 'center';
+            if (p.images && p.images[0]) {
+                img.style.backgroundImage = "url('" + p.images[0].replace(/'/g, '') + "')";
+            }
+            card.appendChild(img);
+
+            var body = document.createElement('div');
+            body.style.flex = '1';
+            body.innerHTML = '<div style="font-weight:600;">' + escapeHtml(p.title || '—') + '</div>'
+                + '<div class="admin-detail-note" style="font-size:0.8rem;">'
+                + escapeHtml(p.brand || '') + (p.category ? ' · ' + escapeHtml(p.category) : '')
+                + (p.source_network ? ' · <em>' + escapeHtml(p.source_network) + '</em>' : '')
+                + '</div>'
+                + (p.admin_review_reason
+                    ? '<div style="font-size:0.8rem;color:var(--warning);margin-top:0.25rem;">'
+                        + 'Flag: ' + escapeHtml(p.admin_review_reason) + '</div>'
+                    : '')
+                + '<div style="font-size:0.8rem;margin-top:0.25rem;">'
+                + (p.price_cents != null ? (p.currency || '') + ' ' + (p.price_cents / 100).toFixed(2) : '(no price)')
+                + ' · <a href="' + escapeHtml(p.affiliate_url || '#') + '" target="_blank" rel="noopener noreferrer">merchant link</a>'
+                + '</div>';
+
+            var actions = document.createElement('div');
+            actions.style.marginTop = '0.5rem';
+            actions.style.display = 'flex';
+            actions.style.gap = '0.25rem';
+
+            var approveBtn = document.createElement('button');
+            approveBtn.className = 'btn btn-primary btn-xs';
+            approveBtn.textContent = 'Approve';
+            approveBtn.onclick = function () { submitAdminMarketplaceReviewAction('clear_review', [p.id]); };
+            actions.appendChild(approveBtn);
+
+            var rejectBtn = document.createElement('button');
+            rejectBtn.className = 'btn btn-secondary btn-xs';
+            rejectBtn.textContent = 'Reject';
+            rejectBtn.onclick = function () { submitAdminMarketplaceReviewAction('deactivate', [p.id]); };
+            actions.appendChild(rejectBtn);
+
+            body.appendChild(actions);
+            card.appendChild(body);
+            listWrap.appendChild(card);
+        });
+    }
+
+    container.appendChild(listWrap);
+    return container;
+}
+
 
 /**
  * VTID-01195: Admin Identity Access View - Auth status + role switching + access logs

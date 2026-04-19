@@ -30,6 +30,8 @@ export const NAVIGATION_CONFIG = [
       { key: 'tenants', label: 'Tenants' },
       { key: 'content-moderation', label: 'Content Moderation' },
       { key: 'identity-access', label: 'Identity & Access' },
+      { key: 'marketplace-shops', label: 'Marketplace Shops' },
+      { key: 'marketplace-review', label: 'Marketplace Review' },
       { key: 'analytics', label: 'Analytics' }
     ]
   },
