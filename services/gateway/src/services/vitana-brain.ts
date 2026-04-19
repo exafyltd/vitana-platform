@@ -37,6 +37,7 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { ConversationChannel, ContextPack } from '../types/conversation';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { emitOasisEvent } from './oasis-event-service';
+import { getSupabase } from '../lib/supabase';
 // Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
 import { getSystemControl } from './system-controls-service';
 import {
@@ -341,6 +342,14 @@ export async function buildBrainSystemInstruction(input: {
     : (ucConfig.operator_instruction || 'You are Vitana, an intelligent assistant. You can be detailed and use formatting when helpful.');
 
   // -------------------------------------------------------------------------
+  // Always-on Life Compass goal block — runs BEFORE any recommendation so
+  // every suggestion is framed through the user's active primary goal,
+  // independent of the proactive-opener feature flag. This is non-negotiable
+  // (see GOAL-GROUNDED RECOMMENDATIONS rule in Proactive Guide).
+  // -------------------------------------------------------------------------
+  const lifeCompassBlock = await buildLifeCompassGoalBlock({ user_id: input.user_id });
+
+  // -------------------------------------------------------------------------
   // Proactive Guide Phase 0.5 — opener + dismissal honor rules
   // Gated on `vitana_proactive_opener_enabled` (default FALSE).
   // Always appends the Silent Honor Rules when guide is on so the LLM knows
@@ -360,6 +369,7 @@ export async function buildBrainSystemInstruction(input: {
   const instruction = `${baseInstruction}
 ${languageDirective}
 ${contextForLLM}
+${lifeCompassBlock}
 
 Current conversation channel: ${input.channel}
 User's role: ${input.role}
@@ -370,9 +380,69 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 ${proactiveGuideBlock}`;
 
   const latencyMs = Date.now() - startTime;
-  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'})`);
+  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'})`);
 
   return { instruction, contextPack };
+}
+
+// =============================================================================
+// Always-on Life Compass goal block (independent of proactive opener flag)
+// =============================================================================
+
+/**
+ * Fetch the user's active Life Compass goal and produce a short system-prompt
+ * block that binds every recommendation to that goal.
+ *
+ * This runs on EVERY brain turn — including plain text chat with the
+ * proactive opener flag OFF — so Vitana never produces off-goal suggestions.
+ * Returns empty string when no goal exists and supabase is unavailable; the
+ * opener-mvp layer will auto-seed a default goal when it runs.
+ */
+export async function buildLifeCompassGoalBlock(input: {
+  user_id: string;
+}): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) return '';
+
+  try {
+    const { data: rows } = await supabase
+      .from('life_compass')
+      .select('primary_goal, category')
+      .eq('user_id', input.user_id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!rows || rows.length === 0) {
+      return `
+=== ACTIVE LIFE COMPASS GOAL — NOT SET ===
+The user has not picked a Life Compass goal yet. Before offering any
+domain-specific recommendation, gently invite them to open the Life Compass
+(they can say "open my goals" or tap the Life Compass button in the utility
+bar on any screen — it opens as an overlay). Until a goal is set, keep
+recommendations broad and focused on helping them clarify what matters most.`;
+    }
+
+    const goal = rows[0] as { primary_goal: string; category: string };
+    return `
+=== ACTIVE LIFE COMPASS GOAL (apply to every recommendation this turn) ===
+Primary goal: "${goal.primary_goal}"
+Category: ${goal.category}
+
+NON-NEGOTIABLE: every suggestion, tip, product, event, or nudge you produce
+in this turn MUST visibly connect to this goal. When you recommend something,
+state the link explicitly ("because your focus is ${goal.primary_goal}, ..."
+or the equivalent in the user's language). Do not produce off-goal advice.
+If the user asks for something unrelated, answer it — but if you volunteer
+a recommendation, frame it through this goal.
+
+If the user wants to change their focus, they can say "open my goals" /
+"change my goals" and the Life Compass overlay opens on the current screen.
+They can also tap the Life Compass button in the utility bar on any screen.`;
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildLifeCompassGoalBlock failed: ${err.message}`);
+    return '';
+  }
 }
 
 // =============================================================================
@@ -602,13 +672,30 @@ GRACEFUL RETURN:
 
 GOAL CHANGES:
 - If the user says "change my goals", "I want a different focus", "update
-  my goals", "pick a different goal" — confirm warmly and tell them the
-  exact path: "Open the Memory Hub and tap Life Compass — that's where
-  your goals live. Pick the focus that matters to you most right now."
-  Do NOT pretend you can navigate the app for them. The goal-change UI
-  is the Life Compass modal accessed via Memory Hub.
-- After they tell you they have changed their goal, you can ask them
-  what they picked (so you can frame the next conversation accordingly).`;
+  my goals", "pick a different goal", "open my goals", "open my life
+  compass", "show me my compass", or "set a new goal" — this is a direct
+  request to surface the Life Compass modal. Respond with a warm, short
+  acknowledgement AND rely on the navigator to dispatch the Life Compass
+  overlay (screen_id "LIFE_COMPASS.OVERLAY", route "/?open=life_compass").
+  The overlay pops on top of whatever screen they are on, so they never
+  lose context. Do NOT tell them to hunt for a menu — the button lives
+  in the utility bar on every screen, and voice opens the popup directly.
+- Suggested phrasing: "Opening your Life Compass now — pick the focus
+  that matters most to you right now. You can also choose 'Spiritual
+  Life' or define a custom goal." (Adapt language to the user.)
+- After they tell you they have picked a new goal, ask what they chose
+  so you can frame the next suggestion accordingly.
+
+GOAL-GROUNDED RECOMMENDATIONS (NON-NEGOTIABLE):
+- Every recommendation, suggestion, or proactive nudge you offer MUST be
+  filtered through the user's active Life Compass goal supplied in the
+  OPENER CANDIDATE block below (field: goal_link.primary_goal + category).
+- If no goal_link is present in this turn's candidate, you still have the
+  user's active goal via the memory context pack — consult it before
+  offering any suggestion. If no goal is set, gently invite the user to
+  pick one before producing domain-specific recommendations.
+- Do NOT make generic off-topic suggestions. Every piece of advice should
+  visibly connect to the goal ("because your focus is X, here's Y").`;
 
   if (!candidate) {
     return rulesBlock;

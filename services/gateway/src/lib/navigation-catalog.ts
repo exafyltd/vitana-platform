@@ -939,6 +939,32 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
     related_kb_topics: ['calendar', 'schedule', 'appointments', 'events'],
   },
+  {
+    // Life Compass opens as an overlay on whatever screen the user is on.
+    // The ?open=life_compass query is intercepted in the ORB widget
+    // navigation handler (useOrbVoiceWidget) which dispatches the global
+    // open-life-compass event instead of routing — so the user never loses
+    // context when they say "open my goals" mid-conversation.
+    screen_id: 'LIFE_COMPASS.OVERLAY',
+    route: '/?open=life_compass',
+    category: 'memory',
+    access: 'authenticated',
+    anonymous_safe: false,
+    priority: 2,
+    i18n: {
+      en: {
+        title: 'Life Compass',
+        description: 'Your Life Compass — the primary goal that guides every Vitana recommendation. Pick from suggested goals (Financial Freedom, Life Partner, Health, Career, Skills, Spiritual Life) or define your own. Opens as an overlay.',
+        when_to_visit: 'When the user asks to open their Life Compass, show their goals, see their goals, change their goals, pick a different goal, update their focus, set a new goal, or talk about what they want to prioritize. Also when the user says "my goals", "my compass", "my focus", or "my primary goal".',
+      },
+      de: {
+        title: 'Lebenskompass',
+        description: 'Dein Lebenskompass — das Hauptziel, das jede Vitana-Empfehlung prägt. Wähle aus vorgeschlagenen Zielen (Finanzielle Freiheit, Lebenspartner, Gesundheit, Karriere, Fähigkeiten, Spirituelles Leben) oder definiere dein eigenes. Öffnet sich als Overlay.',
+        when_to_visit: 'Wenn der Nutzer seinen Lebenskompass öffnen, seine Ziele anzeigen, seine Ziele ändern, einen neuen Fokus setzen oder darüber sprechen möchte, was er priorisieren will. Auch bei "meine Ziele", "mein Kompass", "mein Fokus" oder "mein Hauptziel".',
+      },
+    },
+    related_kb_topics: ['goals', 'life compass', 'focus', 'primary goal', 'priorities', 'spiritual life'],
+  },
 
   // ── AI ──────────────────────────────────────────────────────────────────
   {
