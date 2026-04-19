@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-03-30-v2';
+  var _WIDGET_VERSION = '2026-04-19-freeze-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -451,11 +451,23 @@
     }
     var ctx = _s.playbackCtx;
 
-    // Resume if suspended (mobile)
+    // Resume if suspended (mobile / autoplay policy / backgrounded tab).
+    // Silent failure here was the root cause of "Vitana spricht..." freeze:
+    // chunks piled up in audioQueue, turn_complete's drain loop waited forever.
     if (ctx.state === 'suspended') {
-      ctx.resume().then(function () { setTimeout(_processQueue, 50); }).catch(function () {});
+      if (!_s._suspendedLogged) {
+        _s._suspendedLogged = true;
+        console.warn('[VTOrb] Playback AudioContext suspended — attempting resume. queue=' + _s.audioQueue.length);
+      }
+      ctx.resume().then(function () {
+        _s._suspendedLogged = false;
+        setTimeout(_processQueue, 50);
+      }).catch(function (e) {
+        console.warn('[VTOrb] AudioContext.resume() rejected:', e && e.message ? e.message : e);
+      });
       return;
     }
+    _s._suspendedLogged = false;
 
     var isFirstChunk = _s.scheduledSources.length === 0;
 
@@ -830,6 +842,14 @@
         // Check all three signals: audioPlaying flag, scheduled sources, and queue.
         // audioPlaying has a 1s grace period, but we also directly check sources/queue
         // to catch edge cases where the flag lags behind reality.
+        //
+        // VTID-ORB-FREEZE-FIX: Cap the drain wait at 15s. If the AudioContext is
+        // suspended (autoplay policy, backgrounded tab) or onended never fires,
+        // the queue/sources never drain and the orb gets stuck in SPEAKING state
+        // showing "Vitana spricht..." with no audio. After the cap, force-clear
+        // state and transition to LISTENING so the session stays usable.
+        var _audioDrainAttempts = 0;
+        var MAX_AUDIO_DRAIN_ATTEMPTS = 50; // 50 * 300ms = 15s
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
@@ -839,9 +859,34 @@
             var stillPlaying = _s.audioPlaying ||
               (_s.scheduledSources && _s.scheduledSources.length > 0) ||
               (_s.audioQueue && _s.audioQueue.length > 0);
-            if (stillPlaying) {
+            if (stillPlaying && _audioDrainAttempts++ < MAX_AUDIO_DRAIN_ATTEMPTS) {
               _waitForAudioEnd(); // Still playing — check again in 300ms
               return;
+            }
+            if (stillPlaying) {
+              // Timed out — audio never drained. Common cause: suspended
+              // AudioContext silently dropped playback, so audioQueue never
+              // emptied. Force-clear and proceed so we don't stay frozen.
+              console.warn('[VTOrb] turn_complete: audio drain timed out after 15s — forcing recovery', {
+                audioPlaying: _s.audioPlaying,
+                queueLen: (_s.audioQueue && _s.audioQueue.length) || 0,
+                sourcesLen: (_s.scheduledSources && _s.scheduledSources.length) || 0,
+                ctxState: _s.playbackCtx && _s.playbackCtx.state,
+              });
+              _s.audioQueue = [];
+              if (_s.scheduledSources && _s.scheduledSources.length > 0) {
+                for (var si = 0; si < _s.scheduledSources.length; si++) {
+                  try { _s.scheduledSources[si].stop(); } catch (_e) { /* ok */ }
+                }
+                _s.scheduledSources = [];
+              }
+              _s.lastScheduledEnd = 0;
+              _s.audioPlaying = false;
+              clearTimeout(_s.audioEndGraceTimer);
+              // Best-effort revive for the next turn
+              if (_s.playbackCtx && _s.playbackCtx.state === 'suspended') {
+                _s.playbackCtx.resume().catch(function () { /* logged elsewhere */ });
+              }
             }
             // Start mic on first turn_complete (greeting done) — not before.
             if (!_s.greetingComplete) {
