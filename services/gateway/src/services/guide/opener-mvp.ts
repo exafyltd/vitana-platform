@@ -5,10 +5,16 @@
  * already exists (life_compass + calendar_events + autopilot_recommendations).
  * No contribution-vector scoring yet — that arrives in Phase 6.
  *
- * Heuristic (until Phase 6 swaps in real scoring):
+ * Layered selection (highest specificity wins):
  *   1. Overdue autopilot calendar event (start_time < now, status='scheduled')
  *   2. Upcoming autopilot event within 24h
  *   3. Top "new" autopilot recommendation matching active role
+ *   4. Wave-aware journey opener (user is in wave N of 90-day journey)
+ *   5. Goal-grounded warm opener (user has an active Life Compass goal)
+ *
+ * Layers 4 and 5 are the FALLBACKS — they ensure that whenever a user has
+ * either a journey wave or an active goal, the conversation opens proactively
+ * instead of falling back to "what can I do for you?".
  *
  * MUST check isPaused() before returning a candidate.
  */
@@ -20,8 +26,11 @@ import {
   OpenerCandidateKind,
   OpenerSelection,
 } from './types';
+import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
 
 const LOG_PREFIX = '[Guide:opener-mvp]';
+
+const JOURNEY_TOTAL_DAYS = 90;
 
 export interface PickOpenerInput {
   user_id: string;
@@ -161,8 +170,88 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
     if (candidate.candidate || candidate.suppressed_by_pause) return candidate;
   }
 
-  console.log(`${LOG_PREFIX} no candidate available for user ${input.user_id}`);
+  // 4. Fallback — wave-aware journey opener.
+  //    Reads the user's registration date from app_users to compute current
+  //    journey day, then picks the active wave from DEFAULT_WAVE_CONFIG.
+  //    Date-stamped nudge_key so daily dismissals don't permanently silence.
+  const dateKey = new Date().toISOString().slice(0, 10);
+  let registeredAt: string | null = null;
+  const { data: userRows } = await supabase
+    .from('app_users')
+    .select('created_at')
+    .eq('id', input.user_id)
+    .limit(1);
+  if (userRows && userRows.length) {
+    registeredAt = (userRows[0] as { created_at: string }).created_at;
+  }
+
+  if (registeredAt) {
+    const dayNumber = daysSince(registeredAt);
+    const wave = currentWaveForDay(dayNumber);
+    if (wave) {
+      const candidate = await buildAndCheck({
+        kind: 'wave_transition',
+        nudge_key: `wave:${wave.id}:${dateKey}`,
+        title: `Day ${dayNumber} — ${wave.name}`,
+        subline: wave.description,
+        goalLink,
+        reason: `user is on day ${dayNumber} of the 90-day journey, currently in ${wave.name} wave`,
+        category: 'journey',
+        input,
+      });
+      if (candidate.candidate || candidate.suppressed_by_pause) return candidate;
+    }
+  }
+
+  // 5. Fallback — goal-grounded warm opener.
+  //    Always fires when a Life Compass goal is set. Date-stamped nudge_key
+  //    so the user gets a fresh opportunity each day even if they dismissed
+  //    yesterday's goal nudge.
+  if (goal && goalLink) {
+    const candidate = await buildAndCheck({
+      kind: 'goal_reminder',
+      nudge_key: `goal:${goal.id}:${dateKey}`,
+      title: `Toward your goal: ${goalLink.primary_goal}`,
+      subline: 'open the conversation by inviting reflection on this goal',
+      goalLink,
+      reason: 'user has an active Life Compass goal but no specific scheduled item — open warmly with the goal as the frame',
+      category: 'goal',
+      input,
+    });
+    if (candidate.candidate || candidate.suppressed_by_pause) return candidate;
+  }
+
+  console.log(`${LOG_PREFIX} no candidate available for user ${input.user_id}${goal ? '' : ' (no Life Compass goal set)'}`);
   return { candidate: null, suppressed_by_pause: false };
+}
+
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 0;
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Find the wave whose timeline brackets the given day. Prefers earliest
+ * end_day so a user with overlapping waves gets the more time-sensitive one.
+ * Returns null when day is past the 90-day journey or no wave is enabled.
+ */
+function currentWaveForDay(day: number): { id: string; name: string; description: string } | null {
+  if (day < 0) return null;
+  // For users past the journey (day >= 90), don't surface a wave opener —
+  // let the goal_reminder fallback handle them. The journey is a 90-day
+  // package; beyond that, the proactive system relies on goals + signals.
+  if (day >= JOURNEY_TOTAL_DAYS) return null;
+
+  const enabled = DEFAULT_WAVE_CONFIG.filter((w) => w.enabled);
+  const matching = enabled.filter(
+    (w) => day >= w.timeline.start_day && day <= w.timeline.end_day,
+  );
+  if (matching.length === 0) return null;
+
+  matching.sort((a, b) => a.timeline.end_day - b.timeline.end_day);
+  const w = matching[0];
+  return { id: w.id, name: w.name, description: w.description };
 }
 
 interface BuildAndCheckInput {
