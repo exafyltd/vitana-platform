@@ -10,9 +10,10 @@
 import type { MarketplaceProvider } from '../provider';
 import { shopifyProvider } from './shopify';
 import { cjProvider } from './cj';
+import { amazonProvider } from './amazon';
 
 /** Order here == display order in the admin UI dropdown. */
-const PROVIDERS: readonly MarketplaceProvider[] = [shopifyProvider, cjProvider];
+const PROVIDERS: readonly MarketplaceProvider[] = [shopifyProvider, cjProvider, amazonProvider];
 
 const BY_KEY = new Map<string, MarketplaceProvider>(PROVIDERS.map((p) => [p.key, p]));
 
