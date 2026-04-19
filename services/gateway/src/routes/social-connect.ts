@@ -364,7 +364,7 @@ router.get('/google/verify', async (req: Request, res: Response) => {
 
   const { data: conn } = await supabase
     .from('social_connections')
-    .select('access_token, refresh_token, token_expires_at, scopes, provider_username, connected_at')
+    .select('id, access_token, refresh_token, token_expires_at, scopes, provider_username, connected_at')
     .eq('user_id', user.userId)
     .eq('provider', 'google')
     .eq('is_active', true)
@@ -374,7 +374,52 @@ router.get('/google/verify', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'No active Google connection for this user' });
   }
 
-  const token = conn.access_token as string;
+  // VTID-01928: Refresh the access_token if it's expired or about to expire.
+  // Without this, any verify call >1h after consent fails with 401 from Google.
+  let token = conn.access_token as string;
+  let tokenRefreshed = false;
+  const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
+  const shouldRefresh = expiresAt > 0 && expiresAt < Date.now() + 30_000; // 30s buffer
+
+  if (shouldRefresh && conn.refresh_token) {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    if (clientId && clientSecret) {
+      try {
+        const refreshResp = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            refresh_token: conn.refresh_token as string,
+            grant_type: 'refresh_token',
+          }).toString(),
+        });
+        const refreshJson: any = await refreshResp.json().catch(() => ({}));
+        if (refreshResp.ok && refreshJson.access_token) {
+          token = refreshJson.access_token;
+          tokenRefreshed = true;
+          const newExpiry = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
+          await supabase
+            .from('social_connections')
+            .update({
+              access_token: token,
+              token_expires_at: newExpiry,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', conn.id);
+          conn.token_expires_at = newExpiry;
+          console.log(`[SocialConnect] Refreshed google access_token for user ${user.userId.slice(0, 8)}…, new expiry ${newExpiry}`);
+        } else {
+          console.warn(`[SocialConnect] Token refresh failed:`, refreshJson);
+        }
+      } catch (err: any) {
+        console.warn(`[SocialConnect] Token refresh exception: ${err.message}`);
+      }
+    }
+  }
+
   const headers = { Authorization: `Bearer ${token}` };
 
   // Run all four probes in parallel — each one's failure is isolated.
@@ -410,6 +455,7 @@ router.get('/google/verify', async (req: Request, res: Response) => {
       token_expires_at: conn.token_expires_at,
       scopes: conn.scopes,
       has_refresh_token: Boolean(conn.refresh_token),
+      token_refreshed: tokenRefreshed,
     },
     probes: {
       gmail: gmail.ok ? {
