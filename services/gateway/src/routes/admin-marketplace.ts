@@ -282,6 +282,21 @@ router.patch('/geo-policy/:id', requireTenantAdmin, async (req: Request, res: Re
   res.json({ ok: true, policy: data });
 });
 
+// ==================== VTID-01930: Provider registry ====================
+
+// Drives the Command Hub "Add shop" dropdown + form. Adding a new provider
+// requires zero frontend changes — the form is generated from config_schema.
+router.get('/providers', requireTenantAdmin, async (_req: Request, res: Response) => {
+  const { listProviders } = await import('../services/marketplace-sync/providers');
+  const providers = listProviders().map((p) => ({
+    key: p.key,
+    display_name: p.displayName,
+    description: p.description,
+    config_schema: p.configSchema,
+  }));
+  res.json({ ok: true, providers });
+});
+
 // ==================== VTID-02200: Sources (Shopify + CJ + etc) ====================
 
 router.get('/sources', requireTenantAdmin, async (req: Request, res: Response) => {
@@ -304,6 +319,18 @@ router.post('/sources', requireTenantAdmin, async (req: Request, res: Response) 
   if (!payload.source_network || !payload.display_name || !payload.config) {
     return res.status(400).json({ ok: false, error: 'source_network, display_name, config required' });
   }
+  // VTID-01930: reject unknown providers + run provider-level validateConfig
+  const { getProvider } = await import('../services/marketplace-sync/providers');
+  const provider = getProvider(String(payload.source_network));
+  if (!provider) {
+    return res.status(400).json({ ok: false, error: `Unknown source_network: ${payload.source_network}` });
+  }
+  if (provider.validateConfig) {
+    const validation = provider.validateConfig(payload.config as Record<string, unknown>);
+    if (!validation.ok) {
+      return res.status(400).json({ ok: false, error: `Invalid ${provider.key} config: ${validation.error}` });
+    }
+  }
   payload.created_by = getUserId(req) ?? null;
   const { data, error } = await supabase.from('marketplace_sources_config').insert(payload).select().single();
   if (error) return res.status(500).json({ ok: false, error: error.message });
@@ -325,14 +352,20 @@ router.patch('/sources/:id', requireTenantAdmin, async (req: Request, res: Respo
 });
 
 // Manual sync trigger — runs in-process, returns the result once done.
+// Supported networks come from the provider registry.
 router.post('/sync/:network', requireTenantAdmin, async (req: Request, res: Response) => {
   const network = req.params.network;
-  if (!['shopify', 'cj'].includes(network)) {
-    return res.status(400).json({ ok: false, error: `Unsupported network: ${network}. Use shopify or cj.` });
+  const { providerKeys } = await import('../services/marketplace-sync/providers');
+  const supported = providerKeys();
+  if (!supported.includes(network)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Unsupported network: ${network}. Use one of: ${supported.join(', ')}.`,
+    });
   }
   try {
     const { runMarketplaceSyncSource } = await import('../services/marketplace-sync');
-    const result = await runMarketplaceSyncSource(network as 'shopify' | 'cj', `admin:${getUserId(req) ?? 'unknown'}`);
+    const result = await runMarketplaceSyncSource(network, `admin:${getUserId(req) ?? 'unknown'}`);
     await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_sync.triggered', { network, totals: result.totals });
     res.json({ ok: true, network, result });
   } catch (err: unknown) {

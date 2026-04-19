@@ -1,5 +1,5 @@
 /**
- * VTID-02000: Internal sync trigger endpoint for the scheduler.
+ * VTID-02000 / VTID-01930: Internal sync trigger endpoint for the scheduler.
  *
  * Separate from /api/v1/admin/marketplace/sync which requires a tenant-admin
  * JWT — that's a dead-end for machine-to-machine cron. This endpoint is
@@ -9,6 +9,9 @@
  *   - .github/workflows/MARKETPLACE-SYNC-CRON.yml — daily at 03:00 UTC
  *   - Manual `curl -H 'X-Scheduler-Secret: $MARKETPLACE_SYNC_SECRET' ...`
  *     when an operator wants to force-run outside the schedule
+ *
+ * The supported networks come from the provider registry — adding Amazon,
+ * Rakuten, etc. requires no changes here.
  *
  * Any request without a matching X-Scheduler-Secret header returns 401.
  * If MARKETPLACE_SYNC_SECRET is not configured on the gateway, all requests
@@ -42,8 +45,14 @@ router.post('/sync/:network', async (req: Request, res: Response) => {
   }
 
   const network = req.params.network;
-  if (!['shopify', 'cj', 'all'].includes(network)) {
-    res.status(400).json({ ok: false, error: `Unsupported network: ${network}. Use shopify, cj, or all.` });
+  const { providerKeys } = await import('../services/marketplace-sync/providers');
+  const supported = providerKeys();
+
+  if (network !== 'all' && !supported.includes(network)) {
+    res.status(400).json({
+      ok: false,
+      error: `Unsupported network: ${network}. Use one of: ${['all', ...supported].join(', ')}.`,
+    });
     return;
   }
 
@@ -54,14 +63,15 @@ router.post('/sync/:network', async (req: Request, res: Response) => {
 
     if (network === 'all') {
       const result = await runAllMarketplaceSync(triggeredBy);
-      console.log(
-        `[marketplace-sync-scheduler] all done in ${Date.now() - startedAt}ms shopify=${JSON.stringify(result.shopify.totals)} cj=${JSON.stringify(result.cj.totals)}`,
-      );
+      const summary = Object.entries(result.providers)
+        .map(([k, v]) => `${k}=${JSON.stringify(v.totals)}`)
+        .join(' ');
+      console.log(`[marketplace-sync-scheduler] all done in ${Date.now() - startedAt}ms ${summary}`);
       res.json({ ok: true, network: 'all', duration_ms: Date.now() - startedAt, result });
       return;
     }
 
-    const result = await runMarketplaceSyncSource(network as 'shopify' | 'cj', triggeredBy);
+    const result = await runMarketplaceSyncSource(network, triggeredBy);
     console.log(`[marketplace-sync-scheduler] ${network} done in ${Date.now() - startedAt}ms`, result.totals);
     res.json({ ok: true, network, duration_ms: Date.now() - startedAt, result });
   } catch (err: unknown) {

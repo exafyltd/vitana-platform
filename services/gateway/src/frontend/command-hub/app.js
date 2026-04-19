@@ -10920,7 +10920,34 @@ function renderAdminContentModerationView() {
     return container;
 }
 
-// ==================== VTID-02000: Admin Marketplace Shops ====================
+// ==================== VTID-02000 / VTID-01930: Admin Marketplace Shops ====================
+
+// VTID-01930: Fetch the provider registry from the gateway. The registry
+// drives the network filter, the per-provider sync buttons, and the
+// schema-driven "Add shop" form — so adding Amazon/Rakuten/etc. requires
+// zero frontend changes.
+async function fetchAdminMarketplaceProviders() {
+    if (state.adminMpProviders && state.adminMpProviders.length) return state.adminMpProviders;
+    try {
+        var resp = await fetch('/api/v1/admin/marketplace/providers', {
+            method: 'GET', headers: buildContextHeaders(),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminMpProviders = json.providers || [];
+        return state.adminMpProviders;
+    } catch (err) {
+        console.error('[VTID-01930] fetch providers failed:', err);
+        state.adminMpProviders = [];
+        return [];
+    }
+}
+
+function getAdminMpProvider(key) {
+    var list = state.adminMpProviders || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
+    return null;
+}
 
 async function fetchAdminMarketplaceShops() {
     state.adminMpShopsLoading = true;
@@ -11014,25 +11041,37 @@ async function triggerMarketplaceSync(network) {
 function renderAdminMarketplaceShopsView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container';
+    if (!state.adminMpProviders) {
+        fetchAdminMarketplaceProviders().then(function () { renderApp(); });
+    }
     if (!state.adminMpShopsFetched && !state.adminMpShopsLoading && !state.adminMpShopsError) {
         fetchAdminMarketplaceShops();
     }
 
+    var providers = state.adminMpProviders || [];
+    var providerNames = providers.map(function (p) { return p.display_name; }).join(' + ');
+
     var header = document.createElement('div');
     header.className = 'admin-screen-header';
     header.innerHTML = '<h2>Marketplace Shops</h2>' +
-        '<p class="admin-screen-subtitle">Shopify + CJ Affiliate sources that feed the Discover catalog. '
+        '<p class="admin-screen-subtitle">'
+      + escapeHtml(providerNames || 'Marketplace') + ' sources that feed the Discover catalog. '
       + 'Daily sync runs at 03:00 UTC; use the Sync buttons below to force-run.</p>';
     container.appendChild(header);
 
-    // Toolbar: filter + "Add shop" + "Sync all"
+    // Toolbar: filter + "Add shop" + per-provider Sync buttons (registry-driven)
     var toolbar = document.createElement('div');
     toolbar.className = 'admin-filters-row';
     toolbar.style.gap = '0.5rem';
 
     var networkFilter = document.createElement('select');
     networkFilter.className = 'admin-filter-select';
-    networkFilter.innerHTML = '<option value="">All networks</option><option value="shopify">Shopify</option><option value="cj">CJ Affiliate</option>';
+    var filterOptionsHtml = '<option value="">All networks</option>';
+    for (var pi = 0; pi < providers.length; pi++) {
+        var p = providers[pi];
+        filterOptionsHtml += '<option value="' + escapeHtml(p.key) + '">' + escapeHtml(p.display_name) + '</option>';
+    }
+    networkFilter.innerHTML = filterOptionsHtml;
     networkFilter.value = state.adminMpShopsNetworkFilter || '';
     networkFilter.onchange = function (e) {
         state.adminMpShopsNetworkFilter = e.target.value;
@@ -11049,17 +11088,15 @@ function renderAdminMarketplaceShopsView() {
     };
     toolbar.appendChild(addBtn);
 
-    var syncShopifyBtn = document.createElement('button');
-    syncShopifyBtn.className = 'btn btn-secondary btn-sm';
-    syncShopifyBtn.textContent = 'Sync Shopify now';
-    syncShopifyBtn.onclick = function () { triggerMarketplaceSync('shopify'); };
-    toolbar.appendChild(syncShopifyBtn);
-
-    var syncCjBtn = document.createElement('button');
-    syncCjBtn.className = 'btn btn-secondary btn-sm';
-    syncCjBtn.textContent = 'Sync CJ now';
-    syncCjBtn.onclick = function () { triggerMarketplaceSync('cj'); };
-    toolbar.appendChild(syncCjBtn);
+    for (var si = 0; si < providers.length; si++) {
+        (function (pk, pn) {
+            var b = document.createElement('button');
+            b.className = 'btn btn-secondary btn-sm';
+            b.textContent = 'Sync ' + pn + ' now';
+            b.onclick = function () { triggerMarketplaceSync(pk); };
+            toolbar.appendChild(b);
+        })(providers[si].key, providers[si].display_name);
+    }
 
     container.appendChild(toolbar);
 
@@ -11078,10 +11115,13 @@ function renderAdminMarketplaceShopsView() {
         listWrap.innerHTML = '<div class="admin-error">' + state.adminMpShopsError +
             '<br><button class="btn btn-secondary btn-sm" onclick="state.adminMpShopsError=null;fetchAdminMarketplaceShops();">Retry</button></div>';
     } else if (!state.adminMpShops || state.adminMpShops.length === 0) {
+        var onboardHint = providers.length
+            ? providers.map(function (p) { return p.display_name; }).join(' or ')
+            : 'marketplace';
         listWrap.innerHTML = '<div class="admin-empty-list" style="padding:3rem;text-align:center;">' +
             '<span style="font-size:2.5rem;display:block;margin-bottom:0.75rem;">&#128722;</span>' +
             '<p style="font-size:1.1rem;margin-bottom:0.5rem;">No marketplace sources configured yet</p>' +
-            '<p class="admin-detail-note">Click <strong>+ Add shop</strong> above to onboard the first Shopify merchant or CJ publisher account.</p>' +
+            '<p class="admin-detail-note">Click <strong>+ Add shop</strong> above to onboard the first ' + escapeHtml(onboardHint) + ' source.</p>' +
             '</div>';
     } else {
         var table = document.createElement('table');
@@ -11096,15 +11136,23 @@ function renderAdminMarketplaceShopsView() {
         state.adminMpShops.forEach(function (s) {
             var tr = document.createElement('tr');
             var cfg = s.config || {};
+            // Per-provider keyInfo: show the first required, non-secret config
+            // field's value. Works for any registered provider.
             var keyInfo = '';
-            if (s.source_network === 'shopify') {
-                keyInfo = cfg.domain ? cfg.domain : '<em>no domain</em>';
-            } else if (s.source_network === 'cj') {
-                keyInfo = cfg.advertiser_ids ? ('advertisers: ' + (cfg.advertiser_ids.length || '?'))
-                  : (cfg.keywords ? ('kw: ' + cfg.keywords) : '<em>no filter</em>');
-            } else {
-                keyInfo = JSON.stringify(cfg).slice(0, 60);
+            var providerDef = getAdminMpProvider(s.source_network);
+            if (providerDef && providerDef.config_schema) {
+                for (var ci = 0; ci < providerDef.config_schema.length; ci++) {
+                    var spec = providerDef.config_schema[ci];
+                    if (spec.type === 'password') continue;
+                    if (cfg[spec.key] !== undefined && cfg[spec.key] !== null && cfg[spec.key] !== '') {
+                        var raw = cfg[spec.key];
+                        var rendered = Array.isArray(raw) ? (raw.length + ' items') : String(raw).slice(0, 60);
+                        keyInfo = escapeHtml(spec.label.replace(/\s*\(optional\)\s*$/i, '') + ': ' + rendered);
+                        break;
+                    }
+                }
             }
+            if (!keyInfo) keyInfo = escapeHtml(JSON.stringify(cfg).slice(0, 60));
             tr.innerHTML = ''
                 + '<td><strong>' + escapeHtml(s.display_name || s.id) + '</strong>'
                 + (s.notes ? '<br><small class="admin-detail-note">' + escapeHtml(s.notes) + '</small>' : '')
@@ -11132,13 +11180,23 @@ function renderAdminMarketplaceShopsView() {
     return container;
 }
 
+// VTID-01930: Schema-driven "Add marketplace source" form. Every input is
+// generated from the provider's config_schema — adding Amazon/Rakuten/etc.
+// on the backend makes the corresponding form appear here automatically.
 function renderAdminMarketplaceShopCreateForm() {
     var wrap = document.createElement('div');
     wrap.className = 'admin-card';
     wrap.style.padding = '1rem';
     wrap.style.marginBottom = '1rem';
 
-    var network = state.adminMpShopsCreateNetwork || 'shopify';
+    var providers = state.adminMpProviders || [];
+    if (providers.length === 0) {
+        wrap.innerHTML = '<div class="admin-loading">Loading provider registry…</div>';
+        return wrap;
+    }
+    var network = state.adminMpShopsCreateNetwork || providers[0].key;
+    var providerDef = getAdminMpProvider(network) || providers[0];
+    network = providerDef.key;
 
     var h = document.createElement('h3');
     h.textContent = 'Add marketplace source';
@@ -11146,26 +11204,33 @@ function renderAdminMarketplaceShopCreateForm() {
 
     var note = document.createElement('p');
     note.className = 'admin-detail-note';
-    note.textContent = network === 'shopify'
-        ? 'For a Shopify shop, you need the Storefront access token (Admin → Apps → Develop apps → Configure Storefront API).'
-        : 'For CJ Affiliate, you need a publisher developer key + website id from https://developers.cj.com.';
+    note.textContent = providerDef.description || '';
     wrap.appendChild(note);
 
-    function input(id, label, placeholder, type) {
+    function input(id, spec) {
         var row = document.createElement('div');
         row.style.marginBottom = '0.5rem';
-        row.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">' + label + '</label>'
-            + '<input id="' + id + '" type="' + (type || 'text') + '" placeholder="' + (placeholder || '') + '" class="admin-input" style="width:100%;padding:0.5rem;" />';
+        row.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
+            + escapeHtml(spec.label) + (spec.required ? ' <span style="color:var(--danger)">*</span>' : '')
+            + '</label>'
+            + '<input id="' + id + '" type="' + (spec.type === 'password' ? 'password' : (spec.type === 'number' ? 'number' : 'text')) + '" '
+            + 'placeholder="' + escapeHtml(spec.placeholder || '') + '" class="admin-input" style="width:100%;padding:0.5rem;" />'
+            + (spec.help ? '<small class="admin-detail-note">' + escapeHtml(spec.help) + '</small>' : '');
         return row;
     }
 
-    // Network selector
+    // Network selector — populated from registry
     var netSel = document.createElement('select');
     netSel.className = 'admin-filter-select';
-    netSel.innerHTML = '<option value="shopify">Shopify</option><option value="cj">CJ Affiliate</option>';
+    var netOpts = '';
+    for (var i = 0; i < providers.length; i++) {
+        netOpts += '<option value="' + escapeHtml(providers[i].key) + '">' + escapeHtml(providers[i].display_name) + '</option>';
+    }
+    netSel.innerHTML = netOpts;
     netSel.value = network;
     netSel.onchange = function (e) {
         state.adminMpShopsCreateNetwork = e.target.value;
+        state.adminMpShopsCreateError = null;
         renderApp();
     };
     var netRow = document.createElement('div');
@@ -11174,19 +11239,28 @@ function renderAdminMarketplaceShopCreateForm() {
     netRow.appendChild(netSel);
     wrap.appendChild(netRow);
 
-    wrap.appendChild(input('mp-displayname', 'Display name', network === 'shopify' ? 'Acme Supplements' : 'CJ Publisher Vitana'));
-    wrap.appendChild(input('mp-country', 'Merchant country (ISO-2, optional)', 'DE'));
-    wrap.appendChild(input('mp-notes', 'Internal notes (optional)', 'Commission 12%, contact jane@acme.com'));
+    // Common fields
+    var displayNameRow = input('mp-displayname', {
+        label: 'Display name',
+        required: true,
+        placeholder: providerDef.display_name + ' source',
+        type: 'text',
+    });
+    wrap.appendChild(displayNameRow);
+    wrap.appendChild(input('mp-notes', {
+        label: 'Internal notes (optional)',
+        placeholder: 'Commission 12%, contact jane@acme.com',
+        type: 'text',
+    }));
 
-    if (network === 'shopify') {
-        wrap.appendChild(input('mp-sh-domain', 'Shopify domain', 'acme-supplements.myshopify.com'));
-        wrap.appendChild(input('mp-sh-token', 'Storefront access token', 'shpat_…', 'password'));
-        wrap.appendChild(input('mp-sh-affiliate', 'Affiliate URL template (optional)', 'https://{domain}/products/{handle}?ref=vitana'));
-    } else {
-        wrap.appendChild(input('mp-cj-key', 'CJ developer key', '', 'password'));
-        wrap.appendChild(input('mp-cj-website', 'CJ website id', '12345678'));
-        wrap.appendChild(input('mp-cj-advertisers', 'Advertiser IDs (comma-separated, optional)', '1234,5678'));
-        wrap.appendChild(input('mp-cj-keywords', 'Keyword filter (optional)', 'supplement,vitamin'));
+    // Provider-specific fields, generated from config_schema
+    var fieldInputIds = [];
+    var schema = providerDef.config_schema || [];
+    for (var si = 0; si < schema.length; si++) {
+        var spec = schema[si];
+        var id = 'mp-cfg-' + spec.key;
+        wrap.appendChild(input(id, spec));
+        fieldInputIds.push({ id: id, spec: spec });
     }
 
     if (state.adminMpShopsCreateError) {
@@ -11203,31 +11277,33 @@ function renderAdminMarketplaceShopCreateForm() {
     submitBtn.disabled = !!state.adminMpShopsCreating;
     submitBtn.onclick = function () {
         var displayName = (document.getElementById('mp-displayname') || {}).value || '';
-        var country = (document.getElementById('mp-country') || {}).value || '';
         var notes = (document.getElementById('mp-notes') || {}).value || '';
         var config = {};
-        if (network === 'shopify') {
-            var dom = (document.getElementById('mp-sh-domain') || {}).value || '';
-            var tok = (document.getElementById('mp-sh-token') || {}).value || '';
-            var aff = (document.getElementById('mp-sh-affiliate') || {}).value || '';
-            if (!dom || !tok) { state.adminMpShopsCreateError = 'Shopify requires domain + token'; renderApp(); return; }
-            config.domain = dom.trim();
-            config.storefront_access_token = tok.trim();
-            if (aff) config.affiliate_url_template = aff.trim();
-            if (country) config.merchant_country = country.trim().toUpperCase();
-        } else {
-            var key = (document.getElementById('mp-cj-key') || {}).value || '';
-            var wid = (document.getElementById('mp-cj-website') || {}).value || '';
-            var advs = (document.getElementById('mp-cj-advertisers') || {}).value || '';
-            var kws = (document.getElementById('mp-cj-keywords') || {}).value || '';
-            if (!key || !wid) { state.adminMpShopsCreateError = 'CJ requires developer key + website id'; renderApp(); return; }
-            config.developer_key = key.trim();
-            config.website_id = wid.trim();
-            if (advs.trim()) config.advertiser_ids = advs.split(',').map(function (x){return x.trim();}).filter(Boolean);
-            if (kws.trim()) config.keywords = kws.trim();
-            if (country) config.merchant_country = country.trim().toUpperCase();
+        var missing = [];
+        for (var fi = 0; fi < fieldInputIds.length; fi++) {
+            var entry = fieldInputIds[fi];
+            var el = document.getElementById(entry.id);
+            var v = (el && el.value != null) ? String(el.value).trim() : '';
+            if (!v) {
+                if (entry.spec.required) missing.push(entry.spec.label);
+                continue;
+            }
+            if (entry.spec.list) {
+                config[entry.spec.key] = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+            } else if (entry.spec.type === 'number') {
+                var n = Number(v);
+                if (!Number.isFinite(n)) { missing.push(entry.spec.label + ' (must be a number)'); continue; }
+                config[entry.spec.key] = n;
+            } else {
+                config[entry.spec.key] = v;
+            }
         }
-        if (!displayName) { state.adminMpShopsCreateError = 'display_name is required'; renderApp(); return; }
+        if (!displayName) missing.push('Display name');
+        if (missing.length) {
+            state.adminMpShopsCreateError = 'Required: ' + missing.join(', ');
+            renderApp();
+            return;
+        }
         submitAdminMarketplaceShopCreate({
             source_network: network,
             display_name: displayName.trim(),
