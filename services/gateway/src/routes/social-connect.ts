@@ -41,6 +41,14 @@ const LOG_PREFIX = '[SocialConnect]';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 
+// VTID-01928: OAuth callback redirect path per provider. Google connectors live
+// in /settings/connected-apps; legacy social providers keep the /settings/social
+// path so their existing flows (scrape-based import, share prefs UI) are unaffected.
+function callbackRedirectPath(provider: string): string {
+  if (provider === 'google') return '/settings/connected-apps';
+  return '/settings/social';
+}
+
 // Helper: get Supabase service client
 async function getServiceClient() {
   const url = process.env.SUPABASE_URL;
@@ -122,20 +130,21 @@ router.get('/connect/:provider', (req: Request, res: Response) => {
 router.get('/callback/:provider', async (req: Request, res: Response) => {
   const provider = req.params.provider as SocialProvider;
   const { code, state, error: oauthError } = req.query;
+  const redirectPath = callbackRedirectPath(provider);
 
   if (oauthError) {
     console.warn(`${LOG_PREFIX} OAuth error for ${provider}: ${oauthError}`);
-    return res.redirect(`${APP_URL}/settings/social?error=oauth_denied&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=oauth_denied&provider=${provider}`);
   }
 
   if (!code || !state) {
-    return res.redirect(`${APP_URL}/settings/social?error=missing_params&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=missing_params&provider=${provider}`);
   }
 
   // Parse state to get userId and tenantId
   const stateData = parseOAuthState(state as string);
   if (!stateData) {
-    return res.redirect(`${APP_URL}/settings/social?error=invalid_state&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=invalid_state&provider=${provider}`);
   }
 
   console.log(`${LOG_PREFIX} Processing callback for ${provider}, user ${stateData.userId.slice(0, 8)}…`);
@@ -144,19 +153,19 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   const tokens = await exchangeCodeForTokens(provider, code as string);
   if (!tokens.access_token) {
     console.error(`${LOG_PREFIX} Token exchange failed: ${tokens.error}`);
-    return res.redirect(`${APP_URL}/settings/social?error=token_exchange_failed&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=token_exchange_failed&provider=${provider}`);
   }
 
   // Fetch social profile
   const profile = await fetchSocialProfile(provider, tokens.access_token);
   if (!profile) {
-    return res.redirect(`${APP_URL}/settings/social?error=profile_fetch_failed&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=profile_fetch_failed&provider=${provider}`);
   }
 
   // Store connection
   const supabase = await getServiceClient();
   if (!supabase) {
-    return res.redirect(`${APP_URL}/settings/social?error=service_unavailable&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=service_unavailable&provider=${provider}`);
   }
 
   const result = await storeSocialConnection(
@@ -164,11 +173,13 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   );
 
   if (!result.ok) {
-    return res.redirect(`${APP_URL}/settings/social?error=store_failed&provider=${provider}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=store_failed&provider=${provider}`);
   }
 
-  // Trigger profile enrichment in the background
-  if (result.connection_id) {
+  // VTID-01928: Skip social enrichment for Google — it's a data-access connector,
+  // not a profile-scraping one. Social providers (Instagram/Facebook/TikTok/etc.)
+  // still run the enrichment pipeline for interest/topic extraction.
+  if (result.connection_id && provider !== 'google') {
     enrichProfileFromSocial(supabase, stateData.userId, stateData.tenantId, result.connection_id)
       .then(enrichResult => {
         console.log(`${LOG_PREFIX} Enrichment for ${provider}: ${enrichResult.enrichments.join(', ') || 'none'}`);
@@ -180,7 +191,7 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
 
   // Redirect back to settings with success
   return res.redirect(
-    `${APP_URL}/settings/social?connected=${provider}&username=${encodeURIComponent(profile.username)}`
+    `${APP_URL}${redirectPath}?connected=${provider}&username=${encodeURIComponent(profile.username)}`
   );
 });
 
