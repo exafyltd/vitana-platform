@@ -36,6 +36,13 @@ export {
   type ApplyResult as AdaptationApplyResult,
 } from './adaptation-applier';
 export {
+  extractPatternsForUser,
+  getUserRoutines,
+  type RoutineKind,
+  type RoutineRow,
+  type ExtractResult as PatternExtractResult,
+} from './pattern-extractor';
+export {
   describeTimeSince,
   fetchLastSessionInfo,
   deriveMotivationSignal,

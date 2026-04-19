@@ -86,8 +86,15 @@ export interface UserAwareness {
     last_applied_at: string | null;
   } | null;
 
-  // Reserved for future companion pillars (null until those phases ship)
-  routines: null;
+  // Phase C — user routines from pattern-extractor (VTID-01936)
+  routines: Array<{
+    routine_kind: string;
+    title: string;
+    summary: string;
+    confidence: number;
+  }>;
+
+  // Reserved for future (null until then)
   tastes_preferences: null;
 }
 

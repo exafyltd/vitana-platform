@@ -864,6 +864,17 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     lines.push(`Recent activity: ${raParts.join('; ')}`);
   }
 
+  // Phase C — learned routines from pattern-extractor. Brain weaves naturally.
+  if (awareness.routines && awareness.routines.length > 0) {
+    const top = awareness.routines.slice(0, 4);
+    const routineLines = top.map((r) => `  - ${r.title}: ${r.summary} (confidence ${(r.confidence * 100).toFixed(0)}%)`);
+    lines.push('Known routines (from past 30 days of completed activities):');
+    lines.push(...routineLines);
+    lines.push(
+      'Routine rule: reference routines naturally when relevant — e.g. "you usually do this in the morning, want to keep that?" — and respect them when suggesting new items. Never list them in bulk.',
+    );
+  }
+
   // Phase F — prior session continuity. Brain weaves naturally rather than reciting.
   if (awareness.prior_session_themes && awareness.prior_session_themes.length > 0) {
     const recentSummary = awareness.prior_session_themes[0];
