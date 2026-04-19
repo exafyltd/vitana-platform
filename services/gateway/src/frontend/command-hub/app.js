@@ -11228,11 +11228,19 @@ function renderAdminMarketplaceShopCreateForm() {
     function input(id, spec) {
         var row = document.createElement('div');
         row.style.marginBottom = '0.5rem';
-        row.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
+        var labelHtml = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
             + escapeHtml(spec.label) + (spec.required ? ' <span style="color:var(--danger)">*</span>' : '')
-            + '</label>'
-            + '<input id="' + id + '" type="' + (spec.type === 'password' ? 'password' : (spec.type === 'number' ? 'number' : 'text')) + '" '
-            + 'placeholder="' + escapeHtml(spec.placeholder || '') + '" class="admin-input" style="width:100%;padding:0.5rem;" />'
+            + '</label>';
+        var fieldHtml;
+        if (spec.type === 'textarea') {
+            fieldHtml = '<textarea id="' + id + '" rows="4" placeholder="' + escapeHtml(spec.placeholder || '')
+                + '" class="admin-input" style="width:100%;padding:0.5rem;font-family:monospace;font-size:0.85rem;"></textarea>';
+        } else {
+            var type = spec.type === 'password' ? 'password' : (spec.type === 'number' ? 'number' : 'text');
+            fieldHtml = '<input id="' + id + '" type="' + type + '" placeholder="' + escapeHtml(spec.placeholder || '')
+                + '" class="admin-input" style="width:100%;padding:0.5rem;" />';
+        }
+        row.innerHTML = labelHtml + fieldHtml
             + (spec.help ? '<small class="admin-detail-note">' + escapeHtml(spec.help) + '</small>' : '');
         return row;
     }
@@ -11312,6 +11320,11 @@ function renderAdminMarketplaceShopCreateForm() {
                 var n = Number(v);
                 if (!Number.isFinite(n)) { missing.push(entry.spec.label + ' (must be a number)'); continue; }
                 config[entry.spec.key] = n;
+            } else if (entry.spec.type === 'textarea') {
+                // Textareas often carry JSON — try to parse; if it fails, store as string
+                // and let the server-side validateConfig catch malformed JSON.
+                try { config[entry.spec.key] = JSON.parse(v); }
+                catch (_e) { config[entry.spec.key] = v; }
             } else {
                 config[entry.spec.key] = v;
             }
