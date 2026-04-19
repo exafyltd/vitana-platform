@@ -602,6 +602,8 @@ export type CicdEventType =
   | 'guide.session_summary.recorded'
   // COMPANION Phase E — D43 adaptation applier (VTID-01935)
   | 'guide.adaptation.applied'
+  // COMPANION Phase C — pattern extractor (VTID-01936)
+  | 'guide.patterns.extracted'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

@@ -23,7 +23,9 @@ export type GuideEventType =
   // Phase F — VTID-01933 conversation continuity
   | 'guide.session_summary.recorded'
   // Phase E — VTID-01935 D43 adaptation applier
-  | 'guide.adaptation.applied';
+  | 'guide.adaptation.applied'
+  // Phase C — VTID-01936 pattern extraction
+  | 'guide.patterns.extracted';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,

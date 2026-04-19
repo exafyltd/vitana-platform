@@ -26,6 +26,7 @@ import { describeTimeSince, fetchLastSessionInfo, type LastInteraction } from '.
 import { getFeatureIntroductions } from './feature-introductions';
 import { getRecentSessionSummaries } from './session-summaries';
 import { getAdaptationStatus } from './adaptation-applier';
+import { getUserRoutines } from './pattern-extractor';
 import type {
   UserAwareness,
   TenureStage,
@@ -77,6 +78,7 @@ export async function getAwarenessContext(
     featureIntros,
     priorSummaries,
     adaptationStatus,
+    userRoutines,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
@@ -85,6 +87,7 @@ export async function getAwarenessContext(
     getFeatureIntroductions(userId).catch(() => []),
     getRecentSessionSummaries(userId, 3).catch(() => []),
     getAdaptationStatus(userId).catch(() => null),
+    getUserRoutines(userId, 8).catch(() => []),
   ]);
 
   const tenure = buildTenure(userContext);
@@ -109,7 +112,12 @@ export async function getAwarenessContext(
       ended_at: s.ended_at,
     })),
     adaptation_plans: adaptationStatus,
-    routines: null,
+    routines: (userRoutines || []).map((r) => ({
+      routine_kind: r.routine_kind,
+      title: r.title,
+      summary: r.summary,
+      confidence: r.confidence,
+    })),
     tastes_preferences: null,
   };
 
@@ -314,7 +322,7 @@ function skeletalAwareness(): UserAwareness {
     feature_introductions: [],
     prior_session_themes: [],
     adaptation_plans: null,
-    routines: null,
+    routines: [],
     tastes_preferences: null,
   };
 }
