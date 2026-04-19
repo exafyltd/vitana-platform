@@ -34,6 +34,8 @@
       "tenants",
       "content-moderation",
       "identity-access",
+      "marketplace-shops",
+      "marketplace-review",
       "analytics"
     ],
     "operator": [
@@ -144,6 +146,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 87
+    "total_screens": 89
   }
 }
