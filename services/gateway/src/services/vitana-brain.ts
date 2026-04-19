@@ -492,14 +492,29 @@ GRACEFUL RETURN:
 - After a pause expires, do not dump a backlog. At most ONE gentle check-in
   per session: "Welcome back — want to hear what I noticed, or pick up
   where you were?" If the user declines, stay quiet for the rest of the
-  session.`;
+  session.
+
+GOAL CHANGES:
+- If the user says "change my goals", "I want a different focus", "update
+  my goals", "pick a different goal" — confirm warmly and tell them the
+  exact path: "Open the Memory Hub and tap Life Compass — that's where
+  your goals live. Pick the focus that matters to you most right now."
+  Do NOT pretend you can navigate the app for them. The goal-change UI
+  is the Life Compass modal accessed via Memory Hub.
+- After they tell you they have changed their goal, you can ask them
+  what they picked (so you can frame the next conversation accordingly).`;
 
   if (!candidate) {
     return rulesBlock;
   }
 
   const goalLine = candidate.goal_link
-    ? `Toward the user's active Life Compass goal: "${candidate.goal_link.primary_goal}" (category: ${candidate.goal_link.category})`
+    ? candidate.goal_link.is_system_seeded
+      ? `User's active Life Compass goal (SYSTEM-SEEDED DEFAULT): "${candidate.goal_link.primary_goal}" (category: ${candidate.goal_link.category})\n` +
+        `IMPORTANT: this goal was set BY YOU automatically because the user has not picked one. ` +
+        `Frame your opener accordingly — explicitly mention you've set this default and the user can change it any time. ` +
+        `Example: "I've set your starting focus to improving quality of life and extending lifespan — that's the heart of Vitanaland's mission. You can change it any time by saying so, or in the Memory Hub. For now, here's something on my mind..."`
+      : `Toward the user's active Life Compass goal: "${candidate.goal_link.primary_goal}" (category: ${candidate.goal_link.category})`
     : 'No active Life Compass goal set — gently invite the user to pick one if natural.';
 
   const candidateBlock = `

@@ -38,6 +38,13 @@ export interface OpenerCandidate {
   goal_link?: {
     primary_goal: string;
     category: string;
+    /**
+     * True when this Life Compass goal was system-seeded (the default longevity
+     * goal applied to a new user who hasn't picked one). The brain prompt uses
+     * this to make the agency offer ("I set this for you, change anytime")
+     * explicit instead of implicit.
+     */
+    is_system_seeded?: boolean;
   };
   /** Shipping rationale for the LLM — why this was picked. Not shown to user verbatim. */
   reason: string;
