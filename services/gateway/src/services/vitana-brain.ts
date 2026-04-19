@@ -839,6 +839,19 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     lines.push(`Community signals: ${csParts.join('; ')}`);
   }
 
+  // Phase D (VTID-01934) — taste & preference signals. When stated interests
+  // or goals exist, prefer suggestions that match them. When no interests
+  // known yet, gently discover them through conversation rather than guessing.
+  if (cs.memory_interests.length > 0 || cs.memory_goals.length > 0) {
+    lines.push(
+      'Taste rule: when suggesting ANYTHING (activities, topics, meetups, content), prefer items that align with the user\'s stated interests/goals above. When you dismiss a candidate, note WHY — "that doesn\'t match your interest in X".',
+    );
+  } else {
+    lines.push(
+      'Taste rule: no interests/goals extracted yet. Don\'t guess — when the user mentions something they enjoy, care about, or want to avoid, acknowledge it naturally so future conversations can reflect it.',
+    );
+  }
+
   // Recent activity — what's pending or just happened
   const ra = awareness.recent_activity;
   const raParts: string[] = [];
