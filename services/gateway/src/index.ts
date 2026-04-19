@@ -129,6 +129,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverFeedRouter = require('./routes/discover-feed').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
+  const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -621,6 +623,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });

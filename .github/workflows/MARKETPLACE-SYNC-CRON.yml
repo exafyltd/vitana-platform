@@ -1,0 +1,85 @@
+name: Marketplace Sync Cron
+
+# Runs the marketplace ingestion (Shopify + CJ) against every configured
+# merchant once a day. Calls the gateway's scheduler-authed endpoint so we
+# don't need a service-account JWT.
+#
+# Requires repo secrets:
+#   MARKETPLACE_SYNC_SECRET — shared secret also set on the gateway's
+#                             Cloud Run env. Rotate in both places.
+#   GATEWAY_URL             — full base URL, e.g.
+#                             https://gateway-q74ibpv6ia-uc.a.run.app
+#
+# Can be triggered manually via workflow_dispatch with optional `network`
+# input (shopify / cj / all). Default is `all`.
+
+on:
+  schedule:
+    # Daily at 03:00 UTC — low-traffic window. Adjust as needed.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Which source to sync (shopify / cj / all)'
+        required: false
+        default: 'all'
+        type: choice
+        options: [ all, shopify, cj ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketplace-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Trigger sync
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+          SECRET: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
+          NETWORK: ${{ inputs.network || 'all' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GATEWAY_URL:-}" ] || [ -z "${SECRET:-}" ]; then
+            echo "::error::GATEWAY_URL or MARKETPLACE_SYNC_SECRET secret missing"
+            exit 1
+          fi
+          echo "Triggering marketplace sync: network=$NETWORK"
+          RESP=$(curl -sS -o /tmp/sync-response.json -w "HTTP %{http_code}" \
+            -X POST "$GATEWAY_URL/api/v1/internal/marketplace/sync/$NETWORK" \
+            -H "X-Scheduler-Secret: $SECRET" \
+            -H 'Content-Type: application/json' \
+            --max-time 900 \
+            --retry 2 --retry-delay 30 \
+            -d '{}')
+          echo "$RESP"
+          cat /tmp/sync-response.json | jq . || cat /tmp/sync-response.json
+          # Fail if HTTP != 200 OR ok != true
+          if ! grep -q '"HTTP 200"' <<< "$RESP"; then
+            echo "::error::non-200 response"; exit 1
+          fi
+          OK=$(jq -r '.ok // false' /tmp/sync-response.json)
+          if [ "$OK" != "true" ]; then
+            echo "::error::sync returned ok=false"
+            exit 1
+          fi
+
+          # Surface totals so the workflow run page shows them at a glance
+          {
+            echo "## Marketplace sync — $NETWORK"
+            if [ "$NETWORK" = "all" ]; then
+              echo "### Shopify"
+              jq -r '.result.shopify.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+              echo "### CJ"
+              jq -r '.result.cj.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+            else
+              jq -r '.result.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+            fi
+            echo ""
+            echo "**Duration:** $(jq -r '.duration_ms' /tmp/sync-response.json)ms"
+          } >> "$GITHUB_STEP_SUMMARY"
