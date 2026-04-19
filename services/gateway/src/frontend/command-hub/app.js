@@ -34545,6 +34545,12 @@ if (!state.devAutopilot) {
         // safety-gate rejections (high risk, depth cap, etc.) don't only live
         // in a fleeting toast that's easy to miss.
         actionErrors: {},
+        // Per-finding conversation log (user feedback + plan versions) for
+        // a visible planning dialog history.
+        chats: {},
+        // Active setInterval ids keyed by findingId, so the generation
+        // progress card re-renders every second with live elapsed + %.
+        generationTimers: {},
     };
 }
 
@@ -34993,14 +34999,23 @@ function renderDevAutopilotPlanBlock(findingId) {
     var block = document.createElement('div');
     block.style.cssText = 'margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius: 4px;';
 
+    // Conversation history above any current state (user feedback messages
+    // + agent plan / error markers in chronological order).
+    var chats = (state.devAutopilot.chats || {})[findingId] || [];
+    if (chats.length > 0) {
+        block.appendChild(renderDevAutopilotChatHistory(findingId, chats));
+    }
+
     if (slot.loading) {
-        block.textContent = 'Loading plan…';
-        block.style.color = 'var(--text-secondary, #888)';
+        var loadingEl = document.createElement('div');
+        loadingEl.style.cssText = 'color: var(--text-secondary, #888); padding: 8px 0;';
+        loadingEl.textContent = 'Loading plan…';
+        block.appendChild(loadingEl);
         return block;
     }
 
     if (slot.generating) {
-        block.innerHTML = '<div style="color: var(--text-secondary, #888); margin-bottom: 6px;">Generating plan via Managed Agent…</div><div style="font-size: 11px; color: var(--text-secondary, #666);">This usually takes under 2 minutes. You can leave this card expanded and come back.</div>';
+        block.appendChild(renderDevAutopilotGenerationProgress(findingId, slot));
         return block;
     }
 
@@ -35175,24 +35190,90 @@ function devAutopilotContinuePlanning(findingId, feedback) {
         return;
     }
     devAutopilotMarkFlight(key, true);
+
+    // Start the visible "generating…" state — see renderDevAutopilotPlanBlock
+    // for the progress card. We:
+    //   1. Capture the feedback into a chat-style history (state.devAutopilot.chats)
+    //      so the user can see what they sent — then immediately clear the textarea.
+    //   2. Start a wall-clock timer that re-renders every second so the elapsed
+    //      seconds + simulated progress bar stay live.
+    var slot = state.devAutopilot.plans[findingId] || { versions: [] };
+    var nextVersion = (slot.versions && slot.versions.length > 0
+        ? Math.max.apply(null, slot.versions.map(function (v) { return v.version; })) + 1
+        : 2);
+    if (!state.devAutopilot.chats) state.devAutopilot.chats = {};
+    if (!state.devAutopilot.chats[findingId]) state.devAutopilot.chats[findingId] = [];
+    state.devAutopilot.chats[findingId].push({
+        kind: 'user_feedback',
+        text: feedback.trim(),
+        target_version: nextVersion,
+        ts: Date.now(),
+    });
+    slot.generating = true;
+    slot.generatingFor = nextVersion;
+    slot.generatingStartedAt = Date.now();
+    state.devAutopilot.plans[findingId] = slot;
+    state.devAutopilot.continuePlanningId = null;
+    state.devAutopilot.continuePlanningDraft = '';
+
+    if (state.devAutopilot.generationTimers && state.devAutopilot.generationTimers[findingId]) {
+        clearInterval(state.devAutopilot.generationTimers[findingId]);
+    }
+    if (!state.devAutopilot.generationTimers) state.devAutopilot.generationTimers = {};
+    state.devAutopilot.generationTimers[findingId] = setInterval(function () {
+        // Triggers the progress bar to advance + the elapsed counter to tick.
+        if (state.activeTab === 'dev-autopilot' && state.activeModule === 'command-hub') {
+            renderApp();
+        }
+    }, 1000);
     renderApp();
+
     devAutopilotApi('/findings/' + findingId + '/continue-planning', 'POST', { feedback: feedback.trim() }).then(function (data) {
         devAutopilotMarkFlight(key, false);
+        if (state.devAutopilot.generationTimers[findingId]) {
+            clearInterval(state.devAutopilot.generationTimers[findingId]);
+            delete state.devAutopilot.generationTimers[findingId];
+        }
+        var slot2 = state.devAutopilot.plans[findingId] || { versions: [] };
+        slot2.generating = false;
+        delete slot2.generatingFor;
+        delete slot2.generatingStartedAt;
+
         if (data.ok && data.plan) {
-            // Append the new plan version to the local cache and switch to it
-            var slot = state.devAutopilot.plans[findingId] || { versions: [] };
-            slot.versions = (slot.versions || []).concat([data.plan]);
-            slot.activeVersion = data.plan.version;
-            state.devAutopilot.plans[findingId] = slot;
-            state.devAutopilot.continuePlanningId = null;
-            state.devAutopilot.continuePlanningDraft = '';
+            slot2.versions = (slot2.versions || []).concat([data.plan]);
+            slot2.activeVersion = data.plan.version;
+            state.devAutopilot.chats[findingId].push({
+                kind: 'agent_plan',
+                version: data.plan.version,
+                ts: Date.now(),
+            });
             showToast('Plan v' + data.plan.version + ' generated', 'success');
         } else {
-            showToast(data.error || 'Continue planning failed', 'error');
+            var emsg = data.error || 'Continue planning failed';
+            state.devAutopilot.chats[findingId].push({
+                kind: 'agent_error',
+                text: emsg,
+                ts: Date.now(),
+            });
+            showToast(emsg, 'error');
         }
+        state.devAutopilot.plans[findingId] = slot2;
+        renderApp();
     }).catch(function (err) {
         devAutopilotMarkFlight(key, false);
-        showToast('Network error: ' + (err.message || err), 'error');
+        if (state.devAutopilot.generationTimers[findingId]) {
+            clearInterval(state.devAutopilot.generationTimers[findingId]);
+            delete state.devAutopilot.generationTimers[findingId];
+        }
+        var slot3 = state.devAutopilot.plans[findingId] || { versions: [] };
+        slot3.generating = false;
+        delete slot3.generatingFor;
+        delete slot3.generatingStartedAt;
+        var nmsg = 'Network error: ' + (err.message || err);
+        state.devAutopilot.chats[findingId].push({ kind: 'agent_error', text: nmsg, ts: Date.now() });
+        state.devAutopilot.plans[findingId] = slot3;
+        showToast(nmsg, 'error');
+        renderApp();
     });
 }
 
@@ -35655,6 +35736,122 @@ function renderDevAutopilotLineageView(execId) {
     });
 
     return box;
+}
+
+// Visible "agent is generating…" progress card. Backend Managed Agent
+// sessions have no real progress event stream, so we drive the bar from
+// wall-clock time against an expected duration. Stage labels are heuristic
+// — they convey "the agent is in this phase right now" not literal truth.
+function renderDevAutopilotGenerationProgress(findingId, slot) {
+    var box = document.createElement('div');
+    box.style.cssText = 'margin: 10px 0; padding: 14px 16px; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.35); border-radius: 6px;';
+
+    var elapsedMs = Date.now() - (slot.generatingStartedAt || Date.now());
+    var elapsedSec = Math.floor(elapsedMs / 1000);
+    // Expected end-to-end planning time is ~150s (Opus 4.6 + repo read +
+    // structured plan). Cap progress at 95% so we never claim 100% before
+    // the actual response lands.
+    var expectedSec = 150;
+    var pct = Math.min(95, Math.round((elapsedSec / expectedSec) * 100));
+
+    var stage;
+    if (elapsedSec < 8) stage = 'Submitting prompt to Opus 4.6 agent…';
+    else if (elapsedSec < 25) stage = 'Agent reading the repository…';
+    else if (elapsedSec < 60) stage = 'Agent analyzing the file structure…';
+    else if (elapsedSec < 120) stage = 'Agent drafting the structured plan…';
+    else if (elapsedSec < 180) stage = 'Agent finalizing — writing sections…';
+    else if (elapsedSec < 300) stage = 'Still working — long file or deep analysis…';
+    else stage = 'Taking longer than usual — agent may be reading more than expected.';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px;';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight: 600; font-size: 14px; color: #3b82f6; display: flex; align-items: center; gap: 8px;';
+    var spinner = document.createElement('span');
+    spinner.style.cssText = 'display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(59,130,246,0.25); border-top-color: #3b82f6; border-radius: 50%; animation: dev-autopilot-spin 0.8s linear infinite;';
+    title.appendChild(spinner);
+    var titleText = document.createElement('span');
+    titleText.textContent = 'Generating plan v' + (slot.generatingFor || '?') + '…';
+    title.appendChild(titleText);
+    header.appendChild(title);
+
+    var elapsedEl = document.createElement('div');
+    elapsedEl.style.cssText = 'font-family: monospace; font-size: 12px; color: var(--text-secondary, #aaa);';
+    var mins = Math.floor(elapsedSec / 60);
+    var secs = elapsedSec % 60;
+    elapsedEl.textContent = mins + 'm ' + (secs < 10 ? '0' + secs : secs) + 's elapsed';
+    header.appendChild(elapsedEl);
+    box.appendChild(header);
+
+    var stageEl = document.createElement('div');
+    stageEl.style.cssText = 'font-size: 12px; color: var(--text-color, #ddd); margin-bottom: 10px;';
+    stageEl.textContent = stage;
+    box.appendChild(stageEl);
+
+    var barOuter = document.createElement('div');
+    barOuter.style.cssText = 'width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;';
+    var barInner = document.createElement('div');
+    barInner.style.cssText = 'height: 100%; width: ' + pct + '%; background: linear-gradient(90deg, #3b82f6 0%, #22c55e 100%); transition: width 0.5s linear; border-radius: 3px;';
+    barOuter.appendChild(barInner);
+    box.appendChild(barOuter);
+
+    var hintEl = document.createElement('div');
+    hintEl.style.cssText = 'margin-top: 8px; font-size: 11px; color: var(--text-secondary, #888);';
+    hintEl.textContent = pct + '% (estimated). You can switch tabs and come back — generation runs in the background.';
+    box.appendChild(hintEl);
+
+    // Inject the keyframes once. Idempotent.
+    if (!document.getElementById('dev-autopilot-spin-style')) {
+        var style = document.createElement('style');
+        style.id = 'dev-autopilot-spin-style';
+        style.textContent = '@keyframes dev-autopilot-spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+    }
+
+    return box;
+}
+
+// Conversation log: shows the user's feedback messages and which plan
+// version the agent produced in response, so the supervisor can see the
+// back-and-forth that produced the active plan.
+function renderDevAutopilotChatHistory(findingId, chats) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-color, rgba(255,255,255,0.08));';
+
+    var heading = document.createElement('div');
+    heading.style.cssText = 'font-size: 11px; color: var(--text-secondary, #888); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;';
+    heading.textContent = 'Conversation (' + chats.length + ')';
+    wrap.appendChild(heading);
+
+    chats.forEach(function (c) {
+        var bubble = document.createElement('div');
+        var color, label;
+        if (c.kind === 'user_feedback') {
+            color = '#3b82f6';
+            label = '▸ You · for v' + (c.target_version || '?');
+        } else if (c.kind === 'agent_plan') {
+            color = '#22c55e';
+            label = '✓ Opus 4.6 · plan v' + c.version + ' produced';
+        } else {
+            color = '#ef4444';
+            label = '✗ Opus 4.6 · error';
+        }
+        bubble.style.cssText = 'margin-bottom: 6px; padding: 6px 10px; background: rgba(255,255,255,0.02); border-left: 2px solid ' + color + '; border-radius: 0 4px 4px 0; font-size: 12px;';
+        var labelEl = document.createElement('div');
+        labelEl.style.cssText = 'color: ' + color + '; font-size: 10px; text-transform: uppercase; margin-bottom: 2px;';
+        var ago = Math.floor((Date.now() - c.ts) / 1000);
+        var agoText = ago < 60 ? ago + 's ago' : Math.floor(ago / 60) + 'm ago';
+        labelEl.textContent = label + ' · ' + agoText;
+        bubble.appendChild(labelEl);
+        if (c.text) {
+            var textEl = document.createElement('div');
+            textEl.style.cssText = 'color: var(--text-color, #ddd); white-space: pre-wrap; line-height: 1.4;';
+            textEl.textContent = c.text;
+            bubble.appendChild(textEl);
+        }
+        wrap.appendChild(bubble);
+    });
+    return wrap;
 }
 
 function devAutopilotEscape(s) {
