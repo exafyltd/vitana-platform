@@ -349,6 +349,98 @@ router.get('/:provider/profile-summary', async (req: Request, res: Response) => 
 });
 
 // =============================================================================
+// VTID-01928: GET /google/verify — functional health check of the stored
+// Google OAuth token. Hits Gmail profile, Calendar list, Contacts count and
+// YouTube channel in parallel with the user's access_token, returns a compact
+// summary per service. Used by the Manage button on Connected Apps to prove
+// the connection actually works against Google — not just that a DB row exists.
+// =============================================================================
+router.get('/google/verify', async (req: Request, res: Response) => {
+  const user = extractUserFromJwt(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supabase = await getServiceClient();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
+
+  const { data: conn } = await supabase
+    .from('social_connections')
+    .select('access_token, refresh_token, token_expires_at, scopes, provider_username, connected_at')
+    .eq('user_id', user.userId)
+    .eq('provider', 'google')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!conn || !conn.access_token) {
+    return res.status(404).json({ ok: false, error: 'No active Google connection for this user' });
+  }
+
+  const token = conn.access_token as string;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Run all four probes in parallel — each one's failure is isolated.
+  const [gmailR, calR, contactsR, ytR] = await Promise.allSettled([
+    fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers }),
+    fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=10', { headers }),
+    fetch('https://people.googleapis.com/v1/people/me/connections?personFields=names&pageSize=1', { headers }),
+    fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', { headers }),
+  ]);
+
+  type ProbeResult = { ok: boolean; status?: number; data?: any; error?: string };
+
+  const normalize = async (r: PromiseSettledResult<globalThis.Response>): Promise<ProbeResult> => {
+    if (r.status === 'rejected') return { ok: false, error: String(r.reason) };
+    const resp = r.value;
+    let body: any = null;
+    try { body = await resp.json(); } catch { /* noop */ }
+    if (!resp.ok) {
+      return { ok: false, status: resp.status, error: body?.error?.message ?? resp.statusText };
+    }
+    return { ok: true, status: resp.status, data: body };
+  };
+
+  const [gmail, cal, contacts, yt] = await Promise.all([
+    normalize(gmailR), normalize(calR), normalize(contactsR), normalize(ytR),
+  ]);
+
+  return res.json({
+    ok: true,
+    connection: {
+      email: conn.provider_username,
+      connected_at: conn.connected_at,
+      token_expires_at: conn.token_expires_at,
+      scopes: conn.scopes,
+      has_refresh_token: Boolean(conn.refresh_token),
+    },
+    probes: {
+      gmail: gmail.ok ? {
+        ok: true,
+        email: gmail.data?.emailAddress,
+        messages_total: gmail.data?.messagesTotal,
+        threads_total: gmail.data?.threadsTotal,
+      } : { ok: false, status: gmail.status, error: gmail.error },
+
+      calendar: cal.ok ? {
+        ok: true,
+        calendars: (cal.data?.items ?? []).length,
+        primary: (cal.data?.items ?? []).find((c: any) => c.primary)?.summary ?? null,
+      } : { ok: false, status: cal.status, error: cal.error },
+
+      contacts: contacts.ok ? {
+        ok: true,
+        total_people: contacts.data?.totalPeople ?? contacts.data?.totalItems ?? null,
+      } : { ok: false, status: contacts.status, error: contacts.error },
+
+      youtube: yt.ok ? {
+        ok: true,
+        channel_title: yt.data?.items?.[0]?.snippet?.title ?? null,
+        subscriber_count: yt.data?.items?.[0]?.statistics?.subscriberCount ?? null,
+        has_channel: Array.isArray(yt.data?.items) && yt.data.items.length > 0,
+      } : { ok: false, status: yt.status, error: yt.error },
+    },
+  });
+});
+
+// =============================================================================
 // Health
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {
