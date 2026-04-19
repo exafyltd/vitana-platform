@@ -1,0 +1,58 @@
+name: VTID-02409 Bootstrap (ledger + speeches schema + exec-deploy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/VTID-02409-BOOTSTRAP.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
+
+      - name: Register VTID-02409 in vtid_ledger
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260419094000_vtid_02409_register_ledger.sql"
+
+      - name: Apply tenant_assistant_speeches schema
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260418060000_tenant_assistant_speeches.sql"
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+
+      - name: Dispatch EXEC-DEPLOY for gateway
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "EXEC-DEPLOY.yml",
+              ref: "main",
+              inputs: {
+                vtid: "VTID-02409",
+                service: "gateway",
+                environment: "dev",
+                health_path: "/alive",
+                initiator: "agent"
+              }
+            });
+            core.info("Dispatched EXEC-DEPLOY.yml for VTID-02409 service=gateway");
