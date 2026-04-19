@@ -2588,6 +2588,8 @@ const NAVIGATION_CONFIG = [
             { "key": "tenants", "path": "/command-hub/admin/tenants/" },
             { "key": "content-moderation", "path": "/command-hub/admin/content-moderation/" },
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
+            { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
+            { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
             { "key": "analytics", "path": "/command-hub/admin/analytics/" }
         ]
     },
