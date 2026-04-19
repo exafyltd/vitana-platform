@@ -589,6 +589,13 @@ export type CicdEventType =
   | 'brain.turn.error'
   | 'brain.context.assembled'
   | 'brain.tool.executed'
+  // PROACTIVE-GUIDE: Phase 0.5 opener + dismissal honor events
+  | 'guide.opener.shown'
+  | 'guide.opener.suppressed_by_pause'
+  | 'guide.opener.no_candidate'
+  | 'guide.dismissal.pause_created'
+  | 'guide.dismissal.pause_cleared'
+  | 'guide.flag.disabled'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

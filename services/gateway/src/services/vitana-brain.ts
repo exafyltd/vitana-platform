@@ -37,6 +37,17 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { ConversationChannel, ContextPack } from '../types/conversation';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { emitOasisEvent } from './oasis-event-service';
+// Proactive Guide Phase 0.5
+import { getSystemControl } from './system-controls-service';
+import {
+  pickOpenerCandidate,
+  PAUSE_PROACTIVE_GUIDANCE_TOOL,
+  CLEAR_PROACTIVE_PAUSES_TOOL,
+  executePauseProactiveGuidance,
+  executeClearProactivePauses,
+  emitGuideTelemetry,
+  type OpenerCandidate,
+} from './guide';
 
 // =============================================================================
 // Types
@@ -327,9 +338,22 @@ export async function buildBrainSystemInstruction(input: {
     ? (ucConfig.orb_instruction || 'You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.')
     : (ucConfig.operator_instruction || 'You are Vitana, an intelligent assistant. You can be detailed and use formatting when helpful.');
 
+  // -------------------------------------------------------------------------
+  // Proactive Guide Phase 0.5 — opener + dismissal honor rules
+  // Gated on `vitana_proactive_opener_enabled` (default FALSE).
+  // Always appends the Silent Honor Rules when guide is on so the LLM knows
+  // it has the dismissal tools and how to behave when called.
+  // -------------------------------------------------------------------------
+  const proactiveGuideBlock = await buildProactiveGuideBlock({
+    user_id: input.user_id,
+    role: input.role,
+    channel: input.channel,
+  });
+
   const instruction = `${baseInstruction}
 ${languageDirective}
 ${contextForLLM}
+${proactiveGuideBlock}
 
 Current conversation channel: ${input.channel}
 User's role: ${input.role}
@@ -339,9 +363,144 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 - ${input.channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}`;
 
   const latencyMs = Date.now() - startTime;
-  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context})`);
+  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'})`);
 
   return { instruction, contextPack };
+}
+
+// =============================================================================
+// Proactive Guide system-prompt block (Phase 0.5)
+// =============================================================================
+
+/**
+ * Map an arbitrary role string to the three Guide roles.
+ * Defaults to 'community' for anything unrecognized.
+ */
+function mapRoleForGuide(role: string): 'community' | 'developer' | 'admin' {
+  const r = (role || '').toLowerCase();
+  if (r === 'developer' || r === 'dev') return 'developer';
+  if (r === 'admin' || r === 'super_admin' || r === 'superadmin') return 'admin';
+  return 'community';
+}
+
+/**
+ * Build the Proactive Guide block to append to the system instruction.
+ * Returns empty string when guide is disabled, so callers can concatenate freely.
+ */
+export async function buildProactiveGuideBlock(input: {
+  user_id: string;
+  role: string;
+  channel: ConversationChannel;
+}): Promise<string> {
+  const flag = await getSystemControl('vitana_proactive_opener_enabled').catch(() => null);
+  if (!flag || !flag.enabled) {
+    return '';
+  }
+
+  const channel: 'voice' | 'text' = input.channel === 'orb' ? 'voice' : 'text';
+  const guideRole = mapRoleForGuide(input.role);
+
+  // Best-effort opener fetch — never block instruction build on this.
+  let candidate: OpenerCandidate | null = null;
+  let suppressedByPause = false;
+  try {
+    const sel = await pickOpenerCandidate({
+      user_id: input.user_id,
+      active_role: guideRole,
+      channel,
+    });
+    candidate = sel.candidate;
+    suppressedByPause = sel.suppressed_by_pause;
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} pickOpenerCandidate failed:`, err?.message);
+  }
+
+  // Telemetry — fire-and-forget
+  if (candidate) {
+    emitGuideTelemetry('guide.opener.shown', {
+      user_id: input.user_id,
+      channel,
+      role: guideRole,
+      nudge_key: candidate.nudge_key,
+      kind: candidate.kind,
+      goal: candidate.goal_link?.primary_goal ?? null,
+    }).catch(() => {});
+  } else if (suppressedByPause) {
+    emitGuideTelemetry('guide.opener.suppressed_by_pause', {
+      user_id: input.user_id,
+      channel,
+      role: guideRole,
+    }).catch(() => {});
+  } else {
+    emitGuideTelemetry('guide.opener.no_candidate', {
+      user_id: input.user_id,
+      channel,
+      role: guideRole,
+    }).catch(() => {});
+  }
+
+  // Always include the rules — even with no candidate today, the LLM still
+  // needs to know how to honor dismissals if the user volunteers one.
+  const rulesBlock = `
+=== PROACTIVE OPENER RULES (Phase 0.5) ===
+
+Vitanaland is a longevity platform — its mission is to help people improve
+quality of life and extend lifespan. You are the proactive guide. When the
+moment is right, lead — don't wait to be asked.
+
+WHEN TO OPEN PROACTIVELY:
+- A new conversation thread is starting, OR the user has been silent for a
+  while AND a proactive opener candidate is available below.
+- Maximum 1 unsolicited suggestion per turn.
+- Frame every nudge through the user's active Life Compass goal.
+- Tone: inspirational + educational, never pushy. Offer agency: "I can change
+  this anytime if you tell me to."
+
+SILENT HONOR RULES (non-negotiable):
+- If the user says "skip it", "not that one", "next" → call the
+  pause_proactive_guidance tool with scope="nudge_key" and the candidate's
+  nudge_key, duration_minutes=1440 (24h). Then pivot naturally.
+- If the user says "not today", "quiet today", "give me space" → call
+  pause_proactive_guidance with scope="all" and an appropriate
+  duration_minutes (until 06:00 next day, or 2880 for 48h).
+- If the user says "not this week", "ask me Monday" → scope="all",
+  duration_minutes matching what they asked.
+- If the user says "don't mention X again" → scope="category",
+  scope_value=the topic, duration_minutes=129600 (90d).
+- If the user says "ok you can talk again", "go ahead", "resume" → call
+  clear_proactive_pauses.
+- After ANY of these, respond with at most a brief acknowledgement
+  ("got it") and pivot. Do NOT apologize, do NOT say "I'll stop now",
+  do NOT make a thing of it. Do NOT re-offer the same suggestion within
+  the pause window.
+
+GRACEFUL RETURN:
+- After a pause expires, do not dump a backlog. At most ONE gentle check-in
+  per session: "Welcome back — want to hear what I noticed, or pick up
+  where you were?" If the user declines, stay quiet for the rest of the
+  session.`;
+
+  if (!candidate) {
+    return rulesBlock;
+  }
+
+  const goalLine = candidate.goal_link
+    ? `Toward the user's active Life Compass goal: "${candidate.goal_link.primary_goal}" (category: ${candidate.goal_link.category})`
+    : 'No active Life Compass goal set — gently invite the user to pick one if natural.';
+
+  const candidateBlock = `
+
+=== PROACTIVE OPENER CANDIDATE ===
+Kind: ${candidate.kind}
+nudge_key: ${candidate.nudge_key}      ← use exactly this string if calling pause_proactive_guidance with scope="nudge_key"
+Title: ${candidate.title}${candidate.subline ? `\nDetail: ${candidate.subline}` : ''}
+Why this was selected: ${candidate.reason}
+${goalLine}
+
+Use this candidate to open the conversation if appropriate per the rules above.
+Always tie it back to the goal. If the user declines, honor it via the dismissal tools.`;
+
+  return rulesBlock + candidateBlock;
 }
 
 // =============================================================================
@@ -372,6 +531,11 @@ export function buildBrainToolDefinitions(role: string): object[] {
         required: ['query'],
       },
     },
+    // Proactive Guide Phase 0.5 — dismissal honor tools.
+    // Always available; the LLM only calls them when the system prompt's
+    // Proactive Opener Rules are present (i.e., flag is on).
+    PAUSE_PROACTIVE_GUIDANCE_TOOL,
+    CLEAR_PROACTIVE_PAUSES_TOOL,
   ];
 
   // Merge: registry tools + ORB tools (avoid duplicates)
@@ -443,6 +607,39 @@ export async function executeBrainTool(
 
         console.log(`${LOG_PREFIX} search_calendar: ${today.length} today, ${upcoming.length} upcoming, ${gaps.length} gaps (${Date.now() - startTime}ms)`);
         return { success: true, result: formatted || 'Your calendar is currently empty.' };
+      }
+
+      // Proactive Guide Phase 0.5 — dismissal honor tools
+      case 'pause_proactive_guidance': {
+        const channel: 'voice' | 'text' = 'voice'; // brain executor is currently used by ORB
+        const result = await executePauseProactiveGuidance(
+          {
+            scope: (args.scope as any) || 'all',
+            scope_value: args.scope_value as string | undefined,
+            duration_minutes: args.duration_minutes as number | undefined,
+            reason: args.reason as string | undefined,
+          },
+          { user_id: context.user_id, channel },
+        );
+        if (!result.success) {
+          return { success: false, result: `pause failed: ${result.error}`, error: result.error };
+        }
+        const until = new Date(result.paused_until!);
+        return {
+          success: true,
+          result: `Paused (scope=${result.scope}${result.scope_value ? `:${result.scope_value}` : ''}) until ${until.toISOString()}.`,
+        };
+      }
+
+      case 'clear_proactive_pauses': {
+        const result = await executeClearProactivePauses({ user_id: context.user_id });
+        if (!result.success) {
+          return { success: false, result: `clear failed: ${result.error}`, error: result.error };
+        }
+        return {
+          success: true,
+          result: `Cleared ${result.cleared_count} active pause${result.cleared_count === 1 ? '' : 's'}.`,
+        };
       }
 
       default: {
