@@ -276,6 +276,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { acceptRouter: invitationAcceptRouter } = require('./routes/tenant-admin/invitations');
   // Batch 1.B2: Tenant Assistant Config — per-tenant AI personality overrides
   const tenantAssistantConfigRouter = require('./routes/tenant-admin/assistant-config').default;
+  // Phase 1: Tenant Assistant Speeches — per-tenant overrides for named speeches
+  const tenantAssistantSpeechesRouter = require('./routes/tenant-admin/assistant-speeches').default;
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, opt-outs, search
   const tenantKnowledgeRouter = require('./routes/tenant-admin/knowledge').default;
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
@@ -715,6 +717,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Batch 1.B1: Tenant Invitations — per-tenant invite/accept flow
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/invitations', tenantInvitationsRouter, { owner: 'tenant-invitations' });
   mountRouterSync(app, '/api/v1/admin/invitations', invitationAcceptRouter, { owner: 'invitation-accept' });
+  // Phase 1: Tenant Assistant Speeches — per-tenant overrides for named speeches
+  // (Mounted BEFORE the assistant-config router so the more-specific /assistant/speeches
+  // prefix is matched first and not swallowed by assistant-config's /:surfaceKey handler.)
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/assistant/speeches', tenantAssistantSpeechesRouter, { owner: 'tenant-assistant-speeches' });
   // Batch 1.B2: Tenant Assistant Config — per-tenant AI personality overrides
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/assistant', tenantAssistantConfigRouter, { owner: 'tenant-assistant-config' });
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, search, opt-outs
