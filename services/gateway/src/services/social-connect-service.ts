@@ -13,7 +13,7 @@
  * 1. Frontend calls GET /api/v1/social/connect/:provider → returns OAuth redirect URL
  * 2. User authorizes on provider's site
  * 3. Provider redirects to callback URL with auth code
- * 4. Backend exchanges code for tokens via POST /api/v1/social/callback/:provider
+ * 4. Backend exchanges code for tokens via POST /api/v1/social-accounts/callback/:provider
  * 5. Backend stores tokens and triggers profile enrichment
  */
 
@@ -147,7 +147,7 @@ export function getOAuthUrl(
     return { url: '', error: `${config.name} is not configured. Missing ${config.clientIdEnv}.` };
   }
 
-  const callbackUrl = `${GATEWAY_URL}/api/v1/social/callback/${provider}`;
+  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${provider}`;
   const state = Buffer.from(JSON.stringify({ userId, tenantId, provider })).toString('base64url');
 
   const params = new URLSearchParams({
@@ -213,7 +213,7 @@ export async function exchangeCodeForTokens(
     return { access_token: '', error: `Missing OAuth credentials for ${config.name}` };
   }
 
-  const callbackUrl = `${GATEWAY_URL}/api/v1/social/callback/${provider}`;
+  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${provider}`;
 
   try {
     const body: Record<string, string> = {
