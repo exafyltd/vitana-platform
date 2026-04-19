@@ -181,16 +181,17 @@ async function runFullCodebaseScan(basePath: string): Promise<void> {
 // Community User Daily Regeneration
 // =============================================================================
 
-// VTID-02200: Daily marketplace catalog sync (Shopify + CJ + future Amazon/Awin)
+// VTID-02200 / VTID-01930: Daily marketplace catalog sync — iterates the provider registry.
 async function runMarketplaceSync(): Promise<void> {
   console.log(`${LOG_PREFIX} Running daily marketplace catalog sync...`);
   try {
     const { runAllMarketplaceSync } = await import('../marketplace-sync');
     const result = await runAllMarketplaceSync('scheduler');
     state.lastMarketplaceRun = new Date();
-    console.log(
-      `${LOG_PREFIX} Marketplace sync done: shopify=${result.shopify.totals.inserted}+ cj=${result.cj.totals.inserted}+ in ${result.duration_ms}ms`
-    );
+    const summary = Object.entries(result.providers)
+      .map(([k, v]) => `${k}=${v.totals.inserted}+`)
+      .join(' ');
+    console.log(`${LOG_PREFIX} Marketplace sync done: ${summary} in ${result.duration_ms}ms`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`${LOG_PREFIX} Marketplace sync failed:`, message);
