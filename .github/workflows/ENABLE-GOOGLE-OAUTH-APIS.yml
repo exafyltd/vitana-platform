@@ -1,0 +1,34 @@
+name: Enable Google OAuth APIs
+on:
+  workflow_dispatch:
+
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enable APIs required by VTID-01928 Google connector
+        run: |
+          set -e
+          for api in gmail.googleapis.com calendar-json.googleapis.com people.googleapis.com youtube.googleapis.com; do
+            echo "Enabling $api..."
+            gcloud services enable "$api" --project=lovable-vitana-vers1
+          done
+          echo "Done. All four APIs requested enabled."
+
+      - name: List enabled state
+        run: |
+          gcloud services list --enabled --project=lovable-vitana-vers1 \
+            --filter="config.name:(gmail.googleapis.com OR calendar-json.googleapis.com OR people.googleapis.com OR youtube.googleapis.com)" \
+            --format='value(config.name)'
