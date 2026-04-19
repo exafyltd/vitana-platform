@@ -10763,7 +10763,55 @@ function renderAdminTenantsView() {
                 '<h4>Feature Flags</h4>' +
                 '<p class="admin-detail-note">Not configured — no feature flags table in database yet</p>' +
                 '</div>' +
+                '<div class="admin-detail-section" id="admin-tenant-ai-policy">' +
+                '<h4>AI Policy</h4>' +
+                '<div id="admin-tenant-ai-policy-body"><p class="admin-detail-note">Loading…</p></div>' +
+                '</div>' +
                 '</div>';
+
+            // VTID-02403: lazy-load AI policy for this tenant
+            (function(tenantSlug) {
+                if (!tenantSlug) return;
+                var headers = typeof buildContextHeaders === 'function' ? buildContextHeaders() : {};
+                fetch('/api/v1/admin/ai-assistants/policies/' + encodeURIComponent(tenantSlug), { headers: headers })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        var policies = (data && data.policies) || [];
+                        var body = document.getElementById('admin-tenant-ai-policy-body');
+                        if (!body) return;
+                        if (policies.length === 0) {
+                            body.innerHTML = '<p class="admin-detail-note">No AI provider policies configured for this tenant.</p>';
+                            return;
+                        }
+                        body.innerHTML = '';
+                        policies.forEach(function (p) {
+                            var row = document.createElement('div');
+                            row.className = 'admin-detail-field';
+                            var badgeClass = p.allowed ? 'admin-status-healthy' : 'admin-status-empty';
+                            var badgeLabel = p.allowed ? 'Allowed' : 'Disallowed';
+                            row.innerHTML = '<span class="admin-detail-value">' + escapeHtml(p.provider) + '</span>' +
+                                ' <span class="admin-status-badge ' + badgeClass + '">' + badgeLabel + '</span>' +
+                                ' <span class="admin-detail-note">cap $' + (p.cost_cap_usd_month || 0) + '/mo</span>';
+                            var editBtn = document.createElement('button');
+                            editBtn.type = 'button';
+                            editBtn.className = 'admin-detail-close-btn';
+                            editBtn.textContent = 'Edit';
+                            editBtn.style.marginLeft = '8px';
+                            editBtn.style.cursor = 'pointer';
+                            (function(providerId) {
+                                editBtn.addEventListener('click', function () {
+                                    openAiAssistantDrawer(providerId);
+                                });
+                            })(p.provider);
+                            row.appendChild(editBtn);
+                            body.appendChild(row);
+                        });
+                    })
+                    .catch(function () {
+                        var body = document.getElementById('admin-tenant-ai-policy-body');
+                        if (body) body.innerHTML = '<p class="admin-detail-note">Failed to load AI policy.</p>';
+                    });
+            })(selectedTenant.slug);
         }
     } else {
         rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#127970;</span><p>Select a tenant from the list to view details</p></div>';
@@ -30409,6 +30457,46 @@ function renderIntegrationsLlmProvidersView() {
         countBadge.className = 'infra-card__badge infra-card__badge--healthy';
         countBadge.textContent = models.length + ' model' + (models.length !== 1 ? 's' : '');
         hdr.appendChild(countBadge);
+
+        // VTID-02403: N connections badge for AI-assistant providers (chatgpt/claude)
+        // Use the 'connector_id' field on any model if present (augmented by /api/v1/llm/models)
+        var connectorId = null;
+        var totalConns = 0;
+        models.forEach(function (m) {
+            if (m.connector_id) {
+                connectorId = m.connector_id;
+                if (typeof m.user_connections_count === 'number') {
+                    totalConns = Math.max(totalConns, m.user_connections_count);
+                }
+            }
+        });
+        if (connectorId) {
+            var connsBadge = document.createElement('span');
+            connsBadge.className = 'infra-card__badge infra-card__badge--info';
+            connsBadge.style.marginLeft = '6px';
+            connsBadge.textContent = totalConns + ' connection' + (totalConns !== 1 ? 's' : '');
+            hdr.appendChild(connsBadge);
+
+            var manageBtn = document.createElement('button');
+            manageBtn.className = 'infra-card__manage-btn';
+            manageBtn.type = 'button';
+            manageBtn.textContent = 'Manage';
+            manageBtn.style.marginLeft = 'auto';
+            manageBtn.style.padding = '4px 10px';
+            manageBtn.style.borderRadius = '6px';
+            manageBtn.style.border = '1px solid rgba(255,255,255,0.16)';
+            manageBtn.style.background = 'rgba(255,255,255,0.06)';
+            manageBtn.style.color = 'inherit';
+            manageBtn.style.cursor = 'pointer';
+            manageBtn.style.fontSize = '0.75rem';
+            (function(provider) {
+                manageBtn.addEventListener('click', function () {
+                    openAiAssistantDrawer(provider);
+                });
+            })(connectorId);
+            hdr.appendChild(manageBtn);
+        }
+
         card.appendChild(hdr);
 
         // Models list
@@ -30455,6 +30543,236 @@ function renderIntegrationsLlmProvidersView() {
     container.appendChild(grid);
     autoAddLoadMore(container, 'integrationsLlm');
     return container;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-02403: AI Assistant admin drawer (ChatGPT / Claude)
+// ---------------------------------------------------------------------------
+function openAiAssistantDrawer(provider) {
+    // Remove any existing drawer
+    var existing = document.getElementById('ai-drawer-root');
+    if (existing) existing.remove();
+
+    var root = document.createElement('div');
+    root.id = 'ai-drawer-root';
+    root.className = 'ai-drawer-backdrop';
+
+    var panel = document.createElement('div');
+    panel.className = 'ai-drawer';
+
+    var header = document.createElement('div');
+    header.className = 'ai-drawer__header';
+    var title = document.createElement('h2');
+    title.textContent = provider === 'chatgpt' ? 'ChatGPT' : (provider === 'claude' ? 'Claude' : provider);
+    header.appendChild(title);
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '✕';
+    closeBtn.className = 'ai-drawer__close';
+    closeBtn.addEventListener('click', function () { root.remove(); });
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'ai-drawer__body';
+
+    // Sections
+    var catalogSection = document.createElement('section');
+    catalogSection.className = 'ai-drawer__section';
+    catalogSection.innerHTML = '<h3>Catalog</h3><div class="ai-drawer__catalog">Loading…</div>';
+    body.appendChild(catalogSection);
+
+    var policySection = document.createElement('section');
+    policySection.className = 'ai-drawer__section';
+    policySection.innerHTML = '<h3>Tenant Policy (Maxina)</h3><div class="ai-drawer__policy">Loading…</div>';
+    body.appendChild(policySection);
+
+    var connectionsSection = document.createElement('section');
+    connectionsSection.className = 'ai-drawer__section';
+    connectionsSection.innerHTML = '<h3>Active Connections</h3><div class="ai-drawer__connections">Loading…</div>';
+    body.appendChild(connectionsSection);
+
+    var logSection = document.createElement('section');
+    logSection.className = 'ai-drawer__section';
+    logSection.innerHTML = '<h3>Recent Consent Log</h3><div class="ai-drawer__log">Loading…</div>';
+    body.appendChild(logSection);
+
+    panel.appendChild(body);
+    root.appendChild(panel);
+    root.addEventListener('click', function (e) {
+        if (e.target === root) root.remove();
+    });
+    document.body.appendChild(root);
+
+    var headers = typeof buildContextHeaders === 'function' ? buildContextHeaders() : {};
+
+    // Catalog fetch
+    fetch('/api/v1/admin/ai-assistants/catalog', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var catalog = (data && data.catalog) || [];
+            var entry = catalog.filter(function (x) { return x.id === provider; })[0];
+            var target = catalogSection.querySelector('.ai-drawer__catalog');
+            if (!entry) { target.textContent = 'Not in catalog'; return; }
+            target.innerHTML = '';
+            var row1 = document.createElement('div');
+            row1.className = 'ai-drawer__row';
+            row1.innerHTML = '<label>Display name</label>';
+            var nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = entry.display_name || '';
+            row1.appendChild(nameInput);
+            target.appendChild(row1);
+
+            var row2 = document.createElement('div');
+            row2.className = 'ai-drawer__row';
+            row2.innerHTML = '<label>Enabled</label>';
+            var enabledToggle = document.createElement('input');
+            enabledToggle.type = 'checkbox';
+            enabledToggle.checked = !!entry.enabled;
+            row2.appendChild(enabledToggle);
+            target.appendChild(row2);
+
+            var saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.textContent = 'Save Catalog';
+            saveBtn.className = 'ai-drawer__btn';
+            saveBtn.addEventListener('click', function () {
+                saveBtn.disabled = true;
+                fetch('/api/v1/admin/ai-assistants/catalog/' + encodeURIComponent(provider), {
+                    method: 'PATCH',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+                    body: JSON.stringify({ display_name: nameInput.value, enabled: enabledToggle.checked }),
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function () { saveBtn.textContent = 'Saved'; })
+                    .catch(function () { saveBtn.textContent = 'Error'; })
+                    .finally(function () { setTimeout(function () { saveBtn.textContent = 'Save Catalog'; saveBtn.disabled = false; }, 2000); });
+            });
+            target.appendChild(saveBtn);
+        })
+        .catch(function () {
+            catalogSection.querySelector('.ai-drawer__catalog').textContent = 'Failed to load catalog';
+        });
+
+    // Policy fetch — hard-coded tenant slug 'maxina' for Phase 1
+    fetch('/api/v1/admin/ai-assistants/policies/maxina', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var policies = (data && data.policies) || [];
+            var policy = policies.filter(function (p) { return p.provider === provider; })[0];
+            var target = policySection.querySelector('.ai-drawer__policy');
+            target.innerHTML = '';
+
+            var row1 = document.createElement('div');
+            row1.className = 'ai-drawer__row';
+            row1.innerHTML = '<label>Allowed</label>';
+            var allowedToggle = document.createElement('input');
+            allowedToggle.type = 'checkbox';
+            allowedToggle.checked = policy ? !!policy.allowed : false;
+            row1.appendChild(allowedToggle);
+            target.appendChild(row1);
+
+            var row2 = document.createElement('div');
+            row2.className = 'ai-drawer__row';
+            row2.innerHTML = '<label>Allowed models (comma separated)</label>';
+            var modelsInput = document.createElement('input');
+            modelsInput.type = 'text';
+            modelsInput.value = (policy && policy.allowed_models ? policy.allowed_models.join(', ') : '');
+            modelsInput.style.width = '100%';
+            row2.appendChild(modelsInput);
+            target.appendChild(row2);
+
+            var row3 = document.createElement('div');
+            row3.className = 'ai-drawer__row';
+            row3.innerHTML = '<label>Cost cap USD / month</label>';
+            var capInput = document.createElement('input');
+            capInput.type = 'number';
+            capInput.value = policy && policy.cost_cap_usd_month != null ? String(policy.cost_cap_usd_month) : '50';
+            row3.appendChild(capInput);
+            target.appendChild(row3);
+
+            var saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.textContent = 'Save Policy';
+            saveBtn.className = 'ai-drawer__btn';
+            saveBtn.addEventListener('click', function () {
+                saveBtn.disabled = true;
+                var models = modelsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                fetch('/api/v1/admin/ai-assistants/policies/maxina', {
+                    method: 'PUT',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+                    body: JSON.stringify({
+                        provider: provider,
+                        allowed: allowedToggle.checked,
+                        allowed_models: models,
+                        cost_cap_usd_month: parseFloat(capInput.value) || 0,
+                    }),
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function () { saveBtn.textContent = 'Saved'; })
+                    .catch(function () { saveBtn.textContent = 'Error'; })
+                    .finally(function () { setTimeout(function () { saveBtn.textContent = 'Save Policy'; saveBtn.disabled = false; }, 2000); });
+            });
+            target.appendChild(saveBtn);
+        })
+        .catch(function () {
+            policySection.querySelector('.ai-drawer__policy').textContent = 'Failed to load policy';
+        });
+
+    // Connections fetch
+    fetch('/api/v1/admin/ai-assistants/connections?provider=' + encodeURIComponent(provider) + '&status=active&tenant=maxina', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var connections = (data && data.connections) || [];
+            var target = connectionsSection.querySelector('.ai-drawer__connections');
+            target.innerHTML = '';
+            if (connections.length === 0) {
+                target.textContent = 'No active connections';
+                return;
+            }
+            var table = document.createElement('table');
+            table.className = 'ai-drawer__table';
+            table.innerHTML = '<thead><tr><th>User</th><th>Key</th><th>Verified</th><th>Status</th></tr></thead>';
+            var tbody = document.createElement('tbody');
+            connections.forEach(function (c) {
+                var tr = document.createElement('tr');
+                var last4 = c.key_last4 || '';
+                var prefix = c.key_prefix || '';
+                tr.innerHTML =
+                    '<td>' + escapeHtml(String(c.user_id || '')).slice(0, 8) + '…</td>' +
+                    '<td>' + escapeHtml(prefix) + '•••' + escapeHtml(last4) + '</td>' +
+                    '<td>' + escapeHtml(String(c.last_verified_at || 'never')) + '</td>' +
+                    '<td>' + escapeHtml(String(c.last_verify_status || '—')) + '</td>';
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            target.appendChild(table);
+        })
+        .catch(function () {
+            connectionsSection.querySelector('.ai-drawer__connections').textContent = 'Failed to load connections';
+        });
+
+    // Consent log fetch
+    fetch('/api/v1/admin/ai-assistants/consent-log?tenant=maxina&provider=' + encodeURIComponent(provider) + '&limit=20', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var log = (data && data.log) || [];
+            var target = logSection.querySelector('.ai-drawer__log');
+            target.innerHTML = '';
+            if (log.length === 0) { target.textContent = 'No entries'; return; }
+            var ul = document.createElement('ul');
+            ul.className = 'ai-drawer__log-list';
+            log.forEach(function (e) {
+                var li = document.createElement('li');
+                li.textContent = (e.ts || '') + ' — ' + (e.action || '') + ' — user=' + String(e.user_id || '').slice(0, 8);
+                ul.appendChild(li);
+            });
+            target.appendChild(ul);
+        })
+        .catch(function () {
+            logSection.querySelector('.ai-drawer__log').textContent = 'Failed to load log';
+        });
 }
 
 function renderIntegrationsApisView() {

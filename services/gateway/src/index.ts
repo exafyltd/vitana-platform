@@ -146,6 +146,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const consentActionsRouter = require('./routes/consent-actions').default;
   const { registerAllActionExecutors } = require('./services/action-executors');
   registerAllActionExecutors();
+  // VTID-02403: Phase 1 — AI Assistants (ChatGPT + Claude) API-key connect routes
+  const aiAssistantsRouter = require('./routes/ai-assistants').default;
+  const adminAiIntegrationsRouter = require('./routes/admin/ai-integrations').default;
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
   const locationsRouter = require('./routes/locations').default;
   const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
@@ -631,6 +634,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // PR #661 removed the duplicate /waitlist route from wearablesRouter so this mount is safe.
   mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
   mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
+
+  // VTID-02403: AI Subscription Connect Phase 1 — user-keyed ChatGPT / Claude
+  mountRouterSync(app, '/api/v1/integrations/ai-assistants', aiAssistantsRouter, { owner: 'ai-assistants' });
+  mountRouterSync(app, '/api/v1/admin/ai-assistants', adminAiIntegrationsRouter, { owner: 'admin-ai-integrations' });
 
   // VTID-01091: Locations Memory + Discovery + Preferences
   mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });
