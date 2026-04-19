@@ -491,6 +491,26 @@ export async function buildProactiveGuideBlock(input: {
     console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
   }
 
+  // VTID-01931 Phase B: Read companion config from voice_live personality.
+  // Admins edit these via /admin/assistant/personality — changes propagate
+  // within ~30s without a deploy. Fallback hardcoded values if missing.
+  const voiceLiveCfg = getPersonalityConfigSync('voice_live') as Record<string, any>;
+  const forbiddenOpenings: string[] = Array.isArray(voiceLiveCfg.forbidden_openings)
+    ? voiceLiveCfg.forbidden_openings
+    : [
+        'What can I do for you?',
+        'How can I help you today?',
+        'How may I assist you?',
+        'Good morning. How are you?',
+      ];
+  const silentHonorMaxAck: string =
+    voiceLiveCfg.silent_honor?.max_acknowledgement || 'got it';
+  const silentHonorPivot: string =
+    voiceLiveCfg.silent_honor?.pivot_rule ||
+    'after dismissal, pivot naturally — no apology, no big deal';
+  const reEngageFirstForAbsent: boolean =
+    voiceLiveCfg.companion_behaviors?.re_engagement_first_for_absent !== false;
+
   // Best-effort opener fetch — never block instruction build on this.
   let candidate: OpenerCandidate | null = null;
   let suppressedByPause = false;
@@ -574,12 +594,7 @@ are the proactive companion. You lead — you do not wait to be asked.
 
 ABSOLUTE FORBIDDEN OPENINGS — NEVER say any of these as your first
 utterance of a session, in any language, in any phrasing:
-- "What can I do for you?"
-- "How can I help you today?"
-- "How may I assist you?"
-- "Good morning. How are you?" (alone, with no follow-up content)
-- Any variation that ends by asking the user what they want
-- Any short greeting that closes without offering direction
+${forbiddenOpenings.map((p) => `- "${p}"`).join('\n')}
 
 Those are passive — they ask the user what to do. The user — especially a
 new user — DOES NOT KNOW what you can do for them. It is YOUR job to lead.
@@ -684,9 +699,9 @@ SILENT HONOR RULES (non-negotiable):
 - If the user says "ok you can talk again", "go ahead", "resume" → call
   clear_proactive_pauses.
 - After ANY of these, respond with at most a brief acknowledgement
-  ("got it") and pivot. Do NOT apologize, do NOT say "I'll stop now",
-  do NOT make a thing of it. Do NOT re-offer the same suggestion within
-  the pause window.
+  ("${silentHonorMaxAck}") and ${silentHonorPivot}. Do NOT apologize, do NOT
+  say "I'll stop now", do NOT make a thing of it. Do NOT re-offer the same
+  suggestion within the pause window.
 
 GRACEFUL RETURN:
 - After a pause expires, do not dump a backlog. At most ONE gentle check-in
