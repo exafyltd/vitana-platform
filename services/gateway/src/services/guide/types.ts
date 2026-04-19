@@ -77,10 +77,18 @@ export interface UserAwareness {
     ended_at: string;
   }>;
 
+  // Phase E — D43 adaptation status (VTID-01935)
+  // Null when adaptation_plans table doesn't exist yet (D43 doesn't write
+  // there yet). When populated, shows pending vs applied plans.
+  adaptation_plans: {
+    pending_plans: number;
+    applied_plans: number;
+    last_applied_at: string | null;
+  } | null;
+
   // Reserved for future companion pillars (null until those phases ship)
   routines: null;
   tastes_preferences: null;
-  adaptation_plans: null;
 }
 
 // =============================================================================
