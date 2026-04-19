@@ -1,9 +1,81 @@
 /**
  * Proactive Guide — Shared Types
  *
- * Types for the Phase 0.5 thin proactive opener and dismissal honor system.
- * Plan: .claude/plans/lucent-stitching-sextant.md
+ * Types for the Phase 0.5 thin proactive opener, dismissal honor system,
+ * and Phase A awareness context (VTID-01927).
+ *
+ * Plans:
+ * - .claude/plans/lucent-stitching-sextant.md (broader Proactive Guide)
+ * - .claude/plans/majestic-sleeping-kahan.md (Companion Awareness — this work)
  */
+
+import type { LastInteraction } from './temporal-bucket';
+
+// =============================================================================
+// Awareness Context (Phase A — single source of truth for "who is on the line")
+// =============================================================================
+
+export type TenureStage = 'day0' | 'day1' | 'day3' | 'day7' | 'day14' | 'day30plus';
+
+export interface JourneyContext {
+  current_wave: { id: string; name: string; description: string } | null;
+  day_in_journey: number;
+  is_past_90_day: boolean;
+}
+
+export interface AwarenessGoal {
+  primary_goal: string;
+  category: string;
+  is_system_seeded: boolean;
+}
+
+export interface CommunityAwarenessSignals {
+  diary_streak_days: number;
+  connection_count: number;
+  group_count: number;
+  pending_match_count: number;
+  memory_goals: string[];
+  memory_interests: string[];
+}
+
+export interface RecentActivitySummary {
+  open_autopilot_recs: number;
+  activated_recs_last_7d: number;
+  dismissed_recs_last_7d: number;
+  overdue_calendar_count: number;
+  upcoming_calendar_24h_count: number;
+}
+
+/**
+ * The unified "who is this user, right now" picture the brain reads once
+ * per turn. Every signal that should influence how Vitana speaks lives here.
+ *
+ * Future companion pillars add their own fields (routines, tastes, adaptation,
+ * prior_session_themes) — they're typed as null today and populated by
+ * subsequent phases.
+ */
+export interface UserAwareness {
+  tenure: {
+    stage: TenureStage;
+    days_since_signup: number;
+    registered_at: string;
+  };
+  journey: JourneyContext;
+  goal: AwarenessGoal | null;
+  community_signals: CommunityAwarenessSignals;
+  recent_activity: RecentActivitySummary;
+  last_interaction: LastInteraction | null;
+
+  // Reserved for future companion pillars (null until those phases ship)
+  routines: null;
+  tastes_preferences: null;
+  adaptation_plans: null;
+  prior_session_themes: null;
+}
+
+// =============================================================================
+// Existing types (Phase 0.5)
+// =============================================================================
 
 export type ProactivePauseScope = 'all' | 'category' | 'nudge_key' | 'channel';
 

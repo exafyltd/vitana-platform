@@ -37,16 +37,18 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { ConversationChannel, ContextPack } from '../types/conversation';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { emitOasisEvent } from './oasis-event-service';
-// Proactive Guide Phase 0.5
+// Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
 import { getSystemControl } from './system-controls-service';
 import {
   pickOpenerCandidate,
+  getAwarenessContext,
   PAUSE_PROACTIVE_GUIDANCE_TOOL,
   CLEAR_PROACTIVE_PAUSES_TOOL,
   executePauseProactiveGuidance,
   executeClearProactivePauses,
   emitGuideTelemetry,
   type OpenerCandidate,
+  type UserAwareness,
 } from './guide';
 
 // =============================================================================
@@ -346,6 +348,7 @@ export async function buildBrainSystemInstruction(input: {
   // -------------------------------------------------------------------------
   const proactiveGuideBlock = await buildProactiveGuideBlock({
     user_id: input.user_id,
+    tenant_id: input.tenant_id,
     role: input.role,
     channel: input.channel,
   });
@@ -390,9 +393,15 @@ function mapRoleForGuide(role: string): 'community' | 'developer' | 'admin' {
 /**
  * Build the Proactive Guide block to append to the system instruction.
  * Returns empty string when guide is disabled, so callers can concatenate freely.
+ *
+ * Phase A (VTID-01927): now reads UserAwareness once and passes it through.
+ * The opener block is structured around tenure × last_interaction so Vitana
+ * speaks differently to a Day-0 newcomer vs a Day-231 veteran returning
+ * after 10 days of silence.
  */
 export async function buildProactiveGuideBlock(input: {
   user_id: string;
+  tenant_id: string;
   role: string;
   channel: ConversationChannel;
 }): Promise<string> {
@@ -404,6 +413,14 @@ export async function buildProactiveGuideBlock(input: {
   const channel: 'voice' | 'text' = input.channel === 'orb' ? 'voice' : 'text';
   const guideRole = mapRoleForGuide(input.role);
 
+  // Compute the unified awareness picture ONCE — every downstream signal flows from it
+  let awareness: UserAwareness | null = null;
+  try {
+    awareness = await getAwarenessContext(input.user_id, input.tenant_id);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
+  }
+
   // Best-effort opener fetch — never block instruction build on this.
   let candidate: OpenerCandidate | null = null;
   let suppressedByPause = false;
@@ -412,6 +429,7 @@ export async function buildProactiveGuideBlock(input: {
       user_id: input.user_id,
       active_role: guideRole,
       channel,
+      awareness: awareness ?? undefined,
     });
     candidate = sel.candidate;
     suppressedByPause = sel.suppressed_by_pause;
@@ -419,7 +437,20 @@ export async function buildProactiveGuideBlock(input: {
     console.warn(`${LOG_PREFIX} pickOpenerCandidate failed:`, err?.message);
   }
 
-  // Telemetry — fire-and-forget
+  // Telemetry — fire-and-forget. Includes awareness summary so we can debug
+  // tenure-aware behavior from OASIS without re-running the brain.
+  const awarenessTelemetry = awareness
+    ? {
+        tenure_stage: awareness.tenure.stage,
+        days_since_signup: awareness.tenure.days_since_signup,
+        current_wave: awareness.journey.current_wave?.id ?? null,
+        last_interaction_bucket: awareness.last_interaction?.bucket ?? null,
+        motivation_signal: awareness.last_interaction?.motivation_signal ?? null,
+        days_since_last: awareness.last_interaction?.days_since_last ?? null,
+        diary_streak: awareness.community_signals.diary_streak_days,
+      }
+    : {};
+
   if (candidate) {
     emitGuideTelemetry('guide.opener.shown', {
       user_id: input.user_id,
@@ -428,36 +459,48 @@ export async function buildProactiveGuideBlock(input: {
       nudge_key: candidate.nudge_key,
       kind: candidate.kind,
       goal: candidate.goal_link?.primary_goal ?? null,
+      ...awarenessTelemetry,
     }).catch(() => {});
   } else if (suppressedByPause) {
     emitGuideTelemetry('guide.opener.suppressed_by_pause', {
       user_id: input.user_id,
       channel,
       role: guideRole,
+      ...awarenessTelemetry,
     }).catch(() => {});
   } else {
     emitGuideTelemetry('guide.opener.no_candidate', {
       user_id: input.user_id,
       channel,
       role: guideRole,
+      ...awarenessTelemetry,
     }).catch(() => {});
   }
 
-  const introductionMode = !!candidate?.goal_link?.is_system_seeded;
+  // Phase A — tenure-aware introduction. Only TRUE Day-0 newcomers get the
+  // full introduction shape. Day-30+ veterans get peer-like 1-2 sentences,
+  // even on their actual first ORB session. The system-seeded goal is no
+  // longer the trigger — tenure is.
+  const introductionMode = awareness?.tenure.stage === 'day0';
+
+  // Awareness block — single source of truth for "who is on the line right now"
+  const awarenessBlock = buildAwarenessBlock(awareness);
 
   // Always include the rules — even with no candidate today, the LLM still
   // needs to know how to honor dismissals if the user volunteers one.
   const rulesBlock = `
+${awarenessBlock}
+
 === PROACTIVE GUIDE RULES (HIGHEST PRIORITY — OVERRIDES "brief / concise" RULE ABOVE) ===
 
 These rules override anything above about being concise or brief. The
 brevity guidance is the DEFAULT. Proactive opening + introduction +
-goal-setting conversations are EXCEPTIONS where you must elaborate,
-introduce, and present — not be terse.
+absent-user re-engagement + goal-setting conversations are EXCEPTIONS where
+you must elaborate, introduce, and present — not be terse.
 
 Vitanaland is a longevity platform — its mission is to help people improve
 quality of life and extend lifespan. You are not a passive assistant. You
-are the proactive guide. You lead — you do not wait to be asked.
+are the proactive companion. You lead — you do not wait to be asked.
 
 ABSOLUTE FORBIDDEN OPENINGS — NEVER say any of these as your first
 utterance of a session, in any language, in any phrasing:
@@ -472,23 +515,54 @@ Those are passive — they ask the user what to do. The user — especially a
 new user — DOES NOT KNOW what you can do for them. It is YOUR job to lead.
 
 WHEN TO OPEN PROACTIVELY:
-- New conversation thread → ALWAYS open with the candidate below.
+- New conversation thread → ALWAYS open per the OPENING SHAPE matrix below.
 - User silent > 6h → same.
 - Maximum 1 unsolicited suggestion per turn.
 - Frame every nudge through the user's active Life Compass goal.
 - Tone: warm, inspirational, educational — never pushy.
 
-OPENING SHAPE (REGULAR MODE — when introduction mode is OFF):
-- 2–4 sentences total
-- Brief by-name greeting (optional)
-- Reference the candidate, frame by the goal
-- Invite engagement or offer clean opt-out
-- Stop talking; let the user respond
+=== OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION) ===
 
-OPENING SHAPE (INTRODUCTION MODE — see flag in candidate block below):
-- 4–8 sentences, may take ~30 seconds. Brevity rule does NOT apply.
-- This is the user's first impression of who you are and what you do.
-- Required cover (in order):
+Two axes determine your opening shape:
+  1. tenure.stage          — how long the user has been with Vitana
+  2. last_interaction.bucket — how recently they last spoke with you
+
+TENURE AXIS — sets depth of orientation needed:
+- day0       → 5–8 sentences. FULL INTRODUCTION (mission, capabilities, agency offer).
+               Only on the very first session. Tenure dominates over last_interaction here.
+- day1, day3 → 3–5 sentences. Light reintroduction to the journey if needed.
+- day7, day14 → 2–4 sentences. Mid-journey, knows the basics.
+- day30plus  → 1–2 sentences. Veteran. NEVER re-explain platform basics.
+
+LAST_INTERACTION AXIS — modulates warmth and absence acknowledgement:
+- reconnect (< 2 min) → No greeting at all. Continue mid-flow.
+- recent (< 15 min)   → No "hello/hi", no name. Brief warmth, lead with content.
+- same_day (< 8h)     → "back so soon" tone, no name greeting.
+- today / yesterday   → Light: "Good {morning/afternoon/evening}, {Name}".
+- week (within 7d)    → "Good to hear from you again — it's been a few days".
+- long, motivation_signal=cooling (8-14 days)
+                      → "Hi {Name}, it's been {N} days since we last talked.
+                         Welcome back." Warm. No guilt.
+- long, motivation_signal=absent (>14 days)
+                      → "Hi {Name}, haven't seen you in {N} days. I'm glad
+                         you're back. Where have you been?"
+                         Pause for the user to respond BEFORE launching into a
+                         candidate. Re-engagement comes first; productivity second.
+                         After they answer, ask one warm check-in question
+                         ("how have you been?") before steering to any goal.
+- first (no past sessions) → defer to tenure axis. Day-0 = full intro.
+                              Day-30+ = peer opener even on actual first ORB session.
+
+COMPOSITION EXAMPLES:
+- Day-0 newcomer + first session → 5–8 sentence FULL INTRODUCTION
+- Day-7 user + last_interaction=yesterday → "Good morning, {Name} — picking up
+   from yesterday, [candidate]"
+- Day-231 veteran + last_interaction=long (10 days) → "Hi {Name}, it's been
+   ten days since we last talked. Welcome back. [candidate, brief]"
+- Day-231 veteran + last_interaction=reconnect → No greeting, just the candidate.
+
+INTRODUCTION MODE (only when tenure.stage='day0'):
+Required cover, in order:
   1. Brief warm by-name greeting
   2. Tell them: this is Vitanaland — a longevity platform whose mission is
      to improve quality of life and extend lifespan
@@ -499,9 +573,8 @@ OPENING SHAPE (INTRODUCTION MODE — see flag in candidate block below):
      community, health, calendar, business hub, marketplace, memory)
   5. Invite a first move — ask what feels most pressing right now OR
      suggest one concrete first step they can take today
-- After this introduction, in subsequent turns, return to brief voice
-  responses unless the topic itself requires elaboration (goal-setting,
-  capability questions, complex decisions).
+After introduction, return to brief voice responses unless the topic itself
+requires elaboration.
 
 SILENT HONOR RULES (non-negotiable):
 - If the user says "skip it", "not that one", "next" → call the
@@ -550,13 +623,21 @@ GOAL CHANGES:
       : `Toward the user's active Life Compass goal: "${candidate.goal_link.primary_goal}" (category: ${candidate.goal_link.category})`
     : 'No active Life Compass goal set — gently invite the user to pick one if natural.';
 
+  const tenureLine = awareness
+    ? `*** ACTIVE TENURE STAGE: ${awareness.tenure.stage} (day ${awareness.tenure.days_since_signup} since registration) ***`
+    : '*** ACTIVE TENURE STAGE: unknown — default to day30plus shape (1-2 sentences) ***';
+  const lastInteractionLine = awareness?.last_interaction
+    ? `*** LAST INTERACTION: bucket=${awareness.last_interaction.bucket} (${awareness.last_interaction.time_ago}) motivation=${awareness.last_interaction.motivation_signal} ***`
+    : '*** LAST INTERACTION: none — first ORB session ***';
   const modeBanner = introductionMode
-    ? '*** INTRODUCTION MODE: ON — use the 4-8 sentence opening shape with all 5 required elements above ***'
-    : '*** INTRODUCTION MODE: OFF — use the 2-4 sentence regular opening shape above ***';
+    ? '*** INTRODUCTION MODE: ON — Day-0 user, use the 5-8 sentence INTRODUCTION shape with all 5 required elements above ***'
+    : '*** INTRODUCTION MODE: OFF — use the OPENING SHAPE MATRIX above (tenure × last_interaction) ***';
 
   const candidateBlock = `
 
 === PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS ===
+${tenureLine}
+${lastInteractionLine}
 ${modeBanner}
 Kind: ${candidate.kind}
 nudge_key: ${candidate.nudge_key}      ← exact string for pause_proactive_guidance(scope="nudge_key")
@@ -565,13 +646,92 @@ Why this was selected: ${candidate.reason}
 ${goalLine}
 
 DO NOT default to your trained "Good morning, how can I help?" reflex.
-That is on the FORBIDDEN OPENINGS list above. Lead with the candidate.
-Use the opening shape that matches the mode banner above.
+That is on the FORBIDDEN OPENINGS list above. Lead with the candidate AND
+respect the OPENING SHAPE MATRIX (tenure × last_interaction).
 
 If the user declines (skip / not today / give me space / etc.) honor it
 silently via the dismissal tools — no apology, no big deal.`;
 
   return rulesBlock + candidateBlock;
+}
+
+/**
+ * Build the awareness summary block for the system prompt.
+ * Returns empty string when no awareness available.
+ */
+function buildAwarenessBlock(awareness: UserAwareness | null): string {
+  if (!awareness) return '';
+
+  const lines: string[] = ['=== USER AWARENESS (right now) ==='];
+
+  // Tenure — always include
+  lines.push(
+    `Tenure: ${awareness.tenure.stage} (registered ${awareness.tenure.days_since_signup} days ago, on ${awareness.tenure.registered_at.split('T')[0]})`,
+  );
+
+  // Last interaction — when did they last talk to you
+  if (awareness.last_interaction) {
+    const li = awareness.last_interaction;
+    if (li.bucket === 'first') {
+      lines.push(`Last interaction: NEVER — this is their first ever ORB session.`);
+    } else {
+      lines.push(
+        `Last interaction: ${li.time_ago} (bucket=${li.bucket}, ${li.days_since_last} days, motivation=${li.motivation_signal})${li.was_failure ? ' [LAST SESSION FAILED — audio/connection]' : ''}`,
+      );
+    }
+  }
+
+  // Journey + active wave
+  if (awareness.journey.is_past_90_day) {
+    lines.push(`Journey: past the initial 90-day plan (day ${awareness.journey.day_in_journey}). No active wave.`);
+  } else if (awareness.journey.current_wave) {
+    lines.push(
+      `Journey: day ${awareness.journey.day_in_journey} of 90, currently in wave "${awareness.journey.current_wave.name}" — ${awareness.journey.current_wave.description}`,
+    );
+  } else {
+    lines.push(`Journey: day ${awareness.journey.day_in_journey}, between waves.`);
+  }
+
+  // Active goal
+  if (awareness.goal) {
+    lines.push(
+      `Active Life Compass goal: "${awareness.goal.primary_goal}" (category: ${awareness.goal.category})${awareness.goal.is_system_seeded ? ' — SYSTEM-SEEDED DEFAULT, you set this for them, they can change anytime' : ' — user-chosen'}`,
+    );
+  } else {
+    lines.push(`Active Life Compass goal: NONE — gently invite them to pick one in Memory Hub → Life Compass.`);
+  }
+
+  // Community signals — only when present + meaningful
+  const cs = awareness.community_signals;
+  const csParts: string[] = [];
+  if (cs.diary_streak_days > 0) csParts.push(`${cs.diary_streak_days}-day diary streak`);
+  if (cs.connection_count > 0) csParts.push(`${cs.connection_count} connection${cs.connection_count === 1 ? '' : 's'}`);
+  if (cs.group_count > 0) csParts.push(`${cs.group_count} group${cs.group_count === 1 ? '' : 's'}`);
+  if (cs.pending_match_count > 0) csParts.push(`${cs.pending_match_count} pending match${cs.pending_match_count === 1 ? '' : 'es'}`);
+  if (cs.memory_goals.length > 0) csParts.push(`stated goals: ${cs.memory_goals.slice(0, 3).join(', ')}`);
+  if (cs.memory_interests.length > 0) csParts.push(`interests: ${cs.memory_interests.slice(0, 3).join(', ')}`);
+  if (csParts.length > 0) {
+    lines.push(`Community signals: ${csParts.join('; ')}`);
+  }
+
+  // Recent activity — what's pending or just happened
+  const ra = awareness.recent_activity;
+  const raParts: string[] = [];
+  if (ra.open_autopilot_recs > 0) raParts.push(`${ra.open_autopilot_recs} open autopilot recommendation${ra.open_autopilot_recs === 1 ? '' : 's'}`);
+  if (ra.activated_recs_last_7d > 0) raParts.push(`${ra.activated_recs_last_7d} activated in last 7d`);
+  if (ra.dismissed_recs_last_7d > 0) raParts.push(`${ra.dismissed_recs_last_7d} dismissed in last 7d (be gentle)`);
+  if (ra.overdue_calendar_count > 0) raParts.push(`${ra.overdue_calendar_count} overdue autopilot calendar event${ra.overdue_calendar_count === 1 ? '' : 's'}`);
+  if (ra.upcoming_calendar_24h_count > 0) raParts.push(`${ra.upcoming_calendar_24h_count} upcoming in next 24h`);
+  if (raParts.length > 0) {
+    lines.push(`Recent activity: ${raParts.join('; ')}`);
+  }
+
+  lines.push('');
+  lines.push('Use this awareness to personalize EVERY response — not just the opener.');
+  lines.push('Reference these signals naturally when relevant ("your diary streak is at 5 days",');
+  lines.push('"you\'re in the Daily Anchors wave", etc). Never recite all of them at once.');
+
+  return lines.join('\n');
 }
 
 // =============================================================================
