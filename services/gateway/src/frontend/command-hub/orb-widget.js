@@ -898,6 +898,41 @@
         _setStatus('Error: ' + (msg.message || 'Unknown'));
         break;
 
+      case 'reconnecting':
+        // Backend is transparently reconnecting upstream (Vertex Live API).
+        // Flip UI off "Listening..." so the user stops talking into the void.
+        console.warn('[VTOrb] Upstream reconnecting — pausing UI');
+        clearTimeout(_s._listeningIdleTimer);
+        if (_s.voiceState === 'MUTED') {
+          // Keep the muted visual, but ensure unmute doesn't snap back to LISTENING.
+          _s.preMuteState = 'THINKING';
+        } else {
+          _s._preReconnectVoiceState = _s.voiceState;
+          _setOrbState('thinking');
+          _s.voiceState = 'THINKING';
+          _setStatus(
+            _cfg.lang.startsWith('de')
+              ? 'Verbindung wird wiederhergestellt, einen Moment...'
+              : 'Reconnecting, one moment...'
+          );
+          _updateUI();
+        }
+        break;
+
+      case 'reconnected':
+        // Reconnect succeeded. Don't snap straight to LISTENING here — a
+        // fresh turn_complete (or audio) will drive the next transition and
+        // the user gets the familiar ready-beep cue.
+        console.log('[VTOrb] Upstream reconnected');
+        if (_s.voiceState === 'THINKING' && _s._preReconnectVoiceState === 'LISTENING') {
+          _setOrbState('listening');
+          _s.voiceState = 'LISTENING';
+          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _updateUI();
+        }
+        _s._preReconnectVoiceState = null;
+        break;
+
       case 'connection_issue':
       case 'live_api_disconnected':
         // VTID-RECONNECT: Try auto-reconnect before giving up
