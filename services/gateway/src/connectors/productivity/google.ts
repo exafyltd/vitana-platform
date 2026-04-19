@@ -133,7 +133,10 @@ const googleConnector: Connector = {
       client_secret: creds.secret,
       redirect_uri,
     });
-    const profile = await this.fetchProfile!(tokens);
+    const userinfo = await googleGet('https://openidconnect.googleapis.com/v1/userinfo', tokens.access_token);
+    const profile = userinfo.ok && googleConnector.normalizeProfile
+      ? googleConnector.normalizeProfile(userinfo.json)
+      : undefined;
     return { tokens, provider_user_id: profile?.provider_user_id, profile };
   },
 
@@ -206,15 +209,6 @@ const googleConnector: Connector = {
         return { ok: false, error: `Unknown capability ${action.capability}` };
     }
   },
-};
-
-// Convenience, used by exchangeCode above.
-(googleConnector as Connector & {
-  fetchProfile?: (tokens: TokenPair) => Promise<NormalizedProfile | undefined>;
-}).fetchProfile = async (tokens: TokenPair) => {
-  const r = await googleGet('https://openidconnect.googleapis.com/v1/userinfo', tokens.access_token);
-  if (!r.ok) return undefined;
-  return googleConnector.normalizeProfile ? googleConnector.normalizeProfile(r.json) : undefined;
 };
 
 export default googleConnector;
