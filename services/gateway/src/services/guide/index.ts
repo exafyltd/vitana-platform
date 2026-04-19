@@ -30,6 +30,12 @@ export {
   type RecordSessionSummaryInput,
 } from './session-summaries';
 export {
+  applyApprovedPlans,
+  getAdaptationStatus,
+  type AdaptationStatus,
+  type ApplyResult as AdaptationApplyResult,
+} from './adaptation-applier';
+export {
   describeTimeSince,
   fetchLastSessionInfo,
   deriveMotivationSignal,

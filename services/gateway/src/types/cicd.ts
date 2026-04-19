@@ -600,6 +600,8 @@ export type CicdEventType =
   | 'guide.feature_introduction.recorded'
   // COMPANION Phase F — conversation continuity (VTID-01933)
   | 'guide.session_summary.recorded'
+  // COMPANION Phase E — D43 adaptation applier (VTID-01935)
+  | 'guide.adaptation.applied'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'
