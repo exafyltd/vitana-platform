@@ -534,6 +534,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
 
+  // VTID-01939: Capability layer — voice-intent-level verbs
+  // (music.play, email.read, calendar.create, contacts.import, ...)
+  // backed by the connector framework.
+  const capabilitiesRouter = require('./routes/capabilities').default;
+  mountRouterSync(app, '/api/v1/capabilities', capabilitiesRouter, { owner: 'capabilities' });
+
   // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring (legacy - kept for backwards compatibility)
   mountRouterSync(app, '/api/v1/recommendations', recommendationInboxRouter, { owner: 'recommendation-inbox' });
 

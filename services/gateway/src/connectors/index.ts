@@ -15,6 +15,8 @@ import vitalConnector from './wearable/vital';
 import fitbitConnector from './wearable/fitbit';
 import ouraConnector from './wearable/oura';
 import stravaConnector from './wearable/strava';
+// VTID-01939: productivity category — Google (Gmail/Calendar/Contacts/YouTube)
+import googleConnector from './productivity/google';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -32,6 +34,7 @@ register(vitalConnector);
 register(fitbitConnector);
 register(ouraConnector);
 register(stravaConnector);
+register(googleConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);
