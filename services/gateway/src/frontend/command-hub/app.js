@@ -4876,24 +4876,42 @@ var _renderAppScheduled = false;
 function renderApp() {
     if (_renderAppScheduled) return;
     _renderAppScheduled = true;
-    // Preserve window scroll position across the destructive
-    // root.innerHTML = '' re-render so clicking Expand/Approve/etc.
-    // doesn't yank the user back to the top of the page.
-    var _preservedScrollY = (typeof window !== 'undefined' && typeof window.scrollY === 'number')
-        ? window.scrollY : 0;
-    var _preservedScrollX = (typeof window !== 'undefined' && typeof window.scrollX === 'number')
-        ? window.scrollX : 0;
+    // The actual scrollable container is .module-content-wrapper — NOT
+    // window. window.scrollY is always 0 here. Capture BOTH because we
+    // may also have inner scrolls (nav-section, side panels) in the future.
+    var captureTime = Date.now();
+    var moduleScroller = document.querySelector('.module-content-wrapper');
+    var preservedModuleScrollTop = moduleScroller ? moduleScroller.scrollTop : 0;
+    var preservedWindowY = window.scrollY || 0;
+
     requestAnimationFrame(function () {
         _renderAppScheduled = false;
         _renderAppCore();
-        // Restore after the DOM is re-attached. rAF-inside-rAF to run after
-        // the browser paints the new tree (prevents a flash at top).
-        if (_preservedScrollY > 0 || _preservedScrollX > 0) {
-            requestAnimationFrame(function () {
-                window.scrollTo(_preservedScrollX, _preservedScrollY);
-            });
+        // Restore synchronously after _renderAppCore in the same rAF tick
+        // so no intermediate paint happens between DOM rebuild and scroll
+        // restore (prevents the visible "snap to 0 then back" flash).
+        // Yield only if the user scrolled AFTER capture.
+        if ((window._lastUserScrollTs || 0) > captureTime) return;
+        var newModule = document.querySelector('.module-content-wrapper');
+        if (newModule && preservedModuleScrollTop > 0) {
+            newModule.scrollTop = preservedModuleScrollTop;
         }
+        if (preservedWindowY > 0) window.scrollTo(0, preservedWindowY);
     });
+}
+
+// Tag user-initiated scroll events so renderApp knows not to fight them.
+// Listen on window (capture phase) so inner-container scrolls register too.
+if (typeof window !== 'undefined' && !window._userScrollTracker) {
+    window._userScrollTracker = true;
+    var _tagScroll = function () { window._lastUserScrollTs = Date.now(); };
+    window.addEventListener('wheel', _tagScroll, { passive: true, capture: true });
+    window.addEventListener('touchmove', _tagScroll, { passive: true, capture: true });
+    window.addEventListener('keydown', function (e) {
+        if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].indexOf(e.key) >= 0) {
+            window._lastUserScrollTs = Date.now();
+        }
+    }, { passive: true, capture: true });
 }
 
 function _renderAppCore() {
