@@ -23,6 +23,13 @@ export {
   type FeatureKey,
 } from './feature-introductions';
 export {
+  getRecentSessionSummaries,
+  recordSessionSummary,
+  formatSummariesForPrompt,
+  type SessionSummary,
+  type RecordSessionSummaryInput,
+} from './session-summaries';
+export {
   describeTimeSince,
   fetchLastSessionInfo,
   deriveMotivationSignal,
