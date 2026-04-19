@@ -13,10 +13,25 @@ export {
   executeClearProactivePauses,
 } from './dismissal-tool';
 export { emitGuideTelemetry } from './guide-telemetry';
+export { getAwarenessContext, clearAwarenessCache } from './awareness-context';
+export {
+  describeTimeSince,
+  fetchLastSessionInfo,
+  deriveMotivationSignal,
+  type TemporalBucket,
+  type MotivationSignal,
+  type LastInteraction,
+} from './temporal-bucket';
 export {
   type ProactivePause,
   type ProactivePauseScope,
   type OpenerCandidate,
   type OpenerCandidateKind,
   type OpenerSelection,
+  type UserAwareness,
+  type TenureStage,
+  type JourneyContext,
+  type AwarenessGoal,
+  type CommunityAwarenessSignals,
+  type RecentActivitySummary,
 } from './types';

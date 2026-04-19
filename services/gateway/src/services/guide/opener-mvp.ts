@@ -36,6 +36,12 @@ export interface PickOpenerInput {
   user_id: string;
   active_role: 'community' | 'developer' | 'admin';
   channel: 'voice' | 'text';
+  /**
+   * Phase A (VTID-01927) — when the brain already computed awareness, pass it
+   * here to avoid duplicate queries. When omitted, opener-mvp does its own
+   * minimal lookups (legacy path).
+   */
+  awareness?: import('./types').UserAwareness;
 }
 
 interface LifeCompassRow {
