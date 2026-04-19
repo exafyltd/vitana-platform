@@ -598,6 +598,8 @@ export type CicdEventType =
   | 'guide.flag.disabled'
   // COMPANION Phase G — feature-introduction tracking (VTID-01932)
   | 'guide.feature_introduction.recorded'
+  // COMPANION Phase F — conversation continuity (VTID-01933)
+  | 'guide.session_summary.recorded'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

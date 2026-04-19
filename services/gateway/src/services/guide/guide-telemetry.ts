@@ -19,7 +19,9 @@ export type GuideEventType =
   | 'guide.dismissal.pause_cleared'
   | 'guide.flag.disabled'
   // Phase G — VTID-01932
-  | 'guide.feature_introduction.recorded';
+  | 'guide.feature_introduction.recorded'
+  // Phase F — VTID-01933 conversation continuity
+  | 'guide.session_summary.recorded';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,

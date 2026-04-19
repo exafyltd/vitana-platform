@@ -855,6 +855,31 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     lines.push(`Recent activity: ${raParts.join('; ')}`);
   }
 
+  // Phase F — prior session continuity. Brain weaves naturally rather than reciting.
+  if (awareness.prior_session_themes && awareness.prior_session_themes.length > 0) {
+    const recentSummary = awareness.prior_session_themes[0];
+    const recentDate = recentSummary.ended_at.slice(0, 10);
+    const themeList =
+      recentSummary.themes && recentSummary.themes.length > 0
+        ? ` (themes: ${recentSummary.themes.slice(0, 4).join(', ')})`
+        : '';
+    lines.push(
+      `Last session (${recentDate})${themeList}: ${recentSummary.summary}`,
+    );
+    if (awareness.prior_session_themes.length > 1) {
+      const olderThemes = new Set<string>();
+      for (const s of awareness.prior_session_themes.slice(1)) {
+        for (const t of s.themes) olderThemes.add(t);
+      }
+      if (olderThemes.size > 0) {
+        lines.push(`Earlier sessions touched: ${Array.from(olderThemes).slice(0, 6).join(', ')}.`);
+      }
+    }
+    lines.push(
+      'Weave one of these into the conversation when natural — never recite the summary verbatim. Examples: "last time we talked about your sleep — how did that wind-down ritual go?", "you mentioned the business hub yesterday — any progress?".',
+    );
+  }
+
   // Phase G — feature introductions already given to this user
   if (awareness.feature_introductions && awareness.feature_introductions.length > 0) {
     lines.push(

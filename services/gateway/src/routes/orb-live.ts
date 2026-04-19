@@ -5543,6 +5543,40 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string)
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.ended:', err.message));
 }
 
+/**
+ * VTID-01933 (Companion Phase F): Persist a short summary of the just-ended
+ * ORB session so the brain can weave it into the next session naturally.
+ * Best-effort — never blocks session teardown. Called from POST /end-session.
+ */
+async function recordSessionSummaryFromTranscript(
+  transcript: OrbSessionTranscript,
+): Promise<void> {
+  if (!transcript.user_id) return;
+  if (!transcript.turns || transcript.turns.length === 0) return;
+  try {
+    const { recordSessionSummary } = await import('../services/guide/session-summaries');
+    const turns = transcript.turns
+      .map((t) => ({
+        role: (t.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        text: String(t.text || '').trim(),
+      }))
+      .filter((t) => t.text.length > 0);
+    if (turns.length === 0) return;
+    const durationMs = transcript.started_at
+      ? Date.now() - new Date(transcript.started_at).getTime()
+      : null;
+    await recordSessionSummary({
+      user_id: transcript.user_id,
+      session_id: transcript.orb_session_id,
+      channel: 'voice',
+      transcript_turns: turns,
+      duration_ms: durationMs,
+    });
+  } catch (err: any) {
+    console.warn('[VTID-01933] recordSessionSummary failed:', err?.message);
+  }
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -7440,6 +7474,10 @@ router.post('/end-session', async (req: Request, res: Response) => {
     }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
     console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${durationSec}s)`);
+
+    // VTID-01933 (Companion Phase F): persist summary for the brain to read
+    // on the user's next session. Fire-and-forget; never blocks teardown.
+    recordSessionSummaryFromTranscript(transcript).catch(() => {});
 
     // Send follow-up reminder notification if conversation had substance
     if (transcript.turns.length >= 4) {

@@ -69,11 +69,18 @@ export interface UserAwareness {
   // Phase G — feature-introduction tracking (VTID-01932)
   feature_introductions: string[];
 
+  // Phase F — conversation continuity / prior session summaries (VTID-01933)
+  prior_session_themes: Array<{
+    session_id: string;
+    summary: string;
+    themes: string[];
+    ended_at: string;
+  }>;
+
   // Reserved for future companion pillars (null until those phases ship)
   routines: null;
   tastes_preferences: null;
   adaptation_plans: null;
-  prior_session_themes: null;
 }
 
 // =============================================================================

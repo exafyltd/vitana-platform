@@ -24,6 +24,7 @@ import {
 import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
 import { describeTimeSince, fetchLastSessionInfo, type LastInteraction } from './temporal-bucket';
 import { getFeatureIntroductions } from './feature-introductions';
+import { getRecentSessionSummaries } from './session-summaries';
 import type {
   UserAwareness,
   TenureStage,
@@ -73,12 +74,14 @@ export async function getAwarenessContext(
     goal,
     recentActivity,
     featureIntros,
+    priorSummaries,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
     fetchActiveGoal(userId, supabase),
     fetchRecentActivitySummary(userId, supabase),
     getFeatureIntroductions(userId).catch(() => []),
+    getRecentSessionSummaries(userId, 3).catch(() => []),
   ]);
 
   const tenure = buildTenure(userContext);
@@ -96,10 +99,15 @@ export async function getAwarenessContext(
     recent_activity: recentActivity,
     last_interaction,
     feature_introductions: (featureIntros || []).map((f) => f.feature_key),
+    prior_session_themes: (priorSummaries || []).map((s) => ({
+      session_id: s.session_id,
+      summary: s.summary,
+      themes: s.themes,
+      ended_at: s.ended_at,
+    })),
     routines: null,
     tastes_preferences: null,
     adaptation_plans: null,
-    prior_session_themes: null,
   };
 
   cache.set(cacheKey, { awareness, expires_at: Date.now() + CACHE_TTL_MS });
@@ -301,9 +309,9 @@ function skeletalAwareness(): UserAwareness {
     recent_activity: emptyRecentActivity(),
     last_interaction: describeTimeSince(null),
     feature_introductions: [],
+    prior_session_themes: [],
     routines: null,
     tastes_preferences: null,
     adaptation_plans: null,
-    prior_session_themes: null,
   };
 }
