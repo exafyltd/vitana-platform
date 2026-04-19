@@ -3314,6 +3314,13 @@ function buildTemporalJourneyContextSection(
   lines.push('');
   lines.push('Pick your opening line based on the bucket below. Follow it literally.');
   lines.push('');
+  // VTID-01929: When the brain context (appended after this section) contains
+  // a USER AWARENESS block + Proactive Opener Candidate, that block's OPENING
+  // SHAPE MATRIX (tenure × last_interaction) is the authority — IGNORE the
+  // example follow-up phrasings below. The example phrasings are the LEGACY
+  // FALLBACK for sessions where the proactive guide has no candidate to surface.
+  lines.push('PROACTIVE OVERRIDE: If the brain context appended below contains a "PROACTIVE OPENER CANDIDATE" or "USER AWARENESS" block, IGNORE the example follow-up phrasings in this section. Use the OPENING SHAPE MATRIX from the brain context instead. The phrasings below are LEGACY FALLBACKS only.');
+  lines.push('');
 
   // Map 'night' to 'evening' for greetings ("Good night" is a farewell, not a greeting)
   const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
@@ -3356,44 +3363,40 @@ function buildTemporalJourneyContextSection(
       lines.push('- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).');
       lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
       lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Example follow-up questions (pick ONE or skip):');
-      lines.push('      "What can I do for you?"');
-      lines.push('      "How can I help?"');
-      lines.push('      "What\'s on your mind?"');
+      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
+      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
+      lines.push('      "What\'s on your mind today?"');
+      lines.push('      "Where would you like to focus today?"');
       lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'yesterday':
       lines.push('- BUCKET = yesterday (this is a NEW-DAY greeting).');
       lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
       lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Example follow-up questions (pick ONE or skip):');
+      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
+      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
       lines.push('      "What would you like to explore today?"');
-      lines.push('      "How can I help?"');
-      lines.push('      "What can I do for you?"');
+      lines.push('      "Picking up where we left off?"');
       lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'week':
       lines.push('- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).');
       lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
       lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Example follow-up questions (pick ONE or skip):');
-      lines.push('      "How can I help?"');
+      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
+      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
+      lines.push('      "Good to hear from you again — what\'s been on your mind?"');
       lines.push('      "What would you like to explore today?"');
-      lines.push('      "What can I do for you?"');
       lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'long':
       lines.push('- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).');
       lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
       lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Example follow-up questions (pick ONE or skip):');
-      lines.push('      "What can I help with today?"');
-      lines.push('      "How can I support you today?"');
-      lines.push('      "What would you like to explore today?"');
+      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).');
+      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
+      lines.push('      "It\'s been a few days — happy you\'re back. What\'s been on your mind?"');
+      lines.push('      "What would you like to focus on today?"');
       lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
     case 'first':
@@ -3402,15 +3405,17 @@ function buildTemporalJourneyContextSection(
       // fallback, NOT a genuine first meeting. For authenticated users
       // (everyone who reaches this code path) we treat it as a returning
       // user with unknown recency — treat as new-day greeting.
-      lines.push('- BUCKET = first (telemetry lookup found no prior session — treat as RETURNING user, use NEW-DAY greeting).');
+      // VTID-01927/VTID-01929: when the brain context shows tenure.stage='day0',
+      // the user IS truly new and gets the FULL INTRODUCTION shape (handled
+      // by the OPENING SHAPE MATRIX in the brain block, not this fallback).
+      lines.push('- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).');
       lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
       lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • The user is authenticated — they already know who you are. Do NOT introduce yourself.');
-      lines.push('  • Optionally follow with ONE single short question. NEVER use two-part sentences joined by dashes or commas.');
-      lines.push('  • Example follow-up questions (pick ONE or skip):');
-      lines.push('      "What can I do for you?"');
-      lines.push('      "What\'s on your mind?"');
-      lines.push('      "How can I help?"');
+      lines.push('  • EXCEPTION: when the brain context\'s USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context\'s OPENING SHAPE MATRIX — that overrides this fallback.');
+      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
+      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
+      lines.push('      "What\'s on your mind today?"');
+      lines.push('      "Where would you like to focus today?"');
       lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
       break;
   }
@@ -5159,9 +5164,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // Gemini a menu of warm example phrasings and explicitly tells it not
   // to sound clipped. Each language is independently written so nothing
   // depends on Gemini translating cold English cues into warmer German.
+  // VTID-01927/VTID-01929: Default greeting prompts. The system instruction
+  // contains the OPENING SHAPE MATRIX with the proactive opener candidate when
+  // available — Gemini should use THAT instead of these generic phrasings.
+  // These remain only as the legacy fallback for sessions with no awareness.
+  // "What can I do for you?" removed — it's on the FORBIDDEN OPENINGS list now.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE single short phrase. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. Pick ONE of: "How can I help?" / "What\'s on your mind?" / "What can I do for you?" / "I am listening." / "What would you like to know?". Vary across sessions.',
-    'de': 'Beginne mit EINER einzelnen kurzen Frage. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wähle EINE: "Womit kann ich helfen?" / "Was möchtest du wissen?" / "Was kann ich für dich tun?" / "Ich höre dir zu." / "Was brauchst du?". Variiere zwischen Sitzungen.',
+    'en': 'Open with ONE single short phrase. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "How can I help?" / "What\'s on your mind?" / "I am listening." / "What would you like to know?". Vary across sessions.',
+    'de': 'Beginne mit EINER einzelnen kurzen Frage. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Womit kann ich helfen?" / "Was möchtest du wissen?" / "Ich höre dir zu." / "Was brauchst du?". Variiere zwischen Sitzungen.',
     'fr': 'Commence par UNE seule courte phrase. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Choisis UNE : "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?" / "Je vous écoute." / "Qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
     'es': 'Comienza con UNA sola frase corta. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Elige UNA: "¿En qué puedo ayudar?" / "¿Qué necesitas?" / "Te escucho." / "¿Qué te gustaría saber?". Varía entre sesiones.',
     'ar': 'ابدأ بعبارة واحدة قصيرة. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. اختر واحدة: "كيف يمكنني المساعدة؟" / "ماذا تود أن تعرف؟" / "أنا أستمع." / "ماذا يمكنني أن أفعل لك؟"',
@@ -5227,22 +5237,28 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         case 'same_day':
           prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
           break;
+        // VTID-01927/VTID-01929: For new-day buckets, defer to the OPENING
+        // SHAPE MATRIX in the system instruction (which has the tenure-aware
+        // proactive opener candidate). Removed literal "What can I do for you?"
+        // — it's on the FORBIDDEN OPENINGS list when an opener candidate exists.
         case 'today':
-          prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question like "What can I do for you?" Max TWO short sentences.${screenHint}`;
+          prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;
           break;
         case 'yesterday':
-          prompt = `The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
+          prompt = `The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided).${screenHint}`;
           break;
         case 'week':
-          prompt = `The user was last here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
+          prompt = `The user was last here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided — for early-tenure users a 2-3 day absence warrants warmth like "glad you came back").${screenHint}`;
           break;
         case 'long':
-          prompt = `The user hasn't been here in ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Optionally follow with ONE short question. Max TWO short sentences.${screenHint}`;
+          prompt = `The user hasn't been here in ${temporal.timeAgo} — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been ${temporal.timeAgo} since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.${screenHint}`;
           break;
         case 'first':
         default:
-          // Treat as new-day greeting since we don't know when they were last here.
-          prompt = `Open with "Good ${tod}, [Name]." using the user's name from your memory context. If no name is available, just say "Good ${tod}." Optionally follow with ONE short question like "What can I do for you?" Max TWO short sentences.${screenHint}`;
+          // VTID-01927: When system instruction shows tenure.stage='day0', use
+          // the FULL INTRODUCTION shape (5-8 sentences). Otherwise treat as
+          // returning user with unknown recency.
+          prompt = `Open per the OPENING SHAPE MATRIX in your system instruction. If tenure.stage='day0' (genuinely new user), deliver the FULL INTRODUCTION (mission, capabilities, agency offer). Otherwise treat as a returning user: "Good ${tod}, [Name]." + the Proactive Opener Candidate from your system instruction.${screenHint}`;
           break;
       }
     }
