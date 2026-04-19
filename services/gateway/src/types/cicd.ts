@@ -627,7 +627,12 @@ export type CicdEventType =
   | 'connector.action.executed'
   | 'connector.action.failed'
   | 'connector.action.denied'
-  | 'connector.action.expired';
+  | 'connector.action.expired'
+  // VTID-02403: Phase 1 AI Subscription Connect events
+  | 'integration.ai.connected'
+  | 'integration.ai.verify_failed'
+  | 'integration.ai.disconnected'
+  | 'integration.ai.policy.updated';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -10,6 +10,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import * as jose from 'jose';
 import { z } from 'zod';
 import {
   getRoutingPolicyResponse,
@@ -19,6 +20,7 @@ import {
 } from '../services/llm-routing-policy-service';
 import { queryLLMTelemetry } from '../services/llm-telemetry-service';
 import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS } from '../constants/llm-defaults';
+import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
@@ -321,6 +323,100 @@ router.get('/telemetry', async (req: Request, res: Response) => {
       details: message,
     });
   }
+});
+
+// =============================================================================
+// GET /api/v1/llm/models
+// VTID-02403: Return static catalog of LLM providers + live user_connections_count
+// for AI-assistant providers (ChatGPT, Claude). Command Hub consumes this.
+// =============================================================================
+router.get('/models', async (req: Request, res: Response) => {
+  // Static catalog (mirrors prior front-end defaults so existing UI still works)
+  const staticModels: Array<{
+    provider: string;
+    model_id: string;
+    status: string;
+    avg_latency: number | string;
+    cost_per_1k: string;
+    usage: string;
+  }> = [
+    // Vertex AI
+    { provider: 'vertex-ai', model_id: 'gemini-2.5-pro', status: 'active', avg_latency: 850, cost_per_1k: '0.0035', usage: 'Operator Chat, spec quality' },
+    { provider: 'vertex-ai', model_id: 'gemini-2.0-flash', status: 'active', avg_latency: 320, cost_per_1k: '0.00015', usage: 'Fact extraction, fast queries' },
+    { provider: 'vertex-ai', model_id: 'gemini-1.5-pro', status: 'active', avg_latency: 920, cost_per_1k: '0.0035', usage: 'Fallback routing, long context' },
+    // Gemini API
+    { provider: 'gemini-api', model_id: 'gemini-3-pro-preview', status: 'active', avg_latency: 1100, cost_per_1k: '0.0040', usage: 'ORB Assistant (Q&A)' },
+    { provider: 'gemini-api', model_id: 'gemini-2.0-flash-exp', status: 'active', avg_latency: 280, cost_per_1k: '0.00015', usage: 'Command parsing' },
+    { provider: 'gemini-api', model_id: 'gemini-2.5-pro', status: 'active', avg_latency: 880, cost_per_1k: '0.0035', usage: 'General assistance' },
+    // OpenAI (embeddings + user-keyed chat)
+    { provider: 'openai', model_id: 'text-embedding-3-small', status: 'active', avg_latency: 120, cost_per_1k: '0.00002', usage: 'Semantic memory embeddings' },
+    { provider: 'openai', model_id: 'gpt-4o', status: 'active', avg_latency: 900, cost_per_1k: '0.0050', usage: 'ChatGPT (user-supplied key)' },
+    { provider: 'openai', model_id: 'gpt-4o-mini', status: 'active', avg_latency: 400, cost_per_1k: '0.00015', usage: 'ChatGPT fast (user-supplied key)' },
+    // Anthropic (user-keyed chat)
+    { provider: 'anthropic', model_id: 'claude-3-5-sonnet-20241022', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Claude default (user-supplied key)' },
+    { provider: 'anthropic', model_id: 'claude-3-5-haiku-20241022', status: 'active', avg_latency: 350, cost_per_1k: '0.0010', usage: 'Claude fast (user-supplied key)' },
+    { provider: 'anthropic', model_id: 'claude-3-opus-20240229', status: 'configured', avg_latency: 1200, cost_per_1k: '0.015', usage: 'Claude premium (user-supplied key)' },
+  ];
+
+  // VTID-02403: Augment with user_connections_count + monthly_cost_usd placeholder
+  // Map provider name (from static catalog) → connector_registry id we seed.
+  const providerMap: Record<string, string> = {
+    openai: 'chatgpt',
+    anthropic: 'claude',
+  };
+
+  // Resolve tenant from JWT if present
+  let tenantId: string | null = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const claims = jose.decodeJwt(authHeader.slice(7));
+      const app_metadata = (claims as { app_metadata?: { active_tenant_id?: string } }).app_metadata;
+      tenantId = app_metadata?.active_tenant_id ?? null;
+      if (!tenantId && typeof claims.sub === 'string') {
+        const supabase = getSupabase();
+        if (supabase) {
+          const { data: ut } = await supabase
+            .from('user_tenants')
+            .select('tenant_id')
+            .eq('user_id', claims.sub)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+          tenantId = ut?.tenant_id ?? null;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Count active connections per provider
+  const supabase = getSupabase();
+  const aiCounts: Record<string, number> = { chatgpt: 0, claude: 0 };
+  if (supabase && tenantId) {
+    for (const connectorId of Object.values(providerMap)) {
+      const { count } = await supabase
+        .from('user_connections')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('connector_id', connectorId)
+        .eq('category', 'ai_assistant')
+        .eq('is_active', true);
+      aiCounts[connectorId] = count ?? 0;
+    }
+  }
+
+  const models = staticModels.map((m) => {
+    const connectorId = providerMap[m.provider];
+    if (!connectorId) return m;
+    return {
+      ...m,
+      connector_id: connectorId,
+      user_connections_count: aiCounts[connectorId] ?? 0,
+      monthly_cost_usd: 0, // Phase 1 placeholder
+    };
+  });
+
+  return res.json({ ok: true, data: models });
 });
 
 // =============================================================================

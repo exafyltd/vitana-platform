@@ -400,6 +400,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added d44_predictive_signals, d44_signal_evidence, d44_intervention_history for proactive signal detection | Claude | VTID-01138 |
 | 2026-01-03 | Added contextual_opportunities table for D48 opportunity surfacing | Claude | VTID-01142 |
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
+| 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 
 ---
 
@@ -591,5 +592,80 @@ PLAYWRIGHT_TIMEOUT=30000                        # Test timeout in ms
 
 ---
 
+## VTID-02403 — AI Subscription Connect Phase 1
+
+Added 2026-04-19 by VTID-02403 migration `20260419000000_vtid_02403_ai_assistants_phase1.sql`.
+
+### ai_provider_policies
+**Purpose:** Per-tenant × provider AI policy (allowed, allowed_models, cost cap, memory categories).
+**Used by:** `services/gateway/src/routes/ai-assistants.ts`, `services/gateway/src/routes/admin/ai-integrations.ts`
+
+```sql
+CREATE TABLE ai_provider_policies (
+  tenant_id UUID NOT NULL,
+  provider TEXT NOT NULL,                 -- 'chatgpt' | 'claude'
+  allowed BOOLEAN NOT NULL DEFAULT TRUE,
+  allowed_models TEXT[] NOT NULL DEFAULT '{}',
+  cost_cap_usd_month NUMERIC(10,2) NOT NULL DEFAULT 50,
+  allowed_memory_categories TEXT[] NOT NULL DEFAULT '{}',
+  updated_by UUID,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, provider)
+);
+```
+RLS: `SELECT` for any authenticated user whose `user_tenants.tenant_id` matches; `ALL` for `service_role`.
+
+---
+
+### ai_assistant_credentials
+**Purpose:** Encrypted per-user API keys for AI assistants (AES-256-GCM, key lives in `AI_CREDENTIALS_ENC_KEY` env var on Cloud Run).
+**Used by:** `services/gateway/src/routes/ai-assistants.ts`
+
+```sql
+CREATE TABLE ai_assistant_credentials (
+  connection_id UUID PRIMARY KEY REFERENCES user_connections(id) ON DELETE CASCADE,
+  encrypted_key BYTEA NOT NULL,           -- AES-256-GCM ciphertext (NEVER returned via API)
+  key_prefix TEXT NOT NULL,               -- e.g. 'sk-' or 'sk-ant-'
+  key_last4 TEXT NOT NULL,                -- last 4 chars for display
+  encryption_iv BYTEA NOT NULL,
+  encryption_tag BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_verified_at TIMESTAMPTZ,
+  last_verify_status TEXT,                -- 'ok' | 'unauthorized' | 'network' | 'error' | 'purged'
+  last_verify_error TEXT,
+  verify_failure_count INT NOT NULL DEFAULT 0
+);
+```
+RLS: `SELECT` allowed only via join to `user_connections.user_id = auth.uid()`; `ALL` for service role.
+**SECURITY:** The route layer NEVER returns `encrypted_key`. Only `key_prefix` and `key_last4` are exposed.
+
+---
+
+### ai_consent_log
+**Purpose:** Append-only audit of AI connect/disconnect/verify/policy events.
+**Used by:** `services/gateway/src/routes/ai-assistants.ts`, `services/gateway/src/routes/admin/ai-integrations.ts`
+
+```sql
+CREATE TABLE ai_consent_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID,
+  tenant_id UUID,
+  provider TEXT,
+  action TEXT NOT NULL,                   -- 'connect'|'disconnect'|'verify_ok'|'verify_failed'|'policy_update'
+  before_jsonb JSONB,
+  after_jsonb JSONB,
+  actor_role TEXT,                        -- 'user'|'operator'|'service'
+  actor_id UUID,
+  ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+RLS: users see their own; service role full.
+
+---
+
+**connector_registry** (pre-existing): extended `category` CHECK constraint to include `'ai_assistant'`; seeded rows `id='chatgpt'` and `id='claude'` with `auth_type='api_key'` and `capabilities=['chat','reasoning']`.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
-When in doubt, CHECK HERE FIRST! 🎯
+When in doubt, CHECK HERE FIRST!
