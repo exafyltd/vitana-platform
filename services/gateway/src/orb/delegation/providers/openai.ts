@@ -1,15 +1,20 @@
 /**
- * BOOTSTRAP-ORB-DELEGATION-SCAFFOLD: OpenAI (ChatGPT) provider adapter.
+ * BOOTSTRAP-ORB-DELEGATION-PROVIDERS: OpenAI (ChatGPT) provider adapter.
  *
- * Current state: verify() hits /v1/models (same pattern as the existing
- * /verify/chatgpt route). call() throws `scaffold_not_wired` — Phase 7 will
- * replace it with a real Chat Completions call plus token counting.
+ * Uses the official `openai` SDK (v6). Wire is:
+ *   - verify(): /v1/models — cheap auth check.
+ *   - call(): chat.completions.create with the user's prompt + system
+ *     instruction from buildProviderPrompt. Returns text + exact token
+ *     counts from the response usage field.
  *
- * Pricing table below is a seed for MODEL_COSTS — kept local for now so
- * this adapter is self-contained. Phase 7 can migrate to constants/llm-defaults.ts
- * if we want to share with other surfaces.
+ * The executor wraps adapter.call() in a 15 s hard timeout (execute.ts),
+ * so we don't need per-call timeouts here. SDK errors propagate with
+ * meaningful messages; the executor catches and logs as provider_error.
  */
+import OpenAI from 'openai';
 import type { DelegationContext, DelegationResult, ProviderAdapter } from '../types';
+import { buildProviderPrompt } from '../context-builder';
+import { computeCostUsd } from '../usage';
 
 const PROVIDER_ID = 'chatgpt';
 
@@ -22,8 +27,6 @@ export const adapter: ProviderAdapter = {
     strengths: ['reasoning', 'code', 'vision', 'multilingual', 'factual'],
     supportsStreaming: true,
     costRates: {
-      // USD per 1M tokens (input / output). Seed values — Phase 7 reads
-      // MODEL_COSTS from constants/llm-defaults.ts so there is one source of truth.
       'gpt-4o':      { input: 2.50,  output: 10.00 },
       'gpt-4o-mini': { input: 0.15,  output: 0.60 },
       'o1-mini':     { input: 3.00,  output: 12.00 },
@@ -49,9 +52,40 @@ export const adapter: ProviderAdapter = {
     }
   },
 
-  async call(_ctx: DelegationContext, _apiKey: string, _model: string): Promise<DelegationResult> {
-    throw new Error(
-      'BOOTSTRAP-ORB-DELEGATION-SCAFFOLD: OpenAI adapter.call() not wired yet. Phase 7 ships the real implementation.',
-    );
+  async call(ctx: DelegationContext, apiKey: string, model: string): Promise<DelegationResult> {
+    const client = new OpenAI({ apiKey });
+    const prompt = buildProviderPrompt(ctx);
+
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      // Voice-friendly envelope: bound runaway responses and keep latency low.
+      // Reasoning models (o1) interpret max_tokens loosely; the cap still
+      // limits end-user-visible output tokens either way.
+      max_tokens: 1024,
+      temperature: 0.7,
+    });
+
+    const choice = completion.choices[0];
+    const text = choice?.message?.content ?? '';
+    const inputTokens = completion.usage?.prompt_tokens ?? 0;
+    const outputTokens = completion.usage?.completion_tokens ?? 0;
+
+    const rates = adapter.manifest.costRates[model];
+    const costUsd = rates ? computeCostUsd(inputTokens, outputTokens, rates) : 0;
+
+    return {
+      text,
+      providerId: PROVIDER_ID,
+      model,
+      usage: { inputTokens, outputTokens, costUsd },
+      latencyMs: Date.now() - ctx.startedAt,
+      metadata: {
+        finish_reason: choice?.finish_reason ?? null,
+      },
+    };
   },
 };
