@@ -135,7 +135,9 @@ export interface ResolveOptions {
 export interface ResolveSuccess {
   connectorId: string;
   /** Which rule picked this connector — useful for telemetry and UX. */
-  reason: 'explicit' | 'external_connected' | 'hub_fallback';
+  reason: 'explicit' | 'preference' | 'external_connected' | 'hub_fallback';
+  /** Only set when reason='preference' — so the UI can show "your default". */
+  preference_set_method?: 'explicit' | 'learned' | 'onboarding';
 }
 
 /**
@@ -190,6 +192,28 @@ export async function resolveConnectorFor(
       };
     }
     return { connectorId: exact.id, reason: 'explicit' };
+  }
+
+  // ── Rule 2: stored preference for this capability ─────────────────────
+  // VTID-01942 PR 2: user_capability_preferences row. Honoured only if
+  // the preferred connector is still available.
+  const { data: prefRow } = await supabase
+    .from('user_capability_preferences')
+    .select('preferred_connector_id, set_method')
+    .eq('user_id', userId)
+    .eq('capability_id', capabilityId)
+    .maybeSingle();
+  if (prefRow?.preferred_connector_id) {
+    const pref = candidates.find((c) => c.id === prefRow.preferred_connector_id);
+    if (pref && isAvailable(pref.id, pref.auth_type)) {
+      return {
+        connectorId: pref.id,
+        reason: 'preference',
+        preference_set_method: (prefRow.set_method as 'explicit' | 'learned' | 'onboarding') ?? 'explicit',
+      };
+    }
+    // Preferred connector is no longer available — fall through. Future
+    // enhancement: clear the stale row so we don't keep checking it.
   }
 
   // ── Rule 4: prefer any externally-connected connector ─────────────────
@@ -248,8 +272,69 @@ export async function executeCapability(
     capability: capabilityId,
     args: dispatchArgs,
   });
-  // Surface why this connector was chosen so the UI / voice layer can
-  // shape the response ("Playing on YouTube Music — your default" vs
-  // "I don't have that in the hub, want me to link your music account?").
-  return { ...result, routing_reason: resolved.reason } as DispatchResult & { routing_reason: string };
+
+  // VTID-01942 PR 2: log successful plays so we can suggest a default later.
+  let suggestDefault = false;
+  if (result.ok) {
+    try {
+      await ctx.supabase.from('capability_play_log').insert({
+        tenant_id: ctx.tenantId,
+        user_id: ctx.userId,
+        capability_id: capabilityId,
+        connector_id: resolved.connectorId,
+        reason: resolved.reason,
+        args: dispatchArgs,
+        ok: true,
+      });
+    } catch (err: unknown) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.warn(`[capabilities] play-log insert failed: ${m}`);
+    }
+
+    // Learned-preference prompt: after 3 successful plays through the same
+    // non-hub, non-preference-backed connector and no existing pref, tell
+    // the caller to suggest setting it as default. We never save the pref
+    // silently — the user has to confirm through the /preferences API (or a
+    // voice confirmation handled by the ORB).
+    if (
+      resolved.reason === 'external_connected' &&
+      !explicitSource
+    ) {
+      const { count: existingPrefCount } = await ctx.supabase
+        .from('user_capability_preferences')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', ctx.userId)
+        .eq('capability_id', capabilityId);
+
+      if ((existingPrefCount ?? 0) === 0) {
+        const { data: recent } = await ctx.supabase
+          .from('capability_play_log')
+          .select('connector_id')
+          .eq('user_id', ctx.userId)
+          .eq('capability_id', capabilityId)
+          .eq('ok', true)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        const lastThree = (recent ?? []).map((r: any) => r.connector_id);
+        if (
+          lastThree.length === 3 &&
+          lastThree.every((id) => id === resolved.connectorId)
+        ) {
+          suggestDefault = true;
+        }
+      }
+    }
+  }
+
+  return {
+    ...result,
+    routing_reason: resolved.reason,
+    preference_set_method: resolved.preference_set_method,
+    suggest_default: suggestDefault,
+  } as DispatchResult & {
+    routing_reason: string;
+    preference_set_method?: string;
+    suggest_default?: boolean;
+  };
 }

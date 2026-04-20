@@ -65,6 +65,86 @@ router.get('/my-connectors', async (req: Request, res: Response) => {
   return res.json({ ok: true, connectors });
 });
 
+/**
+ * VTID-01942 PR 2: preferences CRUD so users can pin a default provider per
+ * capability (e.g. "always play music via YouTube Music") and clear it later.
+ * Must be declared BEFORE the generic POST /:capability route below or
+ * "/preferences" would be parsed as a capability name.
+ *
+ *   GET    /api/v1/capabilities/preferences                — list user prefs
+ *   PUT    /api/v1/capabilities/preferences/:capability    — set / update one
+ *   DELETE /api/v1/capabilities/preferences/:capability    — clear one
+ */
+router.get('/preferences', async (req: Request, res: Response) => {
+  const user = extractUserFromJwt(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supabase = await getServiceClient();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
+
+  const { data, error } = await supabase
+    .from('user_capability_preferences')
+    .select('capability_id, preferred_connector_id, set_method, updated_at')
+    .eq('user_id', user.userId);
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  return res.json({ ok: true, preferences: data ?? [] });
+});
+
+router.put('/preferences/:capability', async (req: Request, res: Response) => {
+  const user = extractUserFromJwt(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const capability = req.params.capability;
+  const body = (req.body && typeof req.body === 'object') ? req.body as any : {};
+  const preferred_connector_id = String(body.preferred_connector_id ?? '').trim();
+  const rawSetMethod = String(body.set_method ?? 'explicit').trim();
+  const set_method: 'explicit' | 'learned' | 'onboarding' =
+    rawSetMethod === 'learned' ? 'learned'
+      : rawSetMethod === 'onboarding' ? 'onboarding'
+        : 'explicit';
+
+  if (!preferred_connector_id) {
+    return res.status(400).json({ ok: false, error: 'preferred_connector_id is required' });
+  }
+
+  const supabase = await getServiceClient();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
+
+  const { data, error } = await supabase
+    .from('user_capability_preferences')
+    .upsert({
+      tenant_id: user.tenantId,
+      user_id: user.userId,
+      capability_id: capability,
+      preferred_connector_id,
+      set_method,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'tenant_id,user_id,capability_id' })
+    .select('capability_id, preferred_connector_id, set_method, updated_at')
+    .single();
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  return res.json({ ok: true, preference: data });
+});
+
+router.delete('/preferences/:capability', async (req: Request, res: Response) => {
+  const user = extractUserFromJwt(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supabase = await getServiceClient();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
+
+  const { error } = await supabase
+    .from('user_capability_preferences')
+    .delete()
+    .eq('user_id', user.userId)
+    .eq('capability_id', req.params.capability);
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  return res.json({ ok: true });
+});
+
 /** POST /api/v1/capabilities/:capability — invoke a capability. */
 router.post('/:capability', async (req: Request, res: Response) => {
   const user = extractUserFromJwt(req);
