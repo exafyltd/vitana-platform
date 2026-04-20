@@ -1674,6 +1674,40 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: [],
           },
         },
+        // VTID-01941: Play a song through the user's connected music
+        // provider (YouTube Music today; Spotify / Apple Music later).
+        // Backend dispatches music.play capability → returns a URL →
+        // widget emits orb_directive open_url → browser opens it.
+        {
+          name: 'play_music',
+          description: [
+            'Play a song, album or playlist on the user\'s connected',
+            'music provider. Call this whenever the user asks to play,',
+            'listen to, hear, or put on any music, song or track.',
+            'Examples:',
+            '  - "play Beat It by Michael Jackson"',
+            '  - "play Human Nature"',
+            '  - "play some Whitney Houston"',
+            '  - "put on One Moment in Time"',
+            '',
+            'Pass the full phrase minus "play" as the query. After',
+            'calling, the user\'s browser opens YouTube Music (or',
+            'whichever provider they have connected) and playback',
+            'starts automatically. In your spoken reply, acknowledge',
+            'briefly ("Playing X by Y now on YouTube Music") and NEVER',
+            'read the URL out loud.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Song / artist / album / playlist in natural language, e.g. "Human Nature by Michael Jackson".',
+              },
+            },
+            required: ['query'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -2938,6 +2972,69 @@ async function executeLiveApiToolInner(
 
         console.log(`[VTID-01270A] get_recommendations: ${results.length} results (type=${recType}), ${formatted.length} chars, ${Date.now() - startTime}ms`);
         return { success: true, result: `Here are your personalized recommendations:\n${formatted}` };
+      }
+
+      // VTID-01941: Voice "play a song" — dispatch to the music.play
+      // capability, emit orb_directive open_url so the widget opens
+      // YouTube Music in a new tab, return a short speakable ack.
+      case 'play_music': {
+        const query = String(args.query ?? '').trim();
+        if (!query) {
+          return { success: false, result: '', error: 'play_music requires a "query" argument' };
+        }
+
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Music capability unavailable — Supabase creds not configured' };
+        }
+
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { executeCapability } = await import('../capabilities');
+        const disp = await executeCapability(
+          { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
+          'music.play',
+          { query },
+        );
+
+        if (!disp.ok || !disp.url) {
+          return {
+            success: false,
+            result: '',
+            error: disp.error ?? 'music.play returned no URL',
+          };
+        }
+
+        const raw = (disp.raw ?? {}) as { title?: string; channel?: string; source?: string };
+        const title = raw.title ?? query;
+        const channel = raw.channel ?? '';
+        const source = raw.source ?? 'youtube_music';
+
+        // Hand the URL off to the widget — it calls window.open() for us.
+        const directive = {
+          type: 'orb_directive',
+          directive: 'open_url',
+          url: disp.url,
+          title,
+          channel,
+          source,
+          query,
+          vtid: 'VTID-01941',
+        };
+        try { session.sseResponse?.write(`data: ${JSON.stringify(directive)}\n\n`); } catch (_e) { /* SSE closed */ }
+        const ws = (session as any).clientWs;
+        if (ws && ws.readyState === 1) {
+          try { sendWsMessage(ws, directive); } catch (_e) { /* WS closed */ }
+        }
+
+        console.log(`[VTID-01941] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''}`);
+        // Speakable result — the model reads this back briefly. Keep tight
+        // so it stays under the function_response stall threshold.
+        return {
+          success: true,
+          result: `Now playing "${title}"${channel ? ' by ' + channel : ''} on YouTube Music.`,
+        };
       }
 
       default:
