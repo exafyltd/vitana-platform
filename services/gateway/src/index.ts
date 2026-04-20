@@ -540,6 +540,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const capabilitiesRouter = require('./routes/capabilities').default;
   mountRouterSync(app, '/api/v1/capabilities', capabilitiesRouter, { owner: 'capabilities' });
 
+  // VTID-01942: Vitana Media Hub search — backs the vitana_hub connector
+  // (music / podcast / shorts capability routing falls back here when the
+  // user has no external provider connected).
+  const mediaHubRouter = require('./routes/media-hub').default;
+  mountRouterSync(app, '/api/v1/media-hub', mediaHubRouter, { owner: 'media-hub' });
+
   // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring (legacy - kept for backwards compatibility)
   mountRouterSync(app, '/api/v1/recommendations', recommendationInboxRouter, { owner: 'recommendation-inbox' });
 

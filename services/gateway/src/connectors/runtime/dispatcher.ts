@@ -148,17 +148,31 @@ export async function dispatchAction(
     };
   }
 
-  const stored = await loadConnection(ctx.supabase, ctx.userId, opts.connectorId);
-  if (!stored) {
-    return {
-      ok: false,
-      connector: opts.connectorId,
-      capability: opts.capability,
-      error: `User has no active ${opts.connectorId} connection`,
-    };
-  }
+  // VTID-01942: auth_type 'none' connectors (Vitana Media Hub) are always
+  // available — skip the token lookup and pass an empty TokenPair.
+  let tokens: TokenPair;
+  let refreshed = false;
+  let storedId: string | undefined;
 
-  const { tokens, refreshed } = await refreshIfExpired(ctx.supabase, opts.connectorId, stored.id, connector, stored);
+  if (connector.auth_type === 'none') {
+    tokens = { access_token: '' };
+  } else {
+    const stored = await loadConnection(ctx.supabase, ctx.userId, opts.connectorId);
+    if (!stored) {
+      return {
+        ok: false,
+        connector: opts.connectorId,
+        capability: opts.capability,
+        error: `User has no active ${opts.connectorId} connection`,
+      };
+    }
+    const refreshResult = await refreshIfExpired(
+      ctx.supabase, opts.connectorId, stored.id, connector, stored,
+    );
+    tokens = refreshResult.tokens;
+    refreshed = refreshResult.refreshed;
+    storedId = stored.id;
+  }
 
   const request: ActionRequest = {
     capability: opts.capability,
@@ -168,7 +182,7 @@ export async function dispatchAction(
 
   try {
     const result = await connector.performAction(
-      { tenant_id: ctx.tenantId, user_id: ctx.userId, user_connection_id: stored.id },
+      { tenant_id: ctx.tenantId, user_id: ctx.userId, user_connection_id: storedId },
       tokens,
       request,
     );
