@@ -2746,7 +2746,8 @@ const NAVIGATION_CONFIG = [
             { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
             { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
             { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
+            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" },
+            { "key": "vitana-awareness", "path": "/command-hub/testing-qa/vitana-awareness/" }
         ]
     },
     {
@@ -6115,6 +6116,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingE2eView());
     } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
         container.appendChild(renderTestingCiReportsView());
+    } else if (moduleKey === 'testing-qa' && tab === 'vitana-awareness') {
+        container.appendChild(renderVitanaAwarenessTestView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -39456,6 +39459,204 @@ function renderAutopilotGrowthView() {
         topCard.appendChild(empty);
     }
     container.appendChild(topCard);
+
+    return container;
+}
+
+// =============================================================================
+// BOOTSTRAP-HISTORY-AWARE-TIMELINE — Vitana Awareness Test
+// =============================================================================
+// Calls GET /api/v1/orb/debug/awareness with the current operator's session
+// and renders pass/fail indicators for every context block the voice ORB
+// would inject: identity, memory, recent turns, user context profile, and
+// the final assembled contextInstruction. Designed as a reusable diagnostic
+// for the "Vitana doesn't know about my activity" failure mode.
+// =============================================================================
+function renderVitanaAwarenessTestView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Vitana Awareness Test</h2>' +
+        '<p class="section-subtitle">What does the voice ORB actually know before responding? This calls the same bootstrap path a voice session uses and shows every context block that would be injected into the Gemini Live system_instruction.</p>';
+
+    // Info card
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.innerHTML = '<h3>What this tests</h3><ul>' +
+        '<li><strong>Identity</strong> — is the JWT verifying and resolving to a real user_id + tenant_id?</li>' +
+        '<li><strong>Memory items</strong> — what personal memory loads for this user?</li>' +
+        '<li><strong>Recent turns</strong> — what prior ORB user utterances are fetched?</li>' +
+        '<li><strong>User Context Profile</strong> — the deterministic summary of recent activity, routines, preferences.</li>' +
+        '<li><strong>Context instruction</strong> — the final string injected into the Gemini Live prompt.</li>' +
+        '</ul><p style="margin:.5rem 0 0;font-size:.8rem;color:var(--color-text-secondary);">If all checks are green but voice ORB still seems unaware, the issue is downstream of this test (Gemini model attention, anonymous fallback at widget, etc).</p>';
+    container.appendChild(info);
+
+    // Controls row
+    var controls = document.createElement('div');
+    controls.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin:1rem 0;flex-wrap:wrap;';
+
+    var userInput = document.createElement('input');
+    userInput.type = 'text';
+    userInput.placeholder = 'Optional user_id (service-role only) — leave blank to test as yourself';
+    userInput.style.cssText = 'flex:1 1 320px;min-width:280px;padding:.5rem;background:var(--color-bg-elevated);border:1px solid var(--color-border);border-radius:6px;color:var(--color-text);';
+    controls.appendChild(userInput);
+
+    var runBtn = document.createElement('button');
+    runBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    runBtn.textContent = 'Run Awareness Test';
+    controls.appendChild(runBtn);
+
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'task-spec-pipeline-btn';
+    copyBtn.textContent = 'Copy JSON';
+    copyBtn.style.display = 'none';
+    controls.appendChild(copyBtn);
+
+    container.appendChild(controls);
+
+    var results = document.createElement('div');
+    results.style.cssText = 'margin-top:1rem;';
+    container.appendChild(results);
+
+    var lastPayload = null;
+
+    function renderChecks(data) {
+        var box = document.createElement('div');
+        box.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem;margin-bottom:1rem;';
+        var c = data.checks || {};
+        var items = [
+            ['Identity resolved', c.identity_ok, data.identity && data.identity.user_id ? ('user=' + String(data.identity.user_id).slice(0, 8) + '\u2026 tenant=' + String(data.identity.tenant_id || '').slice(0, 8) + '\u2026') : 'anonymous'],
+            ['Context injected', c.context_injected, (data.context_instruction && data.context_instruction.char_count) + ' chars'],
+            ['Memory items', c.memory_ok, (data.memory && data.memory.item_count) + ' items'],
+            ['Recent ORB turns', c.turns_ok, (data.recent_turns && data.recent_turns.count) + ' turns'],
+            ['Profile summary', c.profile_ok, (data.profile && data.profile.char_count) + ' chars'],
+            ['Awareness overall', c.awareness_ok, c.awareness_ok ? 'ready' : 'degraded'],
+        ];
+        items.forEach(function (row) {
+            var tile = document.createElement('div');
+            var ok = !!row[1];
+            tile.style.cssText = 'padding:.75rem;border-radius:8px;border:1px solid ' +
+                (ok ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)') +
+                ';background:' + (ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)') + ';';
+            tile.innerHTML = '<div style="font-size:.75rem;color:var(--color-text-secondary);">' + row[0] + '</div>' +
+                '<div style="font-weight:600;margin-top:.25rem;">' + (ok ? '\u2705' : '\u274c') + ' ' +
+                String(row[2] || '').replace(/</g, '&lt;') + '</div>';
+            box.appendChild(tile);
+        });
+        return box;
+    }
+
+    function renderSection(title, bodyText, meta) {
+        var card = document.createElement('div');
+        card.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);';
+        var h = document.createElement('h4');
+        h.style.cssText = 'margin:0 0 .25rem;font-size:.9rem;';
+        h.textContent = title;
+        card.appendChild(h);
+        if (meta) {
+            var m = document.createElement('div');
+            m.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);margin-bottom:.5rem;';
+            m.textContent = meta;
+            card.appendChild(m);
+        }
+        var pre = document.createElement('pre');
+        pre.style.cssText = 'margin:0;padding:.75rem;background:var(--color-bg);border-radius:6px;overflow:auto;max-height:300px;font-size:.75rem;white-space:pre-wrap;word-break:break-word;';
+        pre.textContent = bodyText || '(empty)';
+        card.appendChild(pre);
+        return card;
+    }
+
+    function renderList(title, arr) {
+        var card = document.createElement('div');
+        card.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);';
+        var h = document.createElement('h4');
+        h.style.cssText = 'margin:0 0 .5rem;font-size:.9rem;';
+        h.textContent = title + ' (' + (arr ? arr.length : 0) + ')';
+        card.appendChild(h);
+        if (!arr || !arr.length) {
+            var p = document.createElement('div');
+            p.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);';
+            p.textContent = '(none)';
+            card.appendChild(p);
+            return card;
+        }
+        arr.forEach(function (s) {
+            var li = document.createElement('div');
+            li.style.cssText = 'padding:.35rem .5rem;background:var(--color-bg);border-radius:4px;margin-bottom:.25rem;font-size:.75rem;white-space:pre-wrap;';
+            li.textContent = s;
+            card.appendChild(li);
+        });
+        return card;
+    }
+
+    function renderResult(data) {
+        results.innerHTML = '';
+        lastPayload = data;
+        copyBtn.style.display = '';
+
+        results.appendChild(renderChecks(data));
+
+        if (data.warnings && data.warnings.length) {
+            var warnCard = document.createElement('div');
+            warnCard.style.cssText = 'padding:.75rem 1rem;background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.35);border-radius:8px;margin-bottom:1rem;';
+            warnCard.innerHTML = '<strong style="font-size:.85rem;">Warnings</strong>';
+            var ul = document.createElement('ul');
+            ul.style.cssText = 'margin:.5rem 0 0;padding-left:1.25rem;font-size:.8rem;';
+            data.warnings.forEach(function (w) {
+                var li = document.createElement('li'); li.textContent = w; ul.appendChild(li);
+            });
+            warnCard.appendChild(ul);
+            results.appendChild(warnCard);
+        }
+
+        results.appendChild(renderSection(
+            'User Context Profile (summary injected into voice prompt)',
+            data.profile && data.profile.summary ? data.profile.summary : '',
+            'version=' + (data.profile ? data.profile.version : 0) +
+            ' cached=' + (data.profile ? data.profile.cached : false) +
+            ' sections=[' + ((data.profile && data.profile.sections) || []).join(', ') + ']'
+        ));
+
+        results.appendChild(renderList('Memory items (preview)', (data.memory && data.memory.preview) || []));
+        results.appendChild(renderList('Recent ORB turns (preview)', (data.recent_turns && data.recent_turns.preview) || []));
+
+        results.appendChild(renderSection(
+            'Context instruction — what Gemini Live would see',
+            data.context_instruction ? (data.context_instruction.preview + (data.context_instruction.truncated ? '\n\n[\u2026truncated for display\u2026]' : '')) : '',
+            (data.context_instruction ? data.context_instruction.char_count : 0) + ' chars total'
+        ));
+    }
+
+    function runTest() {
+        results.innerHTML = '<div class="placeholder-content">Running awareness check\u2026</div>';
+        var userId = userInput.value.trim();
+        var url = '/api/v1/orb/debug/awareness' + (userId ? ('?user_id=' + encodeURIComponent(userId)) : '');
+        fetch(url, { method: 'GET', headers: buildContextHeaders({ 'Accept': 'application/json' }) })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || data.ok === false) {
+                    results.innerHTML = '<div class="error-text" style="padding:1rem;">Error: ' + ((data && data.error) || 'unknown') + '</div>';
+                    return;
+                }
+                renderResult(data);
+            })
+            .catch(function (err) {
+                results.innerHTML = '<div class="error-text" style="padding:1rem;">Request failed: ' + (err && err.message ? err.message : err) + '</div>';
+            });
+    }
+
+    runBtn.onclick = runTest;
+    copyBtn.onclick = function () {
+        if (lastPayload) {
+            try {
+                navigator.clipboard.writeText(JSON.stringify(lastPayload, null, 2));
+                copyBtn.textContent = 'Copied!';
+                setTimeout(function () { copyBtn.textContent = 'Copy JSON'; }, 1500);
+            } catch (e) { /* ignore */ }
+        }
+    };
+
+    // Auto-run on load so operators see the baseline immediately.
+    setTimeout(runTest, 50);
 
     return container;
 }
