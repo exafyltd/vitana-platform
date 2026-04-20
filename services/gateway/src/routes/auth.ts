@@ -296,6 +296,93 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 /**
+ * BOOTSTRAP-DEV-6H-SESSION: POST /refresh
+ *
+ * Exchange a Supabase refresh_token for a fresh access_token + refresh_token.
+ * Proxies to Supabase GoTrue `/token?grant_type=refresh_token`. Does NOT
+ * require an Authorization header — the refresh token IS the credential.
+ *
+ * Body:
+ *   { "refresh_token": "..." }
+ *
+ * Success (200):
+ *   { "ok": true, "access_token", "refresh_token", "expires_in", "token_type" }
+ *
+ * Failure (401):
+ *   { "ok": false, "error": "INVALID_REFRESH_TOKEN", "message": "..." }
+ */
+router.post('/refresh', async (req: Request, res: Response) => {
+  const { refresh_token } = req.body || {};
+
+  if (!refresh_token || typeof refresh_token !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'refresh_token is required',
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Missing Supabase config');
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Supabase configuration not available',
+    });
+  }
+
+  try {
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnonKey,
+      },
+      body: JSON.stringify({ refresh_token }),
+    });
+
+    const authData = await authResponse.json() as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      token_type?: string;
+      error?: string;
+      error_description?: string;
+      msg?: string;
+    };
+
+    if (!authResponse.ok || !authData.access_token) {
+      console.warn(
+        `[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - failed: ${authData.error || authData.msg || authResponse.status}`
+      );
+      return res.status(401).json({
+        ok: false,
+        error: 'INVALID_REFRESH_TOKEN',
+        message: authData.error_description || authData.msg || 'Refresh token is invalid or expired',
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      access_token: authData.access_token,
+      refresh_token: authData.refresh_token,
+      expires_in: authData.expires_in,
+      token_type: authData.token_type || 'bearer',
+    });
+  } catch (err: any) {
+    console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Exception:', err.message);
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Token refresh service error',
+    });
+  }
+});
+
+/**
  * GET /me
  *
  * Returns the authenticated user's identity, profile, and memberships.

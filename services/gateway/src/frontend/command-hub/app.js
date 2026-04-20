@@ -930,7 +930,11 @@ async function doLogin(email, password) {
         // Store refresh token for later use
         if (data.refresh_token) {
             localStorage.setItem('vitana.refreshToken', data.refresh_token);
+            // BOOTSTRAP-DEV-6H-SESSION: keep in state for silent-refresh path
+            state.refreshToken = data.refresh_token;
         }
+        // Reset activity clock at login so the 6h idle window starts fresh.
+        state.lastActivityAt = Date.now();
 
         // VTID-01196: Store login email as fallback for profile display
         // This ensures we can show user info even if /auth/me fails
@@ -1202,6 +1206,7 @@ function renderAuthGate() {
 function doLogout() {
     // Clear auth state
     state.authToken = null;
+    state.refreshToken = null; // BOOTSTRAP-DEV-6H-SESSION
     state.authIdentity = null;
     state.meContext = null;
     state.loginUserEmail = null; // VTID-01196: Clear login email fallback
@@ -2978,6 +2983,13 @@ const state = {
     meContextError: null,
     // Auth token for API calls (set via dev-auth or Supabase session)
     authToken: localStorage.getItem('vitana.authToken') || null,
+
+    // BOOTSTRAP-DEV-6H-SESSION: refresh token + activity tracking for 6h
+    // extended sessions (developer role only). Non-developer roles continue
+    // to log out at JWT expiry (~1h) per current security posture.
+    refreshToken: localStorage.getItem('vitana.refreshToken') || null,
+    lastActivityAt: Date.now(),
+    refreshingToken: false,
 
     // VTID-01171: Auth Identity from /api/v1/auth/me
     // Contains user identity (email, user_id), profile (display_name, avatar_url), memberships
@@ -34090,31 +34102,113 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD: Active session health monitor.
-        // The JWT in state.authToken can expire while the user is idle.
-        // Without this, the user stays on the Command Hub looking logged in
-        // but every action will 401. Poll every 30s by decoding the JWT exp
-        // claim — if expired, force logout to show the auth gate.
-        // Also check immediately when the tab/WebView returns to foreground.
-        function checkTokenExpiry() {
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION: Active session health monitor.
+        //
+        // Baseline (all roles): JWT expires (~1h for Supabase) → doLogout().
+        //
+        // Developer override: if active_role === 'developer', silently refresh
+        // the access token via /api/v1/auth/refresh whenever it's within 5 min
+        // of expiry, so the developer stays signed in while working. Only log
+        // out after 6 hours of true user inactivity (no mousedown/keydown/
+        // scroll/touchstart) OR when refresh fails (e.g. refresh token revoked
+        // server-side). This is scoped to developer only — community, admin,
+        // staff, professional, patient keep the stricter 1h hard expiry.
+        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;  // 6 hours
+        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;     // refresh if <5m left
+
+        function isDeveloperSession() {
+            return (state.meContext && state.meContext.active_role === 'developer');
+        }
+
+        function markActivity() { state.lastActivityAt = Date.now(); }
+        ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
+            document.addEventListener(evt, markActivity, { passive: true, capture: true });
+        });
+
+        async function refreshAccessToken() {
+            if (state.refreshingToken) return false;
+            if (!state.refreshToken) return false;
+            state.refreshingToken = true;
+            try {
+                var resp = await fetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: state.refreshToken })
+                });
+                var data = await resp.json();
+                if (!resp.ok || !data.ok || !data.access_token) {
+                    console.warn('[DEV-6H-SESSION] refresh failed:', data && (data.message || data.error));
+                    return false;
+                }
+                state.authToken = data.access_token;
+                localStorage.setItem('vitana.authToken', data.access_token);
+                if (data.refresh_token) {
+                    state.refreshToken = data.refresh_token;
+                    localStorage.setItem('vitana.refreshToken', data.refresh_token);
+                }
+                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
+                    window.VitanaOrb.setAuth(data.access_token);
+                }
+                console.log('[DEV-6H-SESSION] access token refreshed silently');
+                return true;
+            } catch (err) {
+                console.warn('[DEV-6H-SESSION] refresh threw:', err && err.message);
+                return false;
+            } finally {
+                state.refreshingToken = false;
+            }
+        }
+
+        async function checkTokenExpiry() {
             if (!state.authToken) return;
+            var payload;
             try {
                 var parts = state.authToken.split('.');
                 if (parts.length !== 3) return;
-                var payload = JSON.parse(atob(parts[1]));
-                if (payload.exp && payload.exp * 1000 < Date.now()) {
-                    console.warn('[VTID-AUTH-GUARD] JWT expired — logging out');
+                payload = JSON.parse(atob(parts[1]));
+            } catch (e) {
+                console.warn('[VTID-AUTH-GUARD] Cannot parse JWT — logging out');
+                doLogout();
+                return;
+            }
+
+            var expMs = (payload && payload.exp) ? payload.exp * 1000 : 0;
+            var now = Date.now();
+
+            if (isDeveloperSession()) {
+                // Developer: enforce 6h idle logout FIRST — if idle for 6h,
+                // don't bother refreshing, just sign out.
+                var idleMs = now - (state.lastActivityAt || now);
+                if (idleMs >= DEV_IDLE_LOGOUT_MS) {
+                    console.warn('[DEV-6H-SESSION] idle ' + Math.round(idleMs / 60000) + 'm — logging out');
+                    doLogout();
+                    return;
+                }
+                // Token fresh enough — nothing to do.
+                if (expMs && expMs - now > TOKEN_REFRESH_LEAD_MS) return;
+                // Token expired or near expiry — try silent refresh.
+                var refreshed = await refreshAccessToken();
+                if (!refreshed) {
+                    console.warn('[DEV-6H-SESSION] cannot refresh — logging out');
                     doLogout();
                 }
-            } catch (e) {
-                // Malformed token — force logout
-                console.warn('[VTID-AUTH-GUARD] Cannot parse JWT — logging out');
+                return;
+            }
+
+            // Non-developer roles: keep the existing strict behavior.
+            if (expMs && expMs < now) {
+                console.warn('[VTID-AUTH-GUARD] JWT expired — logging out');
                 doLogout();
             }
         }
+
         setInterval(checkTokenExpiry, 30000);
         document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'visible') checkTokenExpiry();
+            if (document.visibilityState === 'visible') {
+                // Returning to the tab counts as activity for developers.
+                if (isDeveloperSession()) markActivity();
+                checkTokenExpiry();
+            }
         });
 
         // Initialize unified VitanaOrb widget (voice overlay handled by orb-widget.js)
