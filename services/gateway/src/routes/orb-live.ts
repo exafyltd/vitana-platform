@@ -635,6 +635,12 @@ interface GeminiLiveSession {
   contextPack?: ContextPack;
   contextBootstrapLatencyMs?: number;
   contextBootstrapSkippedReason?: string;
+  // BOOTSTRAP-ORB-PHASE1: epoch ms when the bootstrap context was last built.
+  // Used by the /live/stream reconnect path to skip redundant rebuilds if the
+  // cached pack is still fresh (<60s). Reconnects within this window are
+  // typically EventSource network blips, not long pauses, so rebuilding would
+  // waste 400-1200 ms of Supabase/Gemini calls for zero user benefit.
+  contextBootstrapBuiltAt?: number;
   // VTID-01225: Transcript accumulation for Cognee extraction
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
@@ -9175,18 +9181,16 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // 3. Accept-Language header (browser default)
   // 4. 'en' (ultimate fallback)
   //
-  // Client request MUST win over stored preference because the user may have just
-  // changed their language in the UI. Previously stored pref overrode the client
-  // request, creating a self-reinforcing loop that ignored language changes.
+  // BOOTSTRAP-ORB-PHASE1: Previously getStoredLanguagePreference awaited
+  // serially here (~100 ms) before the bootstrap Promise.all. Now we kick it
+  // off in parallel and await its result alongside bootstrap/role/sessionInfo.
+  // The client-request short-circuit (most common case) stays synchronous.
   let lang = normalizeLang(clientRequestedLang || 'en');
-  if (!clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
-    // No client preference — fall back to stored preference from previous session
-    const storedLang = await getStoredLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id);
-    if (storedLang) {
-      lang = storedLang;
-      console.log(`[LANG-PREF] No client lang — using stored preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
-    }
-  } else if (clientRequestedLang) {
+  const needsStoredLang = !clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id;
+  const storedLangPromise: Promise<string | null> = needsStoredLang
+    ? getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id)
+    : Promise.resolve(null);
+  if (clientRequestedLang) {
     console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
   }
   // For anonymous sessions: use Accept-Language header if client didn't specify
@@ -9196,11 +9200,6 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
       lang = browserLang;
       console.log(`[LANG-PREF] Anonymous session using Accept-Language: ${lang}`);
     }
-  }
-
-  // Persist language preference (fire-and-forget)
-  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
-    persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, lang);
   }
 
   // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
@@ -9221,8 +9220,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
     const useOrbBrain = await isVitanaBrainOrbEnabled();
 
-    // Fetch role, context, and last session info in parallel for minimal latency
-    const [bootstrapResult, fetchedSseRole, fetchedSessionInfo] = await Promise.all([
+    // BOOTSTRAP-ORB-PHASE1: Run bootstrap + role + sessionInfo + language
+    // preference all in parallel. Previously storedLang awaited serially
+    // before this block, adding ~100 ms to the critical path. Now it
+    // overlaps with the other queries so total latency is governed by the
+    // slowest one (bootstrap ~800-1200 ms).
+    const [bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult] = await Promise.all([
       useOrbBrain
         ? (async () => {
             const brainStart = Date.now();
@@ -9252,9 +9255,14 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(bootstrapIdentity.user_id),
+      storedLangPromise,
     ]);
     sseActiveRole = fetchedSseRole;
     lastSessionInfo = fetchedSessionInfo;
+    if (storedLangResult && !clientRequestedLang) {
+      lang = storedLangResult;
+      console.log(`[LANG-PREF] No client lang — using stored preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
+    }
 
     // VTID-ROLE-CMD-HUB: Command Hub is developer-only — override role
     const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
@@ -9278,6 +9286,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
   }
 
+  // BOOTSTRAP-ORB-PHASE1: persist language preference AFTER the final lang is
+  // determined (stored-lang lookup moved into the parallel block above).
+  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+    persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, lang);
+  }
+
   // Create session object with identity and context attached
   const session: GeminiLiveSession = {
     sessionId,
@@ -9298,6 +9312,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     contextPack,
     contextBootstrapLatencyMs,
     contextBootstrapSkippedReason,
+    contextBootstrapBuiltAt: Date.now(),
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
@@ -9672,16 +9687,32 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // VTID-01225: On reconnect, rebuild context pack to include newly extracted facts
   // The incremental extractor persists facts to memory_facts during the session,
   // so a reconnect should pick up the latest facts in the bootstrap context.
+  //
+  // BOOTSTRAP-ORB-PHASE1: If the previous build is <60 s old, skip the rebuild.
+  // Brief EventSource reconnects (network blips, tab-wake, iOS bfcache) arrive
+  // within seconds and no new memory facts have been extracted yet, so
+  // rebuilding burns 400-1200 ms of Supabase + optional brain work for no
+  // user-visible benefit. The 60 s window is well below the Cognee extraction
+  // dedup window, so this never starves the model of genuinely new facts.
+  const bootstrapAgeMs = session.contextBootstrapBuiltAt
+    ? Date.now() - session.contextBootstrapBuiltAt
+    : Infinity;
+  const BOOTSTRAP_REBUILD_MIN_AGE_MS = 60_000;
   if (session.transcriptTurns.length > 0 && session.identity && session.identity.tenant_id) {
-    console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns). Rebuilding context pack...`);
-    try {
-      const bootstrapResult = await buildBootstrapContextPack(session.identity, sessionId);
-      if (bootstrapResult.contextInstruction) {
-        session.contextInstruction = bootstrapResult.contextInstruction;
-        console.log(`[VTID-01225] Context pack rebuilt on reconnect: ${bootstrapResult.latencyMs}ms, chars=${session.contextInstruction.length}`);
+    if (bootstrapAgeMs < BOOTSTRAP_REBUILD_MIN_AGE_MS) {
+      console.log(`[BOOTSTRAP-ORB-PHASE1] Reconnect within ${Math.round(bootstrapAgeMs / 1000)}s of session-start for ${sessionId} — reusing cached bootstrap context (saved ~${Math.round((session.contextBootstrapLatencyMs || 800))} ms)`);
+    } else {
+      console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns, bootstrap age ${Math.round(bootstrapAgeMs / 1000)}s). Rebuilding context pack...`);
+      try {
+        const bootstrapResult = await buildBootstrapContextPack(session.identity, sessionId);
+        if (bootstrapResult.contextInstruction) {
+          session.contextInstruction = bootstrapResult.contextInstruction;
+          session.contextBootstrapBuiltAt = Date.now();
+          console.log(`[VTID-01225] Context pack rebuilt on reconnect: ${bootstrapResult.latencyMs}ms, chars=${session.contextInstruction.length}`);
+        }
+      } catch (err: any) {
+        console.warn(`[VTID-01225] Context pack rebuild on reconnect failed: ${err.message}`);
       }
-    } catch (err: any) {
-      console.warn(`[VTID-01225] Context pack rebuild on reconnect failed: ${err.message}`);
     }
   }
 
@@ -11044,6 +11075,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack,
     contextBootstrapLatencyMs,
     contextBootstrapSkippedReason,
+    contextBootstrapBuiltAt: Date.now(),
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
