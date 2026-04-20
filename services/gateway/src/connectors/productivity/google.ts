@@ -178,9 +178,19 @@ const googleConnector: Connector = {
         if (!query) return { ok: false, error: 'music.play: "query" arg is required' };
         const hit = await youtubeSearchFirst(query, token);
         if (!hit) return { ok: false, error: `No YouTube result found for "${query}"` };
-        // YouTube Music on mobile is an App Link for music.youtube.com, so the
-        // same URL opens the app on Android and the web player on desktop.
-        const url = `https://music.youtube.com/watch?v=${encodeURIComponent(hit.videoId)}`;
+
+        // YouTube Music on mobile is an Android App Link for music.youtube.com,
+        // so the same URL opens the native app (already signed in → Premium,
+        // no ads). On desktop or when the app isn't installed, the browser
+        // opens music.youtube.com. Append &authuser=<email> so if the user
+        // has multiple Google accounts in Chrome, the right one is picked —
+        // which is what makes Premium playback work in the browser too.
+        const params = new URLSearchParams({ v: hit.videoId });
+        if (_ctx.provider_username) {
+          params.set('authuser', _ctx.provider_username);
+        }
+        const url = `https://music.youtube.com/watch?${params.toString()}`;
+
         return {
           ok: true,
           external_id: hit.videoId,
@@ -193,6 +203,7 @@ const googleConnector: Connector = {
             thumbnail: hit.thumbnail,
             source: 'youtube_music',
             query,
+            authuser: _ctx.provider_username ?? null,
           },
         };
       }
