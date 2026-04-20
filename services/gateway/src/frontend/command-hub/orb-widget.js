@@ -1047,42 +1047,23 @@
             break;
           }
 
-          // VTID-01942: pick the right URL per platform. On mobile we want
-          // the native app (intent:// on Android, custom scheme on iOS) so
-          // YouTube Music / Spotify / etc. open as real apps instead of
-          // covering Vitana with an in-WebView web player.
-          var _ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
-          var _isAndroid = /android/i.test(_ua);
-          var _isIOS = /iphone|ipad|ipod/i.test(_ua);
-          var _target = msg.url;
-          var _kind = 'web';
-          if (_isAndroid && msg.android_intent) {
-            _target = msg.android_intent;
-            _kind = 'android_intent';
-          } else if (_isIOS && msg.ios_scheme) {
-            _target = msg.ios_scheme;
-            _kind = 'ios_scheme';
-          }
-          console.log('[VTOrb] orb_directive open_url [' + _kind + ']: ' + (msg.title || _target) + (msg.source ? ' (' + msg.source + ')' : ''));
-
-          // Intent URLs + custom schemes must use location.href — the OS
-          // intercepts them, and window.open on them returns null without
-          // actually dispatching on some WebViews. For https URLs, prefer
-          // a new tab so Vitana stays visible in the original tab on desktop.
-          if (_kind !== 'web') {
-            try {
-              window.location.href = _target;
-            } catch (_e) {
-              console.error('[VTOrb] intent/scheme open failed, falling back to web:', _e);
-              try { window.open(msg.url, '_blank', 'noopener,noreferrer'); } catch (_e2) { /* give up */ }
-            }
-            break;
-          }
+          // VTID-01942: always use window.open on the plain HTTPS URL.
+          // Android App Links (music.youtube.com, open.spotify.com, etc.)
+          // and iOS Universal Links handle the native-app handoff via the
+          // OS. An earlier attempt to switch to `location.href = intent://`
+          // broke the Appilix WebView flow — location.href navigates the
+          // WebView itself and not every wrapper forwards intent URLs to
+          // the OS. window.open with target=_blank is the route the host
+          // WebView already knows how to forward.
+          console.log('[VTOrb] orb_directive open_url: ' + (msg.title || msg.url) + (msg.source ? ' (' + msg.source + ')' : ''));
           try {
-            var _opened = window.open(_target, '_blank', 'noopener,noreferrer');
+            var _opened = window.open(msg.url, '_blank', 'noopener,noreferrer');
             if (!_opened) {
-              console.warn('[VTOrb] window.open blocked, falling back to location.href');
-              window.location.href = _target;
+              // Popup blocked (or WebView returned null). Same-tab fallback
+              // so the user at least reaches the player instead of silently
+              // getting nothing.
+              console.warn('[VTOrb] window.open returned null, falling back to location.href');
+              window.location.href = msg.url;
             }
           } catch (_e) {
             console.error('[VTOrb] open_url failed:', _e);
