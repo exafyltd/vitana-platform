@@ -217,12 +217,112 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   return { score: Number(data.score) || 0, deltas: (data.sub_scores as Record<string, number>) || undefined };
 }
 
+/**
+ * Collapse noisy nav events (page.view, auth.*) into a counted summary and
+ * surface high-signal actions (diary, autopilot, recommendation, health,
+ * community, wallet, memory, orb.session) verbatim. This is the difference
+ * between the voice ORB saying "you viewed some pages" and "you logged a
+ * diary entry this morning and accepted an autopilot recommendation."
+ */
+const HIGH_SIGNAL_PREFIXES = [
+  'diary.',
+  'autopilot.',
+  'recommendation.',
+  'health.',
+  'community.',
+  'wallet.',
+  'memory.',
+  'orb.session.',
+  'task.',
+  'calendar.',
+  'discover.service.bookmark',
+  'discover.offer.view',
+  'profile.update',
+];
+
+function isHighSignal(type: string): boolean {
+  return HIGH_SIGNAL_PREFIXES.some(p => type === p || type.startsWith(p));
+}
+
 function buildRecentSection(activities: ActivityRow[]): string {
   const meaningful = activities.filter(a => !a.activity_type.startsWith('chat.'));
-  const top = meaningful.slice(0, 10);
-  if (!top.length) return '';
-  const lines = top.map(a => `- ${summarizeActivity(a.activity_type)} (${relativeTime(a.created_at)})`);
+  if (!meaningful.length) return '';
+
+  const lines: string[] = [];
+  const highSignal = meaningful.filter(a => isHighSignal(a.activity_type));
+  const seen = new Set<string>();
+
+  // Up to 8 high-signal items, de-duplicated by (type, activity_data.path or id)
+  for (const a of highSignal.slice(0, 20)) {
+    const dataKey = (a.activity_data && (a.activity_data.path || a.activity_data.entry_id || a.activity_data.recommendation_id || a.activity_data.orb_session_id)) as string | undefined;
+    const key = `${a.activity_type}:${dataKey || relativeTime(a.created_at)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`- ${summarizeActivity(a.activity_type)} (${relativeTime(a.created_at)})`);
+    if (lines.length >= 8) break;
+  }
+
+  // Nav summary: collapse consecutive page.view + auth into one counted line.
+  const navCount = meaningful.filter(a => a.activity_type === 'page.view' || a.activity_type.startsWith('auth.')).length;
+  if (navCount) {
+    const navPaths = meaningful
+      .filter(a => a.activity_type === 'page.view')
+      .map(a => (a.activity_data?.path as string) || '')
+      .filter(Boolean);
+    const uniquePaths = Array.from(new Set(navPaths)).slice(0, 3);
+    const pathsHint = uniquePaths.length ? ` — areas: ${uniquePaths.join(', ')}` : '';
+    lines.push(`- ${navCount} navigation event${navCount === 1 ? '' : 's'} in this session${pathsHint}`);
+  }
+
+  if (!lines.length) return '';
   return `[RECENT]\n${lines.join('\n')}`;
+}
+
+/**
+ * Counted summary across the 14-day window. Gives the voice ORB a sentence
+ * it can quote when asked "what have I been doing lately?" even when no
+ * single event is dramatic.
+ */
+function buildActivitySummarySection(activities: ActivityRow[]): string {
+  if (!activities.length) return '';
+
+  const counts: Record<string, number> = {};
+  for (const a of activities) {
+    const prefix = a.activity_type.split('.')[0];
+    counts[prefix] = (counts[prefix] || 0) + 1;
+  }
+
+  const labelMap: Record<string, string> = {
+    page: 'page views',
+    auth: 'sign-ins',
+    diary: 'diary entries',
+    autopilot: 'autopilot actions',
+    recommendation: 'recommendation interactions',
+    health: 'health updates',
+    community: 'community interactions',
+    wallet: 'wallet actions',
+    memory: 'memory updates',
+    orb: 'voice sessions',
+    task: 'task actions',
+    calendar: 'calendar changes',
+    discover: 'discover interactions',
+    profile: 'profile edits',
+  };
+
+  // Show categories with count ≥ 1, ordered by count desc. Page views last
+  // (they always dominate and shouldn't lead the sentence).
+  const entries = Object.entries(counts)
+    .map(([prefix, count]) => ({ prefix, count, label: labelMap[prefix] || prefix }))
+    .sort((a, b) => {
+      if (a.prefix === 'page' && b.prefix !== 'page') return 1;
+      if (b.prefix === 'page' && a.prefix !== 'page') return -1;
+      return b.count - a.count;
+    })
+    .slice(0, 6);
+
+  if (!entries.length) return '';
+  const parts = entries.map(e => `${e.count} ${e.label}`);
+  return `[ACTIVITY_14D]\n- ${parts.join(', ')}.`;
 }
 
 function buildRoutinesSection(routines: RoutineRow[], activities: ActivityRow[]): string {
@@ -332,6 +432,7 @@ export async function getUserContextSummary(
   ]);
 
   const sections = [
+    buildActivitySummarySection(activities),
     buildRoutinesSection(routines, activities),
     buildPreferencesSection(prefs),
     buildHealthSection(activities, vitana),
