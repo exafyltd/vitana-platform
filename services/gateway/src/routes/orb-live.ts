@@ -5829,7 +5829,8 @@ async function emitOrbSessionStarted(orbSessionId: string, conversationId: strin
 async function emitOrbTurnReceived(
   orbSessionId: string,
   conversationId: string,
-  inputText: string
+  inputText: string,
+  userId?: string
 ): Promise<void> {
   await emitOasisEvent({
     vtid: 'VTID-0135',
@@ -5837,10 +5838,12 @@ async function emitOrbTurnReceived(
     source: 'command-hub',
     status: 'info',
     message: `ORB turn received: ${inputText.substring(0, 50)}...`,
+    ...(userId && { actor_id: userId, surface: 'orb' as const }),
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
       input_length: inputText.length,
+      input_preview: inputText.slice(0, 140),
       metadata: { mode: 'orb_voice' }
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.received:', err.message));
@@ -5853,7 +5856,8 @@ async function emitOrbTurnResponded(
   orbSessionId: string,
   conversationId: string,
   replyText: string,
-  provider: string
+  provider: string,
+  userId?: string
 ): Promise<void> {
   await emitOasisEvent({
     vtid: 'VTID-0135',
@@ -5861,10 +5865,12 @@ async function emitOrbTurnResponded(
     source: 'command-hub',
     status: 'success',
     message: `ORB turn responded via ${provider}`,
+    ...(userId && { actor_id: userId, surface: 'orb' as const }),
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
       reply_length: replyText.length,
+      reply_preview: replyText.slice(0, 140),
       provider,
       metadata: { mode: 'orb_voice' }
     }
