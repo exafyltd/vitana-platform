@@ -13,6 +13,12 @@
  * Mounted at /api/v1/media-hub.
  */
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { requireAuth } from '../middleware/auth-supabase-jwt';
+import {
+  analyzeShortFrames,
+  VisionClientError,
+} from '../services/anthropic-vision-client';
 
 const router = Router();
 
@@ -125,6 +131,82 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 
   return res.json({ ok: true, query: q, hits: hits.slice(0, limit) });
+});
+
+// ── POST /shorts/auto-metadata ───────────────────────────────────────────
+// Auto-generate title, description, category, and tags from 3 keyframes of a
+// short video. Powered by Claude Sonnet 4.6 (vision + forced tool use). See
+// services/anthropic-vision-client.ts for the prompt and sanitization pipeline.
+
+const KeyframeSchema = z.object({
+  position_ratio: z.number().min(0).max(1),
+  data_url: z
+    .string()
+    .startsWith('data:image/jpeg;base64,')
+    .max(400_000),
+});
+
+const AutoMetadataRequestSchema = z.object({
+  filename: z.string().min(1).max(255),
+  duration_seconds: z.number().positive().max(600),
+  mime_type: z.string().regex(/^video\//).max(64),
+  frames: z.array(KeyframeSchema).min(1).max(5),
+});
+
+router.post('/shorts/auto-metadata', requireAuth, async (req: Request, res: Response) => {
+  const validation = AutoMetadataRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid request body',
+      details: validation.error.issues,
+    });
+  }
+
+  try {
+    const result = await analyzeShortFrames({
+      frames: validation.data.frames,
+      filename: validation.data.filename,
+      durationSeconds: validation.data.duration_seconds,
+    });
+
+    return res.json({
+      ok: true,
+      metadata: {
+        title: result.title,
+        description: result.description,
+        category: result.category,
+        tags: result.tags,
+      },
+      model: result.model,
+      latency_ms: result.latencyMs,
+    });
+  } catch (err) {
+    if (err instanceof VisionClientError) {
+      const status =
+        err.code === 'TIMEOUT'
+          ? 504
+          : err.code === 'RATE_LIMIT'
+          ? 429
+          : err.code === 'MISSING_API_KEY'
+          ? 503
+          : 502;
+      return res.status(status).json({
+        ok: false,
+        error: 'Auto-metadata generation failed',
+        code: err.code,
+        details: err.message,
+      });
+    }
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[media-hub] POST /shorts/auto-metadata error: ${message}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Auto-metadata generation failed',
+      code: 'INTERNAL',
+      details: message,
+    });
+  }
 });
 
 export default router;
