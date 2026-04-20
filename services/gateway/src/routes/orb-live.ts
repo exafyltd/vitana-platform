@@ -1157,7 +1157,10 @@ async function buildBootstrapContextPack(
     // VTID-RECENT-TURNS: fetch the 3 most recent raw user utterances in parallel
     // so Gemini can answer "what did I ask you last?" accurately instead of
     // hallucinating from aggregated facts.
-    const [memoryContext, recentTurns] = await Promise.all([
+    // BOOTSTRAP-HISTORY-AWARE-TIMELINE: also fetch the User Context Profile
+    // (recent activity, routines, preferences) so the voice ORB is history-aware.
+    const profilerEnabled = process.env.PROFILER_IN_ORB_INSTRUCTION !== 'false';
+    const [memoryContext, recentTurns, profileResult] = await Promise.all([
       fetchMemoryContextWithIdentity(
         { user_id: identity.user_id, tenant_id: identity.tenant_id },
         LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
@@ -1166,17 +1169,27 @@ async function buildBootstrapContextPack(
         { user_id: identity.user_id, tenant_id: identity.tenant_id },
         3
       ),
+      profilerEnabled
+        ? getUserContextSummary(identity.user_id, { tenantId: identity.tenant_id })
+            .catch((err: any) => {
+              console.warn(`[UserContextProfiler] voice bootstrap fetch failed: ${err?.message || err}`);
+              return { summary: '', version: 0, cached: false, warnings: [] };
+            })
+        : Promise.resolve({ summary: '', version: 0, cached: false, warnings: [] }),
     ]);
 
     const latencyMs = Date.now() - startTime;
     const recentTurnsBlock = formatRecentTurnsBlock(recentTurns);
+    const profileBlock = profileResult.summary
+      ? `\n## USER CONTEXT PROFILE (recent activity, routines, preferences)\n${profileResult.summary}\n\nWeave this naturally ("I saw you logged a diary entry this morning", "since you usually walk in the mornings") — never recite the list verbatim.`
+      : '';
 
     if (!memoryContext.ok || memoryContext.items.length === 0) {
       console.warn(`[VTID-01225] Memory context fetch returned ${memoryContext.items.length} items for session ${sessionId}`);
       // Still return the formatted context even if no items (contains user info).
       // Prepend recent turns so the model still has grounding.
       const base = memoryContext.formatted_context || '';
-      const combined = recentTurnsBlock ? `${recentTurnsBlock}\n${base}` : base;
+      const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
       if (combined) {
         return {
           contextInstruction: combined,
@@ -1191,14 +1204,14 @@ async function buildBootstrapContextPack(
 
     // Format the memory context for injection. Prepend the recent-turns block
     // BEFORE truncation so it survives long fact-context sessions.
-    const full = recentTurnsBlock
-      ? `${recentTurnsBlock}\n${memoryContext.formatted_context}`
-      : memoryContext.formatted_context;
+    const full = [recentTurnsBlock, memoryContext.formatted_context, profileBlock]
+      .filter(Boolean)
+      .join('\n');
     const contextInstruction = full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
       ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
       : full;
 
-    console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}`);
+    console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
     return {
       contextInstruction,
