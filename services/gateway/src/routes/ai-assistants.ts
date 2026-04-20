@@ -68,11 +68,13 @@ const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       'Content-Type': 'application/json',
     }),
     verify_body: JSON.stringify({
-      model: 'claude-3-5-haiku-20241022',
+      // BOOTSTRAP-AI-VERIFY-MODEL: claude-3-5-haiku-20241022 was deprecated
+      // by Anthropic and returns not_found_error. Current Haiku is 4.5.
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1,
       messages: [{ role: 'user', content: 'ping' }],
     }),
-    default_model: 'claude-3-5-haiku-20241022',
+    default_model: 'claude-haiku-4-5-20251001',
   },
 };
 
