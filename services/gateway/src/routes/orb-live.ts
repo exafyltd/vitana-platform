@@ -830,6 +830,21 @@ setInterval(() => {
   for (const [sid, s] of liveSessions) {
     if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
       if (s.upstreamWs) { try { s.upstreamWs.close(); } catch (_) { /* ignore */ } }
+      // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
+      // (client closed tab / mobile killed app mid-conversation) show up in
+      // OASIS instead of just disappearing. Prior behaviour left a silent
+      // gap (~10 of 67 sessions / 24 h had no stop event — see diag runs).
+      emitLiveSessionEvent('vtid.live.session.stop', {
+        session_id: sid,
+        user_id: s.identity?.user_id || null,
+        tenant_id: s.identity?.tenant_id || null,
+        transport: s.clientWs ? 'websocket' : 'sse',
+        reason: 'expired_ttl',
+        audio_in_chunks: s.audioInChunks,
+        audio_out_chunks: s.audioOutChunks,
+        duration_ms: Date.now() - s.createdAt.getTime(),
+        turn_count: s.turn_count,
+      }).catch(() => { });
       s.active = false;
       liveSessions.delete(sid);
       purged++;
@@ -1625,11 +1640,16 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             'Don\'t read entire message bodies unless the user asks.',
           ].join('\n'),
           parameters: {
+            // BOOTSTRAP-ORB-1007-AUDIT: Vertex Live function-declaration schema
+            // is the OpenAPI 3.0 SUBSET supported by Gemini — it rejects
+            // `default`, `minimum`, `maximum`, and similar JSON-Schema fields
+            // with WebSocket close code 1007. Keep constraints in description
+            // text instead.
             type: 'object',
             properties: {
-              limit: { type: 'integer', default: 5, minimum: 1, maximum: 25 },
+              limit: { type: 'integer', description: 'Max emails to return (1-25). Default 5.' },
               from: { type: 'string', description: 'Optional sender filter' },
-              unread_only: { type: 'boolean', default: true },
+              unread_only: { type: 'boolean', description: 'Only unread emails. Default true.' },
             },
           },
         },
@@ -1651,9 +1671,10 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             'Never dump raw timestamps — convert to natural language.',
           ].join('\n'),
           parameters: {
+            // BOOTSTRAP-ORB-1007-AUDIT: no default/minimum/maximum (Vertex 1007).
             type: 'object',
             properties: {
-              days_ahead: { type: 'integer', default: 1, minimum: 1, maximum: 60 },
+              days_ahead: { type: 'integer', description: 'How many days ahead (1-60). Default 1 = today.' },
             },
           },
         },
@@ -1704,10 +1725,11 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             'phone +1 555-0100." If multiple matches, say so and ask which.',
           ].join('\n'),
           parameters: {
+            // BOOTSTRAP-ORB-1007-AUDIT: no default/minimum/maximum (Vertex 1007).
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Name / email / phone substring' },
-              limit: { type: 'integer', default: 10, minimum: 1, maximum: 50 },
+              limit: { type: 'integer', description: 'Max contacts to return (1-50). Default 10.' },
             },
           },
         },
