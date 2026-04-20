@@ -712,6 +712,12 @@ interface GeminiLiveSession {
   lastSessionInfo?: { time: string; wasFailure: boolean } | null;
   // VTID-WATCHDOG: Response watchdog timer — fires when model doesn't respond in time
   responseWatchdogTimer?: ReturnType<typeof setTimeout>;
+  // BOOTSTRAP-ORB-RELIABILITY-R4: which reason armed the current watchdog.
+  // Used by the audio-forwarding paths to know when it's safe to SLIDE the
+  // timer forward (reset on each inbound chunk) vs. leave it alone. Only
+  // safe when the reason is 'forwarding_no_ack' — a model-response watchdog
+  // must not be reset by user audio or we'd suppress legitimate stalls.
+  responseWatchdogReason?: string;
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
@@ -5617,6 +5623,10 @@ function startResponseWatchdog(
   // Clear any existing watchdog first
   clearResponseWatchdog(session);
 
+  // BOOTSTRAP-ORB-RELIABILITY-R4: record which reason armed this watchdog so
+  // the sliding-reset logic in the audio-forwarding paths can check it.
+  session.responseWatchdogReason = reason;
+
   session.responseWatchdogTimer = setTimeout(() => {
     if (!session.active) return;
 
@@ -5673,6 +5683,8 @@ function clearResponseWatchdog(session: GeminiLiveSession): void {
     clearTimeout(session.responseWatchdogTimer);
     session.responseWatchdogTimer = undefined;
   }
+  // BOOTSTRAP-ORB-RELIABILITY-R4: clear the reason tag in lockstep.
+  session.responseWatchdogReason = undefined;
 }
 
 /**
@@ -10241,12 +10253,26 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
           session.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
-          // VTID-FORWARDING-WATCHDOG: If user audio is being forwarded but no
-          // watchdog is running, start one. This catches zombie upstream WS
-          // connections where audio goes in but nothing comes back (no
-          // input_transcription → no watchdog → stuck forever).
-          if (!session.responseWatchdogTimer && !session.isModelSpeaking) {
-            startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+          // VTID-FORWARDING-WATCHDOG: catches zombie upstream WS connections
+          // where audio goes in but nothing comes back (no input_transcription
+          // → no watchdog → stuck forever).
+          //
+          // BOOTSTRAP-ORB-RELIABILITY-R4: the watchdog now SLIDES — reset on
+          // each audio chunk while the model isn't speaking. Means the timer
+          // fires only when the user's audio stops AND Vertex stays silent,
+          // which is the actual stall condition. Previously the timer armed
+          // once and counted down regardless of whether the user was still
+          // speaking, interrupting long utterances.
+          //
+          // Only slide when the current watchdog is this same reason — a
+          // model-response watchdog must NOT be reset by user audio or we'd
+          // suppress legitimate mid-stream model stalls.
+          if (!session.isModelSpeaking) {
+            const canSlide = !session.responseWatchdogTimer
+              || session.responseWatchdogReason === 'forwarding_no_ack';
+            if (canSlide) {
+              startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+            }
           }
           // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
           if (session.audioInChunks % 100 === 0) {
@@ -11628,9 +11654,16 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
     if (sent) {
       liveSession.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
-      // VTID-FORWARDING-WATCHDOG: Same as SSE path — detect zombie upstream WS
-      if (!liveSession.responseWatchdogTimer && !liveSession.isModelSpeaking) {
-        startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+      // VTID-FORWARDING-WATCHDOG / BOOTSTRAP-ORB-RELIABILITY-R4: sliding
+      // watchdog. See SSE path for full rationale — mirrored here so the
+      // WS and SSE transports stay in lockstep until Phase 3 collapses
+      // them onto one adapter.
+      if (!liveSession.isModelSpeaking) {
+        const canSlide = !liveSession.responseWatchdogTimer
+          || liveSession.responseWatchdogReason === 'forwarding_no_ack';
+        if (canSlide) {
+          startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+        }
       }
     } else {
       console.warn(`[VTID-01222] Failed to forward audio chunk for ${sessionId}`);
