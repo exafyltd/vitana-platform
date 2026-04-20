@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { getUserContextSummary } from '../services/user-context-profiler';
 import { notifyUserAsync } from '../services/notification-service';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
@@ -5979,13 +5980,14 @@ setInterval(cleanupExpiredConversations, 5 * 60 * 1000);
 /**
  * VTID-0135: Emit orb.session.started event
  */
-async function emitOrbSessionStarted(orbSessionId: string, conversationId: string): Promise<void> {
+async function emitOrbSessionStarted(orbSessionId: string, conversationId: string, userId?: string): Promise<void> {
   await emitOasisEvent({
     vtid: 'VTID-0135',
     type: 'orb.session.started',
     source: 'command-hub',
     status: 'info',
     message: `ORB voice session started: ${orbSessionId}`,
+    ...(userId && { actor_id: userId, surface: 'orb' as const }),
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
@@ -6045,13 +6047,14 @@ async function emitOrbTurnResponded(
 /**
  * VTID-0135: Emit orb.session.ended event
  */
-async function emitOrbSessionEnded(orbSessionId: string, conversationId: string): Promise<void> {
+async function emitOrbSessionEnded(orbSessionId: string, conversationId: string, userId?: string): Promise<void> {
   await emitOasisEvent({
     vtid: 'VTID-0135',
     type: 'orb.session.ended',
     source: 'command-hub',
     status: 'info',
     message: `ORB voice session ended: ${orbSessionId}`,
+    ...(userId && { actor_id: userId, surface: 'orb' as const }),
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
@@ -6365,6 +6368,18 @@ async function generateMemoryEnhancedSystemInstruction(
     ? identity
     : { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID, active_role: DEV_IDENTITY.ACTIVE_ROLE };
 
+  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: Fetch user context profile in parallel with the rest.
+  // Flag-gated so we can disable per-tenant without redeploy.
+  const profilerEnabled = process.env.PROFILER_IN_ORB_INSTRUCTION !== 'false';
+  const userContextSummaryPromise = profilerEnabled && effectiveIdentity.user_id
+    ? getUserContextSummary(effectiveIdentity.user_id, { tenantId: effectiveIdentity.tenant_id })
+        .then(r => r.summary)
+        .catch(err => {
+          console.warn('[UserContextProfiler] non-fatal fetch error:', err?.message || err);
+          return '';
+        })
+    : Promise.resolve('');
+
   // VTID-01225-READ-FIX: Always fetch memory_facts directly via REST API.
   // This bypasses ALL pipeline complexity (Mem0, Context Assembly, Memory Bridge)
   // and guarantees structured facts are ALWAYS available in the system instruction.
@@ -6544,10 +6559,17 @@ ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always l
       console.log(`[VTID-01112] Context assembly failed: ${contextResult.error}`);
       // Fallback to legacy memory bridge with identity-aware function
       const memoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
+      const activitySummary = await userContextSummaryPromise;
       if (!memoryContext.ok || memoryContext.items.length === 0) {
+        if (activitySummary) {
+          return {
+            instruction: `${baseInstructionNoMemory}\n\n## USER CONTEXT PROFILE (recent activity & preferences)\n${activitySummary}\n`,
+            memoryContext
+          };
+        }
         return { instruction: baseInstructionNoMemory, memoryContext };
       }
-      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
+      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext, activitySummary);
       return { instruction: enhancedInstruction, memoryContext };
     }
 
@@ -6558,17 +6580,29 @@ ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always l
       // VTID-01225-READ-FIX: Context assembly reads only memory_items.
       // When those are empty, try fetchMemoryContextWithIdentity() which also reads memory_facts.
       const factsMemoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
+      const activitySummary = await userContextSummaryPromise;
       if (factsMemoryContext.ok && factsMemoryContext.items.length > 0) {
         console.log(`[VTID-01225-READ-FIX] memory_facts fallback found ${factsMemoryContext.items.length} items`);
-        const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, factsMemoryContext);
+        const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, factsMemoryContext, activitySummary);
         return { instruction: enhancedInstruction, memoryContext: factsMemoryContext, contextBundle: bundle };
       }
       console.log('[VTID-01112] No context items found for user (including memory_facts)');
+      if (activitySummary) {
+        return {
+          instruction: `${baseInstructionNoMemory}\n\n## USER CONTEXT PROFILE (recent activity & preferences)\n${activitySummary}\n`,
+          memoryContext: null,
+          contextBundle: bundle
+        };
+      }
       return { instruction: baseInstructionNoMemory, memoryContext: null, contextBundle: bundle };
     }
 
     // Format context bundle for prompt injection
     const contextForPrompt = formatContextForPrompt(bundle);
+    const activitySummary = await userContextSummaryPromise;
+    const activityBlock = activitySummary
+      ? `\n\n## USER CONTEXT PROFILE (recent activity, routines, preferences)\n${activitySummary}\n\n**Weave this naturally** — e.g. "I noticed you logged a diary entry this morning". Never recite the list verbatim.`
+      : '';
 
     // Build enhanced instruction with context bundle
     const enhancedInstruction = `${baseInstructionWithMemory}
@@ -6600,9 +6634,9 @@ You have access to PERSISTENT MEMORY that contains REAL information from previou
 
 ---
 ${contextForPrompt}
----
+---${activityBlock}
 
-You KNOW this user. You REMEMBER their name, their hometown, their family. USE the data above to answer questions. For any calculation, USE the run_code tool.`;
+You KNOW this user. You REMEMBER their name, their hometown, their family, and their recent life rhythm. USE the data above to answer questions. For any calculation, USE the run_code tool.`;
 
     console.log(`[VTID-01112] Context-enhanced instruction generated with ${bundle.traceability.total_items_included} items (bundle=${bundle.bundle_id})`);
 
@@ -6617,10 +6651,17 @@ You KNOW this user. You REMEMBER their name, their hometown, their family. USE t
     // Fallback to legacy memory bridge (identity-scoped)
     try {
       const memoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
+      const activitySummary = await userContextSummaryPromise;
       if (!memoryContext.ok || memoryContext.items.length === 0) {
+        if (activitySummary) {
+          return {
+            instruction: `${baseInstructionNoMemory}\n\n## USER CONTEXT PROFILE (recent activity & preferences)\n${activitySummary}\n`,
+            memoryContext
+          };
+        }
         return { instruction: baseInstructionNoMemory, memoryContext };
       }
-      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
+      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext, activitySummary);
       return { instruction: enhancedInstruction, memoryContext };
     } catch {
       return { instruction: baseInstructionNoMemory, memoryContext: null };
@@ -7227,7 +7268,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
     console.log(`[VTID-0135] Created new conversation: ${conversationId}`);
 
     // Emit session started event
-    await emitOrbSessionStarted(orbSessionId, conversationId);
+    await emitOrbSessionStarted(orbSessionId, conversationId, identity.user_id);
   }
 
   // VTID-01039: Append user turn to transcript (replaces per-turn OASIS event)

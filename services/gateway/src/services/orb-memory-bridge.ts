@@ -2026,10 +2026,14 @@ function truncateContent(content: string, maxLength: number): string {
  */
 export function buildMemoryEnhancedInstruction(
   baseInstruction: string,
-  memoryContext: OrbMemoryContext
+  memoryContext: OrbMemoryContext,
+  activitySummary?: string
 ): string {
-  // If no memory or error, return base instruction
+  // If no memory or error, still inject activity summary if we have one.
   if (!memoryContext.ok || memoryContext.items.length === 0) {
+    if (activitySummary && activitySummary.trim().length > 0) {
+      return `${baseInstruction}\n\n## USER CONTEXT PROFILE (recent activity & preferences)\n${activitySummary}\n`;
+    }
     return baseInstruction;
   }
 
@@ -2051,6 +2055,12 @@ export function buildMemoryEnhancedInstruction(
 
   // Inject memory context after the base instruction
   // VTID-01107 + VTID-01109: Strong instruction to USE memory and NEVER claim inability to remember
+  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: append activity summary so the assistant
+  // is aware of recent actions, routines, and inferred preferences.
+  const activityBlock = activitySummary && activitySummary.trim().length > 0
+    ? `\n\n## USER CONTEXT PROFILE (recent activity, routines, preferences)\n${activitySummary}\n\n**Weave this naturally into responses** — e.g. "I noticed you logged a diary entry this morning" or "since you usually do X". Never recite the list verbatim.`
+    : '';
+
   const enhancedInstruction = `${baseInstruction}
 
 ## CRITICAL: You Have Persistent Memory About This User
@@ -2074,9 +2084,9 @@ ${quickReference}
 ---
 MEMORY CONTEXT (This is REAL data - USE IT when answering):
 ${memoryContext.formatted_context}
----
+---${activityBlock}
 
-You KNOW this user. You REMEMBER their name, their hometown, their family. Answer their questions using the memory above.`;
+You KNOW this user. You REMEMBER their name, their hometown, their family, and their recent life rhythm. Answer their questions using the memory and context above.`;
 
   return enhancedInstruction;
 }
