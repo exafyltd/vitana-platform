@@ -451,11 +451,34 @@
     }
     var ctx = _s.playbackCtx;
 
-    // Resume if suspended (mobile)
+    // BOOTSTRAP-ORB-IOS-UNLOCK: if the context is suspended (common on iOS
+    // when audio arrives before the user has tapped, or after a route
+    // change), attempt resume. Previously the .catch was silent and chunks
+    // sat in the queue until _processQueue was called again. Now we log
+    // visibly, retry up to 3s, and emit an error if the context never
+    // unlocks so the client isn't left silent while UI says "listening".
     if (ctx.state === 'suspended') {
-      ctx.resume().then(function () { setTimeout(_processQueue, 50); }).catch(function () {});
+      if (!_s._resumeRetryStartedAt) _s._resumeRetryStartedAt = Date.now();
+      var elapsed = Date.now() - _s._resumeRetryStartedAt;
+      if (elapsed > 3000) {
+        console.error('[VTOrb] AudioContext failed to resume after 3s — audio will not play. State:', ctx.state);
+        _s._resumeRetryStartedAt = 0;
+        // Drop queued audio rather than leaving UI in a stuck state.
+        _s.audioQueue.length = 0;
+        return;
+      }
+      ctx.resume().then(function () {
+        _s._resumeRetryStartedAt = 0;
+        // Re-enter on next tick so any pending chunks drain.
+        setTimeout(_processQueue, 0);
+      }).catch(function (e) {
+        console.warn('[VTOrb] AudioContext resume rejected (elapsed=' + elapsed + 'ms):', e && e.message);
+        // Retry via the existing setTimeout cadence.
+        setTimeout(_processQueue, 50);
+      });
       return;
     }
+    _s._resumeRetryStartedAt = 0;
 
     var isFirstChunk = _s.scheduledSources.length === 0;
 
@@ -546,12 +569,28 @@
     _s.navigationPending = false;
     _s.signupClosing = false;
 
-    // Create playback AudioContext in user gesture (critical for mobile)
+    // BOOTSTRAP-ORB-IOS-UNLOCK: Create playback AudioContext inside the user
+    // gesture (critical for iOS — creating later or resuming later is
+    // unreliable across awaits). Also play a 1-sample silent buffer
+    // immediately: this is the canonical iOS unlock primitive. The chime
+    // below used to be the de-facto unlock but it fires *after* the fetch
+    // below on slower devices, losing the gesture window.
     if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
       _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
+    try {
+      var _silent = _s.playbackCtx.createBuffer(1, 1, 22050);
+      var _silentSrc = _s.playbackCtx.createBufferSource();
+      _silentSrc.buffer = _silent;
+      _silentSrc.connect(_s.playbackCtx.destination);
+      _silentSrc.start(0);
+    } catch (e) {
+      console.warn('[VTOrb] silent-buffer iOS unlock failed:', e && e.message);
+    }
     if (_s.playbackCtx.state === 'suspended') {
-      _s.playbackCtx.resume().catch(function () {});
+      _s.playbackCtx.resume().catch(function (e) {
+        console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
+      });
     }
 
     // Play activation chime immediately

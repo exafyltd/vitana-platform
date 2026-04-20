@@ -4782,6 +4782,23 @@ async function connectToLiveAPI(
                   session.consecutiveToolCalls = 0;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   emitDiag(session, 'model_start_speaking');
+                  // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
+                  // and greeting was sent), emit the pre-greeting latency gauge
+                  // — baseline metric for Phase 1 latency work.
+                  if (session.greetingSent && session.turn_count === 0 && !session.audioOutChunks) {
+                    const preGreetingMs = Date.now() - session.createdAt.getTime();
+                    emitLiveSessionEvent('orb.live.greeting.delivered', {
+                      session_id: session.sessionId,
+                      user_id: session.identity?.user_id || 'anonymous',
+                      tenant_id: session.identity?.tenant_id || null,
+                      transport: session.clientWs ? 'websocket' : 'sse',
+                      pre_greeting_ms: preGreetingMs,
+                      lang: session.lang,
+                      is_anonymous: session.isAnonymous || false,
+                      reconnect_count: (session as any)._reconnectCount || 0,
+                    }).catch(() => { });
+                    console.log(`[BOOTSTRAP-ORB-HOTFIX-1] pre_greeting_ms=${preGreetingMs} for session ${session.sessionId}`);
+                  }
                 }
                 // VTID-WATCHDOG: Model is sending audio — restart watchdog.
                 // If audio stops mid-stream (no turn_complete), watchdog fires.
@@ -8654,7 +8671,7 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error' | 'orb.live.tool_loop_guard_activated',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error' | 'orb.live.tool_loop_guard_activated' | 'orb.live.greeting.delivered',
   payload: Record<string, unknown>,
   status: 'info' | 'warning' | 'error' = 'info'
 ): Promise<void> {
