@@ -8422,6 +8422,230 @@ router.get('/session/:orb_session_id', (req: Request, res: Response) => {
  *   "timestamp": "ISO"
  * }
  */
+/**
+ * BOOTSTRAP-HISTORY-AWARE-TIMELINE: GET /debug/awareness
+ *
+ * Returns EXACTLY what the voice ORB would know about the authenticated user
+ * at session-start time. Use this to diagnose "Vitana doesn't know about my
+ * activity" reports.
+ *
+ * Auth:
+ *   - Bearer <user_jwt>  → returns that user's awareness snapshot.
+ *   - No auth             → returns diagnostic with identity_ok=false so the
+ *                           caller can see the widget is falling into the
+ *                           anonymous path (the most common cause).
+ *   - Service role + ?user_id=UUID (admin path) → look up any user.
+ *
+ * Response shape is stable so the Command Hub "Vitana Awareness" test panel
+ * can render it.
+ */
+router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const startedAt = Date.now();
+  const checks: Record<string, boolean> = {};
+  const warnings: string[] = [];
+
+  try {
+    // 1. Resolve effective identity -----------------------------------------
+    const authHeader = req.headers.authorization;
+    const hasBearer = !!authHeader && authHeader.startsWith('Bearer ');
+    const jwtVerified = !!(req.identity && req.identity.user_id);
+
+    const explicitUserId = (req.query.user_id as string | undefined) || undefined;
+    const serviceRoleKey = req.get('x-service-role-key');
+    const isServiceRoleCaller = !!serviceRoleKey &&
+      (serviceRoleKey === process.env.SUPABASE_SERVICE_ROLE ||
+       serviceRoleKey === process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    let identity: SupabaseIdentity | null = null;
+    let isAnonymous = true;
+
+    if (hasBearer && !jwtVerified) {
+      warnings.push('Bearer token provided but JWT failed verification — voice ORB would 401 this client.');
+    }
+
+    if (jwtVerified) {
+      identity = {
+        user_id: req.identity!.user_id,
+        tenant_id: req.identity!.tenant_id,
+        email: req.identity!.email ?? null,
+        role: req.identity!.role ?? null,
+        exafy_admin: req.identity!.exafy_admin ?? false,
+        aud: req.identity!.aud ?? null,
+        exp: req.identity!.exp ?? null,
+        iat: req.identity!.iat ?? null,
+      } as SupabaseIdentity;
+      isAnonymous = false;
+    } else if (explicitUserId && isServiceRoleCaller) {
+      // Service-role admin lookup: resolve tenant for the target user.
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrl && supabaseKey) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const admin = createClient(supabaseUrl, supabaseKey, { auth: { autoRefreshToken: false, persistSession: false } });
+          const { data: tenantRow } = await admin
+            .from('user_tenants')
+            .select('tenant_id')
+            .eq('user_id', explicitUserId)
+            .limit(1)
+            .maybeSingle();
+          if (tenantRow?.tenant_id) {
+            identity = {
+              user_id: explicitUserId,
+              tenant_id: tenantRow.tenant_id,
+              email: null,
+              role: 'authenticated',
+              exafy_admin: false,
+              aud: 'authenticated',
+              exp: null,
+              iat: null,
+            } as SupabaseIdentity;
+            isAnonymous = false;
+          } else {
+            warnings.push(`No user_tenants row for user_id=${explicitUserId}`);
+          }
+        } catch (err: any) {
+          warnings.push(`Admin lookup failed: ${err.message}`);
+        }
+      }
+    } else if (explicitUserId && !isServiceRoleCaller) {
+      warnings.push('user_id query param ignored — service-role key required for admin lookups.');
+    }
+
+    checks.identity_ok = !isAnonymous && !!identity;
+
+    if (!checks.identity_ok || !identity) {
+      return res.status(200).json({
+        ok: true,
+        scenario: 'anonymous',
+        identity: { user_id: '', tenant_id: '', role: 'anonymous', is_anonymous: true },
+        memory: { item_count: 0, preview: [] },
+        recent_turns: { count: 0, preview: [] },
+        profile: { char_count: 0, summary: '', version: 0, cached: false, sections: [] },
+        vitana_index: null,
+        context_instruction: { char_count: 0, preview: '', truncated: false },
+        checks: {
+          identity_ok: false,
+          memory_ok: false,
+          turns_ok: false,
+          profile_ok: false,
+          context_injected: false,
+          awareness_ok: false,
+        },
+        warnings: [
+          'Anonymous call: the voice ORB would skip all personal context for this session.',
+          ...(hasBearer && !jwtVerified ? ['The widget is sending a Bearer token that fails verification — check token freshness.'] : []),
+          ...(hasBearer ? [] : ['No Authorization header — if the user is signed in, the widget is not forwarding the Supabase access token.']),
+          ...warnings,
+        ],
+        elapsed_ms: Date.now() - startedAt,
+      });
+    }
+
+    // 2. Invoke the SAME bootstrap path the voice ORB uses ------------------
+    const debugSessionId = `debug-awareness-${Date.now()}`;
+    const bootstrapResult = await buildBootstrapContextPack(identity, debugSessionId);
+
+    const contextInstruction = bootstrapResult.contextInstruction || '';
+    checks.context_injected = contextInstruction.length > 0;
+
+    // 3. Also fetch profiler separately so the panel can show it distinctly -
+    const tenantIdOrUndefined = identity.tenant_id ?? undefined;
+    const profileResult = await getUserContextSummary(identity.user_id, { tenantId: tenantIdOrUndefined })
+      .catch((err: any) => {
+        warnings.push(`Profiler error: ${err?.message || 'unknown'}`);
+        return { summary: '', version: 0, cached: false, warnings: [] as string[] };
+      });
+
+    if (!identity.tenant_id) {
+      warnings.push('Identity has no tenant_id — memory and profile queries may be scoped incorrectly.');
+    }
+
+    // 4. Inspect the memory path ------------------------------------------
+    const memoryContext = identity.tenant_id
+      ? await fetchMemoryContextWithIdentity(
+          { user_id: identity.user_id, tenant_id: identity.tenant_id },
+          LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+        ).catch(() => null as any)
+      : null;
+
+    const recentTurns = identity.tenant_id
+      ? await fetchRecentOrbUserTurns(
+          { user_id: identity.user_id, tenant_id: identity.tenant_id },
+          3
+        ).catch(() => [] as any[])
+      : [];
+
+    const memoryItems = memoryContext?.items || [];
+    checks.memory_ok = memoryItems.length > 0;
+    checks.turns_ok = recentTurns.length > 0;
+
+    const profileSections = (profileResult.summary || '')
+      .split(/\n{2,}/)
+      .map(s => s.split('\n')[0].trim())
+      .filter(s => s.startsWith('['));
+    checks.profile_ok = profileResult.summary.length > 0;
+
+    checks.awareness_ok =
+      checks.identity_ok && checks.context_injected &&
+      (checks.memory_ok || checks.profile_ok || checks.turns_ok);
+
+    return res.status(200).json({
+      ok: true,
+      scenario: isAnonymous ? 'anonymous' : 'authenticated',
+      identity: {
+        user_id: identity.user_id,
+        tenant_id: identity.tenant_id,
+        role: identity.role,
+        email: identity.email,
+        is_anonymous: false,
+      },
+      memory: {
+        item_count: memoryItems.length,
+        preview: memoryItems.slice(0, 5).map((i: any) =>
+          (i.content || '').toString().slice(0, 120)
+        ),
+      },
+      recent_turns: {
+        count: recentTurns.length,
+        preview: recentTurns.slice(0, 3).map((t: any) =>
+          (t.text || t.content || '').toString().slice(0, 120)
+        ),
+      },
+      profile: {
+        char_count: profileResult.summary.length,
+        summary: profileResult.summary,
+        version: profileResult.version,
+        cached: profileResult.cached,
+        sections: profileSections,
+      },
+      context_instruction: {
+        char_count: contextInstruction.length,
+        preview: contextInstruction.slice(0, 4000),
+        truncated: contextInstruction.length > 4000,
+      },
+      checks: {
+        identity_ok: checks.identity_ok,
+        memory_ok: checks.memory_ok,
+        turns_ok: checks.turns_ok,
+        profile_ok: checks.profile_ok,
+        context_injected: checks.context_injected,
+        awareness_ok: checks.awareness_ok,
+      },
+      warnings,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (err: any) {
+    console.error('[Awareness] debug endpoint error:', err?.message);
+    return res.status(500).json({
+      ok: false,
+      error: err?.message || 'awareness debug failed',
+      warnings,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  }
+});
+
 router.get('/debug/memory', async (_req: Request, res: Response) => {
   // Dev-sandbox gate: return 404 in non-dev environments
   if (!isDevSandbox()) {
