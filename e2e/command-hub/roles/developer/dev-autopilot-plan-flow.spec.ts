@@ -133,40 +133,45 @@ test.describe('Dev Autopilot — plan generation + scroll + approve (live gatewa
       await page.waitForTimeout(2000);
     }
 
-    // Capture the scrollable element handle.
-    const moduleScrollerHandle = await page.waitForSelector('.module-content-wrapper', { timeout: 5000 });
+    // Initial measurement via a fresh queryselector each time — the element
+    // is replaced every 10s by the queue poller, so a Playwright ElementHandle
+    // captured once will point at a detached element for the rest of the run.
+    const initialDims = await page.evaluate(() => {
+      const el = document.querySelector('.module-content-wrapper') as HTMLElement | null;
+      return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight } : null;
+    });
+    expect(initialDims, 'module-content-wrapper is present').toBeTruthy();
+    console.log(`.module-content-wrapper: scrollHeight=${initialDims!.scrollHeight} clientHeight=${initialDims!.clientHeight}`);
+    expect(initialDims!.scrollHeight, 'module is scrollable').toBeGreaterThan(initialDims!.clientHeight + 500);
 
-    // Make sure it's scrollable (plan rendered adds ~thousands of px).
-    const scrollHeight = await moduleScrollerHandle.evaluate(el => (el as HTMLElement).scrollHeight);
-    const clientHeight = await moduleScrollerHandle.evaluate(el => (el as HTMLElement).clientHeight);
-    console.log(`.module-content-wrapper: scrollHeight=${scrollHeight} clientHeight=${clientHeight}`);
-    expect(scrollHeight, 'module is scrollable').toBeGreaterThan(clientHeight + 500);
-
-    // Scroll down, hold, sample. Over 30s we'll pass 3 queue-poller cycles
-    // (10s each) and 30 generation-ticker cycles (if any plan is still
-    // generating). Assert scroll never snaps back.
-    await moduleScrollerHandle.evaluate(el => { (el as HTMLElement).scrollTop = 1500; });
+    // Seed the scroll position on the live element.
+    await page.evaluate(() => {
+      const el = document.querySelector('.module-content-wrapper') as HTMLElement | null;
+      if (el) el.scrollTop = 1500;
+    });
     await page.waitForTimeout(200);
 
+    // Scroll + sample every 500ms, re-querying the element each tick so we
+    // always write to the CURRENT container (not the detached one from
+    // before the last renderApp wipe). Dispatch a real wheel event from
+    // inside the page so the browser's scroll machinery sees it too.
     const samples: Array<{ t: number; top: number }> = [];
     const startTs = Date.now();
     const TEST_DURATION_MS = 32_000;
     let peak = 0;
     while (Date.now() - startTs < TEST_DURATION_MS) {
-      // Emit a user wheel so _lastUserScrollTs stays fresh (in case the
-      // stale yield code is still deployed on any forgotten bundle).
-      await page.evaluate(() => {
-        window.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 0 }));
+      const top = await page.evaluate(() => {
+        const el = document.querySelector('.module-content-wrapper') as HTMLElement | null;
+        if (!el) return -1;
+        // User-visible scroll: use scrollBy so the browser fires a real scroll
+        // event and our renderApp's scroll preservation runs on the right
+        // element instance.
+        el.scrollBy({ top: 60, behavior: 'instant' as ScrollBehavior });
+        // Also dispatch a wheel event so any code watching wheel (not scroll)
+        // gets the signal.
+        window.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 60 }));
+        return el.scrollTop;
       });
-      // Incrementally scroll so the test isn't static — this also makes
-      // us catch "the poller pulled me back 400px" regressions.
-      await moduleScrollerHandle.evaluate(el => {
-        const e = el as HTMLElement;
-        const step = 40;
-        const max = e.scrollHeight - e.clientHeight;
-        e.scrollTop = Math.min(e.scrollTop + step, max);
-      });
-      const top = await moduleScrollerHandle.evaluate(el => (el as HTMLElement).scrollTop);
       if (top > peak) peak = top;
       samples.push({ t: Date.now() - startTs, top });
       await page.waitForTimeout(500);
