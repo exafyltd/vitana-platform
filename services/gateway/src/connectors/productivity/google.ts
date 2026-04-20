@@ -215,11 +215,213 @@ const googleConnector: Connector = {
         };
       }
 
-      case 'email.read':
+      // VTID-01943: Gmail read. Returns the N most recent unread messages
+      // (or messages matching a from: filter) as a compact list the voice
+      // layer can read back.
+      case 'email.read': {
+        const limit = Math.max(1, Math.min(25, Number(action.args?.limit ?? 5) || 5));
+        const from = typeof action.args?.from === 'string' ? (action.args.from as string).trim() : '';
+        const unreadOnly = action.args?.unread_only !== false;
+
+        const qParts: string[] = [];
+        if (unreadOnly) qParts.push('is:unread');
+        if (from) qParts.push(`from:${from}`);
+        const gmailQ = qParts.join(' ');
+
+        const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
+        listUrl.searchParams.set('maxResults', String(limit));
+        if (gmailQ) listUrl.searchParams.set('q', gmailQ);
+
+        const listR = await googleGet(listUrl.toString(), token);
+        if (!listR.ok) return { ok: false, error: `Gmail list failed: ${listR.errorMessage}` };
+
+        const ids: Array<{ id: string }> = listR.json?.messages ?? [];
+        if (ids.length === 0) {
+          return {
+            ok: true,
+            raw: {
+              action: 'structured_list',
+              messages: [],
+              query: gmailQ,
+              summary: unreadOnly
+                ? (from ? `No unread emails from ${from}.` : 'No unread emails.')
+                : 'No emails matched.',
+            },
+          };
+        }
+
+        // Parallel-fetch headers. Field mask keeps responses tiny + within
+        // the 3-second TOOL_TIMEOUT_MS budget.
+        const details = await Promise.all(
+          ids.slice(0, limit).map(async (m): Promise<any> => {
+            const u = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(m.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`;
+            const r = await googleGet(u, token);
+            if (!r.ok) return null;
+            const headers: Array<{ name: string; value: string }> = r.json?.payload?.headers ?? [];
+            const h = (name: string) => headers.find((x) => x.name.toLowerCase() === name.toLowerCase())?.value;
+            return {
+              id: m.id,
+              from: h('From') ?? '',
+              subject: h('Subject') ?? '(no subject)',
+              date: h('Date') ?? '',
+              snippet: r.json?.snippet ?? '',
+            };
+          }),
+        );
+        const messages = details.filter(Boolean);
+
+        return {
+          ok: true,
+          raw: {
+            action: 'structured_list',
+            messages,
+            query: gmailQ,
+            summary: `${messages.length} ${unreadOnly ? 'unread ' : ''}email${messages.length === 1 ? '' : 's'}${from ? ' from ' + from : ''}.`,
+          },
+        };
+      }
+
+      // VTID-01943: Calendar list — upcoming events in primary calendar.
+      case 'calendar.list': {
+        const daysAhead = Math.max(1, Math.min(60, Number(action.args?.days_ahead ?? 7) || 7));
+        const timeMin = new Date().toISOString();
+        const timeMax = new Date(Date.now() + daysAhead * 24 * 3600 * 1000).toISOString();
+
+        const u = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+        u.searchParams.set('timeMin', timeMin);
+        u.searchParams.set('timeMax', timeMax);
+        u.searchParams.set('maxResults', '20');
+        u.searchParams.set('singleEvents', 'true');
+        u.searchParams.set('orderBy', 'startTime');
+        const r = await googleGet(u.toString(), token);
+        if (!r.ok) return { ok: false, error: `Calendar list failed: ${r.errorMessage}` };
+
+        const events = (r.json?.items ?? []).map((ev: any) => ({
+          id: ev.id,
+          summary: ev.summary ?? '(no title)',
+          start: ev.start?.dateTime ?? ev.start?.date,
+          end: ev.end?.dateTime ?? ev.end?.date,
+          location: ev.location ?? '',
+          all_day: Boolean(ev.start?.date && !ev.start?.dateTime),
+          html_link: ev.htmlLink ?? '',
+        }));
+
+        return {
+          ok: true,
+          raw: {
+            action: 'structured_list',
+            events,
+            days_ahead: daysAhead,
+            summary: events.length === 0
+              ? `No events in the next ${daysAhead} day${daysAhead === 1 ? '' : 's'}.`
+              : `${events.length} event${events.length === 1 ? '' : 's'} in the next ${daysAhead} day${daysAhead === 1 ? '' : 's'}.`,
+          },
+        };
+      }
+
+      // VTID-01943: Calendar create — adds an event to the primary calendar.
+      case 'calendar.create': {
+        const summary = String(action.args?.title ?? '').trim();
+        const start = String(action.args?.start ?? '').trim();
+        const end = String(action.args?.end ?? '').trim();
+        const description = typeof action.args?.description === 'string' ? (action.args.description as string) : undefined;
+        const attendees = Array.isArray(action.args?.attendees) ? (action.args.attendees as string[]) : [];
+        if (!summary) return { ok: false, error: 'calendar.create: "title" is required' };
+        if (!start) return { ok: false, error: 'calendar.create: "start" is required (RFC3339)' };
+
+        let endFinal = end;
+        if (!endFinal) {
+          const s = new Date(start);
+          if (Number.isNaN(s.getTime())) return { ok: false, error: 'calendar.create: "start" is not a valid date' };
+          endFinal = new Date(s.getTime() + 60 * 60 * 1000).toISOString();
+        }
+
+        const body: Record<string, unknown> = {
+          summary,
+          start: { dateTime: start },
+          end: { dateTime: endFinal },
+        };
+        if (description) body.description = description;
+        if (attendees.length) body.attendees = attendees.map((email) => ({ email }));
+
+        const resp = await fetch(
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        const json: any = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          return { ok: false, error: json?.error?.message ?? resp.statusText };
+        }
+        return {
+          ok: true,
+          external_id: json.id,
+          url: json.htmlLink,
+          raw: {
+            action: 'ack',
+            summary,
+            start,
+            end: endFinal,
+            attendees,
+            html_link: json.htmlLink,
+          },
+        };
+      }
+
+      // VTID-01943: Contacts — list via People API, optional name/email filter.
+      case 'contacts.read': {
+        const queryFilter = typeof action.args?.query === 'string' ? (action.args.query as string).trim().toLowerCase() : '';
+        const limit = Math.max(1, Math.min(200, Number(action.args?.limit ?? 50) || 50));
+
+        const u = new URL('https://people.googleapis.com/v1/people/me/connections');
+        u.searchParams.set('personFields', 'names,emailAddresses,phoneNumbers');
+        u.searchParams.set('pageSize', String(Math.min(limit, 100)));
+        u.searchParams.set('sortOrder', 'LAST_MODIFIED_DESCENDING');
+        const r = await googleGet(u.toString(), token);
+        if (!r.ok) return { ok: false, error: `Contacts list failed: ${r.errorMessage}` };
+
+        const all = (r.json?.connections ?? []).map((c: any) => {
+          const nameObj = (c.names ?? [])[0] ?? {};
+          const emails: string[] = (c.emailAddresses ?? []).map((e: any) => e.value).filter(Boolean);
+          const phones: string[] = (c.phoneNumbers ?? []).map((p: any) => p.value).filter(Boolean);
+          return {
+            resource_name: c.resourceName,
+            name: nameObj.displayName ?? [nameObj.givenName, nameObj.familyName].filter(Boolean).join(' '),
+            emails,
+            phones,
+          };
+        }).filter((c: any) => c.name || c.emails.length || c.phones.length);
+
+        const filtered = queryFilter
+          ? all.filter((c: any) =>
+              (c.name ?? '').toLowerCase().includes(queryFilter) ||
+              c.emails.some((e: string) => e.toLowerCase().includes(queryFilter)) ||
+              c.phones.some((p: string) => p.toLowerCase().includes(queryFilter)),
+            )
+          : all;
+
+        return {
+          ok: true,
+          raw: {
+            action: 'structured_list',
+            contacts: filtered.slice(0, limit),
+            total: filtered.length,
+            total_people: r.json?.totalPeople ?? null,
+            query: queryFilter,
+            summary: queryFilter
+              ? `${filtered.length} contact${filtered.length === 1 ? '' : 's'} matching "${queryFilter}".`
+              : `${filtered.length} contact${filtered.length === 1 ? '' : 's'}.`,
+          },
+        };
+      }
+
       case 'email.send':
-      case 'calendar.list':
-      case 'calendar.create':
-      case 'contacts.read':
       case 'contacts.import':
         return { ok: false, error: `Capability ${action.capability} declared but not yet implemented` };
 
