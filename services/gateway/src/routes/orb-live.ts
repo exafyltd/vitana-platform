@@ -1762,6 +1762,114 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['capability'],
           },
         },
+        // VTID-01943: Gmail read. Routes to email.read capability.
+        {
+          name: 'read_email',
+          description: [
+            'Read the user\'s unread emails or emails from a specific sender.',
+            'Call this when the user asks things like:',
+            '  - "check my emails"',
+            '  - "do I have any new emails?"',
+            '  - "anything from Sarah today?"',
+            '  - "what\'s in my inbox?"',
+            '',
+            'Pass optional filters: `limit` (default 5 — keep low for voice),',
+            '`from` (sender filter, e.g. "sarah@example.com"),',
+            '`unread_only` (default true).',
+            '',
+            'SPEAK THE RESULT SUCCINCTLY. Summarise count + who + subject,',
+            'e.g. "You have 3 unread emails: one from Sarah about the',
+            'project plan, one from Google about your account, and one',
+            'newsletter from Substack. Want me to read any in detail?"',
+            'Don\'t read entire message bodies unless the user asks.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', default: 5, minimum: 1, maximum: 25 },
+              from: { type: 'string', description: 'Optional sender filter' },
+              unread_only: { type: 'boolean', default: true },
+            },
+          },
+        },
+        // VTID-01943: Calendar list. Routes to calendar.list capability.
+        {
+          name: 'get_schedule',
+          description: [
+            'Return the user\'s upcoming calendar events. Call when the user asks:',
+            '  - "what\'s on today?"',
+            '  - "do I have any meetings tomorrow?"',
+            '  - "what does my week look like?"',
+            '  - "am I free at 3pm?"',
+            '',
+            'Pass `days_ahead` — 1 for "today", 2 for "today and tomorrow",',
+            '7 for "this week". Default 1.',
+            '',
+            'Summarise the events: "Today at 10am you have a call with John,',
+            'and at 2pm a team sync." For longer horizons, group by day.',
+            'Never dump raw timestamps — convert to natural language.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              days_ahead: { type: 'integer', default: 1, minimum: 1, maximum: 60 },
+            },
+          },
+        },
+        // VTID-01943: Calendar create. Routes to calendar.create capability.
+        {
+          name: 'add_to_calendar',
+          description: [
+            'Add an event to the user\'s primary calendar. Call when the user says:',
+            '  - "put a meeting with Sarah on my calendar at 3pm tomorrow"',
+            '  - "schedule a call with the team Friday at 10"',
+            '  - "add a reminder for the dentist on Monday at 2pm"',
+            '',
+            'Required: `title`, `start` (RFC3339, e.g. "2026-04-21T15:00:00+02:00").',
+            '`end` defaults to start + 1h. Optional: `description`, `attendees` (emails).',
+            '',
+            'You MUST resolve relative time phrases ("tomorrow at 3pm") into',
+            'an absolute RFC3339 string in the user\'s local timezone before',
+            'calling. If ambiguous, ask.',
+            '',
+            'Acknowledge briefly: "Added — meeting with Sarah tomorrow at 3pm."',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              start: { type: 'string', description: 'RFC3339 start time' },
+              end: { type: 'string', description: 'RFC3339 end (default: start + 1h)' },
+              description: { type: 'string' },
+              attendees: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['title', 'start'],
+          },
+        },
+        // VTID-01943: Contacts search. Routes to contacts.read capability.
+        {
+          name: 'find_contact',
+          description: [
+            'Find a contact by name or partial email. Call when the user asks:',
+            '  - "what\'s Sarah\'s email?"',
+            '  - "find John\'s phone number"',
+            '  - "who is my dentist?"',
+            '  - "do I have a contact for the plumber?"',
+            '',
+            'Pass `query` (substring). If the user asks for a generic list',
+            '("show my contacts"), omit query and cap `limit` at 10.',
+            '',
+            'Speak naturally: "Sarah Jones — email sarah@example.com,',
+            'phone +1 555-0100." If multiple matches, say so and ask which.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Name / email / phone substring' },
+              limit: { type: 'integer', default: 10, minimum: 1, maximum: 50 },
+            },
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -3205,6 +3313,112 @@ async function executeLiveApiToolInner(
           success: true,
           result: `Got it — ${displayName} is your default for ${capability} now.`,
         };
+      }
+
+      // VTID-01943: the Gmail + Calendar + Contacts voice tools all share
+      // the same shape — invoke a capability via executeCapability, then
+      // hand the structured_list back to Gemini so it speaks a summary.
+      case 'read_email':
+      case 'get_schedule':
+      case 'add_to_calendar':
+      case 'find_contact': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { executeCapability } = await import('../capabilities');
+
+        const toolCapabilityMap: Record<string, string> = {
+          read_email: 'email.read',
+          get_schedule: 'calendar.list',
+          add_to_calendar: 'calendar.create',
+          find_contact: 'contacts.read',
+        };
+        const capabilityId = toolCapabilityMap[toolName];
+
+        const disp = await executeCapability(
+          { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
+          capabilityId,
+          args ?? {},
+        ) as any;
+
+        if (!disp.ok) {
+          const errText = String(disp.error ?? 'Capability failed');
+          const notConnected = /isn't connected|requires a connected provider|No active google/i.test(errText);
+          if (notConnected) {
+            return {
+              success: true,
+              result: `I can't check that yet — you haven't connected your Google account. Want me to take you to Connected Apps?`,
+            };
+          }
+          return { success: false, result: '', error: errText };
+        }
+
+        // Shape the voice response from the structured_list raw.
+        const raw = (disp.raw ?? {}) as any;
+
+        if (toolName === 'read_email') {
+          const messages: Array<{ from: string; subject: string; snippet?: string }> = raw.messages ?? [];
+          if (messages.length === 0) {
+            return { success: true, result: raw.summary ?? 'No unread emails.' };
+          }
+          const compact = messages.slice(0, 5).map((m) => {
+            const fromName = m.from.replace(/<[^>]+>/, '').trim() || m.from;
+            return `from ${fromName}, subject "${m.subject}"`;
+          }).join('; ');
+          return {
+            success: true,
+            result: `${raw.summary ?? ''} ${compact}. Want me to read any in detail?`.trim(),
+          };
+        }
+
+        if (toolName === 'get_schedule') {
+          const events: Array<{ summary: string; start: string; all_day?: boolean; location?: string }> = raw.events ?? [];
+          if (events.length === 0) {
+            return { success: true, result: raw.summary ?? 'Nothing on your calendar.' };
+          }
+          const lines = events.slice(0, 8).map((ev) => {
+            const when = ev.all_day
+              ? 'all day'
+              : (ev.start ? new Date(ev.start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '');
+            const loc = ev.location ? ` (${ev.location})` : '';
+            return `${when}: ${ev.summary}${loc}`;
+          }).join('; ');
+          return { success: true, result: `${raw.summary ?? ''} ${lines}.`.trim() };
+        }
+
+        if (toolName === 'add_to_calendar') {
+          const title = raw.summary ?? (args.title as string) ?? 'the event';
+          const start = raw.start ?? '';
+          const when = start ? new Date(start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
+          return { success: true, result: `Added — ${title}${when ? ' at ' + when : ''}.` };
+        }
+
+        if (toolName === 'find_contact') {
+          const contacts: Array<{ name: string; emails: string[]; phones: string[] }> = raw.contacts ?? [];
+          if (contacts.length === 0) {
+            return { success: true, result: raw.summary ?? 'No contacts matched.' };
+          }
+          if (contacts.length > 5) {
+            const names = contacts.slice(0, 5).map((c) => c.name).filter(Boolean).join(', ');
+            return {
+              success: true,
+              result: `Found ${contacts.length} matches: ${names}, and more. Which one?`,
+            };
+          }
+          const spoken = contacts.map((c) => {
+            const bits: string[] = [];
+            if (c.emails?.[0]) bits.push(`email ${c.emails[0]}`);
+            if (c.phones?.[0]) bits.push(`phone ${c.phones[0]}`);
+            return `${c.name || 'Unknown'}${bits.length ? ' — ' + bits.join(', ') : ''}`;
+          }).join('; ');
+          return { success: true, result: spoken };
+        }
+
+        return { success: true, result: raw.summary ?? 'Done.' };
       }
 
       default:
