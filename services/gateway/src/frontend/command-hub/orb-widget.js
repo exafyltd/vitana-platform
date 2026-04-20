@@ -997,10 +997,30 @@
         break;
 
       case 'orb_directive':
-        // VTID-NAV-01: Vitana Navigator dispatch. Today the only directive is
-        // 'navigate' (close + redirect). The discriminator is here so future
-        // directives like 'minimize' or 'dismiss' can be added without a new
-        // message type.
+        // VTID-NAV-01: Vitana Navigator dispatch. Originally only 'navigate'
+        // existed; new directives discriminate on msg.directive.
+        // VTID-01941: 'open_url' added for music.play — opens the track's
+        // provider URL (music.youtube.com etc.) in a new tab and keeps the
+        // orb session alive so the user can keep talking.
+        if (msg.directive === 'open_url') {
+          if (!msg.url) {
+            console.warn('[VTOrb] orb_directive open_url received without url — ignoring');
+            break;
+          }
+          console.log('[VTOrb] orb_directive open_url: ' + (msg.title || msg.url) + (msg.source ? ' (' + msg.source + ')' : ''));
+          try {
+            var _opened = window.open(msg.url, '_blank', 'noopener,noreferrer');
+            if (!_opened) {
+              // Pop-up blocked — fall back to same-tab navigation so the
+              // user at least reaches the player instead of getting nothing.
+              console.warn('[VTOrb] window.open blocked, falling back to location.href');
+              window.location.href = msg.url;
+            }
+          } catch (_e) {
+            console.error('[VTOrb] open_url failed:', _e);
+          }
+          break;
+        }
         if (msg.directive === 'navigate') {
           var navRoute = msg.route;
           var navCtx = { screen_id: msg.screen_id, reason: msg.reason, title: msg.title };
