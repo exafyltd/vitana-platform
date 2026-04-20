@@ -286,6 +286,8 @@ router.post('/:id/accept', async (req: Request, res: Response) => {
       source: 'recommendation-inbox',
       status: 'info',
       message: `User accepted recommendation`,
+      actor_id: userId,
+      surface: 'command-hub',
       payload: {
         recommendation_id: id,
         user_id: userId,
@@ -381,6 +383,8 @@ router.post('/:id/dismiss', async (req: Request, res: Response) => {
       source: 'recommendation-inbox',
       status: 'info',
       message: `User dismissed recommendation`,
+      actor_id: userId,
+      surface: 'command-hub',
       payload: {
         recommendation_id: id,
         user_id: userId,
@@ -506,6 +510,8 @@ router.post('/:id/feedback', async (req: Request, res: Response) => {
       source: 'recommendation-inbox',
       status: 'info',
       message: `User submitted feedback (rating: ${rating})`,
+      actor_id: userId,
+      surface: 'command-hub',
       payload: {
         recommendation_id: id,
         user_id: userId,

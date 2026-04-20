@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'crypto';
 import { CicdEventType, CicdOasisEvent } from '../types/cicd';
+import { projectOasisEventToTimeline } from './timeline-projector';
 
 /**
  * VTID-01874: Infer task_stage from event type when not explicitly set.
@@ -84,6 +85,20 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     }
 
     console.log(`[OASIS Event] Emitted: ${event.type} for ${event.vtid} (${eventId})`);
+
+    // BOOTSTRAP-HISTORY-AWARE-TIMELINE: fan out to user timeline (fire-and-forget).
+    // Projector drops events without actor_id and topics that aren't user-facing.
+    projectOasisEventToTimeline({
+      topic: event.type,
+      actor_id: event.actor_id,
+      event_id: eventId,
+      status: event.status,
+      message: event.message,
+      payload: event.payload,
+      surface: event.surface,
+      conversation_turn_id: event.conversation_turn_id,
+    }).catch(err => console.warn(`[TimelineProjector] non-fatal: ${err instanceof Error ? err.message : 'unknown'}`));
+
     return { ok: true, event_id: eventId };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

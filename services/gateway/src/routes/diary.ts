@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { writeTimelineRow } from '../services/timeline-projector';
 // VTID-01225: Cognee entity extraction from diary entries
 import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 
@@ -724,6 +725,26 @@ router.post('/entry', async (req: Request, res: Response) => {
         extraction_result: extractionResult
       }
     );
+
+    // BOOTSTRAP-HISTORY-AWARE-TIMELINE: direct write to timeline
+    // (emitDiaryEvent omits actor_id, so the tail-projector would drop this).
+    if (jwtUserId) {
+      writeTimelineRow({
+        user_id: jwtUserId,
+        activity_type: 'diary.create',
+        activity_data: {
+          entry_id: memoryId,
+          template_type: entry.template_type,
+          entry_type: entryType,
+          category_key: categoryKey,
+          has_mood: !!entry.mood,
+          has_energy: !!entry.energy_level,
+        },
+        context_data: { surface: 'diary' },
+        dedupe_key: `diary:${memoryId}`,
+        source: 'projector:diary',
+      }).catch(() => {});
+    }
 
     console.log(`[VTID-01097] Diary entry created: ${memoryId} (${entry.template_type})`);
 
