@@ -584,7 +584,7 @@ function copyToClipboard(callIndex, field) {
   const text = JSON.stringify(data, null, 2);
 
   navigator.clipboard.writeText(text).then(() => {
-    showToast('Copied to clipboard');
+    intelShowToast('Copied to clipboard');
   }).catch(err => {
     console.error('Failed to copy:', err);
   });
@@ -661,17 +661,17 @@ async function fetchRecommendations() {
 function copyRecommendationCommands(recIndex) {
   const rec = IntelligenceState.recommendations[recIndex];
   if (!rec || !rec.suggested_commands || rec.suggested_commands.length === 0) {
-    showToast('No commands to copy');
+    intelShowToast('No commands to copy');
     return;
   }
 
   const text = rec.suggested_commands.join('\n');
 
   navigator.clipboard.writeText(text).then(() => {
-    showToast('Commands copied to clipboard');
+    intelShowToast('Commands copied to clipboard');
   }).catch(err => {
     console.error('[VTID-01221] Failed to copy commands:', err);
-    showToast('Failed to copy commands');
+    intelShowToast('Failed to copy commands');
   });
 }
 
@@ -754,11 +754,16 @@ function formatDate(dateStr) {
 }
 
 /**
- * Show a toast notification
+ * Show a toast notification — delegates to the app-level showToast if it's
+ * available on window. MUST be named `intelShowToast` (not `showToast`) so
+ * that its top-level `function` declaration does not shadow app.js's
+ * `showToast` in the global scope. (Top-level function declarations in
+ * sibling scripts bind the same global, and the last-loaded one wins —
+ * that caused every call to showToast anywhere in the app to recurse into
+ * this delegate and stack-overflow.)
  */
-function showToast(message) {
-  // Use existing toast system if available
-  if (typeof window.showToast === 'function') {
+function intelShowToast(message) {
+  if (typeof window.showToast === 'function' && window.showToast !== intelShowToast) {
     window.showToast(message);
   } else {
     console.log('[Intel Panel]', message);
