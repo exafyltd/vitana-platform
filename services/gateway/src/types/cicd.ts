@@ -495,6 +495,8 @@ export type CicdEventType =
   | 'orb.live.connection_failed'
   // VTID-WATCHDOG: ORB stall detection events
   | 'orb.live.stall_detected'
+  // VTID-TOOLGUARD: Tool loop guard activation
+  | 'orb.live.tool_loop_guard_activated'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
