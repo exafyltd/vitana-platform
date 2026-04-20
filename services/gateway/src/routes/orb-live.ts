@@ -1698,6 +1698,70 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             },
           },
         },
+        // BOOTSTRAP-ORB-DELEGATION-ROUTE: Delegate a question to another AI
+        // the user has connected via Settings → Connected Apps (ChatGPT,
+        // Claude, or Google AI). Vitana speaks the result in its own voice.
+        // The user never sees which AI answered — it's pure backend routing.
+        {
+          name: 'consult_external_ai',
+          description: [
+            'Forward a question to one of the user\'s connected external AI',
+            'accounts (ChatGPT, Claude, or Google AI / Gemini via the user\'s',
+            'own API key) and return the answer. Vitana speaks the result in',
+            'its OWN voice — never mention which AI produced the answer, and',
+            'never say "Claude says" / "ChatGPT says".',
+            '',
+            'CALL THIS TOOL WHEN:',
+            '  - the user explicitly names a provider ("ask ChatGPT …",',
+            '    "what does Claude think about …", "frag Claude …")',
+            '  - the task class strongly matches another provider\'s strength',
+            '    and the user has that provider connected (e.g. long code',
+            '    review → claude; image description of a supplied URL →',
+            '    chatgpt with vision)',
+            '  - the user asks for a "second opinion" on an answer',
+            '',
+            'DO NOT CALL WHEN:',
+            '  - the question is about Vitana, the user\'s memory, their',
+            '    calendar, events, or any internal tool you already have —',
+            '    answer those yourself',
+            '  - the user did not ask for an external opinion and your own',
+            '    answer is sufficient',
+            '',
+            'ARGUMENTS:',
+            '  - question (REQUIRED): a self-contained prompt. Do not rely',
+            '    on Vitana-internal context; include whatever the external',
+            '    AI needs to answer.',
+            '  - provider_hint (OPTIONAL): include ONLY when the user named',
+            '    a provider. openai = ChatGPT, anthropic = Claude,',
+            '    google-ai = Google AI. Omit to let the router pick.',
+            '  - task_class (OPTIONAL): hint the router toward a provider',
+            '    whose strengths match the task.',
+            '',
+            'If the user has not connected any external AI, the tool',
+            'returns a clear signal — acknowledge briefly ("you haven\'t',
+            'connected an external AI yet") and answer yourself.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description: 'Self-contained question to forward to the external AI.',
+              },
+              provider_hint: {
+                type: 'string',
+                enum: ['chatgpt', 'claude', 'google-ai'],
+                description: 'Internal ID of the provider the user named. OMIT unless named.',
+              },
+              task_class: {
+                type: 'string',
+                enum: ['code', 'reasoning', 'creative', 'factual', 'summarization', 'long_context', 'vision', 'multilingual'],
+                description: 'Kind of task, so the router can pick the best connected provider.',
+              },
+            },
+            required: ['question'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -1726,11 +1790,15 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
-  // VTID-01224-FIX: Reduced from 5s→3s. Gemini Live API has its own internal
-  // timeout for function_response (~3-4s). If we take longer, the model enters
-  // a stalled state where it stops generating audio. 3s gives enough time for
-  // fast queries while preventing session death on slow ones.
-  const TOOL_TIMEOUT_MS = 3000;
+  // VTID-01224-FIX: Default 3 s budget. Gemini Live API has its own internal
+  // timeout for function_response (~3-4s); taking longer stalls the session.
+  //
+  // BOOTSTRAP-ORB-DELEGATION-ROUTE: consult_external_ai legitimately takes
+  // up to 15 s because it round-trips through a third-party provider
+  // (OpenAI/Anthropic/Google AI). The delegation executor already hard-caps
+  // at 15 s internally (orb/delegation/execute.ts), so we mirror that here
+  // as the outer tool budget. All other tools keep the 3 s budget.
+  const TOOL_TIMEOUT_MS = toolName === 'consult_external_ai' ? 16_000 : 3_000;
 
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
@@ -3247,6 +3315,84 @@ async function executeLiveApiToolInner(
         }
 
         return { success: true, result: raw.summary ?? 'Done.' };
+      }
+
+      // =====================================================================
+      // BOOTSTRAP-ORB-DELEGATION-ROUTE: AI-to-AI delegation
+      // =====================================================================
+      // Forward the user's question to ChatGPT / Claude / Google AI through
+      // the user's own connected credentials, and return the answer so
+      // Gemini can speak it in Vitana's voice. Full orchestration (router,
+      // budget, credential, provider call, usage log) lives in
+      // services/gateway/src/orb/delegation/.
+      case 'consult_external_ai': {
+        if (!session.identity?.user_id) {
+          return {
+            success: true,
+            result: 'External AI consultation requires a signed-in session. I\'ll answer this one myself.',
+          };
+        }
+
+        const question = String(args.question ?? '').trim();
+        if (!question) {
+          return { success: false, result: '', error: 'consult_external_ai requires a non-empty question.' };
+        }
+
+        const providerHint = typeof args.provider_hint === 'string'
+          ? (args.provider_hint as 'chatgpt' | 'claude' | 'google-ai')
+          : undefined;
+        const taskClass = typeof args.task_class === 'string'
+          ? (args.task_class as import('../orb/delegation').DelegationStrength)
+          : undefined;
+
+        const { executeDelegation, adaptForDelivery } = await import('../orb/delegation');
+
+        const outcome = await executeDelegation({
+          userId: session.identity.user_id,
+          tenantId: session.identity.tenant_id ?? '',
+          sessionId: session.sessionId,
+          question,
+          taskClass,
+          providerHint,
+          privacyLevel: 'public',
+          lang: session.lang || 'en',
+          startedAt: startTime,
+        });
+
+        if (!outcome.ok) {
+          // Graceful user-facing copy based on failure reason. Gemini will
+          // read this string and speak it, so keep it short and natural.
+          const reason = outcome.failure.reason;
+          if (reason === 'no_providers_connected' || reason === 'no_credentials') {
+            return {
+              success: true,
+              result: "You haven't connected an external AI yet, so I'll answer this one myself.",
+            };
+          }
+          if (reason === 'budget_cap_exceeded') {
+            return {
+              success: true,
+              result: `You've reached this month's spending cap for that AI, so I'll answer this myself.`,
+            };
+          }
+          if (reason === 'provider_timeout') {
+            return {
+              success: true,
+              result: `That AI is taking too long to respond. Let me answer instead.`,
+            };
+          }
+          // provider_unauthorized / provider_error / network_error / etc.
+          console.warn(`[BOOTSTRAP-ORB-DELEGATION-ROUTE] delegation failed: ${reason} — ${outcome.failure.message}`);
+          return {
+            success: true,
+            result: `That external AI isn't reachable right now, so I'll answer this myself.`,
+          };
+        }
+
+        const voiceText = adaptForDelivery(outcome.result, 'voice');
+        console.log(`[BOOTSTRAP-ORB-DELEGATION-ROUTE] consult_external_ai ok: provider=${outcome.result.providerId} model=${outcome.result.model} in=${outcome.result.usage.inputTokens} out=${outcome.result.usage.outputTokens} cost=$${outcome.result.usage.costUsd.toFixed(4)} latency=${outcome.result.latencyMs}ms`);
+
+        return { success: true, result: voiceText };
       }
 
       default:
