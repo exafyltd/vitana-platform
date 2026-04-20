@@ -63,24 +63,20 @@ export const TURN_RESPONSE_TIMEOUT_MS = 10_000;     // 10s after user speech
 // (via input_transcription or model response), stall recovery force-closes
 // the WS to trigger a transparent reconnect.
 //
-// BOOTSTRAP-ORB-RELIABILITY-R2: Reduced 15 s → 6 s. 24 h production diagnostic
-// showed 21 % of sessions (14 of 67) hit forwarding_no_ack; with 15 s
-// detection + reconnect + greeting re-setup users experienced 20–30 s of
-// dead air. Vertex's SLO for input_transcription is under 2 s; 6 s gives
-// 3× headroom while halving the user-visible interruption window. All 14
-// stalls in the 24 h window successfully recovered via transparent reconnect,
-// so faster detection just makes the recovery faster without raising the
-// false-positive rate.
-//
-// BOOTSTRAP-ORB-WATCHDOG-RESTORE: Raised 6 s → 10 s after voice sessions
-// started flickering on/off with user reports "greeting and first question
-// break." Field diagnostics showed Vertex legitimately takes 8–9 s to respond
-// to the first user turn when system_instruction is ~15 K chars + 16 tools
-// (our current config with memory + profile + tools). 6 s was firing on every
-// real first question and triggering a reconnect storm. 10 s accommodates
-// normal first-turn latency while still cutting the original 15 s interruption
-// window by a third.
-export const FORWARDING_ACK_TIMEOUT_MS = 10_000;
+// History:
+//   R2 (#769): 15 s → 6 s. Mistaken as "Vertex responds in 2-4 s" — actually
+//     Vertex's VAD needs 1.2 s silence before input_transcription, so Vertex
+//     legitimately sends NOTHING during an ongoing utterance. 6 s tripped
+//     mid-sentence on any utterance longer than ~5 s. Reverted.
+//   #772 compromise: 10 s. Still too aggressive with our 15 K-char system
+//     instruction + 16 tools; first-turn inference alone takes 8-9 s.
+//   R3 (this change): back to the pre-regression 15 s. Users were having
+//     their 2nd/3rd questions cut off. A proper follow-up makes the watchdog
+//     SLIDING — reset on each inbound audio chunk — so any timeout becomes
+//     safe because "N seconds without Vertex response" then means "N seconds
+//     after last audio with Vertex still silent" which is the real stall
+//     condition. Until that ships, 15 s is the safest known-good value.
+export const FORWARDING_ACK_TIMEOUT_MS = 15_000;
 
 // =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
