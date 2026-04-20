@@ -497,6 +497,9 @@ export type CicdEventType =
   | 'orb.live.stall_detected'
   // VTID-TOOLGUARD: Tool loop guard activation
   | 'orb.live.tool_loop_guard_activated'
+  // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
+  // request to first greeting audio chunk forwarded to client)
+  | 'orb.live.greeting.delivered'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
