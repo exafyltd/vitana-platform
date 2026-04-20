@@ -1674,28 +1674,39 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: [],
           },
         },
-        // VTID-01941: Play a song through the user's connected music
-        // provider (YouTube Music today; Spotify / Apple Music later).
-        // Backend dispatches music.play capability → returns a URL →
-        // widget emits orb_directive open_url → browser opens it.
+        // VTID-01941 / VTID-01942: Play a song. Backend routes to the right
+        // provider based on (a) explicit source in the phrase, (b) user
+        // preference (PR 2), (c) what's connected, (d) the in-house Vitana
+        // Media Hub as fallback. Model should only pass `source` when the
+        // user explicitly names a provider.
         {
           name: 'play_music',
           description: [
-            'Play a song, album or playlist on the user\'s connected',
-            'music provider. Call this whenever the user asks to play,',
-            'listen to, hear, or put on any music, song or track.',
-            'Examples:',
+            'Play a song, album or playlist. Call this whenever the user',
+            'asks to play, listen to, hear, or put on any music, song or',
+            'track. Examples:',
             '  - "play Beat It by Michael Jackson"',
             '  - "play Human Nature"',
             '  - "play some Whitney Houston"',
-            '  - "put on One Moment in Time"',
+            '  - "put on One Moment in Time on Spotify"',
+            '  - "play something from the Vitana hub"',
             '',
-            'Pass the full phrase minus "play" as the query. After',
-            'calling, the user\'s browser opens YouTube Music (or',
-            'whichever provider they have connected) and playback',
-            'starts automatically. In your spoken reply, acknowledge',
-            'briefly ("Playing X by Y now on YouTube Music") and NEVER',
-            'read the URL out loud.',
+            'Pass the full phrase minus "play" as `query`.',
+            '',
+            'SOURCE HANDLING — only set `source` when the user EXPLICITLY',
+            'names a provider in the phrase:',
+            '  - "on Spotify" / "from Spotify"        → source="spotify"',
+            '  - "on YouTube Music" / "on YT Music"   → source="google"',
+            '  - "on Apple Music"                     → source="apple_music"',
+            '  - "from the Vitana hub" / "in Vitana"  → source="vitana_hub"',
+            'If the user does NOT name a provider, omit `source` — the',
+            'backend picks their default or the Vitana Media Hub.',
+            '',
+            'SPEAKING THE RESULT:',
+            '  - external hit:   "Playing X by Y on YouTube Music."',
+            '  - hub fallback:   "Playing from the Vitana Media Hub — want me to link your Spotify or YouTube Music so I can play the real track?"',
+            '  - not connected:  "You haven\'t connected that yet. Shall I take you to Connected Apps?"',
+            'NEVER read the URL out loud.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -1703,6 +1714,11 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
               query: {
                 type: 'string',
                 description: 'Song / artist / album / playlist in natural language, e.g. "Human Nature by Michael Jackson".',
+              },
+              source: {
+                type: 'string',
+                enum: ['spotify', 'google', 'apple_music', 'vitana_hub'],
+                description: 'OPTIONAL. Only set if the user explicitly named a provider in the phrase. Omit otherwise so the backend can use the user\'s default / hub fallback.',
               },
             },
             required: ['query'],
@@ -2974,11 +2990,14 @@ async function executeLiveApiToolInner(
         return { success: true, result: `Here are your personalized recommendations:\n${formatted}` };
       }
 
-      // VTID-01941: Voice "play a song" — dispatch to the music.play
-      // capability, emit orb_directive open_url so the widget opens
-      // YouTube Music in a new tab, return a short speakable ack.
+      // VTID-01941 / VTID-01942: Voice "play a song" — dispatch music.play
+      // capability, emit orb_directive open_url so the widget opens the
+      // provider URL, return a short speakable ack. The optional `source`
+      // arg from the model (e.g. user said "on Spotify") is passed through
+      // to the capability resolver.
       case 'play_music': {
         const query = String(args.query ?? '').trim();
+        const requestedSource = typeof args.source === 'string' ? args.source.trim() : undefined;
         if (!query) {
           return { success: false, result: '', error: 'play_music requires a "query" argument' };
         }
@@ -2995,8 +3014,8 @@ async function executeLiveApiToolInner(
         const disp = await executeCapability(
           { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
           'music.play',
-          { query },
-        );
+          { query, ...(requestedSource ? { source: requestedSource } : {}) },
+        ) as any;
 
         if (!disp.ok || !disp.url) {
           return {
@@ -3009,9 +3028,9 @@ async function executeLiveApiToolInner(
         const raw = (disp.raw ?? {}) as { title?: string; channel?: string; source?: string };
         const title = raw.title ?? query;
         const channel = raw.channel ?? '';
-        const source = raw.source ?? 'youtube_music';
+        const source = raw.source ?? 'unknown';
+        const routingReason: string | undefined = disp.routing_reason;
 
-        // Hand the URL off to the widget — it calls window.open() for us.
         const directive = {
           type: 'orb_directive',
           directive: 'open_url',
@@ -3020,7 +3039,8 @@ async function executeLiveApiToolInner(
           channel,
           source,
           query,
-          vtid: 'VTID-01941',
+          routing_reason: routingReason,
+          vtid: 'VTID-01942',
         };
         try { session.sseResponse?.write(`data: ${JSON.stringify(directive)}\n\n`); } catch (_e) { /* SSE closed */ }
         const ws = (session as any).clientWs;
@@ -3028,13 +3048,24 @@ async function executeLiveApiToolInner(
           try { sendWsMessage(ws, directive); } catch (_e) { /* WS closed */ }
         }
 
-        console.log(`[VTID-01941] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''}`);
-        // Speakable result — the model reads this back briefly. Keep tight
-        // so it stays under the function_response stall threshold.
-        return {
-          success: true,
-          result: `Now playing "${title}"${channel ? ' by ' + channel : ''} on YouTube Music.`,
-        };
+        // VTID-01942: shape the spoken ack to the routing reason so the user
+        // knows whether they hit their provider or the hub fallback.
+        const providerDisplay =
+          source === 'youtube_music' ? 'YouTube Music' :
+          source === 'spotify' ? 'Spotify' :
+          source === 'apple_music' ? 'Apple Music' :
+          source === 'vitana_hub' ? 'the Vitana Media Hub' :
+          source;
+
+        const baseAck = channel
+          ? `Now playing "${title}" by ${channel} on ${providerDisplay}.`
+          : `Now playing "${title}" on ${providerDisplay}.`;
+        const hubFallbackHint = routingReason === 'hub_fallback'
+          ? ' Want me to link your Spotify or YouTube Music so I can play the real track next time?'
+          : '';
+
+        console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'})`);
+        return { success: true, result: `${baseAck}${hubFallbackHint}` };
       }
 
       default:

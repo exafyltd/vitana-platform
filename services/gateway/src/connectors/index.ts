@@ -17,6 +17,8 @@ import ouraConnector from './wearable/oura';
 import stravaConnector from './wearable/strava';
 // VTID-01939: productivity category — Google (Gmail/Calendar/Contacts/YouTube)
 import googleConnector from './productivity/google';
+// VTID-01942: in-house Vitana Media Hub — music/podcast/shorts, no OAuth
+import vitanaHubConnector from './media/vitana_hub';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -35,6 +37,7 @@ register(fitbitConnector);
 register(ouraConnector);
 register(stravaConnector);
 register(googleConnector);
+register(vitanaHubConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);

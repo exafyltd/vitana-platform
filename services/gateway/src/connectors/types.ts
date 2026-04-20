@@ -23,7 +23,12 @@ export type AuthType =
   | 'api_key'
   | 'webhook_only'
   | 'affiliate_link'
-  | 'sdk_bridge';
+  | 'sdk_bridge'
+  // VTID-01942: `none` — an always-available in-house connector (e.g. the
+  // Vitana Media Hub). Resolver treats these as implicitly connected for
+  // every authenticated user; dispatcher skips the token lookup and passes
+  // an empty TokenPair to performAction.
+  | 'none';
 
 export interface OAuthConfig {
   authorize_url: string;

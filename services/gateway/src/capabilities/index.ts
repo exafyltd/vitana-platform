@@ -122,17 +122,41 @@ export function getCapability(id: string): CapabilityDefinition | undefined {
   return CAPABILITIES.find((c) => c.id === id);
 }
 
+export interface ResolveOptions {
+  /**
+   * Explicit connector id extracted from the user's phrase (e.g. "on Spotify",
+   * "from the Vitana hub"). If set, the resolver honours it or errors — it does
+   * NOT silently fall back. The voice tool is responsible for mapping natural
+   * language into one of the known connector ids.
+   */
+  explicitSource?: string;
+}
+
+export interface ResolveSuccess {
+  connectorId: string;
+  /** Which rule picked this connector — useful for telemetry and UX. */
+  reason: 'explicit' | 'external_connected' | 'hub_fallback';
+}
+
 /**
- * Find the best connector for a given capability, given which connectors the
- * user currently has active. Today picks the first match; future version will
- * honour user-per-capability preferences (e.g. music.play via Spotify not
- * YouTube Music) stored in a user_capability_preferences table.
+ * VTID-01942: Priority ladder for picking a connector for a capability.
+ *
+ *   1. Explicit source in the phrase → honour or error.
+ *   2. (PR 2) User's stored preference for this capability.
+ *   3. (PR 2) Learned preference based on recent play counts.
+ *   4. Any external (non-'none' auth) connector the user has active → use it.
+ *   5. Fall back to an always-available 'none'-auth connector (Vitana Media Hub).
+ *   6. Nothing available → error pointing to Connected Apps settings.
+ *
+ * Rules 2 and 3 land in the preferences PR; the existing shape of the return
+ * value is compatible so callers don't need to change.
  */
 export async function resolveConnectorFor(
   supabase: SupabaseClient,
   userId: string,
   capabilityId: string,
-): Promise<{ connectorId: string } | { error: string }> {
+  options: ResolveOptions = {},
+): Promise<ResolveSuccess | { error: string }> {
   const cap = getCapability(capabilityId);
   if (!cap) return { error: `Unknown capability ${capabilityId}` };
 
@@ -146,15 +170,46 @@ export async function resolveConnectorFor(
     .select('provider')
     .eq('user_id', userId)
     .eq('is_active', true);
-
   const activeIds = new Set((active ?? []).map((r) => r.provider));
-  const hit = candidates.find((c) => activeIds.has(c.id));
-  if (!hit) {
-    return {
-      error: `Capability ${capabilityId} requires a connected provider (one of: ${candidates.map((c) => c.id).join(', ')})`,
-    };
+  const isAvailable = (cId: string, auth: string): boolean =>
+    auth === 'none' || activeIds.has(cId);
+
+  // ── Rule 1: explicit source from the user phrase ──────────────────────
+  if (options.explicitSource) {
+    const exact = candidates.find((c) => c.id === options.explicitSource);
+    if (!exact) {
+      return {
+        error: `"${options.explicitSource}" doesn't provide ${capabilityId}. ` +
+          `Available: ${candidates.map((c) => c.id).join(', ')}.`,
+      };
+    }
+    if (!isAvailable(exact.id, exact.auth_type)) {
+      return {
+        error: `"${options.explicitSource}" isn't connected. ` +
+          `Connect it in Settings → Connected Apps.`,
+      };
+    }
+    return { connectorId: exact.id, reason: 'explicit' };
   }
-  return { connectorId: hit.id };
+
+  // ── Rule 4: prefer any externally-connected connector ─────────────────
+  const externalConnected = candidates.find(
+    (c) => c.auth_type !== 'none' && activeIds.has(c.id),
+  );
+  if (externalConnected) {
+    return { connectorId: externalConnected.id, reason: 'external_connected' };
+  }
+
+  // ── Rule 5: always-available in-house fallback (Vitana Media Hub) ─────
+  const hub = candidates.find((c) => c.auth_type === 'none');
+  if (hub) return { connectorId: hub.id, reason: 'hub_fallback' };
+
+  // ── Rule 6: nothing to route to ───────────────────────────────────────
+  return {
+    error:
+      `${capabilityId} requires a connected provider ` +
+      `(one of: ${candidates.map((c) => c.id).join(', ')}).`,
+  };
 }
 
 /**
@@ -167,17 +222,34 @@ export async function executeCapability(
   capabilityId: string,
   args?: Record<string, unknown>,
 ): Promise<DispatchResult | { ok: false; capability: string; error: string; connector?: string }> {
-  const resolved = await resolveConnectorFor(ctx.supabase, ctx.userId, capabilityId);
+  // VTID-01942: args.source, if present, becomes the explicit source hint.
+  // The voice tool parses phrases like "on Spotify" into args.source='spotify'.
+  const explicitSource = typeof args?.source === 'string' && args.source.trim()
+    ? args.source.trim()
+    : undefined;
+
+  const resolved = await resolveConnectorFor(ctx.supabase, ctx.userId, capabilityId, {
+    explicitSource,
+  });
   if ('error' in resolved) {
     return { ok: false, capability: capabilityId, error: resolved.error };
   }
-  // Double-check that connector is still loaded.
   if (!getConnector(resolved.connectorId)) {
     return { ok: false, capability: capabilityId, error: `Connector ${resolved.connectorId} not registered` };
   }
-  return dispatchAction(ctx, {
+
+  // Strip internal-only "source" hint before dispatching to the connector —
+  // performAction should only see capability-specific args.
+  const dispatchArgs = { ...(args ?? {}) };
+  delete (dispatchArgs as Record<string, unknown>).source;
+
+  const result = await dispatchAction(ctx, {
     connectorId: resolved.connectorId,
     capability: capabilityId,
-    args,
+    args: dispatchArgs,
   });
+  // Surface why this connector was chosen so the UI / voice layer can
+  // shape the response ("Playing on YouTube Music — your default" vs
+  // "I don't have that in the hub, want me to link your music account?").
+  return { ...result, routing_reason: resolved.reason } as DispatchResult & { routing_reason: string };
 }
