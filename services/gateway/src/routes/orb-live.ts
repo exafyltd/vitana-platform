@@ -1724,6 +1724,44 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['query'],
           },
         },
+        // VTID-01942 (PR 3): set / clear the user's preferred provider for a
+        // capability. Called when the user says things like "make YouTube
+        // Music my default", "always play music on Spotify", "don't use
+        // Apple Music as default any more".
+        {
+          name: 'set_capability_preference',
+          description: [
+            'Set or clear the user\'s default provider for a capability.',
+            'Call this when the user tells you which service to use by',
+            'default for music, email, calendar, etc. Examples:',
+            '  - "make YouTube Music my default" → capability="music.play", connector_id="google"',
+            '  - "always play music on Spotify" → capability="music.play", connector_id="spotify"',
+            '  - "use the Vitana hub by default"→ capability="music.play", connector_id="vitana_hub"',
+            '  - "stop using Spotify as default"→ capability="music.play", clear=true',
+            '',
+            'After calling, acknowledge briefly ("Got it — YouTube Music is',
+            'your default for music now."). Don\'t over-explain.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              capability: {
+                type: 'string',
+                description: 'Capability id (e.g. "music.play", "email.send").',
+              },
+              connector_id: {
+                type: 'string',
+                enum: ['google', 'spotify', 'apple_music', 'vitana_hub'],
+                description: 'Which provider should serve this capability by default.',
+              },
+              clear: {
+                type: 'boolean',
+                description: 'True to remove the existing preference entirely. Omit connector_id when set.',
+              },
+            },
+            required: ['capability'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -3018,10 +3056,28 @@ async function executeLiveApiToolInner(
         ) as any;
 
         if (!disp.ok || !disp.url) {
+          // VTID-01942 PR 3: first-timer-friendly failures. If the hub
+          // didn't have the track and the user has no external music
+          // connector, offer to take them to Connected Apps instead of
+          // returning a raw error.
+          const errText = String(disp.error ?? '');
+          const isHubMiss = /no (music|podcast|shorts) found in the vitana media hub/i.test(errText);
+          const isNotConnected = /isn't connected|requires a connected provider/i.test(errText);
+          if (isHubMiss || isNotConnected) {
+            // Nudge the widget: we don't auto-navigate (that would interrupt
+            // the conversation) — the user confirms verbally and Gemini
+            // then calls the `navigate` tool.
+            return {
+              success: true,
+              result: isHubMiss
+                ? `I couldn't find "${query}" in the Vitana Media Hub. To play the real track, you'll need to link a music service like YouTube Music, Spotify, or Apple Music — want me to take you to Connected Apps?`
+                : `You haven't connected that music service yet. Want me to take you to Connected Apps so you can link it?`,
+            };
+          }
           return {
             success: false,
             result: '',
-            error: disp.error ?? 'music.play returned no URL',
+            error: errText || 'music.play returned no URL',
           };
         }
 
@@ -3076,6 +3132,69 @@ async function executeLiveApiToolInner(
 
         console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'}${suggestDefault ? ', suggest_default' : ''})`);
         return { success: true, result: `${baseAck}${tail}` };
+      }
+
+      // VTID-01942 PR 3: voice "make X my default for music" tool. Writes
+      // (or clears) user_capability_preferences row. Confirms back.
+      case 'set_capability_preference': {
+        const capability = String(args.capability ?? '').trim();
+        const connectorId = String(args.connector_id ?? '').trim();
+        const clear = Boolean(args.clear);
+        if (!capability) {
+          return { success: false, result: '', error: 'capability is required' };
+        }
+        if (!clear && !connectorId) {
+          return { success: false, result: '', error: 'connector_id is required unless clear=true' };
+        }
+
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Preferences unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+
+        if (clear) {
+          const { error } = await supabase
+            .from('user_capability_preferences')
+            .delete()
+            .eq('user_id', lens.user_id)
+            .eq('capability_id', capability);
+          if (error) {
+            return { success: false, result: '', error: `Couldn't clear preference: ${error.message}` };
+          }
+          console.log(`[VTID-01942] preference cleared: user=${lens.user_id.slice(0,8)} cap=${capability}`);
+          return { success: true, result: `Okay — cleared your default for ${capability}. I'll ask again next time.` };
+        }
+
+        const { error } = await supabase
+          .from('user_capability_preferences')
+          .upsert({
+            tenant_id: lens.tenant_id,
+            user_id: lens.user_id,
+            capability_id: capability,
+            preferred_connector_id: connectorId,
+            set_method: 'explicit',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'tenant_id,user_id,capability_id' });
+
+        if (error) {
+          return { success: false, result: '', error: `Couldn't save preference: ${error.message}` };
+        }
+
+        const displayName =
+          connectorId === 'google' ? 'YouTube Music' :
+          connectorId === 'spotify' ? 'Spotify' :
+          connectorId === 'apple_music' ? 'Apple Music' :
+          connectorId === 'vitana_hub' ? 'the Vitana Media Hub' :
+          connectorId;
+
+        console.log(`[VTID-01942] preference set: user=${lens.user_id.slice(0,8)} cap=${capability} → ${connectorId}`);
+        return {
+          success: true,
+          result: `Got it — ${displayName} is your default for ${capability} now.`,
+        };
       }
 
       default:
