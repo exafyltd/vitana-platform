@@ -3030,6 +3030,8 @@ async function executeLiveApiToolInner(
         const channel = raw.channel ?? '';
         const source = raw.source ?? 'unknown';
         const routingReason: string | undefined = disp.routing_reason;
+        const suggestDefault: boolean = Boolean(disp.suggest_default);
+        const preferenceSetMethod: string | undefined = disp.preference_set_method;
 
         const directive = {
           type: 'orb_directive',
@@ -3040,6 +3042,7 @@ async function executeLiveApiToolInner(
           source,
           query,
           routing_reason: routingReason,
+          suggest_default: suggestDefault,
           vtid: 'VTID-01942',
         };
         try { session.sseResponse?.write(`data: ${JSON.stringify(directive)}\n\n`); } catch (_e) { /* SSE closed */ }
@@ -3048,8 +3051,6 @@ async function executeLiveApiToolInner(
           try { sendWsMessage(ws, directive); } catch (_e) { /* WS closed */ }
         }
 
-        // VTID-01942: shape the spoken ack to the routing reason so the user
-        // knows whether they hit their provider or the hub fallback.
         const providerDisplay =
           source === 'youtube_music' ? 'YouTube Music' :
           source === 'spotify' ? 'Spotify' :
@@ -3060,12 +3061,21 @@ async function executeLiveApiToolInner(
         const baseAck = channel
           ? `Now playing "${title}" by ${channel} on ${providerDisplay}.`
           : `Now playing "${title}" on ${providerDisplay}.`;
-        const hubFallbackHint = routingReason === 'hub_fallback'
-          ? ' Want me to link your Spotify or YouTube Music so I can play the real track next time?'
-          : '';
 
-        console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'})`);
-        return { success: true, result: `${baseAck}${hubFallbackHint}` };
+        // VTID-01942 PR 2: shape the ack based on routing reason + preference
+        // state so the voice feels aware of why it picked this provider.
+        let tail = '';
+        if (routingReason === 'hub_fallback') {
+          tail = ' Want me to link your Spotify or YouTube Music so I can play the real track next time?';
+        } else if (suggestDefault) {
+          tail = ` That\'s three plays in a row on ${providerDisplay} — want me to make it your default for music?`;
+        } else if (routingReason === 'preference' && preferenceSetMethod === 'explicit') {
+          // Silent — user already set this as their default, don't chatter.
+          tail = '';
+        }
+
+        console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'}${suggestDefault ? ', suggest_default' : ''})`);
+        return { success: true, result: `${baseAck}${tail}` };
       }
 
       default:
