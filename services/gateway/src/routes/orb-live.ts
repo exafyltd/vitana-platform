@@ -4745,12 +4745,31 @@ async function connectToLiveAPI(
           const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];
 
           // VTID-TOOLGUARD: If too many consecutive tool calls without audio,
-          // stop sending function_responses. This forces Gemini to respond
-          // to the user with whatever data it has already gathered.
+          // we break the loop by sending synthetic responses that instruct
+          // Gemini to answer with data already gathered. Previously we silently
+          // DROPPED the responses — but that left Gemini blocked waiting on
+          // function_responses that never arrived, producing zombie upstream
+          // sessions (no input_transcription, no audio) and ultimately
+          // `watchdog_fired` with reason `forwarding_no_ack`. Sending a
+          // synthetic response keeps the Live API protocol intact while still
+          // forcing the model out of the tool-call loop.
           if (session.consecutiveToolCalls > MAX_CONSECUTIVE_TOOL_CALLS) {
-            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${MAX_CONSECUTIVE_TOOL_CALLS}). Dropping tool response to break loop.`);
+            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${MAX_CONSECUTIVE_TOOL_CALLS}). Sending synthetic loop-break response.`);
             emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
-            // Skip tool execution — don't send function_response back to Gemini
+            emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
+              session_id: session.sessionId,
+              consecutive: session.consecutiveToolCalls,
+              tools: toolNames,
+              function_call_count: functionCalls.length,
+            }, 'warning').catch(() => { });
+            for (const fc of functionCalls) {
+              const callId = fc.id || randomUUID();
+              sendFunctionResponseToLiveAPI(ws, callId, fc.name, {
+                success: false,
+                result: '',
+                error: 'Tool loop guard: too many consecutive tool calls. Respond to the user now with the information already gathered from earlier tool results. Do not call any more tools in this turn.',
+              });
+            }
           } else {
             for (const fc of functionCalls) {
             const toolName = fc.name;
@@ -8465,9 +8484,9 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error' | 'orb.live.tool_loop_guard_activated',
   payload: Record<string, unknown>,
-  status: 'info' | 'error' = 'info'
+  status: 'info' | 'warning' | 'error' = 'info'
 ): Promise<void> {
   try {
     await emitOasisEvent({
