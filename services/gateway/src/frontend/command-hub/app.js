@@ -4889,42 +4889,31 @@ var _renderAppScheduled = false;
 function renderApp() {
     if (_renderAppScheduled) return;
     _renderAppScheduled = true;
-    // The actual scrollable container is .module-content-wrapper — NOT
-    // window. window.scrollY is always 0 here. Capture BOTH because we
-    // may also have inner scrolls (nav-section, side panels) in the future.
-    var captureTime = Date.now();
-    var moduleScroller = document.querySelector('.module-content-wrapper');
-    var preservedModuleScrollTop = moduleScroller ? moduleScroller.scrollTop : 0;
-    var preservedWindowY = window.scrollY || 0;
-
     requestAnimationFrame(function () {
         _renderAppScheduled = false;
+        // Capture scroll LATE — inside rAF, immediately before _renderAppCore
+        // destroys the DOM. This guarantees we always capture the user's most
+        // recent scroll position, even when they're actively scrolling during
+        // the 0–16ms gap between the renderApp() call and this rAF tick.
+        //
+        // The previous "yield on user scroll" approach was subtly wrong: during
+        // continuous trackpad/wheel scrolling a wheel event almost always falls
+        // inside that gap, which triggered a yield and left the freshly rebuilt
+        // .module-content-wrapper at scrollTop=0 — i.e. the exact snap-to-top
+        // bug. Restoring unconditionally is correct because the old-DOM scrollTop
+        // IS the user's latest position (scroll events update the element's
+        // scrollTop synchronously). Any wheel that fires after restoration will
+        // scroll the new container naturally from its restored position.
+        var moduleScroller = document.querySelector('.module-content-wrapper');
+        var preservedModuleScrollTop = moduleScroller ? moduleScroller.scrollTop : 0;
+        var preservedWindowY = window.scrollY || 0;
         _renderAppCore();
-        // Restore synchronously after _renderAppCore in the same rAF tick
-        // so no intermediate paint happens between DOM rebuild and scroll
-        // restore (prevents the visible "snap to 0 then back" flash).
-        // Yield only if the user scrolled AFTER capture.
-        if ((window._lastUserScrollTs || 0) > captureTime) return;
         var newModule = document.querySelector('.module-content-wrapper');
         if (newModule && preservedModuleScrollTop > 0) {
             newModule.scrollTop = preservedModuleScrollTop;
         }
         if (preservedWindowY > 0) window.scrollTo(0, preservedWindowY);
     });
-}
-
-// Tag user-initiated scroll events so renderApp knows not to fight them.
-// Listen on window (capture phase) so inner-container scrolls register too.
-if (typeof window !== 'undefined' && !window._userScrollTracker) {
-    window._userScrollTracker = true;
-    var _tagScroll = function () { window._lastUserScrollTs = Date.now(); };
-    window.addEventListener('wheel', _tagScroll, { passive: true, capture: true });
-    window.addEventListener('touchmove', _tagScroll, { passive: true, capture: true });
-    window.addEventListener('keydown', function (e) {
-        if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].indexOf(e.key) >= 0) {
-            window._lastUserScrollTs = Date.now();
-        }
-    }, { passive: true, capture: true });
 }
 
 function _renderAppCore() {
@@ -36165,32 +36154,53 @@ function devAutopilotApproveOne(findingId) {
     delete state.devAutopilot.actionErrors[findingId];
     renderApp();
     devAutopilotApi('/findings/' + findingId + '/approve-auto-execute', 'POST', {}).then(function (data) {
-        devAutopilotMarkFlight(key, false);
-        if (data.ok) {
-            state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
-            delete state.devAutopilot.selectedIds[findingId];
-            delete state.devAutopilot.expandedIds[findingId];
-            delete state.devAutopilot.actionErrors[findingId];
-            if (data.execution) {
-                state.devAutopilot.executions = [data.execution].concat(state.devAutopilot.executions || []);
+        // Split the success and rejection handling into their own try-catch so
+        // any synchronous bug in rendering/state doesn't get surfaced to the
+        // user as a useless "Network error: Maximum call stack size exceeded"
+        // — it's worth knowing the real stack so we can fix the real bug.
+        try {
+            devAutopilotMarkFlight(key, false);
+            if (data.ok) {
+                state.devAutopilot.queue = (state.devAutopilot.queue || []).filter(function (f) { return f.id !== findingId; });
+                delete state.devAutopilot.selectedIds[findingId];
+                delete state.devAutopilot.expandedIds[findingId];
+                delete state.devAutopilot.actionErrors[findingId];
+                if (data.execution) {
+                    state.devAutopilot.executions = [data.execution].concat(state.devAutopilot.executions || []);
+                }
+                showToast('Approved — execution cooling: ' + (data.execution && data.execution.id ? data.execution.id.slice(0, 8) : '?'), 'success');
+            } else {
+                // Persist the error inline in the plan block — toasts are easy to miss.
+                var msg = data.error || 'Approval failed';
+                var violations = (data.decision && Array.isArray(data.decision.violations)) ? data.decision.violations : [];
+                state.devAutopilot.actionErrors[findingId] = { message: msg, violations: violations };
+                if (violations.length) {
+                    msg += ' (' + violations.map(function (v) { return v.code; }).join(', ') + ')';
+                }
+                showToast(msg, 'error');
+                renderApp();
             }
-            showToast('Approved — execution cooling: ' + (data.execution && data.execution.id ? data.execution.id.slice(0, 8) : '?'), 'success');
-        } else {
-            // Persist the error inline in the plan block — toasts are easy to miss.
-            var msg = data.error || 'Approval failed';
-            var violations = (data.decision && Array.isArray(data.decision.violations)) ? data.decision.violations : [];
-            state.devAutopilot.actionErrors[findingId] = { message: msg, violations: violations };
-            if (violations.length) {
-                msg += ' (' + violations.map(function (v) { return v.code; }).join(', ') + ')';
-            }
-            showToast(msg, 'error');
+        } catch (renderErr) {
+            console.error('[dev-autopilot] approve success-handler threw:', renderErr, renderErr && renderErr.stack);
+            devAutopilotMarkFlight(key, false);
+            var remsg = 'Client render error after approve: ' + ((renderErr && renderErr.message) || renderErr) + ' — see browser console for stack.';
+            state.devAutopilot.actionErrors[findingId] = { message: remsg, violations: [] };
+            showToast(remsg, 'error');
             renderApp();
         }
     }).catch(function (err) {
+        // Log the full stack so the next repro tells us where the error
+        // actually originated (network? JSON.parse? render side-effect?).
+        console.error('[dev-autopilot] approve request failed:', err, err && err.stack);
         devAutopilotMarkFlight(key, false);
-        var emsg = 'Network error: ' + (err.message || err);
-        state.devAutopilot.actionErrors[findingId] = { message: emsg, violations: [] };
-        showToast(emsg, 'error');
+        var emsg = (err && err.message ? err.message : String(err));
+        // Distinguish genuine network failures (TypeError: Failed to fetch)
+        // from programming errors (RangeError etc.) so the user sees something
+        // actionable rather than a generic "Network error" banner.
+        var prefix = (err && err.name && err.name !== 'TypeError') ? (err.name + ': ') : 'Network error: ';
+        var banner = prefix + emsg;
+        state.devAutopilot.actionErrors[findingId] = { message: banner, violations: [] };
+        showToast(banner, 'error');
         renderApp();
     });
 }
