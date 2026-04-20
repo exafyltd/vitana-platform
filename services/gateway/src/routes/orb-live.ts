@@ -192,6 +192,26 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
 import { Server as HttpServer, IncomingMessage } from 'http';
 import { parse as parseUrl } from 'url';
+// BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) extracted constants + helpers.
+// Definitions previously inline in this file now live in the orb/ tree.
+import {
+  VAD_SILENCE_DURATION_MS_DEFAULT,
+  POST_TURN_COOLDOWN_MS,
+  SILENCE_KEEPALIVE_INTERVAL_MS,
+  SILENCE_IDLE_THRESHOLD_MS,
+  SILENCE_PCM_BYTES,
+  SILENCE_AUDIO_B64,
+  GREETING_RESPONSE_TIMEOUT_MS,
+  TURN_RESPONSE_TIMEOUT_MS,
+  FORWARDING_ACK_TIMEOUT_MS,
+  MAX_CONSECUTIVE_MODEL_TURNS,
+  MAX_CONSECUTIVE_TOOL_CALLS,
+  connectionIssueMessages,
+} from '../orb/upstream/constants';
+import {
+  SHORT_GAP_GREETING_PHRASES,
+  pickShortGapGreetings,
+} from '../orb/instruction/greeting-pools';
 
 const router = Router();
 
@@ -1080,218 +1100,10 @@ function generateChimePcm(): string {
 // Pre-generate at module load
 generateChimePcm();
 
-// =============================================================================
-// VTID-RESPONSE-DELAY: VAD silence threshold for end-of-speech detection
-// =============================================================================
-// How long Vertex waits after user stops speaking before triggering a response.
-// Default Vertex VAD is ~100ms which is too aggressive — the model starts responding
-// while users are still mid-thought or pausing between sentences.
-// 2000ms (2s) provides natural pause tolerance for conversational speech.
-const VAD_SILENCE_DURATION_MS_DEFAULT = 1_200;
-
-// =============================================================================
-// VTID-ECHO-COOLDOWN: Post-turn mic audio cooldown
-// =============================================================================
-// After Vertex sends turn_complete, the server unsets isModelSpeaking immediately.
-// But the client is still draining its audio playback queue (Web Audio API scheduled
-// sources). During this window, speaker output gets picked up by the mic and
-// forwarded to Vertex as new user speech, causing phantom responses.
-//
-// Mobile devices (Android/iOS) have poor acoustic echo cancellation (AEC).
-// Diagnostics show Vertex triggering on just 2 audio chunks (170ms of echo)
-// within 740ms of turn_complete, creating cascading ghost responses that
-// destabilize the upstream connection. The playback buffer on mobile typically
-// drains 1-2 seconds after the server's turn_complete.
-//
-// 2000ms covers the realistic playback drain window on mobile while keeping
-// the conversation responsive (Vertex's own VAD adds 1200ms silence detection
-// on top of this, so total latency from user speech start is ~3.2s).
-const POST_TURN_COOLDOWN_MS = 2000;
-
-// =============================================================================
-// VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
-// =============================================================================
-// Vertex AI Live API has an idle timeout (~25-30s). When no audio is sent,
-// Vertex closes the WebSocket with code 1000. This silence buffer is sent
-// periodically to keep the audio stream alive during user pauses.
-// Format: 250ms of 16-bit PCM silence at 16kHz mono = 8000 bytes of zeros.
-const SILENCE_KEEPALIVE_INTERVAL_MS = 3_000; // Check every 3 seconds
-const SILENCE_IDLE_THRESHOLD_MS = 3_000; // Send silence after 3s of no audio
-const SILENCE_PCM_BYTES = 8000; // 250ms at 16kHz, 16-bit mono
-const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
-
-// =============================================================================
-// VTID-WATCHDOG: Response watchdog — detects stalls across all failure modes
-// =============================================================================
-// Monitors whether Gemini produces ANY output (audio/text) within N seconds
-// after the user finishes speaking or after the greeting is sent.
-// Catches: Vertex API stalls, tool call cascading failures, internet drops,
-// Gemini hanging after receiving function_response errors, etc.
-const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
-const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
-
-// =============================================================================
-// SHORT-GAP GREETING PHRASE POOL (VTID-GREETING-VARIETY)
-// =============================================================================
-// Gemini tends to converge on a single translation ("What can I do for you?"
-// → "Was kann ich für dich tun?") every short-gap reopening. To avoid the
-// same phrase every time the user reopens the orb after seconds or minutes,
-// we maintain a per-language pool of short, warm openers and inject a random
-// subset into the greeting prompt each turn. Applies ONLY to the short-gap
-// buckets (reconnect, recent, same_day) — new-day greetings keep the polite
-// "Good morning, [Name]" pattern untouched.
-const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
-  en: [
-    "I'm listening.",
-    "I'm all ears.",
-    "Go ahead.",
-    "Ready for you.",
-    "How can I help?",
-    "What's on your mind?",
-    "What would you like to know?",
-    "What do you need?",
-    "How can I support you?",
-    "Yes?",
-    "I'm here.",
-    "At your service.",
-  ],
-  de: [
-    "Ich bin ganz Ohr!",
-    "Ich höre!",
-    "Ich höre dir zu.",
-    "Ja bitte?",
-    "Was gibt's Neues?",
-    "Stets zu Diensten!",
-    "Womit kann ich helfen?",
-    "Was möchtest du wissen?",
-    "Worum geht's?",
-    "Was liegt an?",
-    "Bereit.",
-    "Ich bin da.",
-    "Was brauchst du?",
-  ],
-  fr: [
-    "Je t'écoute.",
-    "Je suis tout ouïe.",
-    "À ton service.",
-    "Oui ?",
-    "Quoi de neuf ?",
-    "Comment puis-je aider ?",
-    "De quoi as-tu besoin ?",
-    "Que veux-tu savoir ?",
-    "Je suis là.",
-    "Prête.",
-  ],
-  es: [
-    "Te escucho.",
-    "Soy toda oídos.",
-    "A tu servicio.",
-    "¿Sí?",
-    "¿Qué hay?",
-    "¿En qué puedo ayudar?",
-    "¿Qué necesitas?",
-    "¿Qué quieres saber?",
-    "Aquí estoy.",
-    "Lista.",
-  ],
-  ar: [
-    "أنا أسمعك.",
-    "تفضل.",
-    "في خدمتك.",
-    "نعم؟",
-    "كيف يمكنني المساعدة؟",
-    "ماذا تحتاج؟",
-    "ماذا تريد أن تعرف؟",
-    "أنا هنا.",
-  ],
-  zh: [
-    "我在听。",
-    "请说。",
-    "为你服务。",
-    "嗯？",
-    "有什么新鲜事？",
-    "有什么我可以帮忙的？",
-    "你需要什么？",
-    "你想知道什么？",
-    "我在这里。",
-  ],
-  ru: [
-    "Я слушаю.",
-    "Я вся внимание.",
-    "К твоим услугам.",
-    "Да?",
-    "Что нового?",
-    "Чем могу помочь?",
-    "Что вас интересует?",
-    "Что тебе нужно?",
-    "Я здесь.",
-  ],
-  sr: [
-    "Слушам те.",
-    "Сва сам уши.",
-    "На услузи.",
-    "Да?",
-    "Шта има ново?",
-    "Како могу да помогнем?",
-    "Шта ти треба?",
-    "Шта те занима?",
-    "Ту сам.",
-  ],
-};
-
-// Pick N phrases from the lang pool without replacement. Randomized per call
-// so the system instruction and the turn-start prompt each see a fresh
-// ordering — Gemini strongly biases toward the first option in a list, so
-// rotating the order is the cheapest effective variety lever.
-function pickShortGapGreetings(lang: string, count: number): string[] {
-  const pool = SHORT_GAP_GREETING_PHRASES[lang] || SHORT_GAP_GREETING_PHRASES.en;
-  const copy = pool.slice();
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, Math.min(count, copy.length));
-}
-
-// =============================================================================
-// VTID-FORWARDING-WATCHDOG: Detect zombie upstream WebSocket connections
-// =============================================================================
-// After turn_complete, the response watchdog is cleared. When the user speaks
-// again, the watchdog only re-starts when Vertex sends input_transcription.
-// If the upstream WS is zombie (technically OPEN but not processing audio),
-// the forwarded audio goes nowhere — no transcription, no watchdog, no recovery.
-// This timeout starts when user audio is successfully forwarded to Vertex
-// but no existing watchdog is running. If Vertex doesn't acknowledge the
-// audio (via input_transcription or model response) within this window,
-// the stall recovery kicks in (terminate WS → transparent reconnect).
-const FORWARDING_ACK_TIMEOUT_MS = 15_000; // 15s for Vertex to acknowledge forwarded audio
-
-// =============================================================================
-// VTID-LOOPGUARD: Response loop prevention
-// =============================================================================
-// Gemini Live API can enter a generative loop where the model keeps responding
-// to its own turn_complete without user input. The silence keepalive audio
-// may be interpreted as "user is still listening, keep talking."
-// After MAX_CONSECUTIVE_MODEL_TURNS without user speech, we pause the silence
-// keepalive to let Vertex's idle timeout naturally stop the model.
-const MAX_CONSECUTIVE_MODEL_TURNS = 3;
-// VTID-TOOLGUARD: Hard limit on consecutive tool calls without audio output.
-// Gemini Live can spiral calling tools (search_memory, search_events, etc.)
-// indefinitely without ever producing audio. After this many consecutive
-// tool calls, we stop sending function_responses — forcing the model to
-// respond to the user with the data it already has.
-const MAX_CONSECUTIVE_TOOL_CALLS = 5;
-
-const connectionIssueMessages: Record<string, string> = {
-  'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
-  'de': 'Es tut mir leid, ich habe gerade Verbindungsprobleme. Bitte versuchen Sie, ein neues Gespräch zu starten.',
-  'fr': "Je suis désolé, j'ai des problèmes de connexion. Veuillez réessayer une nouvelle conversation.",
-  'es': 'Lo siento, parece que tengo problemas de conexión. Por favor, intenta iniciar una nueva conversación.',
-  'ar': 'عذراً، يبدو أنني أواجه مشاكل في الاتصال. يرجى محاولة بدء محادثة جديدة.',
-  'zh': '抱歉，我目前似乎遇到了连接问题。请尝试重新开始对话。',
-  'ru': 'Извините, у меня проблемы с подключением. Пожалуйста, попробуйте начать новый разговор.',
-  'sr': 'Извините, изгледа да имам проблеме са везом. Молимо покушајте поново.',
-};
+// BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) — constants + greeting phrase pool
+// that previously lived here are now imported from the orb/ tree at the top
+// of this file. See orb/upstream/constants.ts and
+// orb/instruction/greeting-pools.ts for the original comments and VTID history.
 
 // =============================================================================
 // VTID-01224: Live API Context Bootstrap Configuration
