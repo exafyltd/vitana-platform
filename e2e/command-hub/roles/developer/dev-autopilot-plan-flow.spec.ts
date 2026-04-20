@@ -69,6 +69,15 @@ test.describe('Dev Autopilot — plan generation + scroll + approve (live gatewa
   test('plan generates, scroll holds, approve surfaces real result', async ({ page }) => {
     const jsErrors: Array<{ message: string; stack?: string }> = [];
     page.on('pageerror', err => jsErrors.push({ message: err.message, stack: err.stack }));
+    // Capture browser console output — the approve .catch logs err.stack via
+    // console.error but that doesn't cross the iframe boundary into test
+    // output unless we explicitly forward it.
+    page.on('console', msg => {
+      const t = msg.type();
+      if (t === 'error' || t === 'warning') {
+        console.log(`[browser ${t}]`, msg.text());
+      }
+    });
 
     // --- Step 1: load page and wait for queue to populate -------------------
     await page.goto(DEV_AUTOPILOT_URL, { waitUntil: 'domcontentloaded' });
@@ -187,8 +196,17 @@ test.describe('Dev Autopilot — plan generation + scroll + approve (live gatewa
     expect(resets.length, 'no snap-to-top while poller fires every 10s').toBeLessThanOrEqual(1);
     // allow at most 1 reset (timing jitter) — anything more is the bug.
 
-    // --- Step 4: click Approve & execute, assert clean result --------------
-    // Accept the native confirm() dialog.
+    // --- Step 4a: call approve-auto-execute via API directly so we see the
+    // server response independent of any client render bug.
+    const apiApprove = await apiJson(page, `/api/v1/dev-autopilot/findings/${finding.id}/approve-auto-execute`, {
+      method: 'POST',
+      body: {},
+      timeoutMs: 30_000,
+    });
+    console.log(`[api approve] status=${apiApprove.status}  ok=${apiApprove.json?.ok}`);
+    console.log(`[api approve] body preview: ${apiApprove.body.slice(0, 600)}`);
+
+    // --- Step 4b: click Approve & execute in the UI. Accept the confirm.
     page.on('dialog', async d => { await d.accept(); });
 
     // Find the Approve button for our finding if still expanded.
