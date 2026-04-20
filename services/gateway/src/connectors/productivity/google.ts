@@ -179,25 +179,32 @@ const googleConnector: Connector = {
         const hit = await youtubeSearchFirst(query, token);
         if (!hit) return { ok: false, error: `No YouTube result found for "${query}"` };
 
-        // YouTube Music on mobile is an Android App Link for music.youtube.com,
-        // so the same URL opens the native app (already signed in → Premium,
-        // no ads). On desktop or when the app isn't installed, the browser
-        // opens music.youtube.com. Append &authuser=<email> so if the user
-        // has multiple Google accounts in Chrome, the right one is picked —
-        // which is what makes Premium playback work in the browser too.
+        // Three URL variants so the widget picks the right one per platform.
+        // Key insight: a mobile WebView (Appilix, Chrome Custom Tab, etc.)
+        // will happily *load* https://music.youtube.com inside itself,
+        // covering Vitana with a raw web player that isn't signed in. An
+        // intent:// URL with the YouTube Music package forces Android to
+        // hand off to the native app — already signed in with Premium.
         const params = new URLSearchParams({ v: hit.videoId });
-        if (_ctx.provider_username) {
-          params.set('authuser', _ctx.provider_username);
-        }
-        const url = `https://music.youtube.com/watch?${params.toString()}`;
+        if (_ctx.provider_username) params.set('authuser', _ctx.provider_username);
+        const webUrl = `https://music.youtube.com/watch?${params.toString()}`;
+        const androidIntent =
+          `intent://music.youtube.com/watch?v=${encodeURIComponent(hit.videoId)}` +
+          `#Intent;scheme=https;package=com.google.android.apps.youtube.music;` +
+          `S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+        // youtubemusic:// is the iOS URL scheme the YouTube Music app
+        // registers — triggers the native app if installed.
+        const iosScheme = `youtubemusic://watch?v=${encodeURIComponent(hit.videoId)}`;
 
         return {
           ok: true,
           external_id: hit.videoId,
-          url,
+          url: webUrl,
           raw: {
             action: 'open_url',
-            url,
+            url: webUrl,
+            android_intent: androidIntent,
+            ios_scheme: iosScheme,
             title: hit.title,
             channel: hit.channel,
             thumbnail: hit.thumbnail,
