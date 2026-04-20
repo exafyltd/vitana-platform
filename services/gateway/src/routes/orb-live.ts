@@ -3089,10 +3089,20 @@ async function executeLiveApiToolInner(
         const suggestDefault: boolean = Boolean(disp.suggest_default);
         const preferenceSetMethod: string | undefined = disp.preference_set_method;
 
+        // VTID-01942: pass through per-platform URL variants so the widget
+        // can hand off to the native app on iOS/Android instead of loading
+        // the web player inside the WebView (which covers Vitana and shows
+        // ads). See orb-widget.js handling of directive='open_url'.
+        const rawRec = (disp.raw ?? {}) as Record<string, unknown>;
+        const androidIntent = typeof rawRec.android_intent === 'string' ? rawRec.android_intent : undefined;
+        const iosScheme = typeof rawRec.ios_scheme === 'string' ? rawRec.ios_scheme : undefined;
+
         const directive = {
           type: 'orb_directive',
           directive: 'open_url',
           url: disp.url,
+          android_intent: androidIntent,
+          ios_scheme: iosScheme,
           title,
           channel,
           source,
