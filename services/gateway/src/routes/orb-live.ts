@@ -4984,9 +4984,17 @@ async function connectToLiveAPI(
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   emitDiag(session, 'model_start_speaking');
                   // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
-                  // and greeting was sent), emit the pre-greeting latency gauge
-                  // — baseline metric for Phase 1 latency work.
-                  if (session.greetingSent && session.turn_count === 0 && !session.audioOutChunks) {
+                  // and greeting was sent), emit the pre-greeting latency gauge.
+                  //
+                  // BOOTSTRAP-ORB-RELIABILITY-R2: Log gate evaluation so we can
+                  // debug why the prior gauge version emitted zero events. All
+                  // three booleans are logged so we can spot which guard is
+                  // falsifying the condition in prod.
+                  const gateGreeting = !!session.greetingSent;
+                  const gateTurnZero = session.turn_count === 0;
+                  const gateNoChunks = !session.audioOutChunks;
+                  console.log(`[BOOTSTRAP-ORB-HOTFIX-1-GATE] session=${session.sessionId} greetingSent=${gateGreeting} turn_count=${session.turn_count} audioOutChunks=${session.audioOutChunks}`);
+                  if (gateGreeting && gateTurnZero && gateNoChunks) {
                     const preGreetingMs = Date.now() - session.createdAt.getTime();
                     emitLiveSessionEvent('orb.live.greeting.delivered', {
                       session_id: session.sessionId,
@@ -4997,7 +5005,9 @@ async function connectToLiveAPI(
                       lang: session.lang,
                       is_anonymous: session.isAnonymous || false,
                       reconnect_count: (session as any)._reconnectCount || 0,
-                    }).catch(() => { });
+                    }).catch((err: any) => {
+                      console.warn(`[BOOTSTRAP-ORB-HOTFIX-1] emit failed: ${err?.message || err}`);
+                    });
                     console.log(`[BOOTSTRAP-ORB-HOTFIX-1] pre_greeting_ms=${preGreetingMs} for session ${session.sessionId}`);
                   }
                 }

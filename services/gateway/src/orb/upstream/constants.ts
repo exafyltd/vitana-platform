@@ -62,7 +62,16 @@ export const TURN_RESPONSE_TIMEOUT_MS = 10_000;     // 10s after user speech
 // not processing anything. If Vertex doesn't acknowledge within this window
 // (via input_transcription or model response), stall recovery force-closes
 // the WS to trigger a transparent reconnect.
-export const FORWARDING_ACK_TIMEOUT_MS = 15_000;
+//
+// BOOTSTRAP-ORB-RELIABILITY-R2: Reduced 15 s → 6 s. 24 h production diagnostic
+// showed 21 % of sessions (14 of 67) hit forwarding_no_ack; with 15 s
+// detection + reconnect + greeting re-setup users experienced 20–30 s of
+// dead air. Vertex's SLO for input_transcription is under 2 s; 6 s gives
+// 3× headroom while halving the user-visible interruption window. All 14
+// stalls in the 24 h window successfully recovered via transparent reconnect,
+// so faster detection just makes the recovery faster without raising the
+// false-positive rate.
+export const FORWARDING_ACK_TIMEOUT_MS = 6_000;
 
 // =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
