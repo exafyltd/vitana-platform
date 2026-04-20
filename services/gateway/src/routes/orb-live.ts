@@ -8647,6 +8647,23 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     return res.status(403).json({ ok: false, error: 'Origin not allowed' });
   }
 
+  // VTID-AUTH-BACKEND-REJECT: If a Bearer token was provided but the JWT
+  // failed verification, reject with 401 so the client knows to re-auth.
+  // optionalAuth silently drops invalid tokens, which is fine for truly
+  // anonymous widget requests on public pages (no Authorization header),
+  // but lets stale authenticated sessions degrade into anonymous greetings —
+  // which is how logged-in users ended up hearing the first-time intro
+  // speech after their JWT expired in the background.
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ') && !req.identity) {
+    console.warn('[VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401');
+    return res.status(401).json({
+      ok: false,
+      error: 'AUTH_TOKEN_INVALID',
+      message: 'Session expired or invalid — please re-authenticate',
+    });
+  }
+
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
   console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
