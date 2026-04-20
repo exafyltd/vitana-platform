@@ -353,9 +353,10 @@ router.get('/models', async (req: Request, res: Response) => {
     { provider: 'openai', model_id: 'gpt-4o', status: 'active', avg_latency: 900, cost_per_1k: '0.0050', usage: 'ChatGPT (user-supplied key)' },
     { provider: 'openai', model_id: 'gpt-4o-mini', status: 'active', avg_latency: 400, cost_per_1k: '0.00015', usage: 'ChatGPT fast (user-supplied key)' },
     // Anthropic (user-keyed chat)
-    { provider: 'anthropic', model_id: 'claude-3-5-sonnet-20241022', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Claude default (user-supplied key)' },
-    { provider: 'anthropic', model_id: 'claude-3-5-haiku-20241022', status: 'active', avg_latency: 350, cost_per_1k: '0.0010', usage: 'Claude fast (user-supplied key)' },
-    { provider: 'anthropic', model_id: 'claude-3-opus-20240229', status: 'configured', avg_latency: 1200, cost_per_1k: '0.015', usage: 'Claude premium (user-supplied key)' },
+    // BOOTSTRAP-AI-VERIFY-MODEL: refreshed to current Claude 4.x lineup.
+    { provider: 'anthropic', model_id: 'claude-sonnet-4-6', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Claude default (user-supplied key)' },
+    { provider: 'anthropic', model_id: 'claude-haiku-4-5-20251001', status: 'active', avg_latency: 350, cost_per_1k: '0.0008', usage: 'Claude fast (user-supplied key)' },
+    { provider: 'anthropic', model_id: 'claude-opus-4-7', status: 'configured', avg_latency: 1200, cost_per_1k: '0.015', usage: 'Claude premium (user-supplied key)' },
   ];
 
   // VTID-02403: Augment with user_connections_count + monthly_cost_usd placeholder
