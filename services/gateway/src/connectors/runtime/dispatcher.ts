@@ -48,10 +48,17 @@ async function loadConnection(
   supabase: SupabaseClient,
   userId: string,
   connectorId: string,
-): Promise<{ id: string; access_token: string; refresh_token: string | null; token_expires_at: string | null } | null> {
+): Promise<{
+  id: string;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  provider_user_id: string | null;
+  provider_username: string | null;
+} | null> {
   const { data } = await supabase
     .from('social_connections')
-    .select('id, access_token, refresh_token, token_expires_at')
+    .select('id, access_token, refresh_token, token_expires_at, provider_user_id, provider_username')
     .eq('user_id', userId)
     .eq('provider', connectorId)
     .eq('is_active', true)
@@ -62,6 +69,8 @@ async function loadConnection(
     access_token: data.access_token,
     refresh_token: data.refresh_token ?? null,
     token_expires_at: data.token_expires_at ?? null,
+    provider_user_id: data.provider_user_id ?? null,
+    provider_username: data.provider_username ?? null,
   };
 }
 
@@ -153,6 +162,8 @@ export async function dispatchAction(
   let tokens: TokenPair;
   let refreshed = false;
   let storedId: string | undefined;
+  let providerUserId: string | undefined;
+  let providerUsername: string | undefined;
 
   if (connector.auth_type === 'none') {
     tokens = { access_token: '' };
@@ -172,6 +183,8 @@ export async function dispatchAction(
     tokens = refreshResult.tokens;
     refreshed = refreshResult.refreshed;
     storedId = stored.id;
+    providerUserId = stored.provider_user_id ?? undefined;
+    providerUsername = stored.provider_username ?? undefined;
   }
 
   const request: ActionRequest = {
@@ -182,7 +195,13 @@ export async function dispatchAction(
 
   try {
     const result = await connector.performAction(
-      { tenant_id: ctx.tenantId, user_id: ctx.userId, user_connection_id: storedId },
+      {
+        tenant_id: ctx.tenantId,
+        user_id: ctx.userId,
+        user_connection_id: storedId,
+        provider_user_id: providerUserId,
+        provider_username: providerUsername,
+      },
       tokens,
       request,
     );

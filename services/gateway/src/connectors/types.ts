@@ -77,6 +77,14 @@ export interface ConnectorContext {
   tenant_id: string;
   user_id: string;
   user_connection_id?: string;
+  /**
+   * VTID-01942: provider-side identity pulled from social_connections when
+   * the dispatcher loaded the user's row. Used for URL decoration (e.g.
+   * music.youtube.com?authuser=<email>) so browser playback picks the
+   * signed-in account instead of anonymous.
+   */
+  provider_user_id?: string;
+  provider_username?: string;
 }
 
 export interface OAuthExchangeResult {
