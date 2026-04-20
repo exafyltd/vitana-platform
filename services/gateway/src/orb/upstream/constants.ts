@@ -71,7 +71,16 @@ export const TURN_RESPONSE_TIMEOUT_MS = 10_000;     // 10s after user speech
 // stalls in the 24 h window successfully recovered via transparent reconnect,
 // so faster detection just makes the recovery faster without raising the
 // false-positive rate.
-export const FORWARDING_ACK_TIMEOUT_MS = 6_000;
+//
+// BOOTSTRAP-ORB-WATCHDOG-RESTORE: Raised 6 s → 10 s after voice sessions
+// started flickering on/off with user reports "greeting and first question
+// break." Field diagnostics showed Vertex legitimately takes 8–9 s to respond
+// to the first user turn when system_instruction is ~15 K chars + 16 tools
+// (our current config with memory + profile + tools). 6 s was firing on every
+// real first question and triggering a reconnect storm. 10 s accommodates
+// normal first-turn latency while still cutting the original 15 s interruption
+// window by a third.
+export const FORWARDING_ACK_TIMEOUT_MS = 10_000;
 
 // =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
