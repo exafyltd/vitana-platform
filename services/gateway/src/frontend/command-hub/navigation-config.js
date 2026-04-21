@@ -36,6 +36,21 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
+    // BOOTSTRAP-AUTONOMY-SECTION-NAV: new dedicated Autonomy section.
+    module: 'autonomy',
+    label: 'Autonomy',
+    tabs: [
+      { key: 'autopilot-community', label: 'Autopilot (Community)' },
+      { key: 'autopilot-developer', label: 'Autopilot (Developer)' },
+      { key: 'autopilot-admin',     label: 'Autopilot (Admin)' },
+      { key: 'awareness-registry',  label: 'Awareness Registry' },
+      { key: 'awareness-test',      label: 'Awareness Test' },
+      { key: 'self-healing',        label: 'Self-Healing' },
+      { key: 'autonomy-pulse',      label: 'Autonomy Pulse' },
+      { key: 'autonomy-trace',      label: 'Autonomy Trace' }
+    ]
+  },
+  {
     module: 'operator',
     label: 'Operator',
     tabs: [
@@ -47,17 +62,18 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
+    // Internal module key stays 'command-hub' for URL compatibility;
+    // displayed label is 'Operations' after BOOTSTRAP-AUTONOMY-SECTION-NAV.
+    // Autonomy tabs (autonomy-pulse / autonomy-trace / dev-autopilot) moved
+    // to the dedicated Autonomy section.
     module: 'command-hub',
-    label: 'Command Hub',
+    label: 'Operations',
     tabs: [
       { key: 'tasks', label: 'Tasks' },
       { key: 'live-console', label: 'Live Console' },
       { key: 'events', label: 'Events' },
       { key: 'vtids', label: 'VTIDs' },
-      { key: 'approvals', label: 'Approvals' },
-      { key: 'autonomy-pulse', label: 'Autonomy Pulse' },
-      { key: 'autonomy-trace', label: 'Autonomy Trace' },
-      { key: 'dev-autopilot', label: 'Dev Autopilot' }
+      { key: 'approvals', label: 'Approvals' }
     ]
   },
   {
@@ -117,12 +133,12 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
+    // Self-Healing moved to the Autonomy section (BOOTSTRAP-AUTONOMY-SECTION-NAV).
     module: 'infrastructure',
     label: 'Infrastructure',
     tabs: [
       { key: 'services', label: 'Services' },
       { key: 'health', label: 'Health' },
-      { key: 'self-healing', label: 'Self-Healing' },
       { key: 'deployments', label: 'Deployments' },
       { key: 'logs', label: 'Logs' },
       { key: 'config', label: 'Config' }
