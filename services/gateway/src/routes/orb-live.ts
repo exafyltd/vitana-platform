@@ -442,17 +442,21 @@ async function resolveOrbIdentity(req: AuthenticatedRequest): Promise<SupabaseId
 }
 
 /**
- * BOOTSTRAP-ORB-ROLE-SYNC: Fetch the user's UI role preference.
+ * BOOTSTRAP-ORB-ROLE-SYNC-2: Fetch the user's UI role preference by
+ * querying the role_preferences table DIRECTLY with service role.
  *
- * The vitana-v1 frontend's `useRole` hook writes to a DIFFERENT store than
- * `user_tenants.active_role` — it uses the `set_role_preference` /
- * `get_role_preference` RPCs (role_preference table). When the user clicks
- * "switch to admin" in Settings → Tenant Role, it updates role_preference,
- * not user_tenants.active_role. The orb was reading only the latter and so
- * never saw admin switches made from the community app.
+ * History:
+ *   Take 1 (PR #776): called the `get_role_preference(p_tenant_id)` RPC
+ *   that the vitana-v1 frontend uses. That RPC uses auth.uid() internally
+ *   to scope the lookup — but when called with a service-role token,
+ *   auth.uid() returns NULL, so the RPC returns 0 rows regardless of
+ *   what the user set in the UI. That's why the admin switch still
+ *   wasn't recognised after PR #776 shipped.
  *
- * This helper calls the same RPC the frontend uses. Gateway combines the
- * two (prefer role_preference when set, fall back to user_tenants.active_role).
+ *   Take 2 (this change): query the public.role_preferences table
+ *   directly. Schema: (id, user_id, tenant_id, role, updated_at) with
+ *   a unique (user_id, tenant_id) row per preference. Service role
+ *   bypasses RLS so the SELECT works regardless of auth.uid().
  *
  * Graceful: returns null on any error.
  */
@@ -465,56 +469,28 @@ async function fetchUserRolePreference(
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
     if (!SUPABASE_URL || !SUPABASE_KEY) return null;
 
-    // Call the same RPC the vitana-v1 useRole hook uses. Service-role JWT
-    // bypasses RLS; the function signature (p_tenant_id, optional p_user_id)
-    // depends on the DB function — we try the tenant-only form first, then
-    // fall back to tenant+user form.
-    const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/get_role_preference`;
-    const resp = await fetch(rpcUrl, {
-      method: 'POST',
+    const url = `${SUPABASE_URL}/rest/v1/role_preferences?select=role&user_id=eq.${userId}&tenant_id=eq.${tenantId}&order=updated_at.desc&limit=1`;
+    const resp = await fetch(url, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         apikey: SUPABASE_KEY,
         Authorization: `Bearer ${SUPABASE_KEY}`,
       },
-      body: JSON.stringify({ p_tenant_id: tenantId, p_user_id: userId }),
     });
-
     if (!resp.ok) {
-      // Try without p_user_id (older function signature)
-      const fallbackResp = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-        body: JSON.stringify({ p_tenant_id: tenantId }),
-      });
-      if (!fallbackResp.ok) {
-        console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC] get_role_preference RPC failed: ${resp.status} (and fallback ${fallbackResp.status})`);
-        return null;
-      }
-      const fallbackRows = await fallbackResp.json() as Array<{ role?: string | null }> | { role?: string | null } | null;
-      const role = Array.isArray(fallbackRows)
-        ? (fallbackRows[0]?.role ?? null)
-        : (fallbackRows?.role ?? null);
-      if (role) {
-        console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${role}" (tenant-only RPC) for user=${userId.substring(0, 8)}...`);
-      }
-      return role || null;
+      console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC-2] role_preferences query failed: ${resp.status}`);
+      return null;
     }
 
-    const rows = await resp.json() as Array<{ role?: string | null }> | { role?: string | null } | null;
-    const role = Array.isArray(rows)
-      ? (rows[0]?.role ?? null)
-      : (rows?.role ?? null);
+    const rows = await resp.json() as Array<{ role?: string | null }>;
+    const role = rows?.[0]?.role || null;
     if (role) {
-      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${role}" for user=${userId.substring(0, 8)}...`);
+      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC-2] role_preferences="${role}" for user=${userId.substring(0, 8)}...`);
     }
-    return role || null;
+    return role;
   } catch (err: any) {
-    console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC] get_role_preference threw: ${err?.message || err}`);
+    console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC-2] role_preferences query threw: ${err?.message || err}`);
     return null;
   }
 }
