@@ -2599,14 +2599,26 @@ const NAVIGATION_CONFIG = [
         ]
     },
     {
+        "section": "assistant",
+        "basePath": "/command-hub/assistant/",
+        "tabs": [
+            { "key": "overview",            "path": "/command-hub/assistant/overview/" },
+            { "key": "orb-live",            "path": "/command-hub/assistant/orb-live/" },
+            { "key": "sessions",            "path": "/command-hub/assistant/sessions/" },
+            { "key": "personality",         "path": "/command-hub/assistant/personality/" },
+            { "key": "experiments",         "path": "/command-hub/assistant/experiments/" },
+            { "key": "metrics",             "path": "/command-hub/assistant/metrics/" },
+            { "key": "awareness-registry",  "path": "/command-hub/assistant/awareness-registry/" },
+            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" }
+        ]
+    },
+    {
         "section": "autonomy",
         "basePath": "/command-hub/autonomy/",
         "tabs": [
             { "key": "autopilot-community", "path": "/command-hub/autonomy/autopilot-community/" },
             { "key": "autopilot-developer", "path": "/command-hub/autonomy/autopilot-developer/" },
             { "key": "autopilot-admin", "path": "/command-hub/autonomy/autopilot-admin/" },
-            { "key": "awareness-registry", "path": "/command-hub/autonomy/awareness-registry/" },
-            { "key": "awareness-test", "path": "/command-hub/autonomy/awareness-test/" },
             { "key": "self-healing", "path": "/command-hub/autonomy/self-healing/" },
             { "key": "autonomy-pulse", "path": "/command-hub/autonomy/autonomy-pulse/" },
             { "key": "autonomy-trace", "path": "/command-hub/autonomy/autonomy-trace/" }
@@ -2786,6 +2798,7 @@ const NAVIGATION_CONFIG = [
 const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
+    'assistant': 'Assistant',
     'autonomy': 'Autonomy',
     'operator': 'Operator',
     'command-hub': 'Operations',
@@ -3642,6 +3655,15 @@ const state = {
     testingValidator: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Vitana Awareness (BOOTSTRAP-HISTORY-AWARE-TIMELINE)
     vitanaAwareness: { result: null, loading: false, error: null, lastRunAt: 0, userId: '' },
+    // Assistant > Overview rollup (BOOTSTRAP-ASSISTANT-SECTION-NAV)
+    assistantOverview: {
+        sessions: null,           // { active_count, list[] }
+        awareness: null,          // result of /debug/awareness for current operator
+        voiceErrors: null,        // recent oasis_events with orb.live.*/voice.live.* status=error
+        loading: false,
+        error: null,
+        lastFetchedAt: 0,
+    },
     // Admin > Awareness Registry (BOOTSTRAP-AWARENESS-REGISTRY)
     awarenessRegistry: {
         manifest: [],
@@ -5926,12 +5948,6 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDevAutopilotView());
     } else if (moduleKey === 'autonomy' && tab === 'autopilot-admin') {
         container.appendChild(renderAutopilotAdminView());
-    } else if (moduleKey === 'autonomy' && tab === 'awareness-registry') {
-        // Moved from admin/awareness
-        container.appendChild(renderAdminAwarenessView());
-    } else if (moduleKey === 'autonomy' && tab === 'awareness-test') {
-        // Moved from testing-qa/vitana-awareness
-        container.appendChild(renderVitanaAwarenessTestView());
     } else if (moduleKey === 'autonomy' && tab === 'self-healing') {
         // Moved from infrastructure/self-healing
         container.appendChild(renderSelfHealingView());
@@ -5941,6 +5957,30 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'autonomy' && tab === 'autonomy-trace') {
         // Moved from command-hub/autonomy-trace — unified timeline
         container.appendChild(renderAutonomyTraceView());
+
+    // ──── BOOTSTRAP-ASSISTANT-SECTION-NAV: Assistant section ────
+    } else if (moduleKey === 'assistant' && tab === 'overview') {
+        container.appendChild(renderAssistantOverviewView());
+    } else if (moduleKey === 'assistant' && tab === 'orb-live') {
+        // Reuses the Voice Lab ORB Live panel — same live-sessions view.
+        state.voiceLab.activeSubTab = 'orb-live';
+        container.appendChild(renderVoiceLabOrbLivePanel());
+    } else if (moduleKey === 'assistant' && tab === 'sessions') {
+        state.voiceLab.activeSubTab = 'sessions';
+        container.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
+    } else if (moduleKey === 'assistant' && tab === 'personality') {
+        state.voiceLab.activeSubTab = 'personality';
+        container.appendChild(renderVoiceLabPersonalityPanel());
+    } else if (moduleKey === 'assistant' && tab === 'experiments') {
+        state.voiceLab.activeSubTab = 'experiments';
+        container.appendChild(renderVoiceLabExperimentsPanel());
+    } else if (moduleKey === 'assistant' && tab === 'metrics') {
+        state.voiceLab.activeSubTab = 'metrics';
+        container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+    } else if (moduleKey === 'assistant' && tab === 'awareness-registry') {
+        container.appendChild(renderAdminAwarenessView());
+    } else if (moduleKey === 'assistant' && tab === 'awareness-test') {
+        container.appendChild(renderVitanaAwarenessTestView());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -9418,16 +9458,27 @@ function handleTabClick(tabKey) {
 
 // Router Logic
 
-// BOOTSTRAP-AUTONOMY-SECTION-NAV: silent redirects for items that moved into
-// the new Autonomy section. Old deep-links keep working — they route to the
-// same tab under its new parent section without a visible page bounce.
+// BOOTSTRAP-AUTONOMY-SECTION-NAV + BOOTSTRAP-ASSISTANT-SECTION-NAV:
+// silent redirects for items that moved into the new Autonomy and Assistant
+// sections. Old deep-links keep working without a visible page bounce.
 const AUTONOMY_REDIRECTS = {
-    '/command-hub/admin/awareness/':              { section: 'autonomy', tab: 'awareness-registry' },
-    '/command-hub/testing-qa/vitana-awareness/':  { section: 'autonomy', tab: 'awareness-test' },
+    // Autonomy section moves (Round 1)
     '/command-hub/infrastructure/self-healing/':  { section: 'autonomy', tab: 'self-healing' },
     '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
     '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
+    // Assistant section moves (Round 2)
+    '/command-hub/admin/awareness/':              { section: 'assistant', tab: 'awareness-registry' },
+    '/command-hub/testing-qa/vitana-awareness/':  { section: 'assistant', tab: 'awareness-test' },
+    '/command-hub/autonomy/awareness-registry/':  { section: 'assistant', tab: 'awareness-registry' },
+    '/command-hub/autonomy/awareness-test/':      { section: 'assistant', tab: 'awareness-test' },
+    // Voice Lab's ORB-facing sub-tabs now live under Assistant (Providers +
+    // Governance stay with Voice Lab under Diagnostics).
+    '/command-hub/diagnostics/voice-lab/':            { section: 'assistant', tab: 'orb-live' },
+    '/command-hub/diagnostics/voice-lab/experiments/':{ section: 'assistant', tab: 'experiments' },
+    '/command-hub/diagnostics/voice-lab/personality/':{ section: 'assistant', tab: 'personality' },
+    '/command-hub/diagnostics/voice-lab/sessions/':   { section: 'assistant', tab: 'sessions' },
+    '/command-hub/diagnostics/voice-lab/metrics/':    { section: 'assistant', tab: 'metrics' },
 };
 
 function getRouteFromPath(pathname) {
@@ -40229,5 +40280,219 @@ function renderAutopilotAdminView() {
         '</ul>' +
         '<p style="margin-top:.75rem;font-size:.8rem;color:var(--color-text-secondary);">This tab reserves the slot in the Autonomy section so the direction is visible. When the implementation lands, the render function in <code>app.js</code> gets swapped for the real view.</p>';
     container.appendChild(card);
+    return container;
+}
+
+// =============================================================================
+// BOOTSTRAP-ASSISTANT-SECTION-NAV — Assistant Overview rollup page
+// =============================================================================
+// Single-pane supervisor view for the voice Assistant: live session count,
+// awareness status for the current operator, recent voice errors, and quick
+// links to every Assistant management surface. Pulls from endpoints that
+// already exist: /api/v1/voice-lab/live/sessions, /api/v1/orb/debug/awareness,
+// and OASIS events filtered to orb.live.*.
+// =============================================================================
+
+function fetchAssistantOverview() {
+    if (state.assistantOverview.loading) return;
+    state.assistantOverview.loading = true;
+    state.assistantOverview.error = null;
+    state.assistantOverview.lastFetchedAt = Date.now();
+    renderApp();
+
+    var headers = buildContextHeaders({ 'Accept': 'application/json' });
+
+    var sessionsP = fetch('/api/v1/voice-lab/live/sessions?limit=20', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false }; });
+
+    var awarenessP = fetch('/api/v1/orb/debug/awareness', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false }; });
+
+    // Recent voice errors — pull from OASIS events (orb.live.stall_detected +
+    // voice.live.session.ended with status=error). Falls back to empty list
+    // if the endpoint shape changes.
+    var errorsP = fetch('/api/v1/events?topic=orb.live.stall_detected&limit=10', { headers: headers })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false }; });
+
+    Promise.all([sessionsP, awarenessP, errorsP]).then(function (results) {
+        state.assistantOverview.loading = false;
+        state.assistantOverview.sessions = results[0] && results[0].ok !== false ? results[0] : null;
+        state.assistantOverview.awareness = results[1] && results[1].ok !== false ? results[1] : null;
+        state.assistantOverview.voiceErrors = results[2] && results[2].ok !== false ? results[2] : null;
+        renderApp();
+    }).catch(function (err) {
+        state.assistantOverview.loading = false;
+        state.assistantOverview.error = (err && err.message) ? err.message : String(err);
+        renderApp();
+    });
+}
+
+function renderAssistantOverviewCard(title, value, subtitle, intent) {
+    var card = document.createElement('div');
+    var accent = intent === 'error' ? 'rgba(239,68,68,0.4)' :
+                 intent === 'warn'  ? 'rgba(234,179,8,0.4)' :
+                 intent === 'ok'    ? 'rgba(34,197,94,0.4)' :
+                                      'var(--color-border)';
+    var bg = intent === 'error' ? 'rgba(239,68,68,0.08)' :
+             intent === 'warn'  ? 'rgba(234,179,8,0.08)' :
+             intent === 'ok'    ? 'rgba(34,197,94,0.08)' :
+                                  'var(--color-bg-elevated)';
+    card.style.cssText = 'padding:1rem;border:1px solid ' + accent + ';border-radius:8px;background:' + bg + ';';
+    card.innerHTML =
+        '<div style="font-size:.72rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;">' + title + '</div>' +
+        '<div style="font-size:1.5rem;font-weight:700;margin-top:.25rem;">' + value + '</div>' +
+        '<div style="font-size:.75rem;color:var(--color-text-secondary);margin-top:.25rem;">' + (subtitle || '') + '</div>';
+    return card;
+}
+
+function renderAssistantOverviewView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Assistant Overview</h2>' +
+        '<p class="section-subtitle">Live supervisor view for Vitana Assistant (voice ORB + awareness). Consolidates session count, awareness status, and recent voice errors.</p>';
+
+    // Auto-fetch on first render; refetch button in toolbar.
+    if (!state.assistantOverview.lastFetchedAt && !state.assistantOverview.loading) {
+        fetchAssistantOverview();
+    }
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;';
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.textContent = state.assistantOverview.loading ? 'Refreshing\u2026' : 'Refresh';
+    refreshBtn.onclick = fetchAssistantOverview;
+    toolbar.appendChild(refreshBtn);
+
+    var quickBtn = function (label, module, tab) {
+        var b = document.createElement('button');
+        b.className = 'task-spec-pipeline-btn';
+        b.textContent = label;
+        b.onclick = function () {
+            var target = '/command-hub/' + module + '/' + tab + '/';
+            history.pushState({}, '', target);
+            var route = getRouteFromPath(target);
+            state.currentModuleKey = route.section;
+            state.currentTab = route.tab;
+            renderApp();
+        };
+        return b;
+    };
+    toolbar.appendChild(quickBtn('Open ORB Live', 'assistant', 'orb-live'));
+    toolbar.appendChild(quickBtn('Awareness Registry', 'assistant', 'awareness-registry'));
+    toolbar.appendChild(quickBtn('Run Awareness Test', 'assistant', 'awareness-test'));
+    toolbar.appendChild(quickBtn('Personality', 'assistant', 'personality'));
+    container.appendChild(toolbar);
+
+    // Rollup cards
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin-bottom:1.5rem;';
+
+    // 1. Active sessions
+    var sessions = state.assistantOverview.sessions;
+    var activeCount = 0;
+    if (sessions) {
+        if (Array.isArray(sessions.sessions)) {
+            activeCount = sessions.sessions.filter(function (s) { return s && !s.ended_at && !s.stopped_at; }).length;
+        } else if (typeof sessions.active_count === 'number') {
+            activeCount = sessions.active_count;
+        }
+    }
+    grid.appendChild(renderAssistantOverviewCard(
+        'Active voice sessions',
+        state.assistantOverview.loading ? '\u2026' : String(activeCount),
+        activeCount === 0 ? 'No live voice sessions right now.' : 'currently live',
+        activeCount > 0 ? 'ok' : 'default'
+    ));
+
+    // 2. Awareness status
+    var awareness = state.assistantOverview.awareness;
+    var awarenessValue = '\u2014', awarenessSub = '', awarenessIntent = 'default';
+    if (awareness) {
+        if (awareness.ok && awareness.checks) {
+            var c = awareness.checks;
+            var passed = Object.keys(c).filter(function (k) { return c[k] === true; }).length;
+            var total  = Object.keys(c).length;
+            awarenessValue = passed + ' / ' + total;
+            awarenessSub = c.awareness_ok ? 'Full context reaching the ORB.' : 'Some context blocks are empty.';
+            awarenessIntent = c.awareness_ok ? 'ok' : 'warn';
+        } else if (awareness.scenario === 'anonymous') {
+            awarenessValue = 'anonymous';
+            awarenessSub = 'No JWT on caller — sign in to measure.';
+            awarenessIntent = 'warn';
+        }
+    } else if (state.assistantOverview.loading) {
+        awarenessValue = '\u2026';
+    }
+    grid.appendChild(renderAssistantOverviewCard(
+        'Your awareness checks',
+        awarenessValue,
+        awarenessSub,
+        awarenessIntent
+    ));
+
+    // 3. Recent voice errors (last hour)
+    var errors = state.assistantOverview.voiceErrors;
+    var errorCount = 0;
+    if (errors && Array.isArray(errors.events)) {
+        var hourAgo = Date.now() - 60 * 60 * 1000;
+        errorCount = errors.events.filter(function (e) {
+            var ts = e && e.created_at ? new Date(e.created_at).getTime() : 0;
+            return ts >= hourAgo;
+        }).length;
+    }
+    grid.appendChild(renderAssistantOverviewCard(
+        'Voice stalls (last hour)',
+        state.assistantOverview.loading ? '\u2026' : String(errorCount),
+        errorCount === 0 ? 'No forwarding stalls detected.' : 'Watchdog-triggered reconnects.',
+        errorCount === 0 ? 'ok' : (errorCount < 3 ? 'warn' : 'error')
+    ));
+
+    // 4. Profiler char budget — pulled from awareness payload if present
+    var profileChars = 0;
+    if (awareness && awareness.profile && typeof awareness.profile.char_count === 'number') {
+        profileChars = awareness.profile.char_count;
+    }
+    grid.appendChild(renderAssistantOverviewCard(
+        'Profile size (you)',
+        state.assistantOverview.loading ? '\u2026' : (profileChars + ' chars'),
+        profileChars > 0 ? 'Sections reaching Gemini Live.' : 'Run awareness test to populate.',
+        profileChars > 0 ? 'ok' : 'default'
+    ));
+
+    container.appendChild(grid);
+
+    // Error list
+    var errCard = document.createElement('div');
+    errCard.style.cssText = 'padding:1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);';
+    var errTitle = document.createElement('h3');
+    errTitle.textContent = 'Recent voice errors';
+    errTitle.style.cssText = 'margin:0 0 .5rem;font-size:.95rem;';
+    errCard.appendChild(errTitle);
+    if (state.assistantOverview.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading\u2026';
+        errCard.appendChild(l);
+    } else if (!errors || !Array.isArray(errors.events) || errors.events.length === 0) {
+        var e = document.createElement('div'); e.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);';
+        e.textContent = 'No recent voice errors.';
+        errCard.appendChild(e);
+    } else {
+        errors.events.slice(0, 10).forEach(function (ev) {
+            var row = document.createElement('div');
+            row.style.cssText = 'padding:.4rem 0;border-bottom:1px solid var(--color-border);font-size:.75rem;';
+            var when = ev.created_at ? new Date(ev.created_at).toLocaleString() : '';
+            var msg = (ev.message || '').toString().slice(0, 200);
+            row.innerHTML = '<code style="color:var(--color-text-secondary);">' + when + '</code> &nbsp; ' +
+                '<strong>' + (ev.topic || ev.type || '') + '</strong> ' +
+                '<span style="color:var(--color-text-secondary);">' + msg + '</span>';
+            errCard.appendChild(row);
+        });
+    }
+    container.appendChild(errCard);
+
     return container;
 }
