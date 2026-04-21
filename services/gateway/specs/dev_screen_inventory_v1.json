@@ -4,6 +4,7 @@
   "sidebar_navigation": [
     "overview",
     "admin",
+    "assistant",
     "autonomy",
     "operator",
     "command-hub",
@@ -39,12 +40,20 @@
       "marketplace-review",
       "analytics"
     ],
+    "assistant": [
+      "overview",
+      "orb-live",
+      "sessions",
+      "personality",
+      "experiments",
+      "metrics",
+      "awareness-registry",
+      "awareness-test"
+    ],
     "autonomy": [
       "autopilot-community",
       "autopilot-developer",
       "autopilot-admin",
-      "awareness-registry",
-      "awareness-test",
       "self-healing",
       "autonomy-pulse",
       "autonomy-trace"

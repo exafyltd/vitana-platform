@@ -36,15 +36,29 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
-    // BOOTSTRAP-AUTONOMY-SECTION-NAV: new dedicated Autonomy section.
+    // BOOTSTRAP-ASSISTANT-SECTION-NAV: dedicated Assistant / ORB supervision.
+    module: 'assistant',
+    label: 'Assistant',
+    tabs: [
+      { key: 'overview',            label: 'Overview' },
+      { key: 'orb-live',            label: 'ORB Live' },
+      { key: 'sessions',            label: 'Sessions' },
+      { key: 'personality',         label: 'Personality' },
+      { key: 'experiments',         label: 'Experiments' },
+      { key: 'metrics',             label: 'Metrics' },
+      { key: 'awareness-registry',  label: 'Awareness Registry' },
+      { key: 'awareness-test',      label: 'Awareness Test' }
+    ]
+  },
+  {
+    // BOOTSTRAP-AUTONOMY-SECTION-NAV: dedicated Autonomy section.
+    // Round 2: awareness-registry + awareness-test moved to Assistant.
     module: 'autonomy',
     label: 'Autonomy',
     tabs: [
       { key: 'autopilot-community', label: 'Autopilot (Community)' },
       { key: 'autopilot-developer', label: 'Autopilot (Developer)' },
       { key: 'autopilot-admin',     label: 'Autopilot (Admin)' },
-      { key: 'awareness-registry',  label: 'Awareness Registry' },
-      { key: 'awareness-test',      label: 'Awareness Test' },
       { key: 'self-healing',        label: 'Self-Healing' },
       { key: 'autonomy-pulse',      label: 'Autonomy Pulse' },
       { key: 'autonomy-trace',      label: 'Autonomy Trace' }
