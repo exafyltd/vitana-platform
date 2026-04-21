@@ -17,6 +17,9 @@ import { autopilotHealthScanner } from './autopilot-health';
 import { contentModerationScanner } from './content-moderation';
 import { communityScanner } from './community';
 import { usersLifecycleScanner } from './users-lifecycle';
+import { marketplaceScanner } from './marketplace';
+import { navigatorScanner } from './navigator';
+import { knowledgeScanner } from './knowledge';
 
 const LOG_PREFIX = '[admin-scanners]';
 
@@ -26,8 +29,11 @@ const REGISTRY: AdminScanner[] = [
   contentModerationScanner,
   communityScanner,
   usersLifecycleScanner,
-  // Phase BB follow-ups: marketplace, navigator, knowledge, assistant,
-  // signups_funnel, settings_audit, compliance, notifications
+  marketplaceScanner,
+  navigatorScanner,
+  knowledgeScanner,
+  // Phase BB follow-ups: assistant, signups_funnel, settings_audit,
+  // compliance, notifications
 ];
 
 export function listScanners(): AdminScanner[] {
