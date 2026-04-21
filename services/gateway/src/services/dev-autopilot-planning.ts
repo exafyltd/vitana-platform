@@ -268,10 +268,11 @@ async function supaRequest<T>(
 // Prompt builder
 // =============================================================================
 
-function buildPlanningPrompt(
+export function buildPlanningPrompt(
   finding: FindingForPlanning,
   previousPlan?: string,
   feedbackNote?: string,
+  scope?: { allow?: string[]; deny?: string[] },
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -312,6 +313,50 @@ function buildPlanningPrompt(
     );
   }
 
+  // HARD CONSTRAINT on the Files to modify section — the safety gate rejects
+  // approvals whose plan cites any path outside allow_scope or any path in
+  // deny_scope, so a plan that puts config files in that section is
+  // guaranteed to be blocked. Surface the constraint as part of the prompt
+  // so Claude puts reference-only files in a separate section instead.
+  const allow = scope?.allow && scope.allow.length > 0 ? scope.allow : undefined;
+  const deny = scope?.deny && scope.deny.length > 0 ? scope.deny : undefined;
+  if (allow || deny) {
+    lines.push(
+      `## Scope constraints (enforced automatically — violations block approval)`,
+      ``,
+      `The "Files to modify" section must contain ONLY paths that the executor`,
+      `will actually create, modify, or delete. Do NOT list config files or`,
+      `dependency manifests there for the developer to "double-check" — put`,
+      `those as plain-text notes in the Out-of-scope section instead.`,
+      ``,
+    );
+    if (allow) {
+      lines.push(`Files to modify MUST match one of these allow-scope globs:`);
+      for (const g of allow) lines.push(`  - \`${g}\``);
+      lines.push(``);
+    }
+    if (deny) {
+      lines.push(`Files to modify MUST NOT match any of these deny-scope globs:`);
+      for (const g of deny) lines.push(`  - \`${g}\``);
+      lines.push(``);
+    }
+    lines.push(
+      `Common traps — do NOT put these in Files to modify:`,
+      `  - \`services/gateway/package.json\` / any \`package.json\``,
+      `  - \`services/gateway/tsconfig.json\` / any \`tsconfig*.json\``,
+      `  - \`services/gateway/jest.config.ts\` / any \`jest.config.*\``,
+      `  - Any \`.github/workflows/*\` file`,
+      `  - Any \`supabase/migrations/*\` file`,
+      `  - Any path containing \`auth\` unless it IS the finding's target`,
+      ``,
+      `If the developer needs to verify any of the above, write a bullet in`,
+      `Out-of-scope like: "Developer should verify supertest is in`,
+      `services/gateway/package.json devDependencies" — NOT a line in`,
+      `Files to modify.`,
+      ``,
+    );
+  }
+
   lines.push(
     `## Your task`,
     `The referenced file is attached below. Use it (plus the finding metadata`,
@@ -338,7 +383,10 @@ function buildPlanningPrompt(
     `(One bullet per file, grouped by purpose. Include file path + what changes.)`,
     ``,
     `## Files to modify`,
-    `(Flat list of repo-relative paths, one per line. Include test files.)`,
+    `(Flat list of repo-relative paths, one per line. Include test files.`,
+    ` Every path here MUST pass the scope constraints above — no config files,`,
+    ` no package.json, no tsconfig, no jest.config. The executor writes exactly`,
+    ` these files and no others.)`,
     ``,
     `## Reused primitives`,
     `(Existing functions/types/services the change should call into — do not`,
@@ -351,7 +399,8 @@ function buildPlanningPrompt(
     `(Unit tests + integration path + observable outcome.)`,
     ``,
     `## Out of scope`,
-    `(Things intentionally not in this change.)`,
+    `(Things intentionally not in this change. Put "developer should verify"`,
+    ` notes about config files HERE, not in Files to modify.)`,
   );
 
   return lines.join('\n');
@@ -451,6 +500,7 @@ async function runPlanningSession(
   finding: FindingForPlanning,
   previousPlan: string | undefined,
   feedbackNote: string | undefined,
+  scope?: { allow?: string[]; deny?: string[] },
 ): Promise<{ ok: boolean; plan_markdown?: string; session_id?: string; error?: string }> {
   const sessionId = `plan_${randomUUID().slice(0, 12)}`;
 
@@ -490,7 +540,7 @@ async function runPlanningSession(
     fileSection = `\n\n## Referenced file\n\n> No file_path recorded on this finding. Produce the plan from the finding metadata alone.\n`;
   }
 
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote) + fileSection;
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope) + fileSection;
 
   const call = await callMessagesApi(prompt);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
@@ -553,8 +603,20 @@ export async function generatePlanVersion(
     }
   }
 
-  // 3. Run the planning session
-  const session = await runPlanningSession(finding, previousPlan, opts.feedback_note);
+  // 3. Load scope from config so the LLM can be told the hard constraints
+  // in the prompt. If the config isn't reachable, fall through with
+  // undefined — the prompt will still list the common traps.
+  let scope: { allow?: string[]; deny?: string[] } | undefined;
+  const cfgR = await supaRequest<Array<{ allow_scope: string[]; deny_scope: string[] }>>(
+    supa,
+    `/rest/v1/dev_autopilot_config?id=eq.1&select=allow_scope,deny_scope&limit=1`,
+  );
+  if (cfgR.ok && cfgR.data && cfgR.data[0]) {
+    scope = { allow: cfgR.data[0].allow_scope, deny: cfgR.data[0].deny_scope };
+  }
+
+  // 4. Run the planning session
+  const session = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope);
   if (!session.ok || !session.plan_markdown) {
     await emitOasisEvent({
       vtid: PLAN_VTID,
@@ -641,4 +703,4 @@ export async function eagerlyPlanTopK(runId: string, k: number): Promise<{ plann
 // Exports
 // =============================================================================
 
-export { buildPlanningPrompt, buildStubPlan, LOG_PREFIX };
+export { buildStubPlan, LOG_PREFIX };
