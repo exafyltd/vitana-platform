@@ -21,10 +21,11 @@
  * routes/tenant-admin/overview.ts — same tables, same Supabase client.
  */
 import { getSupabase } from '../lib/supabase';
+import { runAllScannersForTenant } from './admin-scanners';
 
 const LOG_PREFIX = '[admin-kpi]';
 const WORKER_TICK_MS = 5 * 60 * 1000; // 5 minutes
-const WORKER_VERSION = 'phase-AA.2026-04-21';
+const WORKER_VERSION = 'phase-BB-CC.2026-04-21';
 
 type KpiPayload = Record<string, unknown>;
 
@@ -233,5 +234,20 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     );
   if (dailyErr) {
     console.warn(`${LOG_PREFIX} upsert daily failed ${tenantId.substring(0, 8)}...: ${dailyErr.message}`);
+  }
+
+  // BOOTSTRAP-ADMIN-BB-CC: run domain scanners after KPI compute.
+  // Scanners soft-fail inside the runner; never propagates to break this tick.
+  try {
+    const scan = await runAllScannersForTenant(tenantId);
+    if (scan.scanners_run > 0 || scan.insights_written > 0 || scan.insights_resolved > 0) {
+      console.log(
+        `${LOG_PREFIX} scanners tenant=${tenantId.substring(0, 8)}... ` +
+          `ran=${scan.scanners_run} failed=${scan.scanners_failed} ` +
+          `written=${scan.insights_written} resolved=${scan.insights_resolved}`,
+      );
+    }
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} scanner runner failed ${tenantId.substring(0, 8)}...: ${err?.message}`);
   }
 }
