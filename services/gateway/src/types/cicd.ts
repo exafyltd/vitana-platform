@@ -609,6 +609,10 @@ export type CicdEventType =
   | 'guide.adaptation.applied'
   // COMPANION Phase C — pattern extractor (VTID-01936)
   | 'guide.patterns.extracted'
+  // COMPANION Phase H — proactive presence pacer (VTID-01945)
+  | 'guide.presence.touch_recorded'
+  | 'guide.presence.touch_acknowledged'
+  | 'guide.presence.touch_dismissed'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

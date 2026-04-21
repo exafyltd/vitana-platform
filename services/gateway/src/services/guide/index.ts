@@ -43,6 +43,16 @@ export {
   type ExtractResult as PatternExtractResult,
 } from './pattern-extractor';
 export {
+  canSurfaceProactively,
+  recordTouch,
+  acknowledgeTouch,
+  type ProactiveSurface,
+  type PresenceLevel,
+  type PacerDecision,
+  type RecordTouchInput,
+  type AcknowledgeTouchInput,
+} from './presence-pacer';
+export {
   describeTimeSince,
   fetchLastSessionInfo,
   deriveMotivationSignal,
