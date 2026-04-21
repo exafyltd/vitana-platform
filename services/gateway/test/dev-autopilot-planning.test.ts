@@ -147,4 +147,41 @@ describe('extractFilePaths', () => {
     expect(paths).toContain('supabase/migrations/20260101_foo.sql');
     expect(paths).toContain('.github/workflows/DEPLOY.yml');
   });
+
+  it('preserves .json extension (regression: alternation truncated to .js)', () => {
+    const md = [
+      '## Files to modify',
+      '- services/gateway/src/routes/foo.ts',
+      '- services/gateway/package.json',
+      '',
+      'Also bump services/agents/config.json in prose.',
+    ].join('\n');
+    const paths = extractFilePaths(md);
+    expect(paths).toContain('services/gateway/package.json');
+    expect(paths).not.toContain('services/gateway/package.js');
+  });
+
+  it('ignores prose path noise when Files to modify section is populated', () => {
+    // This is the exact bug that caused every auto-generated plan to fail the
+    // safety gate: the LLM mentions package.json / jest.config.ts / tsconfig
+    // in the Context or Reused primitives sections for reference, but the
+    // "Files to modify" section correctly names only the real targets. The
+    // fallback scan used to leak all the prose paths into files_referenced
+    // and then fail allow_scope.
+    const md = [
+      '## Context',
+      'Check `services/gateway/package.json` for dev-dependencies.',
+      'Reference jest config at services/gateway/jest.config.ts.',
+      '',
+      '## Files to modify',
+      '```',
+      'services/gateway/src/routes/media-hub.test.ts',
+      '```',
+      '',
+      '## Verification',
+      'Run `npm test services/gateway/src/routes/media-hub.test.ts`.',
+    ].join('\n');
+    const paths = extractFilePaths(md);
+    expect(paths).toEqual(['services/gateway/src/routes/media-hub.test.ts']);
+  });
 });

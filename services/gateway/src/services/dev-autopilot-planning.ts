@@ -361,18 +361,39 @@ function buildPlanningPrompt(
 // File-path extraction + validation (catches hallucinated paths)
 // =============================================================================
 
-const PATH_LINE_RE = /(?<![a-zA-Z0-9])((?:services|supabase|scripts|\.github|specs|src)\/[a-zA-Z0-9_./\-]+\.(?:ts|tsx|js|jsx|sql|yml|yaml|json|md))/g;
+// Extension alternation — longest alternatives first + a trailing negative
+// lookahead so ".json" never truncates to ".js" (standard regex alternation
+// is left-to-right-first-match, so "js" silently wins over "json" unless we
+// order longest-first and anchor the end). Before this fix, every plan that
+// referenced `package.json` stored it as `package.js`, which then collided
+// with the safety-gate allow_scope check as an out-of-scope file.
+const EXT_GROUP = '(?:tsx|ts|jsx|js|sql|yaml|yml|json|md)(?![a-zA-Z0-9])';
+const PATH_LINE_RE = new RegExp(
+  `(?<![a-zA-Z0-9])((?:services|supabase|scripts|\\.github|specs|src)\\/[a-zA-Z0-9_./\\-]+\\.${EXT_GROUP})`,
+  'g',
+);
+const FILES_SECTION_LINE_RE = new RegExp(`([a-zA-Z0-9_./\\-]+\\.${EXT_GROUP})`);
 
 export function extractFilePaths(markdown: string): string[] {
   const paths = new Set<string>();
+  // Prefer the explicit "Files to modify" section. If it exists AND lists at
+  // least one path, trust ONLY that list — don't fall back to scanning the
+  // whole markdown. The fallback scan is an over-eager safety net that pulls
+  // in every path the LLM mentions for context (package.json, jest.config.ts,
+  // tsconfig.js, etc.) and flags them as files to modify, which then fails
+  // the safety gate's allow_scope check even though the plan never intended
+  // to touch them.
   const filesSection = markdown.match(/##\s*Files to modify[\s\S]+?(?=\n##\s|$)/i);
   if (filesSection) {
     for (const line of filesSection[0].split('\n').slice(1)) {
-      const match = line.match(/([a-zA-Z0-9_./\-]+\.(?:ts|tsx|js|jsx|sql|yml|yaml|json|md))/);
+      const match = line.match(FILES_SECTION_LINE_RE);
       if (match && match[1].includes('/')) paths.add(match[1]);
     }
+    if (paths.size > 0) return Array.from(paths);
   }
-  // Fallback: scan the whole plan for paths
+  // Fallback: only if the Files-to-modify section was absent or empty, scan
+  // the whole plan for path-like strings. This handles older plans that used
+  // the Components-only format.
   for (const m of markdown.matchAll(PATH_LINE_RE)) {
     paths.add(m[1]);
   }
