@@ -2595,7 +2595,8 @@ const NAVIGATION_CONFIG = [
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
             { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
             { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
-            { "key": "analytics", "path": "/command-hub/admin/analytics/" }
+            { "key": "analytics", "path": "/command-hub/admin/analytics/" },
+            { "key": "awareness", "path": "/command-hub/admin/awareness/" }
         ]
     },
     {
@@ -3632,6 +3633,23 @@ const state = {
     testingValidator: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Vitana Awareness (BOOTSTRAP-HISTORY-AWARE-TIMELINE)
     vitanaAwareness: { result: null, loading: false, error: null, lastRunAt: 0, userId: '' },
+    // Admin > Awareness Registry (BOOTSTRAP-AWARENESS-REGISTRY)
+    awarenessRegistry: {
+        manifest: [],
+        overrides: {},
+        resolved: {},
+        audit: [],
+        loading: false,
+        saving: false,
+        error: null,
+        loaded: false,
+        // local pending edits keyed by signal.key — { enabled, params }
+        pending: {},
+        // expanded tier names
+        expandedTiers: {},
+        previewLoading: false,
+        previewResult: null,
+    },
     // Testing & QA — Test Cycles
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
@@ -6111,6 +6129,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderVitanaAwarenessTestView());
 
     // ──── Admin: Analytics ────
+    } else if (moduleKey === 'admin' && tab === 'awareness') {
+        container.appendChild(renderAdminAwarenessView());
     } else if (moduleKey === 'admin' && tab === 'analytics') {
         container.appendChild(renderAdminAnalyticsView());
 
@@ -39690,6 +39710,417 @@ function renderVitanaAwarenessTestView() {
         renderResult(state.vitanaAwareness.result);
     } else {
         results.innerHTML = '<div class="placeholder-content" style="padding:1rem;color:var(--color-text-secondary);">Click <strong>Run Awareness Test</strong> to check what the voice ORB knows right now.</div>';
+    }
+
+    return container;
+}
+
+// =============================================================================
+// BOOTSTRAP-AWARENESS-REGISTRY — Admin > Awareness control panel
+// =============================================================================
+// Collapsible tier groups, each with subcategories of toggleable signals.
+// Pending edits cached in state.awarenessRegistry.pending so re-renders don't
+// drop in-flight changes. "Save" button writes via /api/v1/awareness/config/bulk.
+// "Preview" calls /api/v1/orb/debug/awareness as the current operator.
+// =============================================================================
+
+var TIER_LABELS = {
+    identity: '1 — Identity',
+    memory: '2 — Memory',
+    activity: '3 — Activity',
+    content: '4 — Content Consumption',
+    social: '5 — Social Graph (Network & Connections)',
+    preferences: '6 — Preferences',
+    routines: '7 — Routines',
+    health: '8 — Health',
+    context: '9 — Session Context',
+    knowledge: '10 — Knowledge & System',
+    brain: '11 — Brain / Proactive',
+    overrides: '12 — Overrides (high-priority blocks)',
+};
+
+function awarenessFetchConfig() {
+    if (state.awarenessRegistry.loading) return;
+    state.awarenessRegistry.loading = true;
+    state.awarenessRegistry.error = null;
+    renderApp();
+    fetch('/api/v1/awareness/config', { method: 'GET', headers: buildContextHeaders({ 'Accept': 'application/json' }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            state.awarenessRegistry.loading = false;
+            if (!d || d.ok === false) {
+                state.awarenessRegistry.error = (d && d.error) || 'Failed to load';
+            } else {
+                state.awarenessRegistry.manifest = d.manifest || [];
+                state.awarenessRegistry.overrides = d.overrides || {};
+                state.awarenessRegistry.resolved = d.resolved || {};
+                state.awarenessRegistry.loaded = true;
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            state.awarenessRegistry.loading = false;
+            state.awarenessRegistry.error = (err && err.message) ? err.message : String(err);
+            renderApp();
+        });
+}
+
+function awarenessFetchAudit() {
+    fetch('/api/v1/awareness/audit?limit=20', { method: 'GET', headers: buildContextHeaders({ 'Accept': 'application/json' }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d && d.ok && Array.isArray(d.entries)) {
+                state.awarenessRegistry.audit = d.entries;
+                renderApp();
+            }
+        })
+        .catch(function () { /* non-critical */ });
+}
+
+function awarenessSavePending() {
+    var pending = state.awarenessRegistry.pending || {};
+    var keys = Object.keys(pending);
+    if (!keys.length || state.awarenessRegistry.saving) return;
+    var changes = keys.map(function (k) {
+        return { key: k, enabled: !!pending[k].enabled, params: pending[k].params || {} };
+    });
+    state.awarenessRegistry.saving = true;
+    renderApp();
+    fetch('/api/v1/awareness/config/bulk', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+        body: JSON.stringify({ changes: changes }),
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            state.awarenessRegistry.saving = false;
+            if (!d || d.ok === false) {
+                state.awarenessRegistry.error = 'Save partially failed: ' + JSON.stringify(d && d.failures || []);
+            } else {
+                state.awarenessRegistry.pending = {};
+                state.awarenessRegistry.error = null;
+            }
+            renderApp();
+            // Re-fetch resolved state + audit.
+            awarenessFetchConfig();
+            awarenessFetchAudit();
+        })
+        .catch(function (err) {
+            state.awarenessRegistry.saving = false;
+            state.awarenessRegistry.error = (err && err.message) ? err.message : String(err);
+            renderApp();
+        });
+}
+
+function awarenessRunPreview() {
+    state.awarenessRegistry.previewLoading = true;
+    state.awarenessRegistry.previewResult = null;
+    renderApp();
+    fetch('/api/v1/orb/debug/awareness', { method: 'GET', headers: buildContextHeaders({ 'Accept': 'application/json' }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            state.awarenessRegistry.previewLoading = false;
+            state.awarenessRegistry.previewResult = d;
+            renderApp();
+        })
+        .catch(function (err) {
+            state.awarenessRegistry.previewLoading = false;
+            state.awarenessRegistry.previewResult = { ok: false, error: (err && err.message) ? err.message : String(err) };
+            renderApp();
+        });
+}
+
+function awarenessSignalEffective(signal) {
+    var pending = state.awarenessRegistry.pending[signal.key];
+    if (pending) return pending;
+    var resolved = state.awarenessRegistry.resolved[signal.key];
+    if (resolved) return { enabled: !!resolved.enabled, params: resolved.params || {} };
+    var defaultParams = {};
+    (signal.params || []).forEach(function (p) { defaultParams[p.key] = p.default; });
+    return { enabled: !!signal.default_on, params: defaultParams };
+}
+
+function awarenessUpdatePending(signal, patch) {
+    var current = awarenessSignalEffective(signal);
+    state.awarenessRegistry.pending[signal.key] = {
+        enabled: 'enabled' in patch ? !!patch.enabled : current.enabled,
+        params: patch.params ? Object.assign({}, current.params, patch.params) : current.params,
+    };
+    renderApp();
+}
+
+function renderAwarenessSignalRow(signal) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-direction:column;gap:.25rem;padding:.5rem .75rem;border-bottom:1px solid var(--color-border);';
+    if (signal.enforcement_status === 'pending') {
+        row.style.opacity = '0.55';
+    }
+
+    var top = document.createElement('div');
+    top.style.cssText = 'display:flex;align-items:center;gap:.75rem;';
+
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    var eff = awarenessSignalEffective(signal);
+    checkbox.checked = eff.enabled;
+    checkbox.disabled = !!signal.locked;
+    checkbox.onchange = function () {
+        awarenessUpdatePending(signal, { enabled: checkbox.checked });
+    };
+    top.appendChild(checkbox);
+
+    var label = document.createElement('div');
+    label.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:.1rem;';
+    var labelLine = document.createElement('div');
+    labelLine.style.cssText = 'display:flex;align-items:center;gap:.4rem;';
+    var labelStrong = document.createElement('strong');
+    labelStrong.textContent = signal.label;
+    labelStrong.style.fontSize = '.85rem';
+    labelLine.appendChild(labelStrong);
+    if (signal.locked) {
+        var lockedBadge = document.createElement('span');
+        lockedBadge.textContent = '\uD83D\uDD12 locked';
+        lockedBadge.style.cssText = 'font-size:.65rem;color:var(--color-text-secondary);background:var(--color-bg);padding:.1rem .35rem;border-radius:4px;';
+        labelLine.appendChild(lockedBadge);
+    }
+    if (signal.enforcement_status === 'pending') {
+        var pendBadge = document.createElement('span');
+        pendBadge.textContent = 'enforcement pending';
+        pendBadge.style.cssText = 'font-size:.65rem;color:#a16207;background:rgba(234,179,8,.12);padding:.1rem .35rem;border-radius:4px;';
+        labelLine.appendChild(pendBadge);
+    }
+    var keyTag = document.createElement('code');
+    keyTag.textContent = signal.key;
+    keyTag.style.cssText = 'font-size:.6rem;color:var(--color-text-secondary);margin-left:auto;';
+    labelLine.appendChild(keyTag);
+    label.appendChild(labelLine);
+    var desc = document.createElement('div');
+    desc.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);';
+    desc.textContent = signal.description;
+    label.appendChild(desc);
+    top.appendChild(label);
+
+    row.appendChild(top);
+
+    if (signal.params && signal.params.length) {
+        var paramsRow = document.createElement('div');
+        paramsRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:.5rem;padding-left:1.5rem;margin-top:.25rem;';
+        signal.params.forEach(function (p) {
+            var wrap = document.createElement('label');
+            wrap.style.cssText = 'display:flex;align-items:center;gap:.35rem;font-size:.7rem;color:var(--color-text-secondary);';
+            wrap.textContent = p.label + ':';
+            var input;
+            var currentVal = (eff.params && (p.key in eff.params)) ? eff.params[p.key] : p.default;
+            if (p.type === 'bool') {
+                input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = !!currentVal;
+                input.onchange = function () {
+                    var patch = {}; patch[p.key] = input.checked;
+                    awarenessUpdatePending(signal, { params: patch });
+                };
+            } else if (p.type === 'enum') {
+                input = document.createElement('select');
+                input.style.cssText = 'padding:.15rem .35rem;background:var(--color-bg-elevated);border:1px solid var(--color-border);color:var(--color-text);border-radius:4px;font-size:.7rem;';
+                (p.options || []).forEach(function (opt) {
+                    var o = document.createElement('option'); o.value = opt; o.textContent = opt;
+                    if (String(currentVal) === String(opt)) o.selected = true;
+                    input.appendChild(o);
+                });
+                input.onchange = function () {
+                    var patch = {}; patch[p.key] = input.value;
+                    awarenessUpdatePending(signal, { params: patch });
+                };
+            } else {
+                input = document.createElement('input');
+                input.type = 'number';
+                input.value = currentVal;
+                if ('min' in p) input.min = String(p.min);
+                if ('max' in p) input.max = String(p.max);
+                if ('step' in p) input.step = String(p.step);
+                input.style.cssText = 'width:5rem;padding:.15rem .35rem;background:var(--color-bg-elevated);border:1px solid var(--color-border);color:var(--color-text);border-radius:4px;font-size:.7rem;';
+                input.onchange = function () {
+                    var v = p.type === 'float' ? parseFloat(input.value) : parseInt(input.value, 10);
+                    if (isNaN(v)) return;
+                    var patch = {}; patch[p.key] = v;
+                    awarenessUpdatePending(signal, { params: patch });
+                };
+            }
+            wrap.appendChild(input);
+            paramsRow.appendChild(wrap);
+        });
+        row.appendChild(paramsRow);
+    }
+
+    return row;
+}
+
+function renderAwarenessTier(tierKey, signals) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);margin-bottom:.75rem;';
+
+    // Header
+    var header = document.createElement('div');
+    var enabledCount = signals.filter(function (s) { return awarenessSignalEffective(s).enabled; }).length;
+    header.style.cssText = 'display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer;user-select:none;';
+    header.innerHTML = '<strong>' + (TIER_LABELS[tierKey] || tierKey) + '</strong>' +
+        '<span style="margin-left:auto;font-size:.75rem;color:var(--color-text-secondary);">' +
+        enabledCount + ' of ' + signals.length + ' enabled</span>';
+    var caret = document.createElement('span');
+    var expanded = !!state.awarenessRegistry.expandedTiers[tierKey];
+    caret.textContent = expanded ? '\u25BC' : '\u25B6';
+    caret.style.fontSize = '.7rem';
+    header.insertBefore(caret, header.firstChild);
+    header.onclick = function () {
+        state.awarenessRegistry.expandedTiers[tierKey] = !expanded;
+        renderApp();
+    };
+    card.appendChild(header);
+
+    if (!expanded) return card;
+
+    // Group by subcategory
+    var bySubcat = {};
+    signals.forEach(function (s) {
+        if (!bySubcat[s.subcategory]) bySubcat[s.subcategory] = [];
+        bySubcat[s.subcategory].push(s);
+    });
+
+    Object.keys(bySubcat).forEach(function (subcat) {
+        var subHeader = document.createElement('div');
+        subHeader.style.cssText = 'padding:.4rem 1rem;font-size:.75rem;font-weight:600;color:var(--color-text-secondary);background:var(--color-bg);border-top:1px solid var(--color-border);';
+        subHeader.textContent = subcat;
+        card.appendChild(subHeader);
+        bySubcat[subcat].forEach(function (s) { card.appendChild(renderAwarenessSignalRow(s)); });
+    });
+
+    return card;
+}
+
+function renderAwarenessPreviewDrawer() {
+    if (!state.awarenessRegistry.previewLoading && !state.awarenessRegistry.previewResult) return null;
+    var drawer = document.createElement('div');
+    drawer.style.cssText = 'margin-top:1rem;padding:1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);';
+    var title = document.createElement('h3');
+    title.textContent = 'Preview: what the voice ORB would receive';
+    title.style.cssText = 'margin:0 0 .5rem;font-size:.95rem;';
+    drawer.appendChild(title);
+    if (state.awarenessRegistry.previewLoading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Running preview\u2026';
+        drawer.appendChild(l);
+        return drawer;
+    }
+    var d = state.awarenessRegistry.previewResult || {};
+    if (d.ok === false) {
+        var e = document.createElement('div'); e.className = 'error-text'; e.textContent = 'Error: ' + (d.error || 'unknown');
+        drawer.appendChild(e);
+        return drawer;
+    }
+    var meta = document.createElement('div');
+    meta.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);margin-bottom:.5rem;';
+    meta.textContent = 'profile=' + ((d.profile && d.profile.char_count) || 0) + ' chars  •  context_instruction=' + ((d.context_instruction && d.context_instruction.char_count) || 0) + ' chars  •  scenario=' + (d.scenario || 'unknown');
+    drawer.appendChild(meta);
+    var pre = document.createElement('pre');
+    pre.style.cssText = 'margin:0;padding:.75rem;background:var(--color-bg);border-radius:6px;overflow:auto;max-height:340px;font-size:.7rem;white-space:pre-wrap;word-break:break-word;';
+    pre.textContent = (d.profile && d.profile.summary) || '(empty)';
+    drawer.appendChild(pre);
+    return drawer;
+}
+
+function renderAdminAwarenessView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Awareness Registry</h2>' +
+        '<p class="section-subtitle">Global control of every context signal the voice ORB and brain inject into the Gemini Live system_instruction. Exafy admins only. Changes apply to all tenants.</p>';
+
+    if (!state.awarenessRegistry.loaded && !state.awarenessRegistry.loading) {
+        awarenessFetchConfig();
+        awarenessFetchAudit();
+    }
+
+    if (state.awarenessRegistry.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading awareness manifest\u2026';
+        container.appendChild(l);
+        return container;
+    }
+    if (state.awarenessRegistry.error) {
+        var e = document.createElement('div'); e.className = 'error-text'; e.style.padding = '1rem';
+        e.textContent = 'Error: ' + state.awarenessRegistry.error + ' (this page requires exafy_admin)';
+        container.appendChild(e);
+        return container;
+    }
+
+    var manifest = state.awarenessRegistry.manifest || [];
+    if (!manifest.length) {
+        var empty = document.createElement('div'); empty.className = 'placeholder-content'; empty.textContent = 'Manifest empty.';
+        container.appendChild(empty);
+        return container;
+    }
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;';
+    var pendingCount = Object.keys(state.awarenessRegistry.pending || {}).length;
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    saveBtn.textContent = state.awarenessRegistry.saving ? 'Saving\u2026' : ('Save Changes' + (pendingCount ? ' (' + pendingCount + ')' : ''));
+    saveBtn.disabled = pendingCount === 0 || state.awarenessRegistry.saving;
+    if (saveBtn.disabled) saveBtn.style.opacity = '0.5';
+    saveBtn.onclick = awarenessSavePending;
+    toolbar.appendChild(saveBtn);
+
+    var discardBtn = document.createElement('button');
+    discardBtn.className = 'task-spec-pipeline-btn';
+    discardBtn.textContent = 'Discard pending';
+    discardBtn.disabled = pendingCount === 0;
+    if (discardBtn.disabled) discardBtn.style.opacity = '0.5';
+    discardBtn.onclick = function () {
+        state.awarenessRegistry.pending = {};
+        renderApp();
+    };
+    toolbar.appendChild(discardBtn);
+
+    var previewBtn = document.createElement('button');
+    previewBtn.className = 'task-spec-pipeline-btn';
+    previewBtn.textContent = state.awarenessRegistry.previewLoading ? 'Previewing\u2026' : 'Run Preview';
+    previewBtn.onclick = awarenessRunPreview;
+    toolbar.appendChild(previewBtn);
+
+    container.appendChild(toolbar);
+
+    // Group manifest by tier
+    var byTier = {};
+    manifest.forEach(function (s) {
+        if (!byTier[s.tier]) byTier[s.tier] = [];
+        byTier[s.tier].push(s);
+    });
+
+    // Render in tier order
+    Object.keys(TIER_LABELS).forEach(function (tierKey) {
+        if (!byTier[tierKey]) return;
+        container.appendChild(renderAwarenessTier(tierKey, byTier[tierKey]));
+    });
+
+    var preview = renderAwarenessPreviewDrawer();
+    if (preview) container.appendChild(preview);
+
+    // Audit
+    if (state.awarenessRegistry.audit && state.awarenessRegistry.audit.length) {
+        var auditCard = document.createElement('div');
+        auditCard.style.cssText = 'margin-top:1.5rem;padding:1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);';
+        var auditTitle = document.createElement('h3');
+        auditTitle.textContent = 'Recent changes';
+        auditTitle.style.cssText = 'margin:0 0 .5rem;font-size:.95rem;';
+        auditCard.appendChild(auditTitle);
+        state.awarenessRegistry.audit.forEach(function (entry) {
+            var line = document.createElement('div');
+            line.style.cssText = 'font-size:.72rem;padding:.25rem 0;border-bottom:1px solid var(--color-border);';
+            var when = new Date(entry.changed_at).toLocaleString();
+            line.innerHTML = '<code style="color:var(--color-text-secondary);">' + when + '</code> &nbsp; <strong>' + entry.key + '</strong> ' +
+                (entry.prev_enabled === entry.new_enabled ? '(params changed)' : (entry.prev_enabled + ' \u2192 ' + entry.new_enabled));
+            auditCard.appendChild(line);
+        });
+        container.appendChild(auditCard);
     }
 
     return container;

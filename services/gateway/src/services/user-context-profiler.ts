@@ -25,6 +25,7 @@
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getCurrentFacts } from './memory-facts-service';
+import { getAwarenessConfig } from './awareness-registry';
 
 const TTL_MS = 10 * 60 * 1000;
 const DEFAULT_WINDOW_DAYS = 14;
@@ -474,26 +475,57 @@ export async function getUserContextSummary(
     return { summary: hit.summary, version, cached: true, warnings };
   }
 
-  const sinceIso = new Date(now - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  // BOOTSTRAP-AWARENESS-REGISTRY: load admin config (60s cache) so each
+  // section can be turned off / tuned globally without a redeploy.
+  const cfg = await getAwarenessConfig().catch(() => null);
+
+  // Effective window: registry param overrides opts.windowDays.
+  const effectiveWindowDays = cfg
+    ? Number(cfg.getParam('activity.recent.enabled', 'window_days', windowDays)) || windowDays
+    : windowDays;
+  const sinceIso = new Date(now - effectiveWindowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const fetchActivitiesIfWanted = (cfg && (
+    !cfg.isEnabled('activity.summary.enabled') &&
+    !cfg.isEnabled('activity.recent.enabled') &&
+    !cfg.isEnabled('content.music.enabled') &&
+    !cfg.isEnabled('health.enabled')))
+    ? Promise.resolve([] as ActivityRow[])
+    : fetchActivityLog(client, userId, sinceIso);
+
+  const fetchRoutinesIfWanted = (cfg && !cfg.isEnabled('routines.enabled'))
+    ? Promise.resolve([] as RoutineRow[])
+    : fetchRoutines(client, userId);
+
+  const fetchPrefsIfWanted = (cfg && !cfg.isEnabled('preferences.explicit.enabled') && !cfg.isEnabled('preferences.inferred.enabled'))
+    ? Promise.resolve([] as PreferenceRow[])
+    : fetchPreferences(client, userId);
+
+  const fetchVitanaIfWanted = (cfg && !cfg.isEnabled('health.enabled'))
+    ? Promise.resolve(null)
+    : fetchVitanaIndex(client, userId);
+
+  const fetchFactsIfWanted = (cfg && !cfg.isEnabled('memory.facts.enabled')) || !opts.tenantId
+    ? Promise.resolve({ ok: true, facts: [] as any[] })
+    : getCurrentFacts({ tenant_id: opts.tenantId, user_id: userId });
 
   const [activities, routines, prefs, vitana, factsResult] = await Promise.all([
-    fetchActivityLog(client, userId, sinceIso),
-    fetchRoutines(client, userId),
-    fetchPreferences(client, userId),
-    fetchVitanaIndex(client, userId),
-    opts.tenantId
-      ? getCurrentFacts({ tenant_id: opts.tenantId, user_id: userId })
-      : Promise.resolve({ ok: true, facts: [] as any[] }),
+    fetchActivitiesIfWanted,
+    fetchRoutinesIfWanted,
+    fetchPrefsIfWanted,
+    fetchVitanaIfWanted,
+    fetchFactsIfWanted,
   ]);
 
   const sections = [
-    buildActivitySummarySection(activities),
-    buildRoutinesSection(routines, activities),
-    buildPreferencesSection(prefs),
-    buildHealthSection(activities, vitana),
-    buildContentSection(activities),
-    buildFactsSection(factsResult.ok ? factsResult.facts : []),
-    buildRecentSection(activities),
+    (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
+    (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',
+    (!cfg || cfg.isEnabled('preferences.explicit.enabled') || cfg.isEnabled('preferences.inferred.enabled'))
+      ? buildPreferencesSection(prefs) : '',
+    (!cfg || cfg.isEnabled('health.enabled'))           ? buildHealthSection(activities, vitana) : '',
+    (!cfg || cfg.isEnabled('content.music.enabled'))    ? buildContentSection(activities) : '',
+    (!cfg || cfg.isEnabled('memory.facts.enabled'))     ? buildFactsSection(factsResult.ok ? factsResult.facts : []) : '',
+    (!cfg || cfg.isEnabled('activity.recent.enabled'))  ? buildRecentSection(activities) : '',
   ].filter(Boolean);
 
   const summary = truncate(sections.join('\n\n'), maxChars);
