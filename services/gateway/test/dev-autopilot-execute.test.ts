@@ -49,56 +49,100 @@ describe('extractDeletions', () => {
   });
 });
 
-describe('parseExecutionJson', () => {
-  it('parses a clean JSON object', () => {
-    const raw = JSON.stringify({
-      files: [{ path: 'a/b.ts', action: 'create', content: 'export {};' }],
-      pr_title: 'T',
-      pr_body: 'B',
-    });
-    const out = parseExecutionJson(raw);
-    if ('error' in out) throw new Error(`unexpected: ${out.error}`);
-    expect(out.files).toHaveLength(1);
-    expect(out.files[0].path).toBe('a/b.ts');
-    expect(out.pr_title).toBe('T');
-  });
-
-  it('strips ```json fences the model often adds', () => {
+describe('parseExecutionJson (delimiter format)', () => {
+  it('parses a complete delimiter-formatted response', () => {
     const raw = [
-      'Here you go:',
-      '```json',
-      JSON.stringify({
-        files: [{ path: 'x.ts', action: 'create', content: 'c' }],
-        pr_title: 't',
-        pr_body: 'b',
-      }),
-      '```',
+      '<<<PR_TITLE>>>',
+      'DEV-AUTOPILOT: add tests for foo',
+      '<<<END>>>',
+      '',
+      '<<<PR_BODY>>>',
+      '## Summary',
+      '',
+      'Adds Jest tests for the foo module.',
+      '<<<END>>>',
+      '',
+      '<<<FILE create services/gateway/src/routes/foo.test.ts>>>',
+      "import { foo } from '../foo';",
+      '',
+      "describe('foo', () => {",
+      "  it('does a thing', () => {",
+      '    expect(foo()).toBe(42);',
+      '  });',
+      '});',
+      '<<<END>>>',
     ].join('\n');
     const out = parseExecutionJson(raw);
     if ('error' in out) throw new Error(`unexpected: ${out.error}`);
-    expect(out.files[0].path).toBe('x.ts');
+    expect(out.pr_title).toBe('DEV-AUTOPILOT: add tests for foo');
+    expect(out.pr_body).toContain('Adds Jest tests');
+    expect(out.files).toHaveLength(1);
+    expect(out.files[0].path).toBe('services/gateway/src/routes/foo.test.ts');
+    expect(out.files[0].action).toBe('create');
+    expect(out.files[0].content).toContain("import { foo } from '../foo';");
+    expect(out.files[0].content).toContain('expect(foo()).toBe(42);');
   });
 
-  it('recovers JSON when the model adds leading narration before {', () => {
-    const raw = 'Sure. Here is the structured output you asked for: { "files": [{"path":"a.ts","action":"create","content":"x"}], "pr_title":"t", "pr_body":"b" }';
+  it('handles source code that contains quotes, backslashes, and braces without escaping', () => {
+    // The exact class of content that broke the old JSON parser.
+    const code = [
+      'export function render() {',
+      '  const msg = "user said \\"hi\\" and then {went} away";',
+      "  const re = /^[a-z]+\\s*$/;",
+      '  return `Template ${msg} with ${re.source}`;',
+      '}',
+    ].join('\n');
+    const raw = [
+      '<<<PR_TITLE>>>t<<<END>>>',
+      '<<<PR_BODY>>>b<<<END>>>',
+      '<<<FILE create services/gateway/src/a.ts>>>',
+      code,
+      '<<<END>>>',
+    ].join('\n');
     const out = parseExecutionJson(raw);
     if ('error' in out) throw new Error(`unexpected: ${out.error}`);
-    expect(out.files[0].path).toBe('a.ts');
+    expect(out.files[0].content).toBe(code);
   });
 
-  it('errors on malformed JSON', () => {
-    const out = parseExecutionJson('{"files": [oops');
-    expect('error' in out).toBe(true);
+  it('parses multiple file blocks with actions create + modify', () => {
+    const raw = [
+      '<<<PR_TITLE>>>t<<<END>>>',
+      '<<<PR_BODY>>>b<<<END>>>',
+      '<<<FILE create a/new.ts>>>',
+      'export const a = 1;',
+      '<<<END>>>',
+      '',
+      '<<<FILE modify a/existing.ts>>>',
+      'export const b = 2;',
+      '<<<END>>>',
+    ].join('\n');
+    const out = parseExecutionJson(raw);
+    if ('error' in out) throw new Error(`unexpected: ${out.error}`);
+    expect(out.files).toHaveLength(2);
+    expect(out.files.map(f => f.action)).toEqual(['create', 'modify']);
+    expect(out.files.map(f => f.path)).toEqual(['a/new.ts', 'a/existing.ts']);
   });
 
-  it('errors when JSON is missing files array', () => {
-    const raw = JSON.stringify({ pr_title: 't', pr_body: 'b' });
+  it('errors when PR_TITLE block is missing', () => {
+    const raw = '<<<PR_BODY>>>b<<<END>>><<<FILE create a.ts>>>\nx\n<<<END>>>';
     const out = parseExecutionJson(raw);
     expect('error' in out).toBe(true);
   });
 
-  it('errors when no JSON object is found', () => {
-    const out = parseExecutionJson('no braces here at all');
+  it('errors when PR_BODY block is missing', () => {
+    const raw = '<<<PR_TITLE>>>t<<<END>>><<<FILE create a.ts>>>\nx\n<<<END>>>';
+    const out = parseExecutionJson(raw);
+    expect('error' in out).toBe(true);
+  });
+
+  it('errors when no FILE blocks are emitted', () => {
+    const raw = '<<<PR_TITLE>>>t<<<END>>><<<PR_BODY>>>b<<<END>>>';
+    const out = parseExecutionJson(raw);
+    expect('error' in out).toBe(true);
+  });
+
+  it('errors for completely malformed input', () => {
+    const out = parseExecutionJson('no delimiters here at all');
     expect('error' in out).toBe(true);
   });
 });
@@ -135,12 +179,15 @@ describe('buildExecutionPrompt', () => {
     expect(p).toMatch(/does NOT exist/);
   });
 
-  it('specifies the JSON output contract so the parser can rely on it', () => {
+  it('specifies the delimiter output contract so the parser can rely on it', () => {
     const p = buildExecutionPrompt('f', 1, 'body', [], 'b');
-    expect(p).toMatch(/"files"/);
-    expect(p).toMatch(/"pr_title"/);
-    expect(p).toMatch(/"pr_body"/);
-    expect(p).toMatch(/"action": "create"/);
-    expect(p).toMatch(/Allowed actions: "create", "modify", "delete"/);
+    expect(p).toContain('<<<PR_TITLE>>>');
+    expect(p).toContain('<<<PR_BODY>>>');
+    expect(p).toMatch(/<<<FILE create /);
+    expect(p).toContain('<<<END>>>');
+    expect(p).toMatch(/Allowed actions in the FILE header: "create", "modify", "delete"/);
+    expect(p).toMatch(/verbatim/);
+    // Must explicitly tell the model NOT to use JSON (prevent regression).
+    expect(p).toMatch(/NOT JSON/);
   });
 });
