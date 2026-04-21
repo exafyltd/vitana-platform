@@ -36,6 +36,7 @@ import {
   SafetyPlan,
   SafetyDecision,
 } from './dev-autopilot-safety';
+import { extractFilePaths } from './dev-autopilot-planning';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -217,7 +218,18 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   const approvedToday = await countApprovedToday(s);
 
   // 4. Evaluate safety gate
-  const files = (plan.files_referenced || []).map(String);
+  // Re-extract files_referenced from the stored plan_markdown rather than
+  // trusting the cached column. Plans generated before the extractFilePaths
+  // fix (PR #778) have a dirty files_referenced list that includes prose
+  // noise like `services/gateway/package.json` / `jest.config.ts` / `tsconfig.json`
+  // — those aren't in the plan's "Files to modify" section but got slurped
+  // in by the old fallback scan and then tripped the safety gate's
+  // file_outside_allow_scope rule forever. Re-extracting here makes the fix
+  // retroactive for every existing plan without a regeneration pass.
+  const freshFiles = extractFilePaths(plan.plan_markdown);
+  const files = freshFiles.length > 0
+    ? freshFiles
+    : (plan.files_referenced || []).map(String);
   const deletions = extractDeletions(plan.plan_markdown);
   const safetyPlan: SafetyPlan = {
     risk_class: (rec.risk_class || 'medium') as 'low' | 'medium' | 'high',
@@ -663,7 +675,11 @@ async function runExecutionSession(
     };
   }
 
-  const planFiles = plan.files_referenced || [];
+  // Re-extract files_referenced from plan_markdown (see note in
+  // approveAutoExecute). Falls back to the stored column for pathological
+  // plans that lack a well-formed Files-to-modify section.
+  const freshFiles = extractFilePaths(plan.plan_markdown);
+  const planFiles = freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []);
   if (planFiles.length === 0) {
     return { ok: false, error: 'plan has no files_referenced — cannot execute', session_id: sessionId };
   }
