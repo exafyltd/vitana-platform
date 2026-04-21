@@ -4111,6 +4111,69 @@ In particular:
 If the brain context contains neither awareness nor candidate, fall back to
 the policy above as normal.`;
 
+  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: Activity awareness override — appended
+  // AFTER the proactive opener override so it wins on recency in Gemini's
+  // attention window. The user context profile (memory + ACTIVITY_14D + RECENT
+  // + FACTS) is already inside bootstrapContext ~8K chars earlier, but Gemini
+  // ignores it and defaults to describing `currentRoute` ("you are on the
+  // event screen") when asked about activity history. Re-extract the profile
+  // here and append at the end with strict anti-hallucination rules.
+  if (bootstrapContext) {
+    const profileMatch = bootstrapContext.match(
+      /## USER CONTEXT PROFILE[\s\S]*?(?=\n\n(?:##|---)\s|\n\n\*\*|$)/
+    );
+    const profileSummary = profileMatch ? profileMatch[0].trim() : '';
+
+    if (profileSummary && profileSummary.length > 100) {
+      instruction += `\n\n## ACTIVITY AWARENESS OVERRIDE (HIGHEST PRIORITY — BOOTSTRAP-HISTORY-AWARE-TIMELINE)
+
+This block REPLACES any instinct to say "I don't know what you've been doing"
+or to answer from your current screen / current route. The data below is
+VERIFIED activity history for THIS user, read from the server's user_activity_log
+table at session start.
+
+${profileSummary}
+
+**HARD RULES — when the user asks about their recent activity, history,
+routines, preferences, or ANY form of "what have I been doing / what did I do
+today / was habe ich heute gemacht":**
+
+1. ANSWER FROM THE PROFILE ABOVE. Start from the [ACTIVITY_14D] one-line
+   summary and pull 2–3 concrete items from [RECENT] or [FACTS]. Example (de):
+     User: "Weißt du, was ich heute im Vitana-System gemacht habe?"
+     ✓ Good: "Ja, in den letzten zwei Wochen hast du acht Kalendereinträge,
+       27 Entdeckungs-Interaktionen und einige Anmeldungen gemacht. Zuletzt
+       hast du Kalenderereignisse hinzugefügt — ich sehe drei in der letzten
+       Woche. Du bist am aktivsten nachmittags."
+     ✗ BAD: "You are now in the event screen."
+       (This is currentRoute, NOT activity history — wrong answer shape.)
+     ✗ BAD: "I don't have access to what you were doing."
+       (The profile IS visible above — this is a lie to the user.)
+
+2. DO NOT substitute currentRoute / selectedId / "you are on X screen" as an
+   answer to activity questions. The current screen tells you WHERE the user
+   is RIGHT NOW; activity history tells you WHAT THEY DID. Different questions.
+
+3. DO NOT call get_current_screen, search_memory, search_knowledge, or any
+   other tool to answer history questions. The answer is already in the
+   profile above. Tool calls here waste 2–5 seconds and return LESS than
+   what's already on screen for you.
+
+4. If the user asks about a specific category ("did I add any calendar events?"
+   / "have I done anything with health lately?"), filter the [RECENT] lines
+   and [ACTIVITY_14D] counts by that category and answer from them.
+
+5. ONLY IF [ACTIVITY_14D], [RECENT] AND [FACTS] are ALL empty in the profile
+   above may you say "I don't see much activity yet in the system — have you
+   been using Vitana recently?" NEVER claim emptiness when the sections
+   contain data.
+
+6. Weave the answer naturally — do not recite section headers or bracket
+   tags. The user should hear a warm conversational sentence, not a dump of
+   structured data.`;
+    }
+  }
+
   return instruction;
 }
 
