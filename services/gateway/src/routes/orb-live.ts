@@ -4068,16 +4068,43 @@ function buildLiveSystemInstruction(
   // Load personality config from service (uses cached values or hardcoded defaults)
   const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
 
-  // VTID-01225-ROLE: Build role-aware context section
+  // VTID-01225-ROLE + BOOTSTRAP-ORB-ROLE-CLARITY: Build role-aware context
+  // section. The authoritative role declaration is also prepended to the very
+  // top of the system instruction below so it's the first thing the model
+  // sees — buried role lines were being ignored when prior memory context
+  // contradicted (e.g. user switches admin → community, memory still
+  // references admin, and the model hallucinates "I can't see your role").
   let roleSection: string;
+  const roleUpper = activeRole ? activeRole.toUpperCase() : null;
   if (activeRole) {
     const roleDescriptions = (voiceLiveConfig.role_descriptions || {}) as Record<string, string>;
-    roleSection = roleDescriptions[activeRole] || `The user's current role is: ${activeRole.toUpperCase()}.`;
+    roleSection = roleDescriptions[activeRole] || `The user's current role is: ${roleUpper}.`;
   } else {
     roleSection = `USER ROLE: Not available for this session. If the user asks about their role, tell them honestly that you do not see their user role in this session — do NOT guess or pretend to know it. You can still assist them with general questions.`;
   }
 
-  let instruction = `${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+  // BOOTSTRAP-ORB-ROLE-CLARITY: explicit, authoritative role header pinned
+  // to the top. Tells the model exactly what to say when asked. Overrides
+  // any conflicting signals from past conversation memory.
+  const roleHeader = roleUpper
+    ? `=== AUTHORITATIVE USER ROLE ===
+The user's role RIGHT NOW is: ${roleUpper}
+This is the definitive source of truth for this session. If the user asks
+about their role ("what is my role?", "can you see my role?", "who am I?"),
+answer plainly: "Yes, you are ${activeRole}." Do NOT say you cannot see
+the role. Do NOT refer to past conversations where the role may have been
+different — roles change, and THIS SESSION's role is ${roleUpper}.
+===============================
+
+`
+    : `=== AUTHORITATIVE USER ROLE ===
+No role is set for this session. If the user asks about their role, answer
+honestly that you do not see a role in this session.
+===============================
+
+`;
+
+  let instruction = `${roleHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
 
