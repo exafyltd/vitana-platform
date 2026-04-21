@@ -25,7 +25,11 @@ export type GuideEventType =
   // Phase E — VTID-01935 D43 adaptation applier
   | 'guide.adaptation.applied'
   // Phase C — VTID-01936 pattern extraction
-  | 'guide.patterns.extracted';
+  | 'guide.patterns.extracted'
+  // Phase H — VTID-01945 proactive presence pacer
+  | 'guide.presence.touch_recorded'
+  | 'guide.presence.touch_acknowledged'
+  | 'guide.presence.touch_dismissed';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,
