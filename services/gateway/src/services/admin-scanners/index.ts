@@ -14,15 +14,20 @@ import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
 import { systemHealthScanner } from './system-health';
 import { autopilotHealthScanner } from './autopilot-health';
+import { contentModerationScanner } from './content-moderation';
+import { communityScanner } from './community';
+import { usersLifecycleScanner } from './users-lifecycle';
 
 const LOG_PREFIX = '[admin-scanners]';
 
 const REGISTRY: AdminScanner[] = [
   systemHealthScanner,
   autopilotHealthScanner,
-  // Phase BB follow-ups: content_moderation, community, users_lifecycle,
-  // marketplace, navigator, knowledge, assistant, signups_funnel,
-  // settings_audit, compliance, notifications
+  contentModerationScanner,
+  communityScanner,
+  usersLifecycleScanner,
+  // Phase BB follow-ups: marketplace, navigator, knowledge, assistant,
+  // signups_funnel, settings_audit, compliance, notifications
 ];
 
 export function listScanners(): AdminScanner[] {
