@@ -37,6 +37,7 @@ import {
   SafetyDecision,
 } from './dev-autopilot-safety';
 import { extractFilePaths } from './dev-autopilot-planning';
+import { isWorkerQueueEnabled, runWorkerTask, reclaimStuckWorkerTasks } from './dev-autopilot-worker-queue';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -733,15 +734,30 @@ async function runExecutionSession(
     fileCtx.push({ path: p, exists: got.exists, content: got.content, sha: got.sha });
   }
 
-  // 2. Ask the Messages API to produce the new file contents
+  // 2. Ask Claude to produce the new file contents. Routes through the
+  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (Claude subscription);
+  // otherwise hits the Messages API directly (pay-per-token).
   const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch);
   const startedAt = Date.now();
-  const llm = await callMessagesApi(prompt);
+  const llm = isWorkerQueueEnabled()
+    ? await runWorkerTask(
+        {
+          kind: 'execute',
+          finding_id: exec.finding_id,
+          execution_id: executionId,
+          prompt,
+          model: EXECUTION_MODEL,
+          max_tokens: MESSAGES_MAX_TOKENS,
+          notes: `execute ${executionId.slice(0, 8)}`,
+        },
+        { timeoutMs: MESSAGES_TIMEOUT_MS },
+      )
+    : await callMessagesApi(prompt);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
   if (!llm.ok || !llm.text) {
     return { ok: false, error: `LLM call failed after ${elapsed}s: ${llm.error || 'unknown'}`, session_id: sessionId, branch };
   }
-  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] LLM returned in ${elapsed}s (${llm.usage?.input_tokens || '?'} in / ${llm.usage?.output_tokens || '?'} out)`);
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] LLM returned in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'messages-api'} (${llm.usage?.input_tokens || '?'} in / ${llm.usage?.output_tokens || '?'} out)`);
 
   const parsed = parseExecutionJson(llm.text);
   if ('error' in parsed) {
@@ -833,6 +849,16 @@ export { parseExecutionJson, buildExecutionPrompt };
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
+
+  // 0. Reclaim worker-queue rows stuck in 'running' past the watchdog
+  // window. Only meaningful when the worker queue is enabled, but safe to
+  // call unconditionally (it's a single PATCH with no-op match otherwise).
+  if (isWorkerQueueEnabled()) {
+    const reclaim = await reclaimStuckWorkerTasks();
+    if (reclaim.reclaimed > 0) {
+      console.log(`${LOG_PREFIX} watchdog reclaimed ${reclaim.reclaimed} stuck worker task(s)`);
+    }
+  }
 
   // 1. Honor kill switch
   const cfg = await loadConfig(s);
