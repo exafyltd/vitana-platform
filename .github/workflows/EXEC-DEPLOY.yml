@@ -304,6 +304,13 @@ jobs:
             SECRETS_ARGS+=(--remove-secrets=APPILIX_APP_KEY)
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
+            # BOOTSTRAP-DEV-AUTOPILOT-WORKER-QUEUE: route Dev Autopilot LLM
+            # calls (plan + execute) through the local worker + Supabase queue
+            # instead of the direct Messages API, so they draw on the Claude
+            # Pro/Max subscription via the worker's `claude -p` subprocess
+            # rather than on the pay-per-token API credit balance.
+            # Flip to false (or delete this line) to fall back to direct API calls.
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
             # VTID-02000: Marketplace sync scheduler secret (shared with
             # .github/workflows/MARKETPLACE-SYNC-CRON.yml). Gateway's
             # /api/v1/internal/marketplace/sync/:network route validates it
