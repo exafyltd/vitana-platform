@@ -20,6 +20,11 @@ import { usersLifecycleScanner } from './users-lifecycle';
 import { marketplaceScanner } from './marketplace';
 import { navigatorScanner } from './navigator';
 import { knowledgeScanner } from './knowledge';
+import { assistantScanner } from './assistant';
+import { signupsFunnelScanner } from './signups-funnel';
+import { settingsAuditScanner } from './settings-audit';
+import { complianceScanner } from './compliance';
+import { notificationsScanner } from './notifications';
 
 const LOG_PREFIX = '[admin-scanners]';
 
@@ -32,8 +37,12 @@ const REGISTRY: AdminScanner[] = [
   marketplaceScanner,
   navigatorScanner,
   knowledgeScanner,
-  // Phase BB follow-ups: assistant, signups_funnel, settings_audit,
-  // compliance, notifications
+  assistantScanner,
+  signupsFunnelScanner,
+  settingsAuditScanner,
+  complianceScanner,
+  notificationsScanner,
+  // Phase BB complete — all 13 scanners registered
 ];
 
 export function listScanners(): AdminScanner[] {
