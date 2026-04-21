@@ -126,6 +126,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const clickRedirectRouter = require('./routes/click-redirect').default;
   // VTID-02000: Discover search (query-driven, used by UI search bar + assistant tool)
   const discoverSearchRouter = require('./routes/discover-search').default;
+  // Public, auth-less profile lookup for OG/share previews (Cloudflare worker).
+  const publicProfileOgRouter = require('./routes/public-profile-og').default;
   // VTID-02000: Discover feed (lifecycle-aware default browse)
   const discoverFeedRouter = require('./routes/discover-feed').default;
   // VTID-02000: Maxina admin marketplace routes
@@ -637,6 +639,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02000: Discover search + feed (unified marketplace query surface)
   mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
+  // Public, auth-less profile lookup for crawler OG previews
+  mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });

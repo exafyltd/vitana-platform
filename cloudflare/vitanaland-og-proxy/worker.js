@@ -40,6 +40,83 @@ function formatPrice(cents, currency) {
 }
 
 /**
+ * Build an HTML page with OG meta tags for a profile. Served to crawlers only.
+ * Queries the gateway's public profile endpoint — no auth required.
+ */
+async function renderProfileOg(id, canonicalUrl, destinationUrl) {
+  const DEFAULT_IMAGE =
+    'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/default-images/vitana-og-default.jpg';
+
+  const resp = await fetch(
+    `${GATEWAY_URL}/api/v1/public/profile/${encodeURIComponent(id)}`,
+  );
+  if (!resp.ok) {
+    return new Response('Profile not found', { status: 404 });
+  }
+  const body = await resp.json();
+  const p = body && body.profile;
+  if (!p) return new Response('Profile not found', { status: 404 });
+
+  const composedName =
+    [p.first_name, p.last_name].filter(Boolean).join(' ').trim() ||
+    p.display_name ||
+    (p.handle ? `@${p.handle}` : 'MAXINA member');
+  const handlePart = p.handle ? `@${p.handle}` : '';
+  const archetype = p.longevity_archetype || p.bio || 'Longevity community member';
+  const title = `${composedName}${handlePart ? ` (${handlePart})` : ''} · MAXINA`;
+  const description = `${handlePart ? handlePart + ' · ' : ''}${archetype}. Tap to view on MAXINA.`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  // cover_url is landscape-friendly; avatar_url is square but auto-fits on
+  // WhatsApp / Telegram. Default to MAXINA hero when both are empty.
+  const image = p.cover_url || p.avatar_url || DEFAULT_IMAGE;
+  const isCover = !!p.cover_url;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+
+  <meta property="og:type" content="profile">
+  <meta property="og:site_name" content="MAXINA">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  <meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:alt" content="${escapeHtml(composedName)}">
+  <meta property="og:image:width" content="${isCover ? 1200 : 512}">
+  <meta property="og:image:height" content="${isCover ? 630 : 512}">
+  ${p.handle ? `<meta property="profile:username" content="${escapeHtml(p.handle)}">` : ''}
+  ${p.first_name ? `<meta property="profile:first_name" content="${escapeHtml(p.first_name)}">` : ''}
+  ${p.last_name ? `<meta property="profile:last_name" content="${escapeHtml(p.last_name)}">` : ''}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${escapeHtml(image)}">
+
+  <meta http-equiv="refresh" content="0;url=${escapeHtml(destinationUrl)}">
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <p>${escapeHtml(description)}</p>
+  <p><a href="${escapeHtml(destinationUrl)}">Open on MAXINA</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300, s-maxage=300',
+    },
+  });
+}
+
+/**
  * Build an HTML page with OG meta tags for a product. Served to crawlers only.
  * Queries the gateway's public product endpoint — no auth required.
  */
@@ -156,6 +233,15 @@ export default {
       if (route.type === 'products') {
         const canonical = getRedirectUrl('products', route.identifier);
         return renderProductOg(route.identifier, canonical);
+      }
+
+      // Profiles: same pattern. Gateway has the profile row; we render the
+      // OG HTML here so WhatsApp/Telegram see rich meta. The og-profile
+      // Supabase function was never implemented — this supersedes that path.
+      if (route.type === 'profiles') {
+        const canonical = `https://e.vitanaland.com/profiles/${encodeURIComponent(route.identifier)}`;
+        const destination = getRedirectUrl('profiles', route.identifier);
+        return renderProfileOg(route.identifier, canonical, destination);
       }
 
       const ogUrl = getOgFunctionUrl(route.type, route.identifier);
