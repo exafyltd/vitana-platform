@@ -38,14 +38,16 @@ router.get('/profile/:id', async (req: Request, res: Response) => {
     return;
   }
 
+  // Accept either a UUID (matches profiles.user_id which is what useProfileShare
+  // puts in the URL, with profiles.id as a secondary match) or a handle.
   const query = supabase
     .from('profiles')
     .select(
-      'id, handle, display_name, first_name, last_name, longevity_archetype, bio, avatar_url, cover_url',
+      'id, user_id, handle, display_name, first_name, last_name, longevity_archetype, bio, avatar_url, cover_url',
     );
 
   const { data, error } = await (isUuid
-    ? query.eq('id', raw).maybeSingle()
+    ? query.or(`user_id.eq.${raw},id.eq.${raw}`).maybeSingle()
     : query.eq('handle', raw.toLowerCase()).maybeSingle());
 
   if (error) {
