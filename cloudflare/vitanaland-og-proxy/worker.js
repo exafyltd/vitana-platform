@@ -44,8 +44,11 @@ function formatPrice(cents, currency) {
  * Queries the gateway's public profile endpoint — no auth required.
  */
 async function renderProfileOg(id, canonicalUrl, destinationUrl) {
+  // Known-good public asset — same one og-match ships to WhatsApp today.
+  // The `default-images` bucket was 403'ing (not actually public), which
+  // is why profiles without an avatar rendered no image at all.
   const DEFAULT_IMAGE =
-    'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/default-images/vitana-og-default.jpg';
+    'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/covers/vitana-og-default.jpg';
 
   const resp = await fetch(
     `${GATEWAY_URL}/api/v1/public/profile/${encodeURIComponent(id)}`,
@@ -68,10 +71,11 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 200);
-  // cover_url is landscape-friendly; avatar_url is square but auto-fits on
-  // WhatsApp / Telegram. Default to MAXINA hero when both are empty.
+  // cover_url is landscape-friendly; avatar_url is square (auto-fits on
+  // WhatsApp/Telegram but below some crawlers' 1200x630 preference, which
+  // is why DEFAULT_IMAGE is a landscape hero).
   const image = p.cover_url || p.avatar_url || DEFAULT_IMAGE;
-  const isCover = !!p.cover_url;
+  const isLandscape = !!p.cover_url || image === DEFAULT_IMAGE;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -87,9 +91,11 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
   <meta property="og:description" content="${escapeHtml(description)}">
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
   <meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:secure_url" content="${escapeHtml(image)}">
+  <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:alt" content="${escapeHtml(composedName)}">
-  <meta property="og:image:width" content="${isCover ? 1200 : 512}">
-  <meta property="og:image:height" content="${isCover ? 630 : 512}">
+  <meta property="og:image:width" content="${isLandscape ? 1200 : 512}">
+  <meta property="og:image:height" content="${isLandscape ? 630 : 512}">
   ${p.handle ? `<meta property="profile:username" content="${escapeHtml(p.handle)}">` : ''}
   ${p.first_name ? `<meta property="profile:first_name" content="${escapeHtml(p.first_name)}">` : ''}
   ${p.last_name ? `<meta property="profile:last_name" content="${escapeHtml(p.last_name)}">` : ''}
@@ -104,6 +110,7 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
 <body>
   <h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(description)}</p>
+  <p><img src="${escapeHtml(image)}" alt="${escapeHtml(composedName)}" style="max-width:100%"></p>
   <p><a href="${escapeHtml(destinationUrl)}">Open on MAXINA</a></p>
 </body>
 </html>`;
