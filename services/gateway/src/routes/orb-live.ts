@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -9772,6 +9773,33 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     } else {
       console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${contextInstruction?.length || 0}`);
     }
+
+    // BOOTSTRAP-ADMIN-EE: admin-role sessions get a proactive briefing of the
+    // top open admin_insights prepended to the greeting. Only fires for admin-ish
+    // roles and only when there's something to speak about.
+    if (isAdminRole(sseActiveRole) && bootstrapIdentity.tenant_id) {
+      try {
+        const briefing = await fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3);
+        if (briefing) {
+          contextInstruction = contextInstruction
+            ? `${contextInstruction}\n\n${briefing}`
+            : briefing;
+          emitOasisEvent({
+            vtid: 'BOOTSTRAP-ADMIN-EE',
+            type: 'admin.briefing.injected',
+            source: 'orb-live',
+            status: 'info',
+            message: `Admin briefing injected into SSE session ${sessionId}`,
+            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: sseActiveRole, chars: briefing.length },
+            actor_id: bootstrapIdentity.user_id,
+            actor_role: 'admin',
+            surface: 'orb',
+          }).catch(() => {});
+        }
+      } catch (err: any) {
+        console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
+      }
+    }
   } else {
     contextBootstrapSkippedReason = 'no_identity';
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
@@ -11500,6 +11528,31 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack = bootstrapResult.contextPack;
     contextBootstrapLatencyMs = bootstrapResult.latencyMs;
     contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+
+    // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
+    if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {
+      try {
+        const briefing = await fetchAdminBriefingBlock(effectiveBootstrapIdentity.tenant_id, 3);
+        if (briefing) {
+          contextInstruction = contextInstruction
+            ? `${contextInstruction}\n\n${briefing}`
+            : briefing;
+          emitOasisEvent({
+            vtid: 'BOOTSTRAP-ADMIN-EE',
+            type: 'admin.briefing.injected',
+            source: 'orb-live-ws',
+            status: 'info',
+            message: `Admin briefing injected into WS session ${sessionId}`,
+            payload: { session_id: sessionId, tenant_id: effectiveBootstrapIdentity.tenant_id, role: activeRole, chars: briefing.length },
+            actor_id: effectiveBootstrapIdentity.user_id,
+            actor_role: 'admin',
+            surface: 'orb',
+          }).catch(() => {});
+        }
+      } catch (err: any) {
+        console.warn(`[BOOTSTRAP-ADMIN-EE] WS briefing fetch failed: ${err?.message}`);
+      }
+    }
 
     // VTID-01224: Emit OASIS telemetry for context bootstrap
     if (bootstrapResult.skippedReason) {
