@@ -5482,6 +5482,22 @@ async function connectToLiveAPI(
     ws.on('close', (code, reason) => {
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
       emitDiag(session, 'upstream_ws_close', { code, reason: reason?.toString() || '' });
+
+      // BOOTSTRAP-ORB-DISCONNECT-ALERT: Tell the client *immediately* that the
+      // upstream went away. The existing `reconnecting` message is only sent
+      // once attemptTransparentReconnect runs (after deduplicated extraction
+      // and other bookkeeping), which can be 100ms-1s+ later. Closing that gap
+      // lets the widget stop the user mid-sentence with a spoken cue instead
+      // of letting them talk into a dead socket.
+      if (session.active && setupComplete) {
+        const alertMsg = { type: 'connection_alert', reason: 'upstream_ws_close' };
+        if (session.sseResponse) {
+          try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
+        } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+          try { session.clientWs.send(JSON.stringify(alertMsg)); } catch (_e) { /* WS may be closed */ }
+        }
+      }
+
       clearTimeout(connectionTimeout);
 
       // VTID-STREAM-KEEPALIVE: Clear upstream ping interval
