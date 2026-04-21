@@ -1,0 +1,34 @@
+name: Apply Account Profile Fields Migration
+
+# One-shot: applies supabase/migrations/20260421000000_add_account_profile_fields.sql.
+# Runs when this workflow itself is pushed to main, and is safe to re-run
+# (migration uses ADD COLUMN IF NOT EXISTS).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/APPLY-ACCOUNT-MIGRATION.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply account-fields migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Applying 20260421000000_add_account_profile_fields.sql"
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260421000000_add_account_profile_fields.sql"
+          echo "Migration applied"
+
+      - name: Reload PostgREST schema cache
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reload signal sent"
