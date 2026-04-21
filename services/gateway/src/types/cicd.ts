@@ -500,6 +500,11 @@ export type CicdEventType =
   // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
   // request to first greeting audio chunk forwarded to client)
   | 'orb.live.greeting.delivered'
+  // BOOTSTRAP-ADMIN-BB-CC: admin insight lifecycle
+  | 'admin.insight.approved'
+  | 'admin.insight.rejected'
+  | 'admin.insight.snoozed'
+  | 'admin.insight.dismissed'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
