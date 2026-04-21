@@ -4,6 +4,7 @@
   "sidebar_navigation": [
     "overview",
     "admin",
+    "autonomy",
     "operator",
     "command-hub",
     "governance",
@@ -37,6 +38,16 @@
       "marketplace-shops",
       "marketplace-review",
       "analytics"
+    ],
+    "autonomy": [
+      "autopilot-community",
+      "autopilot-developer",
+      "autopilot-admin",
+      "awareness-registry",
+      "awareness-test",
+      "self-healing",
+      "autonomy-pulse",
+      "autonomy-trace"
     ],
     "operator": [
       "task-queue",

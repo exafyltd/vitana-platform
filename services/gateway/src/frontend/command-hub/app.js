@@ -2595,8 +2595,21 @@ const NAVIGATION_CONFIG = [
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
             { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
             { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
-            { "key": "analytics", "path": "/command-hub/admin/analytics/" },
-            { "key": "awareness", "path": "/command-hub/admin/awareness/" }
+            { "key": "analytics", "path": "/command-hub/admin/analytics/" }
+        ]
+    },
+    {
+        "section": "autonomy",
+        "basePath": "/command-hub/autonomy/",
+        "tabs": [
+            { "key": "autopilot-community", "path": "/command-hub/autonomy/autopilot-community/" },
+            { "key": "autopilot-developer", "path": "/command-hub/autonomy/autopilot-developer/" },
+            { "key": "autopilot-admin", "path": "/command-hub/autonomy/autopilot-admin/" },
+            { "key": "awareness-registry", "path": "/command-hub/autonomy/awareness-registry/" },
+            { "key": "awareness-test", "path": "/command-hub/autonomy/awareness-test/" },
+            { "key": "self-healing", "path": "/command-hub/autonomy/self-healing/" },
+            { "key": "autonomy-pulse", "path": "/command-hub/autonomy/autonomy-pulse/" },
+            { "key": "autonomy-trace", "path": "/command-hub/autonomy/autonomy-trace/" }
         ]
     },
     {
@@ -2618,10 +2631,7 @@ const NAVIGATION_CONFIG = [
             { "key": "live-console", "path": "/command-hub/live-console/" },
             { "key": "events", "path": "/command-hub/events/" },
             { "key": "vtids", "path": "/command-hub/vtids/" },
-            { "key": "approvals", "path": "/command-hub/approvals/" },
-            { "key": "autonomy-pulse", "path": "/command-hub/autonomy-pulse/" },
-            { "key": "autonomy-trace", "path": "/command-hub/autonomy-trace/" },
-            { "key": "dev-autopilot", "path": "/command-hub/dev-autopilot/" }
+            { "key": "approvals", "path": "/command-hub/approvals/" }
         ]
     },
     {
@@ -2687,7 +2697,6 @@ const NAVIGATION_CONFIG = [
         "tabs": [
             { "key": "services", "path": "/command-hub/infrastructure/services/" },
             { "key": "health", "path": "/command-hub/infrastructure/health/" },
-            { "key": "self-healing", "path": "/command-hub/infrastructure/self-healing/" },
             { "key": "deployments", "path": "/command-hub/infrastructure/deployments/" },
             { "key": "logs", "path": "/command-hub/infrastructure/logs/" },
             { "key": "config", "path": "/command-hub/infrastructure/config/" }
@@ -2747,8 +2756,7 @@ const NAVIGATION_CONFIG = [
             { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
             { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
             { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" },
-            { "key": "vitana-awareness", "path": "/command-hub/testing-qa/vitana-awareness/" }
+            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
         ]
     },
     {
@@ -2778,8 +2786,9 @@ const NAVIGATION_CONFIG = [
 const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
+    'autonomy': 'Autonomy',
     'operator': 'Operator',
-    'command-hub': 'Command Hub',
+    'command-hub': 'Operations',
     'governance': 'Governance',
     'agents': 'Agents',
     'autopilot': 'Autopilot',
@@ -5908,15 +5917,31 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'command-hub' && tab === 'approvals') {
         // VTID-0600: Approvals UI Scaffolding
         container.appendChild(renderApprovalsView());
-    } else if (moduleKey === 'command-hub' && tab === 'dev-autopilot') {
-        // Dev Autopilot — self-improving queue (plan: .claude/plans/quirky-jumping-fairy.md)
+
+    // ──── BOOTSTRAP-AUTONOMY-SECTION-NAV: Autonomy section ────
+    } else if (moduleKey === 'autonomy' && tab === 'autopilot-community') {
+        container.appendChild(renderAutopilotCommunityView());
+    } else if (moduleKey === 'autonomy' && tab === 'autopilot-developer') {
+        // Moved from command-hub/dev-autopilot
         container.appendChild(renderDevAutopilotView());
-    } else if (moduleKey === 'command-hub' && tab === 'autonomy-pulse') {
-        // Autonomy Pulse — unified supervisor feed across self-healing + dev-autopilot
+    } else if (moduleKey === 'autonomy' && tab === 'autopilot-admin') {
+        container.appendChild(renderAutopilotAdminView());
+    } else if (moduleKey === 'autonomy' && tab === 'awareness-registry') {
+        // Moved from admin/awareness
+        container.appendChild(renderAdminAwarenessView());
+    } else if (moduleKey === 'autonomy' && tab === 'awareness-test') {
+        // Moved from testing-qa/vitana-awareness
+        container.appendChild(renderVitanaAwarenessTestView());
+    } else if (moduleKey === 'autonomy' && tab === 'self-healing') {
+        // Moved from infrastructure/self-healing
+        container.appendChild(renderSelfHealingView());
+    } else if (moduleKey === 'autonomy' && tab === 'autonomy-pulse') {
+        // Moved from command-hub/autonomy-pulse — unified supervisor feed
         container.appendChild(renderAutonomyPulseView());
-    } else if (moduleKey === 'command-hub' && tab === 'autonomy-trace') {
-        // Autonomy Trace — unified timeline of all autonomous work
+    } else if (moduleKey === 'autonomy' && tab === 'autonomy-trace') {
+        // Moved from command-hub/autonomy-trace — unified timeline
         container.appendChild(renderAutonomyTraceView());
+
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
         container.appendChild(renderOasisEventsView());
@@ -6055,8 +6080,6 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderInfraServicesView());
     } else if (moduleKey === 'infrastructure' && tab === 'health') {
         container.appendChild(renderInfraHealthView());
-    } else if (moduleKey === 'infrastructure' && tab === 'self-healing') {
-        container.appendChild(renderSelfHealingView());
     } else if (moduleKey === 'infrastructure' && tab === 'deployments') {
         container.appendChild(renderInfraDeploymentsView());
     } else if (moduleKey === 'infrastructure' && tab === 'logs') {
@@ -6125,12 +6148,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingE2eView());
     } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
         container.appendChild(renderTestingCiReportsView());
-    } else if (moduleKey === 'testing-qa' && tab === 'vitana-awareness') {
-        container.appendChild(renderVitanaAwarenessTestView());
 
     // ──── Admin: Analytics ────
-    } else if (moduleKey === 'admin' && tab === 'awareness') {
-        container.appendChild(renderAdminAwarenessView());
     } else if (moduleKey === 'admin' && tab === 'analytics') {
         container.appendChild(renderAdminAnalyticsView());
 
@@ -9399,11 +9418,28 @@ function handleTabClick(tabKey) {
 
 // Router Logic
 
+// BOOTSTRAP-AUTONOMY-SECTION-NAV: silent redirects for items that moved into
+// the new Autonomy section. Old deep-links keep working — they route to the
+// same tab under its new parent section without a visible page bounce.
+const AUTONOMY_REDIRECTS = {
+    '/command-hub/admin/awareness/':              { section: 'autonomy', tab: 'awareness-registry' },
+    '/command-hub/testing-qa/vitana-awareness/':  { section: 'autonomy', tab: 'awareness-test' },
+    '/command-hub/infrastructure/self-healing/':  { section: 'autonomy', tab: 'self-healing' },
+    '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
+    '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
+    '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
+};
+
 function getRouteFromPath(pathname) {
     // DEV-COMHU-2025-0009: Normalize path - ensure trailing slash for consistent matching
     var normalizedPath = pathname;
     if (normalizedPath && !normalizedPath.endsWith('/')) {
         normalizedPath = normalizedPath + '/';
+    }
+
+    // 0. Check redirects first so moved tabs still resolve from their old URLs.
+    if (AUTONOMY_REDIRECTS[normalizedPath]) {
+        return AUTONOMY_REDIRECTS[normalizedPath];
     }
 
     // 1. Try to find exact tab match (with normalized path)
@@ -35607,7 +35643,7 @@ function renderDevAutopilotView() {
     // Cleared in renderApp() preamble when the tab changes (see teardown hook below).
     if (!state.devAutopilot.pollerId) {
         state.devAutopilot.pollerId = setInterval(function () {
-            if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
+            if ((state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') || (state.currentTab === 'autopilot-developer' && state.currentModuleKey === 'autonomy')) {
                 fetchDevAutopilotState();
             }
         }, 10000);
@@ -35984,7 +36020,7 @@ function ensurePlanLoaded(findingId) {
                     clearInterval(state.devAutopilot.generationTimers[findingId]);
                 }
                 state.devAutopilot.generationTimers[findingId] = setInterval(function () {
-                    if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
+                    if ((state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') || (state.currentTab === 'autopilot-developer' && state.currentModuleKey === 'autonomy')) {
                         renderApp();
                     }
                 }, 1000);
@@ -36309,7 +36345,7 @@ function devAutopilotContinuePlanning(findingId, feedback) {
     if (!state.devAutopilot.generationTimers) state.devAutopilot.generationTimers = {};
     state.devAutopilot.generationTimers[findingId] = setInterval(function () {
         // Triggers the progress bar to advance + the elapsed counter to tick.
-        if (state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') {
+        if ((state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') || (state.currentTab === 'autopilot-developer' && state.currentModuleKey === 'autonomy')) {
             renderApp();
         }
     }, 1000);
@@ -37009,7 +37045,7 @@ function renderAutonomyPulseView() {
     // 30s poller while the tab is active
     if (!state.autonomyPulse.pollerId) {
         state.autonomyPulse.pollerId = setInterval(function () {
-            if (state.currentTab === 'autonomy-pulse' && state.currentModuleKey === 'command-hub') {
+            if ((state.currentTab === 'autonomy-pulse') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) {
                 fetchAutonomyPulse();
             }
         }, 30000);
@@ -37308,7 +37344,7 @@ function renderAutonomyTraceView() {
     if (!state.autonomyTrace.fetched && !state.autonomyTrace.loading) fetchAutonomyTrace();
     if (!state.autonomyTrace.pollerId) {
         state.autonomyTrace.pollerId = setInterval(function () {
-            if (state.currentTab === 'autonomy-trace' && state.currentModuleKey === 'command-hub') fetchAutonomyTrace();
+            if ((state.currentTab === 'autonomy-trace') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) fetchAutonomyTrace();
         }, 30000);
     }
 
@@ -40123,5 +40159,75 @@ function renderAdminAwarenessView() {
         container.appendChild(auditCard);
     }
 
+    return container;
+}
+
+// =============================================================================
+// BOOTSTRAP-AUTONOMY-SECTION-NAV — Autopilot by role (placeholders)
+// =============================================================================
+// Autopilot is built for community users today; developer and admin variants
+// are in progress. These two views give all three roles a visible home under
+// Autonomy so operators can jump to any role's autopilot from one place
+// without hunting across three different sections.
+// =============================================================================
+
+function renderAutopilotCommunityView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Autopilot — Community</h2>' +
+        '<p class="section-subtitle">The user-facing Autopilot surfaced in the community app (Maxina). Recommendation intake, activation, snooze, dismissal.</p>';
+
+    var card = document.createElement('div');
+    card.className = 'databases-arch-note';
+    card.innerHTML = '<h3>Where it lives</h3>' +
+        '<p>Community Autopilot has its own top-level Command Hub section (<strong>Autopilot</strong>) with its full detail views: Registry, Runs, Live, Engine, Growth.</p>';
+    var goBtn = document.createElement('button');
+    goBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    goBtn.textContent = 'Open Autopilot (Community)';
+    goBtn.style.marginTop = '.75rem';
+    goBtn.onclick = function () {
+        // Soft-navigate to the existing top-level Autopilot section.
+        var target = '/command-hub/autopilot/registry/';
+        history.pushState({}, '', target);
+        var route = getRouteFromPath(target);
+        state.currentModuleKey = route.section;
+        state.currentTab = route.tab;
+        renderApp();
+    };
+    card.appendChild(goBtn);
+    container.appendChild(card);
+
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.style.marginTop = '1rem';
+    info.innerHTML = '<h3>What a community autopilot recommendation looks like</h3>' +
+        '<ul>' +
+        '<li>Generated from health + activity signals + the user\'s Life Compass goal.</li>' +
+        '<li>Shown in the community app inbox; the user accepts / dismisses / snoozes.</li>' +
+        '<li>Accepted items either activate an automation (book something, add to calendar) or become a task.</li>' +
+        '<li>Every interaction writes an <code>autopilot.recommendation.*</code> OASIS event + a user_activity_log row.</li>' +
+        '</ul>';
+    container.appendChild(info);
+
+    return container;
+}
+
+function renderAutopilotAdminView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Autopilot — Admin <span class="status-badge status-warning" style="margin-left:.5rem;font-size:.7rem;">Coming soon</span></h2>' +
+        '<p class="section-subtitle">The admin-role equivalent of community Autopilot — automated recommendations for platform admins.</p>';
+
+    var card = document.createElement('div');
+    card.className = 'databases-arch-note';
+    card.innerHTML = '<h3>Planned scope</h3>' +
+        '<ul>' +
+        '<li>Recommendations for admins based on platform signals: flagged content, stalled tenants, unassigned VTIDs, governance violations approaching SLA, user growth anomalies.</li>' +
+        '<li>Same intake / accept / dismiss / snooze flow as community Autopilot, but with admin-facing actions (open PR, run migration, escalate to Exafy).</li>' +
+        '<li>Shares the same Autopilot engine as the other roles — differences are in the recommendation sources and the action handlers.</li>' +
+        '<li>Tracked under the parallel autopilot build-out running alongside Dev Autopilot.</li>' +
+        '</ul>' +
+        '<p style="margin-top:.75rem;font-size:.8rem;color:var(--color-text-secondary);">This tab reserves the slot in the Autonomy section so the direction is visible. When the implementation lands, the render function in <code>app.js</code> gets swapped for the real view.</p>';
+    container.appendChild(card);
     return container;
 }
