@@ -31,6 +31,7 @@
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { renderPlanHtml } from './dev-autopilot-html';
+import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -542,7 +543,22 @@ async function runPlanningSession(
 
   const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope) + fileSection;
 
-  const call = await callMessagesApi(prompt);
+  // Route through the local worker queue when enabled, so the LLM call draws
+  // on the Claude subscription instead of the pay-per-token API key. Falls
+  // back to the direct Messages API call when the feature flag is off.
+  const call = isWorkerQueueEnabled()
+    ? await runWorkerTask(
+        {
+          kind: 'plan',
+          finding_id: finding.id,
+          prompt,
+          model: PLANNING_MODEL,
+          max_tokens: 8_000,
+          notes: `plan ${finding.id} — ${feedbackNote ? 'continue' : 'first'}`,
+        },
+        { timeoutMs: MESSAGES_TIMEOUT_MS },
+      )
+    : await callMessagesApi(prompt);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   if (!call.ok || !call.text) {
@@ -554,7 +570,7 @@ async function runPlanningSession(
   }
 
   console.log(
-    `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
+    `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'messages-api'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
   );
 
   return { ok: true, plan_markdown: call.text, session_id: sessionId };
