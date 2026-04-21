@@ -26,9 +26,32 @@ jobs:
           psql "$SUPABASE_DB_URL" -f "supabase/migrations/20260421000000_add_account_profile_fields.sql"
           echo "Migration applied"
 
-      - name: Reload PostgREST schema cache
+      - name: Reload PostgREST schema cache (triple-signal + verify)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
-          echo "Schema cache reload signal sent"
+          # Single NOTIFY sometimes no-ops on hosted Supabase when the
+          # listener connection is momentarily gone. Mirror the pattern
+          # from supabase/migrations/20260416140000_vtid_02000_pgrst_reload.sql.
+          psql "$SUPABASE_DB_URL" <<'SQL'
+          NOTIFY pgrst, 'reload config';
+          NOTIFY pgrst, 'reload schema';
+          SELECT pg_notify('pgrst', 'reload schema');
+
+          -- Small wait, then re-notify for belt-and-braces.
+          SELECT pg_sleep(3);
+          NOTIFY pgrst, 'reload schema';
+
+          -- Verify server-side visibility of the new profiles columns.
+          SELECT column_name, data_type
+            FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name   = 'profiles'
+             AND column_name IN (
+               'account_visibility','first_name','last_name','gender',
+               'marital_status','address','country','city','account_type',
+               'verification_status'
+             )
+           ORDER BY column_name;
+          SQL
+          echo "Schema reload signals sent; column verification printed above"
