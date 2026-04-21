@@ -47,6 +47,7 @@ import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getUserContextSummary } from '../services/user-context-profiler';
+import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
 import { notifyUserAsync } from '../services/notification-service';
 // VTID-01225: Cognee Entity Extraction Integration
@@ -4208,6 +4209,13 @@ ${trimmedHistory}
     clientContext?.timeOfDay,
   );
 
+  // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
+  // toggles. Synchronous read of the cached config; if cache is cold we use
+  // manifest defaults (which are on for both overrides).
+  const awarenessCfg = getAwarenessConfigSync();
+  const includeProactiveOpener = awarenessCfg.isEnabled('overrides.proactive_opener');
+  const includeActivityAwareness = awarenessCfg.isEnabled('overrides.activity_awareness');
+
   // VTID-01927: PROACTIVE OPENER OVERRIDE — appended absolute LAST so it has
   // recency primacy in Gemini's attention. When the brain context (added later
   // by the Vitana Brain layer) includes a "Proactive Opener Candidate" or
@@ -4215,6 +4223,7 @@ ${trimmedHistory}
   // greeting policy + the generic baseline above. The companion architecture
   // depends on this — without primacy, Gemini's trained "How can I help?"
   // reflex wins.
+  if (includeProactiveOpener)
   instruction += `\n\n## PROACTIVE OPENER OVERRIDE (HIGHEST PRIORITY — VTID-01927)
 
 When the brain context appended below contains either:
@@ -4250,7 +4259,7 @@ the policy above as normal.`;
     );
     const profileSummary = profileMatch ? profileMatch[0].trim() : '';
 
-    if (profileSummary && profileSummary.length > 100) {
+    if (includeActivityAwareness && profileSummary && profileSummary.length > 100) {
       instruction += `\n\n## ACTIVITY AWARENESS OVERRIDE (HIGHEST PRIORITY — BOOTSTRAP-HISTORY-AWARE-TIMELINE)
 
 This block REPLACES any instinct to say "I don't know what you've been doing"
