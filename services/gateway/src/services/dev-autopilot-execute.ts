@@ -3,7 +3,7 @@
  *
  * Takes an approved-and-cooled execution row and drives it through:
  *
- *   cooling   → running   (claim + Managed Agents session starts)
+ *   cooling   → running   (claim + Messages API session starts)
  *   running   → ci        (edits applied, PR opened)
  *   ci        → merging   (PR-9 watcher: CI green)
  *   merging   → deploying (PR-9: merged; AUTO-DEPLOY fires)
@@ -13,14 +13,19 @@
  * This module handles the cooling→running→ci stages plus kill-switch /
  * concurrency checks. CI + deploy + verification watchers land in PR-9.
  *
- * Dry-run mode (DEV_AUTOPILOT_DRY_RUN=true) skips the real Managed Agents
- * session and GitHub API call, producing a synthetic PR URL so the UI and
- * pipeline can be tested without touching repo state.
+ * History / why NOT Managed Agents:
+ *   The earlier implementation wired this through the Managed Agents API with
+ *   a GitHub repo mount + a prompt that asked the agent to "write files and
+ *   open a PR". Managed Agents with the triage agent don't have file-write
+ *   or open_pr tools provisioned, so the session always ended without a PR
+ *   URL — and provisioning a dedicated agent with those tools is a large
+ *   operational bet. The Messages API + GitHub Contents API path below is
+ *   deterministic, faster (~30-90s), and uses the same plumbing the planning
+ *   service uses (dev-autopilot-planning.ts, PR #753).
  *
- * Agent ID resolution (env-driven, falls back to triage agent so we ship
- * before dedicated execution agent provisioning):
- *   DEV_AUTOPILOT_EXECUTION_AGENT_ID → falls back to TRIAGE_AGENT_ID
- *   DEV_AUTOPILOT_EXECUTION_ENV_ID   → falls back to TRIAGE_ENVIRONMENT_ID
+ * Dry-run mode (DEV_AUTOPILOT_DRY_RUN=true) skips the LLM + GitHub writes
+ * and produces a synthetic PR URL so the UI and pipeline can be exercised
+ * without touching repo state. Default is FALSE — live PRs are opened.
  */
 
 import { randomUUID } from 'crypto';
@@ -37,21 +42,29 @@ const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_BASE = 'https://api.anthropic.com';
-const BETA_HEADER = 'managed-agents-2026-04-01';
-const SESSION_TIMEOUT_MS = 600_000; // 10 min per execution session
-const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'true').toLowerCase() === 'true';
+// Messages API timeout — Cloud Run's request timeout is 300s; we run in a
+// background ticker so that's not the constraint. Still cap at 8 minutes so
+// a pathological stuck call doesn't hold a concurrency slot forever.
+const MESSAGES_TIMEOUT_MS = 480_000; // 8 min — generous for multi-file generation
+const EXECUTION_MODEL = process.env.DEV_AUTOPILOT_EXECUTION_MODEL || 'claude-sonnet-4-6';
+// Upper bound for total output tokens. One plan may touch up to ~5 files;
+// ~3000 tokens/file is a generous budget. Sonnet 4.6 supports 16k out.
+const MESSAGES_MAX_TOKENS = 16000;
+// Safety cap — refuse to execute plans that cite more files than this. Protects
+// against a misbehaving plan trying to rewrite the world. The safety gate
+// already enforces allow_scope but this adds a quantitative limit.
+const MAX_FILES_PER_EXECUTION = 8;
+// Per-file maximum content size (bytes) that we'll include in the prompt OR
+// write back to GitHub. Plans that need larger files should be split. 200 KB
+// is ~50k tokens — well inside Sonnet's 200k context.
+const MAX_FILE_BYTES = 200_000;
+
+const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
 const BACKGROUND_TICK_MS = 30_000;
 
-function getExecutionAgentIds(): { agent_id: string; environment_id: string } {
-  return {
-    agent_id: process.env.DEV_AUTOPILOT_EXECUTION_AGENT_ID
-           || process.env.TRIAGE_AGENT_ID
-           || 'agent_011Ca1RTRZADaWdZsKAKjs3B',
-    environment_id: process.env.DEV_AUTOPILOT_EXECUTION_ENV_ID
-                 || process.env.TRIAGE_ENVIRONMENT_ID
-                 || 'env_01VrvRRUWP91wiFQrmWaUcEh',
-  };
-}
+const GITHUB_OWNER = process.env.DEV_AUTOPILOT_REPO_OWNER || 'exafyltd';
+const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
+const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
 
 // =============================================================================
 // Types
@@ -316,28 +329,299 @@ export async function cancelExecution(executionId: string): Promise<{ ok: boolea
 }
 
 // =============================================================================
-// Background executor — picks up cooling→running transitions
+// GitHub Contents + Refs helpers — write files, create branches, open PRs
 // =============================================================================
 
-async function anthropicRequest<T>(
+function getGithubToken(): string {
+  return process.env.DEV_AUTOPILOT_GITHUB_TOKEN
+      || process.env.GITHUB_SAFE_MERGE_TOKEN
+      || process.env.GITHUB_TOKEN
+      || '';
+}
+
+async function githubRequest<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
-): Promise<{ ok: boolean; data?: T; error?: string }> {
+  init: { method?: string; body?: unknown; accept?: string } = {},
+): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  const token = getGithubToken();
+  if (!token) return { ok: false, status: 0, error: 'GITHUB_SAFE_MERGE_TOKEN not set' };
   try {
-    const res = await fetch(`${ANTHROPIC_BASE}${path}`, {
-      method: options.method || 'GET',
+    const res = await fetch(`https://api.github.com${path}`, {
+      method: init.method || 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: init.accept || 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'vitana-dev-autopilot-executor',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: init.body != null ? JSON.stringify(init.body) : undefined,
+    });
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 500);
+      return { ok: false, status: res.status, error: `${res.status}: ${body}` };
+    }
+    // 204 No Content responses have no body
+    if (res.status === 204) return { ok: true, status: 204 };
+    const data = (await res.json()) as T;
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, error: String(err) };
+  }
+}
+
+async function fetchFileContent(
+  path: string,
+  ref: string,
+): Promise<{ exists: boolean; content?: string; sha?: string; error?: string }> {
+  const encoded = path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  const r = await githubRequest<{ content: string; encoding: string; sha: string }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
+  );
+  if (!r.ok) {
+    if (r.status === 404) return { exists: false };
+    return { exists: false, error: r.error };
+  }
+  if (!r.data) return { exists: false };
+  // GitHub returns base64-encoded content
+  const decoded = Buffer.from(r.data.content || '', r.data.encoding as BufferEncoding || 'base64').toString('utf-8');
+  return { exists: true, content: decoded, sha: r.data.sha };
+}
+
+async function getBranchSha(branch: string): Promise<{ ok: boolean; sha?: string; error?: string }> {
+  const r = await githubRequest<{ object: { sha: string } }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/heads/${encodeURIComponent(branch)}`,
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error || 'ref lookup failed' };
+  return { ok: true, sha: r.data.object.sha };
+}
+
+async function createBranch(branch: string, baseBranch: string): Promise<{ ok: boolean; error?: string }> {
+  const base = await getBranchSha(baseBranch);
+  if (!base.ok || !base.sha) return { ok: false, error: `base branch lookup: ${base.error}` };
+
+  // If the branch already exists (prior failed run), delete it first so we get
+  // a clean tree. Safe because these branches are always autopilot-prefixed.
+  const existing = await getBranchSha(branch);
+  if (existing.ok) {
+    const del = await githubRequest(
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs/heads/${encodeURIComponent(branch)}`,
+      { method: 'DELETE' },
+    );
+    if (!del.ok) return { ok: false, error: `could not delete stale branch ${branch}: ${del.error}` };
+  }
+
+  const create = await githubRequest(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs`,
+    { method: 'POST', body: { ref: `refs/heads/${branch}`, sha: base.sha } },
+  );
+  if (!create.ok) return { ok: false, error: `create branch ${branch}: ${create.error}` };
+  return { ok: true };
+}
+
+async function putFileToBranch(
+  branch: string,
+  path: string,
+  content: string,
+  message: string,
+  existingSha?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const encoded = path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  // GitHub's PUT contents API needs base64-encoded content.
+  const base64 = Buffer.from(content, 'utf-8').toString('base64');
+  const body: Record<string, unknown> = {
+    message,
+    content: base64,
+    branch,
+  };
+  if (existingSha) body.sha = existingSha;
+  const r = await githubRequest(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}`,
+    { method: 'PUT', body },
+  );
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true };
+}
+
+async function openPullRequest(
+  branch: string,
+  baseBranch: string,
+  title: string,
+  body: string,
+): Promise<{ ok: boolean; url?: string; number?: number; error?: string }> {
+  const r = await githubRequest<{ html_url: string; number: number }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls`,
+    {
+      method: 'POST',
+      body: {
+        title: title.slice(0, 240),
+        head: branch,
+        base: baseBranch,
+        body,
+        maintainer_can_modify: true,
+        draft: false,
+      },
+    },
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error };
+  return { ok: true, url: r.data.html_url, number: r.data.number };
+}
+
+// =============================================================================
+// Messages API — ask Claude to produce the file contents
+// =============================================================================
+
+interface ExecutionLlmOutput {
+  files: Array<{ path: string; action: 'create' | 'modify' | 'delete'; content?: string }>;
+  pr_title: string;
+  pr_body: string;
+}
+
+function parseExecutionJson(raw: string): ExecutionLlmOutput | { error: string } {
+  // Strip any fenced-code-block wrapper the model may have added despite the
+  // instruction. Also strip any leading narration before the opening brace.
+  let text = raw.trim();
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenced) text = fenced[1].trim();
+  // Otherwise, take from the first '{' to the last matching '}'
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < 0 || end <= start) {
+    return { error: 'No JSON object found in model output' };
+  }
+  const candidate = text.slice(start, end + 1);
+  try {
+    const parsed = JSON.parse(candidate);
+    if (!parsed || !Array.isArray(parsed.files)) {
+      return { error: 'Parsed JSON missing files[]' };
+    }
+    return parsed as ExecutionLlmOutput;
+  } catch (err) {
+    return { error: `JSON parse failed: ${String(err).slice(0, 200)}` };
+  }
+}
+
+interface FileCtx { path: string; exists: boolean; content?: string; sha?: string }
+
+function buildExecutionPrompt(
+  findingId: string,
+  planVersion: number,
+  planMarkdown: string,
+  fileCtx: FileCtx[],
+  branch: string,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `# Developer Autopilot — Execute plan ${findingId} (plan v${planVersion})`,
+    ``,
+    `You are producing the exact file contents for a new branch \`${branch}\` that`,
+    `will be opened as a pull request. Follow the plan **exactly**. Do not expand`,
+    `scope — only touch the files the plan lists. Do not add commentary outside`,
+    `the final JSON object.`,
+    ``,
+    `## Plan`,
+    ``,
+    planMarkdown.slice(0, 60_000),
+    ``,
+  );
+  if (fileCtx.length > 0) {
+    lines.push(
+      `## Current state of each file the plan touches`,
+      ``,
+      `Each block below is the file as it currently exists on \`${GITHUB_BASE_BRANCH}\``,
+      `(or a notice that it doesn't exist yet). Produce the **full new content** for`,
+      `each file — not a diff.`,
+      ``,
+    );
+    for (const f of fileCtx) {
+      lines.push(`### \`${f.path}\``);
+      if (f.exists) {
+        lines.push(
+          `State: exists on ${GITHUB_BASE_BRANCH}. Current content (${(f.content || '').length} chars):`,
+          '```',
+          (f.content || '').slice(0, MAX_FILE_BYTES),
+          '```',
+          ``,
+        );
+      } else {
+        lines.push(`State: does NOT exist on ${GITHUB_BASE_BRANCH} — create it.`, ``);
+      }
+    }
+  }
+  lines.push(
+    `## Output format`,
+    ``,
+    `Return a single JSON object (and nothing else) with this exact shape:`,
+    ``,
+    '```json',
+    '{',
+    '  "files": [',
+    '    {',
+    '      "path": "services/gateway/src/routes/example.test.ts",',
+    '      "action": "create",',
+    '      "content": "…full file contents as a JSON string…"',
+    '    }',
+    '  ],',
+    '  "pr_title": "Short descriptive PR title (<=70 chars)",',
+    '  "pr_body": "Markdown body explaining what the PR does and why, suitable for a GitHub PR description."',
+    '}',
+    '```',
+    ``,
+    `Rules:`,
+    `- Allowed actions: "create", "modify", "delete". For "delete" omit "content".`,
+    `- Only emit file paths that appear in the plan's Files-to-modify list. Do not`,
+    `  sneak in unrelated files.`,
+    `- "content" must be the complete file — the executor writes it verbatim.`,
+    `- Escape newlines and quotes correctly in the JSON string. Use \\n for newlines.`,
+    `- pr_title should reference the finding: e.g. "DEV-AUTOPILOT: add tests for …".`,
+    `- pr_body should summarise the plan + list the files changed.`,
+    ``,
+    `Produce the JSON now.`,
+  );
+  return lines.join('\n');
+}
+
+async function callMessagesApi(
+  prompt: string,
+): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), MESSAGES_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${ANTHROPIC_BASE}/v1/messages`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
-        'anthropic-beta': BETA_HEADER,
       },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body: JSON.stringify({
+        model: EXECUTION_MODEL,
+        max_tokens: MESSAGES_MAX_TOKENS,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: ctl.signal,
     });
-    if (!res.ok) return { ok: false, error: `${res.status}: ${await res.text()}` };
-    return { ok: true, data: (await res.json()) as T };
+    if (!res.ok) {
+      return { ok: false, error: `${res.status}: ${(await res.text()).slice(0, 500)}` };
+    }
+    const data = (await res.json()) as {
+      content: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = (data.content || [])
+      .filter(b => b.type === 'text' && b.text)
+      .map(b => b.text as string)
+      .join('\n')
+      .trim();
+    if (!text) return { ok: false, error: 'Messages API returned no text content', usage: data.usage };
+    return { ok: true, text, usage: data.usage };
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { ok: false, error: `Messages API aborted after ${MESSAGES_TIMEOUT_MS / 1000}s` };
+    }
     return { ok: false, error: String(err) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -365,11 +649,11 @@ async function runExecutionSession(
   const plan = planR.data[0];
 
   const branch = `dev-autopilot/${executionId.slice(0, 8)}`;
-  const vtidLike = `VTID-DA-${executionId.slice(0, 8)}`;
+  const sessionId = `msg_${randomUUID().slice(0, 12)}`;
 
   if (DRY_RUN || !ANTHROPIC_API_KEY) {
     console.log(`${LOG_PREFIX} DRY RUN — skipping real session for ${executionId} (files: ${plan.files_referenced.length})`);
-    const stubPr = `https://github.com/exafyltd/vitana-platform/pull/DRY-RUN-${executionId.slice(0, 8)}`;
+    const stubPr = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/pull/DRY-RUN-${executionId.slice(0, 8)}`;
     return {
       ok: true,
       pr_url: stubPr,
@@ -379,117 +663,121 @@ async function runExecutionSession(
     };
   }
 
-  // Live Managed Agents session. Writing files + opening PRs requires dedicated
-  // tool configuration on the agent. For the initial live run we spawn the
-  // session with the plan as its prompt and let the operator provision the
-  // dedicated execution agent ID in env. Until a dedicated agent is wired the
-  // safer behavior is to return an explanatory failure so the bridge routes
-  // it to human review rather than silently no-op.
-  const { agent_id, environment_id } = getExecutionAgentIds();
-  const sessionR = await anthropicRequest<{ id: string }>('/v1/sessions', {
-    method: 'POST',
-    body: {
-      agent: { type: 'agent', id: agent_id, version: 1 },
-      environment_id,
-      title: `Dev Autopilot execute: ${exec.finding_id}`,
-      resources: [
-        {
-          type: 'github_repository',
-          url: 'https://github.com/exafyltd/vitana-platform',
-          authorization_token: process.env.DEV_AUTOPILOT_GITHUB_TOKEN
-            || process.env.GITHUB_SAFE_MERGE_TOKEN
-            || '',
-          mount_path: '/workspace/repo',
-          checkout: { type: 'branch', name: 'main' },
-        },
-      ],
-    },
-  });
-  if (!sessionR.ok || !sessionR.data) {
-    return { ok: false, error: `Session creation failed: ${sessionR.error}` };
+  const planFiles = plan.files_referenced || [];
+  if (planFiles.length === 0) {
+    return { ok: false, error: 'plan has no files_referenced — cannot execute', session_id: sessionId };
   }
-  const sessionId = sessionR.data.id;
-
-  const prompt = [
-    `# Developer Autopilot — Execute plan ${exec.finding_id} (plan v${exec.plan_version})`,
-    ``,
-    `Branch to create: \`${branch}\``,
-    `Commit message should reference ${vtidLike}.`,
-    ``,
-    `Plan:`,
-    `\`\`\`markdown`,
-    plan.plan_markdown,
-    `\`\`\``,
-    ``,
-    `Execute the plan exactly as written. Do not expand scope. After edits,`,
-    `open a PR against main with the plan_markdown as the body. Run tests`,
-    `locally if you can; abort if they fail.`,
-  ].join('\n');
-
-  await anthropicRequest(`/v1/sessions/${sessionId}/events`, {
-    method: 'POST',
-    body: {
-      events: [{ type: 'user.message', content: [{ type: 'text', text: prompt }] }],
-    },
-  });
-
-  // Poll. Full tool-use integration (write_file / open_pr) requires a dedicated
-  // agent configuration beyond what the triage agent provides. For the first
-  // live rollout we just collect output + a placeholder PR URL from the agent
-  // text. Operators should provision DEV_AUTOPILOT_EXECUTION_AGENT_ID before
-  // flipping DEV_AUTOPILOT_DRY_RUN=false.
-  const seen = new Set<string>();
-  const texts: string[] = [];
-  const deadline = Date.now() + SESSION_TIMEOUT_MS;
-  let done = false;
-  let sawAgentMessage = false;
-  let sawUserMessage = false;
-  while (!done && Date.now() < deadline) {
-    const ev = await anthropicRequest<{ data?: Array<{ id: string; type: string; content?: Array<{ type: string; text?: string }>; stop_reason?: { type?: string } }> }>(
-      `/v1/sessions/${sessionId}/events`,
-    );
-    if (!ev.ok) return { ok: false, error: `events poll failed: ${ev.error}`, session_id: sessionId, branch };
-    const events = ev.data?.data || [];
-    for (const e of events) {
-      if (seen.has(e.id)) continue;
-      seen.add(e.id);
-      if (e.type === 'user.message') {
-        sawUserMessage = true;
-      } else if (e.type === 'agent.message' && e.content) {
-        sawAgentMessage = true;
-        for (const b of e.content) {
-          if (b.type === 'text' && b.text) texts.push(b.text);
-        }
-      } else if (e.type === 'session.status_idle' && e.stop_reason?.type !== 'requires_action') {
-        // Don't exit on the pre-user-message idle state — session is idle
-        // between create and user.message arrival.
-        if (sawAgentMessage && sawUserMessage) done = true;
-      } else if (e.type === 'session.status_terminated') {
-        done = true;
-      }
-    }
-    if (!done && events.length === 0) await new Promise(r => setTimeout(r, 3000));
-  }
-
-  // Best-effort PR URL extraction from the agent's output
-  const text = texts.join('\n');
-  const prMatch = text.match(/https:\/\/github\.com\/exafyltd\/vitana-platform\/pull\/(\d+)/);
-  if (!prMatch) {
+  if (planFiles.length > MAX_FILES_PER_EXECUTION) {
     return {
       ok: false,
-      error: 'Agent session ended without producing a PR URL. Provision DEV_AUTOPILOT_EXECUTION_AGENT_ID with file-write + open_pr tools and retry.',
+      error: `plan references ${planFiles.length} files — exceeds MAX_FILES_PER_EXECUTION (${MAX_FILES_PER_EXECUTION})`,
+      session_id: sessionId,
+    };
+  }
+
+  // 1. Gather current file contents from the base branch
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] fetching ${planFiles.length} files from ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH}`);
+  const fileCtx: FileCtx[] = [];
+  for (const p of planFiles) {
+    const got = await fetchFileContent(p, GITHUB_BASE_BRANCH);
+    fileCtx.push({ path: p, exists: got.exists, content: got.content, sha: got.sha });
+  }
+
+  // 2. Ask the Messages API to produce the new file contents
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch);
+  const startedAt = Date.now();
+  const llm = await callMessagesApi(prompt);
+  const elapsed = Math.round((Date.now() - startedAt) / 1000);
+  if (!llm.ok || !llm.text) {
+    return { ok: false, error: `LLM call failed after ${elapsed}s: ${llm.error || 'unknown'}`, session_id: sessionId, branch };
+  }
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] LLM returned in ${elapsed}s (${llm.usage?.input_tokens || '?'} in / ${llm.usage?.output_tokens || '?'} out)`);
+
+  const parsed = parseExecutionJson(llm.text);
+  if ('error' in parsed) {
+    return { ok: false, error: `LLM output parse: ${parsed.error}`, session_id: sessionId, branch };
+  }
+
+  // 3. Validate: every emitted file path was in the plan's files_referenced
+  const allowedSet = new Set(planFiles);
+  const outOfScope: string[] = [];
+  for (const f of parsed.files) {
+    if (!allowedSet.has(f.path)) outOfScope.push(f.path);
+  }
+  if (outOfScope.length > 0) {
+    return {
+      ok: false,
+      error: `LLM emitted files outside the plan's files_referenced: ${outOfScope.join(', ')}`,
       session_id: sessionId,
       branch,
     };
   }
+  if (parsed.files.length === 0) {
+    return { ok: false, error: 'LLM emitted zero files', session_id: sessionId, branch };
+  }
+  for (const f of parsed.files) {
+    if (f.action !== 'delete' && (!f.content || f.content.length === 0)) {
+      return { ok: false, error: `LLM emitted empty content for ${f.path}`, session_id: sessionId, branch };
+    }
+    if (f.content && Buffer.byteLength(f.content, 'utf-8') > MAX_FILE_BYTES) {
+      return {
+        ok: false,
+        error: `content for ${f.path} exceeds MAX_FILE_BYTES (${MAX_FILE_BYTES})`,
+        session_id: sessionId,
+        branch,
+      };
+    }
+  }
+
+  // 4. Create branch
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] creating branch ${branch} off ${GITHUB_BASE_BRANCH}`);
+  const br = await createBranch(branch, GITHUB_BASE_BRANCH);
+  if (!br.ok) return { ok: false, error: br.error, session_id: sessionId, branch };
+
+  // 5. Write each file
+  const vtidLike = `VTID-DA-${executionId.slice(0, 8)}`;
+  for (const f of parsed.files) {
+    const existing = fileCtx.find(x => x.path === f.path);
+    if (f.action === 'delete') {
+      if (!existing?.sha) {
+        console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] delete skipped — ${f.path} doesn't exist`);
+        continue;
+      }
+      const encoded = f.path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+      const delR = await githubRequest(
+        `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}`,
+        {
+          method: 'DELETE',
+          body: { message: `${vtidLike}: delete ${f.path}`, sha: existing.sha, branch },
+        },
+      );
+      if (!delR.ok) return { ok: false, error: `delete ${f.path}: ${delR.error}`, session_id: sessionId, branch };
+      continue;
+    }
+    const shaArg = f.action === 'modify' ? existing?.sha : undefined;
+    const msg = `${vtidLike}: ${f.action} ${f.path}`;
+    const wr = await putFileToBranch(branch, f.path, f.content!, msg, shaArg);
+    if (!wr.ok) return { ok: false, error: `write ${f.path}: ${wr.error}`, session_id: sessionId, branch };
+  }
+
+  // 6. Open PR
+  const prTitle = parsed.pr_title || `DEV-AUTOPILOT: execute plan ${executionId.slice(0, 8)}`;
+  const prBody = parsed.pr_body || `Automated PR from Dev Autopilot execution \`${executionId}\`.\n\n---\n\n${plan.plan_markdown.slice(0, 40_000)}`;
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] opening PR "${prTitle}"`);
+  const pr = await openPullRequest(branch, GITHUB_BASE_BRANCH, prTitle, prBody);
+  if (!pr.ok) return { ok: false, error: `open PR: ${pr.error}`, session_id: sessionId, branch };
+
   return {
     ok: true,
-    pr_url: prMatch[0],
-    pr_number: parseInt(prMatch[1], 10),
+    pr_url: pr.url,
+    pr_number: pr.number,
     branch,
     session_id: sessionId,
   };
 }
+
+// Exported for unit tests.
+export { parseExecutionJson, buildExecutionPrompt };
 
 /** Main tick — called every BACKGROUND_TICK_MS. Idempotent. */
 export async function backgroundExecutorTick(): Promise<void> {
