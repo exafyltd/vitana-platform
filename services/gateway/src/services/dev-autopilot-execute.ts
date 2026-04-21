@@ -489,29 +489,50 @@ interface ExecutionLlmOutput {
   pr_body: string;
 }
 
-function parseExecutionJson(raw: string): ExecutionLlmOutput | { error: string } {
-  // Strip any fenced-code-block wrapper the model may have added despite the
-  // instruction. Also strip any leading narration before the opening brace.
-  let text = raw.trim();
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenced) text = fenced[1].trim();
-  // Otherwise, take from the first '{' to the last matching '}'
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end < 0 || end <= start) {
-    return { error: 'No JSON object found in model output' };
+// Delimiter-based format. Before: we asked the model to emit JSON with source
+// code inside string values. That forced correct escaping of every quote,
+// backslash, and newline across thousands of characters of TypeScript. In
+// practice the model occasionally emitted unescaped characters that broke
+// JSON.parse with errors like "SyntaxError: Expected ',' or ']' after array
+// element in JSON at position 46866" (execution 265fbf0f). Source code
+// inside verbatim delimiter blocks sidesteps all of that.
+function parseExecutionOutput(raw: string): ExecutionLlmOutput | { error: string } {
+  const text = raw.trim();
+
+  // pr_title: single line
+  const titleMatch = text.match(/<<<PR_TITLE>>>\s*([\s\S]*?)\s*<<<END>>>/);
+  if (!titleMatch) return { error: 'Missing <<<PR_TITLE>>>…<<<END>>> block' };
+  const pr_title = titleMatch[1].trim();
+
+  // pr_body: multi-line markdown
+  const bodyMatch = text.match(/<<<PR_BODY>>>\s*([\s\S]*?)\s*<<<END>>>/);
+  if (!bodyMatch) return { error: 'Missing <<<PR_BODY>>>…<<<END>>> block' };
+  const pr_body = bodyMatch[1];
+
+  // files: each block wraps raw content. Match header, then consume until the
+  // NEAREST matching <<<END>>> that's followed by a recognised boundary
+  // (another <<<FILE…>>> header, end of text, or whitespace to EOF).
+  // Using non-greedy match is fine for clean files, but source may contain
+  // "<<<END>>>" as a literal string; guard by requiring it at start of line.
+  const fileRe = /<<<FILE\s+(create|modify|delete)\s+([^\s>]+)\s*>>>\s*\r?\n([\s\S]*?)\r?\n<<<END>>>/g;
+  const files: ExecutionLlmOutput['files'] = [];
+  let m: RegExpExecArray | null;
+  while ((m = fileRe.exec(text)) !== null) {
+    const action = m[1] as 'create' | 'modify' | 'delete';
+    const path = m[2].trim();
+    const content = action === 'delete' ? undefined : m[3];
+    files.push({ path, action, content });
   }
-  const candidate = text.slice(start, end + 1);
-  try {
-    const parsed = JSON.parse(candidate);
-    if (!parsed || !Array.isArray(parsed.files)) {
-      return { error: 'Parsed JSON missing files[]' };
-    }
-    return parsed as ExecutionLlmOutput;
-  } catch (err) {
-    return { error: `JSON parse failed: ${String(err).slice(0, 200)}` };
+  if (files.length === 0) {
+    return { error: 'No <<<FILE …>>>…<<<END>>> blocks found' };
   }
+
+  return { files, pr_title, pr_body };
 }
+
+// Back-compat export name for existing tests / callers. Now points to the
+// new delimiter parser.
+const parseExecutionJson = parseExecutionOutput;
 
 interface FileCtx { path: string; exists: boolean; content?: string; sha?: string }
 
@@ -561,34 +582,47 @@ function buildExecutionPrompt(
     }
   }
   lines.push(
-    `## Output format`,
+    `## Output format — delimiter blocks, NOT JSON`,
     ``,
-    `Return a single JSON object (and nothing else) with this exact shape:`,
+    `Emit output in this exact shape (and nothing else, no surrounding prose or`,
+    `fences). File contents go VERBATIM between the markers — no escaping, no`,
+    `quoting, newlines are literal:`,
     ``,
-    '```json',
-    '{',
-    '  "files": [',
-    '    {',
-    '      "path": "services/gateway/src/routes/example.test.ts",',
-    '      "action": "create",',
-    '      "content": "…full file contents as a JSON string…"',
-    '    }',
-    '  ],',
-    '  "pr_title": "Short descriptive PR title (<=70 chars)",',
-    '  "pr_body": "Markdown body explaining what the PR does and why, suitable for a GitHub PR description."',
-    '}',
-    '```',
+    `<<<PR_TITLE>>>`,
+    `DEV-AUTOPILOT: short descriptive title (<=70 chars)`,
+    `<<<END>>>`,
+    ``,
+    `<<<PR_BODY>>>`,
+    `Markdown body that describes what this PR does and why. Can span many lines.`,
+    `Reference the finding; summarise the plan; list the files touched.`,
+    `<<<END>>>`,
+    ``,
+    `<<<FILE create services/gateway/src/routes/example.test.ts>>>`,
+    `// full file contents go here, verbatim`,
+    `import { foo } from 'bar';`,
+    ``,
+    `describe('example', () => {`,
+    `  it('works', () => {`,
+    `    expect(1).toBe(1);`,
+    `  });`,
+    `});`,
+    `<<<END>>>`,
     ``,
     `Rules:`,
-    `- Allowed actions: "create", "modify", "delete". For "delete" omit "content".`,
-    `- Only emit file paths that appear in the plan's Files-to-modify list. Do not`,
-    `  sneak in unrelated files.`,
-    `- "content" must be the complete file — the executor writes it verbatim.`,
-    `- Escape newlines and quotes correctly in the JSON string. Use \\n for newlines.`,
-    `- pr_title should reference the finding: e.g. "DEV-AUTOPILOT: add tests for …".`,
-    `- pr_body should summarise the plan + list the files changed.`,
+    `- Allowed actions in the FILE header: "create", "modify", "delete". For`,
+    `  "delete" emit the header + immediately <<<END>>> with no content in`,
+    `  between.`,
+    `- Emit one <<<FILE …>>>…<<<END>>> block per file in the plan's`,
+    `  Files-to-modify list. Do not emit files outside that list.`,
+    `- File content is written verbatim — do NOT wrap it in Markdown code`,
+    `  fences, do NOT escape quotes, do NOT use \\n; just write the actual`,
+    `  characters.`,
+    `- Never emit the literal string "<<<END>>>" inside a file's content;`,
+    `  it terminates the block. In the extremely rare case you need to, split`,
+    `  the string across lines or concatenation.`,
+    `- Produce all PR_TITLE, PR_BODY, and FILE blocks in a single response.`,
     ``,
-    `Produce the JSON now.`,
+    `Start now.`,
   );
   return lines.join('\n');
 }
