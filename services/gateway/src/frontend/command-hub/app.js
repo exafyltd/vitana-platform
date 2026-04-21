@@ -3630,6 +3630,8 @@ const state = {
     testingIntegration: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Validator Tests
     testingValidator: { runs: [], loading: false, error: null, fetched: false },
+    // Testing & QA — Vitana Awareness (BOOTSTRAP-HISTORY-AWARE-TIMELINE)
+    vitanaAwareness: { result: null, loading: false, error: null, lastRunAt: 0, userId: '' },
     // Testing & QA — Test Cycles
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
@@ -39527,8 +39529,6 @@ function renderVitanaAwarenessTestView() {
     results.style.cssText = 'margin-top:1rem;';
     container.appendChild(results);
 
-    var lastPayload = null;
-
     function renderChecks(data) {
         var box = document.createElement('div');
         box.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem;margin-bottom:1rem;';
@@ -39600,7 +39600,6 @@ function renderVitanaAwarenessTestView() {
 
     function renderResult(data) {
         results.innerHTML = '';
-        lastPayload = data;
         copyBtn.style.display = '';
 
         results.appendChild(renderChecks(data));
@@ -39637,36 +39636,61 @@ function renderVitanaAwarenessTestView() {
     }
 
     function runTest() {
-        results.innerHTML = '<div class="placeholder-content">Running awareness check\u2026</div>';
+        if (state.vitanaAwareness.loading) return; // already running — ignore re-clicks
         var userId = userInput.value.trim();
+        state.vitanaAwareness.loading = true;
+        state.vitanaAwareness.error = null;
+        state.vitanaAwareness.userId = userId;
+        state.vitanaAwareness.lastRunAt = Date.now();
+        renderApp();
+
         var url = '/api/v1/orb/debug/awareness' + (userId ? ('?user_id=' + encodeURIComponent(userId)) : '');
         fetch(url, { method: 'GET', headers: buildContextHeaders({ 'Accept': 'application/json' }) })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                state.vitanaAwareness.loading = false;
                 if (!data || data.ok === false) {
-                    results.innerHTML = '<div class="error-text" style="padding:1rem;">Error: ' + ((data && data.error) || 'unknown') + '</div>';
-                    return;
+                    state.vitanaAwareness.error = (data && data.error) || 'unknown';
+                    state.vitanaAwareness.result = null;
+                } else {
+                    state.vitanaAwareness.result = data;
+                    state.vitanaAwareness.error = null;
                 }
-                renderResult(data);
+                renderApp();
             })
             .catch(function (err) {
-                results.innerHTML = '<div class="error-text" style="padding:1rem;">Request failed: ' + (err && err.message ? err.message : err) + '</div>';
+                state.vitanaAwareness.loading = false;
+                state.vitanaAwareness.error = (err && err.message) ? err.message : String(err);
+                renderApp();
             });
     }
 
     runBtn.onclick = runTest;
     copyBtn.onclick = function () {
-        if (lastPayload) {
+        var payload = state.vitanaAwareness.result;
+        if (payload) {
             try {
-                navigator.clipboard.writeText(JSON.stringify(lastPayload, null, 2));
+                navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
                 copyBtn.textContent = 'Copied!';
                 setTimeout(function () { copyBtn.textContent = 'Copy JSON'; }, 1500);
             } catch (e) { /* ignore */ }
         }
     };
 
-    // Auto-run on load so operators see the baseline immediately.
-    setTimeout(runTest, 50);
+    // Render from cached state — no auto-run. App re-renders on every state
+    // change (~1 Hz), so the earlier setTimeout(runTest) caused the panel to
+    // reset and re-fetch on every tick, producing a visual flicker and
+    // hammering the backend. User clicks the button to trigger a run.
+    userInput.value = state.vitanaAwareness.userId || '';
+    if (state.vitanaAwareness.loading) {
+        results.innerHTML = '<div class="placeholder-content">Running awareness check\u2026</div>';
+    } else if (state.vitanaAwareness.error) {
+        results.innerHTML = '<div class="error-text" style="padding:1rem;">Error: ' + state.vitanaAwareness.error + '</div>';
+    } else if (state.vitanaAwareness.result) {
+        renderResult(state.vitanaAwareness.result);
+    } else {
+        results.innerHTML = '<div class="placeholder-content" style="padding:1rem;color:var(--color-text-secondary);">Click <strong>Run Awareness Test</strong> to check what the voice ORB knows right now.</div>';
+    }
 
     return container;
 }
