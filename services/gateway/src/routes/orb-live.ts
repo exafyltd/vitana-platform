@@ -442,6 +442,107 @@ async function resolveOrbIdentity(req: AuthenticatedRequest): Promise<SupabaseId
 }
 
 /**
+ * BOOTSTRAP-ORB-ROLE-SYNC: Fetch the user's UI role preference.
+ *
+ * The vitana-v1 frontend's `useRole` hook writes to a DIFFERENT store than
+ * `user_tenants.active_role` — it uses the `set_role_preference` /
+ * `get_role_preference` RPCs (role_preference table). When the user clicks
+ * "switch to admin" in Settings → Tenant Role, it updates role_preference,
+ * not user_tenants.active_role. The orb was reading only the latter and so
+ * never saw admin switches made from the community app.
+ *
+ * This helper calls the same RPC the frontend uses. Gateway combines the
+ * two (prefer role_preference when set, fall back to user_tenants.active_role).
+ *
+ * Graceful: returns null on any error.
+ */
+async function fetchUserRolePreference(
+  userId: string,
+  tenantId: string
+): Promise<string | null> {
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+
+    // Call the same RPC the vitana-v1 useRole hook uses. Service-role JWT
+    // bypasses RLS; the function signature (p_tenant_id, optional p_user_id)
+    // depends on the DB function — we try the tenant-only form first, then
+    // fall back to tenant+user form.
+    const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/get_role_preference`;
+    const resp = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({ p_tenant_id: tenantId, p_user_id: userId }),
+    });
+
+    if (!resp.ok) {
+      // Try without p_user_id (older function signature)
+      const fallbackResp = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        body: JSON.stringify({ p_tenant_id: tenantId }),
+      });
+      if (!fallbackResp.ok) {
+        console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC] get_role_preference RPC failed: ${resp.status} (and fallback ${fallbackResp.status})`);
+        return null;
+      }
+      const fallbackRows = await fallbackResp.json() as Array<{ role?: string | null }> | { role?: string | null } | null;
+      const role = Array.isArray(fallbackRows)
+        ? (fallbackRows[0]?.role ?? null)
+        : (fallbackRows?.role ?? null);
+      if (role) {
+        console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${role}" (tenant-only RPC) for user=${userId.substring(0, 8)}...`);
+      }
+      return role || null;
+    }
+
+    const rows = await resp.json() as Array<{ role?: string | null }> | { role?: string | null } | null;
+    const role = Array.isArray(rows)
+      ? (rows[0]?.role ?? null)
+      : (rows?.role ?? null);
+    if (role) {
+      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${role}" for user=${userId.substring(0, 8)}...`);
+    }
+    return role || null;
+  } catch (err: any) {
+    console.warn(`[BOOTSTRAP-ORB-ROLE-SYNC] get_role_preference threw: ${err?.message || err}`);
+    return null;
+  }
+}
+
+/**
+ * Combine role_preference (frontend's truth) with user_tenants.active_role
+ * (gateway's historical source). role_preference wins when set — it reflects
+ * the user's current UI selection. Fall back to active_role when unset or
+ * when the preference RPC is unavailable (older deployments).
+ */
+async function resolveEffectiveRole(
+  userId: string,
+  tenantId: string
+): Promise<string | null> {
+  const [pref, tenantRole] = await Promise.all([
+    fetchUserRolePreference(userId, tenantId),
+    fetchUserActiveRole(userId, tenantId),
+  ]);
+  if (pref) {
+    if (tenantRole && pref !== tenantRole) {
+      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
+    }
+    return pref;
+  }
+  return tenantRole;
+}
+
+/**
  * VTID-01225-ROLE: Fetch the user's application-level active_role from user_tenants.
  * The JWT only contains the Supabase DB role ("authenticated"), NOT the app role
  * (community/admin/developer). This function queries the DB to get the real role.
@@ -9498,7 +9599,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
         : buildBootstrapContextPack(bootstrapIdentity, sessionId),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
+        : resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(bootstrapIdentity.user_id),
       storedLangPromise,
     ]);
@@ -11237,7 +11338,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : fetchUserActiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
+        : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
     ]);
     activeRole = fetchedRole;
