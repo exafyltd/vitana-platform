@@ -22,10 +22,11 @@
  */
 import { getSupabase } from '../lib/supabase';
 import { runAllScannersForTenant } from './admin-scanners';
+import { storeTenantHealthIndex } from './admin-health-index';
 
 const LOG_PREFIX = '[admin-kpi]';
 const WORKER_TICK_MS = 5 * 60 * 1000; // 5 minutes
-const WORKER_VERSION = 'phase-BB-CC.2026-04-21';
+const WORKER_VERSION = 'phase-BB-CC-GG.2026-04-22';
 
 type KpiPayload = Record<string, unknown>;
 
@@ -249,5 +250,21 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     }
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} scanner runner failed ${tenantId.substring(0, 8)}...: ${err?.message}`);
+  }
+
+  // BOOTSTRAP-ADMIN-GG: compute + upsert tenant health index. Idempotent
+  // upsert by (tenant_id, snapshot_date=today), so the 5-min tick refreshes
+  // the score continuously but only a single row per day survives. Emits
+  // regression OASIS event when score drops > 10 points vs previous snapshot.
+  try {
+    const health = await storeTenantHealthIndex(tenantId);
+    if (health) {
+      console.log(
+        `${LOG_PREFIX} health-index tenant=${tenantId.substring(0, 8)}... ` +
+          `score=${health.score} components=${JSON.stringify(health.components)}`,
+      );
+    }
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} health-index failed ${tenantId.substring(0, 8)}...: ${err?.message}`);
   }
 }

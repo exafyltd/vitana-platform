@@ -293,6 +293,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const tenantKpisRouter = require('./routes/tenant-admin/kpis').default;
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights (scanner outputs + approve/reject)
   const tenantInsightsRouter = require('./routes/tenant-admin/insights').default;
+  // BOOTSTRAP-ADMIN-GG: Tenant Health Index (0-100 composite + trend)
+  const tenantHealthIndexRouter = require('./routes/tenant-admin/health-index').default;
   // Settings — tenant profile, branding, feature flags, integrations
   const tenantSettingsRouter = require('./routes/tenant-admin/settings').default;
   // Audit & Compliance — admin action audit log, access log
@@ -762,6 +764,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // BOOTSTRAP-ADMIN-GG: Tenant Health Index
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/health-index', tenantHealthIndexRouter, { owner: 'tenant-health-index' });
   // Settings — tenant profile, branding, feature flags
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/settings', tenantSettingsRouter, { owner: 'tenant-settings' });
   // Audit & Compliance — admin action audit log

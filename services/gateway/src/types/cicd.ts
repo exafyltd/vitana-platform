@@ -508,6 +508,10 @@ export type CicdEventType =
   // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
   | 'admin.briefing.injected'
   | 'admin.insight.urgent_notified'
+  // BOOTSTRAP-ADMIN-GG: tenant health index
+  | 'tenant.health.computed'
+  | 'tenant.health.regression_detected'
+  | 'tenant.weekly.review.ready'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
