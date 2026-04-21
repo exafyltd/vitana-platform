@@ -88,9 +88,28 @@ function relativeTime(iso: string): string {
   return `${weeks}w ago`;
 }
 
-function summarizeActivity(type: string): string {
+function summarizeActivity(type: string, data?: Record<string, unknown> | null): string {
   const [prefix, ...rest] = type.split('.');
   const suffix = rest.join('.');
+
+  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: media consumption gets rich labels
+  // that include the actual title so the voice ORB can name-drop the song /
+  // podcast the user played, instead of just saying "played media".
+  if (type === 'media.music.play') {
+    const title = data?.title || data?.query || 'music';
+    const channel = data?.channel ? ` by ${data.channel}` : '';
+    const src = data?.source ? ` on ${formatMediaSource(String(data.source))}` : '';
+    return `played "${title}"${channel}${src}`;
+  }
+  if (type === 'media.podcast.play') {
+    const title = data?.title || data?.query || 'a podcast';
+    return `listened to "${title}"`;
+  }
+  if (type === 'media.shorts.play' || type === 'media.video.play') {
+    const title = data?.title || 'a short';
+    return `watched "${title}"`;
+  }
+
   const map: Record<string, string> = {
     'orb.session.start': 'started voice session',
     'orb.session.stop': 'ended voice session',
@@ -232,6 +251,7 @@ const HIGH_SIGNAL_PREFIXES = [
   'community.',
   'wallet.',
   'memory.',
+  'media.',              // songs, podcasts, shorts, videos
   'orb.session.',
   'task.',
   'calendar.',
@@ -240,8 +260,42 @@ const HIGH_SIGNAL_PREFIXES = [
   'profile.update',
 ];
 
+function formatMediaSource(source: string): string {
+  const map: Record<string, string> = {
+    youtube_music: 'YouTube Music',
+    spotify: 'Spotify',
+    apple_music: 'Apple Music',
+    vitana_hub: 'the Vitana Media Hub',
+  };
+  return map[source] || source;
+}
+
 function isHighSignal(type: string): boolean {
   return HIGH_SIGNAL_PREFIXES.some(p => type === p || type.startsWith(p));
+}
+
+/**
+ * Dedicated content-consumption section. Makes songs / podcasts / shorts the
+ * user played impossible for the voice ORB to miss — they get their own block,
+ * separate from the generic [RECENT] list. Listed newest first with the title.
+ */
+function buildContentSection(activities: ActivityRow[]): string {
+  const media = activities.filter(a => a.activity_type.startsWith('media.'));
+  if (!media.length) return '';
+
+  const seenTitles = new Set<string>();
+  const lines: string[] = [];
+  for (const a of media) {
+    const title = (a.activity_data?.title || a.activity_data?.query || '').toString();
+    const dedupeKey = `${a.activity_type}:${title}`;
+    if (seenTitles.has(dedupeKey)) continue;
+    seenTitles.add(dedupeKey);
+    lines.push(`- ${summarizeActivity(a.activity_type, a.activity_data)} (${relativeTime(a.created_at)})`);
+    if (lines.length >= 8) break;
+  }
+
+  if (!lines.length) return '';
+  return `[CONTENT_PLAYED]\n${lines.join('\n')}`;
 }
 
 function buildRecentSection(activities: ActivityRow[]): string {
@@ -258,7 +312,7 @@ function buildRecentSection(activities: ActivityRow[]): string {
     const key = `${a.activity_type}:${dataKey || relativeTime(a.created_at)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    lines.push(`- ${summarizeActivity(a.activity_type)} (${relativeTime(a.created_at)})`);
+    lines.push(`- ${summarizeActivity(a.activity_type, a.activity_data)} (${relativeTime(a.created_at)})`);
     if (lines.length >= 8) break;
   }
 
@@ -302,6 +356,7 @@ function buildActivitySummarySection(activities: ActivityRow[]): string {
     community: 'community interactions',
     wallet: 'wallet actions',
     memory: 'memory updates',
+    media: 'content plays',
     orb: 'voice sessions',
     task: 'task actions',
     calendar: 'calendar changes',
@@ -436,6 +491,7 @@ export async function getUserContextSummary(
     buildRoutinesSection(routines, activities),
     buildPreferencesSection(prefs),
     buildHealthSection(activities, vitana),
+    buildContentSection(activities),
     buildFactsSection(factsResult.ok ? factsResult.facts : []),
     buildRecentSection(activities),
   ].filter(Boolean);

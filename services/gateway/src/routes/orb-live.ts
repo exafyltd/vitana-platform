@@ -47,6 +47,7 @@ import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getUserContextSummary } from '../services/user-context-profiler';
+import { writeTimelineRow } from '../services/timeline-projector';
 import { notifyUserAsync } from '../services/notification-service';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
@@ -3263,6 +3264,27 @@ async function executeLiveApiToolInner(
         }
 
         console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'}${suggestDefault ? ', suggest_default' : ''})`);
+
+        // BOOTSTRAP-HISTORY-AWARE-TIMELINE: record the play on the user
+        // timeline so the profiler picks it up in [RECENT] + [ACTIVITY_14D].
+        // Without this, the voice ORB has no memory of the songs the user
+        // just asked it to play — the whole point of the content-awareness ask.
+        writeTimelineRow({
+          user_id: lens.user_id,
+          activity_type: 'media.music.play',
+          activity_data: {
+            query,
+            title,
+            channel,
+            source,
+            routing_reason: routingReason,
+            url: disp.url,
+          },
+          context_data: { surface: 'orb' },
+          dedupe_key: `media:music:${source}:${title}:${Math.floor(Date.now() / 60_000)}`,
+          source: 'projector:orb',
+        }).catch(() => {});
+
         return { success: true, result: `${baseAck}${tail}` };
       }
 
