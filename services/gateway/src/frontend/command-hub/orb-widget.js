@@ -166,7 +166,14 @@
     _outputTranscriptBuffer: '',
     _transcriptHistory: [],  // Array of { role: 'user'|'assistant', text: string }
     _reconnectCount: 0,      // Track reconnection attempts
-    _isOffline: false         // VTID-OFFLINE: Track network offline state
+    _isOffline: false,        // VTID-OFFLINE: Track network offline state
+
+    // BOOTSTRAP-ORB-DISCONNECT-ALERT: loud, immediate cue when session drops
+    _disconnectActive: false,        // true between _announceDisconnect and _clearDisconnect
+    _disconnectReason: null,         // 'mic' | 'network' | 'connection' | 'offline'
+    _preDisconnectVoiceState: null,  // voiceState captured before we force-muted for the alert
+    _audioSendFailCount: 0,          // consecutive _sendAudio failures
+    _audioSendFailWindowStart: 0     // timestamp of first fail in current window
   };
 
   // VTID-OFFLINE: Instant offline/online detection via browser events
@@ -175,9 +182,7 @@
     _s._isOffline = true;
     if (_s.active || _s.overlayVisible) {
       _stopWatchdog();
-      _setOrbState('offline');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
-      _playErrorTone();
+      _announceDisconnect('offline');
     }
   });
 
@@ -185,8 +190,6 @@
     console.log('[VTOrb] Browser back online');
     _s._isOffline = false;
     if (_s.active || _s.overlayVisible) {
-      _setStatus(_cfg.lang.startsWith('de') ? 'Wieder online — Verbindung wird wiederhergestellt...' : 'Back online — reconnecting...');
-      _setOrbState('connecting');
       // Reset reconnect count so we get fresh attempts after coming back online
       _s._reconnectCount = 0;
       _attemptReconnect();
@@ -436,6 +439,146 @@
   }
 
   // ============================================================
+  // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT)
+  //
+  // When a session silently drops (mic denied, SSE closed, upstream WS dead,
+  // network blip), the UI used to keep showing "Listening..." while the user
+  // talked into a void. _announceDisconnect gives them an immediate, unmissable
+  // cue — tone + spoken phrase + visual state + mic gate — so they stop talking.
+  // _clearDisconnect reverses it on successful reconnect and speaks a short
+  // "we're back" phrase so the user knows it's safe to continue.
+  // ============================================================
+
+  var _DISCONNECT_PHRASES = {
+    mic: {
+      en: "One moment, I can't hear your microphone.",
+      de: "Einen Moment, Mikrofon-Problem."
+    },
+    network: {
+      en: "One moment, we have internet issues.",
+      de: "Einen Moment, Internet-Problem."
+    },
+    connection: {
+      en: "Hold on, I'm reconnecting. Please wait.",
+      de: "Einen Moment, ich verbinde mich neu."
+    },
+    offline: {
+      en: "You're offline. Please wait, don't talk yet.",
+      de: "Du bist offline. Bitte warte mit Sprechen."
+    }
+  };
+
+  // Recovery phrases — named by the cause that was announced, so the user
+  // understands what was fixed. Two variants per bucket; picked randomly.
+  var _RECOVERY_PHRASES = {
+    network: [
+      { en: "Okay, we're back online. I'm listening.", de: "ok, Netz ist wieder da. Ich höre zu." },
+      { en: "Connection is back. Go ahead.",            de: "Internet ist wieder da. Du kannst weitermachen." }
+    ],
+    offline: [
+      { en: "Okay, we're back online. I'm listening.", de: "ok, Netz ist wieder da. Ich höre zu." },
+      { en: "Connection is back. Go ahead.",            de: "Internet ist wieder da. Du kannst weitermachen." }
+    ],
+    mic: [
+      { en: "Okay, the microphone is working again. Let's continue.", de: "ok, Mikrofon funktioniert wieder. Wir können weiter machen." },
+      { en: "Mic is back. I can hear you again.",                      de: "Mikrofon ist wieder da. Ich höre dich wieder." }
+    ],
+    connection: [
+      { en: "Okay, sorry for the interruption. I'm listening.",          de: "ok, entschuldige die Störung. Ich höre zu." },
+      { en: "Sorry, brief interruption. Fixed now, I'm listening again.", de: "Sorry, Unterbrechung. Ist jetzt behoben und höre dir wieder zu." }
+    ]
+  };
+
+  function _pickLang() { return (_cfg.lang || 'en').startsWith('de') ? 'de' : 'en'; }
+
+  function _speak(phrase) {
+    try {
+      if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== 'function') return null;
+      try { window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+      var u = new window.SpeechSynthesisUtterance(phrase);
+      u.lang = _pickLang() === 'de' ? 'de-DE' : 'en-US';
+      u.rate = 1.0;
+      u.volume = 1.0;
+      window.speechSynthesis.speak(u);
+      return u;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _announceDisconnect(reason) {
+    if (_s._disconnectActive) return; // debounce
+    _s._disconnectActive = true;
+    _s._disconnectReason = reason;
+    _s._preDisconnectVoiceState = _s.voiceState;
+
+    // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
+    // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
+    _s.voiceState = 'MUTED';
+    _s._audioSendErrorLogged = true; // suppress fetch-error spam during outage
+    clearTimeout(_s._listeningIdleTimer);
+    clearTimeout(_s.thinkingDelayTimer);
+
+    // Tone first — guaranteed <50ms even if TTS is slow to init
+    _playErrorTone();
+
+    var lang = _pickLang();
+    var bucket = _DISCONNECT_PHRASES[reason] || _DISCONNECT_PHRASES.connection;
+    var phrase = bucket[lang] || bucket.en;
+
+    _setOrbState('paused');
+    _setStatus(phrase);
+    _updateUI();
+
+    _speak(phrase);
+  }
+
+  function _clearDisconnect() {
+    if (!_s._disconnectActive) return;
+    var reason = _s._disconnectReason || 'connection';
+    _s._disconnectActive = false;
+    _s._disconnectReason = null;
+    _s._audioSendErrorLogged = false;
+    _s._audioSendFailCount = 0;
+    _s._audioSendFailWindowStart = 0;
+
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+
+    // Restore voice state — but honor a user-initiated mute from before the outage.
+    if (_s._preDisconnectVoiceState && _s._preDisconnectVoiceState !== 'MUTED') {
+      _s.voiceState = _s._preDisconnectVoiceState;
+    }
+    _s._preDisconnectVoiceState = null;
+
+    var lang = _pickLang();
+    var variants = _RECOVERY_PHRASES[reason] || _RECOVERY_PHRASES.connection;
+    var variant = variants[Math.floor(Math.random() * variants.length)];
+    var phrase = variant[lang] || variant.en;
+
+    _setOrbState('listening');
+    _s.voiceState = (_s.voiceState === 'MUTED') ? _s.voiceState : 'LISTENING';
+    _setStatus(phrase);
+    _updateUI();
+
+    var u = _speak(phrase);
+    var rangBeep = false;
+    function ringReady() {
+      if (rangBeep) return;
+      rangBeep = true;
+      _playReadyBeep();
+      _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
+    }
+    if (u) {
+      u.onend = ringReady;
+      u.onerror = ringReady;
+      // Safety: if TTS never fires onend (e.g. voice pack missing), ring the beep anyway
+      setTimeout(ringReady, 3500);
+    } else {
+      ringReady();
+    }
+  }
+
+  // ============================================================
   // 5. AUDIO PLAYBACK PIPELINE
   // ============================================================
 
@@ -655,6 +798,7 @@
           _stopWatchdog();
           // VTID-RECONNECT: Try auto-reconnect instead of just dying
           if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+            _announceDisconnect('connection');
             _attemptReconnect();
           } else {
             _s.liveError = 'Connection lost.';
@@ -686,6 +830,15 @@
     console.log('[VTOrb] Stopping session...');
     _stopWatchdog();
     clearTimeout(_s._listeningIdleTimer);
+
+    // Cancel any pending disconnect TTS silently — session is ending, so no
+    // "we're back" phrase.
+    if (_s._disconnectActive) {
+      _s._disconnectActive = false;
+      _s._disconnectReason = null;
+      _s._preDisconnectVoiceState = null;
+      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    }
 
     // Stop mic
     if (_s.captureStream) {
@@ -887,6 +1040,7 @@
               _s.greetingComplete = true;
               _startAudioCapture().catch(function (err) {
                 console.error('[VTOrb] Mic capture failed after greeting:', err);
+                _announceDisconnect('mic');
               });
             }
             if (_s.voiceState === 'MUTED') {
@@ -937,33 +1091,25 @@
         _setStatus('Error: ' + (msg.message || 'Unknown'));
         break;
 
+      case 'connection_alert':
       case 'reconnecting':
-        // Backend is transparently reconnecting upstream (Vertex Live API).
-        // Flip UI off "Listening..." so the user stops talking into the void.
-        console.warn('[VTOrb] Upstream reconnecting — pausing UI');
+        // Backend is transparently reconnecting upstream (Vertex Live API), or
+        // signalling an upstream WS close. Either way, give the user a loud,
+        // spoken cue to stop talking until the connection is back.
+        console.warn('[VTOrb] Upstream ' + msg.type + ' — announcing disconnect');
         clearTimeout(_s._listeningIdleTimer);
-        if (_s.voiceState === 'MUTED') {
-          // Keep the muted visual, but ensure unmute doesn't snap back to LISTENING.
-          _s.preMuteState = 'THINKING';
-        } else {
-          _s._preReconnectVoiceState = _s.voiceState;
-          _setOrbState('thinking');
-          _s.voiceState = 'THINKING';
-          _setStatus(
-            _cfg.lang.startsWith('de')
-              ? 'Verbindung wird wiederhergestellt, einen Moment...'
-              : 'Reconnecting, one moment...'
-          );
-          _updateUI();
-        }
+        _s._preReconnectVoiceState = _s.voiceState;
+        _announceDisconnect('connection');
         break;
 
       case 'reconnected':
-        // Reconnect succeeded. Don't snap straight to LISTENING here — a
-        // fresh turn_complete (or audio) will drive the next transition and
-        // the user gets the familiar ready-beep cue.
+        // Reconnect succeeded. _clearDisconnect handles the "we're back" TTS +
+        // ready beep. If no disconnect was active (rare), fall through to the
+        // silent restore so we don't play a bogus recovery phrase.
         console.log('[VTOrb] Upstream reconnected');
-        if (_s.voiceState === 'THINKING' && _s._preReconnectVoiceState === 'LISTENING') {
+        if (_s._disconnectActive) {
+          _clearDisconnect();
+        } else if (_s.voiceState === 'THINKING' && _s._preReconnectVoiceState === 'LISTENING') {
           _setOrbState('listening');
           _s.voiceState = 'LISTENING';
           _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
@@ -1261,16 +1407,38 @@
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' })
     }).then(function (r) {
-      if (!r.ok && !_s._audioSendErrorLogged) {
+      if (r.ok) {
+        _s._audioSendFailCount = 0;
+        return;
+      }
+      if (!_s._audioSendErrorLogged) {
         _s._audioSendErrorLogged = true;
         console.error('[VTOrb] Audio send failed: HTTP ' + r.status);
       }
+      _registerAudioSendFailure();
     }).catch(function (err) {
       if (!_s._audioSendErrorLogged) {
         _s._audioSendErrorLogged = true;
         console.error('[VTOrb] Audio send error:', err.message);
       }
+      _registerAudioSendFailure();
     });
+  }
+
+  // Debounced trigger: only alert on the 2nd failure within a 3s window to
+  // avoid false positives from a single transient 5xx.
+  function _registerAudioSendFailure() {
+    if (_s._disconnectActive) return;
+    var now = Date.now();
+    if (now - _s._audioSendFailWindowStart > 3000) {
+      _s._audioSendFailWindowStart = now;
+      _s._audioSendFailCount = 1;
+      return;
+    }
+    _s._audioSendFailCount++;
+    if (_s._audioSendFailCount >= 2) {
+      _announceDisconnect('network');
+    }
   }
 
   function _sendInterrupt() {
@@ -1336,6 +1504,7 @@
         // VTID-RECONNECT: Try auto-reconnect before giving up
         if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
           console.warn('[VTOrb] Watchdog fired — attempting reconnect');
+          _announceDisconnect('connection');
           _attemptReconnect();
         } else {
           _s.liveError = 'Connection lost.';
@@ -1728,6 +1897,7 @@
         if (_s.active) {
           _s._reconnectCount = 0; // Reset on successful reconnect
           console.log('[VTOrb] Reconnected successfully');
+          if (_s._disconnectActive) _clearDisconnect();
         }
       } catch (err) {
         console.error('[VTOrb] Reconnection failed:', err);
