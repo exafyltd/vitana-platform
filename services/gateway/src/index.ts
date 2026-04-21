@@ -285,6 +285,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const tenantKnowledgeRouter = require('./routes/tenant-admin/knowledge').default;
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   const tenantOverviewRouter = require('./routes/tenant-admin/overview').default;
+  // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface (real-time snapshot + history)
+  const tenantKpisRouter = require('./routes/tenant-admin/kpis').default;
   // Settings — tenant profile, branding, feature flags, integrations
   const tenantSettingsRouter = require('./routes/tenant-admin/settings').default;
   // Audit & Compliance — admin action audit log, access log
@@ -746,6 +748,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kb', tenantKnowledgeRouter, { owner: 'tenant-knowledge' });
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/overview', tenantOverviewRouter, { owner: 'tenant-overview' });
+  // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // Settings — tenant profile, branding, feature flags
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/settings', tenantSettingsRouter, { owner: 'tenant-settings' });
   // Audit & Compliance — admin action audit log
@@ -998,6 +1002,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // BOOTSTRAP-ADMIN-KPI-AA: Admin Awareness Worker (5-min KPI refresh per tenant)
+      try {
+        const adminKpiEnabled = process.env.ADMIN_KPI_WORKER_ENABLED !== 'false';
+        if (adminKpiEnabled) {
+          const { startAdminAwarenessWorker } = require('./services/admin-awareness-worker');
+          startAdminAwarenessWorker();
+        } else {
+          console.log('⏸️ Admin awareness worker disabled (ADMIN_KPI_WORKER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Admin awareness worker initialization failed (non-fatal):', error);
       }
 
       // Dev Autopilot background executor (cooling→running→ci loop).
