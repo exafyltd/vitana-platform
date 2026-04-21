@@ -237,6 +237,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vaeaRouter = require('./routes/vaea').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
+  // VTID-01947: Companion Phase H — Proactive Presence routes
+  const presenceRouter = require('./routes/presence').default;
   // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
   const devAutopilotRouter = require('./routes/dev-autopilot').default;
   // Autonomy Pulse — unified supervisor feed across self-healing + dev-autopilot
@@ -474,6 +476,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/governance', governanceRouter, { owner: 'governance' });
   // VTID-01181: Governance Controls v1 - System Arming Panel (arm/disarm without redeploy)
   mountRouterSync(app, '/api/v1/governance/controls', governanceControlsRouter, { owner: 'governance-controls' });
+  // VTID-01947: Companion Phase H — Proactive Presence
+  mountRouterSync(app, '/api/v1/presence', presenceRouter, { owner: 'presence' });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
