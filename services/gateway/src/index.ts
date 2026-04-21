@@ -994,6 +994,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Recommendation scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-01949: Morning Brief scheduler (Phase H.3 proactive presence)
+      try {
+        const { startMorningBriefScheduler } = require('./services/guide/morning-brief-scheduler');
+        startMorningBriefScheduler();
+        console.log('☀️ Morning brief scheduler initialized (VTID-01949)');
+      } catch (error) {
+        console.warn('⚠️ Morning brief scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');

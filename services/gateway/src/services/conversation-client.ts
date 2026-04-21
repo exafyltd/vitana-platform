@@ -240,8 +240,25 @@ export async function processConversationTurn(
     // Step 3: Format context for LLM
     const contextForLLM = formatContextPackForLLM(contextPack);
 
+    // VTID-01950 (Phase H.5) — Text-chat awareness inheritance.
+    // Same awareness block the ORB voice brain receives, flag-gated so
+    // text and voice have identical situational awareness.
+    const chatAwarenessEnabled =
+      (process.env.PRESENCE_CHAT_AWARENESS_ENABLED ?? 'true').toLowerCase() === 'true';
+    let awarenessBlock = '';
+    if (chatAwarenessEnabled) {
+      try {
+        const { getAwarenessContext } = await import('./guide/awareness-context');
+        const { formatAwarenessForPrompt } = await import('./guide/awareness-prompt');
+        const awareness = await getAwarenessContext(input.user_id, input.tenant_id);
+        awarenessBlock = formatAwarenessForPrompt(awareness, { compact: true });
+      } catch (e: any) {
+        console.warn('[conversation-client] awareness inject failed:', e?.message);
+      }
+    }
+
     // Step 4: Build system instruction (with language preference from context pack)
-    const systemInstruction = buildSystemInstruction(input.channel, input.role, contextForLLM, contextPack);
+    const systemInstruction = buildSystemInstruction(input.channel, input.role, contextForLLM, contextPack, awarenessBlock);
 
     // Step 5: Get tool definitions
     const toolDefs = getGeminiToolDefinitions(input.role);
@@ -429,7 +446,8 @@ function buildSystemInstruction(
   channel: ConversationChannel,
   role: string,
   contextForLLM: string,
-  contextPack?: ContextPack
+  contextPack?: ContextPack,
+  awarenessBlock?: string,
 ): string {
   // Load unified_conversation personality config
   const ucConfig = getPersonalityConfigSync('unified_conversation') as Record<string, any>;
@@ -444,6 +462,7 @@ function buildSystemInstruction(
 
   return `${baseInstruction}
 ${languageDirective}
+${awarenessBlock ? `\n${awarenessBlock}\n` : ''}
 ${contextForLLM}
 
 Current conversation channel: ${channel}
