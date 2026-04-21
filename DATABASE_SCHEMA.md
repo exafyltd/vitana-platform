@@ -667,5 +667,34 @@ RLS: users see their own; service role full.
 
 ---
 
+### profiles
+**Purpose:** Canonical per-user profile — identity, contact, and account data surfaced in the MAXINA profile card (Identity | Social | Account pills).
+**Owned by:** Community app (`vitana-v1`), writes via Supabase client.
+**Migration:** `vitana-v1/supabase/migrations/20260421000000_add_account_profile_fields.sql`
+
+**Account tab — fields + per-field visibility:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `first_name` | TEXT | Basic Personal Information |
+| `last_name` | TEXT | Basic Personal Information |
+| `date_of_birth` | DATE | Pre-existing; exposed in Account tab |
+| `gender` | TEXT | free-form |
+| `marital_status` | TEXT | free-form |
+| `email` | TEXT | Pre-existing |
+| `phone` | TEXT | Pre-existing |
+| `address` | TEXT | Contact Information |
+| `country` | TEXT | Contact Information |
+| `city` | TEXT | Contact Information |
+| `account_type` | TEXT | e.g. `Community`, `Professional` |
+| `verification_status` | TEXT | CHECK (`unverified` \| `pending` \| `verified`) |
+| `account_visibility` | JSONB | Per-field visibility rule, key → `private` \| `connections` \| `public` |
+
+**Default `account_visibility`:** sensitive fields (names, DOB, contact) default to `private`; `country`/`city` default to `connections`; `member_since` / `account_type` / `verification_status` default to `public`.
+
+**Design principle:** Each field has BOTH a value and a visibility rule. Non-owners only see fields flagged `public`.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
