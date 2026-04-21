@@ -12,6 +12,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import { notifyUnnotifiedUrgentInsights } from './briefing';
 import { systemHealthScanner } from './system-health';
 import { autopilotHealthScanner } from './autopilot-health';
 import { contentModerationScanner } from './content-moderation';
@@ -54,9 +55,10 @@ export async function runAllScannersForTenant(tenantId: string): Promise<{
   scanners_failed: number;
   insights_written: number;
   insights_resolved: number;
+  urgent_notified: number;
 }> {
   const supabase = getSupabase();
-  if (!supabase) return { scanners_run: 0, scanners_failed: 0, insights_written: 0, insights_resolved: 0 };
+  if (!supabase) return { scanners_run: 0, scanners_failed: 0, insights_written: 0, insights_resolved: 0, urgent_notified: 0 };
 
   let scannersRun = 0;
   let scannersFailed = 0;
@@ -132,5 +134,20 @@ export async function runAllScannersForTenant(tenantId: string): Promise<{
     }
   }
 
-  return { scanners_run: scannersRun, scanners_failed: scannersFailed, insights_written: insightsWritten, insights_resolved: insightsResolved };
+  // BOOTSTRAP-ADMIN-EE: after all scanners finish, push urgent insights to
+  // tenant admins. Fire-and-forget — soft-fails per user inside the helper.
+  let urgentNotified = 0;
+  try {
+    urgentNotified = await notifyUnnotifiedUrgentInsights(tenantId);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} urgent_notify tenant=${tenantId.substring(0, 8)}... threw: ${err?.message}`);
+  }
+
+  return {
+    scanners_run: scannersRun,
+    scanners_failed: scannersFailed,
+    insights_written: insightsWritten,
+    insights_resolved: insightsResolved,
+    urgent_notified: urgentNotified,
+  };
 }

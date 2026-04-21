@@ -505,6 +505,9 @@ export type CicdEventType =
   | 'admin.insight.rejected'
   | 'admin.insight.snoozed'
   | 'admin.insight.dismissed'
+  // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
+  | 'admin.briefing.injected'
+  | 'admin.insight.urgent_notified'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
