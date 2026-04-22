@@ -95,6 +95,39 @@ const ROUTING_RULES: RoutingRule[] = [
     rationale: 'Vitana system questions prioritize Knowledge Hub for accurate documentation',
   },
 
+  // ===== Personal Vitana Index Questions → User Data First =====
+  // BOOTSTRAP-ORB-INDEX-AWARENESS: when the user asks about THEIR Index,
+  // tier, pillars, or how to improve THEIR score, route to user data
+  // (memory garden + autopilot recommendations) first, then to KB
+  // narrative. Generic "what IS the Vitana Index?" stays at vitana_system
+  // (priority 100) and goes to KB docs. Sits BETWEEN vitana_system (100)
+  // and personal_history (90) so it wins on "MY index" while leaving "the
+  // index" to the higher-priority KB route.
+  {
+    name: 'personal_index',
+    priority: 95,
+    patterns: [
+      /\bmy (vitana )?(index|score|tier|pillars?|s\u00e4ul[en]?)/i,
+      /\bmein(en|e)? (vitana )?(index|score|tier|s\u00e4ul[en]?)/i,
+      /how (do|can) i (improve|raise|lift|boost) (my )?(index|score|tier)/i,
+      /(verbess|improv|raise|lift|boost).*(meinen?|my)\s*(vitana )?(index|score|s\u00e4ul[en]?)/i,
+      /what(\u2019|')?s (holding me back|my weakest)/i,
+      /(make|build|set up|create)\s+(me\s+)?a?\s*plan.*(index|score|pillar|s\u00e4ule)/i,
+      /(plan|schedule).*(improve|verbess).*(index|score|tier|s\u00e4ule)/i,
+    ],
+    keywords: [
+      'my index', 'my vitana index', 'my score', 'my tier', 'my pillar', 'my pillars',
+      'mein index', 'mein vitana index', 'meinen index', 'meine s\u00e4ule',
+      'improve my index', 'raise my score', 'lift my index', 'boost my tier',
+      'verbessere meinen index', 'verbesser meinen score',
+      'weakest pillar', 'lowest pillar', 'schw\u00e4chste s\u00e4ule',
+      'plan to improve', 'plan zur verbesserung',
+    ],
+    primary_source: 'memory_garden',
+    secondary_sources: ['knowledge_hub'],
+    rationale: 'Personal Index questions need the live score + user-specific recommendations. Memory Garden first surfaces the [HEALTH] profile block (current score, pillars, weakest, trend, goal gap); KB docs supplement with explanation when asked.',
+  },
+
   // ===== Personal/Historical Questions → Memory Garden First =====
   {
     name: 'personal_history',
