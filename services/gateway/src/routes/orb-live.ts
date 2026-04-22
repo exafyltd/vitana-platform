@@ -741,6 +741,13 @@ interface GeminiLiveSession {
   // typically EventSource network blips, not long pauses, so rebuilding would
   // waste 400-1200 ms of Supabase/Gemini calls for zero user benefit.
   contextBootstrapBuiltAt?: number;
+  // BOOTSTRAP-ORB-CRITICAL-PATH: Resolves once the heavy context assembly
+  // (memory bootstrap, active role lookup, last-session info, admin briefing,
+  // stored-language lookup) has populated the fields above. Awaited inside
+  // connectToLiveAPI's ws.on('open') handler so the context build (800-1200ms)
+  // overlaps with the Google auth + WS handshake (500-1000ms) instead of
+  // serializing with /live/session/start's response.
+  contextReadyPromise?: Promise<void>;
   // VTID-01225: Transcript accumulation for Cognee extraction
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
@@ -4694,8 +4701,25 @@ async function connectToLiveAPI(
     }, 15000); // 15 second timeout
 
     // Connection opened - send setup message
-    ws.on('open', () => {
+    ws.on('open', async () => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
+
+      // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
+      // background context-assembly promise (Brain/bootstrap + role + last
+      // session + admin briefing + stored lang), wait for it before building
+      // the setup message. The Google auth + WS handshake that just completed
+      // has typically overlapped with context build, so this await is near
+      // zero for authenticated sessions and a no-op for anonymous sessions.
+      const ctxPromise = (session as any).contextReadyPromise as Promise<void> | undefined;
+      if (ctxPromise) {
+        const awaitStart = Date.now();
+        try {
+          await ctxPromise;
+        } catch (e) {
+          // Promise's own .catch already logged; proceed with whatever session fields are populated.
+        }
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${Date.now() - awaitStart}ms before Gemini setup for session ${session.sessionId}`);
+      }
 
       // Send setup message with model and configuration
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
@@ -9752,6 +9776,13 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let sseActiveRole: string | null = null;
   // VTID-01224-FIX: Last session info for context-aware greeting
   let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
+  // BOOTSTRAP-ORB-CRITICAL-PATH: Promise resolving once context assembly has
+  // populated the session fields below. Attached to the session object and
+  // awaited by connectToLiveAPI's ws.on('open') handler, so context build
+  // overlaps with Google auth + Gemini WS handshake instead of blocking the
+  // /live/session/start response. Undefined for anonymous / no-identity
+  // sessions (nothing to build).
+  let contextReadyPromise: Promise<void> | undefined;
 
   if (isAnonymousSession) {
     // VTID-ANON: Anonymous session — skip ALL personal context.
@@ -9765,13 +9796,15 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VITANA-BRAIN: If ORB brain flag is enabled, use brain context assembly instead
     const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
     const useOrbBrain = await isVitanaBrainOrbEnabled();
+    const contextBuildStart = Date.now();
 
-    // BOOTSTRAP-ORB-PHASE1: Run bootstrap + role + sessionInfo + language
-    // preference all in parallel. Previously storedLang awaited serially
-    // before this block, adding ~100 ms to the critical path. Now it
-    // overlaps with the other queries so total latency is governed by the
-    // slowest one (bootstrap ~800-1200 ms).
-    const [bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult] = await Promise.all([
+    // BOOTSTRAP-ORB-CRITICAL-PATH: Kick off bootstrap + role + sessionInfo +
+    // stored-language + admin briefing in parallel, WITHOUT awaiting. The
+    // resulting promise is stored on the session and awaited by
+    // connectToLiveAPI's ws.on('open') handler. Admin briefing is fetched
+    // speculatively (only needs tenant_id) and discarded if the resolved role
+    // turns out not to be admin-ish.
+    const bootstrapWork = Promise.all([
       useOrbBrain
         ? (async () => {
             const brainStart = Date.now();
@@ -9807,75 +9840,86 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
         : resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(bootstrapIdentity.user_id),
       storedLangPromise,
+      bootstrapIdentity.tenant_id
+        ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
+            console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
-    sseActiveRole = fetchedSseRole;
-    lastSessionInfo = fetchedSessionInfo;
-    if (storedLangResult && !clientRequestedLang) {
-      lang = storedLangResult;
-      console.log(`[LANG-PREF] No client lang — using stored preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
-    }
 
-    // VTID-ROLE-CMD-HUB: Command Hub is developer-only — override role
-    const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-    if (sseRoute.startsWith('/command-hub') && (!sseActiveRole || sseActiveRole === 'community')) {
-      console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${sseActiveRole || 'null'})`);
-      sseActiveRole = 'developer';
-    }
+    contextReadyPromise = bootstrapWork
+      .then(([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+        // Resolve effective role (same overrides as before — kept in sync with the Brain path above).
+        let resolvedRole = fetchedSseRole;
+        const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
+          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
+          resolvedRole = 'developer';
+        }
+        if (clientContext.isMobile && resolvedRole !== 'community') {
+          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
+          resolvedRole = 'community';
+        }
 
-    // BOOTSTRAP-ORB-MOBILE-ROLE: Mobile (Appilix WebView / phone browsers) is community-only.
-    // Runs AFTER the Command Hub override so mobile always wins, even if someone routes
-    // an Appilix WebView to /command-hub. Matches the frontend guard in useRole.tsx.
-    if (clientContext.isMobile && sseActiveRole !== 'community') {
-      console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${sseActiveRole || 'null'})`);
-      sseActiveRole = 'community';
-    }
-
-    contextInstruction = bootstrapResult.contextInstruction;
-    contextPack = bootstrapResult.contextPack;
-    contextBootstrapLatencyMs = bootstrapResult.latencyMs;
-    contextBootstrapSkippedReason = bootstrapResult.skippedReason;
-
-    if (bootstrapResult.skippedReason) {
-      console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
-    } else {
-      console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${contextInstruction?.length || 0}`);
-    }
-
-    // BOOTSTRAP-ADMIN-EE: admin-role sessions get a proactive briefing of the
-    // top open admin_insights prepended to the greeting. Only fires for admin-ish
-    // roles and only when there's something to speak about.
-    if (isAdminRole(sseActiveRole) && bootstrapIdentity.tenant_id) {
-      try {
-        const briefing = await fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3);
-        if (briefing) {
-          contextInstruction = contextInstruction
-            ? `${contextInstruction}\n\n${briefing}`
-            : briefing;
+        // Build final context instruction, optionally prepending the admin briefing.
+        let finalContext = bootstrapResult.contextInstruction || '';
+        if (isAdminRole(resolvedRole) && adminBriefing) {
+          finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({
             vtid: 'BOOTSTRAP-ADMIN-EE',
             type: 'admin.briefing.injected',
             source: 'orb-live',
             status: 'info',
             message: `Admin briefing injected into SSE session ${sessionId}`,
-            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: sseActiveRole, chars: briefing.length },
+            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: resolvedRole, chars: adminBriefing.length },
             actor_id: bootstrapIdentity.user_id,
             actor_role: 'admin',
             surface: 'orb',
           }).catch(() => {});
         }
-      } catch (err: any) {
-        console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
-      }
-    }
+
+        if (bootstrapResult.skippedReason) {
+          console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
+        } else {
+          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${finalContext.length}`);
+        }
+
+        // Determine final lang (stored preference wins only if client didn't
+        // explicitly request one).
+        let finalLang = lang;
+        if (storedLangResult && !clientRequestedLang) {
+          finalLang = storedLangResult;
+          console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
+        }
+
+        // Patch the session (it has already been constructed with placeholders
+        // below this block). Mutations are safe because no consumer reads
+        // these fields before awaiting contextReadyPromise.
+        session.active_role = resolvedRole;
+        session.lastSessionInfo = fetchedSessionInfo;
+        session.contextInstruction = finalContext;
+        session.contextPack = bootstrapResult.contextPack;
+        session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
+        session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+        session.contextBootstrapBuiltAt = Date.now();
+        if (finalLang !== session.lang) {
+          session.lang = finalLang;
+        }
+
+        // Persist language preference (non-blocking, after we know the final lang).
+        if (bootstrapIdentity.user_id && bootstrapIdentity.tenant_id) {
+          persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, finalLang);
+        }
+
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
+      })
+      .catch((err) => {
+        console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
+      });
   } else {
     contextBootstrapSkippedReason = 'no_identity';
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
-  }
-
-  // BOOTSTRAP-ORB-PHASE1: persist language preference AFTER the final lang is
-  // determined (stored-lang lookup moved into the parallel block above).
-  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
-    persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, lang);
   }
 
   // Create session object with identity and context attached
@@ -9894,11 +9938,16 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     audioOutChunks: 0,
     // VTID-01224: Context and identity
     turn_count: 0,
+    // BOOTSTRAP-ORB-CRITICAL-PATH: context/role/lastSessionInfo are populated
+    // asynchronously by contextReadyPromise (kicked off above). For anonymous
+    // / no-identity sessions the promise is undefined and these stay
+    // undefined, which all downstream consumers already tolerate.
     contextInstruction,
     contextPack,
     contextBootstrapLatencyMs,
     contextBootstrapSkippedReason,
     contextBootstrapBuiltAt: Date.now(),
+    contextReadyPromise,
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
@@ -9982,7 +10031,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     voice: getVoiceForLang(lang)
   });
 
-  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextChars=${contextInstruction?.length || 0})`);
+  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
 
   return res.status(200).json({
     ok: true,
@@ -9993,9 +10042,14 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
       modalities: responseModalities,
       model: VERTEX_LIVE_MODEL,
       context_bootstrap: {
-        latency_ms: contextBootstrapLatencyMs,
-        context_chars: contextInstruction?.length || 0,
+        // BOOTSTRAP-ORB-CRITICAL-PATH: latency / char count are now known only
+        // after contextReadyPromise resolves (which happens during the Gemini
+        // WS handshake). Returning placeholders is intentional — clients use
+        // these for diagnostics only.
+        latency_ms: contextBootstrapLatencyMs ?? null,
+        context_chars: null,
         skipped_reason: contextBootstrapSkippedReason || null,
+        deferred: !!contextReadyPromise,
       }
     }
   });
