@@ -121,6 +121,13 @@ export async function waitForWorkerTask(
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
   const deadline = Date.now() + (opts.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
+  // Tolerate transient fetch errors from Supabase. Cloud Run's egress
+  // occasionally resets a connection mid-request with 'TypeError: fetch failed';
+  // a single bad poll shouldn't force us to give up on a task the worker is
+  // still working on. Only bail out if we see N consecutive failures or the
+  // overall wait deadline elapses.
+  const MAX_CONSECUTIVE_FAILURES = 10;
+  let consecutiveFailures = 0;
   while (Date.now() < deadline) {
     const r = await supa<Array<{
       status: string;
@@ -131,8 +138,20 @@ export async function waitForWorkerTask(
       `/rest/v1/dev_autopilot_worker_queue?id=eq.${rowId}&select=status,output_payload,error_message&limit=1`,
     );
     if (!r.ok || !r.data || r.data.length === 0) {
-      return { ok: false, error: `worker-queue lookup failed: ${r.error || 'no row'}`, queue_row_id: rowId };
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        return {
+          ok: false,
+          error: `worker-queue lookup failed ${consecutiveFailures}× in a row: ${r.error || 'no row'}`,
+          queue_row_id: rowId,
+        };
+      }
+      // Back off a bit longer than the normal poll interval so transient
+      // issues have a chance to clear.
+      await new Promise(res => setTimeout(res, POLL_INTERVAL_MS * 2));
+      continue;
     }
+    consecutiveFailures = 0;
     const row = r.data[0];
     if (row.status === 'completed') {
       return {
