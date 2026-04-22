@@ -15652,8 +15652,25 @@ function startVoiceLabAutoRefresh() {
     }
     console.log('[VTID-01218B] Starting auto-refresh (2s interval)');
     state.voiceLab.autoRefreshIntervalId = setInterval(function () {
-        if (state.voiceLab.activeSubTab === 'orb-live' && state.voiceLab.autoRefreshEnabled) {
+        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: ORB Live is reachable from two paths
+        // (Diagnostics → Voice Lab AND Assistant → ORB Live). The Diagnostics
+        // path's renderVoiceLabView fires stopVoiceLabAutoRefresh when its
+        // activeSubTab changes, but the Assistant path doesn't — so the
+        // interval was orphaned and fetchVoiceLabSessionsSilent →
+        // updateVoiceLabSessionsTable → renderApp() fired every 2s on every
+        // other screen, resetting sidebar scroll and causing flicker.
+        //
+        // Now: only fetch when the ORB Live panel is actually in view. If
+        // not, self-cancel so we don't keep firing.
+        var onOrbLive =
+            (state.currentModuleKey === 'diagnostics' && state.currentTab === 'voice-lab'
+             && state.voiceLab.activeSubTab === 'orb-live')
+            || (state.currentModuleKey === 'assistant' && state.currentTab === 'orb-live');
+
+        if (onOrbLive && state.voiceLab.autoRefreshEnabled) {
             fetchVoiceLabSessionsSilent();
+        } else if (!onOrbLive) {
+            stopVoiceLabAutoRefresh();
         }
     }, 2000);
 }
@@ -15731,8 +15748,12 @@ function updateVoiceLabSessionsTable() {
 
     var tbody = document.querySelector('.voice-lab-sessions-table tbody');
     if (!tbody) {
-        // Table doesn't exist yet, do full render
-        renderApp();
+        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: if the table isn't in the DOM we are
+        // NOT on the ORB Live panel — just bail. The previous behaviour of
+        // calling renderApp() here turned every orphaned interval tick into
+        // a full re-render (sidebar scroll reset, flicker). If the user is
+        // on the ORB Live panel and the table is genuinely still mounting,
+        // the next tick (2s later) will find it.
         return;
     }
 
