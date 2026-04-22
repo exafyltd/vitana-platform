@@ -40,6 +40,33 @@ function formatPrice(cents, currency) {
 }
 
 /**
+ * Walk a list of candidate image URLs and return the first one that
+ * responds 2xx with an image/* content-type. Falls through to the
+ * supplied default on any miss. Used to shield WhatsApp/Facebook et al.
+ * from legacy / broken rows in `profiles.avatar_url` — some pre-existing
+ * rows point at the no-longer-public `default-images` bucket, at expired
+ * signed URLs, or at third-party picture URLs that return non-image
+ * content to crawlers. Returns the detected content-type too so the
+ * caller can emit an accurate `og:image:type`.
+ */
+async function pickUsableImage(candidates, defaultImage) {
+  for (const url of candidates) {
+    if (!url || typeof url !== 'string') continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+    try {
+      const r = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        cf: { cacheTtl: 300, cacheEverything: true },
+      });
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (r.ok && ct.startsWith('image/')) return { url, contentType: ct };
+    } catch { /* try next */ }
+  }
+  return { url: defaultImage, contentType: 'image/jpeg' };
+}
+
+/**
  * Build an HTML page with OG meta tags for a profile. Served to crawlers only.
  * Queries the gateway's public profile endpoint — no auth required.
  */
@@ -73,9 +100,17 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
     .slice(0, 200);
   // cover_url is landscape-friendly; avatar_url is square (auto-fits on
   // WhatsApp/Telegram but below some crawlers' 1200x630 preference, which
-  // is why DEFAULT_IMAGE is a landscape hero).
-  const image = p.cover_url || p.avatar_url || DEFAULT_IMAGE;
-  const isLandscape = !!p.cover_url || image === DEFAULT_IMAGE;
+  // is why DEFAULT_IMAGE is a landscape hero). HEAD-check each candidate
+  // so crawlers never see a broken URL — see pickUsableImage().
+  const picked = await pickUsableImage(
+    [p.cover_url, p.avatar_url],
+    DEFAULT_IMAGE,
+  );
+  const image = picked.url;
+  const imageType = picked.contentType;
+  // Landscape when we ended up on cover_url or the default hero;
+  // a validated avatar_url stays 512×512.
+  const isLandscape = image === p.cover_url || image === DEFAULT_IMAGE;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -92,7 +127,7 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
   <meta property="og:image" content="${escapeHtml(image)}">
   <meta property="og:image:secure_url" content="${escapeHtml(image)}">
-  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:type" content="${escapeHtml(imageType)}">
   <meta property="og:image:alt" content="${escapeHtml(composedName)}">
   <meta property="og:image:width" content="${isLandscape ? 1200 : 512}">
   <meta property="og:image:height" content="${isLandscape ? 630 : 512}">
