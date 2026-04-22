@@ -128,28 +128,40 @@ router.get('/connect/:provider', (req: Request, res: Response) => {
 
 // =============================================================================
 // GET /callback/:provider — OAuth callback (redirect from provider)
+//
+// NB: the :provider in the URL is what was registered in the OAuth client's
+// redirect-URI allowlist, which is not always the actual provider the user is
+// connecting. YouTube shares Google's OAuth client and rides on the
+// /callback/google URL (see callbackProviderFor). The real provider lives in
+// the state blob — parse that first, then dispatch.
 // =============================================================================
 router.get('/callback/:provider', async (req: Request, res: Response) => {
-  const provider = req.params.provider as SocialProvider;
+  const urlProvider = req.params.provider as SocialProvider;
   const { code, state, error: oauthError } = req.query;
-  const redirectPath = callbackRedirectPath(provider);
 
   if (oauthError) {
-    console.warn(`${LOG_PREFIX} OAuth error for ${provider}: ${oauthError}`);
-    return res.redirect(`${APP_URL}${redirectPath}?error=oauth_denied&provider=${provider}`);
+    const redirectPath = callbackRedirectPath(urlProvider);
+    console.warn(`${LOG_PREFIX} OAuth error for ${urlProvider}: ${oauthError}`);
+    return res.redirect(`${APP_URL}${redirectPath}?error=oauth_denied&provider=${urlProvider}`);
   }
 
   if (!code || !state) {
-    return res.redirect(`${APP_URL}${redirectPath}?error=missing_params&provider=${provider}`);
+    const redirectPath = callbackRedirectPath(urlProvider);
+    return res.redirect(`${APP_URL}${redirectPath}?error=missing_params&provider=${urlProvider}`);
   }
 
-  // Parse state to get userId and tenantId
+  // Parse state to get userId, tenantId and the real provider.
   const stateData = parseOAuthState(state as string);
   if (!stateData) {
-    return res.redirect(`${APP_URL}${redirectPath}?error=invalid_state&provider=${provider}`);
+    const redirectPath = callbackRedirectPath(urlProvider);
+    return res.redirect(`${APP_URL}${redirectPath}?error=invalid_state&provider=${urlProvider}`);
   }
 
-  console.log(`${LOG_PREFIX} Processing callback for ${provider}, user ${stateData.userId.slice(0, 8)}…`);
+  // From here on use the actual provider from state, not the URL path.
+  const provider = stateData.provider;
+  const redirectPath = callbackRedirectPath(provider);
+
+  console.log(`${LOG_PREFIX} Processing callback for ${provider} (url:${urlProvider}), user ${stateData.userId.slice(0, 8)}…`);
 
   // Exchange code for tokens
   const tokens = await exchangeCodeForTokens(provider, code as string);

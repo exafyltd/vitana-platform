@@ -147,7 +147,7 @@ export function getOAuthUrl(
     return { url: '', error: `${config.name} is not configured. Missing ${config.clientIdEnv}.` };
   }
 
-  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${provider}`;
+  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
   const state = Buffer.from(JSON.stringify({ userId, tenantId, provider })).toString('base64url');
 
   const params = new URLSearchParams({
@@ -191,6 +191,22 @@ export function parseOAuthState(state: string): { userId: string; tenantId: stri
   }
 }
 
+/**
+ * Some providers share the same OAuth client as another provider and can
+ * reuse the sibling's callback URL. This avoids having to register a new
+ * redirect URI in the OAuth client's allowlist when splitting a bundled
+ * provider into a narrower one.
+ *
+ * YouTube rides on Google's OAuth client — returning 'google' here means the
+ * auth request, the token-exchange redirect_uri, and the browser-facing
+ * callback all hit /api/v1/social-accounts/callback/google. The real provider
+ * is then read back out of the state blob.
+ */
+export function callbackProviderFor(provider: SocialProvider): SocialProvider {
+  if (provider === 'youtube') return 'google';
+  return provider;
+}
+
 // =============================================================================
 // Token Exchange
 // =============================================================================
@@ -215,7 +231,8 @@ export async function exchangeCodeForTokens(
     return { access_token: '', error: `Missing OAuth credentials for ${config.name}` };
   }
 
-  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${provider}`;
+  // MUST match the redirect_uri used in the auth request.
+  const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
 
   try {
     const body: Record<string, string> = {
