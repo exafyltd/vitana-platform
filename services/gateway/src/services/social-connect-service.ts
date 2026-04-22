@@ -26,10 +26,10 @@ const GATEWAY_URL = process.env.GATEWAY_PUBLIC_URL || process.env.APP_URL || 'ht
 // Provider Configuration
 // =============================================================================
 
-// VTID-01928: `google` covers Gmail + Calendar + Contacts + YouTube data access.
-// Distinct from the `youtube` social-enrichment provider which shares the same
-// OAuth client but only requests the youtube.readonly scope and is surfaced in
-// the Social Media section, not Mail/Calendar/Music.
+// VTID-01928: `google` covers Gmail + Calendar + Contacts in one bundled
+// consent. `youtube` is a dedicated connector for YouTube and YouTube Music —
+// same Google OAuth client underneath, but only youtube.readonly is requested
+// so users connecting YouTube don't have to grant mail and calendar access.
 export type SocialProvider =
   | 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'linkedin' | 'twitter'
   | 'google';
@@ -104,9 +104,10 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
     clientIdEnv: 'TWITTER_CLIENT_ID',
     clientSecretEnv: 'TWITTER_CLIENT_SECRET',
   },
-  // VTID-01928: Google covers Gmail, Google Calendar, Google Contacts (People API),
-  // YouTube data and YouTube Music. All routed through a single OAuth consent so
-  // the user grants once and every Google-based connector activates together.
+  // VTID-01928: Google covers Gmail, Google Calendar and Google Contacts
+  // (People API) in a single consent. YouTube is served by the separate
+  // `youtube` provider above so users aren't forced to grant mail and calendar
+  // scopes just to connect YouTube.
   google: {
     name: 'Google',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -119,7 +120,6 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/contacts.readonly',
-      'https://www.googleapis.com/auth/youtube.readonly',
     ],
     clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
@@ -167,9 +167,11 @@ export function getOAuthUrl(
     params.set('code_challenge', 'challenge'); // PKCE simplified
     params.set('code_challenge_method', 'plain');
   }
-  if (provider === 'google') {
+  if (provider === 'google' || provider === 'youtube') {
     // offline + consent so Google actually returns a refresh_token on every consent,
     // not just the very first one — required for long-lived background access.
+    // YouTube shares Google's OAuth server and needs the same params to get a
+    // refresh_token and reach the consent screen instead of looping on the picker.
     params.set('access_type', 'offline');
     params.set('prompt', 'consent');
     params.set('include_granted_scopes', 'true');
