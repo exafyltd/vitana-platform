@@ -98,19 +98,17 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 200);
-  // cover_url is landscape-friendly; avatar_url is square (auto-fits on
-  // WhatsApp/Telegram but below some crawlers' 1200x630 preference, which
-  // is why DEFAULT_IMAGE is a landscape hero). HEAD-check each candidate
-  // so crawlers never see a broken URL — see pickUsableImage().
-  const picked = await pickUsableImage(
-    [p.cover_url, p.avatar_url],
-    DEFAULT_IMAGE,
-  );
+  // Preview tracks the current profile picture (avatar_url). cover_url is
+  // intentionally NOT in the candidate list: there is no user-facing UI to
+  // update it, so legacy rows drift out of sync with the in-app avatar and
+  // produce surprising previews (e.g. an unrelated old photo for a user
+  // whose current avatar is a headshot). Fall through to the branded
+  // DEFAULT_IMAGE hero when avatar_url is missing or not crawler-fetchable.
+  const picked = await pickUsableImage([p.avatar_url], DEFAULT_IMAGE);
   const image = picked.url;
   const imageType = picked.contentType;
-  // Landscape when we ended up on cover_url or the default hero;
-  // a validated avatar_url stays 512×512.
-  const isLandscape = image === p.cover_url || image === DEFAULT_IMAGE;
+  // avatar_url is square (512×512); DEFAULT_IMAGE is landscape (1200×630).
+  const isLandscape = image === DEFAULT_IMAGE;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
