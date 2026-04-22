@@ -44,8 +44,10 @@ const APP_URL = process.env.APP_URL || 'https://vitana.app';
 // VTID-01928: OAuth callback redirect path per provider. Google connectors live
 // in /settings/connected-apps; legacy social providers keep the /settings/social
 // path so their existing flows (scrape-based import, share prefs UI) are unaffected.
+// YouTube is surfaced in the Music & Video section of /settings/connected-apps,
+// so its callback lands there too.
 function callbackRedirectPath(provider: string): string {
-  if (provider === 'google') return '/settings/connected-apps';
+  if (provider === 'google' || provider === 'youtube') return '/settings/connected-apps';
   return '/settings/social';
 }
 
