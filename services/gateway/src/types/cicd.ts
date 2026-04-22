@@ -220,6 +220,7 @@ export type CicdEventType =
   | 'health.compute.vitana_index'
   | 'health.recommendations.refresh'
   | 'health.compute.error'
+  | 'health.compute.baseline_survey'
   // VTID-01105: Memory Write Events
   | 'memory.write'
   | 'memory.read'
