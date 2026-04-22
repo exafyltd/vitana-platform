@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
 
@@ -694,69 +695,146 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const supabase = createUserSupabaseClient(token);
+  const userClient = createUserSupabaseClient(token);
+  const admin = getSupabase();
+
+  if (!admin) {
+    return res.status(500).json({ ok: false, error: 'SERVICE_UNAVAILABLE', message: 'Admin Supabase client not configured' });
+  }
 
   try {
-    const { data: ctx, error: ctxErr } = await supabase.rpc('me_context');
-    if (ctxErr || !ctx?.user_id || !ctx?.tenant_id) {
-      return res.status(401).json({ ok: false, error: 'NO_CONTEXT' });
+    // Resolve user_id from the authenticated JWT (always available).
+    const { data: userData, error: userErr } = await userClient.auth.getUser();
+    if (userErr || !userData?.user?.id) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: userErr?.message });
+    }
+    const userId = userData.user.id;
+
+    // Resolve tenant_id: prefer JWT-based me_context, fall back to user_tenants.
+    let tenantId: string | null = null;
+    try {
+      const { data: ctx } = await userClient.rpc('me_context');
+      if (ctx && typeof ctx === 'object' && (ctx as any).tenant_id) {
+        tenantId = (ctx as any).tenant_id as string;
+      }
+    } catch { /* fall through to user_tenants */ }
+
+    if (!tenantId) {
+      const { data: tenantRow } = await admin
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle();
+      tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
     }
 
+    // Write the survey row (RLS allows auth.uid() = user_id on this table).
     const answers = { physical, mental, nutritional, notes: notes ?? null };
-    const { error: surveyErr } = await supabase
+    const { error: surveyErr } = await userClient
       .from('vitana_index_baseline_survey')
-      .upsert({ user_id: ctx.user_id, answers, completed_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      .upsert({ user_id: userId, answers, completed_at: new Date().toISOString() }, { onConflict: 'user_id' });
 
     if (surveyErr) {
       console.error(`[${VTID_C3}] baseline-survey upsert failed:`, surveyErr.message);
-      return res.status(400).json({ ok: false, error: surveyErr.message });
+      return res.status(400).json({ ok: false, error: 'SURVEY_WRITE_FAILED', detail: surveyErr.message });
     }
 
-    // Seed health_features_daily so the compute RPC has something to score.
-    // Scale 1-5 → heart_rate/stress/glucose proxies that hit the "good" band
-    // when the user rated themselves well.
-    const ratingToHeartRate = { 1: 95, 2: 88, 3: 75, 4: 70, 5: 65 } as const;
-    const ratingToStress = { 1: 85, 2: 65, 3: 45, 4: 25, 5: 15 } as const;
-    const ratingToGlucose = { 1: 130, 2: 115, 3: 95, 4: 85, 5: 80 } as const;
+    // Map self-ratings (1-5) → 0-200 pillar scores directly. This preserves the
+    // same "good rating → high score" curve as the compute RPC without
+    // depending on request.tenant_id GUC being available in the RPC session.
+    // Bands (1-5): 50 / 100 / 150 / 180 / 200.
+    const ratingToPillar = { 1: 50, 2: 100, 3: 150, 4: 180, 5: 200 } as const;
+    const scorePhysical = ratingToPillar[physical as 1|2|3|4|5];
+    const scoreMental = ratingToPillar[mental as 1|2|3|4|5];
+    const scoreNutritional = ratingToPillar[nutritional as 1|2|3|4|5];
+    const scoreSocial = 100;         // baseline until Proactive Guide 1a
+    const scoreEnvironmental = 100;  // baseline until Proactive Guide 1b
+    const scoreProsperity = 100;     // baseline until Proactive Guide 1c
 
-    const features = [
-      { feature_key: 'wearable_heart_rate', feature_value: ratingToHeartRate[physical as 1|2|3|4|5], feature_unit: 'bpm' },
-      { feature_key: 'wearable_stress',     feature_value: ratingToStress[mental as 1|2|3|4|5],      feature_unit: 'pct' },
-      { feature_key: 'biomarker_glucose',   feature_value: ratingToGlucose[nutritional as 1|2|3|4|5], feature_unit: 'mg/dL' },
-    ];
+    // Read pillar weights from active config (best-effort — default 1.0 each).
+    let weights = { physical: 1, mental: 1, nutritional: 1, social: 1, environmental: 1, prosperity: 1 };
+    try {
+      const { data: cfg } = await admin
+        .from('vitana_index_config')
+        .select('pillar_weights')
+        .eq('is_active', true)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const pw = (cfg as any)?.pillar_weights;
+      if (pw && typeof pw === 'object') {
+        weights = { ...weights, ...pw };
+      }
+    } catch { /* keep defaults */ }
 
-    for (const f of features) {
-      await supabase.from('health_features_daily').upsert({
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
+    const scoreTotal = Math.min(999, Math.max(0, Math.round(
+      scorePhysical * (Number(weights.physical) || 1)
+      + scoreMental * (Number(weights.mental) || 1)
+      + scoreNutritional * (Number(weights.nutritional) || 1)
+      + scoreSocial * (Number(weights.social) || 1)
+      + scoreEnvironmental * (Number(weights.environmental) || 1)
+      + scoreProsperity * (Number(weights.prosperity) || 1)
+    )));
+
+    // vitana_index_scores.tenant_id is NOT NULL — use a fallback UUID for
+    // community users whose tenancy hasn't been provisioned yet.
+    const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
+
+    const { error: scoreErr } = await admin
+      .from('vitana_index_scores')
+      .upsert({
+        tenant_id: effectiveTenantId,
+        user_id: userId,
         date: today,
-        feature_key: f.feature_key,
-        feature_value: f.feature_value,
-        feature_unit: f.feature_unit,
-        sample_count: 1,
+        score_total: scoreTotal,
+        score_physical: scorePhysical,
+        score_mental: scoreMental,
+        score_nutritional: scoreNutritional,
+        score_social: scoreSocial,
+        score_environmental: scoreEnvironmental,
+        score_prosperity: scoreProsperity,
+        model_version: 'baseline-survey-v1',
+        feature_inputs: { source: 'baseline_survey', ratings: { physical, mental, nutritional } },
         confidence: 0.5,
-      }, { onConflict: 'tenant_id,user_id,date,feature_key' });
-    }
+      }, { onConflict: 'tenant_id,user_id,date' });
 
-    // Compute the Index
-    const { data: indexResult, error: indexErr } = await supabase.rpc(
-      'health_compute_vitana_index',
-      { p_date: today, p_model_version: 'baseline-survey-v1' }
-    );
-
-    if (indexErr || !indexResult?.ok) {
-      console.error(`[${VTID_C3}] baseline compute failed:`, indexErr?.message || indexResult);
-      return res.status(400).json({ ok: false, error: 'COMPUTE_FAILED', detail: indexErr?.message });
+    if (scoreErr) {
+      console.error(`[${VTID_C3}] baseline score write failed:`, scoreErr.message);
+      return res.status(400).json({ ok: false, error: 'SCORE_WRITE_FAILED', detail: scoreErr.message });
     }
 
     await emitHealthComputeEvent(
       'health.compute.baseline_survey',
       'success',
-      `Baseline survey seeded Day-0 Index: ${indexResult.score_total}`,
-      { user_id: ctx.user_id, score_total: indexResult.score_total, answers }
+      `Baseline survey seeded Day-0 Index: ${scoreTotal}`,
+      {
+        user_id: userId,
+        tenant_id: effectiveTenantId,
+        score_total: scoreTotal,
+        pillars: { physical: scorePhysical, mental: scoreMental, nutritional: scoreNutritional, social: scoreSocial, environmental: scoreEnvironmental, prosperity: scoreProsperity },
+        answers,
+      }
     );
 
-    return res.status(200).json({ ok: true, date: today, index: indexResult });
+    return res.status(200).json({
+      ok: true,
+      date: today,
+      index: {
+        ok: true,
+        date: today,
+        score_total: scoreTotal,
+        score_physical: scorePhysical,
+        score_mental: scoreMental,
+        score_nutritional: scoreNutritional,
+        score_social: scoreSocial,
+        score_environmental: scoreEnvironmental,
+        score_prosperity: scoreProsperity,
+        pillar_weights: weights,
+        model_version: 'baseline-survey-v1',
+        confidence: 0.5,
+      },
+    });
   } catch (err: any) {
     console.error(`[${VTID_C3}] POST /health/baseline-survey error:`, err.message);
     return res.status(500).json({ ok: false, error: err.message });
