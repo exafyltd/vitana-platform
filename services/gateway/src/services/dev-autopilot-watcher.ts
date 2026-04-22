@@ -27,9 +27,28 @@ import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
 
-const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'true').toLowerCase() === 'true';
+// Historical: this module defaulted to DRY_RUN=true so an unconfigured
+// gateway would synthesise CI pass / merge / deploy outcomes instead of
+// touching GitHub. That was safe for initial rollout but left every real
+// PR sitting OPEN forever — the autopilot opened it, CI went green, and
+// nothing merged it.
+//
+// DEV_AUTOPILOT_WATCHER_LIVE=true forces the watcher into live mode
+// (query GitHub, auto-merge green PRs, follow deploy events). Takes
+// precedence over DEV_AUTOPILOT_DRY_RUN. Default stays OFF so deploys
+// from older EXEC-DEPLOY configs keep the dry-run behaviour until
+// explicitly opted in.
+const DRY_RUN = (() => {
+  if ((process.env.DEV_AUTOPILOT_WATCHER_LIVE || '').toLowerCase() === 'true') return false;
+  return (process.env.DEV_AUTOPILOT_DRY_RUN || 'true').toLowerCase() === 'true';
+})();
 const GITHUB_REPO =
   process.env.DEV_AUTOPILOT_GITHUB_REPO || 'exafyltd/vitana-platform';
+// Risk classes we'll auto-merge. High risk should go through human review
+// regardless of CI state; the safety gate on approve already rejects them,
+// but this is defense-in-depth in case something reaches 'ci' status via
+// an API path that bypassed the gate.
+const AUTO_MERGE_ALLOWED_RISK = new Set(['low', 'medium']);
 
 const CI_TICK_MS = 60_000;          // 1 min — checks API rate limit budget
 const DEPLOY_TICK_MS = 60_000;      // 1 min
@@ -84,6 +103,28 @@ interface ConfigRow { kill_switch: boolean; }
 async function killSwitchArmed(s: SupaConfig): Promise<boolean> {
   const r = await supa<ConfigRow[]>(s, `/rest/v1/dev_autopilot_config?id=eq.1&limit=1`);
   return !!(r.ok && r.data && r.data[0] && r.data[0].kill_switch);
+}
+
+/** Load the finding's risk_class so the CI watcher can refuse to auto-merge
+ * anything that looks high-risk, even if it somehow passed the approve gate. */
+async function loadFindingRiskClass(s: SupaConfig, findingId: string): Promise<'low' | 'medium' | 'high' | 'unknown'> {
+  const r = await supa<Array<{ risk_class: 'low' | 'medium' | 'high' | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=risk_class&limit=1`,
+  );
+  if (!r.ok || !r.data || !r.data[0]) return 'unknown';
+  return (r.data[0].risk_class || 'unknown') as 'low' | 'medium' | 'high' | 'unknown';
+}
+
+/** Returns true when the watcher is safe to auto-merge this PR. */
+export function shouldAutoMerge(
+  riskClass: 'low' | 'medium' | 'high' | 'unknown',
+): { ok: boolean; reason?: string } {
+  if (riskClass === 'unknown') return { ok: false, reason: 'risk_class unknown — refusing auto-merge' };
+  if (!AUTO_MERGE_ALLOWED_RISK.has(riskClass)) {
+    return { ok: false, reason: `risk_class=${riskClass} exceeds auto-merge allowlist` };
+  }
+  return { ok: true };
 }
 
 interface ExecutionRow {
@@ -313,6 +354,32 @@ export async function ciWatcherTick(): Promise<void> {
       message: `Execution ${exec.id.slice(0, 8)} CI passed`,
       payload: { execution_id: exec.id, pr_url: exec.pr_url, checks: prStatus.checks.length },
     });
+
+    // Defense-in-depth: check risk class one more time before auto-merging.
+    // The approve safety-gate already rejected high-risk, but an execution
+    // row could theoretically reach 'ci' via an API path that bypassed it,
+    // and auto-merge to main is irreversible.
+    const riskClass = await loadFindingRiskClass(s, exec.finding_id);
+    const gate = shouldAutoMerge(riskClass);
+    if (!gate.ok) {
+      await transitionStatus(s, exec.id, 'merging', 'failed', {
+        metadata: {
+          ...(exec.metadata || {}),
+          auto_merge_declined: gate.reason,
+          risk_class: riskClass,
+        },
+      });
+      await emitOasisEvent({
+        vtid: WATCHER_VTID,
+        type: 'dev_autopilot.execution.auto_merge_declined',
+        source: 'dev-autopilot-watcher',
+        status: 'warning',
+        message: `Auto-merge declined for ${exec.id.slice(0, 8)}: ${gate.reason}. PR ${exec.pr_url} left open for manual review.`,
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, risk_class: riskClass, reason: gate.reason },
+      });
+      await bridgeFailure(exec.id, 'ci', gate.reason || 'auto-merge declined');
+      continue;
+    }
 
     try {
       const mergeRes = await githubService.mergePullRequest(

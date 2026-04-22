@@ -311,6 +311,13 @@ jobs:
             # rather than on the pay-per-token API credit balance.
             # Flip to false (or delete this line) to fall back to direct API calls.
             EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
+            # BOOTSTRAP-DEV-AUTOPILOT-WATCHER-LIVE: flip the CI / merge /
+            # deploy watchers out of DRY_RUN mode. Queries GitHub for real
+            # check runs, auto-merges (squash) when all checks pass and
+            # risk_class ∈ {low, medium}, follows OASIS deploy events for the
+            # verification stage. Delete this line to fall back to synthetic
+            # dry-run transitions that never touch GitHub.
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_WATCHER_LIVE=true)
             # VTID-02000: Marketplace sync scheduler secret (shared with
             # .github/workflows/MARKETPLACE-SYNC-CRON.yml). Gateway's
             # /api/v1/internal/marketplace/sync/:network route validates it
