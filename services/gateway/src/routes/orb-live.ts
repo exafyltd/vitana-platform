@@ -1890,6 +1890,108 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['question'],
           },
         },
+        // ─── BOOTSTRAP-ORB-INDEX-AWARENESS round 2 — Vitana Index tools ───
+        {
+          name: 'get_vitana_index',
+          description: [
+            'Return the user\'s current Vitana Index with full breakdown:',
+            'total score (0-999), tier, all 6 pillars, 7-day trend, weakest',
+            'pillar, 90-day goal gap.',
+            '',
+            'CALL THIS WHEN the user asks:',
+            '  - "What is my Vitana Index?" / "Was ist mein Vitana Index?"',
+            '  - "What\'s my score / tier?" / "Welchen Tier habe ich?"',
+            '  - "How am I doing?" / "Wie stehe ich?" (when health context is the topic)',
+            '',
+            'DO NOT CALL for generic "what IS the Vitana Index" (no "my") —',
+            'that\'s a platform explanation, use search_knowledge instead.',
+            '',
+            'The [HEALTH] block in the system prompt usually has the same info;',
+            'calling this tool gets the freshest snapshot and returns it in a',
+            'single structured object you can read aloud naturally.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'get_index_improvement_suggestions',
+          description: [
+            'Return 2-3 concrete actions the user can take to improve their',
+            'Vitana Index, ranked by predicted contribution. Each suggestion',
+            'includes a title, the pillar(s) it lifts, and a magnitude.',
+            '',
+            'CALL THIS WHEN the user asks:',
+            '  - "How can I improve my Index?" / "Wie verbessere ich meinen Index?"',
+            '  - "What\'s holding me back?" / "Was hält mich zurück?"',
+            '  - "What should I focus on?" / "Worauf soll ich mich konzentrieren?"',
+            '  - "Which pillar needs work?" / "Welche Säule brauche ich?"',
+            '',
+            'If the user names a pillar ("help me with Mental"), pass the',
+            'pillar argument. Otherwise omit it and the tool will target the',
+            'user\'s weakest pillar automatically.',
+            '',
+            'Speak the suggestions naturally — "a ten-minute morning meditation',
+            'would lift Mental by three points" — never read raw JSON.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: {
+                type: 'string',
+                enum: ['physical', 'mental', 'nutritional', 'social', 'environmental', 'prosperity'],
+                description: 'Optional pillar to focus on. Omit to target the weakest pillar automatically.',
+              },
+              limit: {
+                type: 'integer',
+                description: 'Max suggestions to return. Default 3.',
+              },
+            },
+          },
+        },
+        {
+          name: 'create_index_improvement_plan',
+          description: [
+            'Build a multi-event calendar plan that targets a weak pillar of',
+            'the user\'s Vitana Index, then write the events to their calendar',
+            'directly (autonomous — no per-event confirmation). Returns a',
+            'summary of what was scheduled for you to announce.',
+            '',
+            'CALL THIS WHEN the user asks:',
+            '  - "Make me a plan to improve my Index"',
+            '  - "Mach mir einen Plan für meinen Index"',
+            '  - "Schedule a routine for me" / "Plan mir eine Routine"',
+            '  - "Add things to my calendar to lift [pillar]"',
+            '',
+            'This is AUTONOMOUS by design — you do NOT need per-event',
+            'confirmation. Announce clearly in voice what you just scheduled',
+            '("I\'ve added three movement sessions this week and two',
+            'mindfulness blocks next week to lift your Mental pillar").',
+            '',
+            'If the user names a pillar, pass it. Otherwise the tool targets',
+            'the weakest pillar automatically. Days defaults to 14 (2 weeks),',
+            'actions_per_week defaults to 3.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: {
+                type: 'string',
+                enum: ['physical', 'mental', 'nutritional', 'social', 'environmental', 'prosperity'],
+                description: 'Optional pillar to focus on. Omit to target weakest automatically.',
+              },
+              days: {
+                type: 'integer',
+                description: 'How many days forward to schedule. Default 14.',
+              },
+              actions_per_week: {
+                type: 'integer',
+                description: 'Rough frequency. Default 3.',
+              },
+            },
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -3542,6 +3644,254 @@ async function executeLiveApiToolInner(
         console.log(`[BOOTSTRAP-ORB-DELEGATION-ROUTE] consult_external_ai ok: provider=${outcome.result.providerId} model=${outcome.result.model} in=${outcome.result.usage.inputTokens} out=${outcome.result.usage.outputTokens} cost=$${outcome.result.usage.costUsd.toFixed(4)} latency=${outcome.result.latencyMs}ms`);
 
         return { success: true, result: voiceText };
+      }
+
+      // ─── BOOTSTRAP-ORB-INDEX-AWARENESS round 2 — Vitana Index tools ───
+      case 'get_vitana_index': {
+        try {
+          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
+          if (!snap) {
+            return {
+              success: true,
+              result: 'I don\'t see a Vitana Index score yet — it looks like the baseline survey hasn\'t been completed. Want me to point you to the health screen so you can start?',
+            };
+          }
+          return {
+            success: true,
+            result: JSON.stringify({
+              total: snap.total,
+              tier: snap.tier,
+              pillars: snap.pillars,
+              weakest_pillar: snap.weakest_pillar,
+              strongest_pillar: snap.strongest_pillar,
+              trend_7d: snap.trend_7d,
+              goal_target: snap.goal_target,
+              goal_gap: snap.goal_gap,
+              last_computed: snap.last_computed,
+              last_movement: snap.last_movement,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[get_vitana_index] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'get_index_improvement_suggestions': {
+        try {
+          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          // Resolve target pillar: either user-specified or the weakest.
+          let pillar = typeof args.pillar === 'string' ? args.pillar : undefined;
+          if (!pillar) {
+            const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
+            pillar = snap?.weakest_pillar.name;
+          }
+          if (!pillar) {
+            return {
+              success: true,
+              result: 'I don\'t see Index data for this user yet, so I can\'t pick a target pillar. Complete the baseline survey first.',
+            };
+          }
+
+          const limit = typeof args.limit === 'number' ? Math.min(10, Math.max(1, args.limit)) : 3;
+
+          // Query autopilot_recommendations whose contribution_vector lifts the target pillar.
+          // We use a simple JSON path filter — rows where contribution_vector[pillar] > 0.
+          const { data, error } = await client
+            .from('autopilot_recommendations')
+            .select('id, title, action_description, contribution_vector, priority, status')
+            .eq('user_id', lens.user_id)
+            .in('status', ['pending', 'new', 'snoozed'])
+            .not('contribution_vector', 'is', null)
+            .order('priority', { ascending: false })
+            .limit(50);
+
+          if (error) {
+            return { success: false, result: '', error: `Could not fetch recommendations: ${error.message}` };
+          }
+
+          // Filter + rank by contribution_vector[pillar]
+          const ranked = (data || [])
+            .map((r: any) => {
+              const cv = r.contribution_vector as Record<string, number> | null;
+              const lift = cv && typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
+              return { ...r, _lift: lift };
+            })
+            .filter((r: any) => r._lift > 0)
+            .sort((a: any, b: any) => b._lift - a._lift)
+            .slice(0, limit);
+
+          if (ranked.length === 0) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                pillar,
+                suggestions: [],
+                message: `No pending recommendations with a positive ${pillar} contribution right now. Completing ANY existing recommendation will trigger the Index engine to propose more.`,
+              }),
+            };
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              pillar,
+              suggestions: ranked.map((r: any) => ({
+                id: r.id,
+                title: r.title,
+                action: r.action_description,
+                lift: r._lift,
+                contribution_vector: r.contribution_vector,
+              })),
+            }),
+          };
+        } catch (err: any) {
+          console.error('[get_index_improvement_suggestions] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'create_index_improvement_plan': {
+        try {
+          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { createCalendarEvent } = await import('../services/calendar-service');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let pillar = typeof args.pillar === 'string' ? args.pillar : undefined;
+          if (!pillar) {
+            const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
+            pillar = snap?.weakest_pillar.name;
+          }
+          if (!pillar) {
+            return {
+              success: true,
+              result: 'I don\'t see Index data for this user yet, so I can\'t build a plan. Complete the baseline survey first.',
+            };
+          }
+
+          const days = typeof args.days === 'number' ? Math.min(90, Math.max(7, args.days)) : 14;
+          const perWeek = typeof args.actions_per_week === 'number' ? Math.min(7, Math.max(1, args.actions_per_week)) : 3;
+
+          // Pull top recommendations for this pillar.
+          const { data } = await client
+            .from('autopilot_recommendations')
+            .select('id, title, action_description, contribution_vector, priority')
+            .eq('user_id', lens.user_id)
+            .in('status', ['pending', 'new', 'snoozed'])
+            .not('contribution_vector', 'is', null)
+            .order('priority', { ascending: false })
+            .limit(50);
+
+          const ranked = (data || [])
+            .map((r: any) => {
+              const cv = r.contribution_vector as Record<string, number> | null;
+              const lift = cv && typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
+              return { ...r, _lift: lift };
+            })
+            .filter((r: any) => r._lift > 0)
+            .sort((a: any, b: any) => b._lift - a._lift);
+
+          if (ranked.length === 0) {
+            return {
+              success: true,
+              result: `No pending autopilot recommendations target your ${pillar} pillar right now. Try again after completing a few existing ones — the engine regenerates.`,
+            };
+          }
+
+          // Schedule: `perWeek` actions per 7-day block, cycling through the
+          // top recommendations. Each event is placed at a reasonable time
+          // (10 AM local — widget TZ preserved via clientContext is out of
+          // scope for this tool; UTC is fine, calendar-service renders local).
+          const weeks = Math.ceil(days / 7);
+          const totalEvents = weeks * perWeek;
+          const scheduled: { title: string; start_time: string }[] = [];
+          const startOfToday = new Date();
+          startOfToday.setHours(10, 0, 0, 0);
+          startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
+
+          for (let i = 0; i < totalEvents; i++) {
+            const rec = ranked[i % ranked.length];
+            const eventDate = new Date(startOfToday);
+            // Spread events every 2-3 days.
+            eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
+            if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
+            const startIso = eventDate.toISOString();
+            const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
+
+            const pillarTagMap: Record<string, string[]> = {
+              physical: ['movement', 'exercise'],
+              mental: ['mindfulness', 'focus'],
+              nutritional: ['nutrition'],
+              social: ['community', 'social'],
+              environmental: ['environment'],
+              prosperity: ['growth'],
+            };
+            const wellnessTags = pillarTagMap[pillar!] || [pillar!];
+
+            try {
+              const evt = await createCalendarEvent(lens.user_id, {
+                title: rec.title,
+                start_time: startIso,
+                end_time: endIso,
+                description: `${rec.action_description || ''}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
+                event_type: 'health' as any,
+                status: 'confirmed',
+                priority: 'medium',
+                role_context: (session.active_role || 'community') as any,
+                source_type: 'assistant',
+                source_ref_type: 'autopilot_recommendation',
+                source_ref_id: rec.id,
+                priority_score: 60,
+                wellness_tags: wellnessTags,
+                metadata: { created_via: 'orb_voice', plan: 'index_improvement', target_pillar: pillar },
+                is_recurring: false,
+              });
+              if (evt) scheduled.push({ title: evt.title, start_time: evt.start_time });
+            } catch (evErr: any) {
+              console.warn(`[create_index_improvement_plan] event create failed: ${evErr?.message}`);
+            }
+          }
+
+          if (scheduled.length === 0) {
+            return {
+              success: false,
+              result: '',
+              error: 'No events could be scheduled (calendar write failed).',
+            };
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              pillar,
+              days,
+              actions_per_week: perWeek,
+              scheduled_count: scheduled.length,
+              first_event: scheduled[0],
+              last_event: scheduled[scheduled.length - 1],
+              all_titles: scheduled.map(s => s.title),
+            }),
+          };
+        } catch (err: any) {
+          console.error('[create_index_improvement_plan] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
       }
 
       default:

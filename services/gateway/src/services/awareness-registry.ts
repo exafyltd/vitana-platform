@@ -266,9 +266,10 @@ const M: AwarenessSignal[] = [
   { key: 'health.enabled', tier: 'health', subcategory: 'Section render', label: '[HEALTH] block', description: 'Inject health summary section.', default_on: true, params: [
       { key: 'window_days', label: 'Window (days)', type: 'int', default: 14, min: 1, max: 90, step: 1 },
   ]},
-  { key: 'health.vitana_index.score',      tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: 'Index score',     description: 'Latest Vitana Index score.',         default_on: true },
-  { key: 'health.vitana_index.sub_scores', tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: 'Sub-scores',      description: 'Sleep / stress / movement breakdown.',default_on: true, enforcement_status: 'pending' },
-  { key: 'health.vitana_index.deltas',     tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: 'Index deltas',    description: 'Day-over-day changes.',              default_on: true, enforcement_status: 'pending' },
+  { key: 'health.vitana_index.score',       tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: 'Index score + tier',       description: 'Latest Vitana Index total (0-999) + tier band (Starting / Developing / Fair / Good / Great / Excellent).', default_on: true },
+  { key: 'health.vitana_index.sub_scores',  tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: '6 pillars breakdown',      description: 'Physical / Mental / Nutritional / Social / Environmental / Prosperity — each 0-200 — plus weakest and strongest pillar annotations.', default_on: true },
+  { key: 'health.vitana_index.deltas',      tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: 'Trend + last movement',    description: '7-day trend and most recent index.recomputed event (which pillar moved, by how much, what triggered it).', default_on: true },
+  { key: 'health.vitana_index.goal_gap',    tier: 'health', subcategory: 'Vitana Index (VTID-01103)', label: '90-day goal gap',          description: 'Difference between current score and the default Good-tier goal (600). Positive = points needed, negative = above target.', default_on: true },
   { key: 'health.biomarker.upload_count',  tier: 'health', subcategory: 'Biomarkers',                 label: 'Upload count',    description: 'Recent biomarker uploads (count).',  default_on: true },
   { key: 'health.biomarker.recent_tests',  tier: 'health', subcategory: 'Biomarkers',                 label: 'Recent tests',    description: 'Names of recent tests.',             default_on: true, enforcement_status: 'pending' },
   { key: 'health.supplement.add_count',    tier: 'health', subcategory: 'Supplements',                label: 'Adds count',      description: 'Recent supplement additions.',       default_on: true },
