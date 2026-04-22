@@ -552,6 +552,8 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
         score_nutritional: indexResult.score_nutritional,
         score_social: indexResult.score_social,
         score_environmental: indexResult.score_environmental,
+        score_prosperity: indexResult.score_prosperity,
+        pillar_weights: indexResult.pillar_weights,
         model_version: indexResult.model_version,
         confidence: indexResult.confidence,
       },
@@ -636,6 +638,7 @@ router.get('/summary', async (req: Request, res: Response) => {
             score_nutritional: indexData.score_nutritional,
             score_social: indexData.score_social,
             score_environmental: indexData.score_environmental,
+            score_prosperity: indexData.score_prosperity,
             model_version: indexData.model_version,
             confidence: indexData.confidence,
           }
@@ -659,6 +662,134 @@ router.get('/summary', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /baseline-survey
+ *
+ * Seeds the Day-0 Vitana Index from a 3-question onboarding self-rating.
+ * Writes answers to vitana_index_baseline_survey, then seeds
+ * health_features_daily rows that the compute RPC will pick up, then
+ * triggers the compute pipeline for today.
+ *
+ * Request body:
+ *   { "physical": 1-5, "mental": 1-5, "nutritional": 1-5, "notes"?: string }
+ *
+ * Idempotent via UNIQUE(user_id) on vitana_index_baseline_survey — a second
+ * submission updates the existing row.
+ */
+router.post('/baseline-survey', async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const { physical, mental, nutritional, notes } = req.body ?? {};
+  const ratings = { physical, mental, nutritional };
+  for (const [key, val] of Object.entries(ratings)) {
+    if (typeof val !== 'number' || val < 1 || val > 5 || !Number.isInteger(val)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_RATING',
+        message: `${key} must be an integer between 1 and 5`,
+      });
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const supabase = createUserSupabaseClient(token);
+
+  try {
+    const { data: ctx, error: ctxErr } = await supabase.rpc('me_context');
+    if (ctxErr || !ctx?.user_id || !ctx?.tenant_id) {
+      return res.status(401).json({ ok: false, error: 'NO_CONTEXT' });
+    }
+
+    const answers = { physical, mental, nutritional, notes: notes ?? null };
+    const { error: surveyErr } = await supabase
+      .from('vitana_index_baseline_survey')
+      .upsert({ user_id: ctx.user_id, answers, completed_at: new Date().toISOString() }, { onConflict: 'user_id' });
+
+    if (surveyErr) {
+      console.error(`[${VTID_C3}] baseline-survey upsert failed:`, surveyErr.message);
+      return res.status(400).json({ ok: false, error: surveyErr.message });
+    }
+
+    // Seed health_features_daily so the compute RPC has something to score.
+    // Scale 1-5 → heart_rate/stress/glucose proxies that hit the "good" band
+    // when the user rated themselves well.
+    const ratingToHeartRate = { 1: 95, 2: 88, 3: 75, 4: 70, 5: 65 } as const;
+    const ratingToStress = { 1: 85, 2: 65, 3: 45, 4: 25, 5: 15 } as const;
+    const ratingToGlucose = { 1: 130, 2: 115, 3: 95, 4: 85, 5: 80 } as const;
+
+    const features = [
+      { feature_key: 'wearable_heart_rate', feature_value: ratingToHeartRate[physical as 1|2|3|4|5], feature_unit: 'bpm' },
+      { feature_key: 'wearable_stress',     feature_value: ratingToStress[mental as 1|2|3|4|5],      feature_unit: 'pct' },
+      { feature_key: 'biomarker_glucose',   feature_value: ratingToGlucose[nutritional as 1|2|3|4|5], feature_unit: 'mg/dL' },
+    ];
+
+    for (const f of features) {
+      await supabase.from('health_features_daily').upsert({
+        tenant_id: ctx.tenant_id,
+        user_id: ctx.user_id,
+        date: today,
+        feature_key: f.feature_key,
+        feature_value: f.feature_value,
+        feature_unit: f.feature_unit,
+        sample_count: 1,
+        confidence: 0.5,
+      }, { onConflict: 'tenant_id,user_id,date,feature_key' });
+    }
+
+    // Compute the Index
+    const { data: indexResult, error: indexErr } = await supabase.rpc(
+      'health_compute_vitana_index',
+      { p_date: today, p_model_version: 'baseline-survey-v1' }
+    );
+
+    if (indexErr || !indexResult?.ok) {
+      console.error(`[${VTID_C3}] baseline compute failed:`, indexErr?.message || indexResult);
+      return res.status(400).json({ ok: false, error: 'COMPUTE_FAILED', detail: indexErr?.message });
+    }
+
+    await emitHealthComputeEvent(
+      'health.compute.baseline_survey',
+      'success',
+      `Baseline survey seeded Day-0 Index: ${indexResult.score_total}`,
+      { user_id: ctx.user_id, score_total: indexResult.score_total, answers }
+    );
+
+    return res.status(200).json({ ok: true, date: today, index: indexResult });
+  } catch (err: any) {
+    console.error(`[${VTID_C3}] POST /health/baseline-survey error:`, err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /baseline-survey/status
+ *
+ * Returns { completed: bool } so the frontend can decide whether to show the
+ * baseline survey modal on first /health load.
+ */
+router.get('/baseline-survey/status', async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  try {
+    const supabase = createUserSupabaseClient(token);
+    const { data, error } = await supabase
+      .from('vitana_index_baseline_survey')
+      .select('completed_at')
+      .maybeSingle();
+    if (error) {
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+    return res.status(200).json({ ok: true, completed: !!data, completed_at: data?.completed_at ?? null });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /
  *
  * Health router status endpoint
@@ -674,6 +805,8 @@ router.get('/', (_req: Request, res: Response) => {
       'POST /api/v1/health/wearables/ingest',
       'POST /api/v1/health/recompute/daily',
       'GET /api/v1/health/summary?date=YYYY-MM-DD',
+      'POST /api/v1/health/baseline-survey',
+      'GET /api/v1/health/baseline-survey/status',
     ],
     timestamp: new Date().toISOString(),
   });
