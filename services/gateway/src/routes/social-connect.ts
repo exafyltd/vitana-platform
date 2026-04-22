@@ -352,10 +352,12 @@ router.get('/:provider/profile-summary', async (req: Request, res: Response) => 
 
 // =============================================================================
 // VTID-01928: GET /google/verify — functional health check of the stored
-// Google OAuth token. Hits Gmail profile, Calendar list, Contacts count and
-// YouTube channel in parallel with the user's access_token, returns a compact
-// summary per service. Used by the Manage button on Connected Apps to prove
-// the connection actually works against Google — not just that a DB row exists.
+// Google OAuth token. Hits Gmail profile, Calendar list and Contacts count in
+// parallel with the user's access_token, returns a compact summary per
+// service. Used by the Manage button on Connected Apps to prove the
+// connection actually works against Google — not just that a DB row exists.
+// YouTube has its own connection (see /connect/youtube) and is verified
+// through that flow, not here.
 // =============================================================================
 router.get('/google/verify', async (req: Request, res: Response) => {
   const user = extractUserFromJwt(req);
@@ -424,12 +426,13 @@ router.get('/google/verify', async (req: Request, res: Response) => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  // Run all four probes in parallel — each one's failure is isolated.
-  const [gmailR, calR, contactsR, ytR] = await Promise.allSettled([
+  // Run the Mail/Calendar/Contacts probes in parallel — each one's failure is
+  // isolated. YouTube is verified separately via the dedicated youtube
+  // connection (see VTID-01928 YouTube OAuth split).
+  const [gmailR, calR, contactsR] = await Promise.allSettled([
     fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers }),
     fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=10', { headers }),
     fetch('https://people.googleapis.com/v1/people/me/connections?personFields=names&pageSize=1', { headers }),
-    fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', { headers }),
   ]);
 
   type ProbeResult = { ok: boolean; status?: number; data?: any; error?: string };
@@ -445,8 +448,8 @@ router.get('/google/verify', async (req: Request, res: Response) => {
     return { ok: true, status: resp.status, data: body };
   };
 
-  const [gmail, cal, contacts, yt] = await Promise.all([
-    normalize(gmailR), normalize(calR), normalize(contactsR), normalize(ytR),
+  const [gmail, cal, contacts] = await Promise.all([
+    normalize(gmailR), normalize(calR), normalize(contactsR),
   ]);
 
   return res.json({
@@ -477,13 +480,6 @@ router.get('/google/verify', async (req: Request, res: Response) => {
         ok: true,
         total_people: contacts.data?.totalPeople ?? contacts.data?.totalItems ?? null,
       } : { ok: false, status: contacts.status, error: contacts.error },
-
-      youtube: yt.ok ? {
-        ok: true,
-        channel_title: yt.data?.items?.[0]?.snippet?.title ?? null,
-        subscriber_count: yt.data?.items?.[0]?.statistics?.subscriberCount ?? null,
-        has_channel: Array.isArray(yt.data?.items) && yt.data.items.length > 0,
-      } : { ok: false, status: yt.status, error: yt.error },
     },
   });
 });

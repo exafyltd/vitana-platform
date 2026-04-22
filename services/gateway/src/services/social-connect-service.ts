@@ -120,10 +120,6 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/contacts.readonly',
-      // Kept for backwards compat with existing google connections and the
-      // /google/verify YouTube probe; new YouTube connects go through the
-      // dedicated youtube provider.
-      'https://www.googleapis.com/auth/youtube.readonly',
     ],
     clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
