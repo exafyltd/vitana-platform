@@ -167,6 +167,69 @@ Claude must apply the following **conditional logic**:
 19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
 20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
 
+### Targeted Visual Verification (MANDATORY - Updated 2026-04-14)
+
+**Core principle: screenshot what you changed, interact with it, verify it works — before reporting done.**
+
+26. **AFTER finishing any UI change** (button, layout, page, modal, form, nav) → run this protocol BEFORE telling the user it's done:
+
+    **Step 1 — Identify what to verify:**
+    Look at your own diff. What pages/components did you change? Those are the ONLY pages you need to screenshot. Not 20 pages — just the ones you touched.
+
+    **Step 2 — Screenshot the changed page(s):**
+    Use Playwright to navigate to the specific page you changed. Screenshot it in BOTH viewports:
+    - Desktop: 1400×900
+    - Mobile (iPhone 14): 390×844
+    ```typescript
+    // Example: you changed the Settings page
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('https://community-app-q74ibpv6ia-uc.a.run.app/settings');
+    await page.screenshot({ path: '/tmp/settings-mobile.png' });
+    ```
+
+    **Step 3 — Interact with the changed element:**
+    If you added/changed a button → click it, screenshot the result.
+    If you added/changed a modal → open it, screenshot it open.
+    If you added/changed a form → fill it, screenshot the filled state.
+    If you added/changed a redirect → navigate, verify the URL changed.
+    If you added/changed a drawer → open it, screenshot the overlay.
+
+    **Step 4 — Read and inspect the screenshots:**
+    Use the Read tool to view each screenshot image. Check:
+    - Does the element look correct? (spacing, alignment, colors)
+    - Is text readable and not clipped?
+    - On mobile: is there horizontal overflow? Are tap targets large enough?
+    - Does the interaction produce the expected result?
+    - Are there any visual glitches, overlapping elements, or missing content?
+
+    **Step 5 — Fix or report:**
+    - If the screenshot shows problems → fix them, redeploy, re-screenshot.
+    - If the screenshot looks correct → report completion WITH the screenshot evidence.
+
+27. **NEVER** report a UI change as "done" without having taken and visually inspected a screenshot of the specific thing you changed.
+28. **NEVER** screenshot 20 pages when you changed 1 button. Verify what you changed, not the entire app.
+29. **IF** Playwright deps are missing on WSL2 → set `LD_LIBRARY_PATH="/tmp/chromium-libs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"` or install via `apt download` + `dpkg-deb -x`.
+30. **IF** you cannot run Playwright at all → use `curl` to fetch the page HTML and verify the changed element exists in the DOM. This is a fallback, not the standard.
+
+**Test user UUID:** `a27552a3-0257-4305-8ed0-351a80fd3701`
+Use this user when an authenticated user is needed for testing (e.g., Playwright screenshots, API calls, profile checks).
+
+**Auth for frontend screenshots (Supabase REST):**
+```typescript
+// Sign in via API, inject into localStorage — no brittle form selectors
+const session = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
+  body: JSON.stringify({ email: 'e2e-test@vitana.dev', password: 'VitanaE2eTest2026!' }),
+}).then(r => r.json());
+await page.evaluate(s => {
+  localStorage.setItem('sb-inmkhvwdcuyhnxkgfvsb-auth-token', JSON.stringify(s));
+  localStorage.setItem('vitana.authToken', s.access_token);
+  localStorage.setItem('vitana.viewRole', 'community');
+}, session);
+await page.reload();
+```
+
 ### CI/CD Pipeline (CRITICAL - Added 2026-03-19)
 
 21. **IF** Auto Deploy shows "success" → **THEN check EXEC-DEPLOY runs to confirm actual deployment was dispatched. Auto Deploy success does NOT mean code was deployed.**
@@ -867,10 +930,43 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 ---
 
+## 17. DESIGN SYSTEM (DESIGN.md is authoritative)
+
+**`DESIGN.md` at repo root is the single source of truth for every UI decision across Vitana.** Read it before writing or refactoring any UI — both the Command Hub (Track A) and the community app (Track B, via the mirrored `vitana-v1/DESIGN.md`).
+
+### Binding rules
+
+1. **Reuse before create.** Every token, class, component, and screen pattern documented in `DESIGN.md` already exists in the codebase. Use them.
+2. **Never introduce a new** CSS variable, class name, component file, font size, spacing value, radius, shadow, or variant **without updating `DESIGN.md` first** — and `DESIGN.md` only documents what exists.
+3. **Cite on deviation.** If a change must diverge from `DESIGN.md`, the PR description must cite the exact `§-number` explaining why. One-off exceptions get a `/* design-exception: §… */` comment at the site.
+4. **Prefer implementation over recommendation.** Pick the canonical template screen listed in `DESIGN.md §A.9` (Command Hub) or `§B.7` (vitana-v1), copy it, and ship.
+5. **Preserve cross-surface consistency.** Command Hub, community, admin, staff, professional, patient, wallet, live-room — all follow `DESIGN.md`. Do not fork per-role styling.
+
+### Command Hub specifics (Track A — this repo)
+
+- Only the CSS custom properties at `styles.css:1–36` and `:5136–5162` are permitted. Do not hardcode hex colors. Do not introduce new `--*` variables.
+- **Deprecated — do not use**: `.header-pill--operator`, `.header-button--operator` (SPEC-01 marks them DO NOT USE; scheduled for removal).
+- **Never** write `style="font-size:NNpx"`, `style.cssText = "…padding:NNpx…"`, or inline font/padding values. Classes own visual properties.
+- **Four canonical templates** every new screen must copy: Task Card (`styles.css:483–558`), Header Pill (`styles.css:1074–1220`), Metric Card (`styles.css:16758–16769`), Status Live (`styles.css:128–141`).
+- **Parallel token collision**: `--card-bg`, `--text-primary`, `--text-muted`, `--accent-color`, `--border-color` are now aliased at `:root` to the canonical `--color-*` tokens. Do not redeclare them. Prefer the canonical names in new code.
+- **Button→toast ordering rule** still applies (see memory): update state / re-enable button BEFORE calling `showToast()` or DOM refs detach.
+
+### vitana-v1 specifics (Track B — sibling repo)
+
+The full contract lives at `/home/dstev/vitana-v1/DESIGN.md` + `/home/dstev/vitana-v1/CLAUDE.md`. When working there, every non-auth screen must render the MANDATORY SCREEN CONTRACT (`AppLayout → SEO → SubNavigation → StandardHeader → UtilityActionButton → [SplitBar] → content`, `max-w-7xl p-6 min-h-screen pb-24`). See `DESIGN.md §B.6`.
+
+### Smoke test for compliance
+
+On any UI review: if a diff introduces a raw hex color, a new CSS class, a new `--*` variable, an inline `style` with pixel values, or a primitive that duplicates something under `services/gateway/src/frontend/command-hub/` (or `vitana-v1/src/components/ui/`) — reject and reference the DESIGN.md §-number it violates.
+
+---
+
 ## CHANGE LOG
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-04-22 | Added Section 17 (Design System / DESIGN.md authoritative) | BOOTSTRAP-DESIGN-SYSTEM-MD |
+| 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
 | 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
