@@ -15,8 +15,12 @@
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { hostname, userInfo } from 'os';
-import { claimNextTask, completeTask, failTask, queueDepth } from './queue';
-import { runClaude } from './claude';
+import { claimNextTask, completeTask, failTask, queueDepth, type QueueRow } from './queue';
+import { runClaude, type RunClaudeResult } from './claude';
+import { parseExecutionOutput } from './parse';
+import { applyFiles, fetchAndReset, resetClean } from './repo';
+import { runTsc } from './validate';
+import { buildRetryPrompt } from './retry';
 
 const LOG_PREFIX = '[autopilot-worker]';
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 5_000);
@@ -24,6 +28,15 @@ const TASK_TIMEOUT_MS = Number(process.env.TASK_TIMEOUT_MS || 600_000); // 10 mi
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT || 1);
 const PID_FILE = process.env.AUTOPILOT_WORKER_PIDFILE
   || `${process.env.HOME || '/tmp'}/.local/share/autopilot-worker.pid`;
+
+// Pre-PR validation — run tsc on Claude's output before returning it to the
+// gateway. If tsc finds errors in files we just changed, feed them back and
+// ask Claude to correct its output. Up to VALIDATION_MAX_ATTEMPTS total.
+const VALIDATION_ENABLED = (process.env.AUTOPILOT_WORKER_VALIDATE || 'true').toLowerCase() !== 'false';
+const VALIDATION_MAX_ATTEMPTS = Number(process.env.AUTOPILOT_WORKER_VALIDATION_MAX_ATTEMPTS || 3);
+const VALIDATION_TSCONFIG = process.env.AUTOPILOT_WORKER_TSCONFIG
+  || 'services/gateway/tsconfig.json';
+const VALIDATION_BASE_BRANCH = process.env.AUTOPILOT_WORKER_BASE_BRANCH || 'main';
 
 let running = 0;
 let shuttingDown = false;
@@ -71,6 +84,116 @@ function log(msg: string, ...rest: unknown[]): void {
   console.log(`${ts} ${LOG_PREFIX} ${msg}`, ...rest);
 }
 
+/**
+ * Run an execute task through the validation retry loop.
+ *
+ * - Ask Claude, parse output, apply files to a scratch clone.
+ * - Run tsc --noEmit on the whole project, keep only errors that mention
+ *   files we just wrote.
+ * - If green: return the most-recent Claude output.
+ * - If red: build a retry prompt and go again, up to VALIDATION_MAX_ATTEMPTS.
+ *
+ * The gateway still owns PR creation via the GitHub Contents API — this
+ * function just increases confidence that the output will pass CI once
+ * the gateway writes it.
+ */
+async function runExecuteWithValidation(
+  basePrompt: string,
+  model: string | undefined,
+): Promise<{ ok: boolean; text?: string; usage?: RunClaudeResult['usage']; error?: string; attempts: number; validation_elapsed_ms: number }> {
+  let currentPrompt = basePrompt;
+  let lastOutput: string | undefined;
+  let lastError = 'no attempts ran';
+  let validationElapsedTotal = 0;
+
+  // Reset the clone once up front so we start from a known clean state.
+  const fr = await fetchAndReset(VALIDATION_BASE_BRANCH);
+  if (!fr.ok) {
+    // Clone infrastructure broken → skip validation entirely, fall back to
+    // single-shot behaviour (raw Claude call, return whatever it emits).
+    log(`validation clone unavailable (${fr.error}) — falling back to no-validate path`);
+    const raw = await runClaude(basePrompt, { model, timeoutMs: TASK_TIMEOUT_MS });
+    return {
+      ok: raw.ok,
+      text: raw.text,
+      usage: raw.usage,
+      error: raw.error,
+      attempts: 1,
+      validation_elapsed_ms: 0,
+    };
+  }
+
+  for (let attempt = 0; attempt < VALIDATION_MAX_ATTEMPTS; attempt++) {
+    const claudeResult = await runClaude(currentPrompt, { model, timeoutMs: TASK_TIMEOUT_MS });
+    if (!claudeResult.ok || !claudeResult.text) {
+      return {
+        ok: false,
+        error: claudeResult.error || 'claude returned no text',
+        attempts: attempt + 1,
+        validation_elapsed_ms: validationElapsedTotal,
+      };
+    }
+    lastOutput = claudeResult.text;
+
+    const parsed = parseExecutionOutput(claudeResult.text);
+    if ('error' in parsed) {
+      lastError = `parse: ${parsed.error}`;
+      log(`  attempt ${attempt + 1} parse failed: ${parsed.error}`);
+      currentPrompt = buildRetryPrompt(basePrompt, claudeResult.text, [parsed.error], attempt);
+      continue;
+    }
+
+    // Fetch fresh each attempt — previous attempt may have left files around.
+    await fetchAndReset(VALIDATION_BASE_BRANCH);
+    const applied = await applyFiles(parsed.files);
+    if (!applied.ok || !applied.paths) {
+      lastError = `apply: ${applied.error}`;
+      log(`  attempt ${attempt + 1} apply failed: ${applied.error}`);
+      currentPrompt = buildRetryPrompt(basePrompt, claudeResult.text, [applied.error || 'apply failed'], attempt);
+      continue;
+    }
+
+    const tsc = await runTsc(VALIDATION_TSCONFIG, applied.paths);
+    validationElapsedTotal += tsc.elapsedMs;
+
+    if (tsc.ok) {
+      log(`  attempt ${attempt + 1} PASSED validation in ${Math.round(tsc.elapsedMs / 1000)}s (${parsed.files.length} files applied)`);
+      await resetClean();
+      return {
+        ok: true,
+        text: claudeResult.text,
+        usage: claudeResult.usage,
+        attempts: attempt + 1,
+        validation_elapsed_ms: validationElapsedTotal,
+      };
+    }
+
+    const errCount = (tsc.relevantErrors || []).length;
+    lastError = tsc.error || `${errCount} tsc error(s) in changed files`;
+    log(`  attempt ${attempt + 1} FAILED validation in ${Math.round(tsc.elapsedMs / 1000)}s — ${errCount} relevant tsc error(s)`);
+    currentPrompt = buildRetryPrompt(
+      basePrompt,
+      claudeResult.text,
+      tsc.relevantErrors && tsc.relevantErrors.length > 0
+        ? tsc.relevantErrors
+        : [tsc.error || 'tsc failed with no specific errors extracted'],
+      attempt,
+    );
+  }
+
+  // All attempts exhausted. Return the last output anyway — some classes of
+  // failure (e.g. pre-existing broken types in an unrelated file that our
+  // filter didn't catch) are fixable by human review of the open PR.
+  await resetClean();
+  return {
+    ok: false,
+    text: lastOutput,
+    attempts: VALIDATION_MAX_ATTEMPTS,
+    error: `validation exhausted ${VALIDATION_MAX_ATTEMPTS} attempts: ${lastError}`,
+    validation_elapsed_ms: validationElapsedTotal,
+  };
+}
+
 async function handleTask(wid: string): Promise<void> {
   if (running >= MAX_CONCURRENT) return;
   running++;
@@ -87,26 +210,30 @@ async function handleTask(wid: string): Promise<void> {
     }
 
     const started = Date.now();
-    const result = await runClaude(prompt, {
-      model: row.input_payload.model,
-      timeoutMs: TASK_TIMEOUT_MS,
-    });
+    const shouldValidate = VALIDATION_ENABLED && row.kind === 'execute';
+    const result = shouldValidate
+      ? await runExecuteWithValidation(prompt, row.input_payload.model)
+      : await (async () => {
+          const r = await runClaude(prompt, { model: row.input_payload.model, timeoutMs: TASK_TIMEOUT_MS });
+          return { ok: r.ok, text: r.text, usage: r.usage, error: r.error, attempts: 1, validation_elapsed_ms: 0 } as const;
+        })();
     const elapsed = Math.round((Date.now() - started) / 1000);
 
     if (!result.ok || !result.text) {
-      log(`  task ${row.id.slice(0, 8)} failed after ${elapsed}s: ${result.error}`);
+      log(`  task ${row.id.slice(0, 8)} failed after ${elapsed}s (${result.attempts} attempt${result.attempts === 1 ? '' : 's'}): ${result.error}`);
       await failTask(row.id, result.error || 'claude returned no text');
       return;
     }
 
-    log(`  task ${row.id.slice(0, 8)} ok in ${elapsed}s (${result.usage?.input_tokens ?? '?'} in / ${result.usage?.output_tokens ?? '?'} out, stop=${result.stop_reason ?? '?'})`);
+    log(`  task ${row.id.slice(0, 8)} ok in ${elapsed}s across ${result.attempts} attempt${result.attempts === 1 ? '' : 's'} (${result.usage?.input_tokens ?? '?'} in / ${result.usage?.output_tokens ?? '?'} out)`);
     await completeTask(row.id, {
       text: result.text,
       usage: result.usage,
       extra: {
         worker_id: wid,
-        duration_ms: result.duration_ms,
-        stop_reason: result.stop_reason,
+        attempts: result.attempts,
+        validated: shouldValidate,
+        validation_elapsed_ms: result.validation_elapsed_ms,
       },
     });
   } catch (err) {
