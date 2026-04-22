@@ -225,17 +225,120 @@ async function fetchPreferences(client: SupabaseClient, userId: string): Promise
   return out;
 }
 
-async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<{ score: number; deltas?: Record<string, number> } | null> {
+// =============================================================================
+// Vitana Index (BOOTSTRAP-ORB-INDEX-AWARENESS round 2)
+// =============================================================================
+// Real schema, confirmed against migrations:
+//   vitana_index_scores: (tenant_id, user_id, date, score_total,
+//                         score_physical, score_mental, score_nutritional,
+//                         score_social, score_environmental, score_prosperity)
+// Tier bands (derived deterministically from score_total, matches the
+// platform's published bands):
+//   Starting   0-299
+//   Developing 300-499
+//   Fair       500-599
+//   Good       600-749
+//   Great      750-899
+//   Excellent  900-999
+// Default 90-day journey goal: Good (600+).
+// =============================================================================
+
+export interface VitanaIndexSnapshot {
+  total: number;
+  tier: string;
+  pillars: {
+    physical: number;
+    mental: number;
+    nutritional: number;
+    social: number;
+    environmental: number;
+    prosperity: number;
+  };
+  weakest_pillar: { name: string; score: number };
+  strongest_pillar: { name: string; score: number };
+  trend_7d: number;          // delta vs 7 days ago (0 if no earlier row)
+  history_7d: number[];      // [oldest, ..., latest] up to 7 entries
+  goal_target: number;       // 90-day default
+  goal_gap: number;          // target - total (positive = still needed, negative = over)
+  last_computed: string;     // ISO date
+  last_movement?: { pillar: string; delta: number; reason?: string }; // most recent index.recomputed event
+}
+
+function scoreTier(total: number): string {
+  if (total >= 900) return 'Excellent';
+  if (total >= 750) return 'Great';
+  if (total >= 600) return 'Good';
+  if (total >= 500) return 'Fair';
+  if (total >= 300) return 'Developing';
+  return 'Starting';
+}
+
+async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexSnapshot | null> {
+  // Pull last 7 days so we can compute trend + sparkline.
+  const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { data, error } = await client
     .from('vitana_index_scores')
-    .select('score, sub_scores, computed_at')
+    .select('date, score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental, score_prosperity')
     .eq('user_id', userId)
-    .order('computed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return { score: Number(data.score) || 0, deltas: (data.sub_scores as Record<string, number>) || undefined };
+    .gte('date', sinceIso)
+    .order('date', { ascending: true })
+    .limit(14);
+  if (error || !data || data.length === 0) return null;
+
+  const rows = data as any[];
+  const latest = rows[rows.length - 1];
+  const earliest = rows[0];
+  const history_7d = rows.map(r => Number(r.score_total) || 0);
+  const total = Number(latest.score_total) || 0;
+  const pillars = {
+    physical: Number(latest.score_physical) || 0,
+    mental: Number(latest.score_mental) || 0,
+    nutritional: Number(latest.score_nutritional) || 0,
+    social: Number(latest.score_social) || 0,
+    environmental: Number(latest.score_environmental) || 0,
+    prosperity: Number(latest.score_prosperity) || 0,
+  };
+  const pillarEntries = Object.entries(pillars) as [keyof typeof pillars, number][];
+  pillarEntries.sort((a, b) => a[1] - b[1]);
+  const weakest_pillar = { name: pillarEntries[0][0], score: pillarEntries[0][1] };
+  const strongest_pillar = { name: pillarEntries[pillarEntries.length - 1][0], score: pillarEntries[pillarEntries.length - 1][1] };
+  const trend_7d = rows.length >= 2 ? total - (Number(earliest.score_total) || 0) : 0;
+
+  // Last movement event — optional, best-effort.
+  let last_movement: VitanaIndexSnapshot['last_movement'] | undefined;
+  try {
+    const { data: evt } = await client
+      .from('oasis_events')
+      .select('topic, payload, created_at')
+      .eq('actor_id', userId)
+      .eq('topic', 'index.recomputed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (evt) {
+      const p = (evt.payload as any) || {};
+      const delta = Number(p.total_delta ?? p.delta ?? 0);
+      const reason = p.reason ?? p.source ?? p.action_title;
+      if (delta !== 0) last_movement = { pillar: p.pillar ?? 'unknown', delta, reason };
+    }
+  } catch { /* best-effort */ }
+
+  return {
+    total,
+    tier: scoreTier(total),
+    pillars,
+    weakest_pillar,
+    strongest_pillar,
+    trend_7d,
+    history_7d,
+    goal_target: 600,
+    goal_gap: 600 - total,
+    last_computed: latest.date,
+    last_movement,
+  };
 }
+
+export { fetchVitanaIndex as fetchVitanaIndexForProfiler };
 
 /**
  * Collapse noisy nav events (page.view, auth.*) into a counted summary and
@@ -423,8 +526,54 @@ function buildPreferencesSection(prefs: PreferenceRow[]): string {
   return `[PREFERENCES]\n${lines.join('\n')}`;
 }
 
-function buildHealthSection(activities: ActivityRow[], vitana: { score: number; deltas?: Record<string, number> } | null): string {
+function formatPillarName(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function buildHealthSection(activities: ActivityRow[], vitana: VitanaIndexSnapshot | null): string {
   const lines: string[] = [];
+
+  // Vitana Index — the user's KEY 90-day progress measure. Always rendered
+  // first when available.
+  if (vitana && vitana.total > 0) {
+    const trendStr = vitana.trend_7d > 0
+      ? `trending up +${vitana.trend_7d} over 7 days`
+      : vitana.trend_7d < 0
+        ? `trending down ${vitana.trend_7d} over 7 days`
+        : 'stable over 7 days';
+    lines.push(`- Vitana Index: ${vitana.total} / 999 (${vitana.tier} tier), ${trendStr}.`);
+
+    // Pillar breakdown, weakest marked explicitly so the model can name it.
+    const p = vitana.pillars;
+    const pillarLines = [
+      `Physical ${p.physical}/200`,
+      `Mental ${p.mental}/200`,
+      `Nutritional ${p.nutritional}/200`,
+      `Social ${p.social}/200`,
+      `Environmental ${p.environmental}/200`,
+      `Prosperity ${p.prosperity}/200`,
+    ];
+    lines.push(`- Pillars: ${pillarLines.join(', ')}.`);
+    lines.push(`- Weakest pillar: ${formatPillarName(vitana.weakest_pillar.name)} (${vitana.weakest_pillar.score}/200) — this is where improvements move the Index most.`);
+    lines.push(`- Strongest pillar: ${formatPillarName(vitana.strongest_pillar.name)} (${vitana.strongest_pillar.score}/200).`);
+
+    // Goal gap — default 90-day goal is Good (600+).
+    if (vitana.goal_gap > 0) {
+      lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Currently ${vitana.goal_gap} points below target.`);
+    } else {
+      lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Already ${Math.abs(vitana.goal_gap)} points above target — keep the momentum.`);
+    }
+
+    // Most recent movement, if any.
+    if (vitana.last_movement) {
+      const m = vitana.last_movement;
+      const sign = m.delta > 0 ? '+' : '';
+      const reason = m.reason ? ` from "${m.reason}"` : '';
+      lines.push(`- Last movement: ${sign}${m.delta} ${formatPillarName(m.pillar)}${reason}.`);
+    }
+  }
+
+  // Rest of health signals — biomarkers + supplements.
   const healthActivities = activities.filter(a => a.activity_type.startsWith('health.'));
   if (healthActivities.length) {
     const uploads = healthActivities.filter(a => a.activity_type.includes('upload') || a.activity_type.includes('connect')).length;
@@ -432,9 +581,7 @@ function buildHealthSection(activities: ActivityRow[], vitana: { score: number; 
     if (uploads) lines.push(`- ${uploads} health data upload${uploads === 1 ? '' : 's'} in the last 14 days.`);
     if (supplements) lines.push(`- Added ${supplements} supplement${supplements === 1 ? '' : 's'} recently.`);
   }
-  if (vitana && vitana.score > 0) {
-    lines.push(`- Latest Vitana Index: ${vitana.score.toFixed(1)}.`);
-  }
+
   if (!lines.length) return '';
   return `[HEALTH]\n${lines.join('\n')}`;
 }
