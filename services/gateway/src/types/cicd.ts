@@ -589,6 +589,7 @@ export type CicdEventType =
   | 'dev_autopilot.execution.ci_passed'
   | 'dev_autopilot.execution.ci_failed'
   | 'dev_autopilot.execution.pr_merged'
+  | 'dev_autopilot.execution.auto_merge_declined'
   | 'dev_autopilot.execution.deployed'
   | 'dev_autopilot.execution.deploy_failed'
   | 'dev_autopilot.execution.verification_failed'

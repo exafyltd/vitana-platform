@@ -10,6 +10,7 @@ import {
   findDeployOutcomeForExecution,
   analyzeVerificationWindow,
   VERIFICATION_WINDOW_MS,
+  shouldAutoMerge,
 } from '../src/services/dev-autopilot-watcher';
 
 describe('analyzeCiStatus', () => {
@@ -174,5 +175,26 @@ describe('analyzeVerificationWindow', () => {
     ];
     const r = analyzeVerificationWindow(events, oneMinAgo, VERIFICATION_WINDOW_MS, ourPrefix);
     expect(r.state).toBe('pending');
+  });
+});
+
+describe('shouldAutoMerge', () => {
+  it('allows low risk', () => {
+    const r = shouldAutoMerge('low');
+    expect(r.ok).toBe(true);
+  });
+  it('allows medium risk', () => {
+    const r = shouldAutoMerge('medium');
+    expect(r.ok).toBe(true);
+  });
+  it('blocks high risk even when CI is green (approve gate should already have rejected, belt-and-suspenders)', () => {
+    const r = shouldAutoMerge('high');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/high/);
+  });
+  it('blocks on unknown risk class — refuse to auto-merge without explicit risk classification', () => {
+    const r = shouldAutoMerge('unknown');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/unknown/);
   });
 });
