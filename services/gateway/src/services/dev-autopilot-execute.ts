@@ -860,6 +860,54 @@ export async function backgroundExecutorTick(): Promise<void> {
     }
   }
 
+  // 0b. Reclaim execution rows stuck in 'running'. Cloud Run recycles
+  // containers every few minutes, killing in-flight fire-and-forget
+  // runExecutionSession promises. The row never gets updated and sits in
+  // 'running' forever. Anything that's been running > STUCK_EXECUTION_MS
+  // and has no branch/pr_url yet is almost certainly abandoned — mark it
+  // failed and bridge it into self-heal.
+  const STUCK_EXECUTION_MS = 20 * 60 * 1000; // 20 min — plenty of slack for a normal execute (5-10 min)
+  try {
+    const cutoff = new Date(Date.now() - STUCK_EXECUTION_MS).toISOString();
+    const stuckR = await supa<Array<{ id: string; finding_id: string; updated_at: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?status=eq.running&updated_at=lt.${cutoff}&select=id,finding_id,updated_at&limit=10`,
+    );
+    if (stuckR.ok && stuckR.data && stuckR.data.length > 0) {
+      for (const stuck of stuckR.data) {
+        const reclaim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${stuck.id}&status=eq.running`, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            metadata: { error: `watchdog: stuck in 'running' > ${STUCK_EXECUTION_MS / 60_000}m (container recycled mid-execution)` },
+          }),
+        });
+        if (reclaim.ok) {
+          console.log(`${LOG_PREFIX} watchdog reclaimed stuck execution ${stuck.id.slice(0, 8)}`);
+          await emitOasisEvent({
+            vtid: EXEC_VTID,
+            type: 'dev_autopilot.execution.failed',
+            source: 'dev-autopilot',
+            status: 'error',
+            message: `Execution ${stuck.id.slice(0, 8)} reclaimed by watchdog (stuck in running)`,
+            payload: { execution_id: stuck.id, finding_id: stuck.finding_id, reason: 'stuck_in_running' },
+          });
+          try {
+            const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+            bridgeFailureToSelfHealing({ execution_id: stuck.id, failure_stage: 'ci', error: 'watchdog reclaim: stuck in running' })
+              .catch((err: unknown) => console.error(`${LOG_PREFIX} bridge error for reclaimed ${stuck.id}:`, err));
+          } catch (err) {
+            console.error(`${LOG_PREFIX} bridge load error for reclaimed ${stuck.id}:`, err);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} execution watchdog error:`, err);
+  }
+
   // 1. Honor kill switch
   const cfg = await loadConfig(s);
   if (!cfg || cfg.kill_switch) return;
