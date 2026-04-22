@@ -2836,6 +2836,11 @@ const state = {
     currentModuleKey: 'command-hub', // Will be overwritten by router
     currentTab: 'tasks', // Will be overwritten by router
     sidebarCollapsed: false,
+    // BOOTSTRAP-SIDEBAR-SCROLL-FIX: last module we scrolled the sidebar to.
+    // renderApp calls scrollIntoView on the active nav item; gating on this
+    // ref prevents every re-render from snapping scroll back to the active
+    // item after the user manually scrolled elsewhere.
+    _lastScrolledActiveModule: null,
 
     // Tasks
     tasks: [],
@@ -5137,14 +5142,19 @@ function _renderAppCore() {
     restoreAllScrollPositions(savedScrollPositions);
     attachScrollListeners();
 
-    // Ensure the active sidebar nav item is visible after render.
-    // The sidebar .nav-section is rebuilt on every render, so we scroll the
-    // active item into view rather than trying to restore an exact offset
-    // that becomes stale across route changes.
+    // Ensure the active sidebar nav item is visible after a module change.
+    // BOOTSTRAP-SIDEBAR-SCROLL-FIX: previously this fired on every renderApp
+    // — so any poller tick / badge update / silent refresh yanked the sidebar
+    // scroll back to the active item a few ms after the user manually
+    // scrolled elsewhere. Now we only scroll-into-view when the active
+    // module actually changes. Sidebar scroll retention wins on every other
+    // render.
     requestAnimationFrame(function () {
+        if (state._lastScrolledActiveModule === state.currentModuleKey) return;
         var activeNav = document.querySelector('.nav-section .nav-item.active');
         if (activeNav) {
             activeNav.scrollIntoView({ block: 'nearest' });
+            state._lastScrolledActiveModule = state.currentModuleKey;
         }
     });
 }
