@@ -38,11 +38,24 @@ const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_BASE = 'https://api.anthropic.com';
-// Messages API hard timeout. Cloud Run request timeout is 300s, so cap at
-// 240s and leave 60s of headroom for file fetch + Supabase persist + response
-// flush. Claude Sonnet 4.6 finishes a plan of this shape in ~15-45s; 240s
-// is only to guard against the API itself stalling.
-const MESSAGES_TIMEOUT_MS = 240_000;
+// LLM call timeout. Applies whether we're using the direct Messages API
+// path or the worker-queue path.
+//
+//   Direct API:       15-45s typical, 240s was the original guard.
+//   Worker queue:     subprocess overhead + larger contexts bring this
+//                     up to ~200-300s in practice (observed 267s on a
+//                     first real call against WSL + busy workstation).
+//
+// Cloud Run request ceiling is 300s — the lazy plan endpoint is request-
+// scoped so we can't go above that. Eager planning is background-ticker
+// scoped and tolerates a longer wait, so when the worker queue is in use
+// we extend to 480s for the executor path (see dev-autopilot-execute.ts);
+// the /generate-plan request handler still caps at 280s to stay inside
+// Cloud Run's wall. If the subprocess doesn't finish in that window we
+// return a timeout error to the UI and leave the queue row around — the
+// worker's result is not lost, it's just orphaned, and the next
+// regeneration attempt picks up from the same inputs.
+const MESSAGES_TIMEOUT_MS = 280_000;
 // Model used for planning. Claude Sonnet 4.6 is the right balance of depth
 // and latency for this task; Opus is overkill and slower. Override with
 // DEV_AUTOPILOT_PLANNING_MODEL if needed.
