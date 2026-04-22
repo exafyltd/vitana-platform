@@ -9725,8 +9725,13 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
               const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
               // VTID-ROLE-CMD-HUB: Infer developer role from Command Hub route
               const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-              const brainRole = bodyRoute.startsWith('/command-hub') ? 'developer'
-                : ((bootstrapIdentity as any).active_role || 'community');
+              // BOOTSTRAP-ORB-MOBILE-ROLE: Mobile (Appilix WebView / phone browsers) is community-only.
+              // Even if DB role is admin/developer/professional, mobile sessions must greet as community.
+              const brainRole = clientContext.isMobile
+                ? 'community'
+                : bodyRoute.startsWith('/command-hub')
+                  ? 'developer'
+                  : ((bootstrapIdentity as any).active_role || 'community');
               const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
@@ -9761,6 +9766,14 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     if (sseRoute.startsWith('/command-hub') && (!sseActiveRole || sseActiveRole === 'community')) {
       console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${sseActiveRole || 'null'})`);
       sseActiveRole = 'developer';
+    }
+
+    // BOOTSTRAP-ORB-MOBILE-ROLE: Mobile (Appilix WebView / phone browsers) is community-only.
+    // Runs AFTER the Command Hub override so mobile always wins, even if someone routes
+    // an Appilix WebView to /command-hub. Matches the frontend guard in useRole.tsx.
+    if (clientContext.isMobile && sseActiveRole !== 'community') {
+      console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${sseActiveRole || 'null'})`);
+      sseActiveRole = 'community';
     }
 
     contextInstruction = bootstrapResult.contextInstruction;
