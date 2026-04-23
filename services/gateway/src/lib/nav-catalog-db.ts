@@ -28,7 +28,7 @@
  */
 
 import type { NavCatalogEntry, LangCode, NavCategory } from './navigation-catalog';
-import { NAVIGATION_CATALOG, getContent } from './navigation-catalog';
+import { NAVIGATION_CATALOG, getContent, resolveEffectiveRoles } from './navigation-catalog';
 import { getSupabase } from './supabase';
 
 // =============================================================================
@@ -438,6 +438,7 @@ export interface ScorerOptions {
   category?: NavCategory;
   anonymous_only?: boolean;
   exclude_routes?: string[];
+  role?: string;
 }
 
 /**
@@ -468,6 +469,11 @@ export function searchCatalogEntries(
     if (opts.category && entry.category !== opts.category) continue;
     if (opts.anonymous_only && !entry.anonymous_safe) continue;
     if (excluded.has(entry.route)) continue;
+    // Surface scoping: authenticated callers may only see entries on their
+    // surface. Anonymous callers skip the role gate — anonymous_safe carries
+    // the access decision for them. See navigation-catalog.ts for the same
+    // gate on the static scorer (they must stay in sync).
+    if (opts.role && !resolveEffectiveRoles(entry).includes(opts.role)) continue;
 
     const content = getContent(entry, lang);
     const titleLower = content.title.toLowerCase();

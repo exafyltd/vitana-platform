@@ -322,7 +322,11 @@ function scoreCatalogWithMemory(
           getCatalogForTenant(tenantId) as ReadonlyArray<NavCatalogEntry>,
           input.question,
           input.lang,
-          { anonymous_only: input.is_anonymous, exclude_routes: excludeRoutes }
+          {
+            anonymous_only: input.is_anonymous,
+            exclude_routes: excludeRoutes,
+            role: input.identity?.role || undefined,
+          }
         )
       : searchCatalog(input.question, input.lang, {
           anonymous_only: input.is_anonymous,
