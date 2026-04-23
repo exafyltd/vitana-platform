@@ -682,8 +682,32 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  const { physical, mental, nutritional, notes } = req.body ?? {};
-  const ratings = { physical, mental, nutritional };
+  // Accepts a 5-pillar payload (nutrition, hydration, exercise, sleep, mental).
+  // Also tolerates legacy 3-question payloads (physical, mental, nutritional)
+  // from un-updated clients — maps them conservatively so older mobile clients
+  // can still save.
+  const body = req.body ?? {};
+  const hasFivePillars =
+    body.nutrition !== undefined && body.hydration !== undefined &&
+    body.exercise !== undefined && body.sleep !== undefined && body.mental !== undefined;
+
+  const ratings: Record<'nutrition'|'hydration'|'exercise'|'sleep'|'mental', number> = hasFivePillars
+    ? {
+        nutrition: Number(body.nutrition),
+        hydration: Number(body.hydration),
+        exercise:  Number(body.exercise),
+        sleep:     Number(body.sleep),
+        mental:    Number(body.mental),
+      }
+    : {
+        nutrition: Number(body.nutritional ?? body.nutrition),
+        hydration: 3, // legacy fallback: middle
+        exercise:  Number(body.physical ?? body.exercise),
+        sleep:     3, // legacy fallback: middle
+        mental:    Number(body.mental),
+      };
+  const notes = body.notes;
+
   for (const [key, val] of Object.entries(ratings)) {
     if (typeof val !== 'number' || val < 1 || val > 5 || !Number.isInteger(val)) {
       return res.status(400).json({
@@ -703,7 +727,6 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
   }
 
   try {
-    // Resolve user_id from the authenticated JWT (always available).
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user?.id) {
       return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: userErr?.message });
@@ -729,8 +752,8 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
     }
 
-    // Write the survey row (RLS allows auth.uid() = user_id on this table).
-    const answers = { physical, mental, nutritional, notes: notes ?? null };
+    // Write the survey row with the 5-pillar answers.
+    const answers = { ...ratings, notes: notes ?? null };
     const { error: surveyErr } = await userClient
       .from('vitana_index_baseline_survey')
       .upsert({ user_id: userId, answers, completed_at: new Date().toISOString() }, { onConflict: 'user_id' });
@@ -740,20 +763,18 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'SURVEY_WRITE_FAILED', detail: surveyErr.message });
     }
 
-    // Map self-ratings (1-5) → 0-200 pillar scores directly. This preserves the
-    // same "good rating → high score" curve as the compute RPC without
-    // depending on request.tenant_id GUC being available in the RPC session.
-    // Bands (1-5): 50 / 100 / 150 / 180 / 200.
-    const ratingToPillar = { 1: 50, 2: 100, 3: 150, 4: 180, 5: 200 } as const;
-    const scorePhysical = ratingToPillar[physical as 1|2|3|4|5];
-    const scoreMental = ratingToPillar[mental as 1|2|3|4|5];
-    const scoreNutritional = ratingToPillar[nutritional as 1|2|3|4|5];
-    const scoreSocial = 100;         // baseline until Proactive Guide 1a
-    const scoreEnvironmental = 100;  // baseline until Proactive Guide 1b
-    const scoreProsperity = 100;     // baseline until Proactive Guide 1c
+    // Baseline survey → baseline_survey sub-score only (max 40 per pillar).
+    // Curve: 1→10, 2→20, 3→25, 4→32, 5→40. Rating 5 is NOT 200; the Index
+    // grows through action completions, connected data, and streaks.
+    const curve = { 1: 10, 2: 20, 3: 25, 4: 32, 5: 40 } as const;
+    const scoreNutrition = curve[ratings.nutrition as 1|2|3|4|5];
+    const scoreHydration = curve[ratings.hydration as 1|2|3|4|5];
+    const scoreExercise  = curve[ratings.exercise as 1|2|3|4|5];
+    const scoreSleep     = curve[ratings.sleep as 1|2|3|4|5];
+    const scoreMental    = curve[ratings.mental as 1|2|3|4|5];
 
-    // Read pillar weights from active config (best-effort — default 1.0 each).
-    let weights = { physical: 1, mental: 1, nutritional: 1, social: 1, environmental: 1, prosperity: 1 };
+    // Read 5-pillar weights from active config (default 1.0 each).
+    let weights = { nutrition: 1, hydration: 1, exercise: 1, sleep: 1, mental: 1 };
     try {
       const { data: cfg } = await admin
         .from('vitana_index_config')
@@ -764,21 +785,24 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         .maybeSingle();
       const pw = (cfg as any)?.pillar_weights;
       if (pw && typeof pw === 'object') {
-        weights = { ...weights, ...pw };
+        weights = {
+          nutrition: Number(pw.nutrition) || 1,
+          hydration: Number(pw.hydration) || 1,
+          exercise:  Number(pw.exercise)  || 1,
+          sleep:     Number(pw.sleep)     || 1,
+          mental:    Number(pw.mental)    || 1,
+        };
       }
     } catch { /* keep defaults */ }
 
     const scoreTotal = Math.min(999, Math.max(0, Math.round(
-      scorePhysical * (Number(weights.physical) || 1)
-      + scoreMental * (Number(weights.mental) || 1)
-      + scoreNutritional * (Number(weights.nutritional) || 1)
-      + scoreSocial * (Number(weights.social) || 1)
-      + scoreEnvironmental * (Number(weights.environmental) || 1)
-      + scoreProsperity * (Number(weights.prosperity) || 1)
+        scoreNutrition * weights.nutrition
+      + scoreHydration * weights.hydration
+      + scoreExercise  * weights.exercise
+      + scoreSleep     * weights.sleep
+      + scoreMental    * weights.mental
     )));
 
-    // vitana_index_scores.tenant_id is NOT NULL — use a fallback UUID for
-    // community users whose tenancy hasn't been provisioned yet.
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
 
     const { error: scoreErr } = await admin
@@ -788,14 +812,13 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         user_id: userId,
         date: today,
         score_total: scoreTotal,
-        score_physical: scorePhysical,
+        score_nutrition: scoreNutrition,
+        score_hydration: scoreHydration,
+        score_exercise: scoreExercise,
+        score_sleep: scoreSleep,
         score_mental: scoreMental,
-        score_nutritional: scoreNutritional,
-        score_social: scoreSocial,
-        score_environmental: scoreEnvironmental,
-        score_prosperity: scoreProsperity,
-        model_version: 'baseline-survey-v1',
-        feature_inputs: { source: 'baseline_survey', ratings: { physical, mental, nutritional } },
+        model_version: 'baseline-survey-v3-5pillar',
+        feature_inputs: { source: 'baseline_survey', ratings },
         confidence: 0.5,
       }, { onConflict: 'tenant_id,user_id,date' });
 
@@ -812,7 +835,13 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         user_id: userId,
         tenant_id: effectiveTenantId,
         score_total: scoreTotal,
-        pillars: { physical: scorePhysical, mental: scoreMental, nutritional: scoreNutritional, social: scoreSocial, environmental: scoreEnvironmental, prosperity: scoreProsperity },
+        pillars: {
+          nutrition: scoreNutrition,
+          hydration: scoreHydration,
+          exercise: scoreExercise,
+          sleep: scoreSleep,
+          mental: scoreMental,
+        },
         answers,
       }
     );
@@ -824,14 +853,13 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
         ok: true,
         date: today,
         score_total: scoreTotal,
-        score_physical: scorePhysical,
+        score_nutrition: scoreNutrition,
+        score_hydration: scoreHydration,
+        score_exercise: scoreExercise,
+        score_sleep: scoreSleep,
         score_mental: scoreMental,
-        score_nutritional: scoreNutritional,
-        score_social: scoreSocial,
-        score_environmental: scoreEnvironmental,
-        score_prosperity: scoreProsperity,
         pillar_weights: weights,
-        model_version: 'baseline-survey-v1',
+        model_version: 'baseline-survey-v3-5pillar',
         confidence: 0.5,
       },
     });
