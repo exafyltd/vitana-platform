@@ -2790,7 +2790,8 @@ const NAVIGATION_CONFIG = [
             { "key": "api-inventory", "path": "/command-hub/docs/api-inventory/" },
             { "key": "database-schemas", "path": "/command-hub/docs/database-schemas/" },
             { "key": "architecture", "path": "/command-hub/docs/architecture/" },
-            { "key": "workforce", "path": "/command-hub/docs/workforce/" }
+            { "key": "workforce", "path": "/command-hub/docs/workforce/" },
+            { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" }
         ]
     }
 ];
@@ -6212,6 +6213,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDocsArchitectureView());
     } else if (moduleKey === 'docs' && tab === 'workforce') {
         container.appendChild(renderDocsWorkforceView());
+    } else if (moduleKey === 'docs' && tab === 'system-knowledge') {
+        container.appendChild(renderDocsSystemKnowledgeView());
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
@@ -34064,6 +34067,311 @@ function renderDocsWorkforceView() {
         '<span style="padding:4px 12px;border-radius:4px;background:#22c55e;color:white;">Deploy</span><span style="color:var(--color-text-secondary);">-></span>' +
         '<span style="padding:4px 12px;border-radius:4px;background:#10b981;color:white;">Done</span></div>';
     container.appendChild(pipeline);
+    return container;
+}
+
+// ===========================================================================
+// Docs: System Knowledge — read-only mirror of knowledge_docs (vitana_system)
+// ===========================================================================
+//
+// Operator view of what the Vitana Assistant "knows about itself" (Book of the
+// Vitana Index + other vitana_system docs). Editing happens in the tenant-admin
+// Knowledge UI (Vitanaland → Admin → Knowledge → Documents, system scope).
+// Endpoint: GET /api/v1/admin/system-kb/docs  (exafy-admin only)
+
+function initSystemKbState() {
+    if (state.systemKb) return;
+    state.systemKb = {
+        docsLoading: false,
+        docsError: null,
+        docs: null,
+        filterPrefix: 'kb/vitana-system/index-book/',
+        searchQ: '',
+        selectedId: null,
+        selectedDocLoading: false,
+        selectedDoc: null,
+        selectedDocError: null,
+    };
+}
+
+async function fetchSystemKbDocs() {
+    initSystemKbState();
+    state.systemKb.docsLoading = true;
+    state.systemKb.docsError = null;
+    renderApp();
+
+    try {
+        const token = state.authToken;
+        const qs = new URLSearchParams();
+        if (state.systemKb.filterPrefix) qs.set('path_prefix', state.systemKb.filterPrefix);
+        if (state.systemKb.searchQ) qs.set('q', state.systemKb.searchQ);
+
+        const response = await fetch('/api/v1/admin/system-kb/docs?' + qs.toString(), {
+            headers: token ? { Authorization: 'Bearer ' + token } : {},
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'HTTP ' + response.status);
+        }
+        const json = await response.json();
+        state.systemKb.docs = json.documents || [];
+    } catch (err) {
+        console.error('[system-knowledge] list error:', err);
+        state.systemKb.docsError = err.message;
+        state.systemKb.docs = null;
+    } finally {
+        state.systemKb.docsLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchSystemKbDoc(id) {
+    initSystemKbState();
+    state.systemKb.selectedId = id;
+    state.systemKb.selectedDoc = null;
+    state.systemKb.selectedDocLoading = true;
+    state.systemKb.selectedDocError = null;
+    renderApp();
+
+    try {
+        const token = state.authToken;
+        const response = await fetch('/api/v1/admin/system-kb/docs/' + encodeURIComponent(id), {
+            headers: token ? { Authorization: 'Bearer ' + token } : {},
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'HTTP ' + response.status);
+        }
+        const json = await response.json();
+        state.systemKb.selectedDoc = json.document;
+    } catch (err) {
+        console.error('[system-knowledge] detail error:', err);
+        state.systemKb.selectedDocError = err.message;
+    } finally {
+        state.systemKb.selectedDocLoading = false;
+        renderApp();
+    }
+}
+
+function renderDocsSystemKnowledgeView() {
+    initSystemKbState();
+
+    // Deep-link: ?doc=<id> preselects the doc after the list loads.
+    try {
+        var urlParams = new URLSearchParams(window.location.search);
+        var deepDocId = urlParams.get('doc');
+        if (deepDocId && state.systemKb.selectedId !== deepDocId) {
+            fetchSystemKbDoc(deepDocId);
+        }
+    } catch (_) { /* ignore */ }
+
+    var container = document.createElement('div');
+    container.className = 'docs-container';
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'System Knowledge';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent =
+        'Read-only view of the system-wide knowledge_docs table that grounds the Vitana Assistant (retrieval-router priority 100). Edits happen in the tenant Knowledge admin → Documents → Vitana Platform scope.';
+    container.appendChild(subtitle);
+
+    // Filters
+    var toolbar = document.createElement('div');
+    toolbar.className = 'docs-toolbar';
+    toolbar.style.flexWrap = 'wrap';
+    toolbar.style.gap = '0.5rem';
+
+    var filters = [
+        { key: 'kb/vitana-system/index-book/', label: 'Book of the Vitana Index' },
+        { key: 'kb/vitana-system/', label: 'All vitana_system docs' },
+        { key: '', label: 'All system KB docs' },
+    ];
+    filters.forEach(function (f) {
+        var btn = document.createElement('button');
+        btn.className = state.systemKb.filterPrefix === f.key ? 'btn role-btn-active' : 'btn';
+        btn.textContent = f.label;
+        btn.onclick = function () {
+            state.systemKb.filterPrefix = f.key;
+            state.systemKb.selectedId = null;
+            state.systemKb.selectedDoc = null;
+            fetchSystemKbDocs();
+        };
+        toolbar.appendChild(btn);
+    });
+    container.appendChild(toolbar);
+
+    var searchRow = document.createElement('div');
+    searchRow.style.margin = '0.75rem 0';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'Search by title or path…';
+    searchInput.value = state.systemKb.searchQ;
+    searchInput.style.width = '100%';
+    searchInput.style.padding = '0.5rem 0.75rem';
+    searchInput.style.background = 'var(--bg-secondary, #1a1a1a)';
+    searchInput.style.border = '1px solid var(--border-color, #333)';
+    searchInput.style.color = 'var(--text-primary, #fff)';
+    searchInput.style.borderRadius = '6px';
+    var searchTimer = null;
+    searchInput.oninput = function (e) {
+        state.systemKb.searchQ = e.target.value;
+        if (searchTimer) clearTimeout(searchTimer);
+        searchTimer = setTimeout(fetchSystemKbDocs, 250);
+    };
+    searchRow.appendChild(searchInput);
+    container.appendChild(searchRow);
+
+    // Two-pane layout: list | viewer
+    var panes = document.createElement('div');
+    panes.style.display = 'grid';
+    panes.style.gridTemplateColumns = 'minmax(260px, 1fr) 2fr';
+    panes.style.gap = '1rem';
+    panes.style.marginTop = '1rem';
+
+    // Left: list
+    var listPane = document.createElement('div');
+    listPane.style.minWidth = '0';
+
+    if (state.systemKb.docs === null && !state.systemKb.docsLoading && !state.systemKb.docsError) {
+        fetchSystemKbDocs();
+    }
+
+    if (state.systemKb.docsLoading) {
+        listPane.innerHTML = '<div class="placeholder-content">Loading system KB…</div>';
+    } else if (state.systemKb.docsError) {
+        listPane.innerHTML =
+            '<div class="placeholder-content error-text">Error: ' +
+            escapeHtml(state.systemKb.docsError) +
+            '</div>';
+    } else if (!state.systemKb.docs || state.systemKb.docs.length === 0) {
+        listPane.innerHTML = '<div class="placeholder-content">No docs match this filter.</div>';
+    } else {
+        var ul = document.createElement('ul');
+        ul.style.listStyle = 'none';
+        ul.style.padding = '0';
+        ul.style.margin = '0';
+        ul.style.maxHeight = '65vh';
+        ul.style.overflowY = 'auto';
+        state.systemKb.docs.forEach(function (d) {
+            var li = document.createElement('li');
+            var btn = document.createElement('button');
+            btn.className = state.systemKb.selectedId === d.id ? 'btn role-btn-active' : 'btn';
+            btn.style.display = 'block';
+            btn.style.width = '100%';
+            btn.style.textAlign = 'left';
+            btn.style.marginBottom = '0.25rem';
+            btn.style.padding = '0.5rem 0.75rem';
+            btn.onclick = function () {
+                fetchSystemKbDoc(d.id);
+            };
+            var titleEl = document.createElement('div');
+            titleEl.textContent = d.title;
+            titleEl.style.fontWeight = '500';
+            btn.appendChild(titleEl);
+            var pathEl = document.createElement('div');
+            pathEl.textContent = d.path;
+            pathEl.style.fontSize = '0.75rem';
+            pathEl.style.opacity = '0.7';
+            pathEl.style.wordBreak = 'break-all';
+            pathEl.style.marginTop = '0.15rem';
+            btn.appendChild(pathEl);
+            li.appendChild(btn);
+            ul.appendChild(li);
+        });
+        listPane.appendChild(ul);
+    }
+    panes.appendChild(listPane);
+
+    // Right: viewer
+    var viewerPane = document.createElement('div');
+    viewerPane.style.minWidth = '0';
+    viewerPane.style.background = 'var(--bg-secondary, #1a1a1a)';
+    viewerPane.style.border = '1px solid var(--border-color, #333)';
+    viewerPane.style.borderRadius = '6px';
+    viewerPane.style.padding = '1rem';
+    viewerPane.style.maxHeight = '70vh';
+    viewerPane.style.overflowY = 'auto';
+
+    if (!state.systemKb.selectedId) {
+        viewerPane.innerHTML =
+            '<div class="placeholder-content">Pick a doc from the list to read it.</div>';
+    } else if (state.systemKb.selectedDocLoading) {
+        viewerPane.innerHTML = '<div class="placeholder-content">Loading…</div>';
+    } else if (state.systemKb.selectedDocError) {
+        viewerPane.innerHTML =
+            '<div class="placeholder-content error-text">Error: ' +
+            escapeHtml(state.systemKb.selectedDocError) +
+            '</div>';
+    } else if (state.systemKb.selectedDoc) {
+        var doc = state.systemKb.selectedDoc;
+        var headerRow = document.createElement('div');
+        headerRow.style.display = 'flex';
+        headerRow.style.alignItems = 'baseline';
+        headerRow.style.justifyContent = 'space-between';
+        headerRow.style.gap = '0.5rem';
+        var h = document.createElement('h3');
+        h.textContent = doc.title;
+        h.style.margin = '0 0 0.25rem 0';
+        headerRow.appendChild(h);
+        var editLink = document.createElement('a');
+        editLink.href =
+            'https://vitanaland.com/admin/knowledge/documents?scope=system&doc=' +
+            encodeURIComponent(doc.id);
+        editLink.target = '_blank';
+        editLink.rel = 'noopener noreferrer';
+        editLink.textContent = 'Edit in Vitanaland →';
+        editLink.style.fontSize = '0.75rem';
+        editLink.style.whiteSpace = 'nowrap';
+        headerRow.appendChild(editLink);
+        viewerPane.appendChild(headerRow);
+        var p = document.createElement('div');
+        p.textContent = doc.path;
+        p.style.fontSize = '0.75rem';
+        p.style.opacity = '0.7';
+        p.style.wordBreak = 'break-all';
+        viewerPane.appendChild(p);
+        if (doc.tags && doc.tags.length) {
+            var tagsEl = document.createElement('div');
+            tagsEl.style.margin = '0.5rem 0';
+            doc.tags.forEach(function (t) {
+                var tag = document.createElement('span');
+                tag.textContent = t;
+                tag.style.display = 'inline-block';
+                tag.style.fontSize = '0.7rem';
+                tag.style.padding = '0.15rem 0.4rem';
+                tag.style.marginRight = '0.25rem';
+                tag.style.background = 'var(--bg-tertiary, #222)';
+                tag.style.borderRadius = '3px';
+                tagsEl.appendChild(tag);
+            });
+            viewerPane.appendChild(tagsEl);
+        }
+        var pre = document.createElement('pre');
+        pre.textContent = doc.content || '';
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.wordBreak = 'break-word';
+        pre.style.fontFamily = 'inherit';
+        pre.style.fontSize = '0.85rem';
+        pre.style.lineHeight = '1.5';
+        pre.style.marginTop = '0.5rem';
+        viewerPane.appendChild(pre);
+        var meta = document.createElement('div');
+        meta.style.fontSize = '0.7rem';
+        meta.style.opacity = '0.6';
+        meta.style.marginTop = '1rem';
+        meta.textContent =
+            (doc.word_count || 0) +
+            ' words · updated ' +
+            new Date(doc.updated_at).toLocaleString();
+        viewerPane.appendChild(meta);
+    }
+    panes.appendChild(viewerPane);
+
+    container.appendChild(panes);
     return container;
 }
 
