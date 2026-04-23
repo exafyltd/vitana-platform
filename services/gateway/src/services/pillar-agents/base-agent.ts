@@ -5,16 +5,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PillarKey, PillarSubscores } from './types';
+import { PILLAR_TAGS } from '../../lib/vitana-pillars';
 
 const BASELINE_CURVE: Record<1|2|3|4|5, number> = { 1: 10, 2: 20, 3: 25, 4: 32, 5: 40 };
-
-const PILLAR_TAGS: Record<PillarKey, string[]> = {
-  nutrition: ['nutrition', 'meal', 'food-log'],
-  hydration: ['hydration', 'water'],
-  exercise:  ['movement', 'workout', 'walk', 'steps', 'exercise'],
-  sleep:     ['sleep', 'rest', 'recovery'],
-  mental:    ['mindfulness', 'mental', 'stress', 'meditation', 'learning', 'journal'],
-};
 
 const PILLAR_FEATURE_KEYS: Record<PillarKey, string[]> = {
   nutrition: ['biomarker_glucose', 'biomarker_hba1c', 'meal_log', 'macro_balance'],

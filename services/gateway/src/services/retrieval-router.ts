@@ -114,6 +114,14 @@ const ROUTING_RULES: RoutingRule[] = [
       /what(\u2019|')?s (holding me back|my weakest)/i,
       /(make|build|set up|create)\s+(me\s+)?a?\s*plan.*(index|score|pillar|s\u00e4ule)/i,
       /(plan|schedule).*(improve|verbess).*(index|score|tier|s\u00e4ule)/i,
+      // BOOTSTRAP-ORB-INDEX-AWARENESS-R4 \u2014 balance-aware queries
+      /\b(balance|ratio|lopsided|unbalanced|in harmony)\b.*(pillar|index|score)/i,
+      /(pillar|index|score).*(balance|ratio|lopsided|unbalanced|in harmony)/i,
+      // BOOTSTRAP-ORB-INDEX-AWARENESS-R4 \u2014 per-pillar personal queries
+      /\bmy (nutrition|hydration|exercise|sleep|mental)\b/i,
+      /\bmein(en|e)? (ern\u00e4hrung|hydration|fl\u00fcssigkeit|bewegung|sport|schlaf|mental)\b/i,
+      /how\s+(is|are)\s+my\s+(nutrition|hydration|exercise|sleep|mental)/i,
+      /wie\s+(ist|steht)\s+mein(en|e)?\s+(ern\u00e4hrung|schlaf|bewegung|mental)/i,
     ],
     keywords: [
       'my index', 'my vitana index', 'my score', 'my tier', 'my pillar', 'my pillars',
@@ -122,10 +130,15 @@ const ROUTING_RULES: RoutingRule[] = [
       'verbessere meinen index', 'verbesser meinen score',
       'weakest pillar', 'lowest pillar', 'schw\u00e4chste s\u00e4ule',
       'plan to improve', 'plan zur verbesserung',
+      // R4 \u2014 balance + per-pillar
+      'balance factor', 'balance score', 'pillar balance', 'lopsided', 'in harmony',
+      'my nutrition', 'my hydration', 'my exercise', 'my sleep', 'my mental',
+      'meine ern\u00e4hrung', 'meine hydration', 'mein schlaf', 'meine bewegung', 'mein mental',
+      'how is my sleep', 'how is my nutrition',
     ],
     primary_source: 'memory_garden',
     secondary_sources: ['knowledge_hub'],
-    rationale: 'Personal Index questions need the live score + user-specific recommendations. Memory Garden first surfaces the [HEALTH] profile block (current score, pillars, weakest, trend, goal gap); KB docs supplement with explanation when asked.',
+    rationale: 'Personal Index questions need the live score + user-specific recommendations. Memory Garden first surfaces the [HEALTH] profile block (5-pillar score, balance factor, weakest pillar with sub-score hint, trend, tier framing); Knowledge Hub supplements with the Book-of-the-Index chapters for per-pillar deep questions.',
   },
 
   // ===== Personal/Historical Questions → Memory Garden First =====
