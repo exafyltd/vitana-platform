@@ -167,69 +167,6 @@ Claude must apply the following **conditional logic**:
 19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
 20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
 
-### Targeted Visual Verification (MANDATORY - Updated 2026-04-14)
-
-**Core principle: screenshot what you changed, interact with it, verify it works — before reporting done.**
-
-26. **AFTER finishing any UI change** (button, layout, page, modal, form, nav) → run this protocol BEFORE telling the user it's done:
-
-    **Step 1 — Identify what to verify:**
-    Look at your own diff. What pages/components did you change? Those are the ONLY pages you need to screenshot. Not 20 pages — just the ones you touched.
-
-    **Step 2 — Screenshot the changed page(s):**
-    Use Playwright to navigate to the specific page you changed. Screenshot it in BOTH viewports:
-    - Desktop: 1400×900
-    - Mobile (iPhone 14): 390×844
-    ```typescript
-    // Example: you changed the Settings page
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('https://community-app-q74ibpv6ia-uc.a.run.app/settings');
-    await page.screenshot({ path: '/tmp/settings-mobile.png' });
-    ```
-
-    **Step 3 — Interact with the changed element:**
-    If you added/changed a button → click it, screenshot the result.
-    If you added/changed a modal → open it, screenshot it open.
-    If you added/changed a form → fill it, screenshot the filled state.
-    If you added/changed a redirect → navigate, verify the URL changed.
-    If you added/changed a drawer → open it, screenshot the overlay.
-
-    **Step 4 — Read and inspect the screenshots:**
-    Use the Read tool to view each screenshot image. Check:
-    - Does the element look correct? (spacing, alignment, colors)
-    - Is text readable and not clipped?
-    - On mobile: is there horizontal overflow? Are tap targets large enough?
-    - Does the interaction produce the expected result?
-    - Are there any visual glitches, overlapping elements, or missing content?
-
-    **Step 5 — Fix or report:**
-    - If the screenshot shows problems → fix them, redeploy, re-screenshot.
-    - If the screenshot looks correct → report completion WITH the screenshot evidence.
-
-27. **NEVER** report a UI change as "done" without having taken and visually inspected a screenshot of the specific thing you changed.
-28. **NEVER** screenshot 20 pages when you changed 1 button. Verify what you changed, not the entire app.
-29. **IF** Playwright deps are missing on WSL2 → set `LD_LIBRARY_PATH="/tmp/chromium-libs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"` or install via `apt download` + `dpkg-deb -x`.
-30. **IF** you cannot run Playwright at all → use `curl` to fetch the page HTML and verify the changed element exists in the DOM. This is a fallback, not the standard.
-
-**Test user UUID:** `a27552a3-0257-4305-8ed0-351a80fd3701`
-Use this user when an authenticated user is needed for testing (e.g., Playwright screenshots, API calls, profile checks).
-
-**Auth for frontend screenshots (Supabase REST):**
-```typescript
-// Sign in via API, inject into localStorage — no brittle form selectors
-const session = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
-  body: JSON.stringify({ email: 'e2e-test@vitana.dev', password: 'VitanaE2eTest2026!' }),
-}).then(r => r.json());
-await page.evaluate(s => {
-  localStorage.setItem('sb-inmkhvwdcuyhnxkgfvsb-auth-token', JSON.stringify(s));
-  localStorage.setItem('vitana.authToken', s.access_token);
-  localStorage.setItem('vitana.viewRole', 'community');
-}, session);
-await page.reload();
-```
-
 ### CI/CD Pipeline (CRITICAL - Added 2026-03-19)
 
 21. **IF** Auto Deploy shows "success" → **THEN check EXEC-DEPLOY runs to confirm actual deployment was dispatched. Auto Deploy success does NOT mean code was deployed.**
@@ -934,7 +871,6 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
-| 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
 | 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
