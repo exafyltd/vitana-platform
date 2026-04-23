@@ -1420,14 +1420,6 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   { screen_id: 'DEVHUB.AGENTS.TELEMETRY', route: '/command-hub/agents/telemetry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Agent Telemetry', description: 'Agent performance and telemetry data.', when_to_visit: 'When asking about agent telemetry, agent performance, or agent monitoring.' } } },
 
-  // ── Autopilot ──
-  { screen_id: 'DEVHUB.AUTOPILOT.REGISTRY', route: '/command-hub/autopilot/registry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Autopilot Registry', description: 'Autopilot recommendation registry and configuration.', when_to_visit: 'When asking about autopilot, recommendations, autopilot registry, or AI suggestions.' } } },
-  { screen_id: 'DEVHUB.AUTOPILOT.RUNS', route: '/command-hub/autopilot/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Autopilot Runs', description: 'Autopilot execution runs and history.', when_to_visit: 'When asking about autopilot runs, recommendation batches, or autopilot history.' } } },
-  { screen_id: 'DEVHUB.AUTOPILOT.ENGINE', route: '/command-hub/autopilot/engine/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Autopilot Engine', description: 'Autopilot engine configuration and analyzers.', when_to_visit: 'When asking about autopilot engine, analyzers, or recommendation generation.' } } },
-
   // ── OASIS ──
   { screen_id: 'DEVHUB.OASIS.EVENTS', route: '/command-hub/oasis/events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'OASIS Events', description: 'OASIS event stream — the immutable audit log.', when_to_visit: 'When asking about OASIS, OASIS events, event log, audit log, event stream, or system events.' } } },
