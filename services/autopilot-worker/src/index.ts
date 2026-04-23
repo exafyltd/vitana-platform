@@ -95,6 +95,26 @@ function log(msg: string, ...rest: unknown[]): void {
   console.log(`${ts} ${LOG_PREFIX} ${msg}`, ...rest);
 }
 
+/**
+ * A single validation failure, captured per attempt in the validation retry
+ * loop. The gateway's prompt-gap feedback loop (C4 in the autopilot-tripart
+ * plan) turns these into rows in dev_autopilot_prompt_learnings so future
+ * plan/execute prompts can include a "lessons from prior attempts" block.
+ *
+ * pattern_key is a short, normalized signature that groups similar failures:
+ *   - tsc: extract the first `TSxxxx` code + a slug of the short-form
+ *     message, e.g. "TS2307:cannot-find-module".
+ *   - jest: the first failing test's message, slugged.
+ *   - parse/apply: bucket by the kind of parse failure, e.g.
+ *     "parse:missing-PR_TITLE".
+ */
+interface AttemptFailure {
+  attempt: number;
+  stage: 'parse' | 'apply' | 'tsc' | 'jest';
+  pattern_key: string;
+  example_message: string;
+}
+
 interface ValidatedExecuteResult {
   ok: boolean;
   text?: string;
@@ -107,6 +127,43 @@ interface ValidatedExecuteResult {
   error?: string;
   attempts: number;
   validation_elapsed_ms: number;
+  /** Per-attempt failure signatures — included on both success (when some
+   * attempts failed before one passed) and failure. The gateway upserts
+   * these into dev_autopilot_prompt_learnings. */
+  attempt_failures?: AttemptFailure[];
+}
+
+function slug(msg: string): string {
+  return msg
+    .toLowerCase()
+    .replace(/["'`]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+/**
+ * Derive a normalized pattern_key from a tsc error. Typical error:
+ *   "services/gateway/src/routes/foo.test.ts(12,3): error TS2307: Cannot find module '../bar'"
+ * Output:
+ *   "TS2307:cannot-find-module"
+ */
+function tscPatternKey(msg: string): string {
+  const codeM = msg.match(/TS(\d+)/);
+  const code = codeM ? `TS${codeM[1]}` : 'TS';
+  // Short-form of the human message — take the tail after `: error TSxxxx:`.
+  const tail = msg.split(/error\s+TS\d+:\s*/).pop() || msg;
+  return `${code}:${slug(tail) || 'unknown'}`;
+}
+
+function jestPatternKey(msg: string): string {
+  // jest failure messages are long — keep the first clause only.
+  const firstLine = msg.split('\n').map(l => l.trim()).filter(Boolean)[0] || msg;
+  return `jest:${slug(firstLine) || 'failure'}`;
+}
+
+function parsePatternKey(msg: string): string {
+  return `parse:${slug(msg) || 'unknown'}`;
 }
 
 /**
@@ -130,6 +187,7 @@ async function runExecuteWithValidation(
   let lastOutput: string | undefined;
   let lastError = 'no attempts ran';
   let validationElapsedTotal = 0;
+  const attemptFailures: AttemptFailure[] = [];
 
   // Reset the clone once up front so we start from a known clean state.
   const fr = await fetchAndReset(VALIDATION_BASE_BRANCH);
@@ -164,6 +222,12 @@ async function runExecuteWithValidation(
     if ('error' in parsed) {
       lastError = `parse: ${parsed.error}`;
       log(`  attempt ${attempt + 1} parse failed: ${parsed.error}`);
+      attemptFailures.push({
+        attempt: attempt + 1,
+        stage: 'parse',
+        pattern_key: parsePatternKey(parsed.error),
+        example_message: parsed.error.slice(0, 500),
+      });
       currentPrompt = buildRetryPrompt(basePrompt, claudeResult.text, [parsed.error], attempt);
       continue;
     }
@@ -174,6 +238,12 @@ async function runExecuteWithValidation(
     if (!applied.ok || !applied.paths) {
       lastError = `apply: ${applied.error}`;
       log(`  attempt ${attempt + 1} apply failed: ${applied.error}`);
+      attemptFailures.push({
+        attempt: attempt + 1,
+        stage: 'apply',
+        pattern_key: `apply:${slug(applied.error || 'failed') || 'failed'}`,
+        example_message: (applied.error || 'apply failed').slice(0, 500),
+      });
       currentPrompt = buildRetryPrompt(basePrompt, claudeResult.text, [applied.error || 'apply failed'], attempt);
       continue;
     }
@@ -185,6 +255,13 @@ async function runExecuteWithValidation(
       const errCount = (tsc.relevantErrors || []).length;
       lastError = tsc.error || `${errCount} tsc error(s) in changed files`;
       log(`  attempt ${attempt + 1} FAILED tsc in ${Math.round(tsc.elapsedMs / 1000)}s — ${errCount} relevant error(s)`);
+      const first = (tsc.relevantErrors && tsc.relevantErrors[0]) || tsc.error || 'tsc failed';
+      attemptFailures.push({
+        attempt: attempt + 1,
+        stage: 'tsc',
+        pattern_key: tscPatternKey(first),
+        example_message: first.slice(0, 500),
+      });
       currentPrompt = buildRetryPrompt(
         basePrompt,
         claudeResult.text,
@@ -214,6 +291,7 @@ async function runExecuteWithValidation(
         usage: claudeResult.usage,
         attempts: attempt + 1,
         validation_elapsed_ms: validationElapsedTotal,
+        attempt_failures: attemptFailures.length > 0 ? attemptFailures : undefined,
       };
     }
 
@@ -232,12 +310,20 @@ async function runExecuteWithValidation(
         usage: claudeResult.usage,
         attempts: attempt + 1,
         validation_elapsed_ms: validationElapsedTotal,
+        attempt_failures: attemptFailures.length > 0 ? attemptFailures : undefined,
       };
     }
 
     const failCount = (jest.failures || []).length;
     lastError = jest.error || `${jest.testsFailed}/${jest.testsRun} jest test(s) failed`;
     log(`  attempt ${attempt + 1} FAILED jest in ${Math.round(jest.elapsedMs / 1000)}s — ${failCount} failure(s) (${jest.testsPassed}/${jest.testsRun} passed)`);
+    const firstJest = (jest.failures && jest.failures[0]) || jest.error || 'jest failed';
+    attemptFailures.push({
+      attempt: attempt + 1,
+      stage: 'jest',
+      pattern_key: jestPatternKey(firstJest),
+      example_message: firstJest.slice(0, 500),
+    });
     // Feed the jest failures back to Claude — labeling them so it knows
     // these are runtime assertion errors, not type errors.
     const jestErrorBlock = jest.failures && jest.failures.length > 0
@@ -256,6 +342,7 @@ async function runExecuteWithValidation(
     attempts: VALIDATION_MAX_ATTEMPTS,
     error: `validation exhausted ${VALIDATION_MAX_ATTEMPTS} attempts: ${lastError}`,
     validation_elapsed_ms: validationElapsedTotal,
+    attempt_failures: attemptFailures.length > 0 ? attemptFailures : undefined,
   };
 }
 
@@ -349,7 +436,13 @@ async function handleTask(wid: string): Promise<void> {
 
     if (!result.ok || !result.text) {
       log(`  task ${row.id.slice(0, 8)} failed after ${elapsed}s (${result.attempts} attempt${result.attempts === 1 ? '' : 's'}): ${result.error}`);
-      await failTask(row.id, result.error || 'claude returned no text');
+      await failTask(row.id, result.error || 'claude returned no text', {
+        worker_id: wid,
+        attempts: result.attempts,
+        validated: shouldValidate,
+        validation_elapsed_ms: result.validation_elapsed_ms,
+        attempt_failures: result.attempt_failures,
+      });
       return;
     }
 
@@ -371,7 +464,13 @@ async function handleTask(wid: string): Promise<void> {
       const pub = await publishToGitHub(result.files, result.pr_title, result.pr_body, branch, baseBranch, vtidLike);
       if (!pub.ok) {
         log(`  PR publish FAILED for ${row.id.slice(0, 8)}: ${pub.error}`);
-        await failTask(row.id, `publish PR: ${pub.error}`);
+        await failTask(row.id, `publish PR: ${pub.error}`, {
+          worker_id: wid,
+          attempts: result.attempts,
+          validated: shouldValidate,
+          validation_elapsed_ms: result.validation_elapsed_ms,
+          attempt_failures: result.attempt_failures,
+        });
         return;
       }
       log(`  PR opened: ${pub.pr_url}`);
@@ -383,6 +482,7 @@ async function handleTask(wid: string): Promise<void> {
           attempts: result.attempts,
           validated: shouldValidate,
           validation_elapsed_ms: result.validation_elapsed_ms,
+          attempt_failures: result.attempt_failures,
           // Fields the gateway watches for to advance execution row → 'ci'
           worker_owns_pr: true,
           pr_url: pub.pr_url,
@@ -401,6 +501,7 @@ async function handleTask(wid: string): Promise<void> {
         attempts: result.attempts,
         validated: shouldValidate,
         validation_elapsed_ms: result.validation_elapsed_ms,
+        attempt_failures: result.attempt_failures,
       },
     });
   } catch (err) {

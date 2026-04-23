@@ -33,6 +33,17 @@ const REPO_ROOT = process.cwd();
 const LARGE_FILE_THRESHOLD = 1000;
 const TODO_PATTERN = /\b(TODO|FIXME|HACK|XXX)\b[:\s]?([^\n]*)/;
 
+// missing-tests-scanner-v1 quality filters. Recent scans produced ~338
+// findings; ~60-80 of those were files that don't warrant unit tests
+// (types/constants/config modules, thin re-exports, barrels). These
+// filters target the noise without touching files that genuinely need
+// coverage. All are env-overridable so ops can tune without a redeploy.
+const MISSING_TESTS_MIN_LOC = Number.parseInt(process.env.MISSING_TESTS_MIN_LOC || '50', 10);
+const MISSING_TESTS_FILENAME_DENYLIST = new Set(
+  (process.env.MISSING_TESTS_FILENAME_DENYLIST ||
+    'types,constants,config,defaults,registry,index').split(',').map(s => s.trim()).filter(Boolean),
+);
+
 // Only walk these roots — keeps the scan bounded and skips node_modules / dist
 const SCAN_ROOTS = [
   'services/gateway/src',
@@ -168,12 +179,21 @@ function scanMissingTests(files) {
     if (!TEST_PAIR_ROOTS.some((root) => rel.startsWith(root + '/'))) continue;
     const ext = path.extname(file);
     if (!SOURCE_EXTS.has(ext)) continue;
+    if (ext === '.d.ts' || file.endsWith('.d.ts')) continue;
     const base = path.basename(file, ext);
     // Skip files that ARE tests
     if (/\.(test|spec)$/.test(base)) continue;
-    // Skip barrel / type-only files
-    if (base === 'index' || base === 'types') continue;
+    // Filename denylist — broadens the earlier index/types skip to cover
+    // config/constants/defaults/registry modules that are pure data.
+    if (MISSING_TESTS_FILENAME_DENYLIST.has(base)) continue;
     if (testsByStem.has(base)) continue;
+
+    // Size + pure-export filters require reading the file. Only pay the
+    // cost once we know it's a candidate.
+    const lines = readLines(file);
+    if (!lines) continue;
+    if (lines.length < MISSING_TESTS_MIN_LOC) continue;
+    if (isPureExportModule(lines)) continue;
 
     signals.push({
       type: 'missing_tests',
@@ -183,6 +203,173 @@ function scanMissingTests(files) {
       message: `${rel} has no matching ${base}.test.ts`,
       suggested_action: `Add a unit or integration test file named ${base}.test.ts that covers the public surface of ${rel}.`,
       scanner: 'missing-tests-scanner-v1',
+      raw: { file_loc: lines.length },
+    });
+  }
+  return signals;
+}
+
+/**
+ * True when a file's only top-level statements are imports, `export …`
+ * re-exports, or pure type/interface declarations — nothing that produces
+ * runtime behaviour worth unit-testing. Runs line-by-line rather than with
+ * a full AST so we stay zero-dep.
+ */
+function isPureExportModule(lines) {
+  let inBlockComment = false;
+  let braceDepth = 0;
+  let sawExecutable = false;
+  for (let raw of lines) {
+    let line = raw;
+    if (inBlockComment) {
+      const end = line.indexOf('*/');
+      if (end < 0) continue;
+      line = line.slice(end + 2);
+      inBlockComment = false;
+    }
+    // Strip trailing line comments and inline block comments.
+    line = line.replace(/\/\*[\s\S]*?\*\//g, '');
+    const blockStart = line.indexOf('/*');
+    if (blockStart >= 0 && line.indexOf('*/', blockStart) < 0) {
+      line = line.slice(0, blockStart);
+      inBlockComment = true;
+    }
+    line = line.replace(/\/\/.*$/, '').trim();
+    if (!line) continue;
+    // Track brace depth so bodies of type/interface blocks don't trip us.
+    if (braceDepth > 0) {
+      braceDepth += (line.match(/\{/g) || []).length;
+      braceDepth -= (line.match(/\}/g) || []).length;
+      if (braceDepth < 0) braceDepth = 0;
+      continue;
+    }
+    if (/^import\s/.test(line)) continue;
+    if (/^export\s+\*(\s|$)/.test(line)) continue;
+    if (/^export\s+\{/.test(line)) continue;
+    if (/^export\s+type\b/.test(line)) {
+      braceDepth += (line.match(/\{/g) || []).length;
+      braceDepth -= (line.match(/\}/g) || []).length;
+      if (braceDepth < 0) braceDepth = 0;
+      continue;
+    }
+    if (/^export\s+interface\b/.test(line) || /^export\s+enum\b/.test(line)) {
+      braceDepth += (line.match(/\{/g) || []).length;
+      braceDepth -= (line.match(/\}/g) || []).length;
+      if (braceDepth < 0) braceDepth = 0;
+      continue;
+    }
+    // Anything else (function, class, const expression, top-level call) counts
+    // as executable — unit tests could plausibly cover it.
+    sawExecutable = true;
+    break;
+  }
+  return !sawExecutable;
+}
+
+// =============================================================================
+// Scanner: safety_gap
+// =============================================================================
+
+/**
+ * Infrastructure-class test gaps — routes without integration coverage,
+ * migrations without RLS assertions, governance toggles without tests.
+ * These have bitten production more often than line-coverage gaps, so
+ * they emit at medium severity and higher impact.
+ *
+ * Each item is a static inventory entry; we check the repo state once
+ * per scan and emit a finding when the expected guard file is absent.
+ * Adding a new gap here is cheap and doesn't need LLM help.
+ */
+function scanSafetyGaps() {
+  const signals = [];
+  const gaps = [
+    {
+      key: 'approvals-integration',
+      title: 'Approvals route integration test missing',
+      source_file: 'services/gateway/src/routes/approvals.ts',
+      test_file: 'services/gateway/test/approvals.test.ts',
+      description: 'Integration test covering /api/v1/approvals auth + happy path + rejection path.',
+    },
+    {
+      key: 'autopilot-integration',
+      title: 'Autopilot route integration test missing',
+      source_file: 'services/gateway/src/routes/autopilot.ts',
+      test_file: 'services/gateway/test/autopilot.test.ts',
+      description: 'Integration test covering /api/v1/autopilot list + auto-approve gating.',
+    },
+    {
+      key: 'route-guard',
+      title: 'Route-guard startup test missing',
+      source_file: 'services/gateway/src/index.ts',
+      test_file: 'services/gateway/test/route-guard.test.ts',
+      description: 'Startup test that asserts no duplicate route registrations across the gateway.',
+    },
+    {
+      key: 'admin-auth-coverage',
+      title: 'Admin route auth-middleware coverage missing',
+      source_file: 'services/gateway/src/routes/admin',
+      test_file: 'services/gateway/test/admin-auth.test.ts',
+      description: 'Test that every handler under routes/admin/ + routes/tenant-admin/ rejects non-admin sessions.',
+    },
+    {
+      key: 'schema-vs-migrations',
+      title: 'Schema-vs-migrations validator missing',
+      source_file: 'services/gateway/src',
+      test_file: 'services/gateway/test/schema-vs-migrations.test.ts',
+      description: 'Test that greps every from(...).select(...) in the gateway and asserts every column exists in the latest supabase/migrations SQL.',
+    },
+    {
+      key: 'rls-write-guard',
+      title: 'RLS-write-deny assertion test missing',
+      source_file: 'supabase/migrations',
+      test_file: 'services/gateway/test/rls-write-deny.test.ts',
+      description: 'Test that hits each write-target table with the anon key and asserts RLS rejects the write.',
+    },
+    {
+      key: 'oasis-event-emission',
+      title: 'OASIS event emission contract test missing',
+      source_file: 'services/gateway/src/routes',
+      test_file: 'services/gateway/test/oasis-emission.test.ts',
+      description: 'Contract test: every state-mutating route handler emits a documented OASIS event from services/gateway/src/types/cicd.ts.',
+    },
+    {
+      key: 'governance-gates',
+      title: 'Governance kill-switch test missing',
+      source_file: 'services/gateway/src/services',
+      test_file: 'services/gateway/test/governance-gates.test.ts',
+      description: 'Test that EXECUTION_DISARMED and AUTOPILOT_LOOP_ENABLED, when flipped, actually block the executor/approve paths.',
+    },
+    {
+      key: 'deploy-smoke',
+      title: 'Post-deploy smoke step missing in EXEC-DEPLOY',
+      source_file: '.github/workflows/EXEC-DEPLOY.yml',
+      test_file: '.github/workflows/EXEC-DEPLOY.yml',
+      description: 'EXEC-DEPLOY should curl /alive and /api/v1/vtid/list post-deploy and hard-fail on non-JSON 200.',
+    },
+    {
+      key: 'e2e-playwright-autopilot',
+      title: 'Playwright smoke for task/approval/execution missing',
+      source_file: 'e2e/command-hub/roles/developer',
+      test_file: 'e2e/command-hub/roles/developer/autopilot-flow.spec.ts',
+      description: 'e2e spec that creates a task, approves a finding, and watches one execution through to merge.',
+    },
+  ];
+
+  for (const gap of gaps) {
+    const rel = gap.test_file;
+    const abs = path.join(REPO_ROOT, rel);
+    // Only emit when the expected guard file is absent. Stale-coverage
+    // detection is a follow-up — start simple, catch the binary gap.
+    if (fs.existsSync(abs)) continue;
+    signals.push({
+      type: 'safety_gap',
+      severity: 'medium',
+      file_path: gap.source_file,
+      line_number: 1,
+      message: gap.title,
+      suggested_action: `Add ${rel}. ${gap.description}`,
+      scanner: 'safety-gap-scanner-v1',
+      raw: { gap_key: gap.key, expected_test_file: rel },
     });
   }
   return signals;
@@ -211,9 +398,10 @@ async function main() {
   const todos = scanTodos(allFiles);
   const largeFiles = scanLargeFiles(allFiles);
   const missingTests = scanMissingTests(allFiles);
-  const signals = [...todos, ...largeFiles, ...missingTests];
+  const safetyGaps = scanSafetyGaps();
+  const signals = [...todos, ...largeFiles, ...missingTests, ...safetyGaps];
 
-  console.log(`[dev-autopilot-scan] signals: todo=${todos.length} large_file=${largeFiles.length} missing_tests=${missingTests.length} total=${signals.length}`);
+  console.log(`[dev-autopilot-scan] signals: todo=${todos.length} large_file=${largeFiles.length} missing_tests=${missingTests.length} safety_gap=${safetyGaps.length} total=${signals.length}`);
 
   // Persist signals.json next to the script so the workflow can attach it
   // as an artifact if needed.

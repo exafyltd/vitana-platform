@@ -30,7 +30,8 @@ export type SignalType =
   | 'missing_docs'
   | 'circular_dep'
   | 'unused_dep'
-  | 'cognitive_complexity';
+  | 'cognitive_complexity'
+  | 'safety_gap';
 
 export type Severity = 'low' | 'medium' | 'high';
 
@@ -147,6 +148,9 @@ const TYPE_EFFORT: Record<SignalType, number> = {
   duplication: 5,
   cognitive_complexity: 6,
   large_file: 7,
+  // safety_gap items are infra-scoped integration tests — usually
+  // ~half a day of work per gap.
+  safety_gap: 6,
 };
 
 /** Risk class for auto-exec eligibility — dead_code, unused_dep, missing_docs
@@ -162,6 +166,7 @@ const TYPE_RISK_CLASS: Record<SignalType, 'low' | 'medium' | 'high'> = {
   duplication: 'medium',
   cognitive_complexity: 'medium',
   large_file: 'high',
+  safety_gap: 'medium',
 };
 
 function scoreSignal(signal: DevAutopilotSignal): {
@@ -193,6 +198,7 @@ function titleForSignal(signal: DevAutopilotSignal): string {
     case 'missing_docs':  return `Add missing docs for ${base}`;
     case 'circular_dep':  return `Break circular dependency via ${base}`;
     case 'cognitive_complexity': return `Reduce cognitive complexity in ${base}`;
+    case 'safety_gap':    return signal.message.slice(0, 80);
     default:              return signal.message.substring(0, 80);
   }
 }
@@ -329,6 +335,11 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
           line_number: signal.line_number,
           suggested_action: signal.suggested_action,
           scanner: signal.scanner,
+          // Propagate scanner-specific metadata (file_loc for missing_tests,
+          // gap_key/expected_test_file for safety_gap, etc.) into the
+          // snapshot so downstream consumers (bulk-archive SQL, auto-approve
+          // filter) can read them without a separate lookup.
+          ...(signal.raw || {}),
         },
       }),
     });

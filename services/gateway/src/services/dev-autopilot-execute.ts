@@ -37,7 +37,7 @@ import {
   SafetyDecision,
 } from './dev-autopilot-safety';
 import { extractFilePaths } from './dev-autopilot-planning';
-import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks } from './dev-autopilot-worker-queue';
+import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -160,12 +160,100 @@ interface ConfigRow {
   max_auto_fix_depth: number;
   allow_scope: string[];
   deny_scope: string[];
+  // Auto-approve gate (defaults to disabled — opt-in per environment).
+  auto_approve_enabled?: boolean;
+  auto_approve_max_effort?: number;
+  auto_approve_risk_classes?: string[];
+  auto_approve_scanners?: string[];
 }
 
 async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
   const r = await supa<ConfigRow[]>(s, `/rest/v1/dev_autopilot_config?id=eq.1&limit=1`);
   if (!r.ok || !r.data || r.data.length === 0) return null;
   return r.data[0];
+}
+
+/**
+ * Upsert worker validation failures into dev_autopilot_prompt_learnings.
+ * Scoped by the finding's scanner so retrieval can target lessons from the
+ * same scanner class (e.g. only pull missing-tests lessons for missing-tests
+ * findings).
+ *
+ * The scanner is looked up once from the finding's spec_snapshot. A null
+ * scanner is allowed (legacy rows without a scanner field still write, just
+ * with scanner IS NULL) — the ON CONFLICT index treats (pattern_type,
+ * pattern_key, NULL) as a distinct bucket.
+ */
+async function persistAttemptFailures(
+  s: SupaConfig,
+  failures: WorkerAttemptFailure[],
+  ctx: { finding_id: string; execution_id?: string },
+): Promise<void> {
+  // Look up the finding's scanner once.
+  const findingR = await supa<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${ctx.finding_id}&select=spec_snapshot&limit=1`,
+  );
+  const scanner: string | null = findingR.ok && findingR.data && findingR.data[0]?.spec_snapshot?.scanner
+    ? String(findingR.data[0].spec_snapshot.scanner)
+    : null;
+
+  const now = new Date().toISOString();
+  for (const f of failures) {
+    const pattern_type = f.stage === 'tsc'
+      ? 'tsc_error'
+      : f.stage === 'jest'
+        ? 'jest_failure'
+        : f.stage === 'parse' || f.stage === 'apply'
+          ? 'parse_error'
+          : 'validation_other';
+    const body = {
+      pattern_type,
+      pattern_key: f.pattern_key.slice(0, 200),
+      example_message: (f.example_message || '').slice(0, 500),
+      scanner,
+      finding_id: ctx.finding_id,
+      execution_id: ctx.execution_id || null,
+      last_seen_at: now,
+    };
+    // PostgREST upsert: merge-duplicates against the UNIQUE
+    // (pattern_type, pattern_key, scanner) index. frequency stays at the
+    // default (1) on conflict; the aggregator counts by rows, not by the
+    // column, so an undercount of duplicates is acceptable.
+    await supa(s,
+      `/rest/v1/dev_autopilot_prompt_learnings?on_conflict=pattern_type,pattern_key,scanner`,
+      {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+}
+
+/**
+ * Load up to 5 recent validation lessons for a scanner. Used by the
+ * execution prompt builder so Claude's output avoids repeating known
+ * traps. Best-effort — returns [] on any DB issue so execute flow never
+ * blocks on this.
+ */
+async function loadExecutionLessons(
+  s: SupaConfig,
+  scanner: string,
+): Promise<ExecutionLesson[]> {
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const r = await supa<ExecutionLesson[]>(
+      s,
+      `/rest/v1/dev_autopilot_prompt_learnings?scanner=eq.${encodeURIComponent(scanner)}`
+      + `&last_seen_at=gte.${since}`
+      + `&order=last_seen_at.desc&limit=5`
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note`,
+    );
+    return r.ok && Array.isArray(r.data) ? r.data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function countApprovedToday(s: SupaConfig): Promise<number> {
@@ -543,12 +631,20 @@ const parseExecutionJson = parseExecutionOutput;
 
 interface FileCtx { path: string; exists: boolean; content?: string; sha?: string }
 
+interface ExecutionLesson {
+  pattern_type: string;
+  pattern_key: string;
+  example_message: string;
+  mitigation_note: string | null;
+}
+
 function buildExecutionPrompt(
   findingId: string,
   planVersion: number,
   planMarkdown: string,
   fileCtx: FileCtx[],
   branch: string,
+  lessons?: ExecutionLesson[],
 ): string {
   const lines: string[] = [];
   lines.push(
@@ -564,6 +660,28 @@ function buildExecutionPrompt(
     planMarkdown.slice(0, 60_000),
     ``,
   );
+  // Inject recent validation-failure patterns scoped to the same scanner so
+  // Claude's output avoids repeating known traps (wrong import paths,
+  // jest shape mistakes, parse errors). Best-effort — missing lessons are
+  // a no-op, the base prompt is unchanged.
+  if (lessons && lessons.length > 0) {
+    lines.push(
+      `## Lessons from prior attempts`,
+      ``,
+      `These validation failures occurred on similar recent plans. Do NOT`,
+      `repeat them:`,
+      ``,
+    );
+    for (const l of lessons) {
+      const header = l.mitigation_note && l.mitigation_note.trim().length > 0
+        ? l.mitigation_note.trim()
+        : `${l.pattern_type}: ${l.pattern_key}`;
+      lines.push(`- **${header}**`);
+      const example = (l.example_message || '').trim().split('\n')[0].slice(0, 240);
+      if (example) lines.push(`  Example: ${example}`);
+    }
+    lines.push(``);
+  }
   if (fileCtx.length > 0) {
     lines.push(
       `## Current state of each file the plan touches`,
@@ -740,6 +858,18 @@ async function runExecutionSession(
     fileCtx.push({ path: p, exists: got.exists, content: got.content, sha: got.sha });
   }
 
+  // Pull prior-attempt lessons for the finding's scanner so Claude avoids
+  // repeating known traps. Best-effort — no rows / failed query just skips
+  // the optional prompt section.
+  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot&limit=1`,
+  );
+  const findingScanner: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.spec_snapshot?.scanner
+    ? String(findingMetaR.data[0].spec_snapshot.scanner)
+    : null;
+  const lessons = findingScanner ? await loadExecutionLessons(s, findingScanner) : [];
+
   // 2. Ask Claude to produce the new file contents. Routes through the
   // worker queue when DEV_AUTOPILOT_USE_WORKER=true (Claude subscription);
   // otherwise hits the Messages API directly (pay-per-token).
@@ -750,12 +880,12 @@ async function runExecutionSession(
   // sequence in a single long-lived process, sidestepping the Cloud Run
   // recycle-mid-flight problem that kept stranding executions.
   const ownsPr = isWorkerQueueEnabled() && isWorkerOwnsPrEnabled();
-  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch);
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons);
   const startedAt = Date.now();
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
   // worker-owned-PR mode; direct Messages API never does).
-  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string } =
+  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[] } =
     isWorkerQueueEnabled()
       ? await runWorkerTask(
           {
@@ -775,6 +905,20 @@ async function runExecutionSession(
         )
       : await callMessagesApi(prompt);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
+
+  // Prompt-gap feedback loop: the worker reports per-attempt validation
+  // failures via output_payload.attempt_failures. Upsert each into
+  // dev_autopilot_prompt_learnings so future plan/execute prompts can
+  // reference them. Best-effort — a learnings-persist failure must not
+  // block the execution outcome. Runs even on LLM failure so we capture
+  // exhausted-validation cases too.
+  if (llm.attempt_failures && llm.attempt_failures.length > 0) {
+    await persistAttemptFailures(s, llm.attempt_failures, {
+      finding_id: exec.finding_id,
+      execution_id: executionId,
+    }).catch(err => console.error(`${LOG_PREFIX} persist learnings error:`, err));
+  }
+
   if (!llm.ok || !llm.text) {
     return { ok: false, error: `LLM call failed after ${elapsed}s: ${llm.error || 'unknown'}`, session_id: sessionId, branch };
   }
@@ -1045,6 +1189,123 @@ export async function backgroundExecutorTick(): Promise<void> {
   }
 }
 
+/**
+ * Auto-approve tick — picks eligible `status='new'` findings and calls
+ * approveAutoExecute on their behalf. Runs alongside backgroundExecutorTick.
+ *
+ * Eligibility is gated by dev_autopilot_config:
+ *   - auto_approve_enabled must be true (default false, opt-in per env).
+ *   - kill_switch must be false (same gate as manual approval).
+ *   - finding's risk_class must be in auto_approve_risk_classes.
+ *   - finding's effort_score must be <= auto_approve_max_effort.
+ *   - finding's scanner must be in auto_approve_scanners.
+ *   - A plan version must already exist (approveAutoExecute enforces this
+ *     too; we filter here to avoid calling approveAutoExecute on findings
+ *     that would just error).
+ *
+ * Budget / concurrency caps are respected up-front so we don't burn through
+ * the daily budget in a single burst. The per-tick cap (5) is deliberate:
+ * it prevents a backlog flush if auto-approve is freshly enabled.
+ *
+ * The safety gate (evaluateSafetyGate inside approveAutoExecute) still runs
+ * on every finding — this function only automates the "click Approve" step.
+ */
+export async function autoApproveTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  const cfg = await loadConfig(s);
+  if (!cfg) return;
+  if (cfg.kill_switch) return;
+  if (!cfg.auto_approve_enabled) return;
+
+  const riskClasses = (cfg.auto_approve_risk_classes && cfg.auto_approve_risk_classes.length > 0)
+    ? cfg.auto_approve_risk_classes
+    : ['low', 'medium'];
+  const scanners = (cfg.auto_approve_scanners && cfg.auto_approve_scanners.length > 0)
+    ? cfg.auto_approve_scanners
+    : [];
+  if (scanners.length === 0) return; // no scanner opted-in — nothing to pick
+  const maxEffort = cfg.auto_approve_max_effort ?? 5;
+
+  const approvedToday = await countApprovedToday(s);
+  const running = await countRunningExecutions(s);
+  const budgetSlots = Math.max(0, cfg.daily_budget - approvedToday);
+  const concurrencySlots = Math.max(0, cfg.concurrency_cap - running);
+  // Cap per-tick to avoid bursts when auto-approve is flipped on after a
+  // backlog has accumulated.
+  const PER_TICK_CAP = 5;
+  const slots = Math.min(budgetSlots, concurrencySlots, PER_TICK_CAP);
+  if (slots === 0) return;
+
+  // PostgREST in.(...) expects comma-separated values; quote strings for
+  // safety. scanners/riskClasses come from the config row (operator-controlled),
+  // but still encode to avoid breaking on stray punctuation.
+  const riskList = riskClasses.map(r => `"${encodeURIComponent(r)}"`).join(',');
+  const scannerList = scanners.map(r => `"${encodeURIComponent(r)}"`).join(',');
+  const findingsR = await supa<Array<{
+    id: string;
+    risk_class: 'low' | 'medium' | 'high' | null;
+    effort_score: number | null;
+    impact_score: number | null;
+    spec_snapshot: { scanner?: string } | null;
+  }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new`
+      + `&risk_class=in.(${riskList})`
+      + `&effort_score=lte.${maxEffort}`
+      + `&spec_snapshot->>scanner=in.(${scannerList})`
+      + `&order=impact_score.desc.nullslast,created_at.asc&limit=${slots * 2}`
+      + `&select=id,risk_class,effort_score,impact_score,spec_snapshot`,
+  );
+  if (!findingsR.ok || !findingsR.data || findingsR.data.length === 0) return;
+
+  let approved = 0;
+  for (const f of findingsR.data) {
+    if (approved >= slots) break;
+
+    // Only approve findings that already have a plan. approveAutoExecute
+    // will error otherwise; short-circuit with a cheap HEAD-style lookup.
+    const planR = await supa<Array<{ version: number }>>(
+      s,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&order=version.desc&limit=1`,
+    );
+    if (!planR.ok || !planR.data || planR.data.length === 0) continue;
+
+    const result = await approveAutoExecute({ finding_id: f.id, approved_by: 'auto' });
+    if (!result.ok || !result.execution) {
+      // A safety-gate rejection here is EXPECTED for findings that cite
+      // files outside allow_scope — just log and move on. The operator
+      // will still see those findings in the queue with status='new'.
+      console.log(`${LOG_PREFIX} auto-approve skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
+      continue;
+    }
+
+    approved++;
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.auto_approved',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Auto-approved execution ${result.execution.id.slice(0, 8)} for finding ${f.id.slice(0, 8)}`,
+      payload: {
+        finding_id: f.id,
+        execution_id: result.execution.id,
+        trigger: {
+          risk_class: f.risk_class,
+          effort_score: f.effort_score,
+          impact_score: f.impact_score,
+          scanner: f.spec_snapshot?.scanner ?? null,
+        },
+      },
+    });
+  }
+
+  if (approved > 0) {
+    console.log(`${LOG_PREFIX} auto-approved ${approved} finding(s) this tick`);
+  }
+}
+
 let backgroundTickerStarted = false;
 export function startBackgroundExecutor(): void {
   if (backgroundTickerStarted) return;
@@ -1053,6 +1314,9 @@ export function startBackgroundExecutor(): void {
   setInterval(() => {
     backgroundExecutorTick().catch((err) => {
       console.error(`${LOG_PREFIX} tick error:`, err);
+    });
+    autoApproveTick().catch((err) => {
+      console.error(`${LOG_PREFIX} auto-approve tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }

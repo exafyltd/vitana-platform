@@ -79,6 +79,13 @@ export interface WorkerTaskInput {
   vtid_like?: string;
 }
 
+export interface WorkerAttemptFailure {
+  attempt: number;
+  stage: 'parse' | 'apply' | 'tsc' | 'jest';
+  pattern_key: string;
+  example_message: string;
+}
+
 export interface WorkerTaskResult {
   ok: boolean;
   text?: string;
@@ -88,6 +95,11 @@ export interface WorkerTaskResult {
   pr_url?: string;
   pr_number?: number;
   branch?: string;
+  /** Per-attempt validation failures from the worker's retry loop. Populated
+   * on both success (when earlier attempts failed) and final failure. The
+   * prompt-gap feedback loop in dev-autopilot-execute.ts upserts these into
+   * dev_autopilot_prompt_learnings. */
+  attempt_failures?: WorkerAttemptFailure[];
   error?: string;
   queue_row_id?: string;
 }
@@ -161,6 +173,7 @@ export async function waitForWorkerTask(
         pr_number?: number;
         branch?: string;
         worker_owns_pr?: boolean;
+        attempt_failures?: WorkerAttemptFailure[];
       } | null;
       error_message: string | null;
     }>>(
@@ -192,6 +205,7 @@ export async function waitForWorkerTask(
         pr_url: op.pr_url,
         pr_number: op.pr_number,
         branch: op.branch,
+        attempt_failures: op.attempt_failures,
         queue_row_id: rowId,
       };
     }
@@ -199,6 +213,7 @@ export async function waitForWorkerTask(
       return {
         ok: false,
         error: row.error_message || 'worker reported failure with no message',
+        attempt_failures: row.output_payload?.attempt_failures,
         queue_row_id: rowId,
       };
     }

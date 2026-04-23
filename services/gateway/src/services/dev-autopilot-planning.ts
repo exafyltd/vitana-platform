@@ -279,6 +279,67 @@ async function supaRequest<T>(
 }
 
 // =============================================================================
+// Prompt-gap feedback — pull recent validation failures for the same scanner
+// so plan prompts can warn Claude off known traps.
+// =============================================================================
+
+export interface PromptLesson {
+  pattern_type: string;
+  pattern_key: string;
+  example_message: string;
+  mitigation_note: string | null;
+  last_seen_at: string;
+}
+
+/**
+ * Load up to `limit` recent validation failures for a given scanner. Best-
+ * effort — a DB hiccup here must not block plan generation, so we swallow
+ * errors and return an empty list.
+ */
+export async function loadRecentLessons(
+  supa: SupaConfig,
+  scanner: string | null | undefined,
+  limit = 5,
+): Promise<PromptLesson[]> {
+  if (!scanner) return [];
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const r = await supaRequest<PromptLesson[]>(
+      supa,
+      `/rest/v1/dev_autopilot_prompt_learnings?scanner=eq.${encodeURIComponent(scanner)}`
+      + `&last_seen_at=gte.${since}`
+      + `&order=last_seen_at.desc&limit=${limit}`
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,last_seen_at`,
+    );
+    return r.ok && Array.isArray(r.data) ? r.data : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatLessonsBlock(lessons: PromptLesson[]): string {
+  if (!lessons || lessons.length === 0) return '';
+  const lines: string[] = [
+    ``,
+    `## Lessons from prior attempts on findings from this scanner`,
+    ``,
+    `These validation failures have surfaced recently on similar findings.`,
+    `Avoid repeating them in this plan.`,
+    ``,
+  ];
+  for (const l of lessons) {
+    const header = l.mitigation_note && l.mitigation_note.trim().length > 0
+      ? l.mitigation_note.trim()
+      : `${l.pattern_type}: ${l.pattern_key}`;
+    lines.push(`- **${header}**`);
+    const example = (l.example_message || '').trim().split('\n')[0].slice(0, 240);
+    if (example) lines.push(`  Example: ${example}`);
+  }
+  lines.push(``);
+  return lines.join('\n');
+}
+
+// =============================================================================
 // Prompt builder
 // =============================================================================
 
@@ -287,6 +348,7 @@ export function buildPlanningPrompt(
   previousPlan?: string,
   feedbackNote?: string,
   scope?: { allow?: string[]; deny?: string[] },
+  lessons?: PromptLesson[],
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -309,6 +371,11 @@ export function buildPlanningPrompt(
     `- **Suggested action:** ${snap.suggested_action || '(none)'}`,
     ``,
   );
+
+  // Prompt-gap feedback loop — inject recent validation failures scoped to
+  // this scanner so Claude doesn't repeat known traps.
+  const lessonsBlock = formatLessonsBlock(lessons || []);
+  if (lessonsBlock) lines.push(lessonsBlock);
 
   if (previousPlan && feedbackNote) {
     lines.push(
@@ -515,6 +582,7 @@ async function runPlanningSession(
   previousPlan: string | undefined,
   feedbackNote: string | undefined,
   scope?: { allow?: string[]; deny?: string[] },
+  supa?: SupaConfig,
 ): Promise<{ ok: boolean; plan_markdown?: string; session_id?: string; error?: string }> {
   const sessionId = `plan_${randomUUID().slice(0, 12)}`;
 
@@ -526,6 +594,12 @@ async function runPlanningSession(
       session_id: sessionId,
     };
   }
+
+  // Pull recent validation lessons for this scanner so Claude can avoid
+  // known traps. Best-effort — never blocks plan generation.
+  const lessons = supa
+    ? await loadRecentLessons(supa, finding.spec_snapshot?.scanner)
+    : [];
 
   const startedAt = Date.now();
   const filePath = finding.spec_snapshot?.file_path;
@@ -554,7 +628,7 @@ async function runPlanningSession(
     fileSection = `\n\n## Referenced file\n\n> No file_path recorded on this finding. Produce the plan from the finding metadata alone.\n`;
   }
 
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope) + fileSection;
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons) + fileSection;
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls
@@ -645,7 +719,7 @@ export async function generatePlanVersion(
   }
 
   // 4. Run the planning session
-  const session = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope);
+  const session = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope, supa);
   if (!session.ok || !session.plan_markdown) {
     await emitOasisEvent({
       vtid: PLAN_VTID,
