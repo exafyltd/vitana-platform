@@ -2676,6 +2676,7 @@ const NAVIGATION_CONFIG = [
         "tabs": [
             { "key": "registry", "path": "/command-hub/autopilot/registry/" },
             { "key": "scanners", "path": "/command-hub/autopilot/scanners/" },
+            { "key": "impact-rules", "path": "/command-hub/autopilot/impact-rules/" },
             { "key": "runs", "path": "/command-hub/autopilot/runs/" },
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
@@ -6222,6 +6223,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAutopilotRegistryView());
     } else if (moduleKey === 'autopilot' && tab === 'scanners') {
         container.appendChild(renderAutopilotScannersView());
+    } else if (moduleKey === 'autopilot' && tab === 'impact-rules') {
+        container.appendChild(renderAutopilotImpactRulesView());
     } else if (moduleKey === 'autopilot' && tab === 'runs') {
         container.appendChild(renderAutopilotRunsView());
     } else if (moduleKey === 'autopilot' && tab === 'live') {
@@ -38916,6 +38919,7 @@ if (!state.autopilot) {
     state.autopilot = {
         registry: { loading: false, data: null, summary: null, filters: { domain: '', status: '', trigger: '', search: '' } },
         scanners: { loading: false, data: null, filter: { category: '', maturity: '' } },
+        impactRules: { loading: false, data: null, filter: { category: '', severity: '' } },
         runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
         live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
@@ -39469,6 +39473,166 @@ function renderAutopilotScannersView() {
         container.appendChild(section);
     });
 
+    return container;
+}
+
+// ── Impact Rules view ────────────────────────────────────────
+// Surfaces GET /api/v1/dev-autopilot/impact-rules. Diff-aware rules that run
+// on every PR — companion checks, conflict detectors, and semantic patterns.
+// See scripts/ci/impact-rules/registry.mjs for the code source of truth.
+
+async function fetchAutopilotImpactRules() {
+    var s = state.autopilot.impactRules;
+    if (s.loading) return;
+    s.loading = true;
+    renderApp();
+    try {
+        var res = await fetch('/api/v1/dev-autopilot/impact-rules', { headers: buildContextHeaders({}) });
+        if (res.ok) {
+            var data = await res.json();
+            s.data = (data && Array.isArray(data.rules)) ? data.rules : [];
+        } else {
+            console.error('[Autopilot] fetchImpactRules failed:', res.status);
+            s.data = [];
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchImpactRules error:', err);
+        s.data = [];
+    } finally {
+        s.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotImpactRulesView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Impact Rules';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Diff-aware rules that run on every PR. They catch companion updates that got missed, conflicts with existing state, and new code that doesn’t match established patterns — before merge, not after.';
+    container.appendChild(subtitle);
+
+    var s = state.autopilot.impactRules;
+    if (!s.data && !s.loading) {
+        setTimeout(function () { fetchAutopilotImpactRules(); }, 0);
+    }
+    if (s.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading impact rules...';
+        container.appendChild(loader);
+        return container;
+    }
+    if (!s.data) return container;
+
+    var total = s.data.length;
+    var enabled = s.data.filter(function (r) { return r.enabled; }).length;
+    var blocker = s.data.filter(function (r) { return r.severity === 'blocker'; }).length;
+    var warning = s.data.filter(function (r) { return r.severity === 'warning'; }).length;
+
+    var summaryRow = document.createElement('div');
+    summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    summaryRow.appendChild(createSummaryCard('Rules', total, '#fff'));
+    summaryRow.appendChild(createSummaryCard('Enabled', enabled, '#4caf50'));
+    summaryRow.appendChild(createSummaryCard('Blockers', blocker, '#f44336'));
+    summaryRow.appendChild(createSummaryCard('Warnings', warning, '#ffb74d'));
+    container.appendChild(summaryRow);
+
+    var filter = s.filter;
+    var filtersRow = document.createElement('div');
+    filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
+    var categories = [''].concat(Array.from(new Set(s.data.map(function (r) { return r.category; }))).sort());
+    var catSelect = document.createElement('select');
+    catSelect.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    catSelect.innerHTML = categories.map(function (c) {
+        var label = c === '' ? 'All categories' : c;
+        return '<option value="' + c + '"' + (filter.category === c ? ' selected' : '') + '>' + label + '</option>';
+    }).join('');
+    catSelect.onchange = function () { filter.category = this.value; renderApp(); };
+    filtersRow.appendChild(catSelect);
+
+    var severities = ['', 'blocker', 'warning', 'info'];
+    var sevSelect = document.createElement('select');
+    sevSelect.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    sevSelect.innerHTML = severities.map(function (m) {
+        var label = m === '' ? 'Any severity' : m;
+        return '<option value="' + m + '"' + (filter.severity === m ? ' selected' : '') + '>' + label + '</option>';
+    }).join('');
+    sevSelect.onchange = function () { filter.severity = this.value; renderApp(); };
+    filtersRow.appendChild(sevSelect);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'padding:6px 14px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { state.autopilot.impactRules.data = null; fetchAutopilotImpactRules(); };
+    filtersRow.appendChild(refreshBtn);
+    container.appendChild(filtersRow);
+
+    var rows = s.data.filter(function (r) {
+        if (filter.category && r.category !== filter.category) return false;
+        if (filter.severity && r.severity !== filter.severity) return false;
+        return true;
+    });
+    var byCat = {};
+    rows.forEach(function (r) { (byCat[r.category] = byCat[r.category] || []).push(r); });
+    var catOrder = ['conflict', 'companion', 'semantic'];
+    var seenCats = Object.keys(byCat).sort(function (a, b) {
+        return catOrder.indexOf(a) - catOrder.indexOf(b);
+    });
+
+    seenCats.forEach(function (cat) {
+        var section = document.createElement('section');
+        section.style.cssText = 'margin-bottom:1.5rem;';
+        var h3 = document.createElement('h3');
+        h3.textContent = cat.toUpperCase() + ' (' + byCat[cat].length + ')';
+        h3.style.cssText = 'color:#888;font-size:0.8rem;letter-spacing:0.08em;margin:0 0 0.5rem 0;';
+        section.appendChild(h3);
+
+        byCat[cat].forEach(function (r) {
+            var card = document.createElement('div');
+            card.style.cssText = 'background:#13131f;border:1px solid ' + (r.enabled ? '#333' : '#555') + ';border-radius:8px;padding:12px 16px;margin-bottom:0.5rem;' + (r.enabled ? '' : 'opacity:0.55;');
+
+            var header = document.createElement('div');
+            header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;';
+            var left = document.createElement('div');
+            left.style.cssText = 'display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;';
+            var name = document.createElement('strong');
+            name.textContent = r.title;
+            name.style.cssText = 'color:#e5e5e5;';
+            left.appendChild(name);
+            var id = document.createElement('code');
+            id.textContent = r.rule;
+            id.style.cssText = 'color:#888;font-size:0.8rem;';
+            left.appendChild(id);
+            var sevBadge = document.createElement('span');
+            sevBadge.textContent = r.severity;
+            var sevColor = r.severity === 'blocker' ? '#f44336' : r.severity === 'warning' ? '#ffb74d' : '#60a5fa';
+            sevBadge.style.cssText = 'background:' + sevColor + '20;color:' + sevColor + ';border:1px solid ' + sevColor + '60;padding:2px 8px;border-radius:999px;font-size:0.72rem;';
+            left.appendChild(sevBadge);
+            header.appendChild(left);
+
+            var right = document.createElement('div');
+            right.style.cssText = 'display:flex;gap:0.75rem;align-items:center;font-size:0.82rem;color:#aaa;';
+            var enabledPill = document.createElement('span');
+            enabledPill.textContent = r.enabled ? 'enabled' : 'disabled';
+            enabledPill.style.cssText = 'background:' + (r.enabled ? '#4caf5020' : '#66666620') + ';color:' + (r.enabled ? '#4caf50' : '#888') + ';border:1px solid ' + (r.enabled ? '#4caf5050' : '#66666650') + ';padding:2px 8px;border-radius:999px;font-size:0.72rem;';
+            right.appendChild(enabledPill);
+            header.appendChild(right);
+            card.appendChild(header);
+
+            var desc = document.createElement('p');
+            desc.textContent = r.description;
+            desc.style.cssText = 'margin:0.4rem 0 0 0;color:#bbb;font-size:0.82rem;line-height:1.4;';
+            card.appendChild(desc);
+
+            section.appendChild(card);
+        });
+        container.appendChild(section);
+    });
     return container;
 }
 

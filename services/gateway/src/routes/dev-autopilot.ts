@@ -230,6 +230,30 @@ router.get('/scanners', requireDevRole, async (_req: Request, res: Response) => 
 });
 
 // =============================================================================
+// GET /impact-rules — diff-aware rule registry
+// =============================================================================
+
+router.get('/impact-rules', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  const r = await supaGet<Array<{
+    rule: string;
+    title: string;
+    description: string;
+    category: string;
+    severity: string;
+    enabled: boolean;
+    docs_url: string | null;
+    created_at: string;
+    updated_at: string;
+  }>>(supa, `/rest/v1/dev_autopilot_impact_rules?order=category.asc,rule.asc`);
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+
+  return res.json({ ok: true, rules: r.data, count: (r.data || []).length });
+});
+
+// =============================================================================
 // GET /queue — queue with optional filters
 // =============================================================================
 
