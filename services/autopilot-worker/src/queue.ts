@@ -132,17 +132,26 @@ export async function completeTask(
   return { ok: r.ok, error: r.error };
 }
 
-export async function failTask(rowId: string, error: string): Promise<{ ok: boolean; error?: string }> {
+export async function failTask(
+  rowId: string,
+  error: string,
+  extra?: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  // Even on failure, write diagnostic context (attempt_failures, worker_id,
+  // etc.) into output_payload so the gateway's prompt-gap feedback loop
+  // can pick up the pattern. error_message stays the primary failure
+  // signal the watcher/bridge reads.
+  const body: Record<string, unknown> = {
+    status: 'failed',
+    error_message: error.slice(0, 4000),
+    completed_at: new Date().toISOString(),
+  };
+  if (extra && Object.keys(extra).length > 0) {
+    body.output_payload = extra;
+  }
   const r = await supa(
     `/rest/v1/dev_autopilot_worker_queue?id=eq.${rowId}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status: 'failed',
-        error_message: error.slice(0, 4000),
-        completed_at: new Date().toISOString(),
-      }),
-    },
+    { method: 'PATCH', body: JSON.stringify(body) },
   );
   return { ok: r.ok, error: r.error };
 }
