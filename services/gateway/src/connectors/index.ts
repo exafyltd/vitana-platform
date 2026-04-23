@@ -18,7 +18,7 @@ import stravaConnector from './wearable/strava';
 // VTID-01939: productivity category — Google (Gmail/Calendar/Contacts/YouTube)
 import googleConnector from './productivity/google';
 // VTID-01942: in-house Vitana Media Hub — music/podcast/shorts, no OAuth
-import vitanaHubConnector from './media/vitana_hub';
+import vitanaHubConnector from './media/vitana-hub';
 
 const CONNECTORS = new Map<string, Connector>();
 
