@@ -119,6 +119,13 @@ const CONSULT_CONFIG = {
   MEDIUM_CONFIDENCE_MIN: 12,
   // If 2nd-best is at least this fraction of the top score, treat as ambiguous
   AMBIGUITY_RATIO: 0.7,
+  // Absolute cosine-similarity floor for semantic-only matches (no keyword
+  // hits at all). Without this, a query like "open the screen with the
+  // connectors" picks an arbitrary community page that happens to share the
+  // word "screen" in its description, and the exclude_routes mechanism
+  // rotates through it on repeated calls (Home → Calendar → Wallet). Below
+  // this floor we demote to low confidence and ask the user to clarify.
+  MIN_SEMANTIC_ONLY_SIMILARITY: 0.55,
 
   // Memory budget — we share the 3s Gemini Live tool timeout with KB search
   MEMORY_TIMEOUT_MS: 1500,
@@ -566,6 +573,21 @@ export async function consultNavigator(
     console.log(`[VTID-NAV-SEMANTIC] Hybrid winner: ${top.entry.screen_id} (hybrid=${top.score}, keyword=${topH.keywordScore}, semantic=${topH.semanticScore.toFixed(3)})`);
   }
 
+  // Weak-semantic floor: if the top pick has no keyword support and its raw
+  // semantic similarity is below the floor, we're guessing on the word-in-
+  // common level (e.g. "open connectors screen" matching HOME because both
+  // mention "screen"). Force low confidence so the Navigator asks for
+  // clarification instead of rotating through next-bests on repeat calls.
+  const topHybrid = top ? hybridMap.get(top.entry.screen_id) : null;
+  const isWeakSemanticOnly = !!(
+    topHybrid &&
+    topHybrid.keywordScore === 0 &&
+    topHybrid.semanticScore < CONSULT_CONFIG.MIN_SEMANTIC_ONLY_SIMILARITY
+  );
+  if (isWeakSemanticOnly) {
+    console.log(`[VTID-NAV-SEMANTIC] Weak semantic-only top pick (sim=${topHybrid!.semanticScore.toFixed(3)} < ${CONSULT_CONFIG.MIN_SEMANTIC_ONLY_SIMILARITY}) — demoting to low confidence`);
+  }
+
   // VTID-NAV-02: build the top-3 picks payload for telemetry. Attach the raw
   // score so the admin Telemetry view can surface near-misses and the admin
   // Simulator can show the full ranking.
@@ -582,7 +604,7 @@ export async function consultNavigator(
   let suggestedQuestion: string | undefined;
   let blockedReason: NavigatorConsultResult['blocked_reason'];
 
-  if (!top || top.score < CONSULT_CONFIG.MEDIUM_CONFIDENCE_MIN) {
+  if (!top || top.score < CONSULT_CONFIG.MEDIUM_CONFIDENCE_MIN || isWeakSemanticOnly) {
     confidence = 'low';
     blockedReason = 'no_match';
   } else if (top.score >= CONSULT_CONFIG.HIGH_CONFIDENCE_MIN) {
