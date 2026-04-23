@@ -306,6 +306,171 @@ router.get('/search', requireTenantAdmin, async (req: AuthenticatedRequest, res:
   }
 });
 
+/**
+ * GET /unified-tree
+ * Returns a merged, auto-grouped tree of all three KB scopes:
+ *   - system   (knowledge_docs, namespace=vitana_system — Book of the Vitana Index + others)
+ *   - baseline (kb_documents WHERE tenant_id IS NULL, with per-tenant opt-out flag)
+ *   - tenant   (kb_documents WHERE tenant_id = :tenantId)
+ *
+ * Response shape:
+ *   {
+ *     ok: true,
+ *     tree: {
+ *       system:   [{ group: string, docs: Doc[] }, ...],
+ *       baseline: [{ group: string, docs: Doc[] }, ...],
+ *       tenant:   [{ group: string, docs: Doc[] }, ...]
+ *     }
+ *   }
+ *   Doc = { id, title, path, source, status, topics[], updated_at, is_opted_out? }
+ *
+ * Read-only for tenant admins; exafy admins get the same shape. Editing still
+ * flows through the existing per-scope endpoints:
+ *   - tenant  → PUT /documents/:id
+ *   - baseline→ (exafy admin only; not yet surfaced in this router)
+ *   - system  → /api/v1/admin/system-kb (exafy admin only)
+ */
+router.get('/unified-tree', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const tenantId = req.params.tenantId || (req as any).targetTenantId;
+
+    const [optoutsRes, kbDocsRes, systemDocsRes] = await Promise.allSettled([
+      supabase
+        .from('tenant_kb_baseline_optouts')
+        .select('document_id')
+        .eq('tenant_id', tenantId),
+      supabase
+        .from('kb_documents')
+        .select('id, title, tenant_id, topics, status, created_at, updated_at')
+        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
+      supabase
+        .from('knowledge_docs')
+        .select('id, title, path, tags, source_type, word_count, created_at, updated_at')
+        .order('path', { ascending: true })
+        .limit(500),
+    ]);
+
+    const optoutIds = new Set<string>();
+    if (optoutsRes.status === 'fulfilled' && optoutsRes.value.data) {
+      optoutsRes.value.data.forEach((o: any) => optoutIds.add(o.document_id));
+    }
+
+    const kbDocs: any[] =
+      kbDocsRes.status === 'fulfilled' && kbDocsRes.value.data ? kbDocsRes.value.data : [];
+    const systemDocs: any[] =
+      systemDocsRes.status === 'fulfilled' && systemDocsRes.value.data
+        ? systemDocsRes.value.data
+        : [];
+
+    // --- System scope ---
+    const systemFriendly: Record<string, string> = {
+      'index-book': 'Book of the Vitana Index',
+      vaea: 'VAEA',
+      agents: 'Agents',
+      assistant: 'Assistant',
+      autopilot: 'Autopilot',
+    };
+    const systemGroups: Record<string, any[]> = {};
+    for (const d of systemDocs) {
+      const parts = String(d.path || '').split('/').filter(Boolean);
+      // Expected: kb/vitana-system/<area>/<file>
+      const area = parts[2] || 'other';
+      const groupName = systemFriendly[area] ?? area.charAt(0).toUpperCase() + area.slice(1);
+      if (!systemGroups[groupName]) systemGroups[groupName] = [];
+      systemGroups[groupName].push({
+        id: d.id,
+        title: d.title,
+        path: d.path,
+        source: 'system' as const,
+        status: 'indexed' as const,
+        topics: d.tags || [],
+        updated_at: d.updated_at,
+      });
+    }
+    const systemTree = Object.entries(systemGroups)
+      .map(([group, docs]) => ({
+        group,
+        docs: docs.sort((a, b) => String(a.path).localeCompare(String(b.path))),
+      }))
+      .sort((a, b) => a.group.localeCompare(b.group));
+
+    // --- Baseline + Tenant scopes (both from kb_documents) ---
+    const baselineBuckets: Record<string, any[]> = {};
+    const tenantBuckets: Record<string, any[]> = {};
+    for (const d of kbDocs) {
+      const isBaseline = d.tenant_id === null;
+      const topic = (d.topics && d.topics[0]) || 'Uncategorized';
+      const group = topic.charAt(0).toUpperCase() + topic.slice(1);
+      const entry = {
+        id: d.id,
+        title: d.title,
+        path: null,
+        source: isBaseline ? 'baseline' : 'tenant',
+        status: d.status,
+        topics: d.topics || [],
+        updated_at: d.updated_at,
+        created_at: d.created_at,
+        ...(isBaseline ? { is_opted_out: optoutIds.has(d.id) } : {}),
+      };
+      const target = isBaseline ? baselineBuckets : tenantBuckets;
+      if (!target[group]) target[group] = [];
+      target[group].push(entry);
+    }
+    const toTree = (buckets: Record<string, any[]>) =>
+      Object.entries(buckets)
+        .map(([group, docs]) => ({
+          group,
+          docs: docs.sort((a, b) =>
+            String(b.updated_at || b.created_at || '').localeCompare(
+              String(a.updated_at || a.created_at || '')
+            )
+          ),
+        }))
+        .sort((a, b) => a.group.localeCompare(b.group));
+
+    return res.json({
+      ok: true,
+      tree: {
+        system: systemTree,
+        baseline: toTree(baselineBuckets),
+        tenant: toTree(tenantBuckets),
+      },
+    });
+  } catch (err: any) {
+    console.error(`[${VTID}] unified-tree error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+/**
+ * GET /system-docs/:id
+ * Read-only viewer for knowledge_docs content. Tenant admins can READ system
+ * docs so the unified-tree viewer works; editing stays on /api/v1/admin/system-kb.
+ */
+router.get('/system-docs/:id', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('knowledge_docs')
+      .select('id, title, path, content, tags, source_type, word_count, created_at, updated_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+
+    return res.json({ ok: true, document: data });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
 // GET /topics — distinct topics for this tenant
 router.get('/topics', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
