@@ -2675,6 +2675,7 @@ const NAVIGATION_CONFIG = [
         "basePath": "/command-hub/autopilot/",
         "tabs": [
             { "key": "registry", "path": "/command-hub/autopilot/registry/" },
+            { "key": "scanners", "path": "/command-hub/autopilot/scanners/" },
             { "key": "runs", "path": "/command-hub/autopilot/runs/" },
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
@@ -6219,6 +6220,8 @@ function renderModuleContent(moduleKey, tab) {
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
         container.appendChild(renderAutopilotRegistryView());
+    } else if (moduleKey === 'autopilot' && tab === 'scanners') {
+        container.appendChild(renderAutopilotScannersView());
     } else if (moduleKey === 'autopilot' && tab === 'runs') {
         container.appendChild(renderAutopilotRunsView());
     } else if (moduleKey === 'autopilot' && tab === 'live') {
@@ -38912,6 +38915,7 @@ function renderSecurityRlsAccessView() {
 if (!state.autopilot) {
     state.autopilot = {
         registry: { loading: false, data: null, summary: null, filters: { domain: '', status: '', trigger: '', search: '' } },
+        scanners: { loading: false, data: null, filter: { category: '', maturity: '' } },
         runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
         live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
@@ -39275,6 +39279,197 @@ async function fetchAutopilotRuns() {
         state.autopilot.runs.loading = false;
         renderApp();
     }
+}
+
+// ── Scanner Registry view ────────────────────────────────────
+// Surfaces GET /api/v1/dev-autopilot/scanners. The registry lists every
+// scanner the autopilot knows how to run (canonical source:
+// scripts/ci/scanners/registry.mjs + dev_autopilot_scanners DB table),
+// grouped by category, with live counts of open findings and the last
+// time each scanner produced a signal.
+
+async function fetchAutopilotScanners() {
+    var s = state.autopilot.scanners;
+    if (s.loading) return;
+    s.loading = true;
+    renderApp();
+    try {
+        var res = await fetch('/api/v1/dev-autopilot/scanners', { headers: buildContextHeaders({}) });
+        if (res.ok) {
+            var data = await res.json();
+            s.data = (data && Array.isArray(data.scanners)) ? data.scanners : [];
+        } else {
+            console.error('[Autopilot] fetchScanners failed:', res.status);
+            s.data = [];
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchScanners error:', err);
+        s.data = [];
+    } finally {
+        s.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotScannersView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Scanner Registry';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Detectors the Dev Autopilot runs twice daily. Each emits findings into the autopilot queue, which flow through plan → approve → execute → PR → merge.';
+    container.appendChild(subtitle);
+
+    var scanners = state.autopilot.scanners;
+
+    if (!scanners.data && !scanners.loading) {
+        setTimeout(function () { fetchAutopilotScanners(); }, 0);
+    }
+
+    if (scanners.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading scanner registry...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    if (!scanners.data) return container;
+
+    // Summary counts
+    var total = scanners.data.length;
+    var enabled = scanners.data.filter(function (s) { return s.enabled; }).length;
+    var stable = scanners.data.filter(function (s) { return s.maturity === 'stable'; }).length;
+    var openTotal = scanners.data.reduce(function (acc, s) { return acc + (s.open_findings || 0); }, 0);
+
+    var summaryRow = document.createElement('div');
+    summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    summaryRow.appendChild(createSummaryCard('Scanners', total, '#fff'));
+    summaryRow.appendChild(createSummaryCard('Enabled', enabled, '#4caf50'));
+    summaryRow.appendChild(createSummaryCard('Stable', stable, '#06b6d4'));
+    summaryRow.appendChild(createSummaryCard('Open findings', openTotal, '#ffb74d'));
+    container.appendChild(summaryRow);
+
+    // Filters
+    var filter = scanners.filter;
+    var filtersRow = document.createElement('div');
+    filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
+    var categories = [''].concat(Array.from(new Set(scanners.data.map(function (s) { return s.category; }))).sort());
+    var catSelect = document.createElement('select');
+    catSelect.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    catSelect.innerHTML = categories.map(function (c) {
+        var label = c === '' ? 'All categories' : c;
+        return '<option value="' + c + '"' + (filter.category === c ? ' selected' : '') + '>' + label + '</option>';
+    }).join('');
+    catSelect.onchange = function () { filter.category = this.value; renderApp(); };
+    filtersRow.appendChild(catSelect);
+
+    var maturities = ['', 'stable', 'beta', 'alpha'];
+    var matSelect = document.createElement('select');
+    matSelect.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    matSelect.innerHTML = maturities.map(function (m) {
+        var label = m === '' ? 'Any maturity' : m;
+        return '<option value="' + m + '"' + (filter.maturity === m ? ' selected' : '') + '>' + label + '</option>';
+    }).join('');
+    matSelect.onchange = function () { filter.maturity = this.value; renderApp(); };
+    filtersRow.appendChild(matSelect);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'padding:6px 14px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { state.autopilot.scanners.data = null; fetchAutopilotScanners(); };
+    filtersRow.appendChild(refreshBtn);
+    container.appendChild(filtersRow);
+
+    // Filtered list
+    var rows = scanners.data.filter(function (s) {
+        if (filter.category && s.category !== filter.category) return false;
+        if (filter.maturity && s.maturity !== filter.maturity) return false;
+        return true;
+    });
+
+    // Group by category
+    var byCat = {};
+    rows.forEach(function (s) { (byCat[s.category] = byCat[s.category] || []).push(s); });
+    var catOrder = ['security', 'data_integrity', 'architecture', 'dependencies', 'quality', 'product'];
+    var seenCats = Object.keys(byCat).sort(function (a, b) {
+        return catOrder.indexOf(a) - catOrder.indexOf(b);
+    });
+
+    seenCats.forEach(function (cat) {
+        var section = document.createElement('section');
+        section.style.cssText = 'margin-bottom:1.5rem;';
+        var h3 = document.createElement('h3');
+        h3.textContent = cat.replace('_', ' ').toUpperCase() + ' (' + byCat[cat].length + ')';
+        h3.style.cssText = 'color:#888;font-size:0.8rem;letter-spacing:0.08em;margin:0 0 0.5rem 0;';
+        section.appendChild(h3);
+
+        byCat[cat].forEach(function (s) {
+            var card = document.createElement('div');
+            card.style.cssText = 'background:#13131f;border:1px solid ' + (s.enabled ? '#333' : '#555') + ';border-radius:8px;padding:12px 16px;margin-bottom:0.5rem;' + (s.enabled ? '' : 'opacity:0.55;');
+
+            var header = document.createElement('div');
+            header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;';
+            var left = document.createElement('div');
+            left.style.cssText = 'display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;';
+            var name = document.createElement('strong');
+            name.textContent = s.title;
+            name.style.cssText = 'color:#e5e5e5;';
+            left.appendChild(name);
+            var id = document.createElement('code');
+            id.textContent = s.scanner;
+            id.style.cssText = 'color:#888;font-size:0.8rem;';
+            left.appendChild(id);
+            var maturityBadge = document.createElement('span');
+            maturityBadge.textContent = s.maturity;
+            var matColor = s.maturity === 'stable' ? '#06b6d4' : s.maturity === 'beta' ? '#eab308' : '#f97316';
+            maturityBadge.style.cssText = 'background:' + matColor + '20;color:' + matColor + ';border:1px solid ' + matColor + '60;padding:2px 8px;border-radius:999px;font-size:0.72rem;';
+            left.appendChild(maturityBadge);
+            header.appendChild(left);
+
+            var right = document.createElement('div');
+            right.style.cssText = 'display:flex;gap:1rem;align-items:center;font-size:0.82rem;color:#aaa;';
+            var openBadge = document.createElement('span');
+            openBadge.textContent = (s.open_findings || 0) + ' open';
+            openBadge.style.cssText = (s.open_findings > 0)
+                ? 'color:#ffb74d;font-weight:600;'
+                : 'color:#666;';
+            right.appendChild(openBadge);
+            if (s.last_signal_at) {
+                var last = document.createElement('span');
+                last.textContent = 'last: ' + new Date(s.last_signal_at).toISOString().slice(0, 16).replace('T', ' ');
+                right.appendChild(last);
+            }
+            var enabledPill = document.createElement('span');
+            enabledPill.textContent = s.enabled ? 'enabled' : 'disabled';
+            enabledPill.style.cssText = 'background:' + (s.enabled ? '#4caf5020' : '#66666620') + ';color:' + (s.enabled ? '#4caf50' : '#888') + ';border:1px solid ' + (s.enabled ? '#4caf5050' : '#66666650') + ';padding:2px 8px;border-radius:999px;font-size:0.72rem;';
+            right.appendChild(enabledPill);
+            header.appendChild(right);
+            card.appendChild(header);
+
+            var desc = document.createElement('p');
+            desc.textContent = s.description;
+            desc.style.cssText = 'margin:0.4rem 0 0 0;color:#bbb;font-size:0.82rem;line-height:1.4;';
+            card.appendChild(desc);
+
+            var meta = document.createElement('div');
+            meta.style.cssText = 'margin-top:0.4rem;color:#777;font-size:0.72rem;display:flex;gap:1rem;flex-wrap:wrap;';
+            meta.innerHTML =
+                '<span>signal_type: <code style="color:#9ca3af;">' + s.signal_type + '</code></span>' +
+                '<span>default_severity: ' + s.default_severity + '</span>' +
+                '<span>default_risk_class: ' + s.default_risk_class + '</span>';
+            card.appendChild(meta);
+
+            section.appendChild(card);
+        });
+
+        container.appendChild(section);
+    });
+
+    return container;
 }
 
 function renderAutopilotRunsView() {

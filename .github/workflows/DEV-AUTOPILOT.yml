@@ -43,6 +43,21 @@ jobs:
         with:
           node-version: "22"
 
+      # npm-audit-scanner-v1 needs package-lock.json + an audit DB. The other
+      # scanners are zero-dep and run without this step — it's intentionally
+      # best-effort: a failed install in one service is logged and the rest
+      # of the scan proceeds.
+      - name: Refresh audit metadata per service (best-effort)
+        continue-on-error: true
+        run: |
+          for svc in services/gateway services/autopilot-worker services/oasis-operator services/oasis-projector services/worker-runner services/data-sync services/agents/vitana-orchestrator; do
+            if [ -f "$svc/package-lock.json" ]; then
+              echo "::group::npm install --omit=dev --ignore-scripts $svc"
+              (cd "$svc" && npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline) || echo "  install failed — npm audit may be incomplete"
+              echo "::endgroup::"
+            fi
+          done
+
       - name: Run scanner + POST to gateway
         run: node scripts/ci/dev-autopilot-scan.mjs
 

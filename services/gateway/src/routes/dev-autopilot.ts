@@ -161,6 +161,75 @@ router.get('/runs/:run_id', requireDevRole, async (req: Request, res: Response) 
 });
 
 // =============================================================================
+// GET /scanners — scanner registry + live counts
+// =============================================================================
+
+router.get('/scanners', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  // 1. Load canonical registry rows.
+  const regR = await supaGet<Array<{
+    scanner: string;
+    title: string;
+    description: string;
+    signal_type: string;
+    category: string;
+    maturity: string;
+    default_severity: string;
+    default_risk_class: string;
+    enabled: boolean;
+    docs_url: string | null;
+    created_at: string;
+    updated_at: string;
+  }>>(supa, `/rest/v1/dev_autopilot_scanners?order=category.asc,scanner.asc`);
+  if (!regR.ok) return res.status(500).json({ ok: false, error: regR.error });
+
+  // 2. Compute live counts per scanner:
+  //      - open_findings  — recommendations in status='new' by spec_snapshot->>'scanner'
+  //      - last_scan_at   — most recent signal ingested per scanner
+  //    Both come from dev_autopilot_signals + autopilot_recommendations. We
+  //    fetch the raw rows once and aggregate in JS — avoids N round-trips.
+  const [openR, signalsR] = await Promise.all([
+    supaGet<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+      supa,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new&select=spec_snapshot&limit=2000`,
+    ),
+    supaGet<Array<{ scanner: string | null; created_at: string | null }>>(
+      supa,
+      `/rest/v1/dev_autopilot_signals?scanner=not.is.null&select=scanner,created_at&order=created_at.desc&limit=5000`,
+    ),
+  ]);
+
+  const openCount = new Map<string, number>();
+  if (openR.ok && Array.isArray(openR.data)) {
+    for (const row of openR.data) {
+      const name = row.spec_snapshot?.scanner;
+      if (!name) continue;
+      openCount.set(name, (openCount.get(name) || 0) + 1);
+    }
+  }
+  const lastSeen = new Map<string, string>();
+  const totalSignals = new Map<string, number>();
+  if (signalsR.ok && Array.isArray(signalsR.data)) {
+    for (const row of signalsR.data) {
+      if (!row.scanner) continue;
+      if (!lastSeen.has(row.scanner) && row.created_at) lastSeen.set(row.scanner, row.created_at);
+      totalSignals.set(row.scanner, (totalSignals.get(row.scanner) || 0) + 1);
+    }
+  }
+
+  const scanners = (regR.data || []).map(r => ({
+    ...r,
+    open_findings: openCount.get(r.scanner) || 0,
+    last_signal_at: lastSeen.get(r.scanner) || null,
+    total_signals_in_last_5000: totalSignals.get(r.scanner) || 0,
+  }));
+
+  return res.json({ ok: true, scanners, count: scanners.length });
+});
+
+// =============================================================================
 // GET /queue — queue with optional filters
 // =============================================================================
 
