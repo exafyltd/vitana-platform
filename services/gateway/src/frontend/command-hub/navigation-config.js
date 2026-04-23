@@ -2,11 +2,10 @@
  * Vitana Developer Catalog – Canonical Navigation Config
  * VTID: DEV-CICDL-0205
  *
- * This file is the SINGLE SOURCE for frontend navigation structure.
- * It must match the OASIS spec: 17 modules, 87 screens, exact order.
+ * This file mirrors the runtime NAVIGATION_CONFIG in app.js for documentation
+ * purposes. 19 modules, 108 screens.
  *
- * DO NOT modify without updating the spec in OASIS first.
- * CI will fail if this deviates from specs/dev_screen_inventory_v1.json.
+ * Keep in sync with services/gateway/specs/dev-screen-inventory-v1.json.
  */
 
 export const NAVIGATION_CONFIG = [
@@ -99,7 +98,8 @@ export const NAVIGATION_CONFIG = [
       { key: 'evaluations', label: 'Evaluations' },
       { key: 'violations', label: 'Violations' },
       { key: 'history', label: 'History' },
-      { key: 'proposals', label: 'Proposals' }
+      { key: 'proposals', label: 'Proposals' },
+      { key: 'controls', label: 'Controls' }
     ]
   },
   {
@@ -114,14 +114,15 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
-    module: 'workflows',
-    label: 'Workflows',
+    module: 'autopilot',
+    label: 'Autopilot',
     tabs: [
-      { key: 'workflow-list', label: 'Workflow List' },
-      { key: 'triggers', label: 'Triggers' },
-      { key: 'actions', label: 'Actions' },
-      { key: 'schedules', label: 'Schedules' },
-      { key: 'history', label: 'History' }
+      { key: 'registry', label: 'Registry' },
+      { key: 'scanners', label: 'Scanners' },
+      { key: 'runs', label: 'Runs' },
+      { key: 'live', label: 'Live' },
+      { key: 'engine', label: 'Engine' },
+      { key: 'growth', label: 'Growth' }
     ]
   },
   {
@@ -234,7 +235,8 @@ export const NAVIGATION_CONFIG = [
       { key: 'api-inventory', label: 'API Inventory' },
       { key: 'database-schemas', label: 'Database Schemas' },
       { key: 'architecture', label: 'Architecture' },
-      { key: 'workforce', label: 'Workforce' }
+      { key: 'workforce', label: 'Workforce' },
+      { key: 'system-knowledge', label: 'System Knowledge' }
     ]
   }
 ];

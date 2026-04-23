@@ -166,12 +166,6 @@ export async function semanticSearchCatalog(
       if (!entry.embedding) continue;
       if (opts.anonymous_only && !entry.anonymous_safe) continue;
       if (excluded.has(entry.route)) continue;
-      // Auth / public category entries are sign-in screens and marketing
-      // landers — never the right destination for an authenticated user. The
-      // semantic scorer otherwise matches "open the screen with the connectors"
-      // to AUTH.GENERIC ("Generic sign-in and sign-up screen") on the word
-      // "screen" and leaks the user out to /auth.
-      if (opts.role && (entry.category === 'auth' || entry.category === 'public')) continue;
       // Surface scoping: authenticated callers may only see entries on their
       // surface. Anonymous callers skip the role gate — anonymous_safe carries
       // the access decision for them.
@@ -1514,13 +1508,19 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   { screen_id: 'DEVHUB.DOCS.DATABASE_SCHEMAS', route: '/command-hub/docs/database-schemas/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Database Schemas', description: 'Database table schemas and documentation.', when_to_visit: 'When asking about database schemas, table structure, or schema docs.' } } },
 
-  // ── Workflows ──
-  { screen_id: 'DEVHUB.WORKFLOWS.LIST', route: '/command-hub/workflows/workflow-list/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Workflows', description: 'Automation workflows and task pipelines.', when_to_visit: 'When asking about workflows, automations, workflow list, or task pipelines.' } } },
-  { screen_id: 'DEVHUB.WORKFLOWS.TRIGGERS', route: '/command-hub/workflows/triggers/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Workflow Triggers', description: 'Workflow trigger configuration.', when_to_visit: 'When asking about triggers, workflow triggers, or event triggers.' } } },
-  { screen_id: 'DEVHUB.WORKFLOWS.SCHEDULES', route: '/command-hub/workflows/schedules/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Schedules', description: 'Scheduled jobs and cron tasks.', when_to_visit: 'When asking about schedules, cron jobs, scheduled tasks, or timed automation.' } } },
+  // ── Autopilot ──
+  { screen_id: 'DEVHUB.AUTOPILOT.REGISTRY', route: '/command-hub/autopilot/registry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Registry', description: 'Registered autopilot recommendations and their metadata.', when_to_visit: 'When asking about autopilot registry, registered recommendations, or recommendation metadata.' } } },
+  { screen_id: 'DEVHUB.AUTOPILOT.SCANNERS', route: '/command-hub/autopilot/scanners/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Scanners', description: 'Scanners that produce autopilot recommendations.', when_to_visit: 'When asking about autopilot scanners, recommendation producers, or scanner configuration.' } } },
+  { screen_id: 'DEVHUB.AUTOPILOT.RUNS', route: '/command-hub/autopilot/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Runs', description: 'History of autopilot execution runs.', when_to_visit: 'When asking about autopilot runs, execution history, or past recommendations.' } } },
+  { screen_id: 'DEVHUB.AUTOPILOT.LIVE', route: '/command-hub/autopilot/live/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Live', description: 'Live autopilot stream and currently executing actions.', when_to_visit: 'When asking about live autopilot activity or currently running actions.' } } },
+  { screen_id: 'DEVHUB.AUTOPILOT.ENGINE', route: '/command-hub/autopilot/engine/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Engine', description: 'Autopilot engine configuration and execution policies.', when_to_visit: 'When asking about autopilot engine, execution policies, or engine configuration.' } } },
+  { screen_id: 'DEVHUB.AUTOPILOT.GROWTH', route: '/command-hub/autopilot/growth/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Autopilot Growth', description: 'Autopilot growth metrics and adoption analytics.', when_to_visit: 'When asking about autopilot growth, adoption metrics, or recommendation analytics.' } } },
 ];
 
 // =============================================================================
@@ -1682,10 +1682,6 @@ export function searchCatalog(
     if (opts.category && entry.category !== opts.category) continue;
     if (opts.anonymous_only && !entry.anonymous_safe) continue;
     if (excluded.has(entry.route)) continue;
-    // Auth / public category entries are sign-in screens and marketing landers —
-    // never the right destination for an authenticated user. See the matching
-    // guard in semanticSearchCatalog above for the motivating case.
-    if (opts.role && (entry.category === 'auth' || entry.category === 'public')) continue;
     // Surface scoping: authenticated callers may only see entries on their
     // surface. Anonymous callers skip the role gate — anonymous_safe carries
     // the access decision for them.
