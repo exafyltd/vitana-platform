@@ -10,7 +10,7 @@
     "command-hub",
     "governance",
     "agents",
-    "workflows",
+    "autopilot",
     "oasis",
     "databases",
     "infrastructure",
@@ -23,151 +23,158 @@
     "docs"
   ],
   "module_catalog": {
-    "overview": [
-      "system-overview",
-      "live-metrics",
-      "recent-events",
-      "errors-violations",
-      "release-feed"
-    ],
-    "admin": [
-      "users",
-      "permissions",
-      "tenants",
-      "content-moderation",
-      "identity-access",
-      "marketplace-shops",
-      "marketplace-review",
-      "analytics"
-    ],
-    "assistant": [
-      "overview",
-      "orb-live",
-      "sessions",
-      "personality",
-      "experiments",
-      "metrics",
-      "awareness-registry",
-      "awareness-test"
-    ],
-    "autonomy": [
-      "autopilot-community",
-      "autopilot-developer",
-      "autopilot-admin",
-      "self-healing",
-      "autonomy-pulse",
-      "autonomy-trace"
-    ],
-    "operator": [
-      "dashboard",
-      "task-queue",
-      "event-stream",
-      "deployments",
-      "runbook"
-    ],
-    "command-hub": [
-      "tasks",
-      "live-console",
-      "events",
-      "vtids",
-      "approvals"
-    ],
-    "governance": [
-      "rules",
-      "categories",
-      "evaluations",
-      "violations",
-      "history",
-      "proposals"
-    ],
-    "agents": [
-      "registered-agents",
-      "skills",
-      "pipelines",
-      "memory",
-      "telemetry"
-    ],
-    "workflows": [
-      "workflow-list",
-      "triggers",
-      "actions",
-      "schedules",
-      "history"
-    ],
-    "oasis": [
-      "events",
-      "vtid-ledger",
-      "entities",
-      "streams",
-      "command-log"
-    ],
-    "databases": [
-      "supabase",
-      "vectors",
-      "cache",
-      "analytics",
-      "clusters"
-    ],
-    "infrastructure": [
-      "services",
-      "health",
-      "deployments",
-      "logs",
-      "config"
-    ],
-    "security-dev": [
-      "policies",
-      "roles",
-      "keys-secrets",
-      "audit-log",
-      "rls-access"
-    ],
-    "integrations-tools": [
-      "mcp-connectors",
-      "llm-providers",
-      "apis",
-      "tools",
-      "plugins",
-      "service-mesh"
-    ],
-    "diagnostics": [
-      "health-checks",
-      "latency",
-      "errors",
-      "sse",
-      "debug-panel",
-      "voice-lab"
-    ],
-    "models-evaluations": [
-      "models",
-      "evaluations",
-      "benchmarks",
-      "routing",
-      "playground"
-    ],
-    "testing-qa": [
-      "unit-tests",
-      "integration-tests",
-      "validator-tests",
-      "e2e",
-      "ci-reports"
-    ],
-    "intelligence-memory-dev": [
-      "memory-vault",
-      "knowledge-graph",
-      "embeddings",
-      "recall",
-      "inspector"
-    ],
-    "docs": [
-      "screens",
-      "api-inventory",
-      "database-schemas",
-      "architecture",
-      "workforce"
-    ]
+    "overview": ["system-overview", "live-metrics", "recent-events", "errors-violations", "release-feed"],
+    "admin": ["users", "permissions", "tenants", "content-moderation", "identity-access", "marketplace-shops", "marketplace-review", "analytics"],
+    "assistant": ["overview", "orb-live", "sessions", "personality", "experiments", "metrics", "awareness-registry", "awareness-test"],
+    "autonomy": ["autopilot-community", "autopilot-developer", "autopilot-admin", "self-healing", "autonomy-pulse", "autonomy-trace"],
+    "operator": ["dashboard", "task-queue", "event-stream", "deployments", "runbook"],
+    "command-hub": ["tasks", "live-console", "events", "vtids", "approvals"],
+    "governance": ["rules", "categories", "evaluations", "violations", "history", "proposals", "controls"],
+    "agents": ["registered-agents", "skills", "pipelines", "memory", "telemetry"],
+    "autopilot": ["registry", "scanners", "runs", "live", "engine", "growth"],
+    "oasis": ["events", "vtid-ledger", "entities", "streams", "command-log"],
+    "databases": ["supabase", "vectors", "cache", "analytics", "clusters"],
+    "infrastructure": ["services", "health", "deployments", "logs", "config"],
+    "security-dev": ["policies", "roles", "keys-secrets", "audit-log", "rls-access"],
+    "integrations-tools": ["mcp-connectors", "llm-providers", "apis", "tools", "plugins", "service-mesh"],
+    "diagnostics": ["health-checks", "latency", "errors", "sse", "debug-panel", "voice-lab"],
+    "models-evaluations": ["models", "evaluations", "benchmarks", "routing", "playground"],
+    "testing-qa": ["unit-tests", "integration-tests", "validator-tests", "e2e", "ci-reports"],
+    "intelligence-memory-dev": ["memory-vault", "knowledge-graph", "embeddings", "recall", "inspector"],
+    "docs": ["screens", "api-inventory", "database-schemas", "architecture", "workforce", "system-knowledge"]
   },
   "screen_inventory": {
-    "total_screens": 105
+    "total_screens": 108,
+    "last_synced": "2026-04-23",
+    "source": "services/gateway/src/frontend/command-hub/app.js NAVIGATION_CONFIG (runtime)",
+    "role_counts": { "DEVELOPER": 108 },
+    "screens": [
+      { "screen_id": "DEVHUB.OVERVIEW.SYSTEM_OVERVIEW",        "module": "Overview",                   "tab": "System Overview",       "url_path": "/command-hub/overview/system-overview/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OVERVIEW.LIVE_METRICS",           "module": "Overview",                   "tab": "Live Metrics",          "url_path": "/command-hub/overview/live-metrics/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OVERVIEW.RECENT_EVENTS",          "module": "Overview",                   "tab": "Recent Events",         "url_path": "/command-hub/overview/recent-events/",                "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OVERVIEW.ERRORS_VIOLATIONS",      "module": "Overview",                   "tab": "Errors & Violations",   "url_path": "/command-hub/overview/errors-violations/",            "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OVERVIEW.RELEASE_FEED",           "module": "Overview",                   "tab": "Release Feed",          "url_path": "/command-hub/overview/release-feed/",                 "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.ADMIN.USERS",                     "module": "Admin",                      "tab": "Users",                 "url_path": "/command-hub/admin/users/",                           "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.PERMISSIONS",               "module": "Admin",                      "tab": "Permissions",           "url_path": "/command-hub/admin/permissions/",                     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.TENANTS",                   "module": "Admin",                      "tab": "Tenants",               "url_path": "/command-hub/admin/tenants/",                         "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.CONTENT_MODERATION",        "module": "Admin",                      "tab": "Content Moderation",    "url_path": "/command-hub/admin/content-moderation/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.IDENTITY_ACCESS",           "module": "Admin",                      "tab": "Identity & Access",     "url_path": "/command-hub/admin/identity-access/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.MARKETPLACE_SHOPS",         "module": "Admin",                      "tab": "Marketplace Shops",     "url_path": "/command-hub/admin/marketplace-shops/",               "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.MARKETPLACE_REVIEW",        "module": "Admin",                      "tab": "Marketplace Review",    "url_path": "/command-hub/admin/marketplace-review/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ADMIN.ANALYTICS",                 "module": "Admin",                      "tab": "Analytics",             "url_path": "/command-hub/admin/analytics/",                       "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.ASSISTANT.OVERVIEW",              "module": "Assistant",                  "tab": "Overview",              "url_path": "/command-hub/assistant/overview/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.ORB_LIVE",              "module": "Assistant",                  "tab": "ORB Live",              "url_path": "/command-hub/assistant/orb-live/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.SESSIONS",              "module": "Assistant",                  "tab": "Sessions",              "url_path": "/command-hub/assistant/sessions/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.PERSONALITY",           "module": "Assistant",                  "tab": "Personality",           "url_path": "/command-hub/assistant/personality/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.EXPERIMENTS",           "module": "Assistant",                  "tab": "Experiments",           "url_path": "/command-hub/assistant/experiments/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.METRICS",               "module": "Assistant",                  "tab": "Metrics",               "url_path": "/command-hub/assistant/metrics/",                     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.AWARENESS_REGISTRY",    "module": "Assistant",                  "tab": "Awareness Registry",    "url_path": "/command-hub/assistant/awareness-registry/",          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.ASSISTANT.AWARENESS_TEST",        "module": "Assistant",                  "tab": "Awareness Test",        "url_path": "/command-hub/assistant/awareness-test/",              "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.AUTONOMY.AUTOPILOT_COMMUNITY",    "module": "Autonomy",                   "tab": "Autopilot (Community)", "url_path": "/command-hub/autonomy/autopilot-community/",          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTONOMY.AUTOPILOT_DEVELOPER",    "module": "Autonomy",                   "tab": "Autopilot (Developer)", "url_path": "/command-hub/autonomy/autopilot-developer/",          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTONOMY.AUTOPILOT_ADMIN",        "module": "Autonomy",                   "tab": "Autopilot (Admin)",     "url_path": "/command-hub/autonomy/autopilot-admin/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTONOMY.SELF_HEALING",           "module": "Autonomy",                   "tab": "Self-Healing",          "url_path": "/command-hub/autonomy/self-healing/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTONOMY.AUTONOMY_PULSE",         "module": "Autonomy",                   "tab": "Autonomy Pulse",        "url_path": "/command-hub/autonomy/autonomy-pulse/",               "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTONOMY.AUTONOMY_TRACE",         "module": "Autonomy",                   "tab": "Autonomy Trace",        "url_path": "/command-hub/autonomy/autonomy-trace/",               "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.OPERATOR.DASHBOARD",              "module": "Operator",                   "tab": "Dashboard",             "url_path": "/command-hub/operator/dashboard/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATOR.TASK_QUEUE",             "module": "Operator",                   "tab": "Task Queue",            "url_path": "/command-hub/operator/task-queue/",                   "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATOR.EVENT_STREAM",           "module": "Operator",                   "tab": "Event Stream",          "url_path": "/command-hub/operator/event-stream/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATOR.DEPLOYMENTS",            "module": "Operator",                   "tab": "Deployments",           "url_path": "/command-hub/operator/deployments/",                  "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATOR.RUNBOOK",                "module": "Operator",                   "tab": "Runbook",               "url_path": "/command-hub/operator/runbook/",                      "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.OPERATIONS.TASKS",                "module": "Operations",                 "tab": "Tasks",                 "url_path": "/command-hub/tasks/",                                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATIONS.LIVE_CONSOLE",         "module": "Operations",                 "tab": "Live Console",          "url_path": "/command-hub/live-console/",                          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATIONS.EVENTS",               "module": "Operations",                 "tab": "Events",                "url_path": "/command-hub/events/",                                "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATIONS.VTIDS",                "module": "Operations",                 "tab": "VTIDs",                 "url_path": "/command-hub/vtids/",                                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OPERATIONS.APPROVALS",            "module": "Operations",                 "tab": "Approvals",             "url_path": "/command-hub/approvals/",                             "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.GOVERNANCE.RULES",                "module": "Governance",                 "tab": "Rules",                 "url_path": "/command-hub/governance/rules/",                      "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.CATEGORIES",           "module": "Governance",                 "tab": "Categories",            "url_path": "/command-hub/governance/categories/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.EVALUATIONS",          "module": "Governance",                 "tab": "Evaluations",           "url_path": "/command-hub/governance/evaluations/",                "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.VIOLATIONS",           "module": "Governance",                 "tab": "Violations",            "url_path": "/command-hub/governance/violations/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.HISTORY",              "module": "Governance",                 "tab": "History",               "url_path": "/command-hub/governance/history/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.PROPOSALS",            "module": "Governance",                 "tab": "Proposals",             "url_path": "/command-hub/governance/proposals/",                  "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.GOVERNANCE.CONTROLS",             "module": "Governance",                 "tab": "Controls",              "url_path": "/command-hub/governance/controls/",                   "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.AGENTS.REGISTERED_AGENTS",        "module": "Agents",                     "tab": "Registered Agents",     "url_path": "/command-hub/agents/registered-agents/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AGENTS.SKILLS",                   "module": "Agents",                     "tab": "Skills",                "url_path": "/command-hub/agents/skills/",                         "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AGENTS.PIPELINES",                "module": "Agents",                     "tab": "Pipelines",             "url_path": "/command-hub/agents/pipelines/",                      "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AGENTS.MEMORY",                   "module": "Agents",                     "tab": "Memory",                "url_path": "/command-hub/agents/memory/",                         "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AGENTS.TELEMETRY",                "module": "Agents",                     "tab": "Telemetry",             "url_path": "/command-hub/agents/telemetry/",                      "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.AUTOPILOT.REGISTRY",              "module": "Autopilot",                  "tab": "Registry",              "url_path": "/command-hub/autopilot/registry/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTOPILOT.SCANNERS",              "module": "Autopilot",                  "tab": "Scanners",              "url_path": "/command-hub/autopilot/scanners/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTOPILOT.RUNS",                  "module": "Autopilot",                  "tab": "Runs",                  "url_path": "/command-hub/autopilot/runs/",                        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTOPILOT.LIVE",                  "module": "Autopilot",                  "tab": "Live",                  "url_path": "/command-hub/autopilot/live/",                        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTOPILOT.ENGINE",                "module": "Autopilot",                  "tab": "Engine",                "url_path": "/command-hub/autopilot/engine/",                      "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.AUTOPILOT.GROWTH",                "module": "Autopilot",                  "tab": "Growth",                "url_path": "/command-hub/autopilot/growth/",                      "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.OASIS.EVENTS",                    "module": "OASIS",                      "tab": "Events",                "url_path": "/command-hub/oasis/events/",                          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OASIS.VTID_LEDGER",               "module": "OASIS",                      "tab": "VTID Ledger",           "url_path": "/command-hub/oasis/vtid-ledger/",                     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OASIS.ENTITIES",                  "module": "OASIS",                      "tab": "Entities",              "url_path": "/command-hub/oasis/entities/",                        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OASIS.STREAMS",                   "module": "OASIS",                      "tab": "Streams",               "url_path": "/command-hub/oasis/streams/",                         "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.OASIS.COMMAND_LOG",               "module": "OASIS",                      "tab": "Command Log",           "url_path": "/command-hub/oasis/command-log/",                     "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.DATABASES.SUPABASE",              "module": "Databases",                  "tab": "Supabase",              "url_path": "/command-hub/databases/supabase/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DATABASES.VECTORS",               "module": "Databases",                  "tab": "Vectors",               "url_path": "/command-hub/databases/vectors/",                     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DATABASES.CACHE",                 "module": "Databases",                  "tab": "Cache",                 "url_path": "/command-hub/databases/cache/",                       "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DATABASES.ANALYTICS",             "module": "Databases",                  "tab": "Analytics",             "url_path": "/command-hub/databases/analytics/",                   "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DATABASES.CLUSTERS",              "module": "Databases",                  "tab": "Clusters",              "url_path": "/command-hub/databases/clusters/",                    "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.INFRASTRUCTURE.SERVICES",         "module": "Infrastructure",             "tab": "Services",              "url_path": "/command-hub/infrastructure/services/",               "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INFRASTRUCTURE.HEALTH",           "module": "Infrastructure",             "tab": "Health",                "url_path": "/command-hub/infrastructure/health/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INFRASTRUCTURE.DEPLOYMENTS",      "module": "Infrastructure",             "tab": "Deployments",           "url_path": "/command-hub/infrastructure/deployments/",            "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INFRASTRUCTURE.LOGS",             "module": "Infrastructure",             "tab": "Logs",                  "url_path": "/command-hub/infrastructure/logs/",                   "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INFRASTRUCTURE.CONFIG",           "module": "Infrastructure",             "tab": "Config",                "url_path": "/command-hub/infrastructure/config/",                 "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.SECURITY.POLICIES",               "module": "Security (Dev)",             "tab": "Policies",              "url_path": "/command-hub/security-dev/policies/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.SECURITY.ROLES",                  "module": "Security (Dev)",             "tab": "Roles",                 "url_path": "/command-hub/security-dev/roles/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.SECURITY.KEYS_SECRETS",           "module": "Security (Dev)",             "tab": "Keys & Secrets",        "url_path": "/command-hub/security-dev/keys-secrets/",             "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.SECURITY.AUDIT_LOG",              "module": "Security (Dev)",             "tab": "Audit Log",             "url_path": "/command-hub/security-dev/audit-log/",                "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.SECURITY.RLS_ACCESS",             "module": "Security (Dev)",             "tab": "RLS & Access",          "url_path": "/command-hub/security-dev/rls-access/",               "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.INTEGRATIONS.MCP_CONNECTORS",     "module": "Integrations & Tools",       "tab": "MCP & CLI",             "url_path": "/command-hub/integrations-tools/mcp-connectors/",     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTEGRATIONS.LLM_PROVIDERS",      "module": "Integrations & Tools",       "tab": "LLM Providers",         "url_path": "/command-hub/integrations-tools/llm-providers/",      "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTEGRATIONS.APIS",               "module": "Integrations & Tools",       "tab": "API's",                 "url_path": "/command-hub/integrations-tools/apis/",               "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTEGRATIONS.TOOLS",              "module": "Integrations & Tools",       "tab": "Tools",                 "url_path": "/command-hub/integrations-tools/tools/",              "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTEGRATIONS.PLUGINS",            "module": "Integrations & Tools",       "tab": "Plugins & Extensions",  "url_path": "/command-hub/integrations-tools/plugins/",            "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTEGRATIONS.SERVICE_MESH",       "module": "Integrations & Tools",       "tab": "Service Mesh",          "url_path": "/command-hub/integrations-tools/service-mesh/",       "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.DIAGNOSTICS.HEALTH_CHECKS",       "module": "Diagnostics",                "tab": "Health Checks",         "url_path": "/command-hub/diagnostics/health-checks/",             "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DIAGNOSTICS.LATENCY",             "module": "Diagnostics",                "tab": "Latency",               "url_path": "/command-hub/diagnostics/latency/",                   "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DIAGNOSTICS.ERRORS",              "module": "Diagnostics",                "tab": "Errors",                "url_path": "/command-hub/diagnostics/errors/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DIAGNOSTICS.SSE",                 "module": "Diagnostics",                "tab": "SSE",                   "url_path": "/command-hub/diagnostics/sse/",                       "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DIAGNOSTICS.DEBUG_PANEL",         "module": "Diagnostics",                "tab": "Debug Panel",           "url_path": "/command-hub/diagnostics/debug-panel/",               "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DIAGNOSTICS.VOICE_LAB",           "module": "Diagnostics",                "tab": "Voice LAB",             "url_path": "/command-hub/diagnostics/voice-lab/",                 "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.MODELS.MODELS",                   "module": "Models & Evaluations",       "tab": "Models",                "url_path": "/command-hub/models-evaluations/models/",             "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.MODELS.EVALUATIONS",              "module": "Models & Evaluations",       "tab": "Evaluations",           "url_path": "/command-hub/models-evaluations/evaluations/",        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.MODELS.BENCHMARKS",               "module": "Models & Evaluations",       "tab": "Benchmarks",            "url_path": "/command-hub/models-evaluations/benchmarks/",         "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.MODELS.ROUTING",                  "module": "Models & Evaluations",       "tab": "Routing",               "url_path": "/command-hub/models-evaluations/routing/",            "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.MODELS.PLAYGROUND",               "module": "Models & Evaluations",       "tab": "Playground",            "url_path": "/command-hub/models-evaluations/playground/",         "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.TESTING_QA.UNIT_TESTS",           "module": "Testing & QA",               "tab": "Unit Tests",            "url_path": "/command-hub/testing-qa/unit-tests/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.TESTING_QA.INTEGRATION_TESTS",    "module": "Testing & QA",               "tab": "Integration Tests",     "url_path": "/command-hub/testing-qa/integration-tests/",          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.TESTING_QA.VALIDATOR_TESTS",      "module": "Testing & QA",               "tab": "Validator Tests",       "url_path": "/command-hub/testing-qa/validator-tests/",            "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.TESTING_QA.E2E",                  "module": "Testing & QA",               "tab": "E2E",                   "url_path": "/command-hub/testing-qa/e2e/",                        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.TESTING_QA.CI_REPORTS",           "module": "Testing & QA",               "tab": "CI Reports",            "url_path": "/command-hub/testing-qa/ci-reports/",                 "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.INTELLIGENCE_MEMORY.MEMORY_VAULT","module": "Intelligence & Memory (Dev)","tab": "Memory Vault",          "url_path": "/command-hub/intelligence-memory-dev/memory-vault/",  "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTELLIGENCE_MEMORY.KNOWLEDGE_GRAPH","module": "Intelligence & Memory (Dev)","tab": "Knowledge Graph",    "url_path": "/command-hub/intelligence-memory-dev/knowledge-graph/","role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTELLIGENCE_MEMORY.EMBEDDINGS",  "module": "Intelligence & Memory (Dev)","tab": "Embeddings",            "url_path": "/command-hub/intelligence-memory-dev/embeddings/",    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTELLIGENCE_MEMORY.RECALL",      "module": "Intelligence & Memory (Dev)","tab": "Recall",                "url_path": "/command-hub/intelligence-memory-dev/recall/",        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.INTELLIGENCE_MEMORY.INSPECTOR",   "module": "Intelligence & Memory (Dev)","tab": "Inspector",             "url_path": "/command-hub/intelligence-memory-dev/inspector/",     "role": "DEVELOPER" },
+
+      { "screen_id": "DEVHUB.DOCS.SCREENS",                    "module": "Docs",                       "tab": "Screens",               "url_path": "/command-hub/docs/screens/",                          "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DOCS.API_INVENTORY",              "module": "Docs",                       "tab": "API Inventory",         "url_path": "/command-hub/docs/api-inventory/",                    "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DOCS.DATABASE_SCHEMAS",           "module": "Docs",                       "tab": "Database Schemas",      "url_path": "/command-hub/docs/database-schemas/",                 "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DOCS.ARCHITECTURE",               "module": "Docs",                       "tab": "Architecture",          "url_path": "/command-hub/docs/architecture/",                     "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DOCS.WORKFORCE",                  "module": "Docs",                       "tab": "Workforce",             "url_path": "/command-hub/docs/workforce/",                        "role": "DEVELOPER" },
+      { "screen_id": "DEVHUB.DOCS.SYSTEM_KNOWLEDGE",           "module": "Docs",                       "tab": "System Knowledge",      "url_path": "/command-hub/docs/system-knowledge/",                 "role": "DEVELOPER" }
+    ]
   }
 }
