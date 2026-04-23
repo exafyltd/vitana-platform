@@ -4749,7 +4749,23 @@ E. NEVER cite the Index number from memory_facts or general memory. The
 
 F. The Vitana Index is the user's KEY progress measure across the 90-day
    journey. Treat it with the same priority as their name or birthday — if
-   they ask, you ALWAYS answer. The journey IS the route to lift it.`;
+   they ask, you ALWAYS answer. The journey IS the route to lift it.
+
+G. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
+   SETUP INCOMPLETE" or "NOT SET UP YET", do NOT answer with a number
+   (there isn't one). Instead:
+     - SETUP INCOMPLETE → acknowledge honestly and offer to walk them
+       back to the Health screen to retry the baseline compute.
+       Example (en): "Your baseline survey went through, but the score
+       didn't compute yet — if you open the Health screen it should
+       offer to retry. Want me to walk you there?"
+     - NOT SET UP YET → explain the Index needs a one-time baseline
+       survey and offer to navigate there.
+       Example (de): "Du hast den Vitana Index noch nicht eingerichtet
+       — es ist ein kurzer Fragebogen im Health-Bereich. Soll ich dich
+       dahin führen?"
+   NEVER invent a number. NEVER say "I don't have access" — the status
+   line IS the answer; quote it warmly.`;
     }
   }
 
