@@ -68,18 +68,36 @@ export interface WorkerTaskInput {
   model?: string;
   max_tokens?: number;
   notes?: string;
+  /** Worker-owned-PR mode: after validation passes, the worker creates the
+   * branch + writes files + opens the PR itself, then writes pr_url back to
+   * output_payload. The gateway just reads it instead of doing GitHub work
+   * itself. Removes the "Cloud Run recycles us between worker-finishes and
+   * gateway-writes-PR" failure mode. */
+  worker_owns_pr?: boolean;
+  branch_name?: string;
+  base_branch?: string;
+  vtid_like?: string;
 }
 
 export interface WorkerTaskResult {
   ok: boolean;
   text?: string;
   usage?: { input_tokens?: number; output_tokens?: number };
+  /** Set when input.worker_owns_pr=true and the worker successfully published
+   * a PR. The gateway reads these instead of opening a PR itself. */
+  pr_url?: string;
+  pr_number?: number;
+  branch?: string;
   error?: string;
   queue_row_id?: string;
 }
 
 export function isWorkerQueueEnabled(): boolean {
   return (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true';
+}
+
+export function isWorkerOwnsPrEnabled(): boolean {
+  return (process.env.AUTOPILOT_WORKER_OWNS_PR || '').toLowerCase() === 'true';
 }
 
 /**
@@ -99,6 +117,10 @@ export async function enqueueWorkerTask(
       model: input.model || 'claude-sonnet-4-6',
       max_tokens: input.max_tokens ?? 16_000,
       notes: input.notes || null,
+      worker_owns_pr: input.worker_owns_pr === true,
+      branch_name: input.branch_name,
+      base_branch: input.base_branch,
+      vtid_like: input.vtid_like,
     },
     status: 'pending',
   };
@@ -131,7 +153,15 @@ export async function waitForWorkerTask(
   while (Date.now() < deadline) {
     const r = await supa<Array<{
       status: string;
-      output_payload: { text?: string; usage?: { input_tokens?: number; output_tokens?: number } } | null;
+      output_payload: {
+        text?: string;
+        usage?: { input_tokens?: number; output_tokens?: number };
+        // Set by the worker when it publishes the PR itself (worker_owns_pr).
+        pr_url?: string;
+        pr_number?: number;
+        branch?: string;
+        worker_owns_pr?: boolean;
+      } | null;
       error_message: string | null;
     }>>(
       s,
@@ -154,10 +184,14 @@ export async function waitForWorkerTask(
     consecutiveFailures = 0;
     const row = r.data[0];
     if (row.status === 'completed') {
+      const op = row.output_payload || {};
       return {
         ok: true,
-        text: row.output_payload?.text,
-        usage: row.output_payload?.usage,
+        text: op.text,
+        usage: op.usage,
+        pr_url: op.pr_url,
+        pr_number: op.pr_number,
+        branch: op.branch,
         queue_row_id: rowId,
       };
     }

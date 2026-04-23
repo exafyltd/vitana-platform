@@ -37,7 +37,7 @@ import {
   SafetyDecision,
 } from './dev-autopilot-safety';
 import { extractFilePaths } from './dev-autopilot-planning';
-import { isWorkerQueueEnabled, runWorkerTask, reclaimStuckWorkerTasks } from './dev-autopilot-worker-queue';
+import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks } from './dev-autopilot-worker-queue';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -743,27 +743,56 @@ async function runExecutionSession(
   // 2. Ask Claude to produce the new file contents. Routes through the
   // worker queue when DEV_AUTOPILOT_USE_WORKER=true (Claude subscription);
   // otherwise hits the Messages API directly (pay-per-token).
+  //
+  // When AUTOPILOT_WORKER_OWNS_PR=true, ALSO delegate the post-LLM work
+  // (parse output, create branch, write files, open PR) to the worker.
+  // The worker's local clone + GitHub token mean it can do the whole
+  // sequence in a single long-lived process, sidestepping the Cloud Run
+  // recycle-mid-flight problem that kept stranding executions.
+  const ownsPr = isWorkerQueueEnabled() && isWorkerOwnsPrEnabled();
   const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch);
   const startedAt = Date.now();
-  const llm = isWorkerQueueEnabled()
-    ? await runWorkerTask(
-        {
-          kind: 'execute',
-          finding_id: exec.finding_id,
-          execution_id: executionId,
-          prompt,
-          model: EXECUTION_MODEL,
-          max_tokens: MESSAGES_MAX_TOKENS,
-          notes: `execute ${executionId.slice(0, 8)}`,
-        },
-        { timeoutMs: MESSAGES_TIMEOUT_MS },
-      )
-    : await callMessagesApi(prompt);
+  // Widen the inline type so both call shapes satisfy the union we destructure
+  // below (worker-queue path may carry pr_url/pr_number/branch from the
+  // worker-owned-PR mode; direct Messages API never does).
+  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string } =
+    isWorkerQueueEnabled()
+      ? await runWorkerTask(
+          {
+            kind: 'execute',
+            finding_id: exec.finding_id,
+            execution_id: executionId,
+            prompt,
+            model: EXECUTION_MODEL,
+            max_tokens: MESSAGES_MAX_TOKENS,
+            notes: `execute ${executionId.slice(0, 8)}`,
+            worker_owns_pr: ownsPr,
+            branch_name: branch,
+            base_branch: GITHUB_BASE_BRANCH,
+            vtid_like: `VTID-DA-${executionId.slice(0, 8)}`,
+          },
+          { timeoutMs: MESSAGES_TIMEOUT_MS },
+        )
+      : await callMessagesApi(prompt);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
   if (!llm.ok || !llm.text) {
     return { ok: false, error: `LLM call failed after ${elapsed}s: ${llm.error || 'unknown'}`, session_id: sessionId, branch };
   }
   console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] LLM returned in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'messages-api'} (${llm.usage?.input_tokens || '?'} in / ${llm.usage?.output_tokens || '?'} out)`);
+
+  // Worker-owned-PR path: the worker already created the branch + wrote
+  // files + opened the PR. We just record what it did and hand control to
+  // the watcher.
+  if (ownsPr && llm.pr_url) {
+    console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] worker published PR ${llm.pr_url} (${llm.branch || branch})`);
+    return {
+      ok: true,
+      pr_url: llm.pr_url,
+      pr_number: llm.pr_number,
+      branch: llm.branch || branch,
+      session_id: sessionId,
+    };
+  }
 
   const parsed = parseExecutionJson(llm.text);
   if ('error' in parsed) {
