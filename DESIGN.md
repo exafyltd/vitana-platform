@@ -422,8 +422,10 @@ If a design *must* differ from this document:
 - vitana-v1: `DealsOffers.tsx:483-495` progress bar now uses `<Progress>` from `components/ui/progress.tsx`; `bg-gray-100` → `bg-muted`.
 - vitana-v1: `Community.tsx:797` inline `style={{ minHeight: '280px' }}` replaced with `min-h-72`.
 
+**Command Hub audit**: the full 140-function drift inventory lives at [`docs/design-system/COMMAND_HUB_AUDIT.md`](docs/design-system/COMMAND_HUB_AUDIT.md) (generated 2026-04-23). It lists every render function by drift level, names the canonical class each should migrate onto, and sequences the work into four waves. Summary: 23 HIGH / 12 MEDIUM / 18 LOW / 87 CLEAN out of 140 audited.
+
 **Deferred to follow-up issues** (per-file, per-track):
-- Command Hub: migrate the 6 named `app.js` anti-pattern render functions (login form, approval banners, governance violation badges, Memory Garden columns, Debug modal, Debug Panel rows — see §A.10) onto `.task-card` / `.metric-card` / `.header-pill` / `.status-live` / `.modal` / `.btn`. Each site is a focused follow-up PR; the collision-alias above means visual drift is already resolved.
+- Command Hub: migrate the 23 HIGH-drift render functions listed in the audit doc onto `.task-card` / `.metric-card` / `.header-pill` / `.status-live` / `.modal` / `.btn`. Each becomes a focused follow-up PR; the collision-alias in `styles.css:41–45` means the residual color drift displays correctly but per-function cssText/hex removal is still needed.
 - Command Hub: normalize `styles.css:12022–12051` (Agents Registry) and `:10588–10704` (Unified Intelligence) hardcoded pixel font sizes onto the permitted rem set (§A.2).
 - vitana-v1: per-role screen audit across community / admin / staff / professional / patient — each role's screens validated against the MANDATORY SCREEN CONTRACT.
 - vitana-v1: full sweep of remaining raw Tailwind palette classes (`bg-gray-*`, `bg-red-*`, `bg-blue-*`, `bg-green-*`, `bg-yellow-*`, `text-red-*`, etc.) in `src/`.
