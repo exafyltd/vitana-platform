@@ -287,6 +287,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const tenantAssistantSpeechesRouter = require('./routes/tenant-admin/assistant-speeches').default;
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, opt-outs, search
   const tenantKnowledgeRouter = require('./routes/tenant-admin/knowledge').default;
+  // Admin System KB — exafy_admin-only view of system-wide knowledge_docs
+  // (where the Book of the Vitana Index and other vitana_system docs live).
+  const adminSystemKbRouter = require('./routes/admin-system-kb').default;
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   const tenantOverviewRouter = require('./routes/tenant-admin/overview').default;
   // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface (real-time snapshot + history)
@@ -758,6 +761,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/assistant', tenantAssistantConfigRouter, { owner: 'tenant-assistant-config' });
   // Batch 1.B2: Tenant Knowledge Base — per-tenant KB docs, search, opt-outs
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kb', tenantKnowledgeRouter, { owner: 'tenant-knowledge' });
+  // Admin System KB — exafy_admin-only view of system-wide knowledge_docs
+  mountRouterSync(app, '/api/v1/admin/system-kb', adminSystemKbRouter, { owner: 'admin-system-kb' });
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/overview', tenantOverviewRouter, { owner: 'tenant-overview' });
   // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface
