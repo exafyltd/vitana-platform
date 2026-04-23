@@ -4,6 +4,8 @@
   "sidebar_navigation": [
     "overview",
     "admin",
+    "assistant",
+    "autonomy",
     "operator",
     "command-hub",
     "governance",
@@ -38,6 +40,24 @@
       "marketplace-review",
       "analytics"
     ],
+    "assistant": [
+      "overview",
+      "orb-live",
+      "sessions",
+      "personality",
+      "experiments",
+      "metrics",
+      "awareness-registry",
+      "awareness-test"
+    ],
+    "autonomy": [
+      "autopilot-community",
+      "autopilot-developer",
+      "autopilot-admin",
+      "self-healing",
+      "autonomy-pulse",
+      "autonomy-trace"
+    ],
     "operator": [
       "dashboard",
       "task-queue",
@@ -50,10 +70,7 @@
       "live-console",
       "events",
       "vtids",
-      "approvals",
-      "autonomy-pulse",
-      "autonomy-trace",
-      "dev-autopilot"
+      "approvals"
     ],
     "governance": [
       "rules",
@@ -94,7 +111,6 @@
     "infrastructure": [
       "services",
       "health",
-      "self-healing",
       "deployments",
       "logs",
       "config"
@@ -152,6 +168,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 95
+    "total_screens": 105
   }
 }
