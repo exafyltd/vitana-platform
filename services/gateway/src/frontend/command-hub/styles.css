@@ -16791,6 +16791,84 @@ border-bottom: 1px solid var(--color-border, #333);
 .service-info .service-detail { font-size: 0.75rem; color: var(--color-text-secondary); }
 .service-info .service-latency { font-size: 0.75rem; color: var(--color-text-secondary); }
 
+/* ── Stacked info card variant (Databases module) ──
+   Overrides the default flex-row layout of .infra-service-card so the
+   title / value / detail stack vertically with proper typography. */
+.infra-service-card.databases-info {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+.infra-service-card-title {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.infra-service-card-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+.infra-service-card-detail {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin-top: 0.25rem;
+}
+
+/* ── Generic section header (used by Databases + other modules that do
+   not opt into the `.infra-section-header` variant below) ── */
+.section-header {
+  margin-bottom: 1.5rem;
+}
+.section-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.25rem 0;
+}
+
+/* ── Databases module: tables section + architecture note block ── */
+.databases-tables-section,
+.databases-stats-section {
+  margin-top: 1.5rem;
+}
+.databases-tables-section h3,
+.databases-stats-section h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem 0;
+}
+.databases-arch-note {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 1.5rem;
+}
+.databases-arch-note h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.5rem 0;
+}
+.databases-arch-note ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.databases-arch-note li { margin-bottom: 0.25rem; }
+.databases-arch-note li strong { color: var(--color-text-primary); }
+
 /* ═══════════════════════════════════════════════════════════════
    INFRASTRUCTURE MODULE — Redesigned Layout
    ═══════════════════════════════════════════════════════════════ */

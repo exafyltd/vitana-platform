@@ -34730,7 +34730,7 @@ function renderDatabasesSupabaseView() {
 
     connectionCards.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
+        card.className = 'infra-service-card databases-info';
 
         var cardTitle = document.createElement('div');
         cardTitle.className = 'infra-service-card-title';
@@ -34860,7 +34860,7 @@ function renderDatabasesVectorsView() {
 
     statusCards.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
+        card.className = 'infra-service-card databases-info';
 
         var cardTitle = document.createElement('div');
         cardTitle.className = 'infra-service-card-title';
@@ -34904,7 +34904,7 @@ function renderDatabasesVectorsView() {
 
         embedStats.forEach(function (s) {
             var card = document.createElement('div');
-            card.className = 'infra-service-card';
+            card.className = 'infra-service-card databases-info';
             var ct = document.createElement('div');
             ct.className = 'infra-service-card-title';
             ct.textContent = s.title;
@@ -34997,7 +34997,7 @@ function renderDatabasesCacheView() {
 
     cacheStrategies.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
+        card.className = 'infra-service-card databases-info';
 
         var cardTitle = document.createElement('div');
         cardTitle.className = 'infra-service-card-title';
@@ -35082,7 +35082,7 @@ function renderDatabasesAnalyticsView() {
 
     countCards.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
+        card.className = 'infra-service-card databases-info';
 
         var cardTitle = document.createElement('div');
         cardTitle.className = 'infra-service-card-title';
@@ -35163,7 +35163,7 @@ function renderDatabasesClustersView() {
 
     clusterConfig.forEach(function (info) {
         var card = document.createElement('div');
-        card.className = 'infra-service-card';
+        card.className = 'infra-service-card databases-info';
 
         var cardTitle = document.createElement('div');
         cardTitle.className = 'infra-service-card-title';
