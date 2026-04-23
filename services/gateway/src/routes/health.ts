@@ -844,8 +844,11 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
 /**
  * GET /baseline-survey/status
  *
- * Returns { completed: bool } so the frontend can decide whether to show the
- * baseline survey modal on first /health load.
+ * Returns { completed, has_survey, has_score, completed_at }. `completed`
+ * is true only when BOTH a survey row AND a vitana_index_scores row exist
+ * for the user — guards against the earlier bug where a survey could be
+ * written but the score write failed, leaving the user with no number and
+ * no way to retry the survey.
  */
 router.get('/baseline-survey/status', async (req: Request, res: Response) => {
   const token = getBearerToken(req);
@@ -853,15 +856,42 @@ router.get('/baseline-survey/status', async (req: Request, res: Response) => {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
   try {
-    const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase
+    const userClient = createUserSupabaseClient(token);
+    const admin = getSupabase();
+
+    const { data: userData } = await userClient.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+
+    const { data: survey, error: surveyErr } = await userClient
       .from('vitana_index_baseline_survey')
       .select('completed_at')
       .maybeSingle();
-    if (error) {
-      return res.status(400).json({ ok: false, error: error.message });
+    if (surveyErr) {
+      return res.status(400).json({ ok: false, error: surveyErr.message });
     }
-    return res.status(200).json({ ok: true, completed: !!data, completed_at: data?.completed_at ?? null });
+
+    let hasScore = false;
+    if (admin) {
+      const { data: score } = await admin
+        .from('vitana_index_scores')
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle();
+      hasScore = !!score;
+    }
+
+    const hasSurvey = !!survey;
+    return res.status(200).json({
+      ok: true,
+      completed: hasSurvey && hasScore,
+      has_survey: hasSurvey,
+      has_score: hasScore,
+      completed_at: survey?.completed_at ?? null,
+    });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }
