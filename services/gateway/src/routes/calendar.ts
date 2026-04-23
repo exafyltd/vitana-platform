@@ -13,6 +13,7 @@
 
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { getSupabase } from '../lib/supabase';
 import {
   CreateCalendarEventSchema,
   UpdateCalendarEventSchema,
@@ -33,6 +34,93 @@ import {
   softDeleteEvent,
   toSummary,
 } from '../services/calendar-service';
+
+// Pillar keys — must match the 5 canonical Vitana pillars.
+const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
+type PillarKey = typeof PILLAR_KEYS[number];
+
+/**
+ * Read prior vitana_index_scores row, invoke the admin-callable recompute RPC,
+ * diff the results, emit an index.recomputed OASIS event, and return the new
+ * row + per_pillar_delta. Best-effort — errors are logged and swallowed so a
+ * failed recompute never blocks a successful calendar completion.
+ */
+async function recomputeVitanaIndexForUser(
+  userId: string,
+  eventMetadata: Record<string, unknown> = {},
+): Promise<{ new_index?: Record<string, number>; per_pillar_delta?: Record<PillarKey, number>; delta_total?: number } | null> {
+  const admin = getSupabase();
+  if (!admin) return null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    // Snapshot prior row (if any) so we can compute deltas.
+    const { data: priorRow } = await admin
+      .from('vitana_index_scores')
+      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .maybeSingle();
+
+    const { data: newResult, error: rpcErr } = await admin.rpc(
+      'health_compute_vitana_index_for_user',
+      { p_user_id: userId, p_date: today, p_model_version: 'v3-5pillar' },
+    );
+    if (rpcErr || !(newResult as any)?.ok) {
+      console.warn('[Calendar] recompute RPC failed:', rpcErr?.message || (newResult as any)?.error);
+      return null;
+    }
+    const n = newResult as any;
+
+    const prior = (priorRow as any) ?? {
+      score_total: 0, score_nutrition: 0, score_hydration: 0,
+      score_exercise: 0, score_sleep: 0, score_mental: 0,
+    };
+    const per_pillar_delta: Record<PillarKey, number> = {
+      nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
+      hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
+      exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
+      sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
+      mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
+    };
+    const delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+
+    emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'index.recomputed' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Vitana Index recomputed: ${prior.score_total ?? 0} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      payload: {
+        user_id: userId,
+        date: today,
+        new_score_total: n.score_total,
+        prior_score_total: prior.score_total ?? 0,
+        delta_total,
+        per_pillar_delta,
+        subscores: n.subscores,
+        balance_factor: n.balance_factor,
+        trigger: eventMetadata,
+      },
+    }).catch(() => {});
+
+    return {
+      new_index: {
+        score_total: n.score_total,
+        score_nutrition: n.score_nutrition,
+        score_hydration: n.score_hydration,
+        score_exercise: n.score_exercise,
+        score_sleep: n.score_sleep,
+        score_mental: n.score_mental,
+      },
+      per_pillar_delta,
+      delta_total,
+    };
+  } catch (err: any) {
+    console.warn('[Calendar] recomputeVitanaIndexForUser error:', err.message);
+    return null;
+  }
+}
 
 const router = Router();
 const LOG_PREFIX = '[Calendar]';
@@ -313,10 +401,28 @@ router.post('/events/:id/complete', async (req: Request, res: Response) => {
         event_id: id,
         user_id: userId,
         completion_status: parsed.data.completion_status,
+        wellness_tags: event.wellness_tags ?? [],
+        event_type: event.event_type,
+        source_ref_type: event.source_type,
       },
     }).catch(() => {});
 
-    return res.json({ ok: true, data: event });
+    // Recompute the Vitana Index for this user (only if the event was
+    // actually completed — skips/partials don't yet feed the Index).
+    let indexDelta: Awaited<ReturnType<typeof recomputeVitanaIndexForUser>> = null;
+    if (parsed.data.completion_status === 'completed') {
+      indexDelta = await recomputeVitanaIndexForUser(userId, {
+        event_id: id,
+        wellness_tags: event.wellness_tags ?? [],
+        event_type: event.event_type,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      data: event,
+      vitana_index: indexDelta,
+    });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /events/:id/complete error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
