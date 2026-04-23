@@ -6,6 +6,7 @@ RUN npm install
 COPY BUILD_INFO ./
 COPY src ./src
 COPY config ./config
+COPY specs ./specs
 RUN npm run build
 
 FROM node:20-alpine
@@ -14,6 +15,7 @@ COPY package*.json ./
 RUN apk add --no-cache ffmpeg && npm install --production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/config ./config
+COPY --from=builder /app/specs ./specs
 COPY BUILD_INFO ./
 ENV NODE_ENV=production
 ENV PORT=8080
