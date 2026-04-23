@@ -94,6 +94,87 @@ router.get('/docs/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+// PUT /docs/:id — edit a knowledge_docs row (exafy admin only).
+// This is the system-scope edit path: changes apply immediately to the
+// Vitana Assistant's retrieval-router priority-100 grounding for every tenant.
+router.put('/docs/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const id = req.params.id;
+  const { title, content, tags } = req.body ?? {};
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (typeof title === 'string') updates.title = title;
+  if (typeof content === 'string') {
+    updates.content = content;
+    updates.word_count = content.trim().split(/\s+/).filter(Boolean).length;
+  }
+  if (Array.isArray(tags)) updates.tags = tags;
+
+  if (Object.keys(updates).length === 1) {
+    return res.status(400).json({ ok: false, error: 'NO_FIELDS' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('knowledge_docs')
+      .update(updates)
+      .eq('id', id)
+      .select('id, title, path, content, tags, word_count, source_type, created_at, updated_at')
+      .maybeSingle();
+    if (error) {
+      console.error('[admin-system-kb] update error:', error.message);
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+    if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    console.log(
+      `[admin-system-kb] system doc ${id} edited by exafy_admin user ${req.identity?.user_id}`,
+    );
+    return res.status(200).json({ ok: true, document: data });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// PUT /baseline-docs/:id — edit a baseline kb_documents row (tenant_id IS NULL).
+// Exafy admin only. Changes apply to every tenant that hasn't opted out.
+router.put('/baseline-docs/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const id = req.params.id;
+  const { title, body, topics } = req.body ?? {};
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (typeof title === 'string') updates.title = title;
+  if (typeof body === 'string') updates.body = body;
+  if (Array.isArray(topics)) updates.topics = topics;
+
+  if (Object.keys(updates).length === 1) {
+    return res.status(400).json({ ok: false, error: 'NO_FIELDS' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('kb_documents')
+      .update(updates)
+      .eq('id', id)
+      .is('tenant_id', null) // enforce baseline scope
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      console.error('[admin-system-kb] baseline update error:', error.message);
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+    if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_BASELINE' });
+    console.log(
+      `[admin-system-kb] baseline doc ${id} edited by exafy_admin user ${req.identity?.user_id}`,
+    );
+    return res.status(200).json({ ok: true, document: data });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // GET / — router health
 router.get('/', (_req, res: Response) => {
   res.status(200).json({
@@ -102,6 +183,8 @@ router.get('/', (_req, res: Response) => {
     endpoints: [
       'GET /api/v1/admin/system-kb/docs?path_prefix&tag&q',
       'GET /api/v1/admin/system-kb/docs/:id',
+      'PUT /api/v1/admin/system-kb/docs/:id',
+      'PUT /api/v1/admin/system-kb/baseline-docs/:id',
     ],
   });
 });

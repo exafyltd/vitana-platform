@@ -77,6 +77,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const governanceControlsRouter = require('./routes/governance-controls').default;
   const { oasisTasksRouter } = require('./routes/oasis-tasks');
   const { oasisVtidLedgerRouter } = require('./routes/oasis-vtid-ledger');
+  const oasisSpecsRouter = require('./routes/oasis-specs').default;
   const cicdRouter = require('./routes/cicd').default;
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
@@ -865,6 +866,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01020: VTID Ledger JSON endpoint
   mountRouterSync(app, '/', oasisVtidLedgerRouter, { owner: 'oasis-vtid-ledger' });
+
+  // BOOTSTRAP-DOCS-FOLLOWUPS: OASIS specs for Command Hub Docs UI
+  mountRouterSync(app, '/api/v1/oasis/specs', oasisSpecsRouter, { owner: 'oasis-specs' });
 
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   mountRouterSync(app, '/', vtidTerminalizeRouter, { owner: 'vtid-terminalize' });
