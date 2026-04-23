@@ -226,8 +226,18 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,integration_id' });
 
-    // Re-run pillar agents so the connected_data sub-score reflects the new signal.
+    // Re-run pillar agents so the per-agent connected_data sub-score reflects the new signal.
     const orchestratorResult = await runPillarAgentsForUser(admin, userId, date);
+
+    // Recompute the canonical Index row so vitana_index_scores (and the header badge)
+    // picks up the new feature value. Agents write to vitana_pillar_agent_outputs;
+    // the main Index total lives in vitana_index_scores and is only refreshed by
+    // health_compute_vitana_index_for_user. Without this call the badge stays flat
+    // after a manual log even though the agents panel updates.
+    const { data: recomputedRow, error: recomputeErr } = await admin.rpc(
+      'health_compute_vitana_index_for_user',
+      { p_user_id: userId, p_date: date }
+    );
 
     return res.status(200).json({
       ok: true,
@@ -241,6 +251,9 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
           Object.entries(orchestratorResult.per_pillar).map(([k, v]) => [k, v?.subscores])
         ),
       },
+      index: recomputeErr
+        ? { ok: false, error: recomputeErr.message }
+        : { ok: true, row: recomputedRow },
     });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
