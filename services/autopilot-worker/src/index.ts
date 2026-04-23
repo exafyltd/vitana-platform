@@ -19,7 +19,9 @@ import { claimNextTask, completeTask, failTask, queueDepth, type QueueRow } from
 import { runClaude, type RunClaudeResult } from './claude';
 import { parseExecutionOutput } from './parse';
 import { applyFiles, fetchAndReset, resetClean } from './repo';
-import { runTsc } from './validate';
+import { runTsc, runJest } from './validate';
+import { join } from 'path';
+import { CLONE_ROOT } from './repo';
 import { buildRetryPrompt } from './retry';
 
 const LOG_PREFIX = '[autopilot-worker]';
@@ -37,6 +39,13 @@ const VALIDATION_MAX_ATTEMPTS = Number(process.env.AUTOPILOT_WORKER_VALIDATION_M
 const VALIDATION_TSCONFIG = process.env.AUTOPILOT_WORKER_TSCONFIG
   || 'services/gateway/tsconfig.json';
 const VALIDATION_BASE_BRANCH = process.env.AUTOPILOT_WORKER_BASE_BRANCH || 'main';
+// Directory containing the jest.config.js that owns the changed test files.
+// jest needs to be invoked from this directory so its `roots` resolve.
+const VALIDATION_JEST_PROJECT_DIR = process.env.AUTOPILOT_WORKER_JEST_PROJECT_DIR
+  || 'services/gateway';
+// jest can be slow + flaky for some tests. The worker can skip jest and rely
+// on tsc-only validation by setting AUTOPILOT_WORKER_RUN_JEST=false.
+const RUN_JEST = (process.env.AUTOPILOT_WORKER_RUN_JEST || 'true').toLowerCase() !== 'false';
 
 let running = 0;
 let shuttingDown = false;
@@ -156,8 +165,29 @@ async function runExecuteWithValidation(
     const tsc = await runTsc(VALIDATION_TSCONFIG, applied.paths);
     validationElapsedTotal += tsc.elapsedMs;
 
-    if (tsc.ok) {
-      log(`  attempt ${attempt + 1} PASSED validation in ${Math.round(tsc.elapsedMs / 1000)}s (${parsed.files.length} files applied)`);
+    if (!tsc.ok) {
+      const errCount = (tsc.relevantErrors || []).length;
+      lastError = tsc.error || `${errCount} tsc error(s) in changed files`;
+      log(`  attempt ${attempt + 1} FAILED tsc in ${Math.round(tsc.elapsedMs / 1000)}s — ${errCount} relevant error(s)`);
+      currentPrompt = buildRetryPrompt(
+        basePrompt,
+        claudeResult.text,
+        tsc.relevantErrors && tsc.relevantErrors.length > 0
+          ? tsc.relevantErrors
+          : [tsc.error || 'tsc failed with no specific errors extracted'],
+        attempt,
+      );
+      continue;
+    }
+
+    // tsc passed. Now run jest --findRelatedTests on the same paths so
+    // logic-level bugs (Claude's test asserts the wrong shape, mocks the
+    // wrong module, etc.) get caught before the gateway opens the PR.
+    // The class of bug we just hit on PR #844 (memory.test.ts compiled
+    // fine but its assertions failed at runtime) is exactly what this
+    // catches.
+    if (!RUN_JEST) {
+      log(`  attempt ${attempt + 1} PASSED tsc in ${Math.round(tsc.elapsedMs / 1000)}s (jest skipped)`);
       await resetClean();
       return {
         ok: true,
@@ -168,17 +198,30 @@ async function runExecuteWithValidation(
       };
     }
 
-    const errCount = (tsc.relevantErrors || []).length;
-    lastError = tsc.error || `${errCount} tsc error(s) in changed files`;
-    log(`  attempt ${attempt + 1} FAILED validation in ${Math.round(tsc.elapsedMs / 1000)}s — ${errCount} relevant tsc error(s)`);
-    currentPrompt = buildRetryPrompt(
-      basePrompt,
-      claudeResult.text,
-      tsc.relevantErrors && tsc.relevantErrors.length > 0
-        ? tsc.relevantErrors
-        : [tsc.error || 'tsc failed with no specific errors extracted'],
-      attempt,
-    );
+    const jest = await runJest(join(CLONE_ROOT, VALIDATION_JEST_PROJECT_DIR), applied.paths);
+    validationElapsedTotal += jest.elapsedMs;
+
+    if (jest.ok) {
+      log(`  attempt ${attempt + 1} PASSED tsc + jest (${jest.testsPassed}/${jest.testsRun} tests) in ${Math.round((tsc.elapsedMs + jest.elapsedMs) / 1000)}s`);
+      await resetClean();
+      return {
+        ok: true,
+        text: claudeResult.text,
+        usage: claudeResult.usage,
+        attempts: attempt + 1,
+        validation_elapsed_ms: validationElapsedTotal,
+      };
+    }
+
+    const failCount = (jest.failures || []).length;
+    lastError = jest.error || `${jest.testsFailed}/${jest.testsRun} jest test(s) failed`;
+    log(`  attempt ${attempt + 1} FAILED jest in ${Math.round(jest.elapsedMs / 1000)}s — ${failCount} failure(s) (${jest.testsPassed}/${jest.testsRun} passed)`);
+    // Feed the jest failures back to Claude — labeling them so it knows
+    // these are runtime assertion errors, not type errors.
+    const jestErrorBlock = jest.failures && jest.failures.length > 0
+      ? jest.failures.map(f => `[jest] ${f}`)
+      : [`[jest] ${jest.error || `${jest.testsFailed} test(s) failed (no specific failure messages extracted)`}`];
+    currentPrompt = buildRetryPrompt(basePrompt, claudeResult.text, jestErrorBlock, attempt);
   }
 
   // All attempts exhausted. Return the last output anyway — some classes of
