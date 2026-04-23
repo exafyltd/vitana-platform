@@ -293,6 +293,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminSystemKbRouter = require('./routes/admin-system-kb').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
+  // Phase F v2 step 9: per-user integrations + Manual Data Entry.
+  const integrationsRouter = require('./routes/integrations').default;
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   const tenantOverviewRouter = require('./routes/tenant-admin/overview').default;
   // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface (real-time snapshot + history)
@@ -768,6 +770,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/system-kb', adminSystemKbRouter, { owner: 'admin-system-kb' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
+  // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
+  mountRouterSync(app, '/api/v1/integrations', integrationsRouter, { owner: 'integrations' });
   // Overview Dashboard — KPI summary, at-risk, activity, alerts
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/overview', tenantOverviewRouter, { owner: 'tenant-overview' });
   // BOOTSTRAP-ADMIN-KPI-AA: Admin KPI surface
