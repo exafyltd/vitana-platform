@@ -166,6 +166,12 @@ export async function semanticSearchCatalog(
       if (!entry.embedding) continue;
       if (opts.anonymous_only && !entry.anonymous_safe) continue;
       if (excluded.has(entry.route)) continue;
+      // Auth / public category entries are sign-in screens and marketing
+      // landers — never the right destination for an authenticated user. The
+      // semantic scorer otherwise matches "open the screen with the connectors"
+      // to AUTH.GENERIC ("Generic sign-in and sign-up screen") on the word
+      // "screen" and leaks the user out to /auth.
+      if (opts.role && (entry.category === 'auth' || entry.category === 'public')) continue;
       // Surface scoping: authenticated callers may only see entries on their
       // surface. Anonymous callers skip the role gate — anonymous_safe carries
       // the access decision for them.
@@ -1676,6 +1682,10 @@ export function searchCatalog(
     if (opts.category && entry.category !== opts.category) continue;
     if (opts.anonymous_only && !entry.anonymous_safe) continue;
     if (excluded.has(entry.route)) continue;
+    // Auth / public category entries are sign-in screens and marketing landers —
+    // never the right destination for an authenticated user. See the matching
+    // guard in semanticSearchCatalog above for the motivating case.
+    if (opts.role && (entry.category === 'auth' || entry.category === 'public')) continue;
     // Surface scoping: authenticated callers may only see entries on their
     // surface. Anonymous callers skip the role gate — anonymous_safe carries
     // the access decision for them.

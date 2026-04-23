@@ -469,6 +469,9 @@ export function searchCatalogEntries(
     if (opts.category && entry.category !== opts.category) continue;
     if (opts.anonymous_only && !entry.anonymous_safe) continue;
     if (excluded.has(entry.route)) continue;
+    // Auth / public category entries are sign-in screens and marketing landers —
+    // never the right destination for an authenticated user.
+    if (opts.role && (entry.category === 'auth' || entry.category === 'public')) continue;
     // Surface scoping: authenticated callers may only see entries on their
     // surface. Anonymous callers skip the role gate — anonymous_safe carries
     // the access decision for them. See navigation-catalog.ts for the same
