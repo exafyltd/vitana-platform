@@ -47,7 +47,13 @@ const ANTHROPIC_BASE = 'https://api.anthropic.com';
 // Messages API timeout — Cloud Run's request timeout is 300s; we run in a
 // background ticker so that's not the constraint. Still cap at 8 minutes so
 // a pathological stuck call doesn't hold a concurrency slot forever.
-const MESSAGES_TIMEOUT_MS = 480_000; // 8 min — generous for multi-file generation
+// 12 min. Was 8 min; bumped after PR #846 added jest validation in the
+// worker which can add 60-90s on the first attempt and ~5-15s on retries
+// — combined with up to 3 retry attempts and an initial npm-install on
+// a cold clone, the worker can legitimately hold a task for ~10 min on
+// a hard case. The execute path is background-ticker scoped, so there's
+// no Cloud Run request-wall constraint here.
+const MESSAGES_TIMEOUT_MS = 720_000; // 12 min
 const EXECUTION_MODEL = process.env.DEV_AUTOPILOT_EXECUTION_MODEL || 'claude-sonnet-4-6';
 // Upper bound for total output tokens. One plan may touch up to ~5 files;
 // ~3000 tokens/file is a generous budget. Sonnet 4.6 supports 16k out.

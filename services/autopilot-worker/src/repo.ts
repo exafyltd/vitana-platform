@@ -63,19 +63,53 @@ export function clonePath(): string {
 }
 
 /**
- * Ensure a working clone exists at CLONE_ROOT. Creates it if missing.
- * Idempotent — safe to call on every task.
+ * Directories under the clone that need `npm ci` (or `npm install`) before
+ * tsc / jest validation can do anything useful — without node_modules
+ * present, tsc reports "Cannot find module 'express'" on every file and
+ * jest fails to load setup files.
+ *
+ * Override with AUTOPILOT_WORKER_INSTALL_DIRS=services/gateway,services/foo
+ * if you need to validate against more than one project.
+ */
+const INSTALL_DIRS = (process.env.AUTOPILOT_WORKER_INSTALL_DIRS || 'services/gateway')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+const NPM_INSTALL_TIMEOUT_MS = 10 * 60_000; // 10 min — first-run install can be slow
+
+/**
+ * Ensure a working clone exists at CLONE_ROOT. Creates it if missing,
+ * AND installs npm deps in the validation project dirs so tsc / jest
+ * have something to resolve against.
+ *
+ * Idempotent — safe to call on every task. Both checks (clone exists,
+ * node_modules exists) skip the slow path on subsequent calls.
  */
 export async function ensureClone(): Promise<{ ok: boolean; path?: string; error?: string }> {
   try {
-    if (await exists(join(CLONE_ROOT, '.git'))) {
-      return { ok: true, path: CLONE_ROOT };
+    if (!(await exists(join(CLONE_ROOT, '.git')))) {
+      await mkdir(dirname(CLONE_ROOT), { recursive: true });
+      console.log(`${LOG_PREFIX} cloning ${DEFAULT_REMOTE} → ${CLONE_ROOT} (first run, slow)`);
+      // Shallow clone keeps the initial cost reasonable; we only need
+      // latest main to validate typechecks against.
+      await run('git', ['clone', '--depth', '50', DEFAULT_REMOTE, CLONE_ROOT], { timeoutMs: 600_000 });
     }
-    await mkdir(dirname(CLONE_ROOT), { recursive: true });
-    console.log(`${LOG_PREFIX} cloning ${DEFAULT_REMOTE} → ${CLONE_ROOT} (first run, slow)`);
-    // Shallow clone keeps the initial cost reasonable; we only need
-    // latest main to validate typechecks against.
-    await run('git', ['clone', '--depth', '50', DEFAULT_REMOTE, CLONE_ROOT], { timeoutMs: 600_000 });
+
+    for (const dir of INSTALL_DIRS) {
+      const projectPath = join(CLONE_ROOT, dir);
+      const nodeModulesPath = join(projectPath, 'node_modules');
+      if (await exists(nodeModulesPath)) continue;
+      if (!(await exists(join(projectPath, 'package.json')))) {
+        console.warn(`${LOG_PREFIX} ${dir} has no package.json — skipping npm install`);
+        continue;
+      }
+      console.log(`${LOG_PREFIX} installing npm deps in ${dir} (first run, slow)`);
+      // Use `npm ci` when a lockfile exists (faster + reproducible),
+      // fall back to `npm install` otherwise.
+      const hasLock = await exists(join(projectPath, 'package-lock.json'));
+      const cmd = hasLock ? ['ci', '--no-audit', '--no-fund'] : ['install', '--no-audit', '--no-fund'];
+      await run('npm', cmd, { cwd: projectPath, timeoutMs: NPM_INSTALL_TIMEOUT_MS });
+    }
+
     return { ok: true, path: CLONE_ROOT };
   } catch (err) {
     return { ok: false, error: `ensureClone failed: ${String(err).slice(0, 400)}` };
