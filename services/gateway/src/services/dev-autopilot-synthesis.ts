@@ -31,7 +31,17 @@ export type SignalType =
   | 'circular_dep'
   | 'unused_dep'
   | 'cognitive_complexity'
-  | 'safety_gap';
+  | 'safety_gap'
+  // Scanner-registry PR: second wave of detectors (security, data-integrity,
+  // dependencies, product-gap). See scripts/ci/scanners/registry.mjs for the
+  // source of truth and maturity labels.
+  | 'rls_gap'
+  | 'schema_drift'
+  | 'missing_auth'
+  | 'secret_exposure'
+  | 'cve'
+  | 'stale_flag'
+  | 'product_gap';
 
 export type Severity = 'low' | 'medium' | 'high';
 
@@ -151,6 +161,16 @@ const TYPE_EFFORT: Record<SignalType, number> = {
   // safety_gap items are infra-scoped integration tests — usually
   // ~half a day of work per gap.
   safety_gap: 6,
+  // Scanner-registry wave: effort tuned so auto-approve picks up the easy
+  // ones (secret rotation, CVE bump, stale flag delete) and leaves RLS /
+  // schema-drift for humans by default.
+  cve: 2,
+  stale_flag: 2,
+  secret_exposure: 3,
+  missing_auth: 4,
+  rls_gap: 5,
+  schema_drift: 5,
+  product_gap: 7,
 };
 
 /** Risk class for auto-exec eligibility — dead_code, unused_dep, missing_docs
@@ -167,6 +187,19 @@ const TYPE_RISK_CLASS: Record<SignalType, 'low' | 'medium' | 'high'> = {
   cognitive_complexity: 'medium',
   large_file: 'high',
   safety_gap: 'medium',
+  // Scanner-registry wave:
+  //   cve / stale_flag → low (small bumps, local effect)
+  //   secret_exposure → high (exfil risk if wrong fix)
+  //   missing_auth    → medium (could break a legit public route)
+  //   rls_gap / schema_drift → medium (migration + code coordination)
+  //   product_gap     → medium (LLM-proposed, human review advised)
+  cve: 'low',
+  stale_flag: 'low',
+  secret_exposure: 'high',
+  missing_auth: 'medium',
+  rls_gap: 'medium',
+  schema_drift: 'medium',
+  product_gap: 'medium',
 };
 
 function scoreSignal(signal: DevAutopilotSignal): {
@@ -199,6 +232,13 @@ function titleForSignal(signal: DevAutopilotSignal): string {
     case 'circular_dep':  return `Break circular dependency via ${base}`;
     case 'cognitive_complexity': return `Reduce cognitive complexity in ${base}`;
     case 'safety_gap':    return signal.message.slice(0, 80);
+    case 'rls_gap':       return `Missing RLS policy on ${base}`;
+    case 'schema_drift':  return `Schema drift in ${base}`;
+    case 'missing_auth':  return `Missing auth middleware in ${base}`;
+    case 'secret_exposure': return `Hardcoded secret in ${base}`;
+    case 'cve':           return `CVE: ${base}`;
+    case 'stale_flag':    return `Stale feature flag — ${base}`;
+    case 'product_gap':   return signal.message.slice(0, 80);
     default:              return signal.message.substring(0, 80);
   }
 }
