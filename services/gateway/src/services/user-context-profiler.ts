@@ -273,19 +273,60 @@ function scoreTier(total: number): string {
   return 'Starting';
 }
 
-async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexSnapshot | null> {
-  // Pull last 7 days so we can compute trend + sparkline.
+/**
+ * State of the user's Vitana Index setup. Used by buildHealthSection to
+ * render an explicit, actionable line when the score isn't available —
+ * instead of silently omitting the Index entirely, which is how the voice
+ * model ended up with nothing to say ("I don't know your Index").
+ *
+ * BOOTSTRAP-ORB-INDEX-AWARENESS-R3: ensure the Assistant always has
+ * SOMETHING to quote about the Index, even if that something is
+ * "setup is incomplete — here's how to fix it."
+ */
+export type VitanaIndexFetchResult =
+  | { state: 'ok'; snapshot: VitanaIndexSnapshot }
+  | { state: 'no_score_baseline_exists' }     // survey done, compute failed (#839 state)
+  | { state: 'not_set_up' };                   // neither row exists
+
+async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexFetchResult> {
+  // 1) Try last 7 days first (for trend math).
   const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const { data, error } = await client
+  const { data: recentData, error: recentErr } = await client
     .from('vitana_index_scores')
     .select('date, score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental, score_prosperity')
     .eq('user_id', userId)
     .gte('date', sinceIso)
     .order('date', { ascending: true })
     .limit(14);
-  if (error || !data || data.length === 0) return null;
 
-  const rows = data as any[];
+  let rows: any[] | null = null;
+  if (!recentErr && recentData && recentData.length > 0) {
+    rows = recentData as any[];
+  } else {
+    // 2) Fallback: latest-ever score. User may have paused or not computed in a week;
+    //    we still want to report what they have instead of saying nothing.
+    const { data: latestData } = await client
+      .from('vitana_index_scores')
+      .select('date, score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental, score_prosperity')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(1);
+    if (latestData && latestData.length > 0) rows = latestData as any[];
+  }
+
+  if (!rows || rows.length === 0) {
+    // 3) No score row at all. Detect intermediate state (baseline done, compute failed).
+    //    Matches BOOTSTRAP-VITANA-INDEX-STATUS (#839): survey row can exist without a score.
+    const { data: surveyData } = await client
+      .from('vitana_index_baseline_survey')
+      .select('user_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    if (surveyData) return { state: 'no_score_baseline_exists' };
+    return { state: 'not_set_up' };
+  }
+
   const latest = rows[rows.length - 1];
   const earliest = rows[0];
   const history_7d = rows.map(r => Number(r.score_total) || 0);
@@ -304,7 +345,6 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   const strongest_pillar = { name: pillarEntries[pillarEntries.length - 1][0], score: pillarEntries[pillarEntries.length - 1][1] };
   const trend_7d = rows.length >= 2 ? total - (Number(earliest.score_total) || 0) : 0;
 
-  // Last movement event — optional, best-effort.
   let last_movement: VitanaIndexSnapshot['last_movement'] | undefined;
   try {
     const { data: evt } = await client
@@ -324,21 +364,34 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   } catch { /* best-effort */ }
 
   return {
-    total,
-    tier: scoreTier(total),
-    pillars,
-    weakest_pillar,
-    strongest_pillar,
-    trend_7d,
-    history_7d,
-    goal_target: 600,
-    goal_gap: 600 - total,
-    last_computed: latest.date,
-    last_movement,
+    state: 'ok',
+    snapshot: {
+      total,
+      tier: scoreTier(total),
+      pillars,
+      weakest_pillar,
+      strongest_pillar,
+      trend_7d,
+      history_7d,
+      goal_target: 600,
+      goal_gap: 600 - total,
+      last_computed: latest.date,
+      last_movement,
+    },
   };
 }
 
-export { fetchVitanaIndex as fetchVitanaIndexForProfiler };
+/**
+ * Thin wrapper exposed for ORB tools that want the raw snapshot (not the
+ * state envelope). Returns null when there's no score — callers that need
+ * the richer state machine should call fetchVitanaIndex directly.
+ */
+async function fetchVitanaIndexSnapshot(client: SupabaseClient, userId: string): Promise<VitanaIndexSnapshot | null> {
+  const r = await fetchVitanaIndex(client, userId);
+  return r.state === 'ok' ? r.snapshot : null;
+}
+
+export { fetchVitanaIndexSnapshot as fetchVitanaIndexForProfiler };
 
 /**
  * Collapse noisy nav events (page.view, auth.*) into a counted summary and
@@ -530,50 +583,58 @@ function formatPillarName(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function buildHealthSection(activities: ActivityRow[], vitana: VitanaIndexSnapshot | null): string {
+function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndexFetchResult | null): string {
   const lines: string[] = [];
 
-  // Vitana Index — the user's KEY 90-day progress measure. Always rendered
-  // first when available.
-  if (vitana && vitana.total > 0) {
-    const trendStr = vitana.trend_7d > 0
-      ? `trending up +${vitana.trend_7d} over 7 days`
-      : vitana.trend_7d < 0
-        ? `trending down ${vitana.trend_7d} over 7 days`
-        : 'stable over 7 days';
-    lines.push(`- Vitana Index: ${vitana.total} / 999 (${vitana.tier} tier), ${trendStr}.`);
+  // Vitana Index — ALWAYS emit something so the voice model has a quotable
+  // line. Three paths: real score, baseline-but-compute-failed, not set up.
+  // BOOTSTRAP-ORB-INDEX-AWARENESS-R3: silence was the old bug — an empty
+  // section meant the Assistant had no number AND no guidance.
+  if (vitanaResult) {
+    if (vitanaResult.state === 'ok') {
+      const vitana = vitanaResult.snapshot;
+      const trendStr = vitana.trend_7d > 0
+        ? `trending up +${vitana.trend_7d} over 7 days`
+        : vitana.trend_7d < 0
+          ? `trending down ${vitana.trend_7d} over 7 days`
+          : 'stable over 7 days';
+      lines.push(`- Vitana Index: ${vitana.total} / 999 (${vitana.tier} tier), ${trendStr}.`);
 
-    // Pillar breakdown, weakest marked explicitly so the model can name it.
-    const p = vitana.pillars;
-    const pillarLines = [
-      `Physical ${p.physical}/200`,
-      `Mental ${p.mental}/200`,
-      `Nutritional ${p.nutritional}/200`,
-      `Social ${p.social}/200`,
-      `Environmental ${p.environmental}/200`,
-      `Prosperity ${p.prosperity}/200`,
-    ];
-    lines.push(`- Pillars: ${pillarLines.join(', ')}.`);
-    lines.push(`- Weakest pillar: ${formatPillarName(vitana.weakest_pillar.name)} (${vitana.weakest_pillar.score}/200) — this is where improvements move the Index most.`);
-    lines.push(`- Strongest pillar: ${formatPillarName(vitana.strongest_pillar.name)} (${vitana.strongest_pillar.score}/200).`);
+      const p = vitana.pillars;
+      const pillarLines = [
+        `Physical ${p.physical}/200`,
+        `Mental ${p.mental}/200`,
+        `Nutritional ${p.nutritional}/200`,
+        `Social ${p.social}/200`,
+        `Environmental ${p.environmental}/200`,
+        `Prosperity ${p.prosperity}/200`,
+      ];
+      lines.push(`- Pillars: ${pillarLines.join(', ')}.`);
+      lines.push(`- Weakest pillar: ${formatPillarName(vitana.weakest_pillar.name)} (${vitana.weakest_pillar.score}/200) — this is where improvements move the Index most.`);
+      lines.push(`- Strongest pillar: ${formatPillarName(vitana.strongest_pillar.name)} (${vitana.strongest_pillar.score}/200).`);
 
-    // Goal gap — default 90-day goal is Good (600+).
-    if (vitana.goal_gap > 0) {
-      lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Currently ${vitana.goal_gap} points below target.`);
-    } else {
-      lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Already ${Math.abs(vitana.goal_gap)} points above target — keep the momentum.`);
-    }
+      if (vitana.goal_gap > 0) {
+        lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Currently ${vitana.goal_gap} points below target.`);
+      } else {
+        lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Already ${Math.abs(vitana.goal_gap)} points above target — keep the momentum.`);
+      }
 
-    // Most recent movement, if any.
-    if (vitana.last_movement) {
-      const m = vitana.last_movement;
-      const sign = m.delta > 0 ? '+' : '';
-      const reason = m.reason ? ` from "${m.reason}"` : '';
-      lines.push(`- Last movement: ${sign}${m.delta} ${formatPillarName(m.pillar)}${reason}.`);
+      if (vitana.last_movement) {
+        const m = vitana.last_movement;
+        const sign = m.delta > 0 ? '+' : '';
+        const reason = m.reason ? ` from "${m.reason}"` : '';
+        lines.push(`- Last movement: ${sign}${m.delta} ${formatPillarName(m.pillar)}${reason}.`);
+      }
+    } else if (vitanaResult.state === 'no_score_baseline_exists') {
+      // BOOTSTRAP-VITANA-INDEX-STATUS (#839): baseline survey row exists
+      // but vitana_index_scores has no row (compute RPC failed earlier).
+      // Tell the model so it can guide the user to retry.
+      lines.push('- Vitana Index status: SETUP INCOMPLETE. The baseline survey was submitted, but the score did not compute (earlier compute RPC error). The user needs to retry — the Health screen should re-prompt the baseline modal. Do NOT fabricate an Index number.');
+    } else if (vitanaResult.state === 'not_set_up') {
+      lines.push('- Vitana Index status: NOT SET UP YET. The user has not completed the baseline survey. Direct them to the Health screen to take it — that is the ONLY way the Index gets a first value. Do NOT fabricate an Index number.');
     }
   }
 
-  // Rest of health signals — biomarkers + supplements.
   const healthActivities = activities.filter(a => a.activity_type.startsWith('health.'));
   if (healthActivities.length) {
     const uploads = healthActivities.filter(a => a.activity_type.includes('upload') || a.activity_type.includes('connect')).length;
