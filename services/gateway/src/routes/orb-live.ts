@@ -2062,6 +2062,21 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
 ]);
 
 /**
+ * Derive the Navigator's role from the surface the user is currently in.
+ * The ORB must never cross surfaces: mobile and vitanaland.com → community,
+ * /admin/* inside the community app → admin, /command-hub/* → developer.
+ * The DB's active_role is deliberately NOT consulted — a user's DB role can
+ * legitimately be "developer" while they are browsing the community app, and
+ * in that case the Navigator should still only surface community routes.
+ */
+function deriveSurfaceRole(currentRoute: string | undefined | null): string {
+  const route = (currentRoute || '').toLowerCase();
+  if (route.startsWith('/command-hub')) return 'developer';
+  if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
+  return 'community';
+}
+
+/**
  * VTID-NAV: Handle navigator_consult tool call. Self-contained — does not
  * require an authenticated identity (anonymous sessions can still consult,
  * just with empty memory hints).
@@ -2087,6 +2102,11 @@ async function handleNavigate(
     return { success: false, result: '', error: 'navigate requires a non-empty question.' };
   }
 
+  // Surface-scoped role: the ORB's navigator must stay inside the surface the
+  // user is actually in. The DB's active_role is not authoritative here — a
+  // developer on vitanaland.com is a community user for navigation purposes.
+  const surfaceRole = deriveSurfaceRole(session.current_route);
+
   // Step 1: Run the consult service (catalog + KB + memory)
   const consultInput: NavigatorConsultInput = {
     question,
@@ -2095,7 +2115,7 @@ async function handleNavigate(
       ? {
           user_id: session.identity!.user_id,
           tenant_id: session.identity!.tenant_id as string,
-          role: session.active_role || session.identity!.role || undefined,
+          role: surfaceRole,
         }
       : null,
     is_anonymous: !!session.isAnonymous || !hasIdentity,
@@ -2285,6 +2305,8 @@ async function handleNavigatorConsult(
     return { success: false, result: '', error: 'navigator_consult requires a non-empty question.' };
   }
 
+  const surfaceRole = deriveSurfaceRole(session.current_route);
+
   const consultInput: NavigatorConsultInput = {
     question,
     lang: session.lang || 'en',
@@ -2292,7 +2314,7 @@ async function handleNavigatorConsult(
       ? {
           user_id: session.identity!.user_id,
           tenant_id: session.identity!.tenant_id as string,
-          role: session.active_role || session.identity!.role || undefined,
+          role: surfaceRole,
         }
       : null,
     is_anonymous: !!session.isAnonymous || !hasIdentity,

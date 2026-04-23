@@ -47,8 +47,27 @@ export interface NavCatalogEntry {
   /** VTID-NAV-SEMANTIC: Pre-computed embedding vector for semantic search.
    *  Generated at gateway startup from combined EN+DE title+description+when_to_visit. */
   embedding?: number[];
-  /** VITANA-BRAIN: Roles that can see this entry. If omitted/empty, visible to all authenticated roles. */
+  /** VITANA-BRAIN: Roles that can see this entry. If omitted/empty, surface is inferred from route/category — see resolveEffectiveRoles. */
   allowed_roles?: string[];
+}
+
+/**
+ * Surface-scoped role resolver. Every catalog entry belongs to exactly one
+ * surface — community (vitanaland + mobile), admin (/admin/* inside the
+ * community app), or Command Hub (developer). The ORB Navigator must never
+ * cross surfaces: a community user never gets teleported into /admin or
+ * /command-hub, and a developer in Command Hub never gets sent to a
+ * community route that Command Hub can't render. If the entry has an
+ * explicit `allowed_roles`, we trust it. Otherwise we infer:
+ *   - route starts with `/admin/` → admin surface
+ *   - category `developer`        → Command Hub (developer)
+ *   - everything else             → community
+ */
+export function resolveEffectiveRoles(entry: NavCatalogEntry): string[] {
+  if (entry.allowed_roles && entry.allowed_roles.length > 0) return entry.allowed_roles;
+  if (entry.route.startsWith('/admin/') || entry.route === '/admin') return ['admin'];
+  if (entry.category === 'developer') return ['developer', 'DEV'];
+  return ['community'];
 }
 
 // =============================================================================
@@ -147,10 +166,10 @@ export async function semanticSearchCatalog(
       if (!entry.embedding) continue;
       if (opts.anonymous_only && !entry.anonymous_safe) continue;
       if (excluded.has(entry.route)) continue;
-      // VITANA-BRAIN: Role-gated entries
-      if (entry.allowed_roles && entry.allowed_roles.length > 0) {
-        if (!opts.role || !entry.allowed_roles.includes(opts.role)) continue;
-      }
+      // Surface scoping: authenticated callers may only see entries on their
+      // surface. Anonymous callers skip the role gate — anonymous_safe carries
+      // the access decision for them.
+      if (opts.role && !resolveEffectiveRoles(entry).includes(opts.role)) continue;
 
       let sim = cosineSimilarity(queryEmb, entry.embedding);
 
@@ -1334,167 +1353,167 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   // ===========================================================================
 
   // ── Overview ──
-  { screen_id: 'DEVHUB.OVERVIEW.SYSTEM_OVERVIEW', route: '/command-hub/overview/system-overview/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OVERVIEW.SYSTEM_OVERVIEW', route: '/command-hub/overview/system-overview/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'System Overview', description: 'High-level system dashboard with health and status.', when_to_visit: 'When asking for system overview, dashboard, system status, or platform health.' } } },
-  { screen_id: 'DEVHUB.OVERVIEW.LIVE_METRICS', route: '/command-hub/overview/live-metrics/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OVERVIEW.LIVE_METRICS', route: '/command-hub/overview/live-metrics/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Live Metrics', description: 'Real-time performance metrics and statistics.', when_to_visit: 'When asking for metrics, performance, stats, live data, or real-time monitoring.' } } },
-  { screen_id: 'DEVHUB.OVERVIEW.RECENT_EVENTS', route: '/command-hub/overview/recent-events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OVERVIEW.RECENT_EVENTS', route: '/command-hub/overview/recent-events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Recent Events', description: 'Latest system events and activity feed.', when_to_visit: 'When asking for recent events, activity feed, or what happened recently.' } } },
-  { screen_id: 'DEVHUB.OVERVIEW.ERRORS_VIOLATIONS', route: '/command-hub/overview/errors-violations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OVERVIEW.ERRORS_VIOLATIONS', route: '/command-hub/overview/errors-violations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Errors & Violations', description: 'Error dashboard and governance violations.', when_to_visit: 'When asking about errors, violations, failures, or issues.' } } },
-  { screen_id: 'DEVHUB.OVERVIEW.RELEASE_FEED', route: '/command-hub/overview/release-feed/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OVERVIEW.RELEASE_FEED', route: '/command-hub/overview/release-feed/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Release Feed', description: 'Recent releases and version history.', when_to_visit: 'When asking about releases, versions, changelog, or release feed.' } } },
 
   // ── Admin ──
-  { screen_id: 'DEVHUB.ADMIN.USERS', route: '/command-hub/admin/users/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.USERS', route: '/command-hub/admin/users/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Users', description: 'User management and administration.', when_to_visit: 'When asking about users, user management, user list, or user admin.' } } },
-  { screen_id: 'DEVHUB.ADMIN.PERMISSIONS', route: '/command-hub/admin/permissions/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.PERMISSIONS', route: '/command-hub/admin/permissions/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Permissions', description: 'Permission and access control management.', when_to_visit: 'When asking about permissions, access control, or authorization.' } } },
-  { screen_id: 'DEVHUB.ADMIN.TENANTS', route: '/command-hub/admin/tenants/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.TENANTS', route: '/command-hub/admin/tenants/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Tenants', description: 'Multi-tenant configuration and management.', when_to_visit: 'When asking about tenants, organizations, or multi-tenancy.' } } },
-  { screen_id: 'DEVHUB.ADMIN.CONTENT_MODERATION', route: '/command-hub/admin/content-moderation/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.CONTENT_MODERATION', route: '/command-hub/admin/content-moderation/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Content Moderation', description: 'Content moderation queue and policies.', when_to_visit: 'When asking about content moderation, moderation queue, or flagged content.' } } },
-  { screen_id: 'DEVHUB.ADMIN.IDENTITY_ACCESS', route: '/command-hub/admin/identity-access/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.IDENTITY_ACCESS', route: '/command-hub/admin/identity-access/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Identity & Access', description: 'Identity management and access policies.', when_to_visit: 'When asking about identity, IAM, access management, or authentication.' } } },
-  { screen_id: 'DEVHUB.ADMIN.ANALYTICS', route: '/command-hub/admin/analytics/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.ADMIN.ANALYTICS', route: '/command-hub/admin/analytics/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Admin Analytics', description: 'Administrative analytics and usage data.', when_to_visit: 'When asking about admin analytics, usage stats, or platform analytics.' } } },
 
   // ── Operator ──
-  { screen_id: 'DEVHUB.OPERATOR.DASHBOARD', route: '/command-hub/operator/dashboard/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OPERATOR.DASHBOARD', route: '/command-hub/operator/dashboard/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Operator Dashboard', description: 'Operator console with conversation intelligence.', when_to_visit: 'When asking for operator dashboard, operator console, or operator view.' } } },
-  { screen_id: 'DEVHUB.OPERATOR.TASK_QUEUE', route: '/command-hub/operator/task-queue/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OPERATOR.TASK_QUEUE', route: '/command-hub/operator/task-queue/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Task Queue', description: 'Operator task queue for pending work.', when_to_visit: 'When asking about task queue, pending tasks, or operator queue.' } } },
-  { screen_id: 'DEVHUB.OPERATOR.EVENT_STREAM', route: '/command-hub/operator/event-stream/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OPERATOR.EVENT_STREAM', route: '/command-hub/operator/event-stream/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Event Stream', description: 'Real-time event stream from the operator.', when_to_visit: 'When asking about event stream, live events, or real-time stream.' } } },
-  { screen_id: 'DEVHUB.OPERATOR.DEPLOYMENTS', route: '/command-hub/operator/deployments/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OPERATOR.DEPLOYMENTS', route: '/command-hub/operator/deployments/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Operator Deployments', description: 'Deployment management from operator view.', when_to_visit: 'When asking about operator deployments or deployment control.' } } },
-  { screen_id: 'DEVHUB.OPERATOR.RUNBOOK', route: '/command-hub/operator/runbook/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OPERATOR.RUNBOOK', route: '/command-hub/operator/runbook/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Runbook', description: 'Operational runbook and procedures.', when_to_visit: 'When asking about runbook, procedures, playbook, or operational guide.' } } },
 
   // ── Command Hub ──
-  { screen_id: 'DEVHUB.COMMAND_HUB.TASKS', route: '/command-hub/tasks/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.COMMAND_HUB.TASKS', route: '/command-hub/tasks/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Tasks', description: 'Developer task board with VTIDs and work items.', when_to_visit: 'When asking for tasks, task board, my tasks, work items, backlog, todo list, or things to do.' } } },
-  { screen_id: 'DEVHUB.COMMAND_HUB.LIVE_CONSOLE', route: '/command-hub/live-console/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.COMMAND_HUB.LIVE_CONSOLE', route: '/command-hub/live-console/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Live Console', description: 'Live terminal console for real-time logs and commands.', when_to_visit: 'When asking for live console, terminal, logs, command line, or real-time output.' } } },
-  { screen_id: 'DEVHUB.COMMAND_HUB.EVENTS', route: '/command-hub/events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.COMMAND_HUB.EVENTS', route: '/command-hub/events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Command Hub Events', description: 'Command Hub event log and activity.', when_to_visit: 'When asking for command hub events, hub activity, or hub event log.' } } },
-  { screen_id: 'DEVHUB.COMMAND_HUB.VTIDS', route: '/command-hub/vtids/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.COMMAND_HUB.VTIDS', route: '/command-hub/vtids/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'VTIDs', description: 'VTID registry and task identifier management.', when_to_visit: 'When asking about VTIDs, VTID list, task identifiers, or VTID registry.' } } },
-  { screen_id: 'DEVHUB.COMMAND_HUB.APPROVALS', route: '/command-hub/approvals/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.COMMAND_HUB.APPROVALS', route: '/command-hub/approvals/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Approvals', description: 'Pending approvals for PRs, merges, and deployments.', when_to_visit: 'When asking about approvals, pending reviews, PR reviews, merge requests, or things to approve.' } } },
 
   // ── Governance ──
-  { screen_id: 'DEVHUB.GOVERNANCE.RULES', route: '/command-hub/governance/rules/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.GOVERNANCE.RULES', route: '/command-hub/governance/rules/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Governance Rules', description: 'System governance rules and enforcement policies.', when_to_visit: 'When asking about governance, rules, policies, enforcement, or compliance.' } } },
-  { screen_id: 'DEVHUB.GOVERNANCE.VIOLATIONS', route: '/command-hub/governance/violations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.GOVERNANCE.VIOLATIONS', route: '/command-hub/governance/violations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Governance Violations', description: 'Logged governance violations and breaches.', when_to_visit: 'When asking about violations, breaches, compliance issues, or rule violations.' } } },
-  { screen_id: 'DEVHUB.GOVERNANCE.CONTROLS', route: '/command-hub/governance/controls/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.GOVERNANCE.CONTROLS', route: '/command-hub/governance/controls/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Governance Controls', description: 'Feature flags and system controls.', when_to_visit: 'When asking about controls, feature flags, system toggles, or kill switches.' } } },
-  { screen_id: 'DEVHUB.GOVERNANCE.EVALUATIONS', route: '/command-hub/governance/evaluations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.GOVERNANCE.EVALUATIONS', route: '/command-hub/governance/evaluations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Governance Evaluations', description: 'Safety evaluations and model behavior checks.', when_to_visit: 'When asking about evaluations, safety checks, or model evaluations.' } } },
 
   // ── Agents ──
-  { screen_id: 'DEVHUB.AGENTS.REGISTERED', route: '/command-hub/agents/registered-agents/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AGENTS.REGISTERED', route: '/command-hub/agents/registered-agents/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Registered Agents', description: 'Registry of all AI agents in the system.', when_to_visit: 'When asking about agents, registered agents, agent list, bots, or AI agents.' } } },
-  { screen_id: 'DEVHUB.AGENTS.PIPELINES', route: '/command-hub/agents/pipelines/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AGENTS.PIPELINES', route: '/command-hub/agents/pipelines/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Agent Pipelines', description: 'Agent execution pipelines and run history.', when_to_visit: 'When asking about agent pipelines, agent runs, or pipeline status.' } } },
-  { screen_id: 'DEVHUB.AGENTS.TELEMETRY', route: '/command-hub/agents/telemetry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AGENTS.TELEMETRY', route: '/command-hub/agents/telemetry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Agent Telemetry', description: 'Agent performance and telemetry data.', when_to_visit: 'When asking about agent telemetry, agent performance, or agent monitoring.' } } },
 
   // ── Autopilot ──
-  { screen_id: 'DEVHUB.AUTOPILOT.REGISTRY', route: '/command-hub/autopilot/registry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AUTOPILOT.REGISTRY', route: '/command-hub/autopilot/registry/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Autopilot Registry', description: 'Autopilot recommendation registry and configuration.', when_to_visit: 'When asking about autopilot, recommendations, autopilot registry, or AI suggestions.' } } },
-  { screen_id: 'DEVHUB.AUTOPILOT.RUNS', route: '/command-hub/autopilot/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AUTOPILOT.RUNS', route: '/command-hub/autopilot/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Autopilot Runs', description: 'Autopilot execution runs and history.', when_to_visit: 'When asking about autopilot runs, recommendation batches, or autopilot history.' } } },
-  { screen_id: 'DEVHUB.AUTOPILOT.ENGINE', route: '/command-hub/autopilot/engine/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.AUTOPILOT.ENGINE', route: '/command-hub/autopilot/engine/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Autopilot Engine', description: 'Autopilot engine configuration and analyzers.', when_to_visit: 'When asking about autopilot engine, analyzers, or recommendation generation.' } } },
 
   // ── OASIS ──
-  { screen_id: 'DEVHUB.OASIS.EVENTS', route: '/command-hub/oasis/events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OASIS.EVENTS', route: '/command-hub/oasis/events/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'OASIS Events', description: 'OASIS event stream — the immutable audit log.', when_to_visit: 'When asking about OASIS, OASIS events, event log, audit log, event stream, or system events.' } } },
-  { screen_id: 'DEVHUB.OASIS.VTID_LEDGER', route: '/command-hub/oasis/vtid-ledger/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.OASIS.VTID_LEDGER', route: '/command-hub/oasis/vtid-ledger/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'VTID Ledger', description: 'VTID lifecycle ledger with full event timeline.', when_to_visit: 'When asking about VTID ledger, task lifecycle, VTID timeline, or task history.' } } },
 
   // ── Databases ──
-  { screen_id: 'DEVHUB.DATABASES.SUPABASE', route: '/command-hub/databases/supabase/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DATABASES.SUPABASE', route: '/command-hub/databases/supabase/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Supabase', description: 'Supabase database management and queries.', when_to_visit: 'When asking about database, supabase, postgres, db, tables, or queries.' } } },
-  { screen_id: 'DEVHUB.DATABASES.VECTORS', route: '/command-hub/databases/vectors/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DATABASES.VECTORS', route: '/command-hub/databases/vectors/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Vectors', description: 'Vector database and embedding storage.', when_to_visit: 'When asking about vectors, embeddings, vector database, or pgvector.' } } },
 
   // ── Infrastructure ──
-  { screen_id: 'DEVHUB.INFRA.SERVICES', route: '/command-hub/infrastructure/services/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.SERVICES', route: '/command-hub/infrastructure/services/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Services', description: 'Cloud Run services and infrastructure status.', when_to_visit: 'When asking about services, infrastructure, service health, Cloud Run, or microservices.' } } },
-  { screen_id: 'DEVHUB.INFRA.HEALTH', route: '/command-hub/infrastructure/health/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.HEALTH', route: '/command-hub/infrastructure/health/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Infrastructure Health', description: 'Infrastructure health monitoring.', when_to_visit: 'When asking about infra health, system health, or health checks.' } } },
-  { screen_id: 'DEVHUB.INFRA.SELF_HEALING', route: '/command-hub/infrastructure/self-healing/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.SELF_HEALING', route: '/command-hub/infrastructure/self-healing/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Self-Healing', description: 'Self-healing pipeline status and repair history.', when_to_visit: 'When asking about self-healing, auto-repair, healing pipeline, or self-heal status.' } } },
-  { screen_id: 'DEVHUB.INFRA.DEPLOYMENTS', route: '/command-hub/infrastructure/deployments/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.DEPLOYMENTS', route: '/command-hub/infrastructure/deployments/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Deployments', description: 'Deployment history and release management.', when_to_visit: 'When asking about deployments, deploy history, releases, deploy status, or what was deployed.' } } },
-  { screen_id: 'DEVHUB.INFRA.LOGS', route: '/command-hub/infrastructure/logs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.LOGS', route: '/command-hub/infrastructure/logs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Logs', description: 'Application logs and log viewer.', when_to_visit: 'When asking about logs, log viewer, application logs, or error logs.' } } },
-  { screen_id: 'DEVHUB.INFRA.CONFIG', route: '/command-hub/infrastructure/config/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INFRA.CONFIG', route: '/command-hub/infrastructure/config/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Config', description: 'Infrastructure configuration and environment variables.', when_to_visit: 'When asking about config, configuration, env vars, or environment.' } } },
 
   // ── Security ──
-  { screen_id: 'DEVHUB.SECURITY.KEYS_SECRETS', route: '/command-hub/security-dev/keys-secrets/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.SECURITY.KEYS_SECRETS', route: '/command-hub/security-dev/keys-secrets/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Keys & Secrets', description: 'API keys, secrets, and credential management.', when_to_visit: 'When asking about secrets, API keys, credentials, keys, or key management.' } } },
-  { screen_id: 'DEVHUB.SECURITY.AUDIT_LOG', route: '/command-hub/security-dev/audit-log/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.SECURITY.AUDIT_LOG', route: '/command-hub/security-dev/audit-log/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Audit Log', description: 'Security audit trail and access logs.', when_to_visit: 'When asking about audit log, security audit, access log, or who did what.' } } },
-  { screen_id: 'DEVHUB.SECURITY.RLS', route: '/command-hub/security-dev/rls-access/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.SECURITY.RLS', route: '/command-hub/security-dev/rls-access/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'RLS & Access', description: 'Row-level security and data access policies.', when_to_visit: 'When asking about RLS, row-level security, data access, or access policies.' } } },
 
   // ── Integrations & Tools ──
-  { screen_id: 'DEVHUB.INTEGRATIONS.MCP', route: '/command-hub/integrations-tools/mcp-connectors/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTEGRATIONS.MCP', route: '/command-hub/integrations-tools/mcp-connectors/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'MCP & CLI', description: 'MCP connectors and CLI tools.', when_to_visit: 'When asking about MCP, CLI, connectors, integrations, or MCP tools.' } } },
-  { screen_id: 'DEVHUB.INTEGRATIONS.LLM_PROVIDERS', route: '/command-hub/integrations-tools/llm-providers/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTEGRATIONS.LLM_PROVIDERS', route: '/command-hub/integrations-tools/llm-providers/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'LLM Providers', description: 'LLM provider configuration and API keys.', when_to_visit: 'When asking about LLM providers, Gemini, Claude, OpenAI, or model providers.' } } },
-  { screen_id: 'DEVHUB.INTEGRATIONS.APIS', route: '/command-hub/integrations-tools/apis/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTEGRATIONS.APIS', route: '/command-hub/integrations-tools/apis/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'APIs', description: 'API inventory and endpoint documentation.', when_to_visit: 'When asking about APIs, endpoints, API list, or API documentation.' } } },
 
   // ── Diagnostics ──
-  { screen_id: 'DEVHUB.DIAGNOSTICS.HEALTH_CHECKS', route: '/command-hub/diagnostics/health-checks/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DIAGNOSTICS.HEALTH_CHECKS', route: '/command-hub/diagnostics/health-checks/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Health Checks', description: 'Endpoint health checks and uptime monitoring.', when_to_visit: 'When asking about health checks, uptime, endpoint health, or service availability.' } } },
-  { screen_id: 'DEVHUB.DIAGNOSTICS.LATENCY', route: '/command-hub/diagnostics/latency/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DIAGNOSTICS.LATENCY', route: '/command-hub/diagnostics/latency/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Latency', description: 'Latency monitoring and response time analysis.', when_to_visit: 'When asking about latency, response time, slow endpoints, or performance issues.' } } },
-  { screen_id: 'DEVHUB.DIAGNOSTICS.VOICE_LAB', route: '/command-hub/diagnostics/voice-lab/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DIAGNOSTICS.VOICE_LAB', route: '/command-hub/diagnostics/voice-lab/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Voice LAB', description: 'ORB voice session diagnostics and testing.', when_to_visit: 'When asking about voice lab, voice testing, voice debug, ORB diagnostics, voice sessions, or orb lab.' } } },
-  { screen_id: 'DEVHUB.DIAGNOSTICS.DEBUG_PANEL', route: '/command-hub/diagnostics/debug-panel/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DIAGNOSTICS.DEBUG_PANEL', route: '/command-hub/diagnostics/debug-panel/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Debug Panel', description: 'Debug panel for troubleshooting.', when_to_visit: 'When asking about debug, debug panel, troubleshoot, or debugging.' } } },
 
   // ── Models & Evaluations ──
-  { screen_id: 'DEVHUB.MODELS.PLAYGROUND', route: '/command-hub/models-evaluations/playground/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.MODELS.PLAYGROUND', route: '/command-hub/models-evaluations/playground/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Playground', description: 'Model playground for testing LLM prompts.', when_to_visit: 'When asking about playground, test model, LLM test, prompt testing, or model playground.' } } },
-  { screen_id: 'DEVHUB.MODELS.EVALUATIONS', route: '/command-hub/models-evaluations/evaluations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.MODELS.EVALUATIONS', route: '/command-hub/models-evaluations/evaluations/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Model Evaluations', description: 'LLM evaluation results and benchmarks.', when_to_visit: 'When asking about model evaluations, benchmarks, model quality, or eval results.' } } },
 
   // ── Testing & QA ──
-  { screen_id: 'DEVHUB.TESTING.CI_REPORTS', route: '/command-hub/testing-qa/ci-reports/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.TESTING.CI_REPORTS', route: '/command-hub/testing-qa/ci-reports/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'CI Reports', description: 'CI/CD pipeline reports and build status.', when_to_visit: 'When asking about CI, build status, pipeline, CI reports, test results, or build failures.' } } },
-  { screen_id: 'DEVHUB.TESTING.E2E', route: '/command-hub/testing-qa/e2e/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.TESTING.E2E', route: '/command-hub/testing-qa/e2e/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'E2E Tests', description: 'End-to-end test results and playwright tests.', when_to_visit: 'When asking about E2E tests, end-to-end tests, playwright, or integration testing.' } } },
 
   // ── Intelligence & Memory ──
-  { screen_id: 'DEVHUB.INTELLIGENCE.MEMORY_VAULT', route: '/command-hub/intelligence-memory-dev/memory-vault/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTELLIGENCE.MEMORY_VAULT', route: '/command-hub/intelligence-memory-dev/memory-vault/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Memory Vault', description: 'Memory items and fact storage inspector.', when_to_visit: 'When asking about memory vault, memory dev, stored memories, or memory inspector.' } } },
-  { screen_id: 'DEVHUB.INTELLIGENCE.KNOWLEDGE_GRAPH', route: '/command-hub/intelligence-memory-dev/knowledge-graph/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTELLIGENCE.KNOWLEDGE_GRAPH', route: '/command-hub/intelligence-memory-dev/knowledge-graph/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Knowledge Graph', description: 'Knowledge graph visualization and cognee data.', when_to_visit: 'When asking about knowledge graph, cognee, graph visualization, or entity relationships.' } } },
-  { screen_id: 'DEVHUB.INTELLIGENCE.EMBEDDINGS', route: '/command-hub/intelligence-memory-dev/embeddings/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.INTELLIGENCE.EMBEDDINGS', route: '/command-hub/intelligence-memory-dev/embeddings/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Embeddings', description: 'Embedding vectors and similarity search tools.', when_to_visit: 'When asking about embeddings, vectors, similarity search, or embedding inspector.' } } },
 
   // ── Docs ──
-  { screen_id: 'DEVHUB.DOCS.ARCHITECTURE', route: '/command-hub/docs/architecture/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DOCS.ARCHITECTURE', route: '/command-hub/docs/architecture/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Architecture', description: 'System architecture documentation.', when_to_visit: 'When asking about architecture, docs, documentation, system design, or architecture docs.' } } },
-  { screen_id: 'DEVHUB.DOCS.API_INVENTORY', route: '/command-hub/docs/api-inventory/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DOCS.API_INVENTORY', route: '/command-hub/docs/api-inventory/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'API Inventory', description: 'Complete API endpoint inventory.', when_to_visit: 'When asking about API inventory, all APIs, endpoint list, or API catalog.' } } },
-  { screen_id: 'DEVHUB.DOCS.DATABASE_SCHEMAS', route: '/command-hub/docs/database-schemas/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.DOCS.DATABASE_SCHEMAS', route: '/command-hub/docs/database-schemas/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Database Schemas', description: 'Database table schemas and documentation.', when_to_visit: 'When asking about database schemas, table structure, or schema docs.' } } },
 
   // ── Workflows ──
-  { screen_id: 'DEVHUB.WORKFLOWS.LIST', route: '/command-hub/workflows/workflow-list/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.WORKFLOWS.LIST', route: '/command-hub/workflows/workflow-list/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Workflows', description: 'Automation workflows and task pipelines.', when_to_visit: 'When asking about workflows, automations, workflow list, or task pipelines.' } } },
-  { screen_id: 'DEVHUB.WORKFLOWS.TRIGGERS', route: '/command-hub/workflows/triggers/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.WORKFLOWS.TRIGGERS', route: '/command-hub/workflows/triggers/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Workflow Triggers', description: 'Workflow trigger configuration.', when_to_visit: 'When asking about triggers, workflow triggers, or event triggers.' } } },
-  { screen_id: 'DEVHUB.WORKFLOWS.SCHEDULES', route: '/command-hub/workflows/schedules/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'admin', 'DEV'],
+  { screen_id: 'DEVHUB.WORKFLOWS.SCHEDULES', route: '/command-hub/workflows/schedules/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Schedules', description: 'Scheduled jobs and cron tasks.', when_to_visit: 'When asking about schedules, cron jobs, scheduled tasks, or timed automation.' } } },
 ];
 
@@ -1657,10 +1676,10 @@ export function searchCatalog(
     if (opts.category && entry.category !== opts.category) continue;
     if (opts.anonymous_only && !entry.anonymous_safe) continue;
     if (excluded.has(entry.route)) continue;
-    // VITANA-BRAIN: Role-gated entries — skip if caller doesn't have required role
-    if (entry.allowed_roles && entry.allowed_roles.length > 0) {
-      if (!opts.role || !entry.allowed_roles.includes(opts.role)) continue;
-    }
+    // Surface scoping: authenticated callers may only see entries on their
+    // surface. Anonymous callers skip the role gate — anonymous_safe carries
+    // the access decision for them.
+    if (opts.role && !resolveEffectiveRoles(entry).includes(opts.role)) continue;
 
     const content = getContent(entry, lang);
     const titleLower = content.title.toLowerCase();

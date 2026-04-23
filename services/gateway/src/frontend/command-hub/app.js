@@ -34662,9 +34662,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     state.orb.overlayVisible = false;
                     renderApp();
                 },
-                // VITANA-BRAIN: Handle ORB navigation directives with SPA routing
+                // VITANA-BRAIN: Handle ORB navigation directives with SPA routing.
+                // Surface scoping: Command Hub serves /command-hub/* only. If the
+                // Navigator ever returns a non-Command-Hub route (it shouldn't —
+                // the backend is surface-scoped — but belt-and-suspenders against
+                // catalog drift), refuse instead of falling back to the default
+                // tab or teleporting the user out to the community app.
                 onNavigationRequest: function (route, ctx) {
                     console.log('[VTOrb-Nav] Navigation requested: ' + route + ' (screen=' + (ctx && ctx.screen_id || 'unknown') + ')');
+                    var pathOnly = route ? route.split('?')[0] : '';
+                    if (!pathOnly || pathOnly.indexOf('/command-hub') !== 0) {
+                        console.warn('[VTOrb-Nav] Refused cross-surface route (Command Hub is developer-only): ' + route);
+                        return;
+                    }
                     var parsed = getRouteFromPath(route);
                     if (parsed) {
                         handleModuleClick(parsed.section);
@@ -34672,10 +34682,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             handleTabClick(parsed.tab);
                         }
                         console.log('[VTOrb-Nav] SPA navigated to ' + parsed.section + '/' + parsed.tab);
-                    } else {
-                        // Route not in Command Hub — full page redirect (community route etc.)
-                        console.log('[VTOrb-Nav] Route not in Command Hub, full redirect: ' + route);
-                        window.location.href = route;
                     }
                 }
             });
