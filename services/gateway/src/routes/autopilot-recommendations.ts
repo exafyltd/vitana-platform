@@ -166,7 +166,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -230,7 +230,7 @@ async function queryRecommendationsFallback(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
