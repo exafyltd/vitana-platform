@@ -930,10 +930,42 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 ---
 
+## 17. DESIGN SYSTEM (DESIGN.md is authoritative)
+
+**`DESIGN.md` at repo root is the single source of truth for every UI decision across Vitana.** Read it before writing or refactoring any UI — both the Command Hub (Track A) and the community app (Track B, via the mirrored `vitana-v1/DESIGN.md`).
+
+### Binding rules
+
+1. **Reuse before create.** Every token, class, component, and screen pattern documented in `DESIGN.md` already exists in the codebase. Use them.
+2. **Never introduce a new** CSS variable, class name, component file, font size, spacing value, radius, shadow, or variant **without updating `DESIGN.md` first** — and `DESIGN.md` only documents what exists.
+3. **Cite on deviation.** If a change must diverge from `DESIGN.md`, the PR description must cite the exact `§-number` explaining why. One-off exceptions get a `/* design-exception: §… */` comment at the site.
+4. **Prefer implementation over recommendation.** Pick the canonical template screen listed in `DESIGN.md §A.9` (Command Hub) or `§B.7` (vitana-v1), copy it, and ship.
+5. **Preserve cross-surface consistency.** Command Hub, community, admin, staff, professional, patient, wallet, live-room — all follow `DESIGN.md`. Do not fork per-role styling.
+
+### Command Hub specifics (Track A — this repo)
+
+- Only the CSS custom properties at `styles.css:1–45` are permitted. Do not hardcode hex colors. Do not introduce new `--*` variables.
+- **Deprecated — removed from styles.css**: `.header-pill--operator`, `.header-button--operator` (SPEC-01 marked them DO NOT USE; this PR removes them).
+- **Never** write `style="font-size:NNpx"`, `style.cssText = "…padding:NNpx…"`, or inline font/padding values. Classes own visual properties.
+- **Four canonical templates** every new screen must copy: Task Card (`styles.css:483–558`), Header Pill (`styles.css:1074–1220`), Metric Card (`styles.css:16758–16769`), Status Live (`styles.css:128–141`).
+- **Parallel token collision**: `--card-bg`, `--text-primary`, `--text-muted`, `--accent-color`, `--border-color` are now aliased at `:root` to the canonical `--color-*` tokens. Do not redeclare them. Prefer the canonical names in new code.
+- **Button→toast ordering rule** still applies (see memory): update state / re-enable button BEFORE calling `showToast()` or DOM refs detach.
+
+### vitana-v1 specifics (Track B — sibling repo)
+
+The full contract lives at `/home/dstev/vitana-v1/DESIGN.md` + `/home/dstev/vitana-v1/CLAUDE.md`. When working there, every non-auth screen must render the MANDATORY SCREEN CONTRACT (`AppLayout → SEO → SubNavigation → StandardHeader → UtilityActionButton → [SplitBar] → content`, `max-w-7xl p-6 min-h-screen pb-24`). See `DESIGN.md §B.6`.
+
+### Smoke test for compliance
+
+On any UI review: if a diff introduces a raw hex color, a new CSS class, a new `--*` variable, an inline `style` with pixel values, or a primitive that duplicates something under `services/gateway/src/frontend/command-hub/` (or `vitana-v1/src/components/ui/`) — reject and reference the DESIGN.md §-number it violates.
+
+---
+
 ## CHANGE LOG
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-04-22 | Added Section 17 (Design System / DESIGN.md authoritative) — SPEC-01 class deletions + token alias | SPEC-01 |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |

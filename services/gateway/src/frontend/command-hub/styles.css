@@ -34,6 +34,15 @@
 
   --overview-panel-padding: 0.6rem 0.7rem;
   --overview-panel-radius: 8px;
+
+  /* Aliases for legacy token names used by intelligence/diagnostics panels.
+     See DESIGN.md §A.10 — these map the old parallel token set onto the
+     canonical root palette so color drift resolves without mass-edit. */
+  --card-bg: var(--color-sidebar-bg);
+  --text-primary: var(--color-text-primary);
+  --text-muted: var(--color-text-secondary);
+  --accent-color: var(--color-accent);
+  --border-color: var(--color-border);
 }
 
 * {
@@ -1209,19 +1218,6 @@ body {
   border-color: var(--color-accent-hover);
 }
 
-/* SPEC-01 DEPRECATED: Operator pill (orange accent) - Now uses header-pill--neutral */
-/* DO NOT USE - Violates SPEC-01 Global Top Navigation Standard */
-.header-pill--operator {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: var(--color-operator);
-}
-
-.header-pill--operator:hover {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.5);
-}
-
 /* Primary button style (Operator, Publish) */
 .header-button--primary {
   background: var(--color-accent);
@@ -1233,18 +1229,6 @@ body {
 .header-button--primary:hover {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
-}
-
-/* Operator button variant */
-.header-button--operator {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: var(--color-operator);
-}
-
-.header-button--operator:hover {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.5);
 }
 
 /* Publish button - slightly less dominant than Operator */
