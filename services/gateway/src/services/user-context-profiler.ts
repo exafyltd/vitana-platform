@@ -226,51 +226,58 @@ async function fetchPreferences(client: SupabaseClient, userId: string): Promise
 }
 
 // =============================================================================
-// Vitana Index (BOOTSTRAP-ORB-INDEX-AWARENESS round 2)
+// Vitana Index — canonical 5-pillar model (BOOTSTRAP-ORB-INDEX-AWARENESS-R4)
 // =============================================================================
-// Real schema, confirmed against migrations:
-//   vitana_index_scores: (tenant_id, user_id, date, score_total,
-//                         score_physical, score_mental, score_nutritional,
-//                         score_social, score_environmental, score_prosperity)
-// Tier bands (derived deterministically from score_total, matches the
-// platform's published bands):
-//   Starting   0-299
-//   Developing 300-499
-//   Fair       500-599
-//   Good       600-749
-//   Great      750-899
-//   Excellent  900-999
-// Default 90-day journey goal: Good (600+).
+// Pillars: nutrition, hydration, exercise, sleep, mental  (each 0-200)
+// Schema (post 5pillar-cleanup migration 20260423110000):
+//   vitana_index_scores: tenant_id, user_id, date, score_total,
+//     score_nutrition, score_hydration, score_exercise, score_sleep, score_mental,
+//     model_version, feature_inputs JSONB (balance_factor, ratio, raw_sum, subscores),
+//     confidence, updated_at
+// Tier ladder + balance state: see services/gateway/src/lib/vitana-pillars.ts.
+// Default 90-day framing: aspirational, not a gate — "Really good" at 600+.
 // =============================================================================
 
-export interface VitanaIndexSnapshot {
-  total: number;
-  tier: string;
-  pillars: {
-    physical: number;
-    mental: number;
-    nutritional: number;
-    social: number;
-    environmental: number;
-    prosperity: number;
-  };
-  weakest_pillar: { name: string; score: number };
-  strongest_pillar: { name: string; score: number };
-  trend_7d: number;          // delta vs 7 days ago (0 if no earlier row)
-  history_7d: number[];      // [oldest, ..., latest] up to 7 entries
-  goal_target: number;       // 90-day default
-  goal_gap: number;          // target - total (positive = still needed, negative = over)
-  last_computed: string;     // ISO date
-  last_movement?: { pillar: string; delta: number; reason?: string }; // most recent index.recomputed event
+import {
+  PILLAR_KEYS,
+  type PillarKey,
+  tierForScore,
+  describeBalance,
+  REALLY_GOOD_THRESHOLD,
+} from '../lib/vitana-pillars';
+
+/**
+ * Sub-score breakdown per pillar. Matches the v3 compute RPC output shape
+ * in feature_inputs.subscores. All four components are caps, not live
+ * values — the RPC clamps each. We expose them so voice can explain WHY
+ * a pillar is low ("mostly baseline — connect a tracker to climb").
+ */
+export interface PillarSubscores {
+  baseline: number;     // 0-40, from vitana_index_baseline_survey
+  completions: number;  // 0-80, from calendar_events completions × tag map
+  data: number;         // 0-40, from health_features_daily
+  streak: number;       // 0-40, consecutive-day streak for the pillar
 }
 
-function scoreTier(total: number): string {
-  if (total >= 900) return 'Excellent';
-  if (total >= 750) return 'Great';
-  if (total >= 600) return 'Good';
-  if (total >= 500) return 'Fair';
-  if (total >= 300) return 'Developing';
-  return 'Starting';
+export interface VitanaIndexSnapshot {
+  total: number;                                     // 0-999
+  tier: string;                                      // Starting / Early / ... / Elite
+  tier_framing: string;                              // one-line voice-friendly description
+  pillars: Record<PillarKey, number>;                // each 0-200
+  weakest_pillar: { name: PillarKey; score: number };
+  strongest_pillar: { name: PillarKey; score: number };
+  balance_factor: number;                            // 0.7-1.0, from feature_inputs
+  balance_label: string;                             // 'well balanced' / 'off-balance' / ...
+  balance_hint: string;                              // assistant-facing guidance
+  subscores: Partial<Record<PillarKey, PillarSubscores>>;  // per-pillar if available
+  trend_7d: number;                                  // delta vs 7 days ago
+  history_7d: number[];                              // [oldest...latest], up to 7 entries
+  goal_target: number;                               // 600 (Really good entry)
+  points_to_really_good: number;                     // max(0, 600 - total); aspirational only
+  last_computed: string;                             // ISO date
+  model_version?: string;                            // e.g. 'v3-5pillar'
+  confidence?: number;                               // 0-1, from the RPC
+  last_movement?: { pillar: string; delta: number; reason?: string };
 }
 
 /**
@@ -288,12 +295,34 @@ export type VitanaIndexFetchResult =
   | { state: 'no_score_baseline_exists' }     // survey done, compute failed (#839 state)
   | { state: 'not_set_up' };                   // neither row exists
 
+const INDEX_SELECT_COLUMNS =
+  'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental, model_version, feature_inputs, confidence';
+
+function parseSubscoresFromFeatureInputs(featureInputs: any): Partial<Record<PillarKey, PillarSubscores>> {
+  const out: Partial<Record<PillarKey, PillarSubscores>> = {};
+  if (!featureInputs || typeof featureInputs !== 'object') return out;
+  const s = featureInputs.subscores;
+  if (!s || typeof s !== 'object') return out;
+  for (const pillar of PILLAR_KEYS) {
+    const raw = s[pillar];
+    if (raw && typeof raw === 'object') {
+      out[pillar] = {
+        baseline: Number(raw.baseline) || 0,
+        completions: Number(raw.completions) || 0,
+        data: Number(raw.data) || 0,
+        streak: Number(raw.streak) || 0,
+      };
+    }
+  }
+  return out;
+}
+
 async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexFetchResult> {
   // 1) Try last 7 days first (for trend math).
   const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { data: recentData, error: recentErr } = await client
     .from('vitana_index_scores')
-    .select('date, score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental, score_prosperity')
+    .select(INDEX_SELECT_COLUMNS)
     .eq('user_id', userId)
     .gte('date', sinceIso)
     .order('date', { ascending: true })
@@ -307,7 +336,7 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
     //    we still want to report what they have instead of saying nothing.
     const { data: latestData } = await client
       .from('vitana_index_scores')
-      .select('date, score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental, score_prosperity')
+      .select(INDEX_SELECT_COLUMNS)
       .eq('user_id', userId)
       .order('date', { ascending: false })
       .limit(1);
@@ -315,8 +344,8 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   }
 
   if (!rows || rows.length === 0) {
-    // 3) No score row at all. Detect intermediate state (baseline done, compute failed).
-    //    Matches BOOTSTRAP-VITANA-INDEX-STATUS (#839): survey row can exist without a score.
+    // 3) No score row at all. Distinguish "compute failed after baseline" from
+    //    "never set up" so voice can redirect honestly (BOOTSTRAP-VITANA-INDEX-STATUS #839).
     const { data: surveyData } = await client
       .from('vitana_index_baseline_survey')
       .select('user_id')
@@ -331,19 +360,24 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   const earliest = rows[0];
   const history_7d = rows.map(r => Number(r.score_total) || 0);
   const total = Number(latest.score_total) || 0;
-  const pillars = {
-    physical: Number(latest.score_physical) || 0,
-    mental: Number(latest.score_mental) || 0,
-    nutritional: Number(latest.score_nutritional) || 0,
-    social: Number(latest.score_social) || 0,
-    environmental: Number(latest.score_environmental) || 0,
-    prosperity: Number(latest.score_prosperity) || 0,
+  const pillars: Record<PillarKey, number> = {
+    nutrition: Number(latest.score_nutrition) || 0,
+    hydration: Number(latest.score_hydration) || 0,
+    exercise:  Number(latest.score_exercise)  || 0,
+    sleep:     Number(latest.score_sleep)     || 0,
+    mental:    Number(latest.score_mental)    || 0,
   };
-  const pillarEntries = Object.entries(pillars) as [keyof typeof pillars, number][];
+  const pillarEntries = PILLAR_KEYS.map(k => [k, pillars[k]] as [PillarKey, number]);
   pillarEntries.sort((a, b) => a[1] - b[1]);
   const weakest_pillar = { name: pillarEntries[0][0], score: pillarEntries[0][1] };
   const strongest_pillar = { name: pillarEntries[pillarEntries.length - 1][0], score: pillarEntries[pillarEntries.length - 1][1] };
   const trend_7d = rows.length >= 2 ? total - (Number(earliest.score_total) || 0) : 0;
+
+  const featureInputs = (latest.feature_inputs as any) || {};
+  const balanceFactor = typeof featureInputs.balance_factor === 'number' ? featureInputs.balance_factor : 1.0;
+  const balance = describeBalance(balanceFactor);
+  const subscores = parseSubscoresFromFeatureInputs(featureInputs);
+  const tier = tierForScore(total);
 
   let last_movement: VitanaIndexSnapshot['last_movement'] | undefined;
   try {
@@ -367,15 +401,22 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
     state: 'ok',
     snapshot: {
       total,
-      tier: scoreTier(total),
+      tier: tier.name,
+      tier_framing: tier.framing,
       pillars,
       weakest_pillar,
       strongest_pillar,
+      balance_factor: balanceFactor,
+      balance_label: balance.label,
+      balance_hint: balance.assistantHint,
+      subscores,
       trend_7d,
       history_7d,
-      goal_target: 600,
-      goal_gap: 600 - total,
+      goal_target: REALLY_GOOD_THRESHOLD,
+      points_to_really_good: Math.max(0, REALLY_GOOD_THRESHOLD - total),
       last_computed: latest.date,
+      model_version: latest.model_version ?? undefined,
+      confidence: typeof latest.confidence === 'number' ? latest.confidence : undefined,
       last_movement,
     },
   };
@@ -583,13 +624,46 @@ function formatPillarName(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+/**
+ * Pick the dominant sub-score category for a pillar so voice can explain
+ * WHY the pillar sits where it does ("mostly baseline — connect a tracker
+ * to climb", "strong streak — keep going").
+ */
+function dominantSubscoreHint(sub: PillarSubscores | undefined): string | null {
+  if (!sub) return null;
+  const parts: Array<[string, number]> = [
+    ['baseline', sub.baseline],
+    ['completions', sub.completions],
+    ['data', sub.data],
+    ['streak', sub.streak],
+  ];
+  const total = parts.reduce((a, [, n]) => a + n, 0);
+  if (total <= 0) return 'no signal yet';
+  parts.sort((a, b) => b[1] - a[1]);
+  const [top, topVal] = parts[0];
+  const share = topVal / total;
+  if (top === 'baseline' && share >= 0.6) {
+    return 'mostly survey baseline — connected data or a tracker would lift it further';
+  }
+  if (top === 'completions' && share >= 0.4) {
+    return 'completed actions are carrying it — keep the rhythm';
+  }
+  if (top === 'data' && share >= 0.4) {
+    return 'connected data is feeding it — real signal';
+  }
+  if (top === 'streak' && share >= 0.3) {
+    return 'streak is doing the work — the day-over-day consistency compounds';
+  }
+  return null;
+}
+
 function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndexFetchResult | null): string {
   const lines: string[] = [];
 
   // Vitana Index — ALWAYS emit something so the voice model has a quotable
-  // line. Three paths: real score, baseline-but-compute-failed, not set up.
-  // BOOTSTRAP-ORB-INDEX-AWARENESS-R3: silence was the old bug — an empty
-  // section meant the Assistant had no number AND no guidance.
+  // line. Three states: `ok`, `no_score_baseline_exists`, `not_set_up`.
+  // R3 established the never-silent property; R4 carries it over to the
+  // 5-pillar model with balance + sub-score transparency.
   if (vitanaResult) {
     if (vitanaResult.state === 'ok') {
       const vitana = vitanaResult.snapshot;
@@ -598,25 +672,31 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
         : vitana.trend_7d < 0
           ? `trending down ${vitana.trend_7d} over 7 days`
           : 'stable over 7 days';
-      lines.push(`- Vitana Index: ${vitana.total} / 999 (${vitana.tier} tier), ${trendStr}.`);
+      lines.push(`- Vitana Index: ${vitana.total} / 999 (${vitana.tier} tier — ${vitana.tier_framing}); ${trendStr}.`);
 
       const p = vitana.pillars;
-      const pillarLines = [
-        `Physical ${p.physical}/200`,
-        `Mental ${p.mental}/200`,
-        `Nutritional ${p.nutritional}/200`,
-        `Social ${p.social}/200`,
-        `Environmental ${p.environmental}/200`,
-        `Prosperity ${p.prosperity}/200`,
-      ];
-      lines.push(`- Pillars: ${pillarLines.join(', ')}.`);
-      lines.push(`- Weakest pillar: ${formatPillarName(vitana.weakest_pillar.name)} (${vitana.weakest_pillar.score}/200) — this is where improvements move the Index most.`);
+      const pillarLines = PILLAR_KEYS.map(k => `${formatPillarName(k)} ${p[k]}/200`);
+      lines.push(`- Pillars (5 canonical, max 200 each): ${pillarLines.join(', ')}.`);
+
+      // Weakest/strongest with sub-score explanation so voice can name the lever.
+      const weakestSub = dominantSubscoreHint(vitana.subscores[vitana.weakest_pillar.name]);
+      const weakestSuffix = weakestSub ? ` — ${weakestSub}` : '';
+      lines.push(`- Weakest pillar: ${formatPillarName(vitana.weakest_pillar.name)} (${vitana.weakest_pillar.score}/200)${weakestSuffix}.`);
       lines.push(`- Strongest pillar: ${formatPillarName(vitana.strongest_pillar.name)} (${vitana.strongest_pillar.score}/200).`);
 
-      if (vitana.goal_gap > 0) {
-        lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Currently ${vitana.goal_gap} points below target.`);
+      // Balance factor — a first-class signal. The RPC applies it as a
+      // multiplicative dampener, so when the factor is < 1.0 the dampener
+      // is suppressing the total more than the weakest single pillar does.
+      lines.push(`- Balance: ${vitana.balance_factor.toFixed(2)}× (${vitana.balance_label}) — ${vitana.balance_hint}`);
+
+      // Aspirational framing, NOT a gate. "Really good" starts at 600; we
+      // surface the gap as progress signal, not as pass/fail.
+      if (vitana.points_to_really_good > 0) {
+        lines.push(`- Really-good band (600+) entry: ${vitana.points_to_really_good} points away. Keep building steadily — do not force the ceiling.`);
+      } else if (vitana.total >= 800) {
+        lines.push(`- Elite band (800+): sustained excellence territory. Maintenance, not acceleration.`);
       } else {
-        lines.push(`- 90-day goal: reach Good tier (${vitana.goal_target}). Already ${Math.abs(vitana.goal_gap)} points above target — keep the momentum.`);
+        lines.push(`- Really-good band (600+): already inside. The climb from here is slow and earned.`);
       }
 
       if (vitana.last_movement) {
@@ -625,13 +705,14 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
         const reason = m.reason ? ` from "${m.reason}"` : '';
         lines.push(`- Last movement: ${sign}${m.delta} ${formatPillarName(m.pillar)}${reason}.`);
       }
+
+      if (vitana.model_version) {
+        lines.push(`- Model: ${vitana.model_version}${typeof vitana.confidence === 'number' ? `, confidence ${vitana.confidence.toFixed(2)}` : ''}.`);
+      }
     } else if (vitanaResult.state === 'no_score_baseline_exists') {
-      // BOOTSTRAP-VITANA-INDEX-STATUS (#839): baseline survey row exists
-      // but vitana_index_scores has no row (compute RPC failed earlier).
-      // Tell the model so it can guide the user to retry.
-      lines.push('- Vitana Index status: SETUP INCOMPLETE. The baseline survey was submitted, but the score did not compute (earlier compute RPC error). The user needs to retry — the Health screen should re-prompt the baseline modal. Do NOT fabricate an Index number.');
+      lines.push('- Vitana Index status: SETUP INCOMPLETE. The 5-pillar baseline survey was submitted, but the score did not compute (earlier compute RPC error). The user needs to retry — the Health screen should re-prompt the baseline modal. Do NOT fabricate an Index number.');
     } else if (vitanaResult.state === 'not_set_up') {
-      lines.push('- Vitana Index status: NOT SET UP YET. The user has not completed the baseline survey. Direct them to the Health screen to take it — that is the ONLY way the Index gets a first value. Do NOT fabricate an Index number.');
+      lines.push('- Vitana Index status: NOT SET UP YET. The user has not completed the 5-question baseline survey (Nutrition / Hydration / Exercise / Sleep / Mental). Direct them to the Health screen — that survey is the only way the Index gets its first value. Do NOT fabricate an Index number.');
     }
   }
 

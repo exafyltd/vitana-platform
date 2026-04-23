@@ -1890,13 +1890,16 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['question'],
           },
         },
-        // ─── BOOTSTRAP-ORB-INDEX-AWARENESS round 2 — Vitana Index tools ───
+        // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
         {
           name: 'get_vitana_index',
           description: [
-            'Return the user\'s current Vitana Index with full breakdown:',
-            'total score (0-999), tier, all 6 pillars, 7-day trend, weakest',
-            'pillar, 90-day goal gap.',
+            'Return the user\'s current Vitana Index with the canonical 5-pillar',
+            'breakdown: total score (0-999), tier (Starting / Early / Building /',
+            'Strong / Really good / Elite), all 5 pillars (Nutrition, Hydration,',
+            'Exercise, Sleep, Mental — each 0-200), 7-day trend, weakest pillar',
+            'with sub-score explanation (baseline / completions / connected data /',
+            'streak), balance factor, and aspirational distance to Really-good.',
             '',
             'CALL THIS WHEN the user asks:',
             '  - "What is my Vitana Index?" / "Was ist mein Vitana Index?"',
@@ -1919,8 +1922,9 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
           name: 'get_index_improvement_suggestions',
           description: [
             'Return 2-3 concrete actions the user can take to improve their',
-            'Vitana Index, ranked by predicted contribution. Each suggestion',
-            'includes a title, the pillar(s) it lifts, and a magnitude.',
+            'Vitana Index, ranked by predicted contribution to a specific pillar.',
+            'Each suggestion includes a title, the pillar(s) it lifts, and a',
+            'magnitude from the recommendation\'s contribution_vector.',
             '',
             'CALL THIS WHEN the user asks:',
             '  - "How can I improve my Index?" / "Wie verbessere ich meinen Index?"',
@@ -1928,9 +1932,11 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             '  - "What should I focus on?" / "Worauf soll ich mich konzentrieren?"',
             '  - "Which pillar needs work?" / "Welche Säule brauche ich?"',
             '',
-            'If the user names a pillar ("help me with Mental"), pass the',
-            'pillar argument. Otherwise omit it and the tool will target the',
-            'user\'s weakest pillar automatically.',
+            'If the user names a pillar ("help me with Sleep"), pass the pillar',
+            'argument. Otherwise omit it and the tool targets the weakest pillar',
+            'automatically — OR, when the balance factor is below 0.9, targets',
+            'the imbalance itself (lifting the weakest pillar moves the balance',
+            'dampener, which moves the whole score).',
             '',
             'Speak the suggestions naturally — "a ten-minute morning meditation',
             'would lift Mental by three points" — never read raw JSON.',
@@ -1940,7 +1946,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             properties: {
               pillar: {
                 type: 'string',
-                enum: ['physical', 'mental', 'nutritional', 'social', 'environmental', 'prosperity'],
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
                 description: 'Optional pillar to focus on. Omit to target the weakest pillar automatically.',
               },
               limit: {
@@ -1967,18 +1973,19 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             'This is AUTONOMOUS by design — you do NOT need per-event',
             'confirmation. Announce clearly in voice what you just scheduled',
             '("I\'ve added three movement sessions this week and two',
-            'mindfulness blocks next week to lift your Mental pillar").',
+            'mindfulness blocks next week to lift your Sleep pillar").',
             '',
-            'If the user names a pillar, pass it. Otherwise the tool targets',
-            'the weakest pillar automatically. Days defaults to 14 (2 weeks),',
-            'actions_per_week defaults to 3.',
+            'If the user names a pillar (one of nutrition / hydration / exercise',
+            '/ sleep / mental), pass it. Otherwise the tool targets the weakest',
+            'pillar automatically. Days defaults to 14 (2 weeks), actions_per_week',
+            'defaults to 3.',
           ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
               pillar: {
                 type: 'string',
-                enum: ['physical', 'mental', 'nutritional', 'social', 'environmental', 'prosperity'],
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
                 description: 'Optional pillar to focus on. Omit to target weakest automatically.',
               },
               days: {
@@ -3689,13 +3696,20 @@ async function executeLiveApiToolInner(
             result: JSON.stringify({
               total: snap.total,
               tier: snap.tier,
-              pillars: snap.pillars,
+              tier_framing: snap.tier_framing,
+              pillars: snap.pillars,                       // 5 canonical pillars
               weakest_pillar: snap.weakest_pillar,
               strongest_pillar: snap.strongest_pillar,
+              balance_factor: snap.balance_factor,
+              balance_label: snap.balance_label,
+              balance_hint: snap.balance_hint,
+              subscores: snap.subscores,                   // per-pillar breakdown (why each is where it is)
               trend_7d: snap.trend_7d,
-              goal_target: snap.goal_target,
-              goal_gap: snap.goal_gap,
+              goal_target: snap.goal_target,               // 600 (Really good entry)
+              points_to_really_good: snap.points_to_really_good,
               last_computed: snap.last_computed,
+              model_version: snap.model_version,
+              confidence: snap.confidence,
               last_movement: snap.last_movement,
             }),
           };
@@ -3708,14 +3722,18 @@ async function executeLiveApiToolInner(
       case 'get_index_improvement_suggestions': {
         try {
           const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { PILLAR_KEYS } = await import('../lib/vitana-pillars');
           const { createClient } = await import('@supabase/supabase-js');
           const url = process.env.SUPABASE_URL;
           const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
           if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
           const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
-          // Resolve target pillar: either user-specified or the weakest.
-          let pillar = typeof args.pillar === 'string' ? args.pillar : undefined;
+          // Resolve target pillar. Validate any passed value against the
+          // canonical 5-pillar set — if the model hallucinates an old name
+          // (physical, social, etc.) fall through to weakest-pillar logic.
+          const rawPillar = typeof args.pillar === 'string' ? args.pillar.toLowerCase() : undefined;
+          let pillar: string | undefined = rawPillar && (PILLAR_KEYS as readonly string[]).includes(rawPillar) ? rawPillar : undefined;
           if (!pillar) {
             const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
             pillar = snap?.weakest_pillar.name;
@@ -3723,7 +3741,7 @@ async function executeLiveApiToolInner(
           if (!pillar) {
             return {
               success: true,
-              result: 'I don\'t see Index data for this user yet, so I can\'t pick a target pillar. Complete the baseline survey first.',
+              result: 'I don\'t see Index data for this user yet, so I can\'t pick a target pillar. Complete the 5-question baseline survey first.',
             };
           }
 
@@ -3788,6 +3806,7 @@ async function executeLiveApiToolInner(
       case 'create_index_improvement_plan': {
         try {
           const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { PILLAR_KEYS } = await import('../lib/vitana-pillars');
           const { createCalendarEvent } = await import('../services/calendar-service');
           const { createClient } = await import('@supabase/supabase-js');
           const url = process.env.SUPABASE_URL;
@@ -3795,7 +3814,8 @@ async function executeLiveApiToolInner(
           if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
           const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
-          let pillar = typeof args.pillar === 'string' ? args.pillar : undefined;
+          const rawPillar = typeof args.pillar === 'string' ? args.pillar.toLowerCase() : undefined;
+          let pillar: string | undefined = rawPillar && (PILLAR_KEYS as readonly string[]).includes(rawPillar) ? rawPillar : undefined;
           if (!pillar) {
             const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
             pillar = snap?.weakest_pillar.name;
@@ -3803,7 +3823,7 @@ async function executeLiveApiToolInner(
           if (!pillar) {
             return {
               success: true,
-              result: 'I don\'t see Index data for this user yet, so I can\'t build a plan. Complete the baseline survey first.',
+              result: 'I don\'t see Index data for this user yet, so I can\'t build a plan. Complete the 5-question baseline survey first.',
             };
           }
 
@@ -3856,15 +3876,11 @@ async function executeLiveApiToolInner(
             const startIso = eventDate.toISOString();
             const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
 
-            const pillarTagMap: Record<string, string[]> = {
-              physical: ['movement', 'exercise'],
-              mental: ['mindfulness', 'focus'],
-              nutritional: ['nutrition'],
-              social: ['community', 'social'],
-              environmental: ['environment'],
-              prosperity: ['growth'],
-            };
-            const wellnessTags = pillarTagMap[pillar!] || [pillar!];
+            // Canonical 5-pillar wellness-tag map. Keep in sync with the
+            // source-of-truth at lib/vitana-pillars.ts (PILLAR_TAGS).
+            const { PILLAR_TAGS } = await import('../lib/vitana-pillars');
+            const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
+            const wellnessTags = tags ? [...tags] : [pillar!];
 
             try {
               const evt = await createCalendarEvent(lens.user_id, {
@@ -4723,7 +4739,18 @@ was habe ich heute gemacht / what music did I play":**
    tags. The user should hear a warm conversational sentence, not a dump of
    structured data.
 
-**VITANA INDEX QUESTIONS — special treatment** (BOOTSTRAP-ORB-INDEX-AWARENESS):
+**VITANA INDEX QUESTIONS — special treatment** (BOOTSTRAP-ORB-INDEX-AWARENESS-R4):
+
+The Vitana Index is built on EXACTLY FIVE canonical pillars:
+  Nutrition, Hydration, Exercise, Sleep, Mental.
+Each pillar caps at 200; the total is score_total × balance_factor (0.7–1.0),
+capped at 999. Tier ladder: Starting 0-99 / Early 100-299 / Building 300-499 /
+Strong 500-599 / Really good 600-799 / Elite 800-999. "Really good" (600+) is
+the aspirational Day-90 framing — NOT a threshold the user is failing to meet.
+
+Do NOT name any other pillar (no "Physical", "Social", "Environmental",
+"Prosperity" — those are retired). If the user mentions one of those names,
+translate silently (e.g. their "Physical" maps to Exercise + Sleep).
 
 When the user asks anything about THEIR Vitana Index, score, tier, pillars,
 or how to improve / level up — examples:
@@ -4735,45 +4762,76 @@ or how to improve / level up — examples:
 
 Apply these rules:
 
-A. ALWAYS quote the [HEALTH] block first. Lead with the number + tier and,
-   if a 7-day trend is present, mention the direction. Example (de):
-     ✓ "Du bist aktuell bei 612 — Tier 'Good'. In den letzten sieben Tagen
-        ist er um acht Punkte gestiegen — du bewegst dich in die richtige
-        Richtung."
+A. ALWAYS quote the [HEALTH] block first. Lead with the number + tier name +
+   tier framing. If a 7-day trend is present, mention the direction. Example
+   (de):
+     ✓ "Du bist aktuell bei 612 — 'Really good'. Deine Praxis wirkt. In den
+        letzten sieben Tagen ist dein Index um acht Punkte gestiegen."
      ✗ "I don't know your Vitana Index" (the number IS in [HEALTH] above)
      ✗ "I don't have access to your health data" (you do — quote [HEALTH])
 
-B. For "how can I improve / what's holding me back / which pillar is
-   lowest" — name the WEAKEST pillar from [HEALTH] explicitly. If a list of
-   recommended actions is present in the profile, name 2–3 of them
-   conversationally. Example (en):
-     ✓ "Mental is your lowest pillar at 95 out of 200. The actions that
-        would lift it most are a daily ten-minute meditation and a long
-        walk twice a week."
+B. BALANCE-AWARENESS — if the [HEALTH] Balance line shows a factor below
+   1.00, the balance dampener is holding the total back. When answering
+   "what's holding me back" or "how do I improve", name imbalance FIRST
+   before naming the weakest single pillar:
+     ✓ "Your balance is at 0.80× — the dampener is costing you ~20% of
+        your raw score. Lifting Sleep (your lowest) would pull the ratio
+        up AND add points directly — double effect."
+   When balance is at 1.00× (well balanced), just name the weakest pillar
+   normally.
 
-C. For "make me a plan / schedule it / add to my calendar" — if a planning
-   tool exists for the Index (e.g. a future create_index_improvement_plan
-   tool), call it. If not, propose a small concrete plan in voice and offer
-   to add the events one by one via the existing create_calendar_event tool.
-   Always confirm what was scheduled in voice ("I added three movement
-   sessions this week and two mindfulness blocks across next week").
+C. SUB-SCORE TRANSPARENCY — when explaining a low pillar, use the sub-score
+   hint from the [HEALTH] weakest-pillar line ("mostly survey baseline —
+   connected data or a tracker would lift it further" / "completed actions
+   are carrying it"). This tells the user the LEVER, not just the number.
+   Don't invent sub-scores if the hint isn't in [HEALTH].
 
-D. Generic "what IS the Vitana Index" / "how does it work" (no "my") —
-   these are platform-explanation questions. Use the Knowledge Hub via
-   search_knowledge — there are dedicated docs explaining the 6 pillars,
-   tiers, and how completions move the score. Do NOT confuse this with
-   the personal-data path above; "MY index" needs personal data, "THE index"
-   needs the KB doc.
+D. FOR CONCRETE ACTIONS — call get_index_improvement_suggestions (weakest-
+   pillar default or user-named pillar). Speak the top 2–3 suggestions
+   conversationally. Example:
+     ✓ "The fastest lift for Sleep right now is a 30-minute wind-down block
+        before bed, twice this week. I can schedule it — want me to?"
 
-E. NEVER cite the Index number from memory_facts or general memory. The
+E. FOR PLAN CREATION — when the user says "make me a plan" / "schedule",
+   call create_index_improvement_plan. It writes calendar events
+   autonomously (no per-event confirmation). Announce what was scheduled
+   clearly after it returns:
+     ✓ "Ich habe dir drei Schlaf-Blöcke in den nächsten zwei Wochen in den
+        Kalender gelegt — jeweils 30 Minuten vor dem Schlafengehen. Du
+        kannst sie im Kalender anschauen."
+
+F. PILLAR-DEEP QUESTIONS — when the user asks about a SPECIFIC pillar
+   ("how do I improve my sleep?", "why is my nutrition low?"), ground the
+   answer in the Book of the Vitana Index via search_knowledge:
+     - Nutrition → kb/vitana-system/index-book/01-nutrition.md
+     - Hydration → kb/vitana-system/index-book/02-hydration.md
+     - Exercise → kb/vitana-system/index-book/03-exercise.md
+     - Sleep → kb/vitana-system/index-book/04-sleep.md
+     - Mental → kb/vitana-system/index-book/05-mental.md
+   Quote from the chapter, combine with the user's own [HEALTH] numbers.
+   The Book is the durable source of truth — trust it over the prompt.
+
+G. GENERIC "WHAT IS THE VITANA INDEX" (no "my") — platform explanation,
+   use search_knowledge with the overview / reading / balance chapters:
+     - Overview → kb/vitana-system/index-book/00-overview.md
+     - Reading your number → kb/vitana-system/index-book/08-reading-your-number.md
+     - Balance → kb/vitana-system/index-book/06-balance.md
+     - 90-day journey → kb/vitana-system/index-book/07-the-90-day-journey.md
+
+H. TIER FRAMING IS ASPIRATIONAL, NEVER GATING. Never say "you need to
+   reach X", "you're below target", "you're failing to hit". Do say "you're
+   N points from Really-good territory" — an aspirational destination, not
+   a pass/fail line. Different users have different capacities; the Index
+   communicates honest assessment, not pressure.
+     ✗ "You need 42 more points to hit Good."
+     ✓ "You're 42 points from Really-good territory. Your current rhythm
+        gets you there inside two months if you stay balanced."
+
+I. NEVER cite the Index number from memory_facts or general memory. The
    [HEALTH] block is fresher and authoritative. memory_facts may contain a
    stale number from days ago — never quote it.
 
-F. The Vitana Index is the user's KEY progress measure across the 90-day
-   journey. Treat it with the same priority as their name or birthday — if
-   they ask, you ALWAYS answer. The journey IS the route to lift it.
-
-G. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
+J. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
    SETUP INCOMPLETE" or "NOT SET UP YET", do NOT answer with a number
    (there isn't one). Instead:
      - SETUP INCOMPLETE → acknowledge honestly and offer to walk them
@@ -4781,13 +4839,18 @@ G. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
        Example (en): "Your baseline survey went through, but the score
        didn't compute yet — if you open the Health screen it should
        offer to retry. Want me to walk you there?"
-     - NOT SET UP YET → explain the Index needs a one-time baseline
-       survey and offer to navigate there.
+     - NOT SET UP YET → explain the Index needs a one-time 5-question
+       baseline survey (Nutrition / Hydration / Exercise / Sleep / Mental,
+       1–5 each) and offer to navigate there.
        Example (de): "Du hast den Vitana Index noch nicht eingerichtet
-       — es ist ein kurzer Fragebogen im Health-Bereich. Soll ich dich
-       dahin führen?"
+       — es ist ein kurzer Fragebogen mit fünf Fragen im Health-Bereich.
+       Soll ich dich dahin führen?"
    NEVER invent a number. NEVER say "I don't have access" — the status
-   line IS the answer; quote it warmly.`;
+   line IS the answer; quote it warmly.
+
+K. THE VITANA INDEX IS THE USER'S KEY PROGRESS MEASURE across the 90-day
+   journey. Treat it with the same priority as their name or birthday — if
+   they ask, you ALWAYS answer. The journey IS the route to lift it.`;
     }
   }
 
