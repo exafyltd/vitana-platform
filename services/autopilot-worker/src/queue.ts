@@ -26,6 +26,20 @@ export interface QueueRow {
     model?: string;
     max_tokens?: number;
     notes?: string;
+    /** Tells the worker to publish the validated files to GitHub itself
+     * (branch + commits + open PR) instead of returning text and letting
+     * the gateway do those steps. Set by the gateway when the
+     * worker-owned-PR feature flag is on. */
+    worker_owns_pr?: boolean;
+    /** Pre-computed branch name (gateway-side so it matches what the
+     * watcher / execution row recorded). Defaults to
+     * `dev-autopilot/<execId-prefix>` if absent. */
+    branch_name?: string;
+    /** Base branch to fork from. Defaults to 'main'. */
+    base_branch?: string;
+    /** Used in commit messages so the audit trail mentions the execution
+     * id (gateway also uses this for the safe-merge token's audit log). */
+    vtid_like?: string;
   };
   output_payload: Record<string, unknown> | null;
   error_message: string | null;

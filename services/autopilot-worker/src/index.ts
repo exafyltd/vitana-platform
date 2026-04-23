@@ -23,6 +23,8 @@ import { runTsc, runJest } from './validate';
 import { join } from 'path';
 import { CLONE_ROOT } from './repo';
 import { buildRetryPrompt } from './retry';
+import { createBranch, putFileToBranch, deleteFileOnBranch, fetchFileContent, openPullRequest } from './github';
+import type { ExecutionFile } from './parse';
 
 const LOG_PREFIX = '[autopilot-worker]';
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 5_000);
@@ -93,6 +95,20 @@ function log(msg: string, ...rest: unknown[]): void {
   console.log(`${ts} ${LOG_PREFIX} ${msg}`, ...rest);
 }
 
+interface ValidatedExecuteResult {
+  ok: boolean;
+  text?: string;
+  /** Parsed files from the FINAL validated attempt. Caller can publish
+   * these directly to GitHub instead of re-parsing the text. */
+  files?: ExecutionFile[];
+  pr_title?: string;
+  pr_body?: string;
+  usage?: RunClaudeResult['usage'];
+  error?: string;
+  attempts: number;
+  validation_elapsed_ms: number;
+}
+
 /**
  * Run an execute task through the validation retry loop.
  *
@@ -102,14 +118,14 @@ function log(msg: string, ...rest: unknown[]): void {
  * - If green: return the most-recent Claude output.
  * - If red: build a retry prompt and go again, up to VALIDATION_MAX_ATTEMPTS.
  *
- * The gateway still owns PR creation via the GitHub Contents API — this
- * function just increases confidence that the output will pass CI once
- * the gateway writes it.
+ * Returns parsed files alongside the raw text — the caller can either hand
+ * the text back to the gateway (legacy path) or publish the files itself
+ * via the GitHub API (worker-owned-PR path).
  */
 async function runExecuteWithValidation(
   basePrompt: string,
   model: string | undefined,
-): Promise<{ ok: boolean; text?: string; usage?: RunClaudeResult['usage']; error?: string; attempts: number; validation_elapsed_ms: number }> {
+): Promise<ValidatedExecuteResult> {
   let currentPrompt = basePrompt;
   let lastOutput: string | undefined;
   let lastError = 'no attempts ran';
@@ -192,6 +208,9 @@ async function runExecuteWithValidation(
       return {
         ok: true,
         text: claudeResult.text,
+        files: parsed.files,
+        pr_title: parsed.pr_title,
+        pr_body: parsed.pr_body,
         usage: claudeResult.usage,
         attempts: attempt + 1,
         validation_elapsed_ms: validationElapsedTotal,
@@ -207,6 +226,9 @@ async function runExecuteWithValidation(
       return {
         ok: true,
         text: claudeResult.text,
+        files: parsed.files,
+        pr_title: parsed.pr_title,
+        pr_body: parsed.pr_body,
         usage: claudeResult.usage,
         attempts: attempt + 1,
         validation_elapsed_ms: validationElapsedTotal,
@@ -237,6 +259,69 @@ async function runExecuteWithValidation(
   };
 }
 
+/**
+ * Worker-owned PR creation. After validation succeeds the worker holds the
+ * canonical file contents in memory; instead of returning text to the gateway
+ * and asking it to write the files via the GitHub API (which kept dying when
+ * Cloud Run recycled the container mid-write), the worker publishes them
+ * itself in a single in-process sequence: branch → files → PR.
+ *
+ * Returns the PR url + number to write back to the queue row's output
+ * payload — the gateway picks those up and advances the execution state to
+ * 'ci' for the watcher to take over from there.
+ */
+async function publishToGitHub(
+  files: ExecutionFile[],
+  prTitle: string,
+  prBody: string,
+  branch: string,
+  baseBranch: string,
+  vtidLike: string,
+): Promise<{ ok: boolean; pr_url?: string; pr_number?: number; error?: string }> {
+  // Look up current shas for any "modify" / "delete" targets — GitHub's PUT
+  // and DELETE on /contents both require the existing blob sha.
+  const shaCache = new Map<string, string>();
+  for (const f of files) {
+    if (f.action === 'modify' || f.action === 'delete') {
+      const existing = await fetchFileContent(f.path, baseBranch);
+      if (existing.exists && existing.sha) {
+        shaCache.set(f.path, existing.sha);
+      }
+    }
+  }
+
+  const branchR = await createBranch(branch, baseBranch);
+  if (!branchR.ok) return { ok: false, error: `create branch: ${branchR.error}` };
+
+  for (const f of files) {
+    if (f.action === 'delete') {
+      const sha = shaCache.get(f.path);
+      if (!sha) {
+        log(`  publishToGitHub: skip delete for ${f.path} (not present on ${baseBranch})`);
+        continue;
+      }
+      const dr = await deleteFileOnBranch(branch, f.path, `${vtidLike}: delete ${f.path}`, sha);
+      if (!dr.ok) return { ok: false, error: `delete ${f.path}: ${dr.error}` };
+      continue;
+    }
+    if (typeof f.content !== 'string') {
+      return { ok: false, error: `file ${f.path} missing content for action=${f.action}` };
+    }
+    const wr = await putFileToBranch(
+      branch,
+      f.path,
+      f.content,
+      `${vtidLike}: ${f.action} ${f.path}`,
+      shaCache.get(f.path),
+    );
+    if (!wr.ok) return { ok: false, error: `write ${f.path}: ${wr.error}` };
+  }
+
+  const pr = await openPullRequest(branch, baseBranch, prTitle, prBody);
+  if (!pr.ok) return { ok: false, error: `open PR: ${pr.error}` };
+  return { ok: true, pr_url: pr.url, pr_number: pr.number };
+}
+
 async function handleTask(wid: string): Promise<void> {
   if (running >= MAX_CONCURRENT) return;
   running++;
@@ -254,11 +339,11 @@ async function handleTask(wid: string): Promise<void> {
 
     const started = Date.now();
     const shouldValidate = VALIDATION_ENABLED && row.kind === 'execute';
-    const result = shouldValidate
+    const result: ValidatedExecuteResult = shouldValidate
       ? await runExecuteWithValidation(prompt, row.input_payload.model)
       : await (async () => {
           const r = await runClaude(prompt, { model: row.input_payload.model, timeoutMs: TASK_TIMEOUT_MS });
-          return { ok: r.ok, text: r.text, usage: r.usage, error: r.error, attempts: 1, validation_elapsed_ms: 0 } as const;
+          return { ok: r.ok, text: r.text, usage: r.usage, error: r.error, attempts: 1, validation_elapsed_ms: 0 };
         })();
     const elapsed = Math.round((Date.now() - started) / 1000);
 
@@ -269,6 +354,45 @@ async function handleTask(wid: string): Promise<void> {
     }
 
     log(`  task ${row.id.slice(0, 8)} ok in ${elapsed}s across ${result.attempts} attempt${result.attempts === 1 ? '' : 's'} (${result.usage?.input_tokens ?? '?'} in / ${result.usage?.output_tokens ?? '?'} out)`);
+
+    // Worker-owned-PR path: when the gateway opted in by setting
+    // input_payload.worker_owns_pr=true, the worker creates the branch +
+    // writes files + opens the PR itself, then writes pr_url back to the
+    // queue row. This avoids the gateway / Cloud Run instability that kept
+    // killing fire-and-forget runExecutionSession promises.
+    const ownsPr = row.input_payload?.worker_owns_pr === true && row.kind === 'execute';
+    if (ownsPr && result.files && result.pr_title && result.pr_body) {
+      const branch = row.input_payload?.branch_name as string
+        || `dev-autopilot/${(row.execution_id || row.id).slice(0, 8)}`;
+      const baseBranch = (row.input_payload?.base_branch as string) || 'main';
+      const vtidLike = (row.input_payload?.vtid_like as string)
+        || `VTID-DA-${(row.execution_id || row.id).slice(0, 8)}`;
+      log(`  publishing PR for task ${row.id.slice(0, 8)}: branch=${branch} files=${result.files.length}`);
+      const pub = await publishToGitHub(result.files, result.pr_title, result.pr_body, branch, baseBranch, vtidLike);
+      if (!pub.ok) {
+        log(`  PR publish FAILED for ${row.id.slice(0, 8)}: ${pub.error}`);
+        await failTask(row.id, `publish PR: ${pub.error}`);
+        return;
+      }
+      log(`  PR opened: ${pub.pr_url}`);
+      await completeTask(row.id, {
+        text: result.text,
+        usage: result.usage,
+        extra: {
+          worker_id: wid,
+          attempts: result.attempts,
+          validated: shouldValidate,
+          validation_elapsed_ms: result.validation_elapsed_ms,
+          // Fields the gateway watches for to advance execution row → 'ci'
+          worker_owns_pr: true,
+          pr_url: pub.pr_url,
+          pr_number: pub.pr_number,
+          branch,
+        },
+      });
+      return;
+    }
+
     await completeTask(row.id, {
       text: result.text,
       usage: result.usage,
