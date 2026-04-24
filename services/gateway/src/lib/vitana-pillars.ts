@@ -58,7 +58,16 @@ export const PILLAR_TAGS: Record<PillarKey, readonly string[]> = {
   hydration: ['hydration', 'water'],
   exercise:  ['movement', 'workout', 'walk', 'steps', 'exercise'],
   sleep:     ['sleep', 'rest', 'recovery'],
-  mental:    ['mindfulness', 'mental', 'stress', 'meditation', 'learning', 'journal'],
+  // Mental health is driven by mindfulness AND community engagement in equal
+  // measure. Social connection, joining or creating events, chatting, inviting
+  // others, meeting like-minded people, and match-making all lift the mental
+  // pillar. The DB-side v3 compute RPC and the contribution_vector trigger
+  // are kept in lockstep with this array via the companion migration.
+  mental:    [
+    'mindfulness', 'mental', 'stress', 'meditation', 'learning', 'journal',
+    'social', 'community', 'meetup', 'invite', 'group', 'chat',
+    'leadership', 'connection', 'match',
+  ],
 } as const;
 
 /** Canonical Book chapters referenced by voice when explaining the system. */
