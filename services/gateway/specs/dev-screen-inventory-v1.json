@@ -171,7 +171,7 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 266,
+    "total_screens": 108,
     "last_synced": "2026-04-24",
     "source": "services/gateway/src/frontend/command-hub/app.js NAVIGATION_CONFIG (runtime) + vitana-v1/src/lib/screen-id.ts",
     "role_counts": {
@@ -2045,6 +2045,7 @@
         "url_path": "/admin/webhooks",
         "role": "ADMIN"
       }
-    ]
+    ],
+    "total_entries": 266
   }
 }
