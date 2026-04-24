@@ -16,9 +16,74 @@
 
 import { createHash } from 'crypto';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { detectWeaknesses, WeaknessType, HealthScores } from '../../personalization-service';
+import { PILLAR_KEYS, type PillarKey } from '../../../lib/vitana-pillars';
 
 const LOG_PREFIX = '[VTID-01185:CommunityUser]';
+
+// =============================================================================
+// G2 — Canonical 5-pillar weakness detection (replaces the legacy 6-pillar
+// HealthScores/detectWeaknesses imports which referenced dropped columns).
+// =============================================================================
+
+/**
+ * Canonical 5-pillar scores from vitana_index_scores. Each value 0..200.
+ * Shape mirrors DB columns post-Phase-E cleanup.
+ */
+export type CanonicalHealthScores = Record<PillarKey, number> & {
+  score_total: number;
+};
+
+/**
+ * Weakness types the community analyzer emits. One per canonical pillar —
+ * no legacy "social_low" / "movement_low" / "stress_high" etc., but the
+ * source_refs of the WEAKNESS_TEMPLATES below remain stable so downstream
+ * autopilot_recommendations rows keep the same signal_type values and the
+ * contribution_vector trigger continues to map them correctly.
+ */
+export type CanonicalWeakness =
+  | 'nutrition_low'
+  | 'hydration_low'
+  | 'exercise_low'
+  | 'sleep_low'
+  | 'mental_low';
+
+/** Threshold below which a pillar is considered weak and a weakness
+ *  recommendation is emitted. Each pillar scale: 0..200; threshold 80 =
+ *  below the "Building" floor for that pillar. */
+const PILLAR_WEAKNESS_THRESHOLD = 80;
+
+/**
+ * Pure deterministic weakness detection from canonical 5-pillar scores.
+ * Returns one CanonicalWeakness per pillar that is below threshold.
+ */
+export function detectCanonicalWeaknesses(
+  scores: CanonicalHealthScores | null,
+  previous: CanonicalHealthScores | null = null,
+): CanonicalWeakness[] {
+  if (!scores) return [];
+  const out: CanonicalWeakness[] = [];
+  for (const p of PILLAR_KEYS) {
+    const current = Number(scores[p] ?? 0);
+    if (current < PILLAR_WEAKNESS_THRESHOLD) {
+      out.push(`${p}_low` as CanonicalWeakness);
+      continue;
+    }
+    // Optional trend check: if pillar dropped by >= 10 points from previous
+    // snapshot, flag it as declining even if still above threshold.
+    if (previous) {
+      const prev = Number(previous[p] ?? 0);
+      if (prev - current >= 10) {
+        out.push(`${p}_low` as CanonicalWeakness);
+      }
+    }
+  }
+  return out;
+}
+
+// Back-compat alias so the rest of this file (and downstream types) don't
+// need a bigger rename.
+export type WeaknessType = CanonicalWeakness;
+export type HealthScores = CanonicalHealthScores;
 
 // =============================================================================
 // i18n — 8 supported languages
@@ -465,10 +530,10 @@ export async function gatherUserContext(
     userResult,
     diaryStreakResult,
   ] = await Promise.all([
-    // Latest 2 health scores for trend
+    // Latest 2 Vitana Index rows for trend (canonical 5-pillar schema).
     supabase
       .from('vitana_index_scores')
-      .select('score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental')
+      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(2),
@@ -531,13 +596,30 @@ export async function gatherUserContext(
       .limit(30),
   ]);
 
-  // Parse health scores
-  const healthRows = healthResult.data || [];
-  const currentScores: HealthScores | null = healthRows[0] || null;
-  const previousScores: HealthScores | null = healthRows[1] || null;
+  // Parse canonical 5-pillar health scores (G2: was querying dropped 6-pillar
+  // columns, query returned nulls, no weakness ever fired).
+  const healthRows = (healthResult.data || []) as Array<{
+    score_total: number | null;
+    score_nutrition: number | null;
+    score_hydration: number | null;
+    score_exercise: number | null;
+    score_sleep: number | null;
+    score_mental: number | null;
+  }>;
+  const toCanonical = (r: typeof healthRows[number] | undefined): CanonicalHealthScores | null =>
+    r ? {
+      score_total: Number(r.score_total ?? 0),
+      nutrition: Number(r.score_nutrition ?? 0),
+      hydration: Number(r.score_hydration ?? 0),
+      exercise:  Number(r.score_exercise  ?? 0),
+      sleep:     Number(r.score_sleep     ?? 0),
+      mental:    Number(r.score_mental    ?? 0),
+    } : null;
+  const currentScores = toCanonical(healthRows[0]);
+  const previousScores = toCanonical(healthRows[1]);
 
-  // Detect weaknesses
-  const weaknesses = detectWeaknesses(currentScores, previousScores);
+  // Detect weaknesses against the canonical 5-pillar schema.
+  const weaknesses = detectCanonicalWeaknesses(currentScores, previousScores);
 
   // Parse memory facts
   const facts = memoryFactsResult.data || [];
@@ -670,12 +752,15 @@ const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
 // Weakness-driven Templates
 // =============================================================================
 
-const WEAKNESS_TEMPLATES: Record<string, RecommendationTemplate> = {
-  movement_low: { key: 'weakness_movement', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_movement' },
-  stress_high: { key: 'weakness_stress', domain: 'health', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 120, signal_type: 'weakness_stress' },
-  social_low: { key: 'weakness_social', domain: 'community', priority: 'high', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'weakness_social' },
-  nutrition_low: { key: 'weakness_nutrition', domain: 'health', priority: 'medium', impact_score: 6, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_nutrition' },
-  sleep_declining: { key: 'weakness_sleep', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_sleep' },
+// G2: keyed by canonical 5-pillar weakness types. signal_type values stay
+// stable so the autopilot_recommendations.contribution_vector trigger keeps
+// mapping them via vitana_contribution_vector_from_source_ref().
+const WEAKNESS_TEMPLATES: Record<CanonicalWeakness, RecommendationTemplate> = {
+  exercise_low:  { key: 'weakness_movement',   domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_movement' },
+  mental_low:    { key: 'weakness_stress',     domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 1, time_estimate_seconds: 120, signal_type: 'weakness_stress' },
+  nutrition_low: { key: 'weakness_nutrition',  domain: 'health',    priority: 'medium', impact_score: 6, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_nutrition' },
+  sleep_low:     { key: 'weakness_sleep',      domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_sleep' },
+  hydration_low: { key: 'weakness_hydration',  domain: 'health',    priority: 'medium', impact_score: 6, effort_score: 1, time_estimate_seconds:  60, signal_type: 'weakness_hydration' },
 };
 
 // =============================================================================
