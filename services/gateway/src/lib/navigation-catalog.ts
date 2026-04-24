@@ -1290,8 +1290,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     screen_id: 'SETTINGS.CONNECTED_APPS', route: '/settings/connected-apps', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Connected Apps', description: 'Manage third-party app integrations connected to your account.', when_to_visit: 'When the user asks about connected apps, integrations, third-party connections, or linked services.' },
-      de: { title: 'Verbundene Apps', description: 'Verwalte Drittanbieter-App-Integrationen, die mit deinem Konto verbunden sind.', when_to_visit: 'Wenn der Nutzer nach verbundenen Apps, Integrationen, Drittanbieter-Verbindungen oder verknüpften Diensten fragt.' },
+      en: { title: 'Connectors & Connected Apps', description: 'Connectors to third-party apps and integrations linked to your account.', when_to_visit: 'When the user asks about connectors, a connector, connected apps, app integrations, third-party connections, linked services, or how to connect an external app.' },
+      de: { title: 'Konnektoren & Verbundene Apps', description: 'Konnektoren zu Drittanbieter-Apps und Integrationen, die mit deinem Konto verknüpft sind.', when_to_visit: 'Wenn der Nutzer nach Konnektoren, einem Konnektor, verbundenen Apps, App-Integrationen, Drittanbieter-Verbindungen, verknüpften Diensten oder dem Verbinden einer externen App fragt.' },
     },
   },
   {
