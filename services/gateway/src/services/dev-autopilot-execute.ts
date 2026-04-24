@@ -295,7 +295,11 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
   const rec = recR.data[0];
   if (!rec) return { ok: false, error: 'finding not found' };
-  if (rec.source_type !== 'dev_autopilot') return { ok: false, error: 'not a dev_autopilot finding' };
+  // Accept both baseline and impact-scan findings — both flow through the
+  // same plan→approve→execute path. Reject anything else (community, system).
+  if (rec.source_type !== 'dev_autopilot' && rec.source_type !== 'dev_autopilot_impact') {
+    return { ok: false, error: `not a dev_autopilot finding (source_type=${rec.source_type})` };
+  }
 
   // 2. Load latest plan version
   const planR = await supa<Array<{ version: number; files_referenced: string[]; plan_markdown: string }>>(

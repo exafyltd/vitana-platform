@@ -16,6 +16,12 @@ on:
     # Run on any PR targeting main — the rules self-filter by touched path.
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    # Also run on push to main so findings from merged PRs get INGESTED
+    # into autopilot_recommendations (dev_autopilot_impact source_type).
+    # PR-scoped runs only post a comment; push-to-main runs persist findings
+    # so the Developer Autopilot view can surface + auto-fix them.
+    branches: [main]
   workflow_dispatch:
     inputs:
       base_ref:
@@ -32,15 +38,25 @@ permissions:
   pull-requests: write # for the PR-comment step
 
 concurrency:
-  group: impact-scan-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # PR events: group per-PR so synchronize cancels the prior run.
+  # Push events: queue so each merge commit's findings get ingested.
+  group: impact-scan-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     env:
       IMPACT_SCAN_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-      IMPACT_SCAN_BASE: ${{ github.event.inputs.base_ref || format('origin/{0}', github.event.pull_request.base.ref || 'main') }}
+      # Base ref per event type:
+      #   pull_request  → origin/<pr.base.ref>
+      #   push (main)   → HEAD~1 (compare merge commit to its parent)
+      #   workflow_dispatch → user override OR origin/main
+      IMPACT_SCAN_BASE: >-
+        ${{ github.event.inputs.base_ref
+          || (github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref))
+          || (github.event_name == 'push' && 'HEAD~1')
+          || 'origin/main' }}
     steps:
       - name: Checkout (full history for diff)
         uses: actions/checkout@v4
@@ -54,9 +70,49 @@ jobs:
 
       - name: Run impact scan
         id: scan
-        # Continue even on blocker — we want to post the comment before failing.
+        # Continue even on blocker — we want to post the comment + ingest first,
+        # then fail the check.
         continue-on-error: true
         run: node scripts/ci/dev-autopilot-impact-scan.mjs
+
+      # Ingest step: only on push to main. Persists non-info findings into
+      # autopilot_recommendations (source_type='dev_autopilot_impact') so the
+      # Developer Autopilot view can activate them one by one.
+      - name: Ingest impact findings into Developer Autopilot queue
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          DEV_AUTOPILOT_SCAN_TOKEN: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+        run: |
+          if [ ! -f dev-autopilot-impact-findings.json ]; then
+            echo "No findings file to ingest — skipping."
+            exit 0
+          fi
+          # Build the ingest payload from the driver's output.
+          python3 <<'PY' > ingest-payload.json
+          import json
+          with open('dev-autopilot-impact-findings.json') as fh:
+              data = json.load(fh)
+          payload = {
+              'findings': data.get('findings', []),
+              'metadata': {
+                  'github_sha': '${{ github.sha }}',
+                  'github_ref': '${{ github.ref }}',
+                  'github_run_id': '${{ github.run_id }}',
+                  'event_name': '${{ github.event_name }}',
+              },
+          }
+          with open('ingest-payload.json', 'w') as fh:
+              json.dump(payload, fh)
+          PY
+          curl -sS -o ingest-response.json -w "status=%{http_code}\n" \
+            -X POST "$GATEWAY_URL/api/v1/dev-autopilot/impact-ingest" \
+            -H "Content-Type: application/json" \
+            -H "X-DevAutopilot-Scan-Token: $DEV_AUTOPILOT_SCAN_TOKEN" \
+            --data-binary @ingest-payload.json
+          echo "Ingest response:"
+          cat ingest-response.json
+          echo
 
       - name: Build PR comment body
         id: comment
@@ -145,8 +201,8 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      - name: Fail if blocker findings (respecting dry_run)
-        if: ${{ env.IMPACT_SCAN_DRY_RUN != 'true' && steps.scan.outcome == 'failure' }}
+      - name: Fail if blocker findings (PR only, respecting dry_run)
+        if: ${{ github.event_name == 'pull_request' && env.IMPACT_SCAN_DRY_RUN != 'true' && steps.scan.outcome == 'failure' }}
         run: |
           echo "Impact scan reported blocker findings. See the PR comment or the uploaded artifact."
           exit 1
