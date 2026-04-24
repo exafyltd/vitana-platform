@@ -3722,18 +3722,18 @@ async function executeLiveApiToolInner(
       case 'get_index_improvement_suggestions': {
         try {
           const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
-          const { PILLAR_KEYS } = await import('../lib/vitana-pillars');
+          const { resolvePillarKey } = await import('../lib/vitana-pillars');
           const { createClient } = await import('@supabase/supabase-js');
           const url = process.env.SUPABASE_URL;
           const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
           if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
           const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
-          // Resolve target pillar. Validate any passed value against the
-          // canonical 5-pillar set — if the model hallucinates an old name
-          // (physical, social, etc.) fall through to weakest-pillar logic.
-          const rawPillar = typeof args.pillar === 'string' ? args.pillar.toLowerCase() : undefined;
-          let pillar: string | undefined = rawPillar && (PILLAR_KEYS as readonly string[]).includes(rawPillar) ? rawPillar : undefined;
+          // Resolve target pillar. resolvePillarKey silently maps retired
+          // names (physical → exercise, prosperity → mental, etc.) so the
+          // voice path never acknowledges a 6-pillar term even if the
+          // model slips. If unknown or missing, fall back to weakest.
+          let pillar: string | undefined = resolvePillarKey(args.pillar);
           if (!pillar) {
             const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
             pillar = snap?.weakest_pillar.name;
@@ -3806,7 +3806,7 @@ async function executeLiveApiToolInner(
       case 'create_index_improvement_plan': {
         try {
           const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
-          const { PILLAR_KEYS } = await import('../lib/vitana-pillars');
+          const { resolvePillarKey, PILLAR_TAGS, PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
           const { createCalendarEvent } = await import('../services/calendar-service');
           const { createClient } = await import('@supabase/supabase-js');
           const url = process.env.SUPABASE_URL;
@@ -3814,8 +3814,10 @@ async function executeLiveApiToolInner(
           if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
           const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
-          const rawPillar = typeof args.pillar === 'string' ? args.pillar.toLowerCase() : undefined;
-          let pillar: string | undefined = rawPillar && (PILLAR_KEYS as readonly string[]).includes(rawPillar) ? rawPillar : undefined;
+          // resolvePillarKey silently maps retired 6-pillar names (Physical
+          // → Exercise, Prosperity → Mental, etc.) so voice never says the
+          // retired name back to the user.
+          let pillar: string | undefined = resolvePillarKey(args.pillar);
           if (!pillar) {
             const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
             pillar = snap?.weakest_pillar.name;
@@ -3830,7 +3832,8 @@ async function executeLiveApiToolInner(
           const days = typeof args.days === 'number' ? Math.min(90, Math.max(7, args.days)) : 14;
           const perWeek = typeof args.actions_per_week === 'number' ? Math.min(7, Math.max(1, args.actions_per_week)) : 3;
 
-          // Pull top recommendations for this pillar.
+          // Pull existing autopilot recommendations targeting this pillar.
+          // These are the first-choice source — personalised to the user.
           const { data } = await client
             .from('autopilot_recommendations')
             .select('id, title, action_description, contribution_vector, priority')
@@ -3849,58 +3852,82 @@ async function executeLiveApiToolInner(
             .filter((r: any) => r._lift > 0)
             .sort((a: any, b: any) => b._lift - a._lift);
 
-          if (ranked.length === 0) {
+          // Source pool for the plan: prefer matched autopilot recs, else
+          // fall back to the pillar's canonical template library. This
+          // fixes the R4 failure mode where the tool returned "no plan
+          // possible" whenever the autopilot queue was empty for a
+          // pillar — which is common on new accounts.
+          type PlanItem = {
+            title: string;
+            description: string;
+            source: 'autopilot' | 'template';
+            source_ref_id: string | null;
+          };
+          const source: PlanItem[] = ranked.length > 0
+            ? ranked.map((r: any): PlanItem => ({
+                title: r.title,
+                description: r.action_description || '',
+                source: 'autopilot',
+                source_ref_id: r.id,
+              }))
+            : (PILLAR_ACTION_TEMPLATES[pillar as keyof typeof PILLAR_ACTION_TEMPLATES] ?? []).map((t): PlanItem => ({
+                title: t.title,
+                description: t.description,
+                source: 'template',
+                source_ref_id: null,
+              }));
+
+          if (source.length === 0) {
             return {
               success: true,
-              result: `No pending autopilot recommendations target your ${pillar} pillar right now. Try again after completing a few existing ones — the engine regenerates.`,
+              result: `I can't find any actions for the ${pillar} pillar right now — neither pending autopilot suggestions nor templates. This is unexpected; please report.`,
             };
           }
 
-          // Schedule: `perWeek` actions per 7-day block, cycling through the
-          // top recommendations. Each event is placed at a reasonable time
-          // (10 AM local — widget TZ preserved via clientContext is out of
-          // scope for this tool; UTC is fine, calendar-service renders local).
           const weeks = Math.ceil(days / 7);
           const totalEvents = weeks * perWeek;
-          const scheduled: { title: string; start_time: string }[] = [];
+          const scheduled: { title: string; start_time: string; source: string }[] = [];
           const startOfToday = new Date();
           startOfToday.setHours(10, 0, 0, 0);
           startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
 
+          // Pre-resolve the wellness tag bucket once (was previously re-
+          // imported inside the loop, which also caused extra overhead).
+          const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
+          const wellnessTags: string[] = tags ? [...tags] : [pillar!];
+
           for (let i = 0; i < totalEvents; i++) {
-            const rec = ranked[i % ranked.length];
+            const item = source[i % source.length];
             const eventDate = new Date(startOfToday);
-            // Spread events every 2-3 days.
             eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
             if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
             const startIso = eventDate.toISOString();
             const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
 
-            // Canonical 5-pillar wellness-tag map. Keep in sync with the
-            // source-of-truth at lib/vitana-pillars.ts (PILLAR_TAGS).
-            const { PILLAR_TAGS } = await import('../lib/vitana-pillars');
-            const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
-            const wellnessTags = tags ? [...tags] : [pillar!];
-
             try {
               const evt = await createCalendarEvent(lens.user_id, {
-                title: rec.title,
+                title: item.title,
                 start_time: startIso,
                 end_time: endIso,
-                description: `${rec.action_description || ''}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
+                description: `${item.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
                 event_type: 'health' as any,
                 status: 'confirmed',
                 priority: 'medium',
                 role_context: (session.active_role || 'community') as any,
                 source_type: 'assistant',
-                source_ref_type: 'autopilot_recommendation',
-                source_ref_id: rec.id,
+                source_ref_type: item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
+                source_ref_id: item.source_ref_id ?? undefined,
                 priority_score: 60,
                 wellness_tags: wellnessTags,
-                metadata: { created_via: 'orb_voice', plan: 'index_improvement', target_pillar: pillar },
+                metadata: {
+                  created_via: 'orb_voice',
+                  plan: 'index_improvement',
+                  target_pillar: pillar,
+                  plan_source: item.source,
+                },
                 is_recurring: false,
               });
-              if (evt) scheduled.push({ title: evt.title, start_time: evt.start_time });
+              if (evt) scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
             } catch (evErr: any) {
               console.warn(`[create_index_improvement_plan] event create failed: ${evErr?.message}`);
             }
@@ -3921,6 +3948,10 @@ async function executeLiveApiToolInner(
               days,
               actions_per_week: perWeek,
               scheduled_count: scheduled.length,
+              source_mix: {
+                autopilot: scheduled.filter(s => s.source === 'autopilot').length,
+                template: scheduled.filter(s => s.source === 'template').length,
+              },
               first_event: scheduled[0],
               last_event: scheduled[scheduled.length - 1],
               all_titles: scheduled.map(s => s.title),
@@ -4747,10 +4778,34 @@ Each pillar caps at 200; the total is score_total × balance_factor (0.7–1.0),
 capped at 999. Tier ladder: Starting 0-99 / Early 100-299 / Building 300-499 /
 Strong 500-599 / Really good 600-799 / Elite 800-999. "Really good" (600+) is
 the aspirational Day-90 framing — NOT a threshold the user is failing to meet.
+"850" is the stretch target shown on the goal card: deep inside Elite,
+months of sustained practice, NOT a 90-day goal.
 
-Do NOT name any other pillar (no "Physical", "Social", "Environmental",
-"Prosperity" — those are retired). If the user mentions one of those names,
-translate silently (e.g. their "Physical" maps to Exercise + Sleep).
+===== RETIRED-PILLAR HANDLING — NON-NEGOTIABLE =====
+The names "Physical", "Social", "Environmental", "Prosperity", "Nutritional"
+are RETIRED. They do not exist in the Vitana Index. If the user (or you)
+slips and uses one, you MUST silently translate to the canonical pillar
+and NEVER echo the retired name back in your reply. Silent means: act as
+if the canonical name is what the user said. Do NOT say "translating your
+'Physical' to...". Do NOT say "I'll help with your Physical pillar". Do
+NOT offer Physical as an option in a follow-up question. Just answer
+about the canonical pillar directly.
+
+Silent alias map:
+  Physical      → Exercise   (closest primary fit; Sleep is secondary)
+  Nutritional   → Nutrition  (rename)
+  Social        → Mental     (community/connection feeds Mental in the 5-pillar model)
+  Environmental → Mental     (ambient/context affects Mental in the 5-pillar model)
+  Prosperity    → Mental     (self-actualization feeds Mental in the 5-pillar model)
+
+Example — user says "Help me improve my Physical pillar":
+  ✗ WRONG: "I can help you improve your Physical pillar. Want me to?"
+  ✗ WRONG: "Physical translates to Exercise in the new model."
+  ✗ WRONG: "Your Physical pillar is at 80 of 200..."
+  ✓ RIGHT: "Your Exercise pillar is at 80 of 200 — [continue]."
+  ✓ RIGHT: (silently passes "exercise" to create_index_improvement_plan
+            and announces) "I've added three movement blocks for your
+            Exercise pillar over the next two weeks — [details]."
 
 When the user asks anything about THEIR Vitana Index, score, tier, pillars,
 or how to improve / level up — examples:
@@ -4826,6 +4881,29 @@ H. TIER FRAMING IS ASPIRATIONAL, NEVER GATING. Never say "you need to
      ✗ "You need 42 more points to hit Good."
      ✓ "You're 42 points from Really-good territory. Your current rhythm
         gets you there inside two months if you stay balanced."
+
+H1. TWO ANCHORS: 600 AND 850. The goal card on the Index Detail screen
+    shows both numbers. You must be able to explain each without confusing
+    them:
+      - 600 = Really-good MILESTONE. The Day-90 aspirational target for
+              most users — the threshold of the "thriving" zone.
+      - 850 = STRETCH target within Elite. Long-horizon. Takes months of
+              sustained balanced practice. NOT a 90-day goal.
+    When the user asks "what's 850?" answer directly:
+     ✓ "850 is the stretch target — it sits deep inside Elite. It's a
+        long-horizon marker, not a 90-day goal. Most people focus on 600
+        first."
+    Source both anchors from [HEALTH] ("Really-good milestone (600)" /
+    "Stretch target (850)") — don't invent numbers.
+
+H2. DAY-90 PROJECTION. When [HEALTH] includes a "Day-90 projection" line,
+    use it for "am I on track?" / "where will I be?" questions. Speak it
+    as the trajectory card does — "at this pace you land around X by Day
+    90 — <tier>":
+     ✓ "At this pace you land around 420 by Day 90 — Building tier. Small
+        bumps in your weakest pillar would push that higher."
+    If [HEALTH] has no projection line (no baseline yet, flat trend),
+    fall back to aspirational framing — don't invent a projection.
 
 I. NEVER cite the Index number from memory_facts or general memory. The
    [HEALTH] block is fresher and authoritative. memory_facts may contain a
