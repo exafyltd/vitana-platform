@@ -27,6 +27,7 @@ import { getFeatureIntroductions } from './feature-introductions';
 import { getRecentSessionSummaries } from './session-summaries';
 import { getAdaptationStatus } from './adaptation-applier';
 import { getUserRoutines } from './pattern-extractor';
+import { countActiveUsageDays } from './active-usage';
 import type {
   UserAwareness,
   TenureStage,
@@ -79,6 +80,7 @@ export async function getAwarenessContext(
     priorSummaries,
     adaptationStatus,
     userRoutines,
+    activeUsageDays,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
@@ -88,9 +90,10 @@ export async function getAwarenessContext(
     getRecentSessionSummaries(userId, 3).catch(() => []),
     getAdaptationStatus(userId).catch(() => null),
     getUserRoutines(userId, 8).catch(() => []),
+    countActiveUsageDays(userId).catch(() => 0),
   ]);
 
-  const tenure = buildTenure(userContext);
+  const tenure = buildTenure(userContext, activeUsageDays);
   const journey = buildJourney(tenure.days_since_signup);
   const community_signals = buildCommunitySignals(userContext);
   const last_interaction: LastInteraction | null = lastSessionInfo
@@ -153,13 +156,14 @@ async function safeGatherUserContext(
   }
 }
 
-function buildTenure(uc: UserContext | null): UserAwareness['tenure'] {
+function buildTenure(uc: UserContext | null, activeUsageDays: number): UserAwareness['tenure'] {
   if (!uc) {
     // Fallback when gatherUserContext failed — use day30plus as the safest default
     // (won't trigger an introduction we can't honor)
     return {
       stage: 'day30plus',
       days_since_signup: 0,
+      active_usage_days: Math.max(0, activeUsageDays),
       registered_at: new Date().toISOString(),
     };
   }
@@ -167,6 +171,7 @@ function buildTenure(uc: UserContext | null): UserAwareness['tenure'] {
   return {
     stage: uc.onboardingStage as TenureStage,
     days_since_signup: Math.max(0, days),
+    active_usage_days: Math.max(0, activeUsageDays),
     registered_at: uc.createdAt.toISOString(),
   };
 }
@@ -306,7 +311,7 @@ function emptyRecentActivity(): RecentActivitySummary {
 
 function skeletalAwareness(): UserAwareness {
   return {
-    tenure: { stage: 'day30plus', days_since_signup: 0, registered_at: new Date().toISOString() },
+    tenure: { stage: 'day30plus', days_since_signup: 0, active_usage_days: 0, registered_at: new Date().toISOString() },
     journey: { current_wave: null, day_in_journey: 0, is_past_90_day: true },
     goal: null,
     community_signals: {

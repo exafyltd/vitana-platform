@@ -58,6 +58,13 @@ export interface UserAwareness {
   tenure: {
     stage: TenureStage;
     days_since_signup: number;
+    /**
+     * BOOTSTRAP-DYK-TOUR: distinct UTC dates on which the user had an
+     * authenticated session. Drives the Did-You-Know tour curriculum
+     * (30 days of USAGE, not calendar days). Populated from
+     * user_active_days table. Zero on any read error.
+     */
+    active_usage_days: number;
     registered_at: string;
   };
   journey: JourneyContext;

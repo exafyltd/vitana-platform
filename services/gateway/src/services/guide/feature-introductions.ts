@@ -34,6 +34,12 @@ export const KNOWN_FEATURE_KEYS = [
   'goal_changing',
   'navigator',
   'community',
+  // BOOTSTRAP-DYK-TOUR: Index-centric Did-You-Know tour additions
+  'vitana_index_detail',
+  'health_section',
+  'my_journey',
+  'autopilot_index_impact',
+  'calendar_index_impact',
 ] as const;
 
 export type FeatureKey = (typeof KNOWN_FEATURE_KEYS)[number] | string;

@@ -31,7 +31,10 @@ export type ProactiveSurface =
   | 'morning_brief'
   | 'text_chat_awareness'
   | 'self_awareness_preview'
-  | 'voice_opener';
+  | 'voice_opener'
+  // BOOTSTRAP-DYK-TOUR: Did-You-Know tour surfaces
+  | 'did_you_know_card'
+  | 'voice_opener_tour';
 
 export type PresenceLevel = 'quiet' | 'balanced' | 'engaged';
 

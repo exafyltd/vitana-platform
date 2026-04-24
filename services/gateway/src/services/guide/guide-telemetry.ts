@@ -29,7 +29,12 @@ export type GuideEventType =
   // Phase H — VTID-01945 proactive presence pacer
   | 'guide.presence.touch_recorded'
   | 'guide.presence.touch_acknowledged'
-  | 'guide.presence.touch_dismissed';
+  | 'guide.presence.touch_dismissed'
+  // BOOTSTRAP-DYK-TOUR — Did-You-Know 30-usage-day tour
+  | 'guide.did_you_know.offered'
+  | 'guide.did_you_know.accepted'
+  | 'guide.did_you_know.declined'
+  | 'guide.did_you_know.flag_disabled';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,
