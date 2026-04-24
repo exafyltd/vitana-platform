@@ -422,6 +422,37 @@ router.get('/', async (req: Request, res: Response) => {
       const hasMore = recommendations.length > limit;
       if (hasMore) recommendations.pop();
 
+      // G4: Index-weighted re-rank for community surfaces. Applies pillar
+      // gap + compass boost + journey-mode decay + G6 per-pillar quota.
+      // Read path mirrors the /generate pipeline so the AutopilotPopup and
+      // the voice ORB tool always see the same top pick.
+      if (role === 'community' && userId && recommendations.length > 0) {
+        try {
+          const { buildRankerContext, rankBatch } = await import('../services/recommendation-engine/ranking/index-pillar-weighter');
+          const { createClient } = await import('@supabase/supabase-js');
+          const svc = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE
+            ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE)
+            : null;
+          if (svc) {
+            const ctx = await buildRankerContext(svc, userId);
+            const ranked = rankBatch(recommendations as any, ctx);
+            recommendations = ranked.map(r => r.rec as any);
+            // Attach rank metadata for the UI ("why this now" tooltip).
+            for (const r of ranked) {
+              const target = (r.rec as any);
+              if (target) {
+                target.rank_score = r.rank_score;
+                target.pillar_boost = r.pillar_boost;
+                target.compass_boost = r.compass_boost;
+                target.journey_mode = r.journey_mode;
+              }
+            }
+          }
+        } catch (rankErr: any) {
+          console.warn(`${LOG_PREFIX} community re-rank failed (non-fatal):`, rankErr?.message);
+        }
+      }
+
       // Enrich community recommendations with wave metadata
       let waves: any[] | undefined;
       if (role === 'community') {

@@ -42,6 +42,8 @@ import {
   generateCommunityUserFingerprint,
 } from './analyzers/community-user-analyzer';
 import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
+import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
+import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
 import {
   analyzeMarketplace,
   MarketplaceSignal,
@@ -808,12 +810,16 @@ export async function generatePersonalRecommendations(
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Run community user analyzer + Life Compass analyzer in parallel.
-    // The life-compass analyzer emits CommunityUserSignal-shaped signals so
-    // they flow through the same conversion + dedup pipeline.
-    const [result, compassResult] = await Promise.all([
+    // Run community + Life Compass + Index Gap analyzers in parallel, plus
+    // build the ranker context once so we can re-score the emitted signals
+    // before they hit the fingerprint dedup. Same ranker context the voice
+    // ORB and morning brief call into (G4 invariant: one ranking function,
+    // three surfaces, one top pick).
+    const [result, compassResult, gapResult, rankerCtx] = await Promise.all([
       analyzeCommunityUser(userId, tenantId, supabase),
       analyzeLifeCompass(userId, supabase),
+      analyzeIndexGaps(userId, supabase),
+      buildRankerContext(supabase, userId),
     ]);
 
     if (!result.ok) {
@@ -822,13 +828,38 @@ export async function generatePersonalRecommendations(
     if (!compassResult.ok) {
       errors.push({ source: 'life_compass', error: compassResult.error || 'Analysis failed' });
     }
+    if (!gapResult.ok) {
+      errors.push({ source: 'index_gap', error: gapResult.error || 'Analysis failed' });
+    }
 
-    // Convert signals to recommendations (community + compass, compass first so
-    // its high-impact nudge is processed before community dedup).
-    const allSignals = [...compassResult.signals, ...result.signals];
-    const recommendations: GeneratedRecommendation[] = allSignals.map((s) =>
+    // Merge all signals (compass first for priority, then gap-driven, then
+    // the broader community set).
+    const allSignals = [...compassResult.signals, ...gapResult.signals, ...result.signals];
+    let recommendations: GeneratedRecommendation[] = allSignals.map((s) =>
       convertCommunityUserSignal(s, userId)
     );
+
+    // G4: re-rank by pillar-gap + compass + journey_mode BEFORE fingerprint
+    // dedup so the highest-rank_score candidates survive when they collide.
+    // rankBatch also applies the G6 per-pillar quota + balance guard.
+    try {
+      const rankerInputs = recommendations.map((r, idx) => ({
+        id: String(idx),
+        source_ref: (r as any).source_ref ?? null,
+        impact_score: (r as any).impact_score ?? null,
+        contribution_vector: (r as any).contribution_vector ?? null,
+      }));
+      const ranked = rankBatch(rankerInputs, rankerCtx);
+      // Apply rank order back onto recommendations[].
+      const indexById = new Map<string, GeneratedRecommendation>(
+        recommendations.map((r, idx) => [String(idx), r]),
+      );
+      recommendations = ranked
+        .map(r => indexById.get((r.rec as any).id as string))
+        .filter((r): r is GeneratedRecommendation => !!r);
+    } catch (rankErr: any) {
+      console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
+    }
 
     // Pre-check: fetch ALL existing fingerprints for this user (ANY status)
     // to prevent re-creating recommendations that were already activated/rejected.
