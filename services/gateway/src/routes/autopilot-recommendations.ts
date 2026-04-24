@@ -74,9 +74,11 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Weakness-driven
   weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!', calendar_event: { title_template: 'Exercise session', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
   weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!', calendar_event: { title_template: 'Breathing exercise', duration_minutes: 15, event_type: 'health', wellness_tags: ['mindfulness', 'stress'] } },
-  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!', calendar_event: { title_template: 'Social connection', duration_minutes: 15, event_type: 'personal', wellness_tags: ['social'] } },
+  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!', calendar_event: { title_template: 'Social connection', duration_minutes: 15, event_type: 'personal', wellness_tags: ['social', 'community'] } },
   weakness_nutrition:   { action_type: 'navigate', target: '/health', completion_message: 'Track what you eat today!', calendar_event: { title_template: 'Track your meals', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
   weakness_sleep:       { action_type: 'navigate', target: '/health', completion_message: 'Set up your evening routine!', calendar_event: { title_template: 'Evening routine', duration_minutes: 15, event_type: 'health', wellness_tags: ['sleep'] } },
+  weakness_hydration:   { action_type: 'navigate', target: '/health', completion_message: 'Track your water intake today!', calendar_event: { title_template: 'Hydration check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['hydration'] } },
+  weakness_mental:      { action_type: 'navigate', target: '/health', completion_message: 'A brief mindfulness moment.', calendar_event: { title_template: 'Mindfulness check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['mindfulness', 'mental'] } },
   // Mood-driven
   mood_support:         { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is here to listen.' },
   mood_energy:          { action_type: 'navigate', target: '/events', completion_message: 'Use your energy on an activity!' },
