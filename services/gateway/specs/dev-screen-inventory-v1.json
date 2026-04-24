@@ -173,14 +173,14 @@
   "screen_inventory": {
     "total_screens": 108,
     "last_synced": "2026-04-24",
-    "source": "services/gateway/src/frontend/command-hub/app.js NAVIGATION_CONFIG (runtime) + vitana-v1/src/lib/screen-id.ts",
+    "source": "app.js NAVIGATION_CONFIG (DEV) + vitana-v1/src/config/admin-navigation.ts (ADM) + vitana-v1/src/lib/screen-id.ts (COM/PAT/PRO/STA)",
     "role_counts": {
       "DEVELOPER": 108,
-      "COMMUNITY": 87,
+      "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
       "STAFF": 9,
-      "ADMIN": 44
+      "ADMIN": 63
     },
     "screens": [
       {
@@ -982,6 +982,13 @@
         "role": "COMMUNITY"
       },
       {
+        "screen_id": "COM-EXAFY_LOGIN",
+        "module": "Public",
+        "tab": "Exafy Admin Portal Login",
+        "url_path": "/exafy-admin",
+        "role": "COMMUNITY"
+      },
+      {
         "screen_id": "COM-INTRO",
         "module": "Public",
         "tab": "Intro Experience",
@@ -1014,6 +1021,13 @@
         "module": "Public",
         "tab": "Email Confirmation (Community)",
         "url_path": "/community/confirm",
+        "role": "COMMUNITY"
+      },
+      {
+        "screen_id": "COM-CONFIRM_EXAFY",
+        "module": "Public",
+        "tab": "Email Confirmation (Exafy)",
+        "url_path": "/exafy-admin/confirm",
         "role": "COMMUNITY"
       },
       {
@@ -1738,314 +1752,447 @@
         "role": "STAFF"
       },
       {
-        "screen_id": "ADM-EXAFY_LOGIN",
-        "module": "Admin / Auth",
-        "tab": "Exafy Admin Portal Login",
-        "url_path": "/exafy-admin",
-        "role": "ADMIN"
-      },
-      {
-        "screen_id": "ADM-EXAFY_CONFIRM",
-        "module": "Admin / Auth",
-        "tab": "Email Confirmation (Exafy)",
-        "url_path": "/exafy-admin/confirm",
-        "role": "ADMIN"
-      },
-      {
         "screen_id": "ADM-DASHBOARD",
-        "module": "Admin",
-        "tab": "Admin Dashboard",
-        "url_path": "/admin",
+        "module": "Overview",
+        "tab": "Dashboard",
+        "url_path": "/admin/dashboard",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-OVERVIEW",
-        "module": "Admin",
-        "tab": "Overview",
-        "url_path": "/admin/overview",
+        "screen_id": "ADM-ACTIVITY",
+        "module": "Overview",
+        "tab": "Activity",
+        "url_path": "/admin/activity",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-USERS",
-        "module": "Admin / User Management",
-        "tab": "User Management",
-        "url_path": "/admin/users",
+        "screen_id": "ADM-ALERTS",
+        "module": "Overview",
+        "tab": "Alerts",
+        "url_path": "/admin/alerts",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-ROLES_PERMISSIONS",
-        "module": "Admin / User Management",
-        "tab": "Roles & Permissions",
-        "url_path": "/admin/roles",
+        "screen_id": "ADM-HEALTH",
+        "module": "Overview",
+        "tab": "Health",
+        "url_path": "/admin/health",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-USER_ACTIVITY",
-        "module": "Admin / User Management",
-        "tab": "User Activity",
-        "url_path": "/admin/user-activity",
+        "screen_id": "ADM-DIRECTORY",
+        "module": "Members",
+        "tab": "Directory",
+        "url_path": "/admin/members/directory",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-TENANT_MANAGEMENT",
-        "module": "Admin / Tenant Management",
-        "tab": "Tenant Management",
-        "url_path": "/admin/tenant-management",
+        "screen_id": "ADM-INVITATIONS",
+        "module": "Members",
+        "tab": "Invitations",
+        "url_path": "/admin/members/invitations",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-TENANT_CONFIG",
-        "module": "Admin / Tenant Management",
-        "tab": "Tenant Config",
-        "url_path": "/admin/tenant-config",
+        "screen_id": "ADM-ROLES",
+        "module": "Members",
+        "tab": "Roles & Access",
+        "url_path": "/admin/members/roles",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-MEMBERSHIP_MANAGEMENT",
-        "module": "Admin / Tenant Management",
-        "tab": "Membership Management",
-        "url_path": "/admin/memberships",
+        "screen_id": "ADM-SEGMENTS",
+        "module": "Members",
+        "tab": "Segments",
+        "url_path": "/admin/members/segments",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-SYSTEM_CONFIG",
-        "module": "Admin / System",
-        "tab": "System Config",
-        "url_path": "/admin/system-config",
+        "screen_id": "ADM-AUDIT",
+        "module": "Members",
+        "tab": "Audit",
+        "url_path": "/admin/members/audit",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-DATABASE_ADMIN",
-        "module": "Admin / System",
-        "tab": "Database Admin",
-        "url_path": "/admin/database",
+        "screen_id": "ADM-PERSONALITY",
+        "module": "Assistant",
+        "tab": "Personality",
+        "url_path": "/admin/assistant/personality",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-API_MANAGEMENT",
-        "module": "Admin / System",
-        "tab": "API Management",
-        "url_path": "/admin/api-management",
+        "screen_id": "ADM-SPEECHES",
+        "module": "Assistant",
+        "tab": "Speeches",
+        "url_path": "/admin/assistant/speeches",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-QUEUE_CHECKIN",
-        "module": "Admin / Staff Ops",
-        "tab": "Queue & Check-In",
-        "url_path": "/admin/queue",
+        "screen_id": "ADM-VOICE",
+        "module": "Assistant",
+        "tab": "Voice",
+        "url_path": "/admin/assistant/voice",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-PATIENT_RECORDS",
-        "module": "Admin / Staff Ops",
-        "tab": "Patient Records",
-        "url_path": "/admin/patient-records",
+        "screen_id": "ADM-TOOLS",
+        "module": "Assistant",
+        "tab": "Tools",
+        "url_path": "/admin/assistant/tools",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-SYSTEM_MONITORING",
-        "module": "Admin / Monitoring",
-        "tab": "System Monitoring",
-        "url_path": "/admin/monitoring",
+        "screen_id": "ADM-ROUTING",
+        "module": "Assistant",
+        "tab": "Routing",
+        "url_path": "/admin/assistant/routing",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-NOTIFICATION_DASHBOARD",
-        "module": "Admin / Monitoring",
-        "tab": "Notification Dashboard",
-        "url_path": "/admin/notification-dashboard",
+        "screen_id": "ADM-PLAYGROUND",
+        "module": "Assistant",
+        "tab": "Playground",
+        "url_path": "/admin/assistant/playground",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AUDIT_LOGS",
-        "module": "Admin / Monitoring",
-        "tab": "Audit Logs",
-        "url_path": "/admin/audit-logs",
+        "screen_id": "ADM-SESSIONS",
+        "module": "Assistant",
+        "tab": "Sessions",
+        "url_path": "/admin/assistant/sessions",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-STAFF_DIRECTORY",
-        "module": "Admin / Monitoring",
-        "tab": "Staff Directory",
-        "url_path": "/admin/staff-directory",
+        "screen_id": "ADM-DOCUMENTS",
+        "module": "Knowledge",
+        "tab": "Documents",
+        "url_path": "/admin/knowledge/documents",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-STREAM_SUPERVISION",
-        "module": "Admin / Community Supervision",
-        "tab": "Stream Supervision",
-        "url_path": "/admin/stream-supervision",
+        "screen_id": "ADM-TOPICS",
+        "module": "Knowledge",
+        "tab": "Topics",
+        "url_path": "/admin/knowledge/topics",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-CONTENT_MODERATION",
-        "module": "Admin / Community Supervision",
-        "tab": "Content Moderation",
-        "url_path": "/admin/content-moderation",
+        "screen_id": "ADM-INDEXING",
+        "module": "Knowledge",
+        "tab": "Indexing",
+        "url_path": "/admin/knowledge/indexing",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-USER_REPORTS",
-        "module": "Admin / Community Supervision",
-        "tab": "User Reports",
-        "url_path": "/admin/user-reports",
+        "screen_id": "ADM-SEARCH_TEST",
+        "module": "Knowledge",
+        "tab": "Search Test",
+        "url_path": "/admin/knowledge/search-test",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-COMMUNITY_ANALYTICS",
-        "module": "Admin / Community Supervision",
-        "tab": "Community Analytics",
-        "url_path": "/admin/community-analytics",
+        "screen_id": "ADM-GOVERNANCE",
+        "module": "Knowledge",
+        "tab": "Governance",
+        "url_path": "/admin/knowledge/governance",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-MEDIA_LIBRARY",
-        "module": "Admin / Media",
-        "tab": "Media Library",
-        "url_path": "/admin/media",
+        "screen_id": "ADM-CATALOG",
+        "module": "Navigator",
+        "tab": "Catalog",
+        "url_path": "/admin/navigator",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-MEDIA_MODERATION",
-        "module": "Admin / Media",
-        "tab": "Media Moderation",
-        "url_path": "/admin/media-moderation",
+        "screen_id": "ADM-COVERAGE",
+        "module": "Navigator",
+        "tab": "Coverage",
+        "url_path": "/admin/navigator/coverage",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-CONTENT_RIGHTS",
-        "module": "Admin / Media",
-        "tab": "Content Rights",
-        "url_path": "/admin/content-rights",
+        "screen_id": "ADM-TELEMETRY",
+        "module": "Navigator",
+        "tab": "Telemetry",
+        "url_path": "/admin/navigator/telemetry",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AI_CONTROL",
-        "module": "Admin / AI Assistant",
-        "tab": "AI Assistant Control",
-        "url_path": "/admin/ai-control",
+        "screen_id": "ADM-HISTORY",
+        "module": "Navigator",
+        "tab": "History",
+        "url_path": "/admin/navigator/history",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AI_SITUATIONS",
-        "module": "Admin / AI Assistant",
-        "tab": "AI Situations",
-        "url_path": "/admin/ai-situations",
+        "screen_id": "ADM-PLANNING",
+        "module": "Autopilot",
+        "tab": "Planning",
+        "url_path": "/admin/autopilot/planning",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AI_RECOMMENDATIONS",
-        "module": "Admin / AI Assistant",
-        "tab": "AI Recommendations",
-        "url_path": "/admin/ai-recommendations",
+        "screen_id": "ADM-RECOMMENDATIONS",
+        "module": "Autopilot",
+        "tab": "Recommendations",
+        "url_path": "/admin/autopilot/recommendations",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AI_ANALYTICS",
-        "module": "Admin / AI Assistant",
-        "tab": "AI Analytics",
-        "url_path": "/admin/ai-analytics",
+        "screen_id": "ADM-AUTOMATIONS",
+        "module": "Autopilot",
+        "tab": "Active Automations",
+        "url_path": "/admin/autopilot/automations",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AI_TRAINING",
-        "module": "Admin / AI Assistant",
-        "tab": "AI Training",
-        "url_path": "/admin/ai-training",
+        "screen_id": "ADM-RUNS",
+        "module": "Autopilot",
+        "tab": "Runs",
+        "url_path": "/admin/autopilot/runs",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AUTOMATION_RULES",
-        "module": "Admin / Automation",
-        "tab": "Automation Rules",
-        "url_path": "/admin/automation-rules",
+        "screen_id": "ADM-GUARDRAILS",
+        "module": "Autopilot",
+        "tab": "Guardrails",
+        "url_path": "/admin/autopilot/guardrails",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-AUTOMATION_EXECUTIONS",
-        "module": "Admin / Automation",
-        "tab": "Automation Executions",
-        "url_path": "/admin/automation-executions",
+        "screen_id": "ADM-AUTOPILOT_GROWTH",
+        "module": "Autopilot",
+        "tab": "Growth",
+        "url_path": "/admin/autopilot/growth",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-LIVE_STREAM_CONTROL",
-        "module": "Admin / Live & Stream",
-        "tab": "Live Stream Control",
-        "url_path": "/admin/live-control",
+        "screen_id": "ADM-REPORTED",
+        "module": "Community",
+        "tab": "Reported Content",
+        "url_path": "/admin/community/reported",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-STREAM_ANALYTICS",
-        "module": "Admin / Live & Stream",
-        "tab": "Stream Analytics",
-        "url_path": "/admin/stream-analytics",
+        "screen_id": "ADM-MEETUPS",
+        "module": "Community",
+        "tab": "Meetups",
+        "url_path": "/admin/community/meetups",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-STREAM_QUALITY",
-        "module": "Admin / Live & Stream",
-        "tab": "Stream Quality Monitoring",
-        "url_path": "/admin/stream-quality",
+        "screen_id": "ADM-LIVE_ROOMS",
+        "module": "Community",
+        "tab": "Live Rooms",
+        "url_path": "/admin/community/live-rooms",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-RECORDINGS",
-        "module": "Admin / Live & Stream",
-        "tab": "Recording Manager",
-        "url_path": "/admin/recordings",
+        "screen_id": "ADM-GROUPS",
+        "module": "Community",
+        "tab": "Groups",
+        "url_path": "/admin/community/groups",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-BROADCAST_SETTINGS",
-        "module": "Admin / Live & Stream",
-        "tab": "Broadcast Settings",
-        "url_path": "/admin/broadcast-settings",
+        "screen_id": "ADM-CREATORS",
+        "module": "Community",
+        "tab": "Creators",
+        "url_path": "/admin/community/creators",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-PLATFORM_ANALYTICS",
-        "module": "Admin / Analytics",
-        "tab": "Platform Analytics",
-        "url_path": "/admin/platform-analytics",
+        "screen_id": "ADM-VIDEOS",
+        "module": "Content",
+        "tab": "Videos",
+        "url_path": "/admin/content/videos",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-USER_ENGAGEMENT",
-        "module": "Admin / Analytics",
-        "tab": "User Engagement",
-        "url_path": "/admin/user-engagement",
+        "screen_id": "ADM-PODCASTS",
+        "module": "Content",
+        "tab": "Podcasts",
+        "url_path": "/admin/content/podcasts",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-REVENUE",
-        "module": "Admin / Analytics",
-        "tab": "Revenue Analytics",
-        "url_path": "/admin/revenue",
+        "screen_id": "ADM-MUSIC",
+        "module": "Content",
+        "tab": "Music",
+        "url_path": "/admin/content/music",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-INTEGRATION_HUB",
-        "module": "Admin / Integrations",
-        "tab": "Integration Hub",
-        "url_path": "/admin/integrations",
+        "screen_id": "ADM-UPLOADS",
+        "module": "Content",
+        "tab": "Uploads",
+        "url_path": "/admin/content/uploads",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-API_TESTING",
-        "module": "Admin / Integrations",
-        "tab": "API Testing",
-        "url_path": "/admin/api-testing",
+        "screen_id": "ADM-ANALYTICS",
+        "module": "Content",
+        "tab": "Analytics",
+        "url_path": "/admin/content/analytics",
         "role": "ADMIN"
       },
       {
-        "screen_id": "ADM-WEBHOOKS",
-        "module": "Admin / Integrations",
-        "tab": "Webhook Config",
-        "url_path": "/admin/webhooks",
+        "screen_id": "ADM-COMPOSE",
+        "module": "Notifications",
+        "tab": "Compose",
+        "url_path": "/admin/notifications/compose",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-CATEGORIES",
+        "module": "Notifications",
+        "tab": "Categories",
+        "url_path": "/admin/notifications/categories",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-TEMPLATES",
+        "module": "Notifications",
+        "tab": "Templates",
+        "url_path": "/admin/notifications/templates",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-SENT",
+        "module": "Notifications",
+        "tab": "Sent",
+        "url_path": "/admin/notifications/sent",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-SUBSCRIPTIONS",
+        "module": "Notifications",
+        "tab": "Subscriptions",
+        "url_path": "/admin/notifications/subscriptions",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-PROVIDERS",
+        "module": "Notifications",
+        "tab": "Providers",
+        "url_path": "/admin/notifications/providers",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-INSIGHTS_GROWTH",
+        "module": "Insights",
+        "tab": "Growth",
+        "url_path": "/admin/insights/growth",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-ENGAGEMENT",
+        "module": "Insights",
+        "tab": "Engagement",
+        "url_path": "/admin/insights/engagement",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-ASSISTANT_USAGE",
+        "module": "Insights",
+        "tab": "Assistant Usage",
+        "url_path": "/admin/insights/assistant-usage",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-AUTOPILOT_IMPACT",
+        "module": "Insights",
+        "tab": "Autopilot Impact",
+        "url_path": "/admin/insights/autopilot-impact",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-REPORTS",
+        "module": "Insights",
+        "tab": "Reports",
+        "url_path": "/admin/insights/reports",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-PROFILE",
+        "module": "Settings",
+        "tab": "Profile",
+        "url_path": "/admin/settings/profile",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-BRANDING",
+        "module": "Settings",
+        "tab": "Branding",
+        "url_path": "/admin/settings/branding",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-FEATURE_FLAGS",
+        "module": "Settings",
+        "tab": "Feature Flags",
+        "url_path": "/admin/settings/feature-flags",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-INTEGRATIONS",
+        "module": "Settings",
+        "tab": "Integrations",
+        "url_path": "/admin/settings/integrations",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-DOMAINS",
+        "module": "Settings",
+        "tab": "Domains",
+        "url_path": "/admin/settings/domains",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-BILLING",
+        "module": "Settings",
+        "tab": "Billing",
+        "url_path": "/admin/settings/billing",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-ACTIONS",
+        "module": "Audit & Compliance",
+        "tab": "Admin Actions",
+        "url_path": "/admin/audit/actions",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-ACCESS",
+        "module": "Audit & Compliance",
+        "tab": "Access Log",
+        "url_path": "/admin/audit/access",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-EVENTS",
+        "module": "Audit & Compliance",
+        "tab": "OASIS Events",
+        "url_path": "/admin/audit/events",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-POLICIES",
+        "module": "Audit & Compliance",
+        "tab": "Policies",
+        "url_path": "/admin/audit/policies",
+        "role": "ADMIN"
+      },
+      {
+        "screen_id": "ADM-DATA_RIGHTS",
+        "module": "Audit & Compliance",
+        "tab": "Data Rights",
+        "url_path": "/admin/audit/data-rights",
         "role": "ADMIN"
       }
     ],
-    "total_entries": 266
+    "total_entries": 287
   }
 }
