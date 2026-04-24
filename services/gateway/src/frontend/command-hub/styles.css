@@ -2283,6 +2283,13 @@ body {
   border-radius: 3px;
 }
 
+.docs-table-num {
+  width: 3rem;
+  text-align: right;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Autopilot status text */
 .autopilot-status-text {
   font-size: 0.7em;
