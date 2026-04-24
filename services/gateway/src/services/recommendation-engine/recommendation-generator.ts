@@ -41,6 +41,7 @@ import {
   CommunityUserSignal,
   generateCommunityUserFingerprint,
 } from './analyzers/community-user-analyzer';
+import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
 import {
   analyzeMarketplace,
   MarketplaceSignal,
@@ -807,15 +808,25 @@ export async function generatePersonalRecommendations(
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Run community user analyzer
-    const result = await analyzeCommunityUser(userId, tenantId, supabase);
+    // Run community user analyzer + Life Compass analyzer in parallel.
+    // The life-compass analyzer emits CommunityUserSignal-shaped signals so
+    // they flow through the same conversion + dedup pipeline.
+    const [result, compassResult] = await Promise.all([
+      analyzeCommunityUser(userId, tenantId, supabase),
+      analyzeLifeCompass(userId, supabase),
+    ]);
 
     if (!result.ok) {
       errors.push({ source: 'community', error: result.error || 'Analysis failed' });
     }
+    if (!compassResult.ok) {
+      errors.push({ source: 'life_compass', error: compassResult.error || 'Analysis failed' });
+    }
 
-    // Convert signals to recommendations
-    const recommendations: GeneratedRecommendation[] = result.signals.map((s) =>
+    // Convert signals to recommendations (community + compass, compass first so
+    // its high-impact nudge is processed before community dedup).
+    const allSignals = [...compassResult.signals, ...result.signals];
+    const recommendations: GeneratedRecommendation[] = allSignals.map((s) =>
       convertCommunityUserSignal(s, userId)
     );
 
