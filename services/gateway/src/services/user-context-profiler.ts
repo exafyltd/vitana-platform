@@ -244,6 +244,8 @@ import {
   tierForScore,
   describeBalance,
   REALLY_GOOD_THRESHOLD,
+  STRETCH_TARGET,
+  projectDay90,
 } from '../lib/vitana-pillars';
 
 /**
@@ -274,6 +276,10 @@ export interface VitanaIndexSnapshot {
   history_7d: number[];                              // [oldest...latest], up to 7 entries
   goal_target: number;                               // 600 (Really good entry)
   points_to_really_good: number;                     // max(0, 600 - total); aspirational only
+  stretch_target: number;                            // 850 — aspirational stretch anchor (UI-aligned)
+  points_to_stretch: number;                         // max(0, 850 - total)
+  projected_day_90: number | null;                   // linear extrapolation of trend_7d onto Day 90; null if no baseline
+  projected_day_90_tier: string | null;              // forecast tier name for the projection
   last_computed: string;                             // ISO date
   model_version?: string;                            // e.g. 'v3-5pillar'
   confidence?: number;                               // 0-1, from the RPC
@@ -397,6 +403,32 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
     }
   } catch { /* best-effort */ }
 
+  // Day-90 projection — mirrors the frontend trajectory card (linear from
+  // 7-day trend). Anchored at the user's first-ever Index row rather than
+  // today so "days remaining" is meaningful. If we can't compute a
+  // baseline day count (oldest row missing), fall back to using today as
+  // the reference — projection stays accurate when trend is flat.
+  let projected_day_90: number | null = null;
+  let projected_day_90_tier: string | null = null;
+  try {
+    const { data: firstRow } = await client
+      .from('vitana_index_scores')
+      .select('date')
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const firstDate = firstRow?.date as string | undefined;
+    const today = new Date();
+    const firstTs = firstDate ? Date.parse(firstDate) : today.getTime();
+    const daysSinceStart = Math.max(0, Math.floor((today.getTime() - firstTs) / (24 * 60 * 60 * 1000)));
+    const proj = projectDay90(total, trend_7d, daysSinceStart);
+    if (proj !== null) {
+      projected_day_90 = proj;
+      projected_day_90_tier = tierForScore(proj).name;
+    }
+  } catch { /* best-effort */ }
+
   return {
     state: 'ok',
     snapshot: {
@@ -414,6 +446,10 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
       history_7d,
       goal_target: REALLY_GOOD_THRESHOLD,
       points_to_really_good: Math.max(0, REALLY_GOOD_THRESHOLD - total),
+      stretch_target: STRETCH_TARGET,
+      points_to_stretch: Math.max(0, STRETCH_TARGET - total),
+      projected_day_90,
+      projected_day_90_tier,
       last_computed: latest.date,
       model_version: latest.model_version ?? undefined,
       confidence: typeof latest.confidence === 'number' ? latest.confidence : undefined,
@@ -691,12 +727,27 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
 
       // Aspirational framing, NOT a gate. "Really good" starts at 600; we
       // surface the gap as progress signal, not as pass/fail.
+      // Aspirational anchors — match the Index Detail goal card (600
+      // milestone / 850 stretch). Two lines because users reference both
+      // numbers on screen and voice must be able to answer "what's 850?".
       if (vitana.points_to_really_good > 0) {
-        lines.push(`- Really-good band (600+) entry: ${vitana.points_to_really_good} points away. Keep building steadily — do not force the ceiling.`);
+        lines.push(`- Really-good milestone (600): ${vitana.points_to_really_good} points away. 90-day aspirational target for most users — do not frame as pass/fail.`);
       } else if (vitana.total >= 800) {
-        lines.push(`- Elite band (800+): sustained excellence territory. Maintenance, not acceleration.`);
+        lines.push(`- Really-good milestone (600): already inside, ${vitana.total - 600} points clear.`);
       } else {
-        lines.push(`- Really-good band (600+): already inside. The climb from here is slow and earned.`);
+        lines.push(`- Really-good milestone (600): already inside. The climb from here is slow and earned.`);
+      }
+      if (vitana.points_to_stretch > 0) {
+        lines.push(`- Stretch target (850): ${vitana.points_to_stretch} points away. Deep in the Elite band — months of sustained balanced practice, NOT a 90-day target. When asked "what is 850", explain it as a long-horizon anchor, not a near-term goal.`);
+      } else {
+        lines.push(`- Stretch target (850): already reached. Sustained excellence territory.`);
+      }
+
+      // Day-90 linear projection — matches the frontend trajectory card.
+      // Null when no baseline exists yet (first-day users); otherwise voice
+      // can say "at this pace you land around X by Day 90 — <tier>".
+      if (typeof vitana.projected_day_90 === 'number' && vitana.projected_day_90_tier) {
+        lines.push(`- Day-90 projection (linear from 7-day trend): ~${vitana.projected_day_90} (${vitana.projected_day_90_tier} tier). Mirror the trajectory card on /autopilot — use phrase "at this pace you land around X by Day 90".`);
       }
 
       if (vitana.last_movement) {
