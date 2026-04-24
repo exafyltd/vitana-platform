@@ -73,6 +73,25 @@ async function supaPatch(supa: SupaConfig, path: string, body: unknown): Promise
   }
 }
 
+async function supaPost(supa: SupaConfig, path: string, body: unknown): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${supa.url}${path}`, {
+      method: 'POST',
+      headers: {
+        apikey: supa.key,
+        Authorization: `Bearer ${supa.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { ok: false, error: `${res.status}: ${await res.text()}` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
 // =============================================================================
 // Auth guard
 // =============================================================================
@@ -135,6 +154,145 @@ router.post('/scan', requireScanToken, async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, error: String(err) });
   }
 });
+
+// =============================================================================
+// POST /impact-ingest — diff-aware impact findings from PR-time scans
+// =============================================================================
+// Called by .github/workflows/DEV-AUTOPILOT-IMPACT.yml after the impact scan
+// completes on a push to main. Rows land in autopilot_recommendations with
+// source_type='dev_autopilot_impact' so they show up in the Developer
+// Autopilot view alongside baseline findings and can be auto-executed by
+// the same plan → approve → PR pipeline.
+//
+// Dedup: (source_type, signal_fingerprint) partial-unique index on status
+// IN ('new','snoozed') means re-ingesting the same finding bumps
+// seen_count instead of duplicating. Fingerprint = sha256 of
+// rule|file_path|message[:60] — stable across line-shift diffs.
+//
+// Skipped: findings with severity='info' (too noisy for the queue).
+
+router.post('/impact-ingest', requireScanToken, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  const body = req.body as {
+    findings?: Array<{
+      rule: string;
+      category?: string;
+      severity: 'blocker' | 'warning' | 'info';
+      file_path?: string | null;
+      line_number?: number | null;
+      message: string;
+      suggested_action?: string;
+      raw?: Record<string, unknown>;
+    }>;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body || !Array.isArray(body.findings)) {
+    return res.status(400).json({ ok: false, error: 'body must include findings[]' });
+  }
+
+  const { createHash } = await import('node:crypto');
+  const now = new Date().toISOString();
+  let newCount = 0;
+  let updatedCount = 0;
+  let skippedInfo = 0;
+
+  for (const f of body.findings) {
+    if (!f || !f.rule || !f.message) continue;
+    if (f.severity === 'info') { skippedInfo++; continue; }
+
+    const fingerprint = createHash('sha256')
+      .update(`${f.rule}|${f.file_path || ''}|${(f.message || '').slice(0, 60)}`)
+      .digest('hex')
+      .slice(0, 32);
+
+    // Lookup existing live finding with this fingerprint
+    const existing = await supaGet<Array<{ id: string; seen_count: number | null }>>(
+      supa,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed)&select=id,seen_count&limit=1`,
+    );
+    const hit = existing.ok && existing.data && existing.data[0];
+    if (hit) {
+      await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${hit.id}`, {
+        seen_count: (hit.seen_count || 1) + 1,
+        last_seen_at: now,
+        updated_at: now,
+      });
+      updatedCount++;
+      continue;
+    }
+
+    // Scoring maps severity → risk class + impact score; effort is
+    // deliberately low because most impact findings are small companion
+    // changes the autopilot can handle in one short PR.
+    const riskClass = f.severity === 'blocker' ? 'high' : 'medium';
+    const impactScore = f.severity === 'blocker' ? 8 : 5;
+    const effortScore = 3;
+    const title = buildImpactTitle(f);
+    const domain = domainForImpactCategory(f.category || 'companion');
+
+    const inserted = await supaPost(supa, '/rest/v1/autopilot_recommendations', {
+      title,
+      summary: f.message,
+      domain,
+      risk_level: riskClass,
+      risk_class: riskClass,
+      impact_score: impactScore,
+      effort_score: effortScore,
+      status: 'new',
+      source_type: 'dev_autopilot_impact',
+      // Impact findings ship as auto-exec-eligible at blocker severity only —
+      // warnings are still reviewable but won't be picked up by auto-approve
+      // (which gates on the scanner allowlist, not this field).
+      auto_exec_eligible: f.severity === 'blocker',
+      signal_fingerprint: fingerprint,
+      first_seen_at: now,
+      last_seen_at: now,
+      seen_count: 1,
+      spec_snapshot: {
+        rule: f.rule,
+        category: f.category || 'companion',
+        severity: f.severity,
+        file_path: f.file_path || null,
+        line_number: f.line_number || null,
+        suggested_action: f.suggested_action || null,
+        scanner: `impact:${f.rule}`,
+        signal_type: 'impact_' + (f.category || 'companion'),
+        ...(f.raw || {}),
+        source_metadata: body.metadata || null,
+      },
+    });
+    if (inserted.ok) newCount++;
+  }
+
+  return res.json({
+    ok: true,
+    new_count: newCount,
+    updated_count: updatedCount,
+    skipped_info: skippedInfo,
+  });
+});
+
+function buildImpactTitle(f: {
+  rule: string;
+  file_path?: string | null;
+  severity: 'blocker' | 'warning' | 'info';
+}): string {
+  const base = f.file_path ? (f.file_path.split('/').pop() || f.file_path) : null;
+  const rulePretty = f.rule.replace(/-/g, ' ');
+  if (base) return `[${f.severity}] ${rulePretty} in ${base}`;
+  return `[${f.severity}] ${rulePretty}`;
+}
+
+function domainForImpactCategory(cat: string): string {
+  switch (cat) {
+    case 'conflict':   return 'architecture';
+    case 'semantic':   return 'routes';
+    case 'companion':  return 'services';
+    default:           return 'general';
+  }
+}
 
 // =============================================================================
 // GET /runs — last N runs
@@ -262,7 +420,14 @@ router.get('/queue', requireDevRole, async (req: Request, res: Response) => {
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
   const qs = new URLSearchParams();
-  qs.append('source_type', 'eq.dev_autopilot');
+  // Include both baseline Dev Autopilot findings and the diff-aware impact
+  // findings. Callers that want just one kind can pass ?kind=baseline or
+  // ?kind=impact; default shows both so the Developer Autopilot view can
+  // activate items from either source.
+  const kind = String(req.query.kind || 'all');
+  if (kind === 'baseline') qs.append('source_type', 'eq.dev_autopilot');
+  else if (kind === 'impact') qs.append('source_type', 'eq.dev_autopilot_impact');
+  else qs.append('source_type', 'in.(dev_autopilot,dev_autopilot_impact)');
   const status = String(req.query.status || 'new');
   qs.append('status', `eq.${status}`);
   if (req.query.risk)   qs.append('risk_class', `eq.${String(req.query.risk)}`);
@@ -344,7 +509,7 @@ router.post('/findings/:id/continue-planning', requireDevRole, async (req: Reque
 // =============================================================================
 
 async function rejectById(supa: SupaConfig, id: string): Promise<{ ok: boolean; error?: string }> {
-  const r = await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${id}&source_type=eq.dev_autopilot`, {
+  const r = await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${id}&source_type=in.(dev_autopilot,dev_autopilot_impact)`, {
     status: 'rejected',
     updated_at: new Date().toISOString(),
   });
@@ -391,7 +556,7 @@ async function snoozeById(
   hours: number,
 ): Promise<{ ok: boolean; error?: string }> {
   const until = new Date(Date.now() + hours * 3600 * 1000).toISOString();
-  const r = await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${id}&source_type=eq.dev_autopilot`, {
+  const r = await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${id}&source_type=in.(dev_autopilot,dev_autopilot_impact)`, {
     status: 'snoozed',
     snoozed_until: until,
     updated_at: new Date().toISOString(),
