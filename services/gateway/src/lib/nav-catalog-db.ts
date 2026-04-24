@@ -394,8 +394,14 @@ const SCORER_STOPWORDS = new Set<string>([
   'want', 'wants', 'wanted', 'need', 'needs', 'needed', 'like', 'likes', 'liked',
   'get', 'got', 'getting', 'take', 'taken', 'taking',
   'show', 'shows', 'showed', 'open', 'opens', 'opened', 'close', 'closed', 'go', 'goes', 'going', 'went',
-  // German navigation verbs
+  // Generic UI nouns — users say "open the X screen" meaning "open X". Kept
+  // in sync with navigation-catalog.ts::STOPWORDS.
+  'screen', 'screens', 'page', 'pages', 'section', 'sections',
+  'view', 'views', 'panel', 'panels', 'tab', 'tabs', 'window', 'windows',
+  // German navigation verbs + UI nouns
   'öffne', 'öffnen', 'öffnet', 'schließen', 'schließe',
+  'seite', 'seiten', 'bildschirm', 'bildschirme',
+  'ansicht', 'ansichten', 'bereich', 'bereiche', 'fenster',
   // German
   'ich', 'mich', 'mir', 'mein', 'meine', 'meinen', 'meinem', 'meiner', 'meines',
   'du', 'dich', 'dir', 'dein', 'deine', 'deinen',

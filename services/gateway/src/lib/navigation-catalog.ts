@@ -219,8 +219,18 @@ const STOPWORDS = new Set<string>([
   'want', 'wants', 'wanted', 'need', 'needs', 'needed', 'like', 'likes', 'liked',
   'get', 'got', 'getting', 'take', 'taken', 'taking',
   'show', 'shows', 'showed', 'open', 'opens', 'opened', 'close', 'closed', 'go', 'goes', 'going', 'went',
-  // German navigation verbs
+  // Generic UI nouns — users say "open the X screen" meaning "open X". Without
+  // these in stopwords, any entry whose when_to_visit mentions "screen" /
+  // "page" / "section" picks up a keyword hit on the generic word and the
+  // Navigator can't distinguish specific matches from noise (see "open
+  // connectors screen" silently matching HOME because its hint ends with
+  // "...or simply the home screen").
+  'screen', 'screens', 'page', 'pages', 'section', 'sections',
+  'view', 'views', 'panel', 'panels', 'tab', 'tabs', 'window', 'windows',
+  // German navigation verbs + UI nouns
   'öffne', 'öffnen', 'öffnet', 'schließen', 'schließe',
+  'seite', 'seiten', 'bildschirm', 'bildschirme',
+  'ansicht', 'ansichten', 'bereich', 'bereiche', 'fenster',
   // German
   'ich', 'mich', 'mir', 'mein', 'meine', 'meinen', 'meinem', 'meiner', 'meines',
   'du', 'dich', 'dir', 'dein', 'deine', 'deinen',
