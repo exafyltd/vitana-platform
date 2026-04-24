@@ -22119,6 +22119,7 @@ function renderDocsScreensView() {
         const thead = document.createElement('thead');
         thead.innerHTML = `
             <tr class="docs-table-header">
+                <th class="docs-table-cell docs-table-num">#</th>
                 <th class="docs-table-cell">Screen ID</th>
                 <th class="docs-table-cell">Module</th>
                 <th class="docs-table-cell">Tab</th>
@@ -22134,6 +22135,7 @@ function renderDocsScreensView() {
             const tr = document.createElement('tr');
             if (index % 2 !== 0) tr.className = 'docs-table-row-alt';
             tr.innerHTML = `
+                <td class="docs-table-cell docs-table-num">${index + 1}</td>
                 <td class="docs-table-cell">${screen.screen_id}</td>
                 <td class="docs-table-cell">${screen.module}</td>
                 <td class="docs-table-cell">${screen.tab}</td>
