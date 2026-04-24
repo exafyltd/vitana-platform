@@ -122,6 +122,39 @@ export function getCapability(id: string): CapabilityDefinition | undefined {
   return CAPABILITIES.find((c) => c.id === id);
 }
 
+/**
+ * BOOTSTRAP-YT-MUSIC-ALIAS: connection-provider aliases per capability.
+ *
+ * A user who connects YouTube from Settings → Connected Apps gets a
+ * `social_connections` row with `provider='youtube'` (VTID-01928 — a
+ * dedicated narrow-scope provider that shares Google's OAuth client but
+ * only requests `youtube.readonly` so users aren't forced to grant
+ * Gmail + Calendar access just to play music).
+ *
+ * The `music.play` capability is declared only by the `google` connector,
+ * which naively looks for `provider='google'` rows. Without this alias
+ * the resolver would say "YouTube isn't connected" even though the user
+ * clearly just connected YouTube — the exact bug this fix targets.
+ *
+ * Returns the ordered list of `social_connections.provider` values that
+ * satisfy this connector for this capability. Order matters: the dispatcher
+ * loads the first active row it finds.
+ *
+ * For `google` + `music.play`, the narrower `youtube`-scoped token is
+ * preferred over the bundled `google` token — it's the scope that was
+ * specifically granted for YouTube, and both tokens are equally capable
+ * of calling the YouTube Data API v3 search endpoint used internally.
+ */
+export function storageProvidersFor(
+  connectorId: string,
+  capabilityId: string,
+): string[] {
+  if (connectorId === 'google' && capabilityId === 'music.play') {
+    return ['youtube', 'google'];
+  }
+  return [connectorId];
+}
+
 export interface ResolveOptions {
   /**
    * Explicit connector id extracted from the user's phrase (e.g. "on Spotify",
@@ -173,8 +206,10 @@ export async function resolveConnectorFor(
     .eq('user_id', userId)
     .eq('is_active', true);
   const activeIds = new Set((active ?? []).map((r) => r.provider));
-  const isAvailable = (cId: string, auth: string): boolean =>
-    auth === 'none' || activeIds.has(cId);
+  const isAvailable = (cId: string, auth: string): boolean => {
+    if (auth === 'none') return true;
+    return storageProvidersFor(cId, capabilityId).some((p) => activeIds.has(p));
+  };
 
   // ── Rule 1: explicit source from the user phrase ──────────────────────
   if (options.explicitSource) {
@@ -218,7 +253,7 @@ export async function resolveConnectorFor(
 
   // ── Rule 4: prefer any externally-connected connector ─────────────────
   const externalConnected = candidates.find(
-    (c) => c.auth_type !== 'none' && activeIds.has(c.id),
+    (c) => c.auth_type !== 'none' && isAvailable(c.id, c.auth_type),
   );
   if (externalConnected) {
     return { connectorId: externalConnected.id, reason: 'external_connected' };
