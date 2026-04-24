@@ -284,6 +284,17 @@ export interface VitanaIndexSnapshot {
   model_version?: string;                            // e.g. 'v3-5pillar'
   confidence?: number;                               // 0-1, from the RPC
   last_movement?: { pillar: string; delta: number; reason?: string };
+  // G3: Life Compass active goal attached to the health snapshot so the
+  // ORB [HEALTH] block can emit an `Active goal:` line. Null when the user
+  // has not set a goal yet.
+  life_compass: LifeCompassSnapshot | null;
+}
+
+/** Live Life Compass goal attached to the user's health snapshot. */
+export interface LifeCompassSnapshot {
+  primary_goal: string;
+  category: string;
+  confidence_score?: number | null;
 }
 
 /**
@@ -321,6 +332,36 @@ function parseSubscoresFromFeatureInputs(featureInputs: any): Partial<Record<Pil
     }
   }
   return out;
+}
+
+/**
+ * G3: fetch the user's active Life Compass goal so it can ride along on the
+ * VitanaIndexSnapshot and the ORB [HEALTH] block. Null when no goal set.
+ * Best-effort: a table-missing or RLS error returns null so the profiler
+ * stays up if the compass surface is temporarily unavailable.
+ */
+export async function fetchLifeCompass(
+  client: SupabaseClient,
+  userId: string,
+): Promise<LifeCompassSnapshot | null> {
+  try {
+    const { data, error } = await client
+      .from('life_compass')
+      .select('primary_goal, category, confidence_score')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error || !data || data.length === 0) return null;
+    const row = data[0] as { primary_goal: string; category: string; confidence_score?: number | null };
+    return {
+      primary_goal: row.primary_goal,
+      category: row.category,
+      confidence_score: row.confidence_score ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexFetchResult> {
@@ -454,6 +495,10 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
       model_version: latest.model_version ?? undefined,
       confidence: typeof latest.confidence === 'number' ? latest.confidence : undefined,
       last_movement,
+      // G3: attach Life Compass goal to the snapshot. Best-effort — null when
+      // not set. Fetched after the Index read so the profiler doesn't fan out
+      // an extra call for users whose Index isn't computed yet.
+      life_compass: await fetchLifeCompass(client, userId),
     },
   };
 }
@@ -759,6 +804,14 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
 
       if (vitana.model_version) {
         lines.push(`- Model: ${vitana.model_version}${typeof vitana.confidence === 'number' ? `, confidence ${vitana.confidence.toFixed(2)}` : ''}.`);
+      }
+
+      // G3: Life Compass — when set, surface the goal so voice can align
+      // suggestions toward it. When missing, invite the user to set one.
+      if (vitana.life_compass) {
+        lines.push(`- Active goal: "${vitana.life_compass.primary_goal}" (category: ${vitana.life_compass.category}). Frame every suggestion through this goal. If user wants to change direction: say "open my goals" → Life Compass overlay opens.`);
+      } else {
+        lines.push('- Active goal: NOT SET. Gently suggest the user open their Life Compass and pick a direction so Vitana can bias recommendations.');
       }
     } else if (vitanaResult.state === 'no_score_baseline_exists') {
       lines.push('- Vitana Index status: SETUP INCOMPLETE. The 5-pillar baseline survey was submitted, but the score did not compute (earlier compute RPC error). The user needs to retry — the Health screen should re-prompt the baseline modal. Do NOT fabricate an Index number.');

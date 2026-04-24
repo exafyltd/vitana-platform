@@ -65,7 +65,7 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!', calendar_event: { title_template: 'Attend a meetup', duration_minutes: 60, event_type: 'community', wellness_tags: ['social'] } },
   engage_health:        { action_type: 'navigate', target: '/health', completion_message: 'Check your health scores!', calendar_event: { title_template: 'Check health scores', duration_minutes: 15, event_type: 'health', wellness_tags: ['health-check'] } },
   deepen_connection:    { action_type: 'navigate', target: '/connections', completion_message: 'Reach out to a connection!', calendar_event: { title_template: 'Deepen a connection', duration_minutes: 30, event_type: 'personal', wellness_tags: ['social'] } },
-  set_goal:             { action_type: 'navigate', target: '/health', completion_message: 'Set a health goal with Maxina!', calendar_event: { title_template: 'Set a health goal', duration_minutes: 15, event_type: 'health', wellness_tags: ['health', 'mindfulness'] } },
+  set_goal:             { action_type: 'navigate', target: '/?open=life_compass', completion_message: "Pick a direction — your goal will steer Vitana's recommendations.", calendar_event: { title_template: 'Open your Life Compass', duration_minutes: 10, event_type: 'personal', wellness_tags: ['mindfulness', 'mental'] } },
   invite_friend:        { action_type: 'navigate', target: '/invite', completion_message: 'Share Vitana with a friend!' },
   // Advanced
   share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
