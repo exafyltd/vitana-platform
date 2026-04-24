@@ -48,6 +48,13 @@ export interface RankedRec<T extends RankInputRec = RankInputRec> {
   explanation: string;
 }
 
+export interface PillarRecentActivity {
+  last_completed_at: string | null;
+  completions_24h: number;
+  completions_7d: number;
+  plan_events_24h: number;
+}
+
 export interface RankerContext {
   pillars: Record<PillarKey, number> | null;
   balance_factor: number | null;
@@ -56,6 +63,11 @@ export interface RankerContext {
   days_since_start: number | null;      // calendar days since first Index row
   has_baseline: boolean;
   has_recent_completions: boolean;       // ≥ 1 completion in last 14 days
+  // G7: per-pillar recent activity. Missing pillar → treated as zero so
+  // dampening is a no-op.
+  recent_activity: Partial<Record<PillarKey, PillarRecentActivity>>;
+  // G7: per-domain 30-day dismissal rate for rejection-suppression.
+  rejection_rate_by_domain: Record<string, number>;
 }
 
 export interface RankerConfig {
@@ -64,6 +76,12 @@ export interface RankerConfig {
   compass_boost: number;  // default 1.3
   pillar_quota_max: number;   // default 0.40 → at most 40% from one pillar
   weakest_quota_max: number;  // default 0.60 when balance_factor ≤ 0.7
+  // G7: feedback-loop multipliers
+  completion_dampener: number;    // 0.3 — recent completion halves rec
+  plan_dampener: number;          // 0.3 — voice just planned this pillar
+  rejection_dampener_alpha: number; // 0.5 — impact × (1 - alpha × dismiss_rate)
+  streak_reinforcement: number;    // 1.3 — when streak ≥ 3 days
+  community_momentum_boost: number; // 1.2 — when ≥ 3 community completions/7d
 }
 
 export const DEFAULT_RANKER_CONFIG: RankerConfig = {
@@ -72,6 +90,11 @@ export const DEFAULT_RANKER_CONFIG: RankerConfig = {
   compass_boost: 1.3,
   pillar_quota_max: 0.40,
   weakest_quota_max: 0.60,
+  completion_dampener: 0.3,
+  plan_dampener: 0.3,
+  rejection_dampener_alpha: 0.5,
+  streak_reinforcement: 1.3,
+  community_momentum_boost: 1.2,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -97,8 +120,10 @@ export async function buildRankerContext(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<RankerContext> {
-  // Latest Index row + feature_inputs + first-ever row for day-count
-  const [latestIdx, firstIdx, goal, recentCompletions, baselineSurvey] = await Promise.all([
+  // Latest Index row + first-ever row for day-count + Life Compass +
+  // 14d completion flag + baseline-exists flag + G7 recent-activity view +
+  // G7 rejection-rate-by-domain.
+  const [latestIdx, firstIdx, goal, recentCompletions, baselineSurvey, activity, rejections] = await Promise.all([
     supabase
       .from('vitana_index_scores')
       .select('score_nutrition, score_hydration, score_exercise, score_sleep, score_mental, feature_inputs, date')
@@ -133,6 +158,19 @@ export async function buildRankerContext(
       .eq('user_id', userId)
       .limit(1)
       .maybeSingle(),
+    // G7: user_pillar_recent_activity view — 5 rows/user (one per pillar
+    // the user has activity on). Pillars with zero activity are absent.
+    supabase
+      .from('user_pillar_recent_activity')
+      .select('pillar, last_completed_at, completions_24h, completions_7d, plan_events_24h')
+      .eq('user_id', userId),
+    // G7: 30-day rejection rate per domain. Count rejected vs total for
+    // each domain and compute ratio in-ranker.
+    supabase
+      .from('autopilot_recommendations')
+      .select('domain, status')
+      .eq('user_id', userId)
+      .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()),
   ]);
 
   let pillars: Record<PillarKey, number> | null = null;
@@ -162,7 +200,37 @@ export async function buildRankerContext(
   const has_recent_completions = (recentCompletions.count ?? 0) > 0;
   const has_baseline = !!(baselineSurvey.data);
 
-  return { pillars, balance_factor, weakest_pillar, active_goal_category, days_since_start, has_baseline, has_recent_completions };
+  // G7: build recent_activity map from view rows (missing pillars → absent).
+  const recent_activity: Partial<Record<PillarKey, PillarRecentActivity>> = {};
+  for (const row of (activity.data ?? []) as any[]) {
+    const p = row.pillar as PillarKey;
+    if (!PILLAR_KEYS.includes(p)) continue;
+    recent_activity[p] = {
+      last_completed_at: row.last_completed_at ?? null,
+      completions_24h: Number(row.completions_24h) || 0,
+      completions_7d: Number(row.completions_7d) || 0,
+      plan_events_24h: Number(row.plan_events_24h) || 0,
+    };
+  }
+
+  // G7: compute per-domain rejection rate from last-30-day recs.
+  const domainTotals: Record<string, { total: number; rejected: number }> = {};
+  for (const row of (rejections.data ?? []) as { domain: string | null; status: string | null }[]) {
+    const d = row.domain || 'unknown';
+    if (!domainTotals[d]) domainTotals[d] = { total: 0, rejected: 0 };
+    domainTotals[d].total += 1;
+    if (row.status === 'rejected') domainTotals[d].rejected += 1;
+  }
+  const rejection_rate_by_domain: Record<string, number> = {};
+  for (const [d, t] of Object.entries(domainTotals)) {
+    rejection_rate_by_domain[d] = t.total > 0 ? t.rejected / t.total : 0;
+  }
+
+  return {
+    pillars, balance_factor, weakest_pillar, active_goal_category,
+    days_since_start, has_baseline, has_recent_completions,
+    recent_activity, rejection_rate_by_domain,
+  };
 }
 
 /**
@@ -229,11 +297,51 @@ export function scoreRec<T extends RankInputRec>(
   // Journey mode — decays over 90 days, gated on data coverage.
   const journey_mode = computeJourneyMode(ctx);
 
-  // Final: base × (1 + alpha_pillar × pillarBoost × (1 − journey_mode)) × compass_boost
-  // (wave_match requires template registry metadata we don't have here; alpha_wave applies
-  //  at a higher-level enrichment step — left at 0 contribution here so this weighter is
-  //  a pure pillar+compass+journey function and a later wave-match pass can stack on top.)
-  const rank_score = base * (1 + cfg.alpha_pillar * pillar_boost * (1 - journey_mode)) * compass_boost;
+  // G7 — feedback-loop multipliers.
+  // 1. Completion dampener: if the primary pillar of this rec has a recent
+  //    completion (< 24h) OR voice just planned an event on it, knock the
+  //    score down to 0.3× so the Autopilot surfaces a balance-complementing
+  //    rec instead of doubling up.
+  // 2. Streak reinforcement: if the user has a 7d streak-class signal on this
+  //    pillar AND the rec is a reinforcement (start_streak / completions > 0),
+  //    multiply by 1.3×.
+  // 3. Community-momentum boost: if the user has completed ≥ 3 community
+  //    actions in last 7 days AND the rec's primary pillar is Mental via
+  //    community tags, multiply by 1.2×.
+  // 4. Rejection suppression: impact × (1 − alpha × dismissal_rate_for_domain).
+  const primary = primaryPillar(rec);
+  let feedback_mult = 1.0;
+  let feedback_reason = '';
+  if (primary && ctx.recent_activity[primary]) {
+    const act = ctx.recent_activity[primary]!;
+    if (act.completions_24h > 0) {
+      feedback_mult *= cfg.completion_dampener;
+      feedback_reason += ' completion_dampened';
+    } else if (act.plan_events_24h > 0) {
+      feedback_mult *= cfg.plan_dampener;
+      feedback_reason += ' voice_plan_dampened';
+    }
+    if (act.completions_7d >= 3 && primary === 'mental') {
+      feedback_mult *= cfg.community_momentum_boost;
+      feedback_reason += ' community_momentum';
+    }
+    // Streak reinforcement — rec that encourages continuing the streak
+    if (act.completions_7d >= 3 && rec.source_ref === 'start_streak') {
+      feedback_mult *= cfg.streak_reinforcement;
+      feedback_reason += ' streak_reinforcement';
+    }
+  }
+  // Rejection suppression by domain
+  if (rec.domain) {
+    const rate = ctx.rejection_rate_by_domain[rec.domain] ?? 0;
+    if (rate > 0) {
+      feedback_mult *= Math.max(0.2, 1 - cfg.rejection_dampener_alpha * rate);
+      feedback_reason += ` rej_rate_${rate.toFixed(2)}`;
+    }
+  }
+
+  // Final: base × (1 + alpha_pillar × pillarBoost × (1 − journey_mode)) × compass_boost × feedback_mult
+  const rank_score = base * (1 + cfg.alpha_pillar * pillar_boost * (1 - journey_mode)) * compass_boost * feedback_mult;
 
   return {
     rec,
@@ -241,8 +349,20 @@ export function scoreRec<T extends RankInputRec>(
     pillar_boost,
     compass_boost,
     journey_mode,
-    explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} = ${rank_score.toFixed(2)}`,
+    explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} × fb=${feedback_mult.toFixed(2)}${feedback_reason} = ${rank_score.toFixed(2)}`,
   };
+}
+
+/** Shared helper — pick the primary pillar a rec targets by finding the
+ *  pillar key with the highest non-zero contribution_vector value. */
+function primaryPillar(rec: RankInputRec): PillarKey | null {
+  if (!rec.contribution_vector) return null;
+  let best: { p: PillarKey; v: number } | null = null;
+  for (const p of PILLAR_KEYS) {
+    const v = Number((rec.contribution_vector as any)[p] ?? 0);
+    if (v > 0 && (!best || v > best.v)) best = { p, v };
+  }
+  return best?.p ?? null;
 }
 
 /**
@@ -266,16 +386,6 @@ export function rankBatch<T extends RankInputRec>(
   const pillarQuota = Math.max(1, Math.floor(total * cfg.pillar_quota_max));
   const weakestQuota = Math.max(1, Math.floor(total * cfg.weakest_quota_max));
   const unbalanced = ctx.balance_factor !== null && ctx.balance_factor <= 0.7 && ctx.weakest_pillar !== null;
-
-  const primaryPillar = (rec: T): PillarKey | null => {
-    if (!rec.contribution_vector) return null;
-    let best: { p: PillarKey; v: number } | null = null;
-    for (const p of PILLAR_KEYS) {
-      const v = Number((rec.contribution_vector as any)[p] ?? 0);
-      if (v > 0 && (!best || v > best.v)) best = { p, v };
-    }
-    return best?.p ?? null;
-  };
 
   const counts: Record<PillarKey, number> = { nutrition: 0, hydration: 0, exercise: 0, sleep: 0, mental: 0 };
   const kept: RankedRec<T>[] = [];
