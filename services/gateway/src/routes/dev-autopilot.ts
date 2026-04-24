@@ -348,7 +348,10 @@ router.get('/scanners', requireDevRole, async (_req: Request, res: Response) => 
   //      - last_scan_at   — most recent signal ingested per scanner
   //    Both come from dev_autopilot_signals + autopilot_recommendations. We
   //    fetch the raw rows once and aggregate in JS — avoids N round-trips.
-  const [openR, signalsR] = await Promise.all([
+  // 3. Cross-reference the auto-approve config so each row carries its
+  //    auto_approved status — the Command Hub Auto-Approve tab reads this
+  //    to show ops which scanners the autopilot would pick unattended.
+  const [openR, signalsR, cfgR] = await Promise.all([
     supaGet<Array<{ spec_snapshot: { scanner?: string } | null }>>(
       supa,
       `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new&select=spec_snapshot&limit=2000`,
@@ -356,6 +359,10 @@ router.get('/scanners', requireDevRole, async (_req: Request, res: Response) => 
     supaGet<Array<{ scanner: string | null; created_at: string | null }>>(
       supa,
       `/rest/v1/dev_autopilot_signals?scanner=not.is.null&select=scanner,created_at&order=created_at.desc&limit=5000`,
+    ),
+    supaGet<Array<{ auto_approve_enabled: boolean; auto_approve_scanners: string[] }>>(
+      supa,
+      `/rest/v1/dev_autopilot_config?id=eq.1&select=auto_approve_enabled,auto_approve_scanners&limit=1`,
     ),
   ]);
 
@@ -376,12 +383,19 @@ router.get('/scanners', requireDevRole, async (_req: Request, res: Response) => 
       totalSignals.set(row.scanner, (totalSignals.get(row.scanner) || 0) + 1);
     }
   }
+  const cfg = cfgR.ok && cfgR.data && cfgR.data[0];
+  const autoEnabled = !!(cfg && cfg.auto_approve_enabled);
+  const autoList = new Set(cfg && cfg.auto_approve_scanners ? cfg.auto_approve_scanners : []);
 
   const scanners = (regR.data || []).map(r => ({
     ...r,
     open_findings: openCount.get(r.scanner) || 0,
     last_signal_at: lastSeen.get(r.scanner) || null,
     total_signals_in_last_5000: totalSignals.get(r.scanner) || 0,
+    // Effective auto-approve status — true only when the master switch is ON
+    // AND the scanner id is in the allowlist.
+    auto_approved: autoEnabled && autoList.has(r.scanner),
+    in_auto_approve_list: autoList.has(r.scanner),
   }));
 
   return res.json({ ok: true, scanners, count: scanners.length });
@@ -395,20 +409,150 @@ router.get('/impact-rules', requireDevRole, async (_req: Request, res: Response)
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
-  const r = await supaGet<Array<{
-    rule: string;
-    title: string;
-    description: string;
-    category: string;
-    severity: string;
-    enabled: boolean;
-    docs_url: string | null;
-    created_at: string;
-    updated_at: string;
-  }>>(supa, `/rest/v1/dev_autopilot_impact_rules?order=category.asc,rule.asc`);
-  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const [rulesR, cfgR] = await Promise.all([
+    supaGet<Array<{
+      rule: string;
+      title: string;
+      description: string;
+      category: string;
+      severity: string;
+      enabled: boolean;
+      docs_url: string | null;
+      created_at: string;
+      updated_at: string;
+    }>>(supa, `/rest/v1/dev_autopilot_impact_rules?order=category.asc,rule.asc`),
+    supaGet<Array<{ auto_approve_impact_enabled: boolean; auto_approve_impact_rules: string[] }>>(
+      supa,
+      `/rest/v1/dev_autopilot_config?id=eq.1&select=auto_approve_impact_enabled,auto_approve_impact_rules&limit=1`,
+    ),
+  ]);
+  if (!rulesR.ok) return res.status(500).json({ ok: false, error: rulesR.error });
 
-  return res.json({ ok: true, rules: r.data, count: (r.data || []).length });
+  const cfg = cfgR.ok && cfgR.data && cfgR.data[0];
+  const autoEnabled = !!(cfg && cfg.auto_approve_impact_enabled);
+  const autoList = new Set(cfg && cfg.auto_approve_impact_rules ? cfg.auto_approve_impact_rules : []);
+
+  const rules = (rulesR.data || []).map(r => ({
+    ...r,
+    auto_approved: autoEnabled && autoList.has(r.rule),
+    in_auto_approve_list: autoList.has(r.rule),
+  }));
+
+  return res.json({ ok: true, rules, count: rules.length });
+});
+
+// =============================================================================
+// GET /auto-approve — aggregated view of the auto-approve registry
+// =============================================================================
+// One call for the Command Hub Auto-Approve tab. Returns:
+//   - master switches (enabled flags, daily budget, concurrency cap)
+//   - budget usage (approved_today, running_now)
+//   - baseline scanners with auto_approved + in_auto_approve_list flags
+//   - impact rules with the same flags
+//   - derived "autonomy progress" — share of scanners/rules currently opted in
+// The long-term direction is documented inline: the user's stated goal is
+// "extend the list until fully autonomous, self-improving and self-healing".
+// Each unchecked row here is a step on that path.
+
+router.get('/auto-approve', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  const [cfgR, scannersR, rulesR, approvedTodayR, runningR] = await Promise.all([
+    supaGet<Array<{
+      auto_approve_enabled: boolean;
+      auto_approve_max_effort: number;
+      auto_approve_risk_classes: string[];
+      auto_approve_scanners: string[];
+      auto_approve_impact_enabled: boolean;
+      auto_approve_impact_rules: string[];
+      daily_budget: number;
+      concurrency_cap: number;
+      kill_switch: boolean;
+    }>>(supa,
+      `/rest/v1/dev_autopilot_config?id=eq.1`
+      + `&select=auto_approve_enabled,auto_approve_max_effort,auto_approve_risk_classes,`
+      + `auto_approve_scanners,auto_approve_impact_enabled,auto_approve_impact_rules,`
+      + `daily_budget,concurrency_cap,kill_switch&limit=1`),
+    supaGet<Array<{
+      scanner: string; title: string; description: string; category: string;
+      maturity: string; default_severity: string; default_risk_class: string;
+      enabled: boolean;
+    }>>(supa, `/rest/v1/dev_autopilot_scanners?order=category.asc,scanner.asc`),
+    supaGet<Array<{
+      rule: string; title: string; description: string; category: string;
+      severity: string; enabled: boolean;
+    }>>(supa, `/rest/v1/dev_autopilot_impact_rules?order=category.asc,rule.asc`),
+    supaGet<unknown[]>(
+      supa,
+      `/rest/v1/dev_autopilot_executions?approved_at=gte.${(function () {
+        const t = new Date(); t.setUTCHours(0, 0, 0, 0); return t.toISOString();
+      })()}&select=id`,
+    ),
+    supaGet<unknown[]>(
+      supa,
+      `/rest/v1/dev_autopilot_executions?status=in.(running,ci,merging,deploying,verifying)&select=id`,
+    ),
+  ]);
+  if (!cfgR.ok) return res.status(500).json({ ok: false, error: cfgR.error });
+  const cfg = cfgR.data && cfgR.data[0];
+  if (!cfg) return res.status(500).json({ ok: false, error: 'dev_autopilot_config missing' });
+
+  const scannerAllow = new Set(cfg.auto_approve_scanners || []);
+  const impactAllow = new Set(cfg.auto_approve_impact_rules || []);
+
+  const scanners = (scannersR.data || []).map(s => ({
+    ...s,
+    auto_approved: cfg.auto_approve_enabled && scannerAllow.has(s.scanner),
+    in_auto_approve_list: scannerAllow.has(s.scanner),
+  }));
+  const rules = (rulesR.data || []).map(r => ({
+    ...r,
+    auto_approved: cfg.auto_approve_impact_enabled && impactAllow.has(r.rule),
+    in_auto_approve_list: impactAllow.has(r.rule),
+  }));
+
+  const approvedToday = Array.isArray(approvedTodayR.data) ? approvedTodayR.data.length : 0;
+  const running = Array.isArray(runningR.data) ? runningR.data.length : 0;
+
+  const totalSurfaces = scanners.length + rules.length;
+  const autoSurfaces = scanners.filter(s => s.auto_approved).length
+    + rules.filter(r => r.auto_approved).length;
+  const autonomyProgress = totalSurfaces > 0
+    ? Math.round((autoSurfaces / totalSurfaces) * 100)
+    : 0;
+
+  return res.json({
+    ok: true,
+    config: {
+      kill_switch: cfg.kill_switch,
+      daily_budget: cfg.daily_budget,
+      concurrency_cap: cfg.concurrency_cap,
+      baseline: {
+        enabled: cfg.auto_approve_enabled,
+        max_effort: cfg.auto_approve_max_effort,
+        risk_classes: cfg.auto_approve_risk_classes || [],
+        allowed_scanners: cfg.auto_approve_scanners || [],
+      },
+      impact: {
+        enabled: cfg.auto_approve_impact_enabled,
+        allowed_rules: cfg.auto_approve_impact_rules || [],
+      },
+    },
+    budget: {
+      approved_today: approvedToday,
+      daily_budget: cfg.daily_budget,
+      running_now: running,
+      concurrency_cap: cfg.concurrency_cap,
+    },
+    progress: {
+      auto_approved_surfaces: autoSurfaces,
+      total_surfaces: totalSurfaces,
+      autonomy_percent: autonomyProgress,
+    },
+    scanners,
+    rules,
+  });
 });
 
 // =============================================================================

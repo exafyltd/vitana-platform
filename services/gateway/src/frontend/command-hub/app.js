@@ -2677,6 +2677,7 @@ const NAVIGATION_CONFIG = [
             { "key": "registry", "path": "/command-hub/autopilot/registry/" },
             { "key": "scanners", "path": "/command-hub/autopilot/scanners/" },
             { "key": "impact-rules", "path": "/command-hub/autopilot/impact-rules/" },
+            { "key": "auto-approve", "path": "/command-hub/autopilot/auto-approve/" },
             { "key": "runs", "path": "/command-hub/autopilot/runs/" },
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
@@ -6225,6 +6226,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAutopilotScannersView());
     } else if (moduleKey === 'autopilot' && tab === 'impact-rules') {
         container.appendChild(renderAutopilotImpactRulesView());
+    } else if (moduleKey === 'autopilot' && tab === 'auto-approve') {
+        container.appendChild(renderAutopilotAutoApproveView());
     } else if (moduleKey === 'autopilot' && tab === 'runs') {
         container.appendChild(renderAutopilotRunsView());
     } else if (moduleKey === 'autopilot' && tab === 'live') {
@@ -38922,6 +38925,7 @@ if (!state.autopilot) {
         registry: { loading: false, data: null, summary: null, filters: { domain: '', status: '', trigger: '', search: '' } },
         scanners: { loading: false, data: null, filter: { category: '', maturity: '' } },
         impactRules: { loading: false, data: null, filter: { category: '', severity: '' } },
+        autoApprove: { loading: false, data: null },
         runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
         live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
@@ -39635,6 +39639,210 @@ function renderAutopilotImpactRulesView() {
         });
         container.appendChild(section);
     });
+    return container;
+}
+
+// ── Auto-Approve Registry ────────────────────────────────────
+// Surfaces GET /api/v1/dev-autopilot/auto-approve — the continuously-growing
+// list that tracks the autopilot's path from "manual approve everything" to
+// "fully autonomous self-improving + self-healing". Each row that's green
+// here runs unattended end-to-end; each row that's gray is a candidate for
+// the next opt-in step.
+
+async function fetchAutopilotAutoApprove() {
+    var s = state.autopilot.autoApprove;
+    if (s.loading) return;
+    s.loading = true;
+    renderApp();
+    try {
+        var res = await fetch('/api/v1/dev-autopilot/auto-approve', { headers: buildContextHeaders({}) });
+        if (res.ok) {
+            s.data = await res.json();
+        } else {
+            console.error('[Autopilot] fetchAutoApprove failed:', res.status);
+            s.data = null;
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchAutoApprove error:', err);
+        s.data = null;
+    } finally {
+        s.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotAutoApproveView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Auto-Approve Registry';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'The path from manual approval to fully autonomous self-improvement. Every green row runs end-to-end without human input; every gray row is a candidate for the next opt-in.';
+    container.appendChild(subtitle);
+
+    var s = state.autopilot.autoApprove;
+    if (!s.data && !s.loading) setTimeout(function () { fetchAutopilotAutoApprove(); }, 0);
+    if (s.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading auto-approve registry...';
+        container.appendChild(loader);
+        return container;
+    }
+    if (!s.data || !s.data.ok) return container;
+
+    var data = s.data;
+    var cfg = data.config;
+    var budget = data.budget;
+    var progress = data.progress;
+
+    // Autonomy progress bar
+    var progressSection = document.createElement('section');
+    progressSection.style.cssText = 'background:linear-gradient(135deg,#0f172a,#13131f);border:1px solid #333;border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1.5rem;';
+    var progHeader = document.createElement('div');
+    progHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;';
+    var progLabel = document.createElement('div');
+    progLabel.style.cssText = 'color:#ccc;font-size:0.95rem;font-weight:600;';
+    progLabel.textContent = 'Autonomy progress';
+    progHeader.appendChild(progLabel);
+    var progPct = document.createElement('div');
+    progPct.style.cssText = 'color:#4ade80;font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;';
+    progPct.textContent = progress.autonomy_percent + '%';
+    progHeader.appendChild(progPct);
+    progressSection.appendChild(progHeader);
+
+    var barTrack = document.createElement('div');
+    barTrack.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:999px;height:10px;overflow:hidden;margin-bottom:0.5rem;';
+    var barFill = document.createElement('div');
+    barFill.style.cssText = 'background:linear-gradient(90deg,#06b6d4,#4ade80);height:100%;width:' + progress.autonomy_percent + '%;transition:width 0.4s ease;';
+    barTrack.appendChild(barFill);
+    progressSection.appendChild(barTrack);
+
+    var progFoot = document.createElement('div');
+    progFoot.style.cssText = 'color:#888;font-size:0.82rem;';
+    progFoot.textContent = progress.auto_approved_surfaces + ' of ' + progress.total_surfaces + ' detection surfaces run unattended · ultimate goal: 100%';
+    progressSection.appendChild(progFoot);
+    container.appendChild(progressSection);
+
+    // Master state cards
+    var cardsRow = document.createElement('div');
+    cardsRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    cardsRow.appendChild(createSummaryCard('Baseline auto-approve',
+        cfg.baseline.enabled ? 'ON' : 'OFF',
+        cfg.baseline.enabled ? '#4ade80' : '#888'));
+    cardsRow.appendChild(createSummaryCard('Impact auto-approve',
+        cfg.impact.enabled ? 'ON' : 'OFF',
+        cfg.impact.enabled ? '#4ade80' : '#888'));
+    cardsRow.appendChild(createSummaryCard('Approved today',
+        budget.approved_today + ' / ' + budget.daily_budget,
+        '#06b6d4'));
+    cardsRow.appendChild(createSummaryCard('Running now',
+        budget.running_now + ' / ' + budget.concurrency_cap,
+        budget.running_now >= budget.concurrency_cap ? '#ffb74d' : '#fff'));
+    if (cfg.kill_switch) {
+        cardsRow.appendChild(createSummaryCard('Kill switch', 'ACTIVE', '#f44336'));
+    }
+    container.appendChild(cardsRow);
+
+    // Config rules summary
+    var cfgSection = document.createElement('section');
+    cfgSection.style.cssText = 'background:#13131f;border:1px solid #333;border-radius:8px;padding:1rem 1.25rem;margin-bottom:1.5rem;color:#aaa;font-size:0.84rem;line-height:1.5;';
+    var cfgRules = document.createElement('div');
+    cfgRules.innerHTML =
+        '<strong style="color:#ccc;">Baseline gate:</strong> risk_class in [' +
+        (cfg.baseline.risk_classes || []).join(', ') + '] · max_effort ≤ ' +
+        cfg.baseline.max_effort + ' · allowlist of ' +
+        (cfg.baseline.allowed_scanners || []).length + ' scanners<br>' +
+        '<strong style="color:#ccc;">Impact gate:</strong> explicit allowlist of ' +
+        (cfg.impact.allowed_rules || []).length + ' rule(s)<br>' +
+        '<strong style="color:#ccc;">To opt in a new detector:</strong> add its id to <code style="color:#9ca3af;">auto_approve_scanners</code> or <code style="color:#9ca3af;">auto_approve_impact_rules</code> in dev_autopilot_config, then flip the corresponding <code style="color:#9ca3af;">*_enabled</code> flag.';
+    cfgSection.appendChild(cfgRules);
+    container.appendChild(cfgSection);
+
+    // Helper: one row per surface.
+    function renderSurfaceRow(s, idField, type) {
+        var card = document.createElement('div');
+        var borderColor = s.auto_approved ? '#4ade8055' : (s.in_auto_approve_list ? '#eab30855' : '#333');
+        var bg = s.auto_approved ? '#0f2316' : '#13131f';
+        card.style.cssText = 'background:' + bg + ';border:1px solid ' + borderColor + ';border-radius:8px;padding:10px 14px;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.85rem;';
+
+        // Status pill
+        var pill = document.createElement('span');
+        var pillColor, pillText;
+        if (s.auto_approved) { pillColor = '#4ade80'; pillText = '✓ auto'; }
+        else if (s.in_auto_approve_list) { pillColor = '#eab308'; pillText = '◐ listed (gate off)'; }
+        else { pillColor = '#666'; pillText = '○ manual'; }
+        pill.textContent = pillText;
+        pill.style.cssText = 'background:' + pillColor + '20;color:' + pillColor + ';border:1px solid ' + pillColor + '50;padding:2px 10px;border-radius:999px;font-size:0.72rem;white-space:nowrap;min-width:130px;text-align:center;';
+        card.appendChild(pill);
+
+        // Name + id
+        var left = document.createElement('div');
+        left.style.cssText = 'flex:1;min-width:0;';
+        var top = document.createElement('div');
+        top.style.cssText = 'color:#e5e5e5;font-weight:600;font-size:0.88rem;';
+        top.textContent = s.title;
+        left.appendChild(top);
+        var bottom = document.createElement('div');
+        bottom.style.cssText = 'color:#888;font-size:0.75rem;font-family:monospace;margin-top:2px;';
+        bottom.textContent = s[idField] + (type === 'impact' ? '  ·  severity=' + s.severity : '  ·  severity=' + s.default_severity);
+        left.appendChild(bottom);
+        card.appendChild(left);
+
+        // Category badge
+        var cat = document.createElement('span');
+        cat.textContent = (s.category || 'general').replace('_', ' ');
+        cat.style.cssText = 'color:#666;font-size:0.7rem;letter-spacing:0.05em;text-transform:uppercase;';
+        card.appendChild(cat);
+
+        return card;
+    }
+
+    // Baseline scanners
+    var scannerSection = document.createElement('section');
+    scannerSection.style.cssText = 'margin-bottom:2rem;';
+    var scH = document.createElement('h3');
+    scH.textContent = 'BASELINE SCANNERS (' + (data.scanners || []).length + ')';
+    scH.style.cssText = 'color:#888;font-size:0.8rem;letter-spacing:0.08em;margin:0 0 0.75rem 0;';
+    scannerSection.appendChild(scH);
+    var scHelp = document.createElement('p');
+    scHelp.style.cssText = 'color:#777;font-size:0.78rem;margin:0 0 0.75rem 0;';
+    scHelp.textContent = 'Run twice daily against the repo. Auto-approve gates on risk_class + effort_score + scanner allowlist when the baseline switch is ON.';
+    scannerSection.appendChild(scHelp);
+    (data.scanners || []).forEach(function (sc) {
+        scannerSection.appendChild(renderSurfaceRow(sc, 'scanner', 'scanner'));
+    });
+    container.appendChild(scannerSection);
+
+    // Impact rules
+    var ruleSection = document.createElement('section');
+    ruleSection.style.cssText = 'margin-bottom:2rem;';
+    var irH = document.createElement('h3');
+    irH.textContent = 'IMPACT RULES (' + (data.rules || []).length + ')';
+    irH.style.cssText = 'color:#888;font-size:0.8rem;letter-spacing:0.08em;margin:0 0 0.75rem 0;';
+    ruleSection.appendChild(irH);
+    var irHelp = document.createElement('p');
+    irHelp.style.cssText = 'color:#777;font-size:0.78rem;margin:0 0 0.75rem 0;';
+    irHelp.textContent = 'Run on every PR + every push to main. Auto-approve requires an explicit rule id in the allowlist — no risk/effort filter, the operator\'s opt-in IS the approval signal.';
+    ruleSection.appendChild(irHelp);
+    (data.rules || []).forEach(function (r) {
+        ruleSection.appendChild(renderSurfaceRow(r, 'rule', 'impact'));
+    });
+    container.appendChild(ruleSection);
+
+    // Refresh button
+    var refreshRow = document.createElement('div');
+    refreshRow.style.cssText = 'display:flex;justify-content:flex-end;';
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'padding:6px 14px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { state.autopilot.autoApprove.data = null; fetchAutopilotAutoApprove(); };
+    refreshRow.appendChild(refreshBtn);
+    container.appendChild(refreshRow);
+
     return container;
 }
 

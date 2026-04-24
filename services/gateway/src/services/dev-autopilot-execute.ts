@@ -160,11 +160,17 @@ interface ConfigRow {
   max_auto_fix_depth: number;
   allow_scope: string[];
   deny_scope: string[];
-  // Auto-approve gate (defaults to disabled — opt-in per environment).
+  // Auto-approve gate for BASELINE scanner findings (dev_autopilot).
+  // Defaults to disabled — opt-in per environment.
   auto_approve_enabled?: boolean;
   auto_approve_max_effort?: number;
   auto_approve_risk_classes?: string[];
   auto_approve_scanners?: string[];
+  // Auto-approve gate for IMPACT rule findings (dev_autopilot_impact).
+  // Independent toggle + allowlist so baseline and impact auto-approval
+  // evolve separately. See Command Hub → Autopilot → Auto-Approve.
+  auto_approve_impact_enabled?: boolean;
+  auto_approve_impact_rules?: string[];
 }
 
 async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
@@ -1303,6 +1309,79 @@ export async function autoApproveTick(): Promise<void> {
         },
       },
     });
+  }
+
+  // =============================================================
+  // Second pass: IMPACT findings.
+  // Independent gate — auto_approve_impact_enabled + explicit allowlist of
+  // rule ids. Unlike baseline, we don't filter by risk_class/effort — if
+  // the operator named the rule in auto_approve_impact_rules, that IS the
+  // approval signal. Shares the same daily_budget + concurrency_cap as
+  // baseline (one bucket), and the same PER_TICK_CAP.
+  // =============================================================
+  if (cfg.auto_approve_impact_enabled) {
+    const impactRules = cfg.auto_approve_impact_rules || [];
+    const remainingSlots = slots - approved;
+    if (remainingSlots > 0 && impactRules.length > 0) {
+      const ruleList = impactRules.map(r => `"${encodeURIComponent(r)}"`).join(',');
+      const impactR = await supa<Array<{
+        id: string;
+        risk_class: 'low' | 'medium' | 'high' | null;
+        effort_score: number | null;
+        impact_score: number | null;
+        spec_snapshot: { rule?: string; severity?: string; category?: string } | null;
+      }>>(
+        s,
+        `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&status=eq.new`
+          + `&spec_snapshot->>rule=in.(${ruleList})`
+          + `&order=impact_score.desc.nullslast,created_at.asc&limit=${remainingSlots * 2}`
+          + `&select=id,risk_class,effort_score,impact_score,spec_snapshot`,
+      );
+      if (impactR.ok && impactR.data && impactR.data.length > 0) {
+        for (const f of impactR.data) {
+          if (approved >= slots) break;
+
+          // Plan must exist — approveAutoExecute requires it. Impact
+          // findings don't get eager plans by default, so we generate one
+          // on the fly if none exists. Keep this best-effort: a plan-gen
+          // failure just means this finding waits for the next tick.
+          const planR = await supa<Array<{ version: number }>>(
+            s,
+            `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&order=version.desc&limit=1`,
+          );
+          if (!planR.ok || !planR.data || planR.data.length === 0) {
+            console.log(`${LOG_PREFIX} auto-approve (impact) skipping ${f.id.slice(0, 8)}: no plan yet — will retry after eager-plan runs`);
+            continue;
+          }
+
+          const result = await approveAutoExecute({ finding_id: f.id, approved_by: 'auto' });
+          if (!result.ok || !result.execution) {
+            console.log(`${LOG_PREFIX} auto-approve (impact) skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
+            continue;
+          }
+
+          approved++;
+          await emitOasisEvent({
+            vtid: EXEC_VTID,
+            type: 'dev_autopilot.execution.auto_approved',
+            source: 'dev-autopilot',
+            status: 'info',
+            message: `Auto-approved impact execution ${result.execution.id.slice(0, 8)} for finding ${f.id.slice(0, 8)} (rule: ${f.spec_snapshot?.rule})`,
+            payload: {
+              finding_id: f.id,
+              execution_id: result.execution.id,
+              trigger: {
+                source: 'impact',
+                rule: f.spec_snapshot?.rule ?? null,
+                severity: f.spec_snapshot?.severity ?? null,
+                category: f.spec_snapshot?.category ?? null,
+                risk_class: f.risk_class,
+              },
+            },
+          });
+        }
+      }
+    }
   }
 
   if (approved > 0) {
