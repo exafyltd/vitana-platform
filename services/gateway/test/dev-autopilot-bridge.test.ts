@@ -72,7 +72,7 @@ describe('decideBridgeAction', () => {
 
   it('escalates when confidence below threshold', () => {
     expect(decideBridgeAction({
-      confidence_numeric: 0.4,
+      confidence_numeric: 0.2,
       auto_fix_depth: 0,
       max_auto_fix_depth: 2,
       kill_switch: false,
@@ -98,10 +98,12 @@ describe('decideBridgeAction', () => {
   });
 
   it('threshold is the documented CHILD_SPAWN_CONFIDENCE_THRESHOLD', () => {
-    expect(CHILD_SPAWN_CONFIDENCE_THRESHOLD).toBe(0.5);
+    // Lowered from 0.5 to 0.3 (BOOTSTRAP-AUTONOMY-E2E) to make the autopilot
+    // retry more aggressively. Configurable via AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD.
+    expect(CHILD_SPAWN_CONFIDENCE_THRESHOLD).toBe(0.3);
     // Exactly at threshold → spawn child (>=)
     expect(decideBridgeAction({
-      confidence_numeric: 0.5,
+      confidence_numeric: 0.3,
       auto_fix_depth: 0,
       max_auto_fix_depth: 2,
       kill_switch: false,
@@ -141,7 +143,12 @@ function configRow(overrides: Partial<Record<string, unknown>> = {}): Record<str
 }
 
 function triageReport(confidence: 'high' | 'medium' | 'low', overrides: Partial<Record<string, unknown>> = {}): any {
-  const numeric = confidence === 'high' ? 0.85 : confidence === 'medium' ? 0.65 : 0.4;
+  // Numeric chosen to be unambiguously above/below the retry threshold
+  // (currently 0.3, lowered from 0.5 in BOOTSTRAP-AUTONOMY-E2E):
+  //   high   → 0.85   (well above)
+  //   medium → 0.65   (above)
+  //   low    → 0.2    (well below — escalates regardless of small threshold tweaks)
+  const numeric = confidence === 'high' ? 0.85 : confidence === 'medium' ? 0.65 : 0.2;
   return {
     session_id: 'session_test_123',
     severity: 'warning',
