@@ -130,14 +130,20 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
 // OAuth URL Generation
 // =============================================================================
 
+export type OAuthReturnMode = 'web' | 'mobile';
+
 /**
  * Generate the OAuth authorization URL for a provider.
- * The state parameter encodes user_id and tenant_id for the callback.
+ * The state parameter encodes user_id, tenant_id, the real provider, and
+ * the requested returnMode so the callback can route success/failure to
+ * the right surface (Connected Apps for web, /oauth/complete for the
+ * Appilix WebView re-entry path).
  */
 export function getOAuthUrl(
   provider: SocialProvider,
   userId: string,
   tenantId: string,
+  returnMode: OAuthReturnMode = 'web',
 ): { url: string; error?: string } {
   const config = PROVIDER_CONFIGS[provider];
   if (!config) return { url: '', error: `Unsupported provider: ${provider}` };
@@ -148,7 +154,7 @@ export function getOAuthUrl(
   }
 
   const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
-  const state = Buffer.from(JSON.stringify({ userId, tenantId, provider })).toString('base64url');
+  const state = Buffer.from(JSON.stringify({ userId, tenantId, provider, returnMode })).toString('base64url');
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -183,7 +189,7 @@ export function getOAuthUrl(
 /**
  * Parse the state parameter from the OAuth callback.
  */
-export function parseOAuthState(state: string): { userId: string; tenantId: string; provider: SocialProvider } | null {
+export function parseOAuthState(state: string): { userId: string; tenantId: string; provider: SocialProvider; returnMode?: OAuthReturnMode } | null {
   try {
     return JSON.parse(Buffer.from(state, 'base64url').toString());
   } catch {
