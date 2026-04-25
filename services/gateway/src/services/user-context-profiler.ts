@@ -806,6 +806,19 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
         lines.push(`- Model: ${vitana.model_version}${typeof vitana.confidence === 'number' ? `, confidence ${vitana.confidence.toFixed(2)}` : ''}.`);
       }
 
+      // BOOTSTRAP-TEACH-BEFORE-REDIRECT: NEW USER detection. A user whose
+      // Index is mostly baseline-only (no completion sub-scores yet, low
+      // confidence, baseline-survey-v2 model) is a first-timer who needs
+      // fuller explanations. Voice's intent classifier reads this hint
+      // and biases TEACH-ONLY / TEACH-THEN-NAV toward the longest steps.
+      const isBaselineOnlyModel = typeof vitana.model_version === 'string'
+        && vitana.model_version.includes('baseline-survey');
+      const lowConfidence = typeof vitana.confidence === 'number' && vitana.confidence < 0.5;
+      const noCompletionsYet = Object.values(vitana.subscores).every(s => !s || s.completions === 0);
+      if (isBaselineOnlyModel || (lowConfidence && noCompletionsYet)) {
+        lines.push('- User profile maturity: NEW USER (no completions yet, baseline-only score). When the user asks teach-intent questions, default to the FULLEST explanation + step list. Offer onboarding pointers warmly.');
+      }
+
       // G3: Life Compass — when set, surface the goal so voice can align
       // suggestions toward it. When missing, invite the user to set one.
       if (vitana.life_compass) {

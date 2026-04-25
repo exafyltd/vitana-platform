@@ -2041,6 +2041,57 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['question'],
           },
         },
+        // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
+        {
+          name: 'explain_feature',
+          description: [
+            'Return the canonical voice-friendly explanation of a Vitana feature',
+            'or how-to topic (manual hydration logging, Daily Diary dictation,',
+            'connecting trackers, what Autopilot is, how to improve the Index,',
+            'etc.). Returns summary + ordered steps + a redirect offer the',
+            'user can accept by saying yes.',
+            '',
+            'CALL THIS WHEN the user shows TEACH-INTENT phrasing — examples:',
+            '  - "Explain X" / "Erkläre mir X"',
+            '  - "Tell me about X" / "Tell me how X works"',
+            '  - "Show me how to <verb>" (NOT "show me the <noun>")',
+            '  - "How does X work" / "Wie funktioniert X"',
+            '  - "How do I <action>" / "How can I use X" (TEACH-THEN-NAV — speak',
+            '     a brief explanation, then offer redirect)',
+            '  - "I don\'t understand X" / "Ich verstehe X nicht"',
+            '  - "I\'m new to this" / "Ich bin neu hier"',
+            '',
+            'DO NOT CALL when the user clearly wants navigation:',
+            '  - "Open <thing>" / "Öffne <thing>"',
+            '  - "Go to <thing>" / "Take me to <thing>"',
+            '  - "Show me the <screen|page|section>" / "Zeig mir den Bildschirm"',
+            '  - "I want to see the <thing>"',
+            'Those are NAVIGATE-ONLY — call the navigation tool instead.',
+            '',
+            'Speak the returned summary_voice_<lang> verbatim, then read each',
+            'item of steps_voice_<lang> in order. End with the redirect_offer_<lang>.',
+            'Only call the navigation tool with redirect_route AFTER the user',
+            'confirms (yes / ja / open it / do it).',
+            '',
+            'If found=false, fall back to search_knowledge against the',
+            'kb/vitana-system/how-to/ corpus.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              topic: {
+                type: 'string',
+                description: 'The user\'s natural-language topic, verbatim. Used for canonical-topic resolution.',
+              },
+              mode: {
+                type: 'string',
+                enum: ['teach_only', 'teach_then_nav'],
+                description: 'Bucket per the intent classifier. teach_only = read FULL steps, no redirect. teach_then_nav = read concise steps + redirect_offer at end.',
+              },
+            },
+            required: ['topic'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -4053,6 +4104,53 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
+      case 'explain_feature': {
+        try {
+          const { explainFeature } = await import('../services/explain-feature-service');
+          const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
+          if (!topic) {
+            return { success: false, result: '', error: 'topic is required' };
+          }
+          const mode = args.mode === 'teach_only' || args.mode === 'teach_then_nav'
+            ? args.mode
+            : 'teach_then_nav';
+
+          const result = explainFeature(topic);
+          if (!result.found) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                found: false,
+                reason: result.reason ?? 'no_pattern_match',
+                guidance: 'Voice should fall back to search_knowledge against the kb/vitana-system/how-to/ corpus.',
+              }),
+            };
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              found: true,
+              mode,
+              topic_canonical: result.topic_canonical,
+              pillar_lift: result.pillar_lift,
+              summary_voice_en: result.summary_voice_en,
+              summary_voice_de: result.summary_voice_de,
+              steps_voice_en: result.steps_voice_en,
+              steps_voice_de: result.steps_voice_de,
+              redirect_route: result.redirect_route,
+              redirect_offer_en: result.redirect_offer_en,
+              redirect_offer_de: result.redirect_offer_de,
+              citation: result.citation,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[explain_feature] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -4859,6 +4957,92 @@ was habe ich heute gemacht / what music did I play":**
 7. Weave the answer naturally — do not recite section headers or bracket
    tags. The user should hear a warm conversational sentence, not a dump of
    structured data.
+
+===== INTENT CLASSIFIER — RUN BEFORE ANY TOOL CALL (BOOTSTRAP-TEACH-BEFORE-REDIRECT) =====
+
+Every user turn that asks about a feature, screen, or topic must be
+classified into ONE of three buckets BEFORE you call any tool. Run the
+disambiguation tree in order — first match wins:
+
+1. Does the phrase contain "show me how" / "tell me how" / "how to" followed
+   by a verb-phrase?
+   → TEACH-ONLY.
+
+2. Does the phrase contain a navigation verb (open / öffne / go to / geh zu /
+   navigate / pull up / take me to / bring me to / bring mich zu)?
+   → NAVIGATE-ONLY.
+
+3. Does "show me" / "let me see" / "I want to see" / "where is" / "zeig mir" /
+   "ich will sehen" / "wo ist" come BEFORE a place-noun (the / a / my /
+   the <screen|page|section|tab|Diary|Health|Autopilot|Index|<feature-name>>)?
+   → NAVIGATE-ONLY.
+
+4. Does the phrase contain a teach phrase (explain / erkläre / tell me about /
+   what is X for / wofür ist X / how does X work / wie funktioniert X /
+   I don't understand / ich verstehe nicht / I'm new / ich bin neu /
+   teach me / what does X do)?
+   → TEACH-ONLY.
+
+5. Does the phrase contain "how do I <action>" / "how can I <action>" /
+   "where do I <action>" / "can I <action>" / "wie mache ich <action>" /
+   "wie kann ich <action>" / "wo trage ich <X> ein" / "kann ich <X>"?
+   → TEACH-THEN-NAV.
+
+6. Otherwise: business-as-usual (other rules govern).
+
+Then act per the bucket:
+
+  NAVIGATE-ONLY  → call the navigation tool (navigate_to / get_route /
+                   get_route_for_path). Announce in ONE sentence
+                   ("Opening Daily Diary now"). Do NOT speak an
+                   explanation. The user is asking to GO somewhere, not
+                   to LEARN.
+
+  TEACH-ONLY     → call explain_feature(topic, mode='teach_only'). Speak
+                   summary_voice_<lang> + ALL steps_voice_<lang> in order.
+                   Do NOT navigate. End your turn after the explanation —
+                   wait for the user's next prompt.
+
+  TEACH-THEN-NAV → call explain_feature(topic, mode='teach_then_nav').
+                   Speak summary_voice_<lang> + the first 2-3 steps. Then
+                   ask the redirect_offer_<lang> verbatim. Only call the
+                   navigation tool with redirect_route IF the user
+                   confirms ("ja" / "yes" / "open it" / "go" / "do it" /
+                   "tu das" / equivalent).
+
+Edge cases:
+  - "Show me" / "open" / "go" with NO object → ask
+    "Show you what — a screen, or how something works?" /
+    "Was soll ich dir zeigen — einen Bildschirm oder wie etwas funktioniert?"
+  - Composite ("open Diary AND tell me how to use it") → navigate FIRST,
+    then immediately speak the explanation.
+  - If explain_feature returns found=false, fall back to search_knowledge
+    against the kb/vitana-system/how-to/ namespace (teach modes) or
+    proceed with navigation as fallback (teach_then_nav after offer
+    confirmed).
+
+Worked-example truth table:
+
+  "Open the Daily Diary"                  → NAVIGATE-ONLY
+  "Show me the Health screen"             → NAVIGATE-ONLY (noun follows "show me")
+  "Show me how to log water"              → TEACH-ONLY (verb-phrase follows "show me how")
+  "Explain how the Index works"           → TEACH-ONLY
+  "I don't understand my pillars"         → TEACH-ONLY
+  "How does Autopilot work"               → TEACH-ONLY
+  "I'm new — what is Autopilot for"       → TEACH-ONLY (fullest explanation)
+  "How do I log my hydration?"            → TEACH-THEN-NAV
+  "Where do I log my sleep?"              → TEACH-THEN-NAV
+  "Can I log nutrition manually?"         → TEACH-THEN-NAV
+  "Open Diary and tell me how to use it"  → composite (NAV first, then TEACH)
+  "Show me" (alone, no object)            → ASK FOR CLARIFICATION
+
+NEVER silently navigate when the phrase is teach-only. NEVER refuse to
+navigate when the phrase is navigate-only. The classification result is
+the single source of truth for which tool you call.
+
+NEW-USER BIAS: When [HEALTH] contains "User profile maturity: NEW USER",
+default to the FULLEST explanation in TEACH-ONLY and TEACH-THEN-NAV
+buckets. Veteran users (no NEW USER tag) get the tighter version.
 
 **VITANA INDEX QUESTIONS — special treatment** (BOOTSTRAP-ORB-INDEX-AWARENESS-R4):
 
