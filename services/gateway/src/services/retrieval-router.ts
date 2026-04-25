@@ -95,6 +95,90 @@ const ROUTING_RULES: RoutingRule[] = [
     rationale: 'Vitana system questions prioritize Knowledge Hub for accurate documentation',
   },
 
+  // ===== Intent Classifier — Navigation vs Teaching =====
+  // BOOTSTRAP-TEACH-BEFORE-REDIRECT Phase 1. Three sibling rules sitting
+  // between vitana_system (100) and personal_index (95). They route to
+  // the how-to KB corpus with a `mode` hint downstream consumers (logs,
+  // explain_feature tool) read to decide whether to navigate, teach, or
+  // teach-then-redirect. Same target source; different rationale tags so
+  // misclassifications are auditable.
+
+  // NAV-ONLY — clear navigation phrasings. Voice opens the screen,
+  // does NOT explain. "Show me the X" only matches when X is a noun
+  // (screen / page / Diary / Health / etc.), NOT when followed by
+  // "how to <verb>" (which is teach-only).
+  {
+    name: 'nav_intent',
+    priority: 94,
+    patterns: [
+      /\b(open|öffne|mach\s+\w+\s+auf)\s+(the\s+|a\s+|den\s+|die\s+|das\s+)?[\w-]+/i,
+      /\b(go to|geh zu|navigate to|jump to|pull up|take me to|bring me to|bring mich zu)\s+/i,
+      /\b(show me|let me see|i want to see|zeig mir|ich will sehen)\s+(the|a|my|den|die|das|mein|meine)\s+(screen|page|section|tab|list|dashboard|bildschirm|seite|bereich|liste|diary|tagebuch|health|index|autopilot|kalender|calendar)/i,
+      /\bwhere is\s+(the|a|my)\s+\w+/i,
+      /\bwo ist\s+(der|die|das|mein|meine)\s+\w+/i,
+    ],
+    keywords: [
+      'open', 'go to', 'take me to', 'navigate', 'pull up',
+      'öffne', 'geh zu', 'mach auf', 'bring mich zu',
+      'show me the', 'i want to see the',
+      'zeig mir den', 'ich will den', 'wo ist der',
+    ],
+    primary_source: 'knowledge_hub',
+    secondary_sources: [],
+    rationale: 'INTENT=NAV — phrase is a clear navigation request. Voice should call the navigation tool, no explanation.',
+  },
+
+  // TEACH-ONLY — clear explanatory phrasings. Voice calls explain_feature,
+  // speaks summary + ALL steps, does NOT navigate. Includes the
+  // unambiguous "show me how <verb>" form (verb-phrase, not noun).
+  {
+    name: 'teach_intent',
+    priority: 93,
+    patterns: [
+      /\b(explain|erkläre|tell me about|teach me|what does\s+\w+\s+do|what is\s+.+\s+for|wofür ist|was bedeutet)\b/i,
+      /\b(how does|wie funktioniert)\s+(it|this|that|es|das|dies)\b/i,
+      /\b(show me how|tell me how|zeig mir wie)\s+(to|i can|ich)\b/i,
+      /\b(i don'?t (understand|get)|ich verstehe (das )?nicht)\b/i,
+      /\b(i'?m new|ich bin neu)\b/i,
+    ],
+    keywords: [
+      'explain', 'tell me about', 'teach me', 'what does', 'what is for',
+      'how does it work', 'how does this work',
+      'show me how to', 'tell me how to',
+      'i don\'t understand', 'i\'m new',
+      'erkläre mir', 'wie funktioniert', 'wofür ist', 'was bedeutet',
+      'zeig mir wie', 'ich verstehe nicht', 'ich bin neu',
+    ],
+    primary_source: 'knowledge_hub',
+    secondary_sources: [],
+    rationale: 'INTENT=TEACH — phrase asks for understanding. Voice should call explain_feature with mode=teach_only, speak full explanation, no redirect.',
+  },
+
+  // TEACH-THEN-NAV — ambiguous "how do I <action>" / "where do I <action>"
+  // phrasings. Voice teaches briefly, then offers redirect. Default for
+  // anything between pure-nav and pure-teach.
+  {
+    name: 'teach_then_nav_intent',
+    priority: 92,
+    patterns: [
+      /\b(how|wie)\s+(do|can|kann)\s+i\s+(log|track|enter|record|connect|set up|setup|use|find|wear|dictate|sync|link|input)/i,
+      /\b(wie|wo)\s+(mache|kann|trage|verbinde|finde|nutze)\s+ich\b/i,
+      /\b(where do i|wo trage ich|wo kann ich)\b/i,
+      /\b(can i|kann ich)\s+(log|track|enter|record|connect|verbinde|protokoll|eintrag)/i,
+      /\bwhat should i do to\b/i,
+    ],
+    keywords: [
+      'how do i log', 'how can i log', 'how do i track', 'how can i connect',
+      'where do i log', 'where do i find',
+      'can i log', 'can i enter', 'can i connect',
+      'wie mache ich', 'wie kann ich', 'wo trage ich', 'wo kann ich',
+      'kann ich protokollieren', 'kann ich eintragen', 'kann ich verbinden',
+    ],
+    primary_source: 'knowledge_hub',
+    secondary_sources: [],
+    rationale: 'INTENT=TEACH-THEN-NAV — phrase is action-shaped but ambiguous. Voice should call explain_feature with mode=teach_then_nav, speak brief explanation + redirect_offer, only navigate on confirmation.',
+  },
+
   // ===== Personal Vitana Index Questions → User Data First =====
   // BOOTSTRAP-ORB-INDEX-AWARENESS: when the user asks about THEIR Index,
   // tier, pillars, or how to improve THEIR score, route to user data
