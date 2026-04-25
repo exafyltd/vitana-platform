@@ -1,13 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PillarAgent, PillarAgentOutput } from '../types';
-import { computeAllSubscoresForPillar } from '../base-agent';
+import type { PillarAgent, PillarAgentOutput, PillarAnswer } from '../types';
+import { computeAllSubscoresForPillar, defaultPillarAnswer } from '../base-agent';
 
 /**
  * Sleep pillar agent (v1).
  *
- * v1: mirrors the compute RPC math for Sleep.
+ * v1: mirrors the compute RPC math for Sleep + Q&A delegates to the
+ *     deterministic defaultPillarAnswer (sub-scores + Book ch 4 citation).
  * v2+: Oura, Whoop, Eight Sleep, Apple Sleep, Fitbit Sleep, Garmin Sleep.
- *      Personalised sleep-hygiene review, bedtime planner.
+ *      Personalised sleep-hygiene review, bedtime planner, narrative
+ *      answers grounded in the user's connected sleep data.
  */
 export function createSleepAgent(admin: SupabaseClient): PillarAgent {
   return {
@@ -23,6 +25,9 @@ export function createSleepAgent(admin: SupabaseClient): PillarAgent {
         metadata: { source: 'v1', integrations_connected: [] },
         agent_version: 'v1',
       };
+    },
+    async answerQuestion(userId: string, question: string): Promise<PillarAnswer> {
+      return defaultPillarAnswer(admin, userId, 'sleep', question, 'v1');
     },
   };
 }

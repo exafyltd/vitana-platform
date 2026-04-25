@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PillarAgent, PillarAgentOutput } from '../types';
-import { computeAllSubscoresForPillar } from '../base-agent';
+import type { PillarAgent, PillarAgentOutput, PillarAnswer } from '../types';
+import { computeAllSubscoresForPillar, defaultPillarAnswer } from '../base-agent';
 
 /**
  * Mental pillar agent (v1).
  *
- * v1: mirrors the compute RPC math for Mental.
+ * v1: mirrors the compute RPC math for Mental + Q&A delegates to the
+ *     deterministic defaultPillarAnswer (sub-scores + Book ch 5 citation).
  * v2+: journal LLM analysis, HRV stress signals, Calm / Headspace logs,
  *      Apple Health Mindful Minutes, mood-tracking apps.
  */
@@ -23,6 +24,9 @@ export function createMentalAgent(admin: SupabaseClient): PillarAgent {
         metadata: { source: 'v1', integrations_connected: [] },
         agent_version: 'v1',
       };
+    },
+    async answerQuestion(userId: string, question: string): Promise<PillarAnswer> {
+      return defaultPillarAnswer(admin, userId, 'mental', question, 'v1');
     },
   };
 }

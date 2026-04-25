@@ -1999,6 +1999,48 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             },
           },
         },
+        // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar agent Q&A dispatch ───
+        {
+          name: 'ask_pillar_agent',
+          description: [
+            'Route a per-pillar deep question to the matching specialised',
+            'pillar agent (Nutrition / Hydration / Exercise / Sleep / Mental).',
+            'The agent grounds the answer in the user\'s LIVE pillar data',
+            '(current sub-scores: baseline / completions / connected data /',
+            'streak) AND cites the relevant Book of the Vitana Index chapter.',
+            '',
+            'CALL THIS WHEN the user asks about a specific pillar:',
+            '  - "How is my sleep?" / "Wie steht mein Schlaf?"',
+            '  - "Why is my nutrition low?" / "Warum ist meine Ernährung niedrig?"',
+            '  - "What\'s holding back my exercise score?"',
+            '  - "How do I improve my mental pillar?"',
+            '',
+            'Pass `pillar` when the user\'s phrasing is unambiguous; OMIT it',
+            'and the tool will detect the pillar from `question`. If detection',
+            'fails and `pillar` is omitted, the tool returns null — voice should',
+            'then fall back to search_knowledge against the Book.',
+            '',
+            'Speak the returned `text` naturally and cite the Book chapter.',
+            'NEVER read raw JSON. NEVER echo a retired pillar name (Physical,',
+            'Social, Environmental, Prosperity) — the tool already aliases',
+            'those silently.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description: 'The user\'s natural-language question, verbatim. Used for pillar detection if `pillar` is omitted.',
+              },
+              pillar: {
+                type: 'string',
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
+                description: 'Optional explicit pillar. Omit to auto-detect from question text.',
+              },
+            },
+            required: ['question'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -3963,6 +4005,54 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
+      case 'ask_pillar_agent': {
+        try {
+          const { askPillarAgent } = await import('../services/pillar-agents/router');
+          const { resolvePillarKey } = await import('../lib/vitana-pillars');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const question = typeof args.question === 'string' ? args.question.trim() : '';
+          if (!question) {
+            return { success: false, result: '', error: 'question is required' };
+          }
+          // resolvePillarKey silently translates retired aliases; undefined
+          // = no explicit pillar passed, let the router auto-detect.
+          const explicit = resolvePillarKey(args.pillar);
+
+          const answer = await askPillarAgent(client, lens.user_id, question, explicit);
+          if (!answer) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                routed: false,
+                reason: 'no_pillar_detected_or_agent_unavailable',
+                guidance: 'Voice should fall back to search_knowledge against the Book of the Vitana Index.',
+              }),
+            };
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              routed: true,
+              pillar: answer.pillar,
+              text: answer.text,
+              citations: answer.citations,
+              data: answer.data,
+              agent_version: answer.agent_version,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[ask_pillar_agent] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -4856,15 +4946,27 @@ E. FOR PLAN CREATION — when the user says "make me a plan" / "schedule",
         kannst sie im Kalender anschauen."
 
 F. PILLAR-DEEP QUESTIONS — when the user asks about a SPECIFIC pillar
-   ("how do I improve my sleep?", "why is my nutrition low?"), ground the
-   answer in the Book of the Vitana Index via search_knowledge:
-     - Nutrition → kb/vitana-system/index-book/01-nutrition.md
-     - Hydration → kb/vitana-system/index-book/02-hydration.md
-     - Exercise → kb/vitana-system/index-book/03-exercise.md
-     - Sleep → kb/vitana-system/index-book/04-sleep.md
-     - Mental → kb/vitana-system/index-book/05-mental.md
-   Quote from the chapter, combine with the user's own [HEALTH] numbers.
-   The Book is the durable source of truth — trust it over the prompt.
+   ("how do I improve my sleep?", "why is my nutrition low?", "what's
+   holding back my exercise score?"), PREFER the specialised pillar agent
+   over generic KB search:
+     1. CALL ask_pillar_agent(question, [pillar?]) FIRST. The agent
+        returns text grounded in the user's CURRENT sub-scores (baseline /
+        completions / connected data / streak) plus a Book chapter
+        citation. This is fresher and more personalised than any prompt
+        text or generic KB hit.
+     2. Speak the agent's "text" field naturally (do not read raw JSON).
+     3. Cite the returned Book chapter URL — let the user open it for
+        depth.
+     4. ONLY IF ask_pillar_agent returns routed=false (no pillar
+        detected) fall back to search_knowledge against the Book:
+          - Nutrition → kb/vitana-system/index-book/01-nutrition.md
+          - Hydration → kb/vitana-system/index-book/02-hydration.md
+          - Exercise → kb/vitana-system/index-book/03-exercise.md
+          - Sleep → kb/vitana-system/index-book/04-sleep.md
+          - Mental → kb/vitana-system/index-book/05-mental.md
+   When the user uses a retired-pillar name (Physical / Social / etc.),
+   pass the question text — the router silently aliases it. Never echo
+   the retired name back.
 
 G. GENERIC "WHAT IS THE VITANA INDEX" (no "my") — platform explanation,
    use search_knowledge with the overview / reading / balance chapters:

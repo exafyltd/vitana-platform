@@ -29,6 +29,24 @@ export interface PillarAgentOutput {
   agent_version: string;
 }
 
+/**
+ * Structured response a PillarAgent gives to a user-facing question. Voice
+ * weaves `text` naturally; `citations` get surfaced as Knowledge Hub
+ * deeplinks; `data` is a transparency payload that anything else along the
+ * chain (logging, autopilot ranker, future LLM rewrap) can read.
+ *
+ * v1 implementations build this deterministically from the user's current
+ * sub-scores + Book chapter URL — no LLM call. v2+ may swap in an LLM or
+ * external-integration narrative without changing the contract.
+ */
+export interface PillarAnswer {
+  pillar: PillarKey;
+  text: string;
+  citations: string[];
+  data: Record<string, unknown>;
+  agent_version: string;
+}
+
 export interface PillarAgent {
   readonly pillar: PillarKey;
   readonly agentId: string;         // e.g., 'pillar-nutrition-agent'
@@ -41,6 +59,17 @@ export interface PillarAgent {
    * from vitana_index_baseline_survey / calendar_events / health_features_daily.
    */
   computePillarSubscores(userId: string, date: string): Promise<PillarAgentOutput>;
+
+  /**
+   * Answer a natural-language question about THIS pillar for THIS user.
+   * v1 default implementation in base-agent.ts is deterministic — pulls the
+   * user's current pillar score + sub-score breakdown + cites the Book
+   * chapter. v2+ may LLM-augment or pull from external integrations.
+   *
+   * Optional in the contract so existing call sites stay compile-safe; the
+   * pillar-agent-router treats absence as "fall back to KB search".
+   */
+  answerQuestion?(userId: string, question: string): Promise<PillarAnswer>;
 }
 
 export interface OrchestratorRunResult {
