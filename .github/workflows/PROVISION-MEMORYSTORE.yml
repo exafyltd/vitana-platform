@@ -47,10 +47,30 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Enable required APIs (idempotent)
+      - name: Verify required APIs are enabled
+        # The WIF service account doesn't have serviceusage.services.enable.
+        # This is intentional — service enablement is a one-time project-admin
+        # action. We only verify here; if missing, the user must enable via:
+        #   gcloud services enable redis.googleapis.com vpcaccess.googleapis.com \
+        #     --project=lovable-vitana-vers1
+        # (run interactively, project-owner credentials)
         run: |
-          gcloud services enable redis.googleapis.com vpcaccess.googleapis.com \
-            --project=lovable-vitana-vers1
+          set -euo pipefail
+          MISSING=""
+          for api in redis.googleapis.com vpcaccess.googleapis.com ; do
+            STATE=$(gcloud services list --enabled --project=lovable-vitana-vers1 --filter="config.name:$api" --format='value(config.name)' 2>/dev/null || true)
+            if [ -z "$STATE" ]; then
+              MISSING="$MISSING $api"
+            else
+              echo "  ✓ $api enabled"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing GCP APIs:$MISSING"
+            echo "Enable interactively (project-owner credentials):"
+            echo "  gcloud services enable$MISSING --project=lovable-vitana-vers1"
+            exit 1
+          fi
 
       - name: Provision Memorystore (idempotent)
         id: redis
