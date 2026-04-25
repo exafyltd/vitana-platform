@@ -20,10 +20,18 @@
  *     'failed' by reclaimStuckWorkerTasks() — called on a schedule separately.
  */
 
+import { writeAutopilotFailure, type AutopilotFailureStage } from './dev-autopilot-self-heal-log';
+
 const LOG_PREFIX = '[dev-autopilot-worker-queue]';
 const POLL_INTERVAL_MS = 2_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 360_000; // 6 min — generous for plan + execute
 const STUCK_MINUTES = 15;
+// A row sitting in 'pending' for more than this is almost certainly an
+// orphan — either no worker daemon is alive to claim it, or the gateway
+// container that enqueued it died before any worker noticed. The existing
+// running-watchdog can't see these. Without this, the row stays pending
+// forever and the failure is invisible on the Self-Healing screen.
+const PENDING_STUCK_MINUTES = 15;
 
 export interface SupaConfig { url: string; key: string; }
 
@@ -259,6 +267,83 @@ export async function reclaimStuckWorkerTasks(): Promise<{ reclaimed: number; er
   );
   if (!r.ok) return { reclaimed: 0, error: r.error };
   return { reclaimed: (r.data || []).length };
+}
+
+/**
+ * Watchdog #2: rows stuck in 'pending' past PENDING_STUCK_MINUTES.
+ *
+ * Why this exists: when no worker daemon is alive to poll the queue (binary
+ * missing, daemon crashed, host machine down), pending rows pile up
+ * indefinitely. The running-watchdog above only catches rows a worker
+ * already started. Without this, the failure is silent — `waitForWorkerTask`
+ * eventually times out, but if the gateway container that was waiting got
+ * recycled mid-flight, no caller is left to log the failure either.
+ *
+ * Each reclaimed row also writes a self_healing_log entry directly so the
+ * Self-Healing screen surfaces "the worker queue is jammed" even when no
+ * caller is around to attribute the failure.
+ */
+export async function reclaimStuckPendingWorkerTasks(): Promise<{ reclaimed: number; error?: string }> {
+  const s = getSupabase();
+  if (!s) return { reclaimed: 0, error: 'Supabase not configured' };
+  const cutoff = new Date(Date.now() - PENDING_STUCK_MINUTES * 60 * 1000).toISOString();
+  const stuckR = await supa<Array<{
+    id: string;
+    kind: string;
+    finding_id: string;
+    execution_id: string | null;
+    created_at: string;
+  }>>(
+    s,
+    `/rest/v1/dev_autopilot_worker_queue?status=eq.pending&created_at=lt.${cutoff}`
+    + `&select=id,kind,finding_id,execution_id,created_at&limit=20`,
+  );
+  if (!stuckR.ok) return { reclaimed: 0, error: stuckR.error };
+  if (!stuckR.data || stuckR.data.length === 0) return { reclaimed: 0 };
+
+  let reclaimed = 0;
+  for (const row of stuckR.data) {
+    const ageMin = Math.round((Date.now() - new Date(row.created_at).getTime()) / 60_000);
+    const errorMsg = `no worker claimed task in ${ageMin}m (worker daemon down / binary missing / network)`;
+    // Conditional PATCH so we don't overwrite a row a worker just claimed
+    // a moment ago.
+    const patch = await supa(
+      s,
+      `/rest/v1/dev_autopilot_worker_queue?id=eq.${row.id}&status=eq.pending`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          status: 'failed',
+          error_message: errorMsg,
+          completed_at: new Date().toISOString(),
+        }),
+      },
+    );
+    if (!patch.ok) continue;
+    reclaimed++;
+    const stage: AutopilotFailureStage = row.kind === 'plan' ? 'plan_gen' : 'execute_run';
+    await writeAutopilotFailure(s, {
+      stage,
+      vtid: row.execution_id
+        ? `VTID-DA-${row.execution_id.slice(0, 8)}`
+        : `VTID-DA-FIND-${row.finding_id.slice(0, 8)}`,
+      endpoint: `autopilot.worker_queue.${row.kind}`,
+      failure_class: 'dev_autopilot_worker_queue_unclaimed',
+      confidence: 0,
+      diagnosis: {
+        summary: errorMsg + ' — restart worker daemon or fix binary path; ANTHROPIC_API_KEY fallback runs only when worker spawn returns ENOENT during a live call.',
+        finding_id: row.finding_id,
+        execution_id: row.execution_id,
+        worker_queue_id: row.id,
+        age_minutes: ageMin,
+        kind: row.kind,
+      },
+      outcome: 'escalated',
+      attempt_number: 1,
+    });
+  }
+  return { reclaimed };
 }
 
 export { LOG_PREFIX };
