@@ -208,7 +208,16 @@ function extractObjectLiteralAfter(rawSrc, marker) {
 
 function loadAdm() {
   if (!fs.existsSync(ADMIN_NAV_TS)) {
-    bail(`vitana-v1 admin-navigation.ts not found at ${ADMIN_NAV_TS}. Set VITANA_V1_ROOT or check out exafyltd/vitana-v1 next to vitana-platform.`);
+    // Graceful fallback when vitana-v1 isn't reachable (no PAT configured,
+    // offline, etc): preserve whatever ADMIN rows are already in the spec
+    // so the DEV side can still regenerate without losing the ADM data.
+    console.warn(`⚠ vitana-v1 admin-navigation.ts not found at ${ADMIN_NAV_TS} — preserving existing ADMIN rows from spec.`);
+    if (!fs.existsSync(SPEC_PATH)) return [];
+    try {
+      const spec = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8'));
+      const existing = (spec.screen_inventory && spec.screen_inventory.screens) || [];
+      return existing.filter(s => s.role === 'ADMIN');
+    } catch { return []; }
   }
   const src = fs.readFileSync(ADMIN_NAV_TS, 'utf8');
   const arrLit = extractArrayLiteralAfter(src, 'export const ADMIN_SECTIONS');
