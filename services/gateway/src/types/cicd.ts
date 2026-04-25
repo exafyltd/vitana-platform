@@ -669,7 +669,11 @@ export type CicdEventType =
   | 'integration.ai.connected'
   | 'integration.ai.verify_failed'
   | 'integration.ai.disconnected'
-  | 'integration.ai.policy.updated';
+  | 'integration.ai.policy.updated'
+  // OAuth WebView fix Phase 5: background OAuth token refresher
+  | 'oauth.token.refresh.succeeded'
+  | 'oauth.token.refresh.failed'
+  | 'oauth.token.refresh.tombstoned';
 
 export interface CicdOasisEvent {
   vtid: string;

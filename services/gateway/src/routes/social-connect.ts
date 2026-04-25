@@ -32,8 +32,11 @@ import {
   getSharePrefs,
   updateSharePrefs,
   getAvailableProviders,
+  parseGoogleInclude,
   SocialProvider,
   SUPPORTED_PROVIDERS,
+  type OAuthReturnMode,
+  type GoogleSubService,
 } from '../services/social-connect-service';
 
 const router = Router();
@@ -50,6 +53,58 @@ function callbackRedirectPath(provider: string): string {
   if (provider === 'google' || provider === 'youtube') return '/settings/connected-apps';
   return '/settings/social';
 }
+
+// Phase 7B: when the OAuth flow originated inside the Appilix WebView, the
+// gateway redirects to /oauth/complete instead of the Connected Apps page.
+// That landing page handles deep-linking back into the WebView and keeps the
+// session-handoff logic in one place for both gateway-driven Google flows
+// and Supabase Auth (Apple) flows.
+function buildCallbackRedirect(
+  provider: string,
+  returnMode: OAuthReturnMode | undefined,
+  params: Record<string, string>,
+): string {
+  const path = returnMode === 'mobile' ? '/oauth/complete' : callbackRedirectPath(provider);
+  const merged: Record<string, string> = { provider, ...params };
+  if (returnMode === 'mobile') merged['return'] = 'mobile';
+  const query = new URLSearchParams(merged).toString();
+  return `${APP_URL}${path}?${query}`;
+}
+
+// Phase 2: opaque codes like ?error=token_exchange_failed are useless to
+// users. Pair every error code with a human message and a hint for what
+// to do next, so the Connected Apps toast and the OAuthComplete error
+// screen can show something actionable.
+const CALLBACK_ERROR_MESSAGES: Record<string, { detail: string; hint: string }> = {
+  oauth_denied: {
+    detail: "You didn't grant Vitana permission on the provider's screen.",
+    hint: 'Try the Connect button again and accept the requested scopes.',
+  },
+  missing_params: {
+    detail: 'The provider returned an incomplete response.',
+    hint: 'Please try again. If it keeps happening, contact support.',
+  },
+  invalid_state: {
+    detail: 'Your session expired during sign-in.',
+    hint: 'Please try connecting again.',
+  },
+  token_exchange_failed: {
+    detail: 'The provider rejected our credentials.',
+    hint: 'This usually clears up in a minute — please try again.',
+  },
+  profile_fetch_failed: {
+    detail: "We connected, but couldn't read your profile.",
+    hint: 'Please try again or contact support if it persists.',
+  },
+  service_unavailable: {
+    detail: 'Our services are temporarily unavailable.',
+    hint: 'Please try again in a minute.',
+  },
+  store_failed: {
+    detail: "We couldn't save your connection.",
+    hint: 'Please contact support with error code STORE-FAILED.',
+  },
+};
 
 // Helper: get Supabase service client
 async function getServiceClient() {
@@ -118,7 +173,39 @@ router.get('/connect/:provider', (req: Request, res: Response) => {
     });
   }
 
-  const { url, error } = getOAuthUrl(provider, user.userId, user.tenantId);
+  // Phase 7B: clients running inside the Appilix WebView pass `?return=mobile`
+  // so the callback can route the success/error screen to /oauth/complete
+  // instead of the inline Connected Apps page (which the user would only
+  // see in the system browser tab, not in the app).
+  const returnMode: OAuthReturnMode = req.query.return === 'mobile' ? 'mobile' : 'web';
+
+  // Phase 3 (unified Google connect): clients can request a specific bundle
+  // of Google sub-services with `?include=gmail,calendar,contacts,youtube`.
+  // Default behavior (no include) keeps the legacy Gmail+Calendar+Contacts
+  // bundle so existing per-service Connect buttons still work.
+  // Phase 4 (incremental consent): `?mode=incremental` adds the requested
+  // scopes onto the user's existing token without forcing a full re-consent.
+  let includeServices: GoogleSubService[] | undefined = undefined;
+  if (provider === 'google' && typeof req.query.include === 'string') {
+    const parsed = parseGoogleInclude(req.query.include);
+    if (parsed === null) {
+      // include= present but empty/invalid — fall through to default bundle.
+    } else if (parsed.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid `include` value. Use a comma-separated list of: gmail, calendar, contacts, youtube.',
+      });
+    } else {
+      includeServices = parsed;
+    }
+  }
+  const mode: 'full' | 'incremental' = req.query.mode === 'incremental' ? 'incremental' : 'full';
+
+  const { url, error } = getOAuthUrl(provider, user.userId, user.tenantId, {
+    returnMode,
+    includeServices,
+    mode,
+  });
   if (error) {
     return res.status(400).json({ ok: false, error });
   }
@@ -139,47 +226,69 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   const urlProvider = req.params.provider as SocialProvider;
   const { code, state, error: oauthError } = req.query;
 
+  // Best-effort returnMode read — if we can't parse the state we fall
+  // back to web routing.
+  let returnMode: OAuthReturnMode | undefined = undefined;
+  let stateProvider: SocialProvider | undefined = undefined;
+  if (typeof state === 'string') {
+    const probe = parseOAuthState(state);
+    if (probe) {
+      returnMode = probe.returnMode;
+      stateProvider = probe.provider;
+    }
+  }
+
+  const errRedirect = (errCode: string, providerForRedirect: string) => {
+    const msg = CALLBACK_ERROR_MESSAGES[errCode] ?? {
+      detail: 'Sign-in failed.',
+      hint: 'Please try again.',
+    };
+    return res.redirect(buildCallbackRedirect(providerForRedirect, returnMode, {
+      status: 'failed',
+      error: errCode,
+      error_detail: msg.detail,
+      error_hint: msg.hint,
+    }));
+  };
+
   if (oauthError) {
-    const redirectPath = callbackRedirectPath(urlProvider);
     console.warn(`${LOG_PREFIX} OAuth error for ${urlProvider}: ${oauthError}`);
-    return res.redirect(`${APP_URL}${redirectPath}?error=oauth_denied&provider=${urlProvider}`);
+    return errRedirect('oauth_denied', stateProvider ?? urlProvider);
   }
 
   if (!code || !state) {
-    const redirectPath = callbackRedirectPath(urlProvider);
-    return res.redirect(`${APP_URL}${redirectPath}?error=missing_params&provider=${urlProvider}`);
+    return errRedirect('missing_params', stateProvider ?? urlProvider);
   }
 
   // Parse state to get userId, tenantId and the real provider.
   const stateData = parseOAuthState(state as string);
   if (!stateData) {
-    const redirectPath = callbackRedirectPath(urlProvider);
-    return res.redirect(`${APP_URL}${redirectPath}?error=invalid_state&provider=${urlProvider}`);
+    return errRedirect('invalid_state', urlProvider);
   }
 
   // From here on use the actual provider from state, not the URL path.
   const provider = stateData.provider;
-  const redirectPath = callbackRedirectPath(provider);
+  returnMode = stateData.returnMode ?? returnMode;
 
-  console.log(`${LOG_PREFIX} Processing callback for ${provider} (url:${urlProvider}), user ${stateData.userId.slice(0, 8)}…`);
+  console.log(`${LOG_PREFIX} Processing callback for ${provider} (url:${urlProvider}, return:${returnMode ?? 'web'}), user ${stateData.userId.slice(0, 8)}…`);
 
   // Exchange code for tokens
   const tokens = await exchangeCodeForTokens(provider, code as string);
   if (!tokens.access_token) {
     console.error(`${LOG_PREFIX} Token exchange failed: ${tokens.error}`);
-    return res.redirect(`${APP_URL}${redirectPath}?error=token_exchange_failed&provider=${provider}`);
+    return errRedirect('token_exchange_failed', provider);
   }
 
   // Fetch social profile
   const profile = await fetchSocialProfile(provider, tokens.access_token);
   if (!profile) {
-    return res.redirect(`${APP_URL}${redirectPath}?error=profile_fetch_failed&provider=${provider}`);
+    return errRedirect('profile_fetch_failed', provider);
   }
 
   // Store connection
   const supabase = await getServiceClient();
   if (!supabase) {
-    return res.redirect(`${APP_URL}${redirectPath}?error=service_unavailable&provider=${provider}`);
+    return errRedirect('service_unavailable', provider);
   }
 
   const result = await storeSocialConnection(
@@ -187,7 +296,7 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   );
 
   if (!result.ok) {
-    return res.redirect(`${APP_URL}${redirectPath}?error=store_failed&provider=${provider}`);
+    return errRedirect('store_failed', provider);
   }
 
   // VTID-01928: Skip social enrichment for Google — it's a data-access connector,
@@ -203,10 +312,11 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
       });
   }
 
-  // Redirect back to settings with success
-  return res.redirect(
-    `${APP_URL}${redirectPath}?connected=${provider}&username=${encodeURIComponent(profile.username)}`
-  );
+  return res.redirect(buildCallbackRedirect(provider, returnMode, {
+    status: 'ok',
+    connected: provider,
+    username: profile.username,
+  }));
 });
 
 // =============================================================================

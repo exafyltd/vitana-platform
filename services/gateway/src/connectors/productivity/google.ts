@@ -70,8 +70,70 @@ async function googleGet(url: string, token: string): Promise<{ ok: boolean; sta
   return { ok: true, status: resp.status, json };
 }
 
+/**
+ * Phase 4: detect insufficient-scope failures so the dispatcher can
+ * surface a structured error to the frontend (with a reconnect URL the
+ * UI can show as a "Grant access" button) instead of a generic 403.
+ *
+ * Google's response shape on missing scope:
+ *   {
+ *     "error": {
+ *       "code": 403,
+ *       "message": "Request had insufficient authentication scopes.",
+ *       "status": "PERMISSION_DENIED",
+ *       "details": [{ "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT", ... }]
+ *     }
+ *   }
+ */
+function isInsufficientScope(r: { ok: boolean; status: number; json: any }): boolean {
+  if (r.ok) return false;
+  if (r.status !== 403) return false;
+  const message: string = String(r.json?.error?.message ?? '').toLowerCase();
+  if (message.includes('insufficient') && message.includes('scope')) return true;
+  const details: any[] = r.json?.error?.details ?? [];
+  return details.some((d) => String(d?.reason ?? '').toLowerCase() === 'access_token_scope_insufficient');
+}
+
+/**
+ * Per-capability scope requirements + the unified-flow sub-services to
+ * request when the user re-consents. Used by the insufficient-scope error
+ * path to build a `reconnect_url`.
+ */
+const CAPABILITY_RECONNECT: Record<string, { needed: string[]; include: string[] }> = {
+  'music.play': { needed: ['youtube.readonly'], include: ['youtube'] },
+  'email.read': { needed: ['gmail.readonly'], include: ['gmail'] },
+  'email.send': { needed: ['gmail.send'], include: ['gmail'] },
+  'calendar.list': { needed: ['calendar.readonly'], include: ['calendar'] },
+  'calendar.create': { needed: ['calendar.events'], include: ['calendar'] },
+  'contacts.read': { needed: ['contacts.readonly'], include: ['contacts'] },
+  'contacts.import': { needed: ['contacts.readonly'], include: ['contacts'] },
+};
+
+function insufficientScopeResult(capability: string): ActionResult {
+  const cap = CAPABILITY_RECONNECT[capability] ?? { needed: [], include: ['gmail', 'calendar', 'contacts'] };
+  const reconnectUrl = `/api/v1/social-accounts/connect/google?include=${encodeURIComponent(cap.include.join(','))}&mode=incremental`;
+  return {
+    ok: false,
+    error: 'insufficient_scope',
+    raw: {
+      capability,
+      needed_scopes: cap.needed,
+      reconnect_url: reconnectUrl,
+      message:
+        cap.needed.length > 0
+          ? `${capability} needs the ${cap.needed.join(', ')} permission(s) — re-connect Google to grant them.`
+          : `${capability} needs an additional Google permission. Please re-connect Google.`,
+    },
+  };
+}
+
+type YouTubeHit = { videoId: string; title: string; channel: string; thumbnail?: string };
+type YouTubeSearchResult =
+  | { ok: true; hit: YouTubeHit | null }
+  | { ok: false; insufficientScope: boolean; error: string };
+
 /** YouTube search → first video hit. Used by the music.play capability. */
-async function youtubeSearchFirst(query: string, token: string): Promise<{ videoId: string; title: string; channel: string; thumbnail?: string } | null> {
+async function youtubeSearchFirst(query: string, token: string): Promise<YouTubeSearchResult> {
   const u = new URL('https://www.googleapis.com/youtube/v3/search');
   u.searchParams.set('part', 'snippet');
   u.searchParams.set('type', 'video');
@@ -80,14 +142,23 @@ async function youtubeSearchFirst(query: string, token: string): Promise<{ video
   // videoCategoryId=10 is Music — bias results toward music videos.
   u.searchParams.set('videoCategoryId', '10');
   const r = await googleGet(u.toString(), token);
-  if (!r.ok) throw new Error(`YouTube search failed: ${r.errorMessage}`);
+  if (!r.ok) {
+    return {
+      ok: false,
+      insufficientScope: isInsufficientScope(r),
+      error: r.errorMessage ?? 'YouTube search failed',
+    };
+  }
   const item = r.json?.items?.[0];
-  if (!item?.id?.videoId) return null;
+  if (!item?.id?.videoId) return { ok: true, hit: null };
   return {
-    videoId: item.id.videoId,
-    title: item.snippet?.title ?? query,
-    channel: item.snippet?.channelTitle ?? '',
-    thumbnail: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url,
+    ok: true,
+    hit: {
+      videoId: item.id.videoId,
+      title: item.snippet?.title ?? query,
+      channel: item.snippet?.channelTitle ?? '',
+      thumbnail: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url,
+    },
   };
 }
 
@@ -176,7 +247,12 @@ const googleConnector: Connector = {
       case 'music.play': {
         const query = String(action.args?.query ?? '').trim();
         if (!query) return { ok: false, error: 'music.play: "query" arg is required' };
-        const hit = await youtubeSearchFirst(query, token);
+        const search = await youtubeSearchFirst(query, token);
+        if (!search.ok) {
+          if (search.insufficientScope) return insufficientScopeResult('music.play');
+          return { ok: false, error: `YouTube search failed: ${search.error}` };
+        }
+        const hit = search.hit;
         if (!hit) return { ok: false, error: `No YouTube result found for "${query}"` };
 
         // Three URL variants so the widget picks the right one per platform.
@@ -233,6 +309,7 @@ const googleConnector: Connector = {
         if (gmailQ) listUrl.searchParams.set('q', gmailQ);
 
         const listR = await googleGet(listUrl.toString(), token);
+        if (isInsufficientScope(listR)) return insufficientScopeResult('email.read');
         if (!listR.ok) return { ok: false, error: `Gmail list failed: ${listR.errorMessage}` };
 
         const ids: Array<{ id: string }> = listR.json?.messages ?? [];
@@ -294,6 +371,7 @@ const googleConnector: Connector = {
         u.searchParams.set('singleEvents', 'true');
         u.searchParams.set('orderBy', 'startTime');
         const r = await googleGet(u.toString(), token);
+        if (isInsufficientScope(r)) return insufficientScopeResult('calendar.list');
         if (!r.ok) return { ok: false, error: `Calendar list failed: ${r.errorMessage}` };
 
         const events = (r.json?.items ?? []).map((ev: any) => ({
@@ -357,6 +435,9 @@ const googleConnector: Connector = {
         );
         const json: any = await resp.json().catch(() => ({}));
         if (!resp.ok) {
+          if (isInsufficientScope({ ok: false, status: resp.status, json })) {
+            return insufficientScopeResult('calendar.create');
+          }
           return { ok: false, error: json?.error?.message ?? resp.statusText };
         }
         return {
@@ -384,6 +465,7 @@ const googleConnector: Connector = {
         u.searchParams.set('pageSize', String(Math.min(limit, 100)));
         u.searchParams.set('sortOrder', 'LAST_MODIFIED_DESCENDING');
         const r = await googleGet(u.toString(), token);
+        if (isInsufficientScope(r)) return insufficientScopeResult('contacts.read');
         if (!r.ok) return { ok: false, error: `Contacts list failed: ${r.errorMessage}` };
 
         const all = (r.json?.connections ?? []).map((c: any) => {

@@ -922,6 +922,23 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01063: Log route guard summary
   logStartupSummary();
 
+  // OAuth preflight (Phase 6 of OAuth WebView fix plan): missing
+  // GOOGLE_OAUTH_CLIENT_ID/SECRET silently breaks every Connected Apps
+  // Connect button (frontend gets `configured: false` from /providers and
+  // disables the button) but the failure mode used to be invisible.
+  // Surface it loudly at startup so deploys don't ship without OAuth.
+  const oauthPreflight = [
+    { key: 'GOOGLE_OAUTH_CLIENT_ID', label: 'Google OAuth client ID' },
+    { key: 'GOOGLE_OAUTH_CLIENT_SECRET', label: 'Google OAuth client secret' },
+  ];
+  for (const { key, label } of oauthPreflight) {
+    if (!process.env[key]) {
+      console.error(`❌ OAuth preflight: ${key} is not set — ${label} is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.`);
+    } else {
+      console.log(`✅ OAuth preflight: ${key} present.`);
+    }
+  }
+
   // Start server
   if (process.env.NODE_ENV !== 'test') {
     // VTID-01222: Capture HTTP server instance for WebSocket attachment
@@ -1051,6 +1068,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // OAuth WebView fix Phase 5: refresh expiring social_connections
+      // tokens ahead of expiry so ORB/Autopilot stop hitting silent 401s.
+      try {
+        const refresherEnabled = process.env.OAUTH_TOKEN_REFRESHER_ENABLED !== 'false';
+        if (refresherEnabled) {
+          const { startOAuthTokenRefresher } = require('./services/oauth-token-refresher');
+          startOAuthTokenRefresher();
+        } else {
+          console.log('⏸️ OAuth token refresher disabled (OAUTH_TOKEN_REFRESHER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ OAuth token refresher initialization failed (non-fatal):', error);
       }
 
       // BOOTSTRAP-ADMIN-KPI-AA: Admin Awareness Worker (5-min KPI refresh per tenant)

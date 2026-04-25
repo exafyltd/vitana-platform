@@ -130,15 +130,59 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
 // OAuth URL Generation
 // =============================================================================
 
+export type OAuthReturnMode = 'web' | 'mobile';
+
+/**
+ * Phase 3 (unified Google connect): scopes per sub-service. The unified
+ * /connect/google?include=gmail,calendar,contacts,youtube endpoint builds
+ * the consent URL from these so the user gets one consent screen
+ * covering exactly the services they ticked. Keep the per-service lists
+ * minimal — Phase 4 (incremental consent) covers extra scopes (e.g.
+ * gmail.send) on demand.
+ */
+export type GoogleSubService = 'gmail' | 'calendar' | 'contacts' | 'youtube';
+
+export const GOOGLE_SUB_SCOPES: Record<GoogleSubService, string[]> = {
+  gmail: ['https://www.googleapis.com/auth/gmail.readonly'],
+  calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
+  contacts: ['https://www.googleapis.com/auth/contacts.readonly'],
+  youtube: ['https://www.googleapis.com/auth/youtube.readonly'],
+};
+
+/** Default unified bundle when no `include` is passed. */
+export const GOOGLE_DEFAULT_INCLUDE: GoogleSubService[] = ['gmail', 'calendar', 'contacts'];
+
+export function parseGoogleInclude(raw: string | undefined): GoogleSubService[] | null {
+  if (!raw) return null;
+  const valid = new Set<GoogleSubService>(['gmail', 'calendar', 'contacts', 'youtube']);
+  const parsed = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s): s is GoogleSubService => valid.has(s as GoogleSubService));
+  return parsed.length > 0 ? Array.from(new Set(parsed)) : [];
+}
+
+export interface GetOAuthUrlOptions {
+  returnMode?: OAuthReturnMode;
+  /** Phase 3: which Google sub-services to request scopes for. Ignored for non-google providers. */
+  includeServices?: GoogleSubService[];
+  /** Phase 4: 'incremental' drops `prompt=consent` so Google merges new scopes onto the user's existing grant instead of forcing a full re-consent. */
+  mode?: 'full' | 'incremental';
+}
+
 /**
  * Generate the OAuth authorization URL for a provider.
- * The state parameter encodes user_id and tenant_id for the callback.
+ * The state parameter encodes user_id, tenant_id, the real provider, the
+ * requested returnMode, and (for google) the includeServices list so the
+ * callback knows which sub-services were granted.
  */
 export function getOAuthUrl(
   provider: SocialProvider,
   userId: string,
   tenantId: string,
+  options: GetOAuthUrlOptions = {},
 ): { url: string; error?: string } {
+  const { returnMode = 'web', includeServices, mode = 'full' } = options;
   const config = PROVIDER_CONFIGS[provider];
   if (!config) return { url: '', error: `Unsupported provider: ${provider}` };
 
@@ -148,13 +192,31 @@ export function getOAuthUrl(
   }
 
   const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
-  const state = Buffer.from(JSON.stringify({ userId, tenantId, provider })).toString('base64url');
+  const state = Buffer.from(
+    JSON.stringify({ userId, tenantId, provider, returnMode, includeServices }),
+  ).toString('base64url');
+
+  // Phase 3: when the unified Google flow passes includeServices, replace
+  // the provider's default scope list with the union of the selected
+  // sub-services (plus openid/email/profile so we still get a userinfo
+  // round-trip to populate provider_username).
+  const scopes =
+    provider === 'google' && includeServices && includeServices.length > 0
+      ? Array.from(
+          new Set([
+            'openid',
+            'email',
+            'profile',
+            ...includeServices.flatMap((s) => GOOGLE_SUB_SCOPES[s]),
+          ]),
+        )
+      : config.scopes;
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: callbackUrl,
     response_type: 'code',
-    scope: config.scopes.join(' '),
+    scope: scopes.join(' '),
     state,
   });
 
@@ -168,13 +230,17 @@ export function getOAuthUrl(
     params.set('code_challenge_method', 'plain');
   }
   if (provider === 'google' || provider === 'youtube') {
-    // offline + consent so Google actually returns a refresh_token on every consent,
-    // not just the very first one — required for long-lived background access.
-    // YouTube shares Google's OAuth server and needs the same params to get a
-    // refresh_token and reach the consent screen instead of looping on the picker.
+    // offline guarantees a refresh_token on every consent. We force
+    // `prompt=consent` for the full-consent path so Google actually
+    // returns a refresh_token (it's omitted on subsequent consents
+    // otherwise). Phase 4 incremental flow drops `prompt=consent` so
+    // Google shows only the additional scopes and merges them onto the
+    // user's existing token via include_granted_scopes=true.
     params.set('access_type', 'offline');
-    params.set('prompt', 'consent');
     params.set('include_granted_scopes', 'true');
+    if (mode !== 'incremental') {
+      params.set('prompt', 'consent');
+    }
   }
 
   return { url: `${config.authUrl}?${params.toString()}` };
@@ -183,7 +249,13 @@ export function getOAuthUrl(
 /**
  * Parse the state parameter from the OAuth callback.
  */
-export function parseOAuthState(state: string): { userId: string; tenantId: string; provider: SocialProvider } | null {
+export function parseOAuthState(state: string): {
+  userId: string;
+  tenantId: string;
+  provider: SocialProvider;
+  returnMode?: OAuthReturnMode;
+  includeServices?: GoogleSubService[];
+} | null {
   try {
     return JSON.parse(Buffer.from(state, 'base64url').toString());
   } catch {
