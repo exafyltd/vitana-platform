@@ -90,6 +90,17 @@ async function fetchStaleRows(thresholdMs: number): Promise<StaleRow[]> {
 async function probeEndpoint(
   endpoint: string,
 ): Promise<{ healthy: boolean; http_status: number | null }> {
+  // Voice synthetic endpoints (voice-error://<class>) have no HTTP path —
+  // they're a routing convention so the Voice→SelfHealing Adapter can flow
+  // through the same dedup/diagnose/inject pipeline. Verification for voice
+  // rows happens via the Synthetic Voice Probe (programmatic SSE session
+  // against /api/v1/orb/live/session/start with semantic-token check),
+  // which lands in PR #4. For now we report voice rows as not-healthy so
+  // the reconciler keeps them in the queue and does not falsely transition
+  // them to recovered_externally.
+  if (endpoint.startsWith('voice-error://')) {
+    return { healthy: false, http_status: null };
+  }
   try {
     const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),

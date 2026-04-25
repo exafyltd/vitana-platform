@@ -139,7 +139,9 @@ async function queryVoiceLabEvents(
     }
 
     // VTID filter: VTID-01218A (legacy voice-lab) + VTID-01155 (orb-live emitter)
-    params.push(`vtid=in.("VTID-01218A","VTID-01155")`);
+    // + VTID-VOICE-HEALING (autonomous self-healing loop events: dispatched,
+    // verdict, rollback, suppressed, spec_memory.blocked, investigation.completed)
+    params.push(`vtid=in.("VTID-01218A","VTID-01155","VTID-VOICE-HEALING")`);
 
     // Ordering and pagination
     params.push('order=created_at.desc');

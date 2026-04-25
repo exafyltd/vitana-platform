@@ -383,8 +383,15 @@ router.post('/report', async (req: Request, res: Response) => {
     knownEndpoints.add('/alive');
     knownEndpoints.add('/api/v1/self-healing/health');
 
+    // Voice synthetic endpoints (voice-error://<class>) are accepted by the
+    // self-healing pipeline so the Voice→SelfHealing Adapter can dispatch
+    // ORB voice failures through the same diagnose/inject/dispatch chain.
+    // Subsequent PRs add the adapter, deterministic specs, and synthetic probe.
+    const VOICE_SYNTHETIC_ENDPOINT = /^voice-error:\/\/[a-z._-]+$/;
+
     for (const failure of downServices) {
-      if (!knownEndpoints.has(failure.endpoint)) {
+      const isVoiceSynthetic = VOICE_SYNTHETIC_ENDPOINT.test(failure.endpoint);
+      if (!isVoiceSynthetic && !knownEndpoints.has(failure.endpoint)) {
         console.log(`[self-healing] Rejecting unknown endpoint: ${failure.endpoint}`);
         details.push({
           service: failure.name,
