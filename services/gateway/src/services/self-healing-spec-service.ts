@@ -13,6 +13,7 @@ import { Diagnosis, FailureClass } from '../types/self-healing';
 import { emitOasisEvent } from './oasis-event-service';
 import { runFullQualityCheck } from './spec-quality-agent';
 import { createVtidSpec } from './vtid-spec-service';
+import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
 
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -557,8 +558,16 @@ export async function generateAndStoreFixSpec(
 ): Promise<{ spec: string; spec_hash: string; quality_score: number }> {
   console.log(`[SelfHealingSpec] Generating fix spec for ${diagnosis.vtid} (${diagnosis.failure_class})`);
 
+  // VTID-01960 (PR #3): Voice synthetic endpoints get a deterministic spec
+  // from voice-spec-hints.ts before Gemini. Cheaper, reviewable, and the
+  // hash is stable across calls so the Spec Memory Gate (in the adapter)
+  // can reliably block repeats. Voice classes without a hint (tool_loop,
+  // audio_one_way, permission_denied, unknown) fall through to Gemini.
+  const voiceClass = parseVoiceClassFromEndpoint(diagnosis.endpoint || '');
+  const voiceHint = voiceClass ? getVoiceSpecHint(voiceClass) : null;
+
   const context = assembleSpecContext(diagnosis);
-  let spec = await generateSpecWithAI(diagnosis, context);
+  let spec = voiceHint?.spec ?? (await generateSpecWithAI(diagnosis, context));
 
   const sectionCheck = validateSpecSections(spec);
   if (!sectionCheck.valid) {

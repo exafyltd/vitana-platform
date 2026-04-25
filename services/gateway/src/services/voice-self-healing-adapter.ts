@@ -26,6 +26,9 @@ import {
   classifyVoiceSession,
   VoiceClassification,
 } from './voice-session-classifier';
+import { getVoiceSpecHint } from './voice-spec-hints';
+import { lookupSpecMemory } from './voice-spec-memory';
+import { emitOasisEvent } from './oasis-event-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -106,6 +109,7 @@ export type DispatchAction =
   | 'synthetic_skipped'
   | 'dedupe_hit'
   | 'classifier_no_error'
+  | 'spec_memory_blocked'
   | 'error';
 
 export interface DispatchResult {
@@ -257,6 +261,53 @@ export async function dispatchVoiceFailure(
       class: classification.class,
       normalized_signature: classification.normalized_signature,
     };
+  }
+
+  // VTID-01960 (PR #3): Spec Memory Gate. Only applies when we know which
+  // spec WILL run — i.e., a deterministic hint exists. For Gemini-fallback
+  // classes the spec_hash isn't known until generateAndStoreFixSpec runs,
+  // so the gate is bypassed here (the dedupe/circuit-breaker handles
+  // those). When a hint exists, look up (spec_hash, signature) in the last
+  // 72h: a probe_failed/rollback row OR a stale 'success' row whose
+  // signature is recurring → block dispatch and emit
+  // voice.healing.spec_memory.blocked. Investigator queue (PR #6) will
+  // pick these up.
+  const hint = getVoiceSpecHint(classification.class);
+  if (hint) {
+    const decision = await lookupSpecMemory(
+      hint.spec_hash,
+      classification.normalized_signature,
+      true,
+    );
+    if (decision.block) {
+      try {
+        await emitOasisEvent({
+          vtid: 'VTID-VOICE-HEALING',
+          type: 'voice.healing.spec_memory.blocked',
+          source: 'voice-self-healing-adapter',
+          status: 'warning',
+          message: `Spec Memory Gate blocked dispatch for ${classification.class} (${decision.reason})`,
+          payload: {
+            class: classification.class,
+            normalized_signature: classification.normalized_signature,
+            spec_hash: hint.spec_hash,
+            reason: decision.reason,
+            matched_outcome: decision.matched?.outcome,
+            matched_attempted_at: decision.matched?.attempted_at,
+            matched_vtid: decision.matched?.vtid,
+            session_id: opts.sessionId,
+          },
+        });
+      } catch {
+        /* best-effort telemetry */
+      }
+      return {
+        action: 'spec_memory_blocked',
+        class: classification.class,
+        normalized_signature: classification.normalized_signature,
+        detail: decision.reason,
+      };
+    }
   }
 
   const tenantScope = opts.tenantScope || 'global';

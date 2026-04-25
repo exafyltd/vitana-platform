@@ -523,6 +523,14 @@ export type CicdEventType =
   // VTID-FALLBACK: Chat-TTS fallback events
   | 'orb.live.fallback_used'
   | 'orb.live.fallback_error'
+  // VTID-VOICE-HEALING: Autonomous ORB voice self-healing loop events
+  | 'voice.healing.dispatched'
+  | 'voice.healing.dispatch.suppressed'
+  | 'voice.healing.spec_memory.blocked'
+  | 'voice.healing.verdict'
+  | 'voice.healing.rollback.triggered'
+  | 'voice.healing.rollback.failed'
+  | 'voice.healing.investigation.completed'
   // VTID-NAV-01: Vitana Navigator — voice-driven navigation guide events
   | 'orb.navigator.consulted'
   | 'orb.navigator.requested'

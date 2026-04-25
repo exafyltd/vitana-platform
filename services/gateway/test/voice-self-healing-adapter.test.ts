@@ -107,6 +107,14 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=live + dedupe hit → dedupe_hit, no POST', async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Default: gate empty → allow
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) {
+        // Best-effort emit — return success
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
       if (url.includes('voice_healing_dedupe')) {
         // ON CONFLICT DO NOTHING — already-existing row returns []
         return Promise.resolve(jsonResp([]));
@@ -125,6 +133,14 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=shadow + first-time signature → shadow_logged, no POST', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'shadow' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Default: gate empty → allow
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) {
+        // Best-effort emit — return success
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
       if (url.includes('voice_healing_dedupe')) {
         return Promise.resolve(jsonResp([{ class: 'voice.config_missing' }]));
       }
@@ -143,6 +159,14 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
     let capturedPostBody: any = null;
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Default: gate empty → allow
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) {
+        // Best-effort emit — return success
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
       if (url.includes('voice_healing_dedupe')) {
         return Promise.resolve(jsonResp([{ class: 'voice.config_missing' }]));
       }
@@ -169,6 +193,14 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=live + /report 500 → action=error with detail', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Default: gate empty → allow
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) {
+        // Best-effort emit — return success
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
       if (url.includes('voice_healing_dedupe')) {
         return Promise.resolve(jsonResp([{ class: 'voice.config_missing' }]));
       }
@@ -198,6 +230,14 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
     let capturedDedupeBody: any = null;
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'shadow' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Default: gate empty → allow
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) {
+        // Best-effort emit — return success
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
       if (url.includes('voice_healing_dedupe')) {
         capturedDedupeBody = JSON.parse((init?.body as string) || '{}');
         return Promise.resolve(jsonResp([{ class: 'voice.model_stall' }]));
@@ -216,5 +256,96 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
     });
     expect(typeof capturedDedupeBody.hour_bucket).toBe('string');
     expect(capturedDedupeBody.hour_bucket).toMatch(/T\d\d:00:00/);
+  });
+
+  test('VTID-01960: spec_memory has probe_failed for (spec_hash, signature) → spec_memory_blocked', async () => {
+    let dedupeCalled = false;
+    let reportCalled = false;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        // Recent probe_failed for the matching (spec_hash, signature)
+        return Promise.resolve(
+          jsonResp([
+            {
+              spec_hash: 'placeholder',
+              normalized_signature: 'vertex_project_id_empty',
+              attempted_at: new Date().toISOString(),
+              outcome: 'probe_failed',
+            },
+          ]),
+        );
+      }
+      if (url.includes('oasis_events')) {
+        return Promise.resolve(jsonResp({ id: 'test-event' }));
+      }
+      if (url.includes('voice_healing_dedupe')) {
+        dedupeCalled = true;
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('/api/v1/self-healing/report')) {
+        reportCalled = true;
+        return Promise.resolve(jsonResp({ ok: true }));
+      }
+      throw new Error('unexpected fetch: ' + url);
+    });
+    mockClassify.mockResolvedValue(classification());
+    const r = await dispatchVoiceFailure({ sessionId: 's11' });
+    expect(r.action).toBe('spec_memory_blocked');
+    expect(r.class).toBe('voice.config_missing');
+    expect(r.detail).toBe('recent_failure');
+    // Critical: gate must short-circuit BEFORE dedupe and BEFORE /report.
+    expect(dedupeCalled).toBe(false);
+    expect(reportCalled).toBe(false);
+  });
+
+  test('VTID-01960: spec_memory empty AND class has hint → continues to dispatch', async () => {
+    let dedupeCalled = false;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) return Promise.resolve(jsonResp([]));
+      if (url.includes('oasis_events')) return Promise.resolve(jsonResp({ id: 'e' }));
+      if (url.includes('voice_healing_dedupe')) {
+        dedupeCalled = true;
+        return Promise.resolve(jsonResp([{ class: 'voice.config_missing' }]));
+      }
+      if (url.includes('/api/v1/self-healing/report')) {
+        return Promise.resolve(jsonResp({ ok: true }));
+      }
+      throw new Error('unexpected fetch: ' + url);
+    });
+    mockClassify.mockResolvedValue(classification());
+    const r = await dispatchVoiceFailure({ sessionId: 's12' });
+    expect(r.action).toBe('dispatched');
+    expect(dedupeCalled).toBe(true);
+  });
+
+  test('VTID-01960: voice.tool_loop has NO hint → spec_memory bypassed, dispatch proceeds', async () => {
+    let specMemoryCalled = false;
+    let dispatched = false;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_spec_memory')) {
+        specMemoryCalled = true;
+        return Promise.resolve(jsonResp([]));
+      }
+      if (url.includes('oasis_events')) return Promise.resolve(jsonResp({ id: 'e' }));
+      if (url.includes('voice_healing_dedupe')) {
+        return Promise.resolve(jsonResp([{ class: 'voice.tool_loop' }]));
+      }
+      if (url.includes('/api/v1/self-healing/report')) {
+        dispatched = true;
+        return Promise.resolve(jsonResp({ ok: true }));
+      }
+      throw new Error('unexpected fetch: ' + url);
+    });
+    mockClassify.mockResolvedValue(
+      classification({ class: 'voice.tool_loop', normalized_signature: 'tool_loop_8plus' }),
+    );
+    const r = await dispatchVoiceFailure({ sessionId: 's13' });
+    expect(r.action).toBe('dispatched');
+    // tool_loop has no hint → adapter must NOT consult spec_memory
+    expect(specMemoryCalled).toBe(false);
+    expect(dispatched).toBe(true);
   });
 });
