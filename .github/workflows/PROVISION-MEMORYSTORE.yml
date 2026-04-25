@@ -1,0 +1,141 @@
+name: Provision Memorystore Redis (VTID-01955)
+# One-shot infra provisioning for Phase 1 Tier 0 Redis turn buffer.
+# Idempotent — safe to re-run. Uses the same WIF auth as EXEC-DEPLOY.
+# Plan: /home/dstev/.claude/plans/the-vitana-system-has-wild-puffin.md  Part 8 Phase 1.
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_name:
+        description: 'Memorystore Redis instance name'
+        required: true
+        default: 'vitana-tier0'
+      instance_size_gb:
+        description: 'Instance size (GB) — BASIC tier'
+        required: true
+        default: '1'
+      vpc_connector_name:
+        description: 'Serverless VPC Access connector name'
+        required: true
+        default: 'vitana-redis-cnx'
+      vpc_connector_range:
+        description: 'VPC connector /28 IP range (must be unused in default network)'
+        required: true
+        default: '10.8.0.0/28'
+      update_gateway_env:
+        description: 'Update gateway Cloud Run with REDIS_URL + VPC connector after provisioning'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write   # required for WIF
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enable required APIs (idempotent)
+        run: |
+          gcloud services enable redis.googleapis.com vpcaccess.googleapis.com \
+            --project=lovable-vitana-vers1
+
+      - name: Provision Memorystore (idempotent)
+        id: redis
+        run: |
+          set -euo pipefail
+          NAME="${{ inputs.instance_name }}"
+          REGION="us-central1"
+          PROJECT="lovable-vitana-vers1"
+
+          if gcloud redis instances describe "$NAME" --region="$REGION" --project="$PROJECT" >/dev/null 2>&1 ; then
+            echo "Memorystore '$NAME' already exists — skipping create"
+          else
+            echo "Creating Memorystore '$NAME'..."
+            gcloud redis instances create "$NAME" \
+              --size="${{ inputs.instance_size_gb }}" \
+              --region="$REGION" \
+              --network=default \
+              --tier=BASIC \
+              --redis-version=redis_7_0 \
+              --project="$PROJECT"
+          fi
+
+          HOST=$(gcloud redis instances describe "$NAME" --region="$REGION" --project="$PROJECT" --format='value(host)')
+          PORT=$(gcloud redis instances describe "$NAME" --region="$REGION" --project="$PROJECT" --format='value(port)')
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+          echo "port=$PORT" >> "$GITHUB_OUTPUT"
+          echo "redis_url=redis://${HOST}:${PORT}" >> "$GITHUB_OUTPUT"
+          echo "Memorystore endpoint: redis://${HOST}:${PORT}"
+
+      - name: Provision Serverless VPC Access connector (idempotent)
+        id: vpc
+        run: |
+          set -euo pipefail
+          NAME="${{ inputs.vpc_connector_name }}"
+          REGION="us-central1"
+          PROJECT="lovable-vitana-vers1"
+
+          if gcloud compute networks vpc-access connectors describe "$NAME" --region="$REGION" --project="$PROJECT" >/dev/null 2>&1 ; then
+            echo "VPC connector '$NAME' already exists — skipping create"
+          else
+            echo "Creating VPC connector '$NAME'..."
+            gcloud compute networks vpc-access connectors create "$NAME" \
+              --region="$REGION" \
+              --network=default \
+              --range="${{ inputs.vpc_connector_range }}" \
+              --min-instances=2 \
+              --max-instances=3 \
+              --project="$PROJECT"
+          fi
+
+          STATE=$(gcloud compute networks vpc-access connectors describe "$NAME" --region="$REGION" --project="$PROJECT" --format='value(state)')
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+          echo "VPC connector state: $STATE"
+
+      - name: Update gateway with REDIS_URL + VPC connector (optional)
+        if: ${{ inputs.update_gateway_env }}
+        run: |
+          set -euo pipefail
+          REDIS_URL="${{ steps.redis.outputs.redis_url }}"
+          VPC="projects/lovable-vitana-vers1/locations/us-central1/connectors/${{ inputs.vpc_connector_name }}"
+
+          echo "Updating gateway with REDIS_URL=$REDIS_URL and VPC connector $VPC ..."
+          gcloud run services update gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --vpc-connector="$VPC" \
+            --vpc-egress=private-ranges-only \
+            --update-env-vars=REDIS_URL="$REDIS_URL"
+
+          echo ""
+          echo "Verifying revision serving..."
+          gcloud run services describe gateway \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(status.traffic[0].revisionName)'
+
+      - name: Summary
+        run: |
+          echo "::notice::Memorystore endpoint: ${{ steps.redis.outputs.redis_url }}"
+          echo "::notice::VPC connector: ${{ inputs.vpc_connector_name }} state=${{ steps.vpc.outputs.state }}"
+          echo "::notice::Gateway env updated: ${{ inputs.update_gateway_env }}"
+          echo ""
+          echo "Next step (manual, via supabase):"
+          echo "  INSERT INTO system_controls (key, enabled, reason, updated_by, updated_by_role)"
+          echo "  VALUES ('tier0_redis_enabled', false, 'phase 1 canary', 'system', 'system')"
+          echo "  ON CONFLICT (key) DO NOTHING;"
+          echo ""
+          echo "Then to enable for canary tenant:"
+          echo "  UPDATE system_controls SET enabled=true, updated_at=now() WHERE key='tier0_redis_enabled';"
