@@ -30,6 +30,7 @@ import { runVoiceProbe } from './voice-synthetic-probe';
 import { triggerRollbackRecommendation } from './voice-auto-rollback';
 import { recordSpecMemory } from './voice-spec-memory';
 import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
+import { appendVerdict, evaluateAndQuarantine } from './voice-recurrence-sentinel';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -296,6 +297,20 @@ async function reconcileVoiceRow(
         detail: `probe_passed_${probe.duration_ms}ms`,
       });
     }
+    // VTID-01962 (PR #5): Sentinel append + threshold evaluate.
+    await appendVerdict({
+      class: voiceClass,
+      normalized_signature: signature,
+      verdict: 'ok',
+      vtid: row.vtid,
+      fixed_at: new Date().toISOString(),
+    });
+    const quarantineReason = await evaluateAndQuarantine(voiceClass, signature);
+    if (quarantineReason) {
+      console.log(
+        `${LOG_PREFIX} Sentinel quarantined ${voiceClass}/${signature} after probe_ok: ${quarantineReason}`,
+      );
+    }
     if (ok) {
       try {
         await emitOasisEvent({
@@ -337,6 +352,19 @@ async function reconcileVoiceRow(
       vtid: row.vtid,
       detail: `${probe.failure_mode_code}_${probe.duration_ms}ms`,
     });
+  }
+  // VTID-01962 (PR #5): Sentinel append + threshold evaluate.
+  await appendVerdict({
+    class: voiceClass,
+    normalized_signature: signature,
+    verdict: 'rollback',
+    vtid: row.vtid,
+  });
+  const quarantineReason = await evaluateAndQuarantine(voiceClass, signature);
+  if (quarantineReason) {
+    console.log(
+      `${LOG_PREFIX} Sentinel quarantined ${voiceClass}/${signature} after probe_failed: ${quarantineReason}`,
+    );
   }
   if (ok) {
     try {

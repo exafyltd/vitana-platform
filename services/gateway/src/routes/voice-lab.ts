@@ -13,6 +13,10 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
+import {
+  releaseQuarantine,
+  getQuarantineState,
+} from '../services/voice-recurrence-sentinel';
 
 const router = Router();
 
@@ -561,6 +565,59 @@ router.post('/probe', async (_req: Request, res: Response) => {
       .status(500)
       .json({ ok: false, error: 'Probe internal error', details: err.message });
   }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/quarantine?class=...&signature=... (VTID-01962, PR #5)
+ *
+ * Inspect the current quarantine state for a (class, signature) pair.
+ * Returns 404 if no row exists (= active by default).
+ */
+router.get('/healing/quarantine', async (req: Request, res: Response) => {
+  const klass = String(req.query.class || '');
+  const signature = String(req.query.signature || '');
+  if (!klass || !signature) {
+    return res.status(400).json({ ok: false, error: 'class and signature query params required' });
+  }
+  const row = await getQuarantineState(klass, signature);
+  if (!row) {
+    return res.status(404).json({ ok: false, error: 'no quarantine row (= active)' });
+  }
+  return res.json({ ok: true, ...row });
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/quarantine/release (VTID-01962, PR #5)
+ *
+ * Move a quarantined (class, signature) into 72h probation. Halved
+ * thresholds + max 1 dispatch per day apply during probation. The
+ * probation expires automatically without re-quarantine, transitioning
+ * to 'released'.
+ *
+ * Body: { class: string, signature: string, reason?: string }
+ */
+router.post('/healing/quarantine/release', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const klass = typeof body.class === 'string' ? body.class : '';
+  const signature = typeof body.signature === 'string' ? body.signature : '';
+  const reason = typeof body.reason === 'string' ? body.reason : undefined;
+  if (!klass || !signature) {
+    return res.status(400).json({ ok: false, error: 'class and signature body fields required' });
+  }
+  const r = await releaseQuarantine(klass, signature, reason);
+  if (!r.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: r.error || 'release_failed',
+      new_status: r.new_status,
+      probation_until: r.probation_until,
+    });
+  }
+  return res.json({
+    ok: true,
+    new_status: r.new_status,
+    probation_until: r.probation_until,
+  });
 });
 
 /**

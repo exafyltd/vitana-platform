@@ -28,6 +28,7 @@ import {
 } from './voice-session-classifier';
 import { getVoiceSpecHint } from './voice-spec-hints';
 import { lookupSpecMemory } from './voice-spec-memory';
+import { isDispatchAllowed } from './voice-recurrence-sentinel';
 import { emitOasisEvent } from './oasis-event-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -110,6 +111,8 @@ export type DispatchAction =
   | 'dedupe_hit'
   | 'classifier_no_error'
   | 'spec_memory_blocked'
+  | 'sentinel_quarantined'
+  | 'sentinel_probation_capped'
   | 'error';
 
 export interface DispatchResult {
@@ -260,6 +263,47 @@ export async function dispatchVoiceFailure(
       action: 'classifier_no_error',
       class: classification.class,
       normalized_signature: classification.normalized_signature,
+    };
+  }
+
+
+
+  // VTID-01962 (PR #5): Recurrence Sentinel quarantine check. If the
+  // (class, signature) pair is quarantined, suppress dispatch and emit
+  // voice.healing.dispatch.suppressed. Probation status allows dispatch
+  // but caps daily volume — adapter respects probation_capped.
+  const dispatchDecision = await isDispatchAllowed(
+    classification.class,
+    classification.normalized_signature,
+  );
+  if (!dispatchDecision.allowed) {
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-VOICE-HEALING',
+        type: 'voice.healing.dispatch.suppressed',
+        source: 'voice-self-healing-adapter',
+        status: 'warning',
+        message: `Sentinel ${dispatchDecision.reason} — dispatch suppressed for ${classification.class}`,
+        payload: {
+          class: classification.class,
+          normalized_signature: classification.normalized_signature,
+          reason: dispatchDecision.reason,
+          status: dispatchDecision.status,
+          probation_until: dispatchDecision.probation_until,
+          session_id: opts.sessionId,
+        },
+      });
+    } catch {
+      /* best-effort telemetry */
+    }
+    return {
+      action:
+        dispatchDecision.reason === 'probation_capped'
+          ? 'sentinel_probation_capped'
+          : 'sentinel_quarantined',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+      detail: dispatchDecision.reason,
     };
   }
 
