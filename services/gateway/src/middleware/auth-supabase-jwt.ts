@@ -16,6 +16,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
+import { upsertActiveDay } from '../services/guide/active-usage';
 
 /**
  * Identity claims extracted from a validated Supabase JWT
@@ -168,6 +169,12 @@ export async function requireAuth(
   req.auth_raw_claims = result.claims;
   req.auth_source = result.auth_source;
 
+  // BOOTSTRAP-DYK-TOUR: fire-and-forget active-day tracker for the usage-based
+  // 30-day Did-You-Know tour. PK-deduped per (user_id, UTC date) — safe to spam.
+  if (result.identity.user_id) {
+    upsertActiveDay(result.identity.user_id).catch(() => {});
+  }
+
   next();
 }
 
@@ -188,6 +195,9 @@ export async function optionalAuth(
       req.identity = result.identity;
       req.auth_raw_claims = result.claims;
       req.auth_source = result.auth_source;
+      if (result.identity.user_id) {
+        upsertActiveDay(result.identity.user_id).catch(() => {});
+      }
     }
   }
 
@@ -323,6 +333,11 @@ export async function requireAuthWithTenant(
   req.auth_raw_claims = result.claims;
   req.auth_source = result.auth_source;
 
+  // BOOTSTRAP-DYK-TOUR: active-day tracker for the tour curriculum
+  if (result.identity.user_id) {
+    upsertActiveDay(result.identity.user_id).catch(() => {});
+  }
+
   // If tenant_id missing from JWT, resolve from user_tenants table
   if (!req.identity.tenant_id) {
     const supabase = getSupabase();
@@ -400,6 +415,11 @@ export async function requireAdminAuth(
   req.identity = result.identity;
   req.auth_raw_claims = result.claims;
   req.auth_source = result.auth_source;
+
+  // BOOTSTRAP-DYK-TOUR: active-day tracker for the tour curriculum
+  if (result.identity.user_id) {
+    upsertActiveDay(result.identity.user_id).catch(() => {});
+  }
 
   // Then, require exafy_admin
   if (!req.identity.exafy_admin) {

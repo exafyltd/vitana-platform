@@ -52,6 +52,20 @@ export {
   type RecordTouchInput,
   type AcknowledgeTouchInput,
 } from './presence-pacer';
+// BOOTSTRAP-DYK-TOUR
+export { upsertActiveDay, countActiveUsageDays } from './active-usage';
+export {
+  DYK_TIP_REGISTRY,
+  resolveNextTip,
+  getTipByKey,
+  tourHintFromTip,
+  mentionsIndexOrPillar,
+  INDEX_FRAMING_TOKENS,
+  type DidYouKnowTip,
+  type IndexPillar,
+  type TipPillarLink,
+  type ResolveOptions,
+} from './tip-curriculum';
 export {
   describeTimeSince,
   fetchLastSessionInfo,

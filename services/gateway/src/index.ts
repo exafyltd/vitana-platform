@@ -240,6 +240,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
   // VTID-01947: Companion Phase H — Proactive Presence routes
   const presenceRouter = require('./routes/presence').default;
+  // BOOTSTRAP-DYK-TOUR: Did-You-Know 30-usage-day guided tour
+  const presenceDidYouKnowRouter = require('./routes/presence-did-you-know').default;
   // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
   const devAutopilotRouter = require('./routes/dev-autopilot').default;
   // Autonomy Pulse — unified supervisor feed across self-healing + dev-autopilot
@@ -490,6 +492,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/governance/controls', governanceControlsRouter, { owner: 'governance-controls' });
   // VTID-01947: Companion Phase H — Proactive Presence
   mountRouterSync(app, '/api/v1/presence', presenceRouter, { owner: 'presence' });
+  // BOOTSTRAP-DYK-TOUR: Did-You-Know tour (mounted as a sibling so the base
+  // /presence route shape stays clean)
+  mountRouterSync(app, '/api/v1/presence/did-you-know', presenceDidYouKnowRouter, {
+    owner: 'presence-did-you-know',
+  });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
