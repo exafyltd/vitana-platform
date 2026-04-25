@@ -26,6 +26,10 @@ import {
   createFreshVtidFromTriageReport,
   MAX_TRIAGE_ATTEMPTS,
 } from './self-healing-triage-service';
+import { runVoiceProbe } from './voice-synthetic-probe';
+import { triggerRollbackRecommendation } from './voice-auto-rollback';
+import { recordSpecMemory } from './voice-spec-memory';
+import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -193,9 +197,16 @@ async function attemptRedispatch(
   return { status: 'redispatched' };
 }
 
+type EscalateReason =
+  | 'recovered_externally'
+  | 'stale_no_progress'
+  | 'stale_agent_exhausted'
+  | 'probe_verified'
+  | 'probe_failed';
+
 async function markEscalated(
   row: StaleRow,
-  reason: 'recovered_externally' | 'stale_no_progress' | 'stale_agent_exhausted',
+  reason: EscalateReason,
   httpStatus: number | null,
 ): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
@@ -225,7 +236,9 @@ async function markEscalated(
   //    seeing this VTID as "active". Without this, the ledger stays at
   //    status=allocated and blocks new self-healing VTIDs for the same
   //    endpoint forever.
-  const terminalStatus = reason === 'recovered_externally' ? 'completed' : 'failed';
+  // Recovered/probe-verified rows complete the VTID; everything else fails.
+  const terminalStatus =
+    reason === 'recovered_externally' || reason === 'probe_verified' ? 'completed' : 'failed';
   await fetch(
     `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(row.vtid)}`,
     {
@@ -250,6 +263,119 @@ async function markEscalated(
   return true;
 }
 
+/**
+ * VTID-01961 (PR #4): Reconcile a voice synthetic-endpoint row.
+ *
+ * Voice rows have no HTTP path to probe; instead we run the Synthetic
+ * Voice Probe (which checks /api/v1/orb/health flags). Pass → mark
+ * recovered + record success in spec_memory. Fail → mark probe_failed +
+ * record probe_failed in spec_memory + emit rollback recommendation.
+ * Either way, transition the row terminal so it doesn't loop.
+ */
+async function reconcileVoiceRow(
+  row: StaleRow,
+  ageHours: number,
+  voiceClass: string,
+): Promise<void> {
+  const probe = await runVoiceProbe();
+  const signature =
+    ((row.diagnosis || {}) as Record<string, unknown>).normalized_signature as string | undefined ||
+    'unknown';
+  const hint = getVoiceSpecHint(voiceClass);
+  const specHash = hint?.spec_hash;
+
+  if (probe.ok) {
+    // Probe passed — mark recovered, record success in spec_memory, emit verdict.
+    const ok = await markEscalated(row, 'probe_verified', null);
+    if (specHash) {
+      await recordSpecMemory({
+        spec_hash: specHash,
+        normalized_signature: signature,
+        outcome: 'success',
+        vtid: row.vtid,
+        detail: `probe_passed_${probe.duration_ms}ms`,
+      });
+    }
+    if (ok) {
+      try {
+        await emitOasisEvent({
+          vtid: row.vtid,
+          type: 'voice.healing.verdict',
+          source: 'self-healing-reconciler',
+          status: 'success',
+          message: `Voice probe PASSED for ${voiceClass} after fix attempt (${probe.duration_ms}ms)`,
+          payload: {
+            voice_class: voiceClass,
+            normalized_signature: signature,
+            spec_hash: specHash,
+            verdict: 'ok',
+            probe_duration_ms: probe.duration_ms,
+            probe_evidence: probe.evidence,
+            age_hours: Number(ageHours.toFixed(2)),
+            endpoint: row.endpoint,
+          },
+        });
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Failed to emit voice.healing.verdict for ${row.vtid}:`, err);
+      }
+      console.log(
+        `${LOG_PREFIX} Voice probe passed for ${row.vtid} (${voiceClass}, ${probe.duration_ms}ms)`,
+      );
+    }
+    return;
+  }
+
+  // Probe failed — mark terminal as probe_failed, record probe_failed in
+  // spec_memory (Spec Memory Gate will block re-dispatch for 72h), and
+  // emit rollback recommendation.
+  const ok = await markEscalated(row, 'probe_failed', null);
+  if (specHash) {
+    await recordSpecMemory({
+      spec_hash: specHash,
+      normalized_signature: signature,
+      outcome: 'probe_failed',
+      vtid: row.vtid,
+      detail: `${probe.failure_mode_code}_${probe.duration_ms}ms`,
+    });
+  }
+  if (ok) {
+    try {
+      await emitOasisEvent({
+        vtid: row.vtid,
+        type: 'voice.healing.verdict',
+        source: 'self-healing-reconciler',
+        status: 'error',
+        message: `Voice probe FAILED for ${voiceClass} after fix attempt: ${probe.failure_mode_code}`,
+        payload: {
+          voice_class: voiceClass,
+          normalized_signature: signature,
+          spec_hash: specHash,
+          verdict: 'rollback',
+          failure_mode_code: probe.failure_mode_code,
+          probe_duration_ms: probe.duration_ms,
+          probe_evidence: probe.evidence,
+          age_hours: Number(ageHours.toFixed(2)),
+          endpoint: row.endpoint,
+        },
+      });
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Failed to emit voice.healing.verdict for ${row.vtid}:`, err);
+    }
+
+    await triggerRollbackRecommendation({
+      vtid: row.vtid,
+      voice_class: voiceClass,
+      normalized_signature: signature,
+      spec_hash: specHash,
+      probe_result: probe,
+    });
+
+    console.log(
+      `${LOG_PREFIX} Voice probe failed for ${row.vtid} (${voiceClass}, ${probe.failure_mode_code}) — rollback recommended`,
+    );
+  }
+}
+
 async function runReconcileCycle(thresholdMs: number): Promise<void> {
   if (cycleInFlight) return;
   cycleInFlight = true;
@@ -259,6 +385,18 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
     console.log(`${LOG_PREFIX} Found ${rows.length} stale row(s) to reconcile`);
     for (const row of rows) {
       const ageHours = (Date.now() - new Date(row.created_at).getTime()) / 3600000;
+
+      // VTID-01961 (PR #4): voice synthetic endpoints take a different path —
+      // run the synthetic probe (chime-aware, semantic verification post-PR-5),
+      // record outcome to voice_healing_spec_memory, emit voice.healing.verdict,
+      // and on failure emit voice.healing.rollback.triggered. Then mark
+      // terminal so we don't retry forever.
+      const voiceClass = parseVoiceClassFromEndpoint(row.endpoint);
+      if (voiceClass) {
+        await reconcileVoiceRow(row, ageHours, voiceClass);
+        continue;
+      }
+
       const { healthy, http_status } = await probeEndpoint(row.endpoint);
 
       // Path A: endpoint healthy now → tombstone as recovered_externally
