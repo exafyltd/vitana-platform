@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
@@ -942,6 +943,12 @@ setInterval(() => {
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
+      // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+      dispatchVoiceFailureFireAndForget({
+        sessionId: sid,
+        tenantScope: s.identity?.tenant_id || 'global',
+        metadata: { synthetic: (s as any).synthetic === true },
+      });
       s.active = false;
       liveSessions.delete(sid);
       purged++;
@@ -1023,6 +1030,12 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
+    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    dispatchVoiceFailureFireAndForget({
+      sessionId: sid,
+      tenantScope: existingSession.identity?.tenant_id || 'global',
+      metadata: { synthetic: (existingSession as any).synthetic === true },
+    });
   }
   return terminated;
 }
@@ -11093,6 +11106,12 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
   });
+  // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+  dispatchVoiceFailureFireAndForget({
+    sessionId: session_id,
+    tenantScope: session.identity?.tenant_id || 'global',
+    metadata: { synthetic: (session as any).synthetic === true },
+  });
 
   // VTID-01225: Fire-and-forget entity extraction from live session
   // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items
@@ -11419,6 +11438,13 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         error: err.message,
         vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
       }, 'error').catch(() => {});
+      // VTID-01959: voice self-healing dispatch (mode-gated; off by default).
+      // Hooked here for the fast-fail path that may abort before session.stop.
+      dispatchVoiceFailureFireAndForget({
+        sessionId,
+        tenantScope: session.identity?.tenant_id || 'global',
+        metadata: { synthetic: (session as any).synthetic === true },
+      });
 
       // Notify client of connection failure
       if (session.sseResponse) {
@@ -11437,6 +11463,13 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       google_auth_ready: !!googleAuth,
       vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
     }, 'error').catch(() => {});
+    // VTID-01959: voice self-healing dispatch (mode-gated; off by default).
+    // Hooked here for the fast-fail path that may abort before session.stop.
+    dispatchVoiceFailureFireAndForget({
+      sessionId,
+      tenantScope: session.identity?.tenant_id || 'global',
+      metadata: { synthetic: (session as any).synthetic === true },
+    });
   }
 
   // VTID-HEARTBEAT-FIX: Send actual data heartbeats, not SSE comments.
@@ -13227,6 +13260,12 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
+    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    dispatchVoiceFailureFireAndForget({
+      sessionId,
+      tenantScope: liveSession.identity?.tenant_id || 'global',
+      metadata: { synthetic: (liveSession as any).synthetic === true },
+    });
 
     liveSessions.delete(sessionId);
   }
