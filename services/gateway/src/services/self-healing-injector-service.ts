@@ -56,7 +56,13 @@ export async function injectIntoAutopilotPipeline(
   }
 
   try {
-    const autoApproved = diagnosis.confidence >= 0.8;
+    // Voice synthetic endpoints auto-approve regardless of confidence.
+    // The safety net for voice rows is the synthetic Voice Probe + auto-rollback
+    // + Spec Memory Gate (PR #4 + PR #3), not human approval.
+    const isVoiceSyntheticSource =
+      typeof diagnosis.endpoint === 'string' &&
+      diagnosis.endpoint.startsWith('voice-error://');
+    const autoApproved = isVoiceSyntheticSource || diagnosis.confidence >= 0.8;
 
     // Step 1: Update the existing VTID entry — transition allocated → pending
     const updateResp = await fetch(
