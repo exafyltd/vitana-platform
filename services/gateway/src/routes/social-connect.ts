@@ -32,9 +32,11 @@ import {
   getSharePrefs,
   updateSharePrefs,
   getAvailableProviders,
+  parseGoogleInclude,
   SocialProvider,
   SUPPORTED_PROVIDERS,
   type OAuthReturnMode,
+  type GoogleSubService,
 } from '../services/social-connect-service';
 
 const router = Router();
@@ -177,7 +179,33 @@ router.get('/connect/:provider', (req: Request, res: Response) => {
   // see in the system browser tab, not in the app).
   const returnMode: OAuthReturnMode = req.query.return === 'mobile' ? 'mobile' : 'web';
 
-  const { url, error } = getOAuthUrl(provider, user.userId, user.tenantId, returnMode);
+  // Phase 3 (unified Google connect): clients can request a specific bundle
+  // of Google sub-services with `?include=gmail,calendar,contacts,youtube`.
+  // Default behavior (no include) keeps the legacy Gmail+Calendar+Contacts
+  // bundle so existing per-service Connect buttons still work.
+  // Phase 4 (incremental consent): `?mode=incremental` adds the requested
+  // scopes onto the user's existing token without forcing a full re-consent.
+  let includeServices: GoogleSubService[] | undefined = undefined;
+  if (provider === 'google' && typeof req.query.include === 'string') {
+    const parsed = parseGoogleInclude(req.query.include);
+    if (parsed === null) {
+      // include= present but empty/invalid — fall through to default bundle.
+    } else if (parsed.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid `include` value. Use a comma-separated list of: gmail, calendar, contacts, youtube.',
+      });
+    } else {
+      includeServices = parsed;
+    }
+  }
+  const mode: 'full' | 'incremental' = req.query.mode === 'incremental' ? 'incremental' : 'full';
+
+  const { url, error } = getOAuthUrl(provider, user.userId, user.tenantId, {
+    returnMode,
+    includeServices,
+    mode,
+  });
   if (error) {
     return res.status(400).json({ ok: false, error });
   }
