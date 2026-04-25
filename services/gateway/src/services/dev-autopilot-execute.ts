@@ -36,7 +36,7 @@ import {
   SafetyPlan,
   SafetyDecision,
 } from './dev-autopilot-safety';
-import { extractFilePaths } from './dev-autopilot-planning';
+import { extractFilePaths, generatePlanVersion } from './dev-autopilot-planning';
 import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure } from './dev-autopilot-self-heal-log';
 
@@ -1755,6 +1755,67 @@ export async function autoApproveTick(): Promise<void> {
   }
 }
 
+/**
+ * Lazy plan generator — fills in plans for backlog findings that the
+ * eager top-K planner missed.
+ *
+ * Why this exists: eagerlyPlanTopK() only fires from synthesis ingest
+ * with brand-new signals. Once the scanner reaches steady state
+ * (0 new findings per run, all duplicates), no planning ever happens
+ * for the backlog. autoApproveTick() then silently does nothing because
+ * it only approves findings WITH plans. Net effect: an empty queue
+ * sitting on top of dozens of plannable findings.
+ *
+ * This tick picks up to 3 plannable findings per cycle (status=new,
+ * risk_class IN ('low','medium'), no plan_versions row) and calls
+ * generatePlanVersion. Bounded so a hung worker never wedges the loop.
+ */
+const LAZY_PLAN_BATCH_SIZE = 3;
+const LAZY_PLAN_RISK_CLASSES = ['low', 'medium'];
+
+export async function lazyPlanTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  // Honor the kill switch so this can't run away when ops disables autonomy.
+  const cfg = await loadConfig(s);
+  if (!cfg) return;
+  if (cfg.kill_switch) return;
+
+  // Find planless findings ordered by impact_score desc.
+  const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
+  const findingsR = await supa<Array<{ id: string }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?source_type=in.(dev_autopilot,dev_autopilot_impact)`
+    + `&status=eq.new&risk_class=in.${riskFilter}`
+    + `&order=impact_score.desc&limit=${LAZY_PLAN_BATCH_SIZE * 4}&select=id`,
+  );
+  if (!findingsR.ok || !findingsR.data) return;
+
+  let generated = 0;
+  for (const f of findingsR.data) {
+    if (generated >= LAZY_PLAN_BATCH_SIZE) break;
+    // Skip if a plan already exists for this finding.
+    const planR = await supa<Array<{ version: number }>>(
+      s,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&limit=1`,
+    );
+    if (planR.ok && planR.data && planR.data.length > 0) continue;
+    try {
+      const result = await generatePlanVersion(f.id);
+      if (result.ok) {
+        generated++;
+        console.log(`${LOG_PREFIX} lazy-plan generated for ${f.id.slice(0, 8)}`);
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} lazy-plan error for ${f.id.slice(0, 8)}:`, err);
+    }
+  }
+  if (generated > 0) {
+    console.log(`${LOG_PREFIX} lazy-plan tick: generated ${generated} plan(s)`);
+  }
+}
+
 let backgroundTickerStarted = false;
 export function startBackgroundExecutor(): void {
   if (backgroundTickerStarted) return;
@@ -1766,6 +1827,9 @@ export function startBackgroundExecutor(): void {
     });
     autoApproveTick().catch((err) => {
       console.error(`${LOG_PREFIX} auto-approve tick error:`, err);
+    });
+    lazyPlanTick().catch((err) => {
+      console.error(`${LOG_PREFIX} lazy-plan tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }
