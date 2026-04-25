@@ -30,6 +30,7 @@ import { getVoiceSpecHint } from './voice-spec-hints';
 import { lookupSpecMemory } from './voice-spec-memory';
 import { isDispatchAllowed } from './voice-recurrence-sentinel';
 import { emitOasisEvent } from './oasis-event-service';
+import { spawnInvestigator } from './voice-architecture-investigator';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -345,6 +346,21 @@ export async function dispatchVoiceFailure(
       } catch {
         /* best-effort telemetry */
       }
+      // VTID-01963 (PR #6): spawn Architecture Investigator on first repeat
+      // — fire-and-forget; never blocks the dispatch path. The investigator
+      // produces a structured report and emits voice.healing.investigation.completed.
+      spawnInvestigator({
+        class: classification.class,
+        normalized_signature: classification.normalized_signature,
+        trigger_reason: 'spec_memory_blocked',
+        related_spec_hash: hint.spec_hash,
+        notes: `Spec Memory Gate blocked dispatch: ${decision.reason}.`,
+      }).catch((err) =>
+        console.warn(
+          `[voice-self-healing-adapter] investigator spawn failed: ${err?.message ?? err}`,
+        ),
+      );
+
       return {
         action: 'spec_memory_blocked',
         class: classification.class,

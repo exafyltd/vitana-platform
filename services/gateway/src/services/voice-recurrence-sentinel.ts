@@ -31,6 +31,7 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+import { spawnInvestigator } from './voice-architecture-investigator';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -315,6 +316,20 @@ export async function evaluateAndQuarantine(
   } catch {
     /* best-effort */
   }
+
+  // VTID-01963 (PR #6): spawn the Architecture Investigator. Fire-and-forget
+  // so we don't block the reconciler tick on the Vertex call. The
+  // investigator persists a report row and emits voice.healing.investigation.completed.
+  spawnInvestigator({
+    class: klass,
+    normalized_signature: signature,
+    trigger_reason: 'sentinel_quarantine',
+    notes: `Quarantine reason: ${reason}. Burst=${counts.burst_24h}, persistence=${counts.persistence_7d}, failed_fix=${counts.failed_fix_7d}.`,
+  }).catch((err) =>
+    console.warn(
+      `[voice-recurrence-sentinel] investigator spawn failed: ${err?.message ?? err}`,
+    ),
+  );
 
   return reason;
 }
