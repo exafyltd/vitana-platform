@@ -32,6 +32,7 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { renderPlanHtml } from './dev-autopilot-html';
 import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
+import { writeAutopilotFailure, isWorkerBinaryMissing } from './dev-autopilot-self-heal-log';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -633,7 +634,7 @@ async function runPlanningSession(
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls
   // back to the direct Messages API call when the feature flag is off.
-  const call = isWorkerQueueEnabled()
+  let call = isWorkerQueueEnabled()
     ? await runWorkerTask(
         {
           kind: 'plan',
@@ -646,9 +647,51 @@ async function runPlanningSession(
         { timeoutMs: MESSAGES_TIMEOUT_MS },
       )
     : await callMessagesApi(prompt);
+
+  // Auto-fallback for the worker-binary-missing failure: when the worker
+  // can't spawn the Claude Code CLI (ENOENT, binary path stale after an
+  // extension update, etc.), retry once via the direct Messages API path.
+  // This is the kind of self-healing the "fully autonomous" goal requires:
+  // detect a known dependency failure and route around it without human
+  // intervention. ANTHROPIC_API_KEY must be set for the fallback to work;
+  // if it's missing, we still surface the failure on self_healing_log.
+  let fallback_used = false;
+  if (!call.ok && isWorkerQueueEnabled() && isWorkerBinaryMissing(call.error) && ANTHROPIC_API_KEY) {
+    console.warn(`${LOG_PREFIX} worker binary missing — falling back to Messages API for ${finding.id}`);
+    call = await callMessagesApi(prompt);
+    fallback_used = true;
+  }
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   if (!call.ok || !call.text) {
+    const supaForLog = getSupabase();
+    if (supaForLog) {
+      const isBinaryMissing = isWorkerBinaryMissing(call.error);
+      await writeAutopilotFailure(supaForLog, {
+        stage: 'plan_gen',
+        vtid: `VTID-DA-FIND-${finding.id.slice(0, 8)}`,
+        endpoint: finding.spec_snapshot?.file_path || `autopilot.plan_gen`,
+        failure_class: isBinaryMissing
+          ? 'dev_autopilot_worker_binary_missing'
+          : 'dev_autopilot_plan_gen_failed',
+        confidence: 0,
+        diagnosis: {
+          summary: isBinaryMissing
+            ? 'Worker process cannot spawn Claude Code CLI (binary moved or PATH changed). Restart worker or update binary path. Fallback to Messages API also failed (or ANTHROPIC_API_KEY unset).'
+            : `Plan generation failed after ${elapsed}s: ${call.error || 'unknown error'}`,
+          finding_id: finding.id,
+          finding_title: finding.title,
+          scanner: finding.spec_snapshot?.scanner,
+          file_path: finding.spec_snapshot?.file_path,
+          worker_used: isWorkerQueueEnabled(),
+          fallback_attempted: fallback_used,
+          elapsed_s: elapsed,
+          raw_error: (call.error || '').slice(0, 500),
+        },
+        outcome: 'escalated',
+        attempt_number: 1,
+      });
+    }
     return {
       ok: false,
       error: `Plan generation failed after ${elapsed}s: ${call.error || 'unknown error'}`,
