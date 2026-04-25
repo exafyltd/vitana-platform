@@ -1782,6 +1782,17 @@ export async function lazyPlanTick(): Promise<void> {
   if (!cfg) return;
   if (cfg.kill_switch) return;
 
+  // Global queue-pressure guard: if the worker queue already has any plan
+  // tasks pending OR running, skip this tick entirely. Without this, every
+  // 30s tick (and every Cloud Run instance running its own copy) keeps
+  // enqueueing more tasks faster than the worker can drain them — leading
+  // to dozens of duplicate plans per finding and starving execute tasks.
+  const pendingR = await supa<Array<{ id: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_worker_queue?kind=eq.plan&status=in.(pending,running)&select=id&limit=1`,
+  );
+  if (pendingR.ok && pendingR.data && pendingR.data.length > 0) return;
+
   // Find planless findings ordered by impact_score desc.
   const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
   const findingsR = await supa<Array<{ id: string }>>(
@@ -1801,6 +1812,14 @@ export async function lazyPlanTick(): Promise<void> {
       `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&limit=1`,
     );
     if (planR.ok && planR.data && planR.data.length > 0) continue;
+    // Skip if a plan task for this finding is already pending/running
+    // (defense in depth — the global guard above usually covers this,
+    // but a tick mid-claim could still race).
+    const inflightR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_worker_queue?finding_id=eq.${f.id}&kind=eq.plan&status=in.(pending,running)&select=id&limit=1`,
+    );
+    if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
     try {
       const result = await generatePlanVersion(f.id);
       if (result.ok) {
