@@ -51,6 +51,10 @@ import {
   executePauseProactiveGuidance,
   executeClearProactivePauses,
   emitGuideTelemetry,
+  // BOOTSTRAP-DYK-TOUR Phase 1b — voice tour-hint injection
+  canSurfaceProactively,
+  recordTouch,
+  resolveNextTip,
   type OpenerCandidate,
   type UserAwareness,
 } from './guide';
@@ -735,8 +739,16 @@ GOAL-GROUNDED RECOMMENDATIONS (NON-NEGOTIABLE):
 - Do NOT make generic off-topic suggestions. Every piece of advice should
   visibly connect to the goal ("because your focus is X, here's Y").`;
 
+  // BOOTSTRAP-DYK-TOUR Phase 1b — Did-You-Know voice opener
+  // Compute the tour-hint block alongside the candidate. If eligible, ORB
+  // gets ONE additional sanctioned proactive utterance: the day-N tip.
+  // It's appended AFTER the candidate so it has recency primacy in attention.
+  const tourHintBlock = await buildDidYouKnowVoiceHint(input.user_id, awareness, channel).catch(
+    () => '',
+  );
+
   if (!candidate) {
-    return rulesBlock;
+    return rulesBlock + tourHintBlock;
   }
 
   const goalLine = candidate.goal_link
@@ -777,7 +789,102 @@ respect the OPENING SHAPE MATRIX (tenure × last_interaction).
 If the user declines (skip / not today / give me space / etc.) honor it
 silently via the dismissal tools — no apology, no big deal.`;
 
-  return rulesBlock + candidateBlock;
+  return rulesBlock + candidateBlock + tourHintBlock;
+}
+
+/**
+ * BOOTSTRAP-DYK-TOUR Phase 1b — Voice tour-hint block.
+ *
+ * If the Did-You-Know flag is on AND the pacer permits a 'voice_opener_tour'
+ * touch AND the curriculum resolves a tip for this user, emit a system-prompt
+ * block that authorizes the LLM to offer the tip ONCE this session, with
+ * exact phrasing and a clear consent flow.
+ *
+ * Fail-safe: any error → empty string. Voice path must never break because
+ * of a tour bug.
+ *
+ * Note: this surface is INDEPENDENT of the silent card surface — they each
+ * record their own touch in user_proactive_touches with different surface
+ * names ('voice_opener_tour' vs 'did_you_know_card'), so a user with
+ * presence_level=balanced (cap=2) can receive both in the same day before
+ * cap is hit.
+ */
+async function buildDidYouKnowVoiceHint(
+  userId: string,
+  awareness: UserAwareness | null,
+  channel: 'voice' | 'text',
+): Promise<string> {
+  // Voice-only surface — text channels handle DYK via the Card UI.
+  if (channel !== 'voice') return '';
+  if (!awareness) return '';
+
+  // Flag kill switch
+  const flag = await getSystemControl('vitana_did_you_know_enabled').catch(() => null);
+  if (!flag || !flag.enabled) return '';
+
+  // Pacer — respects user_proactive_pause + per-user daily cap + same-surface dedup
+  const decision = await canSurfaceProactively(userId, 'voice_opener_tour').catch(() => null);
+  if (!decision || !decision.allow) return '';
+
+  // Curriculum
+  const tip = resolveNextTip(awareness);
+  if (!tip) return '';
+
+  // Record touch fire-and-forget so the daily cap counts this offer
+  recordTouch({
+    user_id: userId,
+    surface: 'voice_opener_tour',
+    reason_tag: tip.tip_key,
+    metadata: {
+      feature_key: tip.feature_key,
+      index_pillar_link: tip.index_pillar_link,
+      active_usage_days: awareness.tenure.active_usage_days,
+    },
+  }).catch(() => {});
+
+  emitGuideTelemetry('guide.did_you_know.offered', {
+    user_id: userId,
+    tip_key: tip.tip_key,
+    feature_key: tip.feature_key,
+    index_pillar_link: tip.index_pillar_link,
+    active_usage_days: awareness.tenure.active_usage_days,
+    tenure_stage: awareness.tenure.stage,
+    channel: 'voice',
+  }).catch(() => {});
+
+  return `
+
+=== DID-YOU-KNOW TOUR HINT (BOOTSTRAP-DYK-TOUR — APPEND-ONLY, ONE SHOT PER SESSION) ===
+
+A curriculum tip is available for this user (usage day ${awareness.tenure.active_usage_days}).
+The tour is voice-first — you MAY offer this ONE tip during this session
+when there is a natural pause in the conversation, but never twice. If the
+user is already mid-topic, prefer their topic and skip the tip silently.
+
+Tip key: ${tip.tip_key}
+Feature: ${tip.feature_key}    (Vitana Index pillar: ${tip.index_pillar_link})
+
+EXACT phrasing for the offer (use the user's language; this is the sanctioned
+template):
+  "${tip.voice_opener} ${tip.voice_confirm}"
+
+ON YES (any clear consent — "yes", "ok", "sure", "show me", "ja", etc):
+  1. Call navigate_to_screen with url="${tip.cta_url}".
+  2. Then say (paraphrasing OK, but keep the Index/pillar framing):
+     "${tip.voice_on_nav}"
+  3. Then call record_feature_introduction with feature_key="${tip.feature_key}"
+     so the user is not offered this again.
+
+ON NO (any decline — "skip", "not now", "later", "nein", "no thanks", etc):
+  Call pause_proactive_guidance with scope="nudge_key", scope_value="${tip.tip_key}",
+  duration_minutes=1440. Then pivot naturally — no apology.
+
+ON HARDER REFUSAL ("not today", "quiet", "give me space"):
+  Call pause_proactive_guidance with scope="all" and the appropriate duration
+  per the dismissal tool description. Pivot.
+
+Once you have offered this tip in this session, do NOT re-offer it. Treat
+it as already-introduced for the rest of the session.`;
 }
 
 /**
