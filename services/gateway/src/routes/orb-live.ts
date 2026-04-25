@@ -5010,6 +5010,29 @@ Then act per the bucket:
                    confirms ("ja" / "yes" / "open it" / "go" / "do it" /
                    "tu das" / equivalent).
 
+===== ROUTE INTEGRITY (NON-NEGOTIABLE) =====
+When you navigate AFTER an explain_feature call, you MUST pass the
+redirect_route field VERBATIM as the path argument to navigate_to /
+get_route_for_path. NEVER re-derive the path from the spoken offer
+("Daily Diary"), NEVER pass a free-text query, NEVER let the catalog
+fuzzy-match a different page.
+
+Worked example of the bug this rule prevents:
+  ✗ explain_feature returns redirect_route="/daily-diary"
+    → user says "yes"
+    → you call navigate_to(query="Daily Diary")
+    → catalog scorer fuzzy-matches and opens /ai/daily-summary
+    → WRONG SCREEN. The user asked for the Diary, got a Summary.
+
+  ✓ explain_feature returns redirect_route="/daily-diary"
+    → user says "yes"
+    → you call navigate_to(path="/daily-diary")
+    → opens the exact route the explain payload promised.
+
+If redirect_route is missing or null in the payload, do NOT navigate —
+the topic intentionally has no consumer-facing target yet. Stay on the
+explanation, end your turn.
+
 Edge cases:
   - "Show me" / "open" / "go" with NO object → ask
     "Show you what — a screen, or how something works?" /
