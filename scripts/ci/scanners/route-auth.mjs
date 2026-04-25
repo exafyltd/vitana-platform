@@ -222,31 +222,11 @@ export async function run({ repoRoot }) {
 
   if (unauthedFiles.length === 0) return [];
 
-  // ROLLUP — when enough files share the same fix class, emit ONE finding
-  // that batches them. Operators fix the whole class in one PR instead of N.
-  if (unauthedFiles.length >= ROLLUP_THRESHOLD) {
-    const total = unauthedFiles.length;
-    const totalHandlers = unauthedFiles.reduce((s, f) => s + f.handlers.length, 0);
-    const preview = unauthedFiles.slice(0, 6).map(f => f.file).join(', ');
-    const moreNote = total > 6 ? ` (+${total - 6} more)` : '';
-    return [{
-      type: 'missing_auth',
-      severity: 'high',
-      file_path: unauthedFiles[0].file,
-      line_number: unauthedFiles[0].firstLine,
-      message: `${total} route files have handlers without auth middleware (${totalHandlers} handlers total). Files: ${preview}${moreNote}.`,
-      suggested_action: `Either (a) add an auth middleware to the mount call in services/gateway/src/index.ts (one line per router — covers all handlers in that file), OR (b) add \`router.use(requireAuth)\` (or the right variant — requireTenantAdmin, requireDevRole, etc.) at the top of each file. For intentionally public handlers, add \`// public-route\` on the line above. See raw.affected_files for the full list.`,
-      scanner: 'route-auth-scanner-v1',
-      raw: {
-        rollup: true,
-        total_files: total,
-        total_unauthed_handlers: totalHandlers,
-        affected_files: unauthedFiles.map(f => ({ file: f.file, handler_count: f.handlers.length, handlers: f.handlers })),
-      },
-    }];
-  }
-
-  // Under threshold — emit per-file findings.
+  // Per-file emission. Rollup is handled system-wide at the synthesis layer
+  // (services/gateway/src/services/dev-autopilot-synthesis.ts groupSignalsForRollup),
+  // so any cluster of ≥5 same-class signals collapses into one rollup
+  // finding automatically. Scanners stay simple; the queue rule lives in
+  // one place.
   return unauthedFiles.map(f => {
     const preview = f.handlers.slice(0, 5).map(h => `${h.method} ${h.route}`).join(', ');
     const moreNote = f.handlers.length > 5 ? ` (+${f.handlers.length - 5} more)` : '';

@@ -254,6 +254,93 @@ function domainForPath(path: string): string {
 }
 
 // =============================================================================
+// System-wide rollup rule
+// =============================================================================
+// When a single scanner emits a cluster of N findings of the same
+// (signal_type, severity), the queue gets useless: an operator either
+// approves all N (N PRs of the same trivial fix) or none (queue ignored).
+// Either way it's friction.
+//
+// This is a system-level invariant: any cluster of ROLLUP_THRESHOLD or
+// more signals from the same (scanner, signal_type, severity) collapses
+// into ONE rollup finding before insert. Children land in
+// raw.affected_files; the planner + worker pipeline reads that and writes
+// one PR touching every file in the cluster.
+//
+// The rule lives here, in the synthesis layer, instead of in each scanner
+// — so adding scanner #14 inherits the behaviour automatically.
+const ROLLUP_THRESHOLD = Number.parseInt(process.env.AUTOPILOT_ROLLUP_THRESHOLD || '5', 10);
+
+interface RollupGroup {
+  scanner: string;
+  signal_type: SignalType;
+  severity: Severity;
+  signals: DevAutopilotSignal[];
+}
+
+function groupSignalsForRollup(signals: DevAutopilotSignal[]): {
+  passthrough: DevAutopilotSignal[];
+  rollups: RollupGroup[];
+} {
+  const groups = new Map<string, RollupGroup>();
+  for (const s of signals) {
+    const scanner = s.scanner || 'unknown';
+    const key = `${scanner}|${s.type}|${s.severity}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { scanner, signal_type: s.type, severity: s.severity, signals: [] };
+      groups.set(key, g);
+    }
+    g.signals.push(s);
+  }
+  const passthrough: DevAutopilotSignal[] = [];
+  const rollups: RollupGroup[] = [];
+  for (const g of groups.values()) {
+    if (g.signals.length >= ROLLUP_THRESHOLD) rollups.push(g);
+    else passthrough.push(...g.signals);
+  }
+  return { passthrough, rollups };
+}
+
+function buildRollupSignal(g: RollupGroup): DevAutopilotSignal {
+  // Sort children by file_path for stable fingerprinting + readable lists.
+  const sorted = [...g.signals].sort((a, b) => (a.file_path || '').localeCompare(b.file_path || ''));
+  const previewFiles = sorted.slice(0, 6).map(s => s.file_path).filter(Boolean);
+  const moreNote = sorted.length > 6 ? ` (+${sorted.length - 6} more)` : '';
+  const anchorFile = sorted[0]?.file_path || '(rollup)';
+  const anchorLine = sorted[0]?.line_number || 1;
+
+  // Combine the children's suggested actions when distinct, otherwise use
+  // the first one's text — most scanners emit identical suggestions per
+  // signal in a cluster, so dedup keeps the message tight.
+  const distinctActions = Array.from(new Set(sorted.map(s => s.suggested_action).filter(Boolean)));
+  const action = distinctActions.length === 1
+    ? distinctActions[0]
+    : `Apply the same fix class to every file in raw.affected_files (typically a one-line change per file). Children's suggestions: ${distinctActions.slice(0, 3).join(' | ')}${distinctActions.length > 3 ? ' …' : ''}`;
+
+  return {
+    type: g.signal_type,
+    severity: g.severity,
+    file_path: anchorFile,
+    line_number: anchorLine,
+    message: `[rollup] ${g.scanner} flagged ${sorted.length} files with the same fix class (${g.signal_type}). Files: ${previewFiles.join(', ')}${moreNote}.`,
+    suggested_action: action || 'See raw.affected_files for the per-file fix list.',
+    scanner: g.scanner,
+    raw: {
+      rollup: true,
+      total_files: sorted.length,
+      affected_files: sorted.map(s => ({
+        file_path: s.file_path,
+        line_number: s.line_number,
+        message: s.message,
+        suggested_action: s.suggested_action,
+        raw: s.raw || {},
+      })),
+    },
+  };
+}
+
+// =============================================================================
 // Core: ingest a scan — dedup + upsert findings
 // =============================================================================
 
@@ -289,7 +376,8 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     payload: { run_id: runId, signal_count: input.signals.length, triggered_by: input.triggered_by },
   });
 
-  // 2. Persist raw signals (for audit + dedup traceability)
+  // 2. Persist raw signals (for audit + dedup traceability) — one row per
+  // RAW signal, before rollup. Audit always sees the full pre-collapse list.
   if (input.signals.length > 0) {
     const signalRows = input.signals.map(s => ({
       run_id: runId,
@@ -313,12 +401,30 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     }
   }
 
+  // 2b. System-wide rollup. Group raw signals by (scanner, signal_type, severity);
+  // any cluster ≥ ROLLUP_THRESHOLD becomes one synthetic rollup signal that
+  // replaces the cluster in the dedup-and-upsert loop below. Small clusters
+  // pass through unchanged. The rollup signal carries the full child list in
+  // raw.affected_files for downstream planning.
+  const { passthrough, rollups } = groupSignalsForRollup(input.signals);
+  const effectiveSignals: DevAutopilotSignal[] = [
+    ...passthrough,
+    ...rollups.map(g => buildRollupSignal(g)),
+  ];
+  if (rollups.length > 0) {
+    console.log(
+      `${LOG_PREFIX} rollup applied: ${rollups.length} cluster(s) collapsed `
+      + `(${rollups.reduce((acc, g) => acc + g.signals.length, 0)} signals → ${rollups.length} rollup findings, `
+      + `threshold=${ROLLUP_THRESHOLD})`,
+    );
+  }
+
   // 3. Dedup + upsert findings
   let newCount = 0;
   let updatedCount = 0;
   const now = new Date().toISOString();
 
-  for (const signal of input.signals) {
+  for (const signal of effectiveSignals) {
     const fingerprint = fingerprintSignal(signal);
     // Lookup existing live finding with this fingerprint
     const existing = await supaRequest<FindingRow[]>(
