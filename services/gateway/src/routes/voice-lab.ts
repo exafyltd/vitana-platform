@@ -18,6 +18,8 @@ import {
   getQuarantineState,
 } from '../services/voice-recurrence-sentinel';
 import { spawnInvestigator } from '../services/voice-architecture-investigator';
+import { setMode } from '../services/voice-shadow-mode';
+import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
 
 const router = Router();
 
@@ -711,6 +713,34 @@ router.get('/healing/reports/:id', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/mode (VTID-01964, PR #7)
+ *
+ * Returns the current voice self-healing mode (off / shadow / live).
+ * Forces a fresh read past the 30s in-memory cache.
+ */
+router.get('/healing/mode', async (_req: Request, res: Response) => {
+  const mode = await getVoiceSelfHealingMode(true);
+  return res.json({ ok: true, mode });
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/mode (VTID-01964, PR #7)
+ *
+ * Flip system_config.voice_self_healing_mode. Body: { mode: 'off' | 'shadow' | 'live', vtid?: string }.
+ * Idempotent. Emits voice.healing.dispatched (mode flip event) for audit.
+ */
+router.post('/healing/mode', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const next = body.mode;
+  const actorVtid = typeof body.vtid === 'string' ? body.vtid : 'VTID-VOICE-HEALING';
+  if (next !== 'off' && next !== 'shadow' && next !== 'live') {
+    return res.status(400).json({ ok: false, error: 'mode must be one of off|shadow|live' });
+  }
+  const r = await setMode(next, actorVtid);
+  return res.json(r);
 });
 
 /**

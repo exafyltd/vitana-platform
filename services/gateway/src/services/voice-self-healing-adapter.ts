@@ -31,6 +31,7 @@ import { lookupSpecMemory } from './voice-spec-memory';
 import { isDispatchAllowed } from './voice-recurrence-sentinel';
 import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
+import { appendShadowLog } from './voice-shadow-mode';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -236,7 +237,7 @@ async function postSelfHealingReport(
  * result describing what happened. Does not throw — all internal errors
  * are surfaced as `action: 'error'`.
  */
-export async function dispatchVoiceFailure(
+async function _dispatchVoiceFailureCore(
   opts: DispatchOptions,
 ): Promise<DispatchResult> {
   if (opts.metadata?.synthetic === true) {
@@ -410,6 +411,42 @@ export async function dispatchVoiceFailure(
     normalized_signature: classification.normalized_signature,
     http_status: post.status,
   };
+}
+
+/**
+ * Public dispatch wrapper. Runs the core decision pipeline and then writes
+ * a row to voice_healing_shadow_log (PR #7) for the dashboard's
+ * would-dispatch vs actual-outcome comparison view. The log row is
+ * written for every action — dispatched, mode_off, sentinel_quarantined,
+ * spec_memory_blocked, dedupe_hit, etc. — so ops sees a complete decision
+ * timeline, not just the cases that reached /report.
+ */
+export async function dispatchVoiceFailure(
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
+  const result = await _dispatchVoiceFailureCore(opts);
+
+  // Skip shadow log for synthetic probe sessions — they're not real voice
+  // traffic and would pollute the comparison view.
+  if (result.action === 'synthetic_skipped') {
+    return result;
+  }
+
+  // Best-effort log; never blocks the caller.
+  const mode = (cachedMode ?? 'off') as 'off' | 'shadow' | 'live';
+  appendShadowLog({
+    mode,
+    action: result.action,
+    class: result.class,
+    normalized_signature: result.normalized_signature,
+    detail: result.detail,
+    session_id: opts.sessionId,
+    tenant_scope: opts.tenantScope,
+  }).catch(() => {
+    /* swallow — logging is best-effort */
+  });
+
+  return result;
 }
 
 /**
