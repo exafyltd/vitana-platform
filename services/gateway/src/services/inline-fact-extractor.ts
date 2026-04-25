@@ -18,6 +18,7 @@
  */
 
 import { VertexAI } from '@google-cloud/vertexai';
+import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 
 // =============================================================================
 // Configuration (mirrors gemini-operator.ts)
@@ -254,6 +255,26 @@ async function persistFact(
   } catch (checkErr) {
     // Non-fatal — canonical check is advisory
     console.warn(`[VTID-02000] canonical fact check failed (non-fatal):`, checkErr);
+  }
+
+  // VTID-01952: Identity Lock chokepoint. Inline LLM extraction is an
+  // inference path — never allowed to write identity-class facts (name,
+  // DOB, gender, email, etc.). DB trigger is defense-in-depth.
+  const lockCheck = await assertWriteFact({
+    fact_key: effectiveFactKey,
+    provenance_source: 'assistant_inferred',
+    provenance_confidence: 0.80,
+    actor_id: 'inline-fact-extractor',
+    source_engine: 'inline-fact-extractor',
+    tenant_id,
+    user_id,
+  });
+  if (!lockCheck.ok) {
+    console.log(
+      `[VTID-01952] Identity Lock blocked inline fact write: ${effectiveFactKey} ` +
+      `(reason=${lockCheck.reason}). User must change identity-class facts via Profile/Settings UI.`
+    );
+    return false;
   }
 
   try {

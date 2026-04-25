@@ -31,6 +31,8 @@ import { classifyCategory } from '../routes/memory';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { writeMemoryItemWithIdentity } from './orb-memory-bridge';
 import { isUnifiedConversationEnabled } from './system-controls-service';
+// VTID-01952 Phase 0 — Identity-mutation intent intercept (Maria → Kemal fix)
+import { handleIdentityIntent } from './identity-intent-handler';
 
 // =============================================================================
 // Thread Management
@@ -201,6 +203,62 @@ export async function processConversationTurn(
     // Get or create thread
     const thread = getOrCreateThread(input.thread_id, input.tenant_id, input.user_id, input.channel);
     thread.turn_count++;
+
+    // ---------------------------------------------------------------
+    // VTID-01952 Phase 0 — Identity-mutation intent intercept.
+    // If the user explicitly asks to change their name, DOB, gender,
+    // email, etc., short-circuit BEFORE running the LLM. Return the
+    // sanctioned refusal-and-redirect message + redirect_target metadata
+    // for the frontend to fire the deep-link event.
+    // The brain prompt Guardrail B already prevents drift in the LLM
+    // turn itself; this intercept makes the redirect explicit + cheap.
+    // ---------------------------------------------------------------
+    const identityIntent = await handleIdentityIntent({
+      utterance: input.message,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      // user_locale not always available here — defaults to 'en' inside the handler
+      source: 'conversation-client',
+      conversation_turn_id: thread.thread_id,
+    });
+    if (identityIntent.handled) {
+      console.log(
+        `[VTID-01952] Identity-mutation intent intercepted: fact_key=${identityIntent.detected_fact_key}, ` +
+        `pattern="${identityIntent.detected_pattern}", confidence=${identityIntent.detected_confidence}`
+      );
+      return {
+        ok: true,
+        reply: identityIntent.message,
+        thread_id: thread.thread_id,
+        turn_number: thread.turn_count,
+        tool_calls: [
+          {
+            // Surface the redirect_target as a "tool call" the frontend can
+            // interpret; this mirrors the G3 set_goal → vitana:open-life-compass
+            // pattern. The frontend listens for this and dispatches the
+            // matching CustomEvent on the window.
+            id: requestId,
+            name: 'request_identity_redirect',
+            args: {
+              event: identityIntent.redirect_target.event,
+              section: identityIntent.redirect_target.payload.section,
+              field: identityIntent.redirect_target.payload.field ?? null,
+              fact_key: identityIntent.detected_fact_key,
+            },
+            duration_ms: 0,
+            result: { ok: true, redirect_target: identityIntent.redirect_target },
+            success: true,
+          },
+        ],
+        meta: {
+          channel: input.channel,
+          model_used: 'identity-intent-handler',
+          latency_ms: Date.now() - startTime,
+        },
+        oasis_ref: requestId,
+      };
+    }
+    // ---------------------------------------------------------------
 
     // Create context lens
     const lens: ContextLens = createContextLens(input.tenant_id, input.user_id, {

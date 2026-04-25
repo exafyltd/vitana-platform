@@ -9,6 +9,7 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { generateFactEmbeddingAsync } from './memory-facts-service';
+import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 
 // =============================================================================
 // VTID-01225: Configuration
@@ -576,6 +577,31 @@ class CogneeExtractorClient {
 
         if (!factKey || !factValue) {
           console.debug(`[VTID-01225] Skipping entity without fact mapping: ${entity.name}`);
+          continue;
+        }
+
+        // VTID-01952: Identity Lock chokepoint. Cognee extraction is an
+        // inference path — NEVER allowed to write identity-class facts (name,
+        // DOB, gender, email, etc.). The Postgres trigger
+        // enforce_identity_lock_memory_facts is defense-in-depth, but we check
+        // here first to avoid wasted RPC calls + emit the audit event with
+        // proper rejection context. See plan Part 1.5 (Maria → Kemal fix).
+        const lockCheck = await assertWriteFact({
+          fact_key: factKey,
+          provenance_source: 'assistant_inferred',
+          provenance_confidence: 0.85,
+          actor_id: 'cognee-extractor',
+          source_engine: 'cognee-extractor',
+          tenant_id: request.tenant_id,
+          user_id: request.user_id,
+        });
+        if (!lockCheck.ok) {
+          console.log(
+            `[VTID-01952] Identity Lock blocked Cognee fact write: ${factKey} ` +
+            `(reason=${lockCheck.reason}, redirect=${lockCheck.redirect_target.event}). ` +
+            `This is correct — identity-class facts must come from authorized UI surfaces only.`
+          );
+          factsFailed++;
           continue;
         }
 

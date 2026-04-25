@@ -17,6 +17,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 
 // =============================================================================
 // Configuration
@@ -136,6 +137,32 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
     return {
       ok: false,
       error: `Confidence ${confidence} below minimum ${MIN_INFERENCE_CONFIDENCE} for inferred facts`
+    };
+  }
+
+  // VTID-01952: Identity Lock chokepoint. Block writes to identity-class
+  // fact_keys (name, DOB, gender, email, etc.) from any provenance_source
+  // not in the authorized UI surface set. Defense-in-depth — the Postgres
+  // trigger enforce_identity_lock_memory_facts also enforces this. Audit
+  // event memory.identity.write_attempted is emitted from inside.
+  const lockCheck = await assertWriteFact({
+    fact_key: request.fact_key,
+    provenance_source: request.provenance_source,
+    provenance_confidence: confidence,
+    actor_id: 'memory-facts-service',
+    source_engine: 'memory-facts-service',
+    tenant_id: request.tenant_id,
+    user_id: request.user_id,
+  });
+  if (!lockCheck.ok) {
+    console.log(
+      `[VTID-01952] Identity Lock blocked writeFact: ${request.fact_key} ` +
+      `from ${request.provenance_source ?? '<null>'} (reason=${lockCheck.reason}). ` +
+      `User must change identity-class facts via Profile/Settings UI.`
+    );
+    return {
+      ok: false,
+      error: `identity_locked: ${request.fact_key} cannot be written from this source`,
     };
   }
 

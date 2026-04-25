@@ -431,6 +431,11 @@ export type CicdEventType =
   | 'memory.embeddings.updated'
   | 'memory.reembed.triggered'
   | 'memory.deprecation_warning'
+  // VTID-01952 Phase 0 — Identity Lock + HIPAA audit chokepoint
+  | 'memory.identity.write_attempted'
+  | 'memory.write.persisted'
+  | 'memory.read.requested'
+  | 'memory.read.completed'
   | 'embedding.fallback_used'
   | 'embedding.all_providers_failed'
   | 'embedding.batch_generated'
