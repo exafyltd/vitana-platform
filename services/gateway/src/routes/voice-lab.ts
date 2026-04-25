@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
+import { runVoiceProbe } from '../services/voice-synthetic-probe';
 
 const router = Router();
 
@@ -537,6 +538,28 @@ router.get('/live/sessions/:sessionId/diagnostics', async (req: Request, res: Re
   } catch (err: any) {
     console.error(`[VTID-01218A] Error getting diagnostics for ${sessionId}:`, err.message);
     return res.status(500).json({ ok: false, error: 'Failed to get diagnostics', details: err.message });
+  }
+});
+
+/**
+ * POST /api/v1/voice-lab/probe (VTID-01961, PR #4)
+ *
+ * Manual trigger for the Synthetic Voice Probe. Returns the structured
+ * probe verdict (ok, failure_mode_code, duration_ms, evidence). Used by
+ * ops to spot-check the voice path without waiting for the next session,
+ * and by the reconciler verification branch on voice synthetic-endpoint
+ * rows.
+ */
+router.post('/probe', async (_req: Request, res: Response) => {
+  console.log('[VTID-01961] POST /voice-lab/probe — running synthetic voice probe');
+  try {
+    const result = await runVoiceProbe();
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[VTID-01961] Probe error:', err.message);
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Probe internal error', details: err.message });
   }
 });
 
