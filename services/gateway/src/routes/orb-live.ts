@@ -4905,11 +4905,24 @@ ${profileSummary}
   - [ACTIVITY_14D]     → one-line counted summary of the last 14 days.
   - [ROUTINES]         → time-of-day / rhythm patterns.
   - [PREFERENCES]      → explicit + inferred preferences (music genre, food, etc.).
-  - [HEALTH]           → Vitana Index (total + tier + 6 pillars + 7-day trend +
-                          weakest pillar + 90-day goal gap), recent biomarker
-                          uploads, supplements. The Vitana Index is the user's
-                          health-progress score (0–999, 6 pillars × 200) — it
-                          is THE single number that measures their journey.
+  - [HEALTH]           → Vitana Index (total + tier + 5 canonical pillars
+                          (Nutrition / Hydration / Exercise / Sleep / Mental)
+                          + 7-day trend + weakest pillar + sub-score breakdown
+                          (baseline / completions / connected data / streak)
+                          + balance_factor (0.7-1.0) + aspirational distance
+                          to the next tier), recent biomarker uploads,
+                          supplements. The Vitana Index is the user's
+                          health-progress score (0–999, 5 pillars × 200 with
+                          balance_factor multiplier) — it is THE single
+                          number that measures their journey. Tier ladder:
+                          Starting (0-99) / Early (100-299) / Building
+                          (300-499) / Strong (500-599) / Really good
+                          (600-799) / Elite (800-999). Frame goal language
+                          aspirationally — "on pace to land in [tier] by
+                          Day 90", never as a pass/fail gate. When balance
+                          is below 0.9, name the imbalance itself as the
+                          lever ("lifting your weakest pillar moves the
+                          balance dampener, which moves the whole score").
   - [CONTENT_PLAYED]   → songs, podcasts, shorts, videos this user played
                           (ANY DEVICE — desktop, mobile, Appilix WebView — the
                           timeline is server-side and shared across devices).
