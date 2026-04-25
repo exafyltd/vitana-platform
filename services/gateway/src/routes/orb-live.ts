@@ -59,6 +59,8 @@ import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services
 import { addTurn as addSessionTurn, destroySessionBuffer, addSessionFact } from '../services/session-memory-buffer';
 // VTID-01953 Phase 0 follow-up — Identity-mutation intent intercept on ORB voice
 import { handleIdentityIntent } from '../services/identity-intent-handler';
+// VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (multi-instance safe; dual-write w/ in-process buffer)
+import { addTurnRedis, destroySessionBufferRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
 // VTID-01149: Unified Task-Creation Intake
 import {
@@ -5958,6 +5960,10 @@ async function connectToLiveAPI(
               // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
               if (session.identity && session.identity.tenant_id && session.identity.user_id) {
                 addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
+                // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
+                // Fire-and-forget — Redis failure cannot block the ORB voice path.
+                addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText)
+                  .catch(() => { /* logged inside redis-turn-buffer */ });
               }
               // Write to memory_items (single write per turn, not per-fragment)
               let userMemoryIdentity: MemoryIdentity | null = null;
@@ -6061,6 +6067,9 @@ async function connectToLiveAPI(
                 // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
                 if (session.identity && session.identity.tenant_id && session.identity.user_id) {
                   addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript);
+                  // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
+                  addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript)
+                    .catch(() => { /* logged inside redis-turn-buffer */ });
                 }
 
                 // Write to memory_items for persistence
