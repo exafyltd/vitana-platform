@@ -37,7 +37,7 @@ import {
   SafetyDecision,
 } from './dev-autopilot-safety';
 import { extractFilePaths } from './dev-autopilot-planning';
-import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
+import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure } from './dev-autopilot-self-heal-log';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
@@ -1356,13 +1356,18 @@ export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
 
-  // 0. Reclaim worker-queue rows stuck in 'running' past the watchdog
-  // window. Only meaningful when the worker queue is enabled, but safe to
-  // call unconditionally (it's a single PATCH with no-op match otherwise).
+  // 0. Reclaim worker-queue rows stuck in 'running' or 'pending' past their
+  // watchdog windows. Pending rows accumulate when no worker daemon is alive
+  // to claim them — the running-watchdog can't see those. Each pending
+  // reclaim writes a self_healing_log row directly so the Self-Healing
+  // screen surfaces queue jams even when no caller is left waiting.
   if (isWorkerQueueEnabled()) {
-    const reclaim = await reclaimStuckWorkerTasks();
-    if (reclaim.reclaimed > 0) {
-      console.log(`${LOG_PREFIX} watchdog reclaimed ${reclaim.reclaimed} stuck worker task(s)`);
+    const reclaimRunning = await reclaimStuckWorkerTasks();
+    const reclaimPending = await reclaimStuckPendingWorkerTasks();
+    if (reclaimRunning.reclaimed > 0 || reclaimPending.reclaimed > 0) {
+      console.log(
+        `${LOG_PREFIX} watchdog reclaimed ${reclaimRunning.reclaimed} running + ${reclaimPending.reclaimed} pending worker task(s)`,
+      );
     }
   }
 
