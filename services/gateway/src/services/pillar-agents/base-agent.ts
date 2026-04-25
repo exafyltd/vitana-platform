@@ -163,7 +163,17 @@ export async function defaultPillarAnswer(
       ? 'A consistent streak is doing real work — day-over-day consistency compounds.'
       : 'Sub-scores are evenly distributed; lifting any of the four (baseline, completions, data, streak) would help.';
 
-  const text = `Your ${pillar} pillar is at ${score} of 200. ${lever}`;
+  // BOOTSTRAP-PROMOTIONAL-DICTATION: when the pillar is mostly baseline
+  // (no logging yet — the most common new-user state), append a friction-
+  // removal invitation so voice can lead the user into the dictation flow
+  // without the model having to improvise the framing each time.
+  const noActivityYet = subscores.completions === 0 && subscores.data === 0;
+  const mostlyBaseline = topKey === 'baseline' && share >= 0.6;
+  const easyLever = (noActivityYet || mostlyBaseline)
+    ? ' The fastest fix is honestly just a sentence into Daily Diary — tap the mic, say what you did, two seconds. No typing.'
+    : '';
+
+  const text = `Your ${pillar} pillar is at ${score} of 200. ${lever}${easyLever}`;
   const citation = pillarBookChapter(pillar);
 
   return {
