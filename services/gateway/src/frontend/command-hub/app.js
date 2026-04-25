@@ -40012,10 +40012,14 @@ async function fetchAutopilotLive() {
     state.autopilot.live.loading = true;
     if (isInitialLoad) renderApp();
     try {
-        var [activeRes, runsRes, healthRes] = await Promise.all([
+        var [activeRes, runsRes, healthRes, devApRes] = await Promise.all([
             fetch('/api/v1/automations/runs/active', { headers: buildContextHeaders({}) }),
             fetch('/api/v1/automations/runs?limit=10', { headers: buildContextHeaders({}) }),
             fetch('/api/v1/automations/health', { headers: buildContextHeaders({}) }),
+            // Dev Autopilot active executions — anything not yet in a terminal
+            // state. The Live view is the canonical home; the developer-page
+            // status strip's "N active runs →" badge links here.
+            fetch('/api/v1/dev-autopilot/executions?status=active&limit=50', { headers: buildContextHeaders({}) }),
         ]);
         if (activeRes.ok) {
             var data = await activeRes.json();
@@ -40032,10 +40036,17 @@ async function fetchAutopilotLive() {
         if (healthRes.ok) {
             state.autopilot.live.engineStatus = await healthRes.json();
         }
+        if (devApRes.ok) {
+            var data = await devApRes.json();
+            state.autopilot.live.devAutopilotExecutions = data.executions || data.data || [];
+        } else {
+            state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
+        }
     } catch (err) {
         console.error('[Autopilot] fetchLive error:', err);
         state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
         state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
+        state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
     } finally {
         state.autopilot.live.loading = false;
         // Only full render on initial load; subsequent 10s polls update state
@@ -40198,6 +40209,82 @@ function renderAutopilotLiveView() {
 
     grid.appendChild(rightCol);
     container.appendChild(grid);
+
+    // Dev Autopilot Active Executions — separate section below the grid.
+    // The broader "Active Runs / Last 10 Runs" cards above are for the
+    // automation engine (community automations); dev autopilot has its
+    // own lifecycle (cooling → running → ci → merging → deploying →
+    // verifying → completed). Each row shows the upstream finding
+    // context (title, scanner, file_path, current stage, PR if any).
+    var devApSection = document.createElement('section');
+    devApSection.style.cssText = 'margin-top:1.5rem;background:#13131f;border:1px solid #333;border-radius:8px;padding:1.25rem;';
+    var devApHeader = document.createElement('div');
+    devApHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.75rem;';
+    var devApTitle = document.createElement('h3');
+    devApTitle.style.cssText = 'margin:0;font-size:1rem;color:#e5e5e5;';
+    var devExecs = state.autopilot.live.devAutopilotExecutions || [];
+    devApTitle.innerHTML = 'Dev Autopilot Executions <span style="color:#60a5fa;">(' + devExecs.length + ' active)</span>';
+    devApHeader.appendChild(devApTitle);
+    var devApSub = document.createElement('span');
+    devApSub.style.cssText = 'color:#777;font-size:0.78rem;';
+    devApSub.textContent = 'Each row: finding → plan → PR → CI → deploy → verify';
+    devApHeader.appendChild(devApSub);
+    devApSection.appendChild(devApHeader);
+
+    if (devExecs.length === 0) {
+        var emptyDev = document.createElement('div');
+        emptyDev.style.cssText = 'color:#666;text-align:center;padding:1.5rem;font-size:0.88rem;';
+        emptyDev.textContent = 'No dev autopilot executions in flight. Approve a finding from /command-hub/autonomy/autopilot-developer/ to start one.';
+        devApSection.appendChild(emptyDev);
+    } else {
+        devExecs.forEach(function (exec) {
+            var card = document.createElement('div');
+            var statusColor = exec.status === 'running' || exec.status === 'ci' || exec.status === 'merging' ? '#3b82f6'
+                : exec.status === 'cooling' ? '#eab308'
+                : exec.status === 'deploying' || exec.status === 'verifying' ? '#a855f7'
+                : '#888';
+            card.style.cssText = 'padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid #2a2a3a;border-left:3px solid ' + statusColor + ';border-radius:6px;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;';
+
+            // Status pill
+            var pill = document.createElement('span');
+            pill.textContent = exec.status;
+            pill.style.cssText = 'background:' + statusColor + '20;color:' + statusColor + ';border:1px solid ' + statusColor + '60;padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;text-transform:uppercase;min-width:80px;text-align:center;';
+            card.appendChild(pill);
+
+            // Task label (from upstream finding if available, else exec id)
+            var label = document.createElement('div');
+            label.style.cssText = 'flex:1;min-width:0;';
+            var topLine = document.createElement('div');
+            topLine.style.cssText = 'color:#e5e5e5;font-size:0.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;';
+            // Defensive: the executions endpoint may or may not embed finding data —
+            // fall back gracefully.
+            var taskTitle = (exec.recommendation && exec.recommendation.title)
+                || exec.task_title
+                || ('Execution ' + (exec.id ? exec.id.slice(0, 8) : 'unknown'));
+            topLine.textContent = taskTitle;
+            label.appendChild(topLine);
+            var bottomLine = document.createElement('div');
+            bottomLine.style.cssText = 'color:#888;font-size:0.74rem;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;';
+            var scanner = (exec.recommendation && exec.recommendation.spec_snapshot && exec.recommendation.spec_snapshot.scanner) || exec.scanner || '';
+            var filePath = (exec.recommendation && exec.recommendation.spec_snapshot && exec.recommendation.spec_snapshot.file_path) || exec.file_path || '';
+            var depthBadge = exec.auto_fix_depth > 0 ? ' [self-heal d' + exec.auto_fix_depth + ']' : '';
+            bottomLine.textContent = (scanner ? scanner + ' · ' : '') + (filePath || 'no file') + depthBadge;
+            label.appendChild(bottomLine);
+            card.appendChild(label);
+
+            // PR link if available
+            if (exec.pr_url) {
+                var prLink = document.createElement('a');
+                prLink.href = exec.pr_url;
+                prLink.target = '_blank';
+                prLink.textContent = 'PR #' + (exec.pr_number || '?');
+                prLink.style.cssText = 'color:#60a5fa;text-decoration:none;font-size:0.78rem;font-family:monospace;';
+                card.appendChild(prLink);
+            }
+            devApSection.appendChild(card);
+        });
+    }
+    container.appendChild(devApSection);
 
     return container;
 }

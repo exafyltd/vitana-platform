@@ -1397,6 +1397,40 @@ export async function backgroundExecutorTick(): Promise<void> {
     console.error(`${LOG_PREFIX} reconciler error:`, err);
   }
 
+  // 0d. Auto-archive watchdog: any execution in a terminal-failure state
+  // (failed / failed_escalated / reverted / cancelled) whose updated_at is
+  // older than AUTO_ARCHIVE_DAYS gets moved to status='auto_archived' so
+  // the queue + Self-Healing UI don't accumulate stale entries forever.
+  // The escalation event already wrote to self_healing_log; archiving here
+  // doesn't lose context.
+  const AUTO_ARCHIVE_DAYS = Number.parseInt(process.env.AUTOPILOT_AUTO_ARCHIVE_DAYS || '7', 10);
+  try {
+    const cutoff = new Date(Date.now() - AUTO_ARCHIVE_DAYS * 86_400_000).toISOString();
+    const archR = await supa(s,
+      `/rest/v1/dev_autopilot_executions?status=in.(failed,failed_escalated,reverted,cancelled)`
+      + `&updated_at=lt.${cutoff}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          status: 'auto_archived',
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    if (archR.ok) {
+      // PATCH return=minimal doesn't give us a count; log when the query
+      // actually matched anything by re-querying — cheap and only fires on
+      // archival activity.
+      const sampleR = await supa<Array<{ id: string }>>(s,
+        `/rest/v1/dev_autopilot_executions?status=eq.auto_archived&updated_at=gte.${new Date(Date.now() - 60_000).toISOString()}&select=id&limit=20`);
+      if (sampleR.ok && sampleR.data && sampleR.data.length > 0) {
+        console.log(`${LOG_PREFIX} auto-archive: ${sampleR.data.length} terminal-failure execution(s) archived (>${AUTO_ARCHIVE_DAYS}d old)`);
+      }
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} auto-archive error:`, err);
+  }
+
   // 1. Honor kill switch
   const cfg = await loadConfig(s);
   if (!cfg || cfg.kill_switch) return;

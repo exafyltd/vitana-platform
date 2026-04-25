@@ -44,8 +44,56 @@ const GITHUB_REPO =
   process.env.DEV_AUTOPILOT_GITHUB_REPO || 'exafyltd/vitana-platform';
 
 // Confidence threshold above which we trust the agent to propose an
-// autonomous retry. Matches the self-healing reconciler's threshold.
-const CHILD_SPAWN_CONFIDENCE_THRESHOLD = 0.5;
+// autonomous retry. Lowered from 0.5 → 0.3 (configurable via env var) so
+// the autopilot retries more aggressively by default — the user goal is
+// "self-improving + self-healing autonomously." Failed retries still
+// escalate at the depth cap.
+const CHILD_SPAWN_CONFIDENCE_THRESHOLD = Number.parseFloat(
+  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD || '0.3',
+);
+
+/**
+ * Write a row into self_healing_log so the Self-Healing UI surfaces this
+ * autopilot failure alongside the system-level health probes. Without this,
+ * the bridge's escalation only updates dev_autopilot_executions and the
+ * operator never sees the failure on the canonical self-healing screen.
+ *
+ * Best-effort: a write failure here must not block the bridge's primary
+ * job (transitioning the execution row + emitting OASIS events). If
+ * self_healing_log isn't writable, log and move on.
+ */
+async function writeSelfHealingLogEntry(
+  s: SupaConfig,
+  args: {
+    execution_id: string;
+    vtid: string;
+    endpoint: string;
+    failure_class: string;
+    confidence: number;
+    diagnosis: Record<string, unknown>;
+    outcome: 'escalated' | 'fixed' | 'failed' | 'rolled_back' | 'pending';
+    attempt_number: number;
+  },
+): Promise<void> {
+  try {
+    await supa(s, '/rest/v1/self_healing_log', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        vtid: args.vtid,
+        endpoint: args.endpoint,
+        failure_class: args.failure_class,
+        confidence: args.confidence,
+        diagnosis: args.diagnosis,
+        outcome: args.outcome,
+        attempt_number: args.attempt_number,
+        resolved_at: args.outcome === 'pending' ? null : new Date().toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} writeSelfHealingLogEntry failed for ${args.execution_id}:`, err);
+  }
+}
 
 // =============================================================================
 // Types
@@ -350,6 +398,22 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         completed_at: new Date().toISOString(),
       }),
     });
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'dev_autopilot_triage_failed',
+      confidence: 0,
+      diagnosis: {
+        summary: `Triage failed: ${triage.error || 'unknown error'}`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        stage: input.failure_stage,
+        triage_error: triage.error,
+      },
+      outcome: 'escalated',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
+    });
     await emitOasisEvent({
       vtid: BRIDGE_VTID,
       type: 'dev_autopilot.execution.escalated',
@@ -421,6 +485,23 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
           completed_at: new Date().toISOString(),
         }),
       });
+      await writeSelfHealingLogEntry(s, {
+        execution_id: exec.id,
+        vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+        endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+        failure_class: 'dev_autopilot_child_spawn_failed',
+        confidence: report.confidence_numeric,
+        diagnosis: {
+          summary: `Child spawn failed: ${child.error}`,
+          execution_id: exec.id,
+          finding_id: exec.finding_id,
+          stage: input.failure_stage,
+          triage_summary: report.root_cause_hypothesis,
+          spawn_error: child.error,
+        },
+        outcome: 'escalated',
+        attempt_number: (exec.auto_fix_depth || 0) + 1,
+      });
       await emitOasisEvent({
         vtid: BRIDGE_VTID,
         type: 'dev_autopilot.execution.escalated',
@@ -446,6 +527,27 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         status: 'reverted',
         completed_at: new Date().toISOString(),
       }),
+    });
+
+    // Record the in-flight retry on the self-healing log so the UI shows
+    // the autopilot is actively trying. Outcome 'pending' (the table's
+    // default for in-progress repairs).
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'dev_autopilot_self_heal_in_progress',
+      confidence: report.confidence_numeric,
+      diagnosis: {
+        summary: `Auto-retry: depth ${(exec.auto_fix_depth || 0) + 1}/${maxDepth} — ${report.root_cause_hypothesis || 'no hypothesis'}`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        child_execution_id: child.execution_id,
+        stage: input.failure_stage,
+        triage_summary: report.root_cause_hypothesis,
+      },
+      outcome: 'pending',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
     });
 
     await emitOasisEvent({
@@ -484,6 +586,30 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       status: 'failed_escalated',
       completed_at: new Date().toISOString(),
     }),
+  });
+
+  await writeSelfHealingLogEntry(s, {
+    execution_id: exec.id,
+    vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+    endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+    failure_class: cfg?.kill_switch ? 'dev_autopilot_kill_switch_blocked'
+      : (exec.auto_fix_depth || 0) >= maxDepth ? 'dev_autopilot_max_retries_reached'
+      : 'dev_autopilot_low_confidence',
+    confidence: report.confidence_numeric,
+    diagnosis: {
+      summary: `Escalated: ${cfg?.kill_switch ? 'kill switch armed'
+        : (exec.auto_fix_depth || 0) >= maxDepth ? `max retries reached (${exec.auto_fix_depth}/${maxDepth})`
+        : `confidence ${report.confidence_numeric.toFixed(2)} below threshold ${CHILD_SPAWN_CONFIDENCE_THRESHOLD}`}`,
+      execution_id: exec.id,
+      finding_id: exec.finding_id,
+      stage: input.failure_stage,
+      triage_summary: report.root_cause_hypothesis,
+      auto_fix_depth: exec.auto_fix_depth || 0,
+      max_depth: maxDepth,
+      revert_pr_url: revert.revert_pr_url,
+    },
+    outcome: 'escalated',
+    attempt_number: (exec.auto_fix_depth || 0) + 1,
   });
 
   const escalationReason =

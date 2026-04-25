@@ -135,9 +135,23 @@ interface ExecRow {
   self_healing_vtid: string | null;
   parent_execution_id: string | null;
   triage_report: Record<string, unknown> | null;
+  failure_stage: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string | null;
   completed_at: string | null;
+  // Embedded via PostgREST resource embedding; carries the upstream
+  // finding's title + scanner + file_path so each trace row tells a
+  // supervisor what the execution was trying to do.
+  recommendation: {
+    title: string | null;
+    spec_snapshot: {
+      scanner?: string;
+      file_path?: string;
+      signal_type?: string;
+      [k: string]: unknown;
+    } | null;
+  } | null;
 }
 
 interface HealRow {
@@ -233,15 +247,43 @@ function normalizeExecution(row: ExecRow): TraceNode[] {
 
   const depth = row.auto_fix_depth || 0;
   const childBadge = depth > 0 ? ` [self-heal d${depth}]` : '';
-  const headline = `Execution ${execShort}${childBadge} — ${row.status}`;
-  const detail =
-    row.status === 'cooling' && row.execute_after
-      ? `Fires at ${new Date(row.execute_after).toISOString()} unless cancelled.`
-      : row.status === 'verifying'
-      ? 'Watching OASIS errors for 30 min to detect blast radius.'
-      : row.status === 'failed' || row.status === 'reverted'
-      ? (row.triage_report && (row.triage_report as { root_cause_hypothesis?: string }).root_cause_hypothesis) || 'Failed'
-      : `Current lifecycle stage.`;
+
+  // Build a useful headline from the upstream finding when possible. Falls
+  // back to the raw exec id only when no finding metadata is available.
+  const findingTitle = row.recommendation?.title || null;
+  const scanner = row.recommendation?.spec_snapshot?.scanner || null;
+  const filePath = row.recommendation?.spec_snapshot?.file_path || null;
+  const fileBase = filePath ? (filePath.split('/').pop() || filePath) : null;
+
+  const taskLabel = findingTitle
+    ? findingTitle
+    : fileBase
+    ? `${row.recommendation?.spec_snapshot?.signal_type || 'task'} on ${fileBase}`
+    : `Execution ${execShort}`;
+
+  const headline = `${taskLabel}${childBadge} — ${row.status}`;
+
+  // Detail: stage-aware + finding context.
+  const triageHypothesis = row.triage_report
+    && (row.triage_report as { root_cause_hypothesis?: string }).root_cause_hypothesis;
+  const failureStage = row.failure_stage ? ` [${row.failure_stage}]` : '';
+  const errorMsg = row.metadata && (row.metadata as { error?: string }).error;
+
+  let detail: string;
+  if (row.status === 'cooling' && row.execute_after) {
+    detail = `Fires at ${new Date(row.execute_after).toISOString()} unless cancelled.`;
+  } else if (row.status === 'verifying') {
+    detail = 'Watching OASIS errors for 30 min to detect blast radius.';
+  } else if (row.status === 'failed' || row.status === 'reverted' || row.status === 'failed_escalated') {
+    detail = `${failureStage} ${triageHypothesis || errorMsg || 'Failed'}`.trim();
+  } else if (row.status === 'completed') {
+    detail = `Completed${row.pr_number ? ` via PR #${row.pr_number}` : ''}`;
+  } else {
+    detail = scanner ? `${scanner}` : 'Current lifecycle stage.';
+  }
+  if (filePath && (row.status === 'cooling' || row.status === 'running' || row.status === 'ci' || row.status === 'merging' || row.status === 'deploying')) {
+    detail = `${scanner || 'autopilot'} → ${filePath}`;
+  }
 
   nodes.push({
     stable_id: `exec:${row.id}:${row.status}`,
@@ -262,6 +304,11 @@ function normalizeExecution(row: ExecRow): TraceNode[] {
       auto_fix_depth: depth,
       parent_execution_id: row.parent_execution_id,
       self_healing_vtid: row.self_healing_vtid,
+      // Surfaced from the embedded recommendation so the UI can render
+      // chips per row (scanner, file_path) without a second fetch.
+      task_title: findingTitle,
+      scanner,
+      file_path: filePath,
     },
     links,
   });
@@ -327,11 +374,15 @@ function normalizeOasisEvent(row: OasisEventRow): TraceNode | null {
 // =============================================================================
 
 async function fetchExecutions(s: SupaConfig, limit: number, sinceIso: string): Promise<ExecRow[]> {
+  // Embed autopilot_recommendations(title, spec_snapshot) so each row carries
+  // the upstream finding context — title, scanner, file_path. Without this,
+  // the autonomy trace shows raw "Execution xxxxxxx — failed" headlines that
+  // tell a supervisor nothing about WHAT was being attempted.
   const r = await supaGet<ExecRow[]>(
     s,
     `/rest/v1/dev_autopilot_executions` +
     `?or=(updated_at.gte.${encodeURIComponent(sinceIso)},created_at.gte.${encodeURIComponent(sinceIso)})` +
-    `&select=id,finding_id,status,pr_url,pr_number,branch,execute_after,auto_fix_depth,self_healing_vtid,parent_execution_id,triage_report,created_at,updated_at,completed_at` +
+    `&select=id,finding_id,status,pr_url,pr_number,branch,execute_after,auto_fix_depth,self_healing_vtid,parent_execution_id,triage_report,failure_stage,metadata,created_at,updated_at,completed_at,recommendation:autopilot_recommendations!finding_id(title,spec_snapshot)` +
     `&order=updated_at.desc,created_at.desc&limit=${limit}`,
   );
   return r.ok && r.data ? r.data : [];
