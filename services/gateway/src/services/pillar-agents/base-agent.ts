@@ -4,8 +4,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PillarKey, PillarSubscores } from './types';
-import { PILLAR_TAGS } from '../../lib/vitana-pillars';
+import type { PillarAnswer, PillarKey, PillarSubscores } from './types';
+import { PILLAR_TAGS, pillarBookChapter } from '../../lib/vitana-pillars';
 
 const BASELINE_CURVE: Record<1|2|3|4|5, number> = { 1: 10, 2: 20, 3: 25, 4: 32, 5: 40 };
 
@@ -117,4 +117,67 @@ export async function computeAllSubscoresForPillar(
     computeStreakSubscore(admin, userId, pillar),
   ]);
   return { baseline, completions, data, streak };
+}
+
+/**
+ * Default v1 implementation of `PillarAgent.answerQuestion`. Deterministic,
+ * no LLM. Reads the user's current sub-scores for the pillar, identifies
+ * the dominant signal source, and returns a short narrative + Book chapter
+ * citation. Voice consumes `text` and weaves naturally; `data` is for
+ * downstream consumers (logging, future LLM rewrap).
+ *
+ * Each agent's index.ts can replace this with custom logic when external
+ * integrations or per-pillar narratives ship in Phase F v2+.
+ */
+export async function defaultPillarAnswer(
+  admin: SupabaseClient,
+  userId: string,
+  pillar: PillarKey,
+  question: string,
+  agentVersion: string,
+): Promise<PillarAnswer> {
+  const subscores = await computeAllSubscoresForPillar(admin, userId, pillar);
+  const total = subscores.baseline + subscores.completions + subscores.data + subscores.streak;
+  const cap = 200;
+  const score = Math.min(cap, total);
+
+  // Dominant signal source — what's carrying this pillar's number.
+  const parts: Array<[keyof PillarSubscores, number]> = [
+    ['baseline', subscores.baseline],
+    ['completions', subscores.completions],
+    ['data', subscores.data],
+    ['streak', subscores.streak],
+  ];
+  parts.sort((a, b) => b[1] - a[1]);
+  const [topKey, topVal] = parts[0];
+  const share = total > 0 ? topVal / total : 0;
+
+  const lever: string =
+    topKey === 'baseline' && share >= 0.6
+      ? 'Most of the score is the survey baseline — connecting a tracker or logging your daily activity would lift it the most.'
+      : topKey === 'completions' && share >= 0.4
+      ? 'Completed actions are carrying the score — keep the rhythm.'
+      : topKey === 'data' && share >= 0.4
+      ? 'Connected data is feeding the score — real signal is stronger than survey self-rating.'
+      : topKey === 'streak' && share >= 0.3
+      ? 'A consistent streak is doing real work — day-over-day consistency compounds.'
+      : 'Sub-scores are evenly distributed; lifting any of the four (baseline, completions, data, streak) would help.';
+
+  const text = `Your ${pillar} pillar is at ${score} of 200. ${lever}`;
+  const citation = pillarBookChapter(pillar);
+
+  return {
+    pillar,
+    text,
+    citations: [citation],
+    data: {
+      score,
+      cap,
+      subscores,
+      dominant_subscore: topKey,
+      dominant_share: Number(share.toFixed(2)),
+      question_seen: question.slice(0, 200),
+    },
+    agent_version: agentVersion,
+  };
 }
