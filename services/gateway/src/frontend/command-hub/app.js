@@ -36096,6 +36096,7 @@ function renderDevAutopilotView() {
 
     var cfg = state.devAutopilot.config || {};
     var queueCount = (state.devAutopilot.queue || []).length;
+    var activeRuns = (state.devAutopilot.executions || []).length;
     var chips = [
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
@@ -36108,6 +36109,17 @@ function renderDevAutopilotView() {
         el.innerHTML = '<span style="color: var(--text-secondary, #888); margin-right: 6px;">' + c.label + ':</span><strong style="color: ' + c.color + ';">' + c.value + '</strong>';
         statusStrip.appendChild(el);
     });
+    // Active runs link — points to the canonical live execution view at
+    // Command Hub → Autopilot → Live. This is the only surface where
+    // operators should monitor in-flight executions; the inline panel that
+    // used to live below the queue was removed because it duplicated this
+    // surface and didn't scale to multiple concurrent runs.
+    var activeRunsLink = document.createElement('a');
+    activeRunsLink.href = '/command-hub/autopilot/live/';
+    activeRunsLink.style.cssText = 'margin-left: auto; padding: 4px 10px; border-radius: 999px; background: ' + (activeRuns > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.04)') + '; border: 1px solid ' + (activeRuns > 0 ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.1)') + '; color: ' + (activeRuns > 0 ? '#60a5fa' : '#888') + '; text-decoration: none; font-size: 12px; font-weight: 600;';
+    activeRunsLink.textContent = activeRuns + ' active run' + (activeRuns === 1 ? '' : 's') + ' →';
+    activeRunsLink.title = 'Open the canonical live execution view (Command Hub → Autopilot → Live)';
+    statusStrip.appendChild(activeRunsLink);
     container.appendChild(statusStrip);
 
     var runsSection = document.createElement('details');
@@ -36141,8 +36153,9 @@ function renderDevAutopilotView() {
     // Findings queue
     container.appendChild(renderDevAutopilotQueue());
 
-    // Live trace — active executions panel below the queue (PR-8)
-    container.appendChild(renderDevAutopilotLiveTrace());
+    // Live trace removed from this surface — see Command Hub → Autopilot →
+    // Live for the canonical live execution view. The badge on the status
+    // strip above (see chips.activeRuns) links there.
 
     return container;
 }
