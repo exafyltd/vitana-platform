@@ -17,6 +17,7 @@ import {
   releaseQuarantine,
   getQuarantineState,
 } from '../services/voice-recurrence-sentinel';
+import { spawnInvestigator } from '../services/voice-architecture-investigator';
 
 const router = Router();
 
@@ -618,6 +619,98 @@ router.post('/healing/quarantine/release', async (req: Request, res: Response) =
     new_status: r.new_status,
     probation_until: r.probation_until,
   });
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/investigate (VTID-01963, PR #6)
+ *
+ * Manual trigger for the Architecture Investigator. Used by ops to
+ * spot-spawn an investigation outside the Sentinel/Spec Memory Gate
+ * automatic paths, e.g., to validate prompt iteration without waiting
+ * for a real quarantine event.
+ *
+ * Body: { class: string, signature?: string, notes?: string, related_vtid?: string }
+ */
+router.post('/healing/investigate', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const klass = typeof body.class === 'string' ? body.class : '';
+  const signature = typeof body.signature === 'string' ? body.signature : null;
+  const notes = typeof body.notes === 'string' ? body.notes : undefined;
+  const related_vtid =
+    typeof body.related_vtid === 'string' ? body.related_vtid : undefined;
+  if (!klass) {
+    return res.status(400).json({ ok: false, error: 'class body field required' });
+  }
+  const r = await spawnInvestigator({
+    class: klass,
+    normalized_signature: signature,
+    trigger_reason: 'manual',
+    related_vtid: related_vtid ?? null,
+    notes,
+  });
+  return res.json(r);
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/reports?class=&limit= (VTID-01963, PR #6)
+ *
+ * List Architecture Investigator reports, optionally filtered by class.
+ * Used by the Healing dashboard (PR #8). Returns most-recent-first.
+ */
+router.get('/healing/reports', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const klass = typeof req.query.class === 'string' ? req.query.class : '';
+  const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+  const filter = klass ? `class=eq.${encodeURIComponent(klass)}&` : '';
+  const url =
+    `${config.url}/rest/v1/voice_architecture_reports?` +
+    `${filter}order=generated_at.desc&limit=${limit}`;
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = await resp.json();
+    return res.json({ ok: true, reports: rows });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/reports/:id (VTID-01963, PR #6)
+ *
+ * Fetch a single Architecture Investigator report.
+ */
+router.get('/healing/reports/:id', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const id = req.params.id;
+  const url = `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(id)}&limit=1`;
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = (await resp.json()) as any[];
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'report not found' });
+    }
+    return res.json({ ok: true, report: rows[0] });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 /**
