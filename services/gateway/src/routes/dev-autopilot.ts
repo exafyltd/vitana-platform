@@ -16,6 +16,7 @@ import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
+import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
@@ -142,15 +143,56 @@ router.post('/scan', requireScanToken, async (req: Request, res: Response) => {
   if (!body || !Array.isArray(body.signals)) {
     return res.status(400).json({ ok: false, error: 'body must include signals[]' });
   }
+  const triggeredBy = body.triggered_by || 'api';
   try {
     const result = await ingestScan({
       signals: body.signals,
-      triggered_by: body.triggered_by || 'api',
+      triggered_by: triggeredBy,
       metadata: body.metadata || {},
     });
+    if (!result.ok) {
+      // Synthesis returned a non-ok result. Surface it on the Self-Healing
+      // screen so a silent ingest failure is visible without scraping CI logs.
+      const supa = getSupabase();
+      if (supa) {
+        await writeAutopilotFailure(supa, {
+          stage: 'scan_ingest',
+          vtid: 'VTID-DA-SCAN',
+          endpoint: 'autopilot.scan_ingest',
+          failure_class: 'dev_autopilot_scan_ingest_failed',
+          confidence: 0,
+          diagnosis: {
+            summary: `Scan ingest returned ok=false: ${result.error || 'no error message'}`,
+            triggered_by: triggeredBy,
+            signal_count: body.signals.length,
+            error: result.error,
+          },
+          outcome: 'escalated',
+          attempt_number: 1,
+        });
+      }
+    }
     return res.status(result.ok ? 200 : 500).json(result);
   } catch (err) {
     console.error(`${LOG_PREFIX} /scan failed:`, err);
+    const supa = getSupabase();
+    if (supa) {
+      await writeAutopilotFailure(supa, {
+        stage: 'scan_ingest',
+        vtid: 'VTID-DA-SCAN',
+        endpoint: 'autopilot.scan_ingest',
+        failure_class: 'dev_autopilot_scan_ingest_threw',
+        confidence: 0,
+        diagnosis: {
+          summary: `Scan ingest threw: ${String(err).slice(0, 300)}`,
+          triggered_by: triggeredBy,
+          signal_count: body.signals.length,
+          error: String(err),
+        },
+        outcome: 'escalated',
+        attempt_number: 1,
+      });
+    }
     return res.status(500).json({ ok: false, error: String(err) });
   }
 });
