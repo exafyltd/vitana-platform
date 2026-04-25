@@ -41,6 +41,8 @@ import { getSupabase } from '../lib/supabase';
 // Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
 // + Phase B personality config (VTID-01931) + Phase G feature introductions (VTID-01932)
 import { getSystemControl } from './system-controls-service';
+// VTID-01952 Phase 0 — Identity Lock guardrail block (canonical name/DOB/etc from app_users)
+import { buildIdentityGuardrailBlock } from './identity-guardrail-block';
 import {
   pickOpenerCandidate,
   getAwarenessContext,
@@ -344,7 +346,12 @@ export async function buildBrainSystemInstruction(input: {
   // memory/calendar/OASIS, Life Compass reads life_compass, and the
   // proactive guide block reads its own awareness tables — so a single
   // Promise.all is safe.
-  const [contextPack, lifeCompassBlock, proactiveGuideBlock] = await Promise.all([
+  // VTID-01952 Phase 0: identity guardrail block fetched in parallel.
+  // app_users is canonical for name/DOB/gender/etc — never memory_facts mirror.
+  // Block contains Guardrail A (authoritative identity) + Guardrail B (anti-drift)
+  // and is injected at the TOP of the system prompt (highest attention weight)
+  // so memory blocks below cannot poison identity recall (Maria → Kemal fix).
+  const [contextPack, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock] = await Promise.all([
     buildContextPack(contextPackInput),
     buildLifeCompassGoalBlock({ user_id: input.user_id }),
     buildProactiveGuideBlock({
@@ -353,6 +360,7 @@ export async function buildBrainSystemInstruction(input: {
       role: input.role,
       channel: input.channel,
     }),
+    buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
   ]);
   const contextForLLM = formatContextPackForLLM(contextPack, { userTimezone: input.user_timezone });
 
@@ -365,12 +373,18 @@ export async function buildBrainSystemInstruction(input: {
     ? (ucConfig.orb_instruction || 'You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.')
     : (ucConfig.operator_instruction || 'You are Vitana, an intelligent assistant. You can be detailed and use formatting when helpful.');
 
-  // PROMPT ORDER MATTERS: the proactive guide block goes LAST so it has
-  // recency primacy in Gemini's attention. Putting it before the brevity
-  // rule caused Gemini to default to "What can I do for you?" on the first
-  // utterance because the brevity rule reinforced its trained habit.
+  // PROMPT ORDER MATTERS:
+  // - Identity guardrail block goes FIRST (after baseInstruction) — Guardrail A
+  //   declares the canonical name/DOB/etc., Guardrail B forbids drifting from
+  //   them regardless of what memory blocks below contain. This is the
+  //   Maria → Kemal fix at the prompt layer (VTID-01952 Phase 0).
+  // - The proactive guide block goes LAST so it has recency primacy in
+  //   Gemini's attention. Putting it before the brevity rule caused Gemini to
+  //   default to "What can I do for you?" on the first utterance because the
+  //   brevity rule reinforced its trained habit.
   const instruction = `${baseInstruction}
 ${languageDirective}
+${identityGuardrailBlock}
 ${contextForLLM}
 ${lifeCompassBlock}
 
@@ -383,7 +397,7 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 ${proactiveGuideBlock}`;
 
   const latencyMs = Date.now() - startTime;
-  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'})`);
+  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'}, identity=${identityGuardrailBlock.length > 0 ? 'on' : 'off'})`);
 
   return { instruction, contextPack };
 }
