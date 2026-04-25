@@ -38,6 +38,7 @@ import {
 } from './dev-autopilot-safety';
 import { extractFilePaths } from './dev-autopilot-planning';
 import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
+import { writeAutopilotFailure } from './dev-autopilot-self-heal-log';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -355,6 +356,32 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
+    // Surface safety-gate rejections on the Self-Healing screen so the
+    // operator sees WHY the autopilot didn't proceed (allow_scope mismatch,
+    // deny_scope hit, file count exceeds cap, etc.). Without this, blocked
+    // approvals rot in silence — exactly what we just fixed for plan-gen.
+    await writeAutopilotFailure(s, {
+      stage: 'approve_safety',
+      vtid: `VTID-DA-FIND-${input.finding_id.slice(0, 8)}`,
+      endpoint: rec.spec_snapshot?.file_path
+        ? String(rec.spec_snapshot.file_path)
+        : 'autopilot.approve_safety',
+      failure_class: 'dev_autopilot_safety_gate_blocked',
+      confidence: 0,
+      diagnosis: {
+        summary: `Safety gate blocked approval: ${decision.violations?.map((v: { rule?: string; message?: string }) => v.rule || v.message).join(', ') || 'unknown reason'}`,
+        finding_id: input.finding_id,
+        approved_by: input.approved_by || null,
+        risk_class: rec.risk_class,
+        scanner: rec.spec_snapshot?.scanner,
+        file_path: rec.spec_snapshot?.file_path,
+        violations: decision.violations || [],
+        files_to_modify: files,
+        files_to_delete: deletions,
+      },
+      outcome: 'escalated',
+      attempt_number: 1,
+    });
     return { ok: false, decision, error: 'safety gate blocked approval' };
   }
 
