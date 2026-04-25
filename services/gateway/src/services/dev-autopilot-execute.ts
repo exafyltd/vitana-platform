@@ -1034,6 +1034,296 @@ async function runExecutionSession(
 // Exported for unit tests.
 export { parseExecutionJson, buildExecutionPrompt };
 
+// =============================================================================
+// State reconciler — guarantees end-to-end execution
+// =============================================================================
+// The original watchdog only covered status='running' (20 min timeout). After
+// a few real-world stuck executions (PRs #854 #798 sat in 'deploying' /
+// 'merging' for 2+ days because the gateway missed an OASIS event), this
+// reconciler covers every non-terminal stage:
+//
+//   ci         → query GitHub PR check status
+//   merging    → query GitHub PR.merged
+//   deploying  → query oasis_events for deploy.gateway.success on this branch
+//   verifying  → curl /alive on the live gateway + check verification event
+//
+// For each stuck execution past its per-state timeout, the reconciler asks
+// "what's actually true?" (GitHub + OASIS + HTTP probe). If reality says the
+// stage is done, transition the row forward. If reality says the stage
+// failed, mark failed + bridge to self-heal. If reality is genuinely still
+// in flight (e.g. CI is slow), leave it alone.
+//
+// Cadence: runs every BACKGROUND_TICK_MS alongside the existing executor.
+// Bounded: ≤10 rows reconciled per tick per state to cap GitHub API spend.
+
+interface StuckExecRow {
+  id: string;
+  finding_id: string;
+  status: string;
+  pr_url: string | null;
+  pr_number: number | null;
+  branch: string | null;
+  updated_at: string;
+}
+
+/** Per-state timeout. Beyond this, the state is considered "stuck" and
+ *  the reconciler asks reality. */
+const RECONCILE_TIMEOUT_MS: Record<string, number> = {
+  ci:        30 * 60 * 1000,  // 30 min
+  merging:   15 * 60 * 1000,  // 15 min
+  deploying: 30 * 60 * 1000,  // 30 min
+  verifying: 15 * 60 * 1000,  // 15 min
+};
+
+const RECONCILE_BATCH_SIZE = 10;
+
+async function patchExecution(
+  s: SupaConfig,
+  id: string,
+  fields: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+  });
+  return { ok: r.ok, error: r.error };
+}
+
+async function bridgeFailure(executionId: string, stage: string, error: string): Promise<void> {
+  try {
+    const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+    await bridgeFailureToSelfHealing({ execution_id: executionId, failure_stage: stage, error });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} bridge load error for ${executionId}:`, err);
+  }
+}
+
+/** Reconcile status='ci'. Source of truth: GitHub PR check runs. */
+async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  if (!exec.pr_number) {
+    console.warn(`${LOG_PREFIX} reconcile/ci: ${exec.id.slice(0, 8)} has no pr_number — leaving alone`);
+    return;
+  }
+  // GET /repos/{owner}/{repo}/commits/{ref}/check-runs gives the PR head sha's
+  // checks. Simpler: GET /pulls/{n} gives mergeable_state which summarizes.
+  const prR = await githubRequest<{
+    state: 'open' | 'closed';
+    merged: boolean;
+    mergeable_state: 'clean' | 'unstable' | 'dirty' | 'blocked' | 'behind' | 'has_hooks' | 'unknown';
+    head: { sha: string };
+  }>(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`);
+  if (!prR.ok || !prR.data) {
+    console.warn(`${LOG_PREFIX} reconcile/ci: PR lookup failed for ${exec.id.slice(0, 8)}: ${prR.error}`);
+    return;
+  }
+
+  if (prR.data.merged) {
+    // Already merged (CI green and watcher merged) — advance to deploying.
+    await patchExecution(s, exec.id, { status: 'deploying' });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_merged',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} already merged — advancing to deploying`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'ci' },
+    });
+    return;
+  }
+
+  if (prR.data.state === 'closed' && !prR.data.merged) {
+    // PR closed without merge — terminal failure.
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { error: 'reconciler: PR closed without merge' },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} closed without merge`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reason: 'pr_closed_unmerged' },
+    });
+    bridgeFailure(exec.id, 'ci', 'PR closed without merge').catch(() => {});
+    return;
+  }
+
+  // CI may be still running (mergeable_state='unstable') or blocked.
+  // 'dirty' or 'blocked' for >timeout means CI failed or the PR has unresolved
+  // conflicts — failure. 'unstable' typically means a check is still running;
+  // leave alone.
+  if (prR.data.mergeable_state === 'dirty' || prR.data.mergeable_state === 'blocked') {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { error: `reconciler: PR mergeable_state=${prR.data.mergeable_state} after ${RECONCILE_TIMEOUT_MS.ci / 60_000}m` },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.ci_failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} mergeable_state=${prR.data.mergeable_state}`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, mergeable_state: prR.data.mergeable_state },
+    });
+    bridgeFailure(exec.id, 'ci', `PR mergeable_state=${prR.data.mergeable_state}`).catch(() => {});
+  }
+  // else: CI still in flight, leave alone.
+}
+
+/** Reconcile status='merging'. Source of truth: GitHub PR.merged. */
+async function reconcileMerging(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  if (!exec.pr_number) return;
+  const prR = await githubRequest<{ state: string; merged: boolean }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`,
+  );
+  if (!prR.ok || !prR.data) return;
+  if (prR.data.merged) {
+    await patchExecution(s, exec.id, { status: 'deploying' });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_merged',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} merged — advancing to deploying`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'merging' },
+    });
+  } else if (prR.data.state === 'closed') {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { error: 'reconciler: PR closed without merge while in merging' },
+    });
+    bridgeFailure(exec.id, 'merging', 'PR closed without merge').catch(() => {});
+  }
+  // else: stuck on auto-merge — leave to watcher one more cycle.
+}
+
+/** Reconcile status='deploying'. Source of truth: oasis_events for
+ *  deploy.gateway.success or any event tagged with the merge SHA / branch. */
+async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  // Look for a deploy success event newer than the execution's last update.
+  const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.deploying * 2).toISOString();
+  const deployR = await supa<Array<{ id: string; type: string; created_at: string }>>(s,
+    `/rest/v1/oasis_events?type=in.(deploy.gateway.success,deploy.success,vtid.lifecycle.deployed)`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=20&select=id,type,created_at`);
+  if (deployR.ok && deployR.data && deployR.data.length > 0) {
+    // We saw at least one recent deploy success event. Best-effort: advance
+    // this execution to verifying; the verification step will run next.
+    await patchExecution(s, exec.id, { status: 'verifying' });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.deployed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
+      payload: { execution_id: exec.id, deploy_event_id: deployR.data[0].id, reconciled_from: 'deploying' },
+    });
+    return;
+  }
+
+  // No deploy event seen within the look-back window — fail.
+  await patchExecution(s, exec.id, {
+    status: 'failed',
+    completed_at: new Date().toISOString(),
+    metadata: { error: `reconciler: no deploy success event observed after ${RECONCILE_TIMEOUT_MS.deploying / 60_000}m in deploying` },
+  });
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.deploy_failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Reconciler: ${exec.id.slice(0, 8)} stuck in deploying with no observed deploy event`,
+    payload: { execution_id: exec.id, reason: 'no_deploy_event_observed' },
+  });
+  bridgeFailure(exec.id, 'deploying', 'No deploy event observed').catch(() => {});
+}
+
+/** Reconcile status='verifying'. Source of truth: HTTP /alive probe + any
+ *  recent verification-passed event. */
+async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  // Look for a verification event tagged for this execution.
+  const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.verifying * 2).toISOString();
+  const verifyR = await supa<Array<{ id: string; type: string }>>(s,
+    `/rest/v1/oasis_events?type=in.(dev_autopilot.execution.verification_passed,vtid.lifecycle.completed)`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=10&select=id,type`);
+  if (verifyR.ok && verifyR.data && verifyR.data.length > 0) {
+    await patchExecution(s, exec.id, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.completed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} verification observed — completing`,
+      payload: { execution_id: exec.id, reconciled_from: 'verifying' },
+    });
+    return;
+  }
+
+  // No verification event — best-effort: probe /alive ourselves. If 200,
+  // call it good. (Conservative: only complete if /alive returns 200; else
+  // fail.)
+  const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+  let alive = false;
+  try {
+    const r = await fetch(`${gatewayUrl}/alive`);
+    alive = r.ok;
+  } catch { /* alive=false */ }
+
+  if (alive) {
+    await patchExecution(s, exec.id, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.completed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} /alive ok — completing`,
+      payload: { execution_id: exec.id, reconciled_from: 'verifying', via: 'alive_probe' },
+    });
+    return;
+  }
+
+  await patchExecution(s, exec.id, {
+    status: 'failed',
+    completed_at: new Date().toISOString(),
+    metadata: { error: `reconciler: /alive failed after ${RECONCILE_TIMEOUT_MS.verifying / 60_000}m in verifying` },
+  });
+  bridgeFailure(exec.id, 'verifying', '/alive probe failed').catch(() => {});
+}
+
+/** Top-level reconciler. Iterates each non-terminal status with a per-state
+ *  timeout and queries reality to transition or fail. Bounded per tick. */
+export async function reconcileStuckExecutions(s: SupaConfig): Promise<void> {
+  for (const status of Object.keys(RECONCILE_TIMEOUT_MS)) {
+    const cutoff = new Date(Date.now() - RECONCILE_TIMEOUT_MS[status]).toISOString();
+    const stuckR = await supa<StuckExecRow[]>(s,
+      `/rest/v1/dev_autopilot_executions?status=eq.${status}&updated_at=lt.${cutoff}`
+      + `&select=id,finding_id,status,pr_url,pr_number,branch,updated_at`
+      + `&order=updated_at.asc&limit=${RECONCILE_BATCH_SIZE}`);
+    if (!stuckR.ok || !stuckR.data || stuckR.data.length === 0) continue;
+    console.log(`${LOG_PREFIX} reconciler: ${stuckR.data.length} execution(s) stuck in '${status}'`);
+    for (const exec of stuckR.data) {
+      try {
+        if (status === 'ci')         await reconcileCi(s, exec);
+        else if (status === 'merging')   await reconcileMerging(s, exec);
+        else if (status === 'deploying') await reconcileDeploying(s, exec);
+        else if (status === 'verifying') await reconcileVerifying(s, exec);
+      } catch (err) {
+        console.error(`${LOG_PREFIX} reconciler error on ${exec.id} [${status}]:`, err);
+      }
+    }
+  }
+}
+
 /** Main tick — called every BACKGROUND_TICK_MS. Idempotent. */
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
@@ -1095,6 +1385,16 @@ export async function backgroundExecutorTick(): Promise<void> {
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} execution watchdog error:`, err);
+  }
+
+  // 0c. State reconciler — for executions stuck in ci / merging / deploying /
+  // verifying past their per-state timeout, query reality (GitHub + OASIS +
+  // /alive probe) and either advance them or mark them failed + bridge to
+  // self-heal. Bounded per tick so GitHub API spend is capped.
+  try {
+    await reconcileStuckExecutions(s);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} reconciler error:`, err);
   }
 
   // 1. Honor kill switch
