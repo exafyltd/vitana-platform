@@ -504,3 +504,25 @@ export async function isVitanaBrainOrbEnabled(): Promise<boolean> {
   }
   return true;
 }
+
+/**
+ * VTID-01955 — Tier 0 Memorystore Redis turn buffer.
+ *
+ * When enabled, context-pack-builder reads recent turns from the shared
+ * Redis turn buffer (multi-instance safe) instead of the in-process Map.
+ * Writes are dual-routed (both Redis and the in-process Map) regardless
+ * of this flag, so flipping it on/off is reversible without data loss.
+ *
+ * Default: false. Requires REDIS_URL env var on the gateway. Once
+ * Memorystore is provisioned + VPC connector wired + REDIS_URL set,
+ * flip to true (start with canary tenant).
+ *
+ * Plan: Part 8 Phase 1.
+ */
+export async function isTier0RedisEnabled(): Promise<boolean> {
+  const control = await getSystemControl('tier0_redis_enabled');
+  if (!control || !control.enabled) {
+    return false;
+  }
+  return true;
+}

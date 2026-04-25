@@ -45,6 +45,9 @@ import { generateEmbedding } from './embedding-service';
 import { ContextLens } from '../types/context-lens';
 // VTID-01230: Session buffer for Tier 0 short-term memory
 import { formatSessionBufferForLLM, getSessionContext } from './session-memory-buffer';
+// VTID-01955: Tier 0 Memorystore Redis turn buffer (multi-instance shared) — gated by tier0_redis_enabled flag.
+import { getSessionContextRedis, formatRedisBufferForLLM } from './redis-turn-buffer';
+import { isTier0RedisEnabled } from './system-controls-service';
 // VTID-02000: Marketplace context primitive
 import { getUserHealthContext } from './user-health-context';
 
@@ -1306,8 +1309,40 @@ export async function buildContextPack(
   // VTID-01230: Session buffer — inject recent turns from Tier 0
   // This is the FASTEST path: no DB round-trip, guaranteed turn-to-turn coherence
   const sessionId = input.session_id || input.thread_id;
-  const sessionCtx = getSessionContext(sessionId);
-  const sessionBufferFormatted = formatSessionBufferForLLM(sessionId);
+
+  // VTID-01955: Read from Memorystore Redis when tier0_redis_enabled flag is on
+  // (multi-instance shared so "what did I just say?" survives Cloud Run cold
+  // starts and worker scale-out). Falls back to in-process Map on any error
+  // OR when Redis returns empty (cold cache, brand-new session).
+  // Writes are dual-routed unconditionally — both buffers receive every turn.
+  let sessionCtx = getSessionContext(sessionId);
+  let sessionBufferFormatted = formatSessionBufferForLLM(sessionId);
+  let bufferSource: 'in-process' | 'redis' = 'in-process';
+  try {
+    if (await isTier0RedisEnabled()) {
+      const redisCtx = await getSessionContextRedis(sessionId);
+      if (redisCtx && redisCtx.turn_count > 0) {
+        // Redis hit: use Redis turns. Keep session_facts from in-process
+        // (facts aren't yet mirrored to Redis — Phase 5+ work).
+        const inProcessFacts = sessionCtx?.session_facts ?? {};
+        sessionCtx = {
+          recent_turns: redisCtx.recent_turns.map((t) => ({
+            role: t.role,
+            content: t.content,
+            timestamp: t.timestamp,
+          })),
+          session_facts: inProcessFacts,
+          turn_count: redisCtx.turn_count,
+          is_continuation: redisCtx.is_continuation,
+        };
+        sessionBufferFormatted = await formatRedisBufferForLLM(sessionId);
+        bufferSource = 'redis';
+      }
+    }
+  } catch (err) {
+    console.warn('[VTID-01955] tier0_redis read failed (falling back to in-process):', (err as Error)?.message);
+  }
+
   const sessionBufferData = sessionCtx ? {
     turn_count: sessionCtx.turn_count,
     session_facts_count: Object.keys(sessionCtx.session_facts).length,
@@ -1315,7 +1350,7 @@ export async function buildContextPack(
   } : undefined;
 
   if (sessionBufferData && sessionBufferData.turn_count > 0) {
-    console.log(`[VTID-01230] Session buffer: ${sessionBufferData.turn_count} turns, ${sessionBufferData.session_facts_count} facts for session ${sessionId.substring(0, 8)}...`);
+    console.log(`[VTID-01230] Session buffer (source=${bufferSource}): ${sessionBufferData.turn_count} turns, ${sessionBufferData.session_facts_count} facts for session ${sessionId.substring(0, 8)}...`);
   }
 
   // Estimate token usage

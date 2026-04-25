@@ -65,6 +65,8 @@ import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01230: Session buffer for short-term memory + extraction dedup
 import { addTurn as addSessionTurn } from '../services/session-memory-buffer';
+// VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (dual-write w/ in-process buffer)
+import { addTurnRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract } from '../services/extraction-dedup-manager';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
@@ -431,6 +433,11 @@ ${channelInstructions}`;
       // VTID-01230: Add turns to session buffer (Tier 0 short-term memory)
       addSessionTurn(thread.thread_id, tenant_id, user_id, 'user', message.text);
       addSessionTurn(thread.thread_id, tenant_id, user_id, 'assistant', reply);
+      // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
+      addTurnRedis(thread.thread_id, tenant_id, user_id, 'user', message.text)
+        .catch(() => { /* logged inside redis-turn-buffer */ });
+      addTurnRedis(thread.thread_id, tenant_id, user_id, 'assistant', reply)
+        .catch(() => { /* logged inside redis-turn-buffer */ });
 
       // Persist both messages to Supabase (fire-and-forget, non-blocking)
       persistMessage({
@@ -825,6 +832,11 @@ Instructions:
       // VTID-01230: Session buffer + deduplicated extraction for streamed conversation
       addSessionTurn(thread.thread_id, input.tenant_id, input.user_id, 'user', input.message.text);
       addSessionTurn(thread.thread_id, input.tenant_id, input.user_id, 'assistant', geminiResult.reply);
+      // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
+      addTurnRedis(thread.thread_id, input.tenant_id, input.user_id, 'user', input.message.text)
+        .catch(() => { /* logged inside redis-turn-buffer */ });
+      addTurnRedis(thread.thread_id, input.tenant_id, input.user_id, 'assistant', geminiResult.reply)
+        .catch(() => { /* logged inside redis-turn-buffer */ });
 
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
