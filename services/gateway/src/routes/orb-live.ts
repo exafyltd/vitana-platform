@@ -57,6 +57,8 @@ import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01230: Session buffer (Tier 0 short-term memory) + extraction dedup
 import { addTurn as addSessionTurn, destroySessionBuffer, addSessionFact } from '../services/session-memory-buffer';
+// VTID-01953 Phase 0 follow-up — Identity-mutation intent intercept on ORB voice
+import { handleIdentityIntent } from '../services/identity-intent-handler';
 import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
 // VTID-01149: Unified Task-Creation Intake
 import {
@@ -5902,6 +5904,52 @@ async function connectToLiveAPI(
             if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
               const userText = session.inputTranscriptBuffer.trim();
               chatBridgeUserText = userText;
+
+              // VTID-01953 — Identity-mutation intent intercept (post-transcription).
+              // Vertex Live API streams the LLM response in real time, so we can't
+              // pre-empt the model the way conversation-client does. But we can:
+              //   1. Detect the explicit identity-mutation intent on the user's
+              //      transcript at turn_complete.
+              //   2. Push the redirect_target as an SSE event so the frontend
+              //      fires the deep-link (open Profile / Settings) — the LLM
+              //      can't dispatch CustomEvents on its own.
+              //   3. Audit via memory.identity.write_attempted (handled inside
+              //      handleIdentityIntent).
+              // The brain prompt Guardrail B already shapes the LLM's spoken
+              // response to use the sanctioned refusal phrasing, so we don't
+              // duplicate the message — just add the deep-link.
+              if (session.identity?.user_id && session.identity?.tenant_id) {
+                handleIdentityIntent({
+                  utterance: userText,
+                  user_id: session.identity.user_id,
+                  tenant_id: session.identity.tenant_id,
+                  source: 'orb-live',
+                  conversation_turn_id: session.sessionId,
+                }).then((result) => {
+                  if (!result.handled) return;
+                  console.log(
+                    `[VTID-01953] Identity-mutation intent intercepted on ORB voice: ` +
+                    `fact_key=${result.detected_fact_key}, pattern="${result.detected_pattern}"`
+                  );
+                  // Push the redirect-target event to the connected client so the
+                  // frontend opens the right screen and focuses the right field.
+                  const redirectMsg = JSON.stringify({
+                    type: 'identity_redirect',
+                    redirect_target: result.redirect_target,
+                    fact_key: result.detected_fact_key,
+                    pattern: result.detected_pattern,
+                  });
+                  if (session.sseResponse) {
+                    try { session.sseResponse.write(`data: ${redirectMsg}\n\n`); } catch (_e) { /* socket closing */ }
+                  }
+                  if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                    try { sendWsMessage((session as any).clientWs, JSON.parse(redirectMsg)); } catch (_e) { /* ignore */ }
+                  }
+                }).catch((err) => {
+                  console.warn('[VTID-01953] handleIdentityIntent failed (non-fatal):', err);
+                });
+              }
+
               session.transcriptTurns.push({
                 role: 'user',
                 text: userText,
