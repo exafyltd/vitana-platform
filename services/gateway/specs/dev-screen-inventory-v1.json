@@ -91,6 +91,8 @@
     "autopilot": [
       "registry",
       "scanners",
+      "impact-rules",
+      "auto-approve",
       "runs",
       "live",
       "engine",
@@ -171,11 +173,12 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 108,
-    "last_synced": "2026-04-24",
-    "source": "app.js NAVIGATION_CONFIG (DEV) + vitana-v1/src/config/admin-navigation.ts (ADM) + vitana-v1/src/lib/screen-id.ts (COM/PAT/PRO/STA)",
+    "total_screens": 110,
+    "total_entries": 289,
+    "last_synced": "2026-04-25",
+    "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
-      "DEVELOPER": 108,
+      "DEVELOPER": 110,
       "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
@@ -249,7 +252,7 @@
       {
         "screen_id": "DEV-IDENTITY_ACCESS",
         "module": "Admin",
-        "tab": "Identity & Access",
+        "tab": "Identity Access",
         "url_path": "/command-hub/admin/identity-access/",
         "role": "DEVELOPER"
       },
@@ -538,6 +541,20 @@
         "module": "Autopilot",
         "tab": "Scanners",
         "url_path": "/command-hub/autopilot/scanners/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-IMPACT_RULES",
+        "module": "Autopilot",
+        "tab": "Impact Rules",
+        "url_path": "/command-hub/autopilot/impact-rules/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-AUTO_APPROVE",
+        "module": "Autopilot",
+        "tab": "Auto Approve",
+        "url_path": "/command-hub/autopilot/auto-approve/",
         "role": "DEVELOPER"
       },
       {
@@ -907,7 +924,7 @@
       {
         "screen_id": "DEV-API_INVENTORY",
         "module": "Docs",
-        "tab": "API Inventory",
+        "tab": "Api Inventory",
         "url_path": "/command-hub/docs/api-inventory/",
         "role": "DEVELOPER"
       },
@@ -2192,7 +2209,6 @@
         "url_path": "/admin/audit/data-rights",
         "role": "ADMIN"
       }
-    ],
-    "total_entries": 287
+    ]
   }
 }
