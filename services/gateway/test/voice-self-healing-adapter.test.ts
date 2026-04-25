@@ -107,6 +107,10 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=live + dedupe hit → dedupe_hit, no POST', async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_quarantine')) {
+        // Default: no quarantine row → active (allowed)
+        return Promise.resolve(jsonResp([]));
+      }
       if (url.includes('voice_healing_spec_memory')) {
         // Default: gate empty → allow
         return Promise.resolve(jsonResp([]));
@@ -133,6 +137,10 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=shadow + first-time signature → shadow_logged, no POST', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'shadow' }]));
+      if (url.includes('voice_healing_quarantine')) {
+        // Default: no quarantine row → active (allowed)
+        return Promise.resolve(jsonResp([]));
+      }
       if (url.includes('voice_healing_spec_memory')) {
         // Default: gate empty → allow
         return Promise.resolve(jsonResp([]));
@@ -159,6 +167,10 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
     let capturedPostBody: any = null;
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_quarantine')) {
+        // Default: no quarantine row → active (allowed)
+        return Promise.resolve(jsonResp([]));
+      }
       if (url.includes('voice_healing_spec_memory')) {
         // Default: gate empty → allow
         return Promise.resolve(jsonResp([]));
@@ -193,6 +205,10 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
   test('mode=live + /report 500 → action=error with detail', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'live' }]));
+      if (url.includes('voice_healing_quarantine')) {
+        // Default: no quarantine row → active (allowed)
+        return Promise.resolve(jsonResp([]));
+      }
       if (url.includes('voice_healing_spec_memory')) {
         // Default: gate empty → allow
         return Promise.resolve(jsonResp([]));
@@ -230,6 +246,10 @@ describe('VTID-01959: Voice→SelfHealing Adapter', () => {
     let capturedDedupeBody: any = null;
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('system_config')) return Promise.resolve(jsonResp([{ value: 'shadow' }]));
+      if (url.includes('voice_healing_quarantine')) {
+        // Default: no quarantine row → active (allowed)
+        return Promise.resolve(jsonResp([]));
+      }
       if (url.includes('voice_healing_spec_memory')) {
         // Default: gate empty → allow
         return Promise.resolve(jsonResp([]));
