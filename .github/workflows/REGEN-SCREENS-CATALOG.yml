@@ -37,12 +37,19 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout vitana-v1 (read-only)
+        id: checkout_v1
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: exafyltd/vitana-v1
           token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
           path: vitana-v1
+
+      - name: Note v1 checkout outcome
+        if: steps.checkout_v1.outcome != 'success'
+        run: |
+          echo "::warning::vitana-v1 checkout failed — VITANA_V1_READ_TOKEN secret likely missing. ADMIN rows will be preserved from existing spec; DEV side will still regenerate."
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
