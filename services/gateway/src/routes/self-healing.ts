@@ -648,9 +648,14 @@ router.get('/pending-approval', async (req: Request, res: Response) => {
 
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 200);
 
+    // dev_autopilot_self_heal_in_progress is written by dev-autopilot-bridge
+    // when it AUTO-spawns a child execution to retry. Outcome is 'pending'
+    // because the retry is in flight, but no human input is requested or
+    // useful — those rows belong on the Active Repairs view, not here.
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/self_healing_log?` +
         `outcome=eq.pending&confidence=lt.0.8` +
+        `&failure_class=neq.dev_autopilot_self_heal_in_progress` +
         `&select=id,vtid,endpoint,failure_class,confidence,diagnosis,created_at,attempt_number` +
         `&order=created_at.desc&limit=${limit}`,
       { headers: supabaseHeaders() },
@@ -711,29 +716,38 @@ router.post('/approve', async (req: Request, res: Response) => {
     const logRow = logBody[0];
     const vtid = logRow.vtid;
 
-    // 2. Read the vtid_ledger row to get title + spec
-    const ledgerResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,title,summary&limit=1`,
-      { headers: supabaseHeaders() },
-    );
-    if (!ledgerResp.ok) {
-      const errText = await ledgerResp.text().catch(() => '');
-      return res.status(500).json({ ok: false, error: `vtid_ledger query failed: ${errText.slice(0, 200)}` });
-    }
-    const ledgerBody = await ledgerResp.json();
-    if (!Array.isArray(ledgerBody) || ledgerBody.length === 0) {
-      return res.status(404).json({ ok: false, error: `vtid_ledger row ${vtid} not found` });
-    }
-    const ledgerRow = ledgerBody[0];
+    // Real ledger VTIDs match `VTID-<digits>`. Dev-autopilot synthetic
+    // correlation IDs (`VTID-DA-<exec>`, `VTID-DA-FIND-<finding>`) have
+    // no vtid_ledger row by design — see dev-autopilot-self-heal-log.ts.
+    // For those, the standard execution_approved → autopilot event loop
+    // path can't dispatch (no ledger row to read), so we mark the log
+    // row approved and emit a self-healing.approved signal instead.
+    const isLedgerVtid = /^VTID-\d+$/.test(vtid);
 
-    // 3. Mark spec approved in vtid_ledger
-    await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
-      method: 'PATCH',
-      headers: supabaseHeaders(),
-      body: JSON.stringify({ spec_status: 'approved', updated_at: new Date().toISOString() }),
-    });
+    if (isLedgerVtid) {
+      // 2. Read the vtid_ledger row to confirm it exists.
+      const ledgerResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,title,summary&limit=1`,
+        { headers: supabaseHeaders() },
+      );
+      if (!ledgerResp.ok) {
+        const errText = await ledgerResp.text().catch(() => '');
+        return res.status(500).json({ ok: false, error: `vtid_ledger query failed: ${errText.slice(0, 200)}` });
+      }
+      const ledgerBody = await ledgerResp.json();
+      if (!Array.isArray(ledgerBody) || ledgerBody.length === 0) {
+        return res.status(404).json({ ok: false, error: `vtid_ledger row ${vtid} not found` });
+      }
 
-    // 4. Mark self_healing_log row as human-approved
+      // 3. Mark spec approved in vtid_ledger.
+      await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+        method: 'PATCH',
+        headers: supabaseHeaders(),
+        body: JSON.stringify({ spec_status: 'approved', updated_at: new Date().toISOString() }),
+      });
+    }
+
+    // 4. Mark self_healing_log row as human-approved.
     const newDiagnosis = {
       ...(logRow.diagnosis || {}),
       human_decision: 'approved',
@@ -746,12 +760,14 @@ router.post('/approve', async (req: Request, res: Response) => {
       body: JSON.stringify({ diagnosis: newDiagnosis }),
     });
 
-    // 5. Emit execution_approved OASIS event — the autopilot event loop
-    // picks this up and dispatches through the standard pipeline (worker
-    // orchestrator → worker-runner), just like any other approved task.
-    // NO direct dispatch — same path as every other task.
+    // 5. Emit the appropriate approval event.
+    //   - Ledger VTIDs: vtid.lifecycle.execution_approved so the autopilot
+    //     event loop dispatches through the standard worker pipeline.
+    //   - Synthetic VTIDs: self-healing.approved as a record-only signal
+    //     (the dev-autopilot bridge owns the real retry path; this just
+    //     clears the row from the human queue and leaves an audit trail).
     await emitOasisEvent({
-      type: 'vtid.lifecycle.execution_approved',
+      type: isLedgerVtid ? 'vtid.lifecycle.execution_approved' : 'self-healing.approved',
       vtid,
       source: 'self-healing',
       status: 'info',
@@ -761,6 +777,7 @@ router.post('/approve', async (req: Request, res: Response) => {
         source: 'self-healing',
         operator: operator || 'command-hub',
         confidence: logRow.confidence,
+        synthetic_vtid: !isLedgerVtid,
       },
     });
 

@@ -60,14 +60,25 @@ export interface AutopilotFailureArgs {
   attempt_number?: number;
 }
 
+/** Time window for the writer-level idempotency check. Same vtid+endpoint+
+ *  failure_class within this window is treated as a duplicate and skipped.
+ *  Sized to comfortably swallow ticker-loop spam (lazyPlanTick fires every
+ *  ~30s, multiple Cloud Run instances each run their own ticker) without
+ *  hiding a genuine new occurrence after the underlying problem returns. */
+const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
 /**
  * Best-effort write — caller must NOT block on the result. A failure to
  * write to self_healing_log is logged but never propagates because that
  * would mask the original autopilot failure that needed surfacing.
  *
- * Idempotency: not enforced — duplicate writes get duplicate rows. If
- * a stage runs in a tick loop and may double-fire, the caller should
- * dedupe with its own short-window check before calling here.
+ * Idempotency: enforced at the writer (VTID-01971). Before each INSERT we
+ * GET self_healing_log filtered by (vtid, endpoint, failure_class) within
+ * the last DEDUP_WINDOW_MS; if a row exists, the write is skipped. Stops
+ * tick-loop spam (lazyPlanTick re-firing the same plan_gen failure every
+ * ~30s × N Cloud Run instances) from flooding the Self-Healing UI with
+ * dozens of identical rows. Retries that legitimately need a separate row
+ * should pass a stage-discriminating endpoint or distinct failure_class.
  */
 export async function writeAutopilotFailure(
   s: SupaConfig,
@@ -77,6 +88,26 @@ export async function writeAutopilotFailure(
   const confidence = args.confidence ?? 0;
   const attempt = args.attempt_number ?? 1;
   try {
+    const sinceIso = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+    const dedupQuery =
+      `?vtid=eq.${encodeURIComponent(args.vtid)}` +
+      `&endpoint=eq.${encodeURIComponent(args.endpoint)}` +
+      `&failure_class=eq.${encodeURIComponent(args.failure_class)}` +
+      `&created_at=gte.${encodeURIComponent(sinceIso)}` +
+      `&select=id&limit=1`;
+    const dedupRes = await fetch(`${s.url}/rest/v1/self_healing_log${dedupQuery}`, {
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+      },
+    });
+    if (dedupRes.ok) {
+      const existing = (await dedupRes.json()) as Array<{ id: string }>;
+      if (Array.isArray(existing) && existing.length > 0) {
+        return;
+      }
+    }
+
     const res = await fetch(`${s.url}/rest/v1/self_healing_log`, {
       method: 'POST',
       headers: {
