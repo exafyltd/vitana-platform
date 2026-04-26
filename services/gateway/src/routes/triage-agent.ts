@@ -258,14 +258,19 @@ triageAgentRouter.get('/:sessionId/stream', async (req: Request, res: Response) 
   try {
     // Poll events from the Managed Agents session and forward to the browser.
     // Also handle custom tool calls (query_oasis_events).
+    //
+    // The Anthropic events list endpoint does NOT support an after-cursor
+    // query param — valid params are `limit`, `order`, `page` (per
+    // managed-agents-2026-04-01). We fetch up to the page max each poll and
+    // dedupe by event ID via `seenIds`. A triage session is expected to
+    // produce well under 1000 events, so a single page is sufficient. If we
+    // ever hit the cap, switch to cursor pagination via `page`.
     let done = false;
-    let lastEventId: string | undefined;
     const seenIds = new Set<string>();
 
     while (!done) {
-      // Fetch events
       const eventsResult = await anthropicRequest<any>(
-        `/v1/sessions/${sessionId}/events${lastEventId ? `?after_id=${lastEventId}` : ''}`
+        `/v1/sessions/${sessionId}/events?limit=1000&order=asc`,
       );
 
       if (!eventsResult.ok || !eventsResult.data) {
@@ -278,7 +283,6 @@ triageAgentRouter.get('/:sessionId/stream', async (req: Request, res: Response) 
       for (const event of events) {
         if (seenIds.has(event.id)) continue;
         seenIds.add(event.id);
-        lastEventId = event.id;
 
         // Forward relevant events to the browser
         switch (event.type) {
