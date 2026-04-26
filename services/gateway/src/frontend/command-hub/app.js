@@ -3070,6 +3070,9 @@ const state = {
     autopilotRecommendationsError: null,
     autopilotRecommendationsCount: 0,
     autopilotRecommendationErrors: {}, // rec.id → error message for inline display
+    // Phase 2 batch UX: selected ids in the popup. Use Set for O(1) toggle.
+    autopilotSelectedIds: new Set(),
+    autopilotBatchInFlight: false, // disables footer buttons during a batch op
 
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
@@ -23780,12 +23783,82 @@ function renderAutopilotRecommendationsModal() {
     // === FOOTER ===
     var footer = document.createElement('div');
     footer.className = 'modal-footer';
-    footer.style.cssText = 'padding: 12px 20px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.1)); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;';
+    footer.style.cssText = 'padding: 12px 20px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.1)); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 12px;';
+
+    var leftFooter = document.createElement('div');
+    leftFooter.style.cssText = 'display: flex; align-items: center; gap: 12px;';
+
+    // "Select all visible" toggle (only when there are recommendations)
+    if (state.autopilotRecommendations.length > 0) {
+        var selectAll = document.createElement('label');
+        selectAll.style.cssText = 'display: flex; align-items: center; gap: 6px; color: var(--text-secondary, #888); font-size: 13px; cursor: pointer;';
+        var selectAllCb = document.createElement('input');
+        selectAllCb.type = 'checkbox';
+        selectAllCb.style.cssText = 'width: 14px; height: 14px; cursor: pointer;';
+        var allSelected = state.autopilotRecommendations.length > 0 &&
+            state.autopilotRecommendations.every(function (r) { return state.autopilotSelectedIds.has(r.id); });
+        selectAllCb.checked = allSelected;
+        selectAllCb.onchange = function () {
+            if (selectAllCb.checked) {
+                state.autopilotRecommendations.forEach(function (r) { state.autopilotSelectedIds.add(r.id); });
+            } else {
+                state.autopilotSelectedIds.clear();
+            }
+            renderApp();
+        };
+        selectAll.appendChild(selectAllCb);
+        var selectAllText = document.createElement('span');
+        selectAllText.textContent = 'Select all';
+        selectAll.appendChild(selectAllText);
+        leftFooter.appendChild(selectAll);
+    }
 
     var countLabel = document.createElement('span');
     countLabel.style.cssText = 'color: var(--text-secondary, #888); font-size: 13px;';
-    countLabel.textContent = state.autopilotRecommendations.length + ' awaiting your decision';
-    footer.appendChild(countLabel);
+    var selCount = state.autopilotSelectedIds.size;
+    if (selCount > 0) {
+        countLabel.textContent = selCount + ' selected of ' + state.autopilotRecommendations.length;
+    } else {
+        countLabel.textContent = state.autopilotRecommendations.length + ' awaiting your decision';
+    }
+    leftFooter.appendChild(countLabel);
+    footer.appendChild(leftFooter);
+
+    var rightFooter = document.createElement('div');
+    rightFooter.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+    if (selCount > 0) {
+        // Batch action buttons. Disabled while a batch op is in flight to
+        // prevent re-clicks; renderApp() flips them back when the response
+        // returns. showToast() is called LAST per the Command Hub button
+        // pattern: state-update → re-render → toast.
+        var approveBtn = document.createElement('button');
+        approveBtn.className = 'btn btn-primary';
+        approveBtn.textContent = 'Approve ' + selCount;
+        approveBtn.style.cssText = 'padding: 8px 16px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;' +
+            (state.autopilotBatchInFlight ? ' opacity: 0.5; pointer-events: none;' : '');
+        approveBtn.disabled = state.autopilotBatchInFlight;
+        approveBtn.onclick = function () { runAutopilotBatchAction('approve'); };
+        rightFooter.appendChild(approveBtn);
+
+        var snoozeBtn = document.createElement('button');
+        snoozeBtn.className = 'btn btn-secondary';
+        snoozeBtn.textContent = 'Snooze 7d';
+        snoozeBtn.style.cssText = 'padding: 8px 16px;' +
+            (state.autopilotBatchInFlight ? ' opacity: 0.5; pointer-events: none;' : '');
+        snoozeBtn.disabled = state.autopilotBatchInFlight;
+        snoozeBtn.onclick = function () { runAutopilotBatchAction('snooze'); };
+        rightFooter.appendChild(snoozeBtn);
+
+        var dismissBtn = document.createElement('button');
+        dismissBtn.className = 'btn btn-secondary';
+        dismissBtn.textContent = 'Dismiss';
+        dismissBtn.style.cssText = 'padding: 8px 16px;' +
+            (state.autopilotBatchInFlight ? ' opacity: 0.5; pointer-events: none;' : '');
+        dismissBtn.disabled = state.autopilotBatchInFlight;
+        dismissBtn.onclick = function () { runAutopilotBatchAction('dismiss'); };
+        rightFooter.appendChild(dismissBtn);
+    }
 
     var closeFooterBtn = document.createElement('button');
     closeFooterBtn.className = 'btn btn-secondary';
@@ -23793,9 +23866,11 @@ function renderAutopilotRecommendationsModal() {
     closeFooterBtn.style.cssText = 'padding: 8px 16px;';
     closeFooterBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
+        state.autopilotSelectedIds = new Set();
         renderApp();
     };
-    footer.appendChild(closeFooterBtn);
+    rightFooter.appendChild(closeFooterBtn);
+    footer.appendChild(rightFooter);
 
     modal.appendChild(footer);
 
@@ -23811,15 +23886,32 @@ function createRecommendationCard(rec) {
     card.className = 'recommendation-card';
     card.style.cssText = 'background: var(--card-bg, rgba(255,255,255,0.05)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; padding: 16px; margin-bottom: 12px;';
 
-    // Top row: Domain badge + Risk level
+    // Top row: Selection checkbox + Domain badge + Risk level
     var topRow = document.createElement('div');
-    topRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;';
+    topRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px;';
+
+    // Phase 2 batch UX: per-card checkbox bound to state.autopilotSelectedIds.
+    var leftGroup = document.createElement('div');
+    leftGroup.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.style.cssText = 'width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;';
+    checkbox.checked = state.autopilotSelectedIds.has(rec.id);
+    checkbox.onchange = function () {
+        if (checkbox.checked) state.autopilotSelectedIds.add(rec.id);
+        else state.autopilotSelectedIds.delete(rec.id);
+        renderApp();
+    };
+    leftGroup.appendChild(checkbox);
 
     var domainBadge = document.createElement('span');
     domainBadge.className = 'domain-badge';
     domainBadge.style.cssText = 'background: var(--accent-color, #3b82f6); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;';
     domainBadge.textContent = rec.domain || 'general';
-    topRow.appendChild(domainBadge);
+    leftGroup.appendChild(domainBadge);
+
+    topRow.appendChild(leftGroup);
 
     var riskBadge = document.createElement('span');
     var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316', critical: '#ef4444' };
@@ -23994,6 +24086,79 @@ async function fetchAutopilotRecommendationsCount() {
     } catch (err) {
         console.warn('[autopilot-popup] Could not fetch pending approvals count:', err);
     }
+}
+
+/**
+ * Phase 2 batch UX: act on every selected pending-approval row.
+ *   action='approve' → POST /findings/batch-approve-auto-execute  (creates VTID + spec + execution per row)
+ *   action='snooze'  → POST /findings/batch-snooze   (hours=168, i.e. 7d)
+ *   action='dismiss' → POST /findings/batch-reject   (status='rejected')
+ *
+ * State-update + re-render fire BEFORE showToast() so the toast's renderApp()
+ * doesn't detach mid-update DOM refs (Command Hub button pattern).
+ */
+async function runAutopilotBatchAction(action) {
+    var ids = Array.from(state.autopilotSelectedIds);
+    if (ids.length === 0) return;
+    if (state.autopilotBatchInFlight) return;
+
+    var endpoint;
+    var body = { ids: ids };
+    if (action === 'approve') {
+        endpoint = '/api/v1/dev-autopilot/findings/batch-approve-auto-execute';
+    } else if (action === 'snooze') {
+        endpoint = '/api/v1/dev-autopilot/findings/batch-snooze';
+        body.hours = 24 * 7;
+    } else if (action === 'dismiss') {
+        endpoint = '/api/v1/dev-autopilot/findings/batch-reject';
+    } else {
+        return;
+    }
+
+    state.autopilotBatchInFlight = true;
+    renderApp();
+
+    var verb = action === 'approve' ? 'approving' : action === 'snooze' ? 'snoozing' : 'dismissing';
+    var pastVerb = action === 'approve' ? 'Approved' : action === 'snooze' ? 'Snoozed' : 'Dismissed';
+    var summary = '';
+    var ok = false;
+
+    try {
+        var resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(body),
+        });
+        var data = await resp.json();
+        if (resp.ok && data.ok) {
+            ok = true;
+            // Different endpoints return different shapes — count by id.
+            var succeeded = (data.approved || data.snoozed || data.rejected || []).length;
+            var failed = (data.failed || []).length;
+            summary = pastVerb + ' ' + succeeded + (failed > 0 ? ' (' + failed + ' failed)' : '');
+        } else {
+            summary = 'Batch ' + verb + ' failed: ' + (data.error || resp.status);
+        }
+    } catch (err) {
+        summary = 'Batch ' + verb + ' error: ' + err.message;
+    }
+
+    // Optimistically remove successfully-actioned rows from the visible list.
+    // Re-fetch handles the rest (and corrects optimism if the server disagrees).
+    if (ok) {
+        state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) {
+            return !state.autopilotSelectedIds.has(r.id);
+        });
+    }
+    state.autopilotSelectedIds = new Set();
+    state.autopilotBatchInFlight = false;
+    renderApp();
+
+    // Re-fetch count + list to sync with server (handles partial failures and
+    // any server-side filtering the client doesn't replicate).
+    fetchAutopilotRecommendationsCount();
+
+    showToast(summary, ok ? 'success' : 'error');
 }
 
 // --- VTID-0407: Governance Blocked Modal ---
@@ -36314,12 +36479,20 @@ function renderDevAutopilotFindingCard(finding) {
     riskBadge.textContent = (finding.risk_class || 'low') + ' risk';
     titleLine.appendChild(riskBadge);
 
+    // Phase 2: explicit status pill so the relationship to the Pending
+    // Approvals popup is obvious. Pending → orange; Auto-exec → blue.
+    // The exec badge (below) takes precedence if a run is in flight.
+    var statusPill = document.createElement('span');
     if (finding.auto_exec_eligible) {
-        var eligibleBadge = document.createElement('span');
-        eligibleBadge.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(59,130,246,0.15); color: #3b82f6;';
-        eligibleBadge.textContent = 'auto-exec';
-        titleLine.appendChild(eligibleBadge);
+        statusPill.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(59,130,246,0.15); color: #3b82f6;';
+        statusPill.textContent = 'auto-exec';
+        statusPill.title = 'autoApproveTick will execute this when the scanner is allowlisted (dev_autopilot_config.auto_approve_enabled).';
+    } else {
+        statusPill.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(245,158,11,0.15); color: #f59e0b;';
+        statusPill.textContent = 'pending approval';
+        statusPill.title = 'In the AUTOPILOT popup — click AUTOPILOT in the header to approve in batch.';
     }
+    titleLine.appendChild(statusPill);
 
     // Cross-link: if an active execution exists for this finding, show a
     // badge that scrolls to the live trace section. (PR-8)
