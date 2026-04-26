@@ -326,6 +326,10 @@ jobs:
             # verification stage. Delete this line to fall back to synthetic
             # dry-run transitions that never touch GitHub.
             EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_WATCHER_LIVE=true)
+            # VTID-01973 / VTID-01975 / VTID-01976: enable the Vitana Intent
+            # Engine routes (/intents, /intent-matches, /intent-board, etc.).
+            # Without this flag the routes don't mount on boot.
+            EXTRA_ENV_ARGS+=(--update-env-vars=FEATURE_INTENT_ENGINE_A=true)
             # VTID-02000: Marketplace sync scheduler secret (shared with
             # .github/workflows/MARKETPLACE-SYNC-CRON.yml). Gateway's
             # /api/v1/internal/marketplace/sync/:network route validates it
