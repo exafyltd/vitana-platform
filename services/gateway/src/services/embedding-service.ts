@@ -11,6 +11,8 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-01970 Tier 1: in-process LRU cache for embeddings (sha256(text)→vector)
+import { getCachedEmbedding, setCachedEmbedding, getCacheStats } from './embedding-cache';
 
 // =============================================================================
 // Configuration
@@ -302,11 +304,27 @@ async function generateGeminiEmbedding(text: string): Promise<EmbeddingResponse>
  * @returns Embedding vector (1536 dimensions)
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResponse> {
+  // VTID-01970 Tier 1 hot cache — return cached vector when available
+  // (eliminates the OpenAI/Gemini round-trip + cost for identical inputs).
+  const cached = getCachedEmbedding(text);
+  if (cached) {
+    return {
+      ok: true,
+      embedding: cached.vector,
+      model: cached.model,
+      dimensions: cached.dimensions,
+      latency_ms: 0,  // hot-cache hit
+    };
+  }
+
   // Try OpenAI first
   const openaiResult = await generateOpenAIEmbedding(text);
 
   if (openaiResult.ok) {
     console.log(`[${VTID}] Embedding generated (OpenAI): ${openaiResult.dimensions}d, ${openaiResult.latency_ms}ms`);
+    if (openaiResult.embedding && openaiResult.dimensions && openaiResult.model) {
+      setCachedEmbedding(text, openaiResult.embedding, openaiResult.model, openaiResult.dimensions);
+    }
     return openaiResult;
   }
 
@@ -316,6 +334,9 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
 
   if (geminiResult.ok) {
     console.log(`[${VTID}] Embedding generated (Gemini): ${geminiResult.dimensions}d, ${geminiResult.latency_ms}ms`);
+    if (geminiResult.embedding && geminiResult.dimensions && geminiResult.model) {
+      setCachedEmbedding(text, geminiResult.embedding, geminiResult.model, geminiResult.dimensions);
+    }
 
     // Emit OASIS event for fallback
     await emitOasisEvent({
