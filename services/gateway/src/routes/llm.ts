@@ -28,19 +28,33 @@ const router = Router();
 // Validation Schemas
 // =============================================================================
 
+// BOOTSTRAP-LLM-ROUTER: extended provider list (added deepseek + claude_subscription)
+// and made fallback nullable so a stage can be configured with no fallback.
+const ProviderEnum = z.enum([
+  'anthropic',
+  'vertex',
+  'openai',
+  'deepseek',
+  'claude_subscription',
+] as const);
+
 const StageConfigSchema = z.object({
-  primary_provider: z.enum(['anthropic', 'vertex', 'openai'] as const),
+  primary_provider: ProviderEnum,
   primary_model: z.string().min(1),
-  fallback_provider: z.enum(['anthropic', 'vertex', 'openai'] as const),
-  fallback_model: z.string().min(1),
+  fallback_provider: ProviderEnum.nullable(),
+  fallback_model: z.string().min(1).nullable(),
 });
 
+// BOOTSTRAP-LLM-ROUTER: extended schema with triage/vision/classifier stages.
 const PolicySchema = z.object({
   planner: StageConfigSchema,
   worker: StageConfigSchema,
   validator: StageConfigSchema,
   operator: StageConfigSchema,
   memory: StageConfigSchema,
+  triage: StageConfigSchema,
+  vision: StageConfigSchema,
+  classifier: StageConfigSchema,
 });
 
 const UpdatePolicySchema = z.object({
@@ -54,7 +68,16 @@ const ResetPolicySchema = z.object({
 
 const TelemetryQuerySchema = z.object({
   vtid: z.string().optional(),
-  stage: z.enum(['planner', 'worker', 'validator', 'operator', 'memory'] as const).optional(),
+  stage: z.enum([
+    'planner',
+    'worker',
+    'validator',
+    'operator',
+    'memory',
+    'triage',
+    'vision',
+    'classifier',
+  ] as const).optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
   service: z.string().optional(),
