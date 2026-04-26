@@ -19,6 +19,7 @@ import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopi
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { recordOutcome } from '../services/dev-autopilot-outcomes';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
@@ -803,7 +804,11 @@ router.post('/findings/:id/continue-planning', requireDevRole, async (req: Reque
 // POST /findings/:id/reject and batch variant
 // =============================================================================
 
-async function rejectById(supa: SupaConfig, id: string): Promise<{ ok: boolean; error?: string }> {
+async function rejectById(
+  supa: SupaConfig,
+  id: string,
+  approver_user_id?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
   const r = await supaPatch(supa, `/rest/v1/autopilot_recommendations?id=eq.${id}&source_type=in.(dev_autopilot,dev_autopilot_impact)`, {
     status: 'rejected',
     updated_at: new Date().toISOString(),
@@ -817,6 +822,14 @@ async function rejectById(supa: SupaConfig, id: string): Promise<{ ok: boolean; 
       message: `Finding ${id} rejected`,
       payload: { finding_id: id },
     });
+    // Outcomes substrate: human said no. The future autonomy-graduation
+    // policy reads these rows to identify scanners whose findings get
+    // rejected often (signal that the scanner's signal:noise is bad).
+    await recordOutcome({
+      finding_id: id,
+      decision: 'rejected',
+      approver_user_id: approver_user_id || null,
+    });
   }
   return r;
 }
@@ -824,7 +837,8 @@ async function rejectById(supa: SupaConfig, id: string): Promise<{ ok: boolean; 
 router.post('/findings/:id/reject', requireDevRole, async (req: Request, res: Response) => {
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
-  const r = await rejectById(supa, req.params.id);
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  const r = await rejectById(supa, req.params.id, userId);
   return res.status(r.ok ? 200 : 500).json(r.ok ? { ok: true } : { ok: false, error: r.error });
 });
 
@@ -835,7 +849,8 @@ router.post('/findings/batch-reject', requireDevRole, async (req: Request, res: 
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ ok: false, error: 'ids[] required' });
   }
-  const results = await Promise.all(ids.map(id => rejectById(supa, id).then(r => ({ id, ...r }))));
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  const results = await Promise.all(ids.map(id => rejectById(supa, id, userId).then(r => ({ id, ...r }))));
   const rejected = results.filter(r => r.ok).map(r => r.id);
   const failed = results.filter(r => !r.ok).map(r => ({ id: r.id, reason: r.error }));
   return res.json({ ok: true, rejected, failed });
