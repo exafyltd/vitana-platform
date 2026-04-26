@@ -599,6 +599,81 @@ router.get('/auto-approve', requireDevRole, async (_req: Request, res: Response)
 });
 
 // =============================================================================
+// GET /pending-approvals — escalation inbox for the AUTOPILOT popup
+// =============================================================================
+// Single source of truth for the AUTOPILOT pill badge AND the popup body.
+// Returns dev_autopilot* findings that need a human go/no-go decision:
+// status='new' AND auto_exec_eligible=false (i.e., the triage step did NOT
+// mark this as low-risk-auto-exec). Snoozed rows are filtered out by the
+// snoozed_until check. Sorted riskiest-first.
+//
+// Once Phase 2 ships the auto-exec triage rule, low-risk findings flip to
+// auto_exec_eligible=true and the dispatcher executes them silently — those
+// disappear from this endpoint, which is exactly what makes the popup small
+// enough to be useful for batch decisions.
+
+const PENDING_APPROVALS_PREDICATE =
+  'source_type=in.(dev_autopilot,dev_autopilot_impact)' +
+  '&status=eq.new' +
+  // not.is.true covers both FALSE (default for new rows) and NULL (legacy rows
+  // pre-dating the column's existence) — anything not affirmatively auto-exec.
+  '&auto_exec_eligible=not.is.true' +
+  '&or=(snoozed_until.is.null,snoozed_until.lt.now())';
+
+const PENDING_APPROVALS_SELECT =
+  'id,title,summary,domain,risk_class,impact_score,effort_score,' +
+  'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot';
+
+router.get('/pending-approvals', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  const limit = Math.min(parseInt(String(req.query.limit || '200'), 10), 500);
+  const offset = Math.max(parseInt(String(req.query.offset || '0'), 10), 0);
+
+  // Sort riskiest-first then highest impact then most recent activity.
+  const order = 'order=risk_class.desc.nullslast,impact_score.desc.nullslast,last_seen_at.desc';
+  const path =
+    `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
+    `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${limit}&offset=${offset}`;
+
+  const r = await supaGet<unknown[]>(supa, path);
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const recommendations = r.data || [];
+  return res.json({ ok: true, recommendations, count: recommendations.length });
+});
+
+router.get('/pending-approvals/count', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+
+  // PostgREST exact count: HEAD with Prefer: count=exact returns total in
+  // Content-Range. We use a tiny GET to sidestep adding a HEAD helper.
+  const path =
+    `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
+    `&select=id&limit=1`;
+
+  try {
+    const url = `${supa.url}${path}`;
+    const resp = await fetch(url, {
+      headers: {
+        apikey: supa.key,
+        Authorization: `Bearer ${supa.key}`,
+        Prefer: 'count=exact',
+      },
+    });
+    if (!resp.ok) {
+      return res.status(500).json({ ok: false, error: `${resp.status}: ${await resp.text()}` });
+    }
+    const range = resp.headers.get('content-range') || '';
+    const total = parseInt(range.split('/').pop() || '0', 10) || 0;
+    return res.json({ ok: true, count: total });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// =============================================================================
 // GET /queue — queue with optional filters
 // =============================================================================
 

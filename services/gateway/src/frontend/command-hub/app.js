@@ -5351,60 +5351,28 @@ function renderHeader() {
                 user_id: state.meContext?.user_id || 'none',
                 tenant_id: state.meContext?.tenant_id || 'none',
             }));
-            const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
+            // Popup is the dev autopilot escalation inbox: scanner findings that
+            // need a human go/no-go decision. Same source as the badge counter
+            // and the "Pending Approval" filter in the Autopilot Developer tab.
+            const response = await fetch('/api/v1/dev-autopilot/pending-approvals?limit=200', {
                 headers: reqHeaders
             });
-            console.log('[VTID-01180] Response status:', response.status, response.statusText);
+            console.log('[autopilot-popup] Response status:', response.status, response.statusText);
             if (!response.ok) {
                 var errorBody = await response.text();
-                console.error('[VTID-01180] Non-OK response body:', errorBody);
-                throw new Error('Failed to fetch recommendations: ' + response.status);
+                console.error('[autopilot-popup] Non-OK response body:', errorBody);
+                throw new Error('Failed to fetch pending approvals: ' + response.status);
             }
             const data = await response.json();
-            console.log('[VTID-01180] Response data:', JSON.stringify({
+            console.log('[autopilot-popup] Response data:', JSON.stringify({
                 ok: data.ok,
                 count: data.count,
-                has_more: data.has_more,
                 recommendationsLength: (data.recommendations || []).length,
-                _debug: data._debug || 'none',
                 error: data.error || 'none',
             }));
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
                 state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
-
-                // Auto-replenishment: if community role has 0 new recommendations,
-                // trigger generation of fresh personalized recommendations
-                if (state.autopilotRecommendations.length === 0 &&
-                    state.meContext?.active_role === 'community' &&
-                    state.meContext?.user_id &&
-                    !state._autopilotReplenishAttempted) {
-                    console.log('[VTID-01180] Zero recommendations for community user — triggering auto-replenishment');
-                    state._autopilotReplenishAttempted = true;
-                    try {
-                        var genResp = await fetch('/api/v1/autopilot/recommendations/generate-personal', {
-                            method: 'POST',
-                            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-                            body: JSON.stringify({})
-                        });
-                        var genData = await genResp.json();
-                        console.log('[VTID-01180] Auto-replenishment result:', JSON.stringify(genData));
-                        if (genData.ok && genData.generated > 0) {
-                            // Re-fetch to show the new recommendations
-                            var refetchResp = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                                headers: buildContextHeaders({})
-                            });
-                            var refetchData = await refetchResp.json();
-                            if (refetchData.ok) {
-                                state.autopilotRecommendations = refetchData.recommendations || [];
-                                state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
-                                console.log('[VTID-01180] After replenishment:', state.autopilotRecommendations.length, 'recommendations');
-                            }
-                        }
-                    } catch (genErr) {
-                        console.warn('[VTID-01180] Auto-replenishment failed:', genErr.message);
-                    }
-                }
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }
@@ -23748,10 +23716,20 @@ function renderAutopilotRecommendationsModal() {
     iconSpan.textContent = '\u{1F916}'; // Robot emoji
     titleRow.appendChild(iconSpan);
 
+    var titleStack = document.createElement('div');
+    titleStack.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
+
     var title = document.createElement('span');
-    title.textContent = 'Autopilot Recommendations';
+    title.textContent = 'Pending Approvals';
     title.style.cssText = 'font-size: 18px; font-weight: 600; color: var(--text-color, #fff);';
-    titleRow.appendChild(title);
+    titleStack.appendChild(title);
+
+    var subtitle = document.createElement('span');
+    subtitle.textContent = 'Scanner findings the autopilot needs you to greenlight.';
+    subtitle.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    titleStack.appendChild(subtitle);
+
+    titleRow.appendChild(titleStack);
 
     header.appendChild(titleRow);
 
@@ -23786,8 +23764,8 @@ function renderAutopilotRecommendationsModal() {
         var emptyDiv = document.createElement('div');
         emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
         emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
-        emptyDiv.innerHTML += '<div style="font-size: 16px;">All caught up!</div>';
-        emptyDiv.innerHTML += '<div style="font-size: 14px; margin-top: 8px;">No new recommendations at this time.</div>';
+        emptyDiv.innerHTML += '<div style="font-size: 16px;">All caught up.</div>';
+        emptyDiv.innerHTML += '<div style="font-size: 14px; margin-top: 8px;">Autopilot is handling the rest.</div>';
         body.appendChild(emptyDiv);
     } else {
         // Render recommendations list
@@ -23806,7 +23784,7 @@ function renderAutopilotRecommendationsModal() {
 
     var countLabel = document.createElement('span');
     countLabel.style.cssText = 'color: var(--text-secondary, #888); font-size: 13px;';
-    countLabel.textContent = state.autopilotRecommendations.length + ' recommendation' + (state.autopilotRecommendations.length !== 1 ? 's' : '');
+    countLabel.textContent = state.autopilotRecommendations.length + ' awaiting your decision';
     footer.appendChild(countLabel);
 
     var closeFooterBtn = document.createElement('button');
@@ -23845,8 +23823,10 @@ function createRecommendationCard(rec) {
 
     var riskBadge = document.createElement('span');
     var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316', critical: '#ef4444' };
-    riskBadge.style.cssText = 'font-size: 11px; color: ' + (riskColors[rec.risk_level] || '#888') + ';';
-    riskBadge.textContent = (rec.risk_level || 'low').toUpperCase() + ' RISK';
+    // dev_autopilot rows store severity in risk_class; community/system rows in risk_level.
+    var riskValue = rec.risk_level || rec.risk_class || 'low';
+    riskBadge.style.cssText = 'font-size: 11px; color: ' + (riskColors[riskValue] || '#888') + ';';
+    riskBadge.textContent = riskValue.toUpperCase() + ' RISK';
     topRow.appendChild(riskBadge);
 
     card.appendChild(topRow);
@@ -24001,7 +23981,7 @@ function createRecommendationCard(rec) {
  */
 async function fetchAutopilotRecommendationsCount() {
     try {
-        var response = await fetch('/api/v1/autopilot/recommendations/count', {
+        var response = await fetch('/api/v1/dev-autopilot/pending-approvals/count', {
             headers: buildContextHeaders({})
         });
         if (response.ok) {
@@ -24012,7 +23992,7 @@ async function fetchAutopilotRecommendationsCount() {
             }
         }
     } catch (err) {
-        console.warn('[VTID-01180] Could not fetch recommendations count:', err);
+        console.warn('[autopilot-popup] Could not fetch pending approvals count:', err);
     }
 }
 
