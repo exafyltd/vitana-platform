@@ -21,8 +21,10 @@ import { getCachedEmbedding, setCachedEmbedding, getCacheStats } from './embeddi
 const VTID = 'VTID-01184';
 const SERVICE_NAME = 'embedding-service';
 
-// Embedding dimensions
-export const EMBEDDING_DIMENSIONS = 768;
+// Embedding dimensions — must match memory_items.embedding column (vector(1536))
+// and OpenAI text-embedding-3-small native output (1536). VTID-01978: corrected
+// from stale 768 (Gemini value) which silently rejected every search request.
+export const EMBEDDING_DIMENSIONS = 1536;
 
 // Provider configurations
 const OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
