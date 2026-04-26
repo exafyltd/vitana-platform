@@ -48,6 +48,10 @@ interface LiveSessionSummary {
   error_count: number;
   interrupted_count: number;
   user_id?: string;
+  // VTID-01969: speakable Vitana ID for support readability. Resolved from
+  // app_users at session-summary time via cached lookup. Null-tolerant:
+  // undefined for legacy sessions before Release A backfill.
+  vitana_id?: string | null;
   user_email?: string;
   user_display_name?: string;
   user_role?: string;
@@ -294,6 +298,10 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
         error_count: 0,
         interrupted_count: endEvent?.metadata?.interrupted_count || 0,
         user_id: startEvent.metadata?.user_id,
+        // VTID-01969: prefer vitana_id from the OASIS event (Release B
+        // backfill on oasis_events.vitana_id), fall back to metadata if
+        // present. Null-tolerant — Voice Lab UI shows UUID alone if missing.
+        vitana_id: (startEvent as any).vitana_id || startEvent.metadata?.vitana_id || null,
         user_email: startEvent.metadata?.email,
         user_display_name: startEvent.metadata?.email?.split('@')[0] || undefined,
         user_role: startEvent.metadata?.active_role,
@@ -392,6 +400,8 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
       output_rate: startEvent.metadata?.output_rate,
       video_frames: endEvent?.metadata?.video_frames,
       user_id: startEvent.metadata?.user_id,
+      // VTID-01969: speakable Vitana ID (see LiveSessionSummary comment).
+      vitana_id: (startEvent as any).vitana_id || startEvent.metadata?.vitana_id || null,
       user_email: startEvent.metadata?.email,
       user_display_name: startEvent.metadata?.email?.split('@')[0] || undefined,
       user_role: startEvent.metadata?.active_role,
