@@ -1648,6 +1648,20 @@ export async function autoApproveTick(): Promise<void> {
     );
     if (!planR.ok || !planR.data || planR.data.length === 0) continue;
 
+    // Dedup: skip findings that already have a non-terminal execution.
+    // Without this, every tick approves a NEW execution row even though
+    // the prior one is still cooling/running — N concurrent executions
+    // for the same finding all racing the same plan. Discovered while
+    // running v1 autonomy: a single eligible finding produced 5 cooling
+    // executions in 3 minutes after auto-approve flipped on.
+    const inflightR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
+      + `&status=in.(cooling,running,ci,merging,deploying,verifying)`
+      + `&select=id&limit=1`,
+    );
+    if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
+
     // Pass undefined so the INSERT writes approved_by=NULL.
     // Earlier code passed the string literal 'auto', but approved_by is a
     // UUID column — Postgres rejected every autonomous approval with
