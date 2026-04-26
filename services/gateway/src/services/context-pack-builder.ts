@@ -168,9 +168,17 @@ async function fetchMemoryHits(
 }
 
 /**
- * VTID-01230: Semantic search path for memory_items.
- * Generates query embedding → calls existing semantic_memory_search RPC (VTID-01184).
- * No new migration required — this RPC was deployed in 20260221.
+ * VTID-01230 / VTID-01980: Semantic search path for memory_items.
+ *
+ * Generates query embedding → calls memory_semantic_search RPC (VTID-01184,
+ * type-fixed in VTID-01978).
+ *
+ * Historical note (VTID-01980): the prior version called a non-existent RPC
+ * `semantic_memory_search` whose migration (20260221000000_fix_embedding_dimensions_768)
+ * was authored but never applied. The 404 was caught, the function returned [],
+ * and callers silently fell through to the importance+recency REST fallback —
+ * which performs no semantic matching. End result: ORB never recalled anything,
+ * even when the user asked direct questions about facts already in memory.
  */
 async function fetchMemoryHitsSemantic(
   supabaseUrl: string,
@@ -181,15 +189,13 @@ async function fetchMemoryHitsSemantic(
 ): Promise<MemoryHit[]> {
   const timeout = fetchWithTimeout();
   try {
-    // Generate query embedding
     const embResult = await generateEmbedding(query);
     if (!embResult.ok || !embResult.embedding) {
       console.warn(`[VTID-01230] Embedding generation failed for memory_items semantic search: ${embResult.error}`);
       return [];
     }
 
-    // Use the existing semantic_memory_search RPC (deployed in VTID-01184/01225)
-    const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/semantic_memory_search`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/memory_semantic_search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -197,34 +203,41 @@ async function fetchMemoryHitsSemantic(
         Authorization: `Bearer ${serviceRole}`,
       },
       body: JSON.stringify({
-        p_query_embedding: JSON.stringify(embResult.embedding),
+        p_query_embedding: '[' + embResult.embedding.join(',') + ']',
         p_top_k: limit * 2,
         p_tenant_id: lens.tenant_id,
         p_user_id: lens.user_id,
+        p_workspace_scope: lens.workspace_scope ?? null,
+        p_active_role: lens.active_role ?? null,
+        p_categories: lens.allowed_categories ?? null,
+        p_visibility_scope: lens.visibility_scope ?? 'private',
+        p_max_age_hours: lens.max_age_hours ?? null,
+        p_recency_boost: true,
       }),
       signal: timeout.signal,
     });
 
     if (!resp.ok) {
-      // RPC may not exist yet — fall through to REST silently
       if (resp.status === 404) {
-        console.log(`[VTID-01230] semantic_memory_search RPC not found — using REST fallback`);
+        console.log(`[VTID-01230] memory_semantic_search RPC not found — using REST fallback`);
       } else {
-        console.warn(`[VTID-01230] Semantic search RPC failed: ${resp.status}`);
+        console.warn(`[VTID-01230] memory_semantic_search RPC failed: ${resp.status}`);
       }
       return [];
     }
 
-    // The RPC returns: id, category_key, content, content_json, importance,
-    // source, embedding_similarity, created_at, updated_at
     const results = await resp.json() as Array<{
       id: string;
       category_key: string;
       content: string;
-      importance: number;
+      content_json: Record<string, unknown> | null;
       source: string;
-      embedding_similarity: number;
+      importance: number;
+      occurred_at: string;
       created_at: string;
+      similarity_score: number;
+      recency_score: number;
+      combined_score: number;
     }>;
 
     return results.map((r) => ({
@@ -232,20 +245,21 @@ async function fetchMemoryHitsSemantic(
       category_key: r.category_key,
       content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
       importance: r.importance,
-      occurred_at: r.created_at, // RPC returns created_at, not occurred_at
+      occurred_at: r.occurred_at || r.created_at,
       source: r.source,
-      // Blend semantic similarity with importance and recency
+      // The RPC already produces a 0.7*similarity + 0.3*recency combined_score.
+      // Blend in importance for our final ranking.
       relevance_score: Math.min(1,
-        r.embedding_similarity * 0.5 +
+        r.similarity_score * 0.5 +
         (r.importance / 100) * 0.3 +
-        computeRecencyBoost(r.created_at) * 0.2
+        r.recency_score * 0.2
       ),
     })).slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS));
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      console.warn(`[VTID-01230] Semantic memory_items search timed out`);
+      console.warn(`[VTID-01230] memory_semantic_search timed out`);
     } else {
-      console.warn(`[VTID-01230] Semantic memory_items search error: ${err.message}`);
+      console.warn(`[VTID-01230] memory_semantic_search error: ${err.message}`);
     }
     return [];
   } finally {
