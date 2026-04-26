@@ -85,7 +85,7 @@ describe('DYK resolveNextTip — usage-day gating', () => {
     expect(tip!.feature_key).toBe('voice_chat_basics');
   });
 
-  test('day 2 user with Index + voice already introduced → resolves to health_section (Physical pillar)', () => {
+  test('day 2 user with Index + voice already introduced → resolves to health_section (Exercise pillar)', () => {
     const aw = makeAwareness({
       tenure: { stage: 'day3', days_since_signup: 2, active_usage_days: 2, registered_at: new Date().toISOString() },
       feature_introductions: ['vitana_index', 'voice_chat_basics', 'life_compass', 'vitana_index_detail'],
@@ -93,7 +93,7 @@ describe('DYK resolveNextTip — usage-day gating', () => {
     const tip = resolveNextTip(aw);
     expect(tip).not.toBeNull();
     expect(tip!.feature_key).toBe('health_section');
-    expect(tip!.index_pillar_link).toBe('Physical');
+    expect(tip!.index_pillar_link).toBe('Exercise');
   });
 
   test('day 3 user with open recs → autopilot_index_impact eligible', () => {
