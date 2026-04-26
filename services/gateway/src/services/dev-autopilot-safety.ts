@@ -231,5 +231,100 @@ export function evaluateSafetyGate(plan: SafetyPlan, ctx: SafetyContext): Safety
   return { ok: violations.length === 0, violations };
 }
 
+// =============================================================================
+// Listing-time pre-flight (VTID-01974)
+// =============================================================================
+
+/**
+ * Lightweight gate dry-run for the findings listing endpoint.
+ *
+ * Why this exists: the full evaluateSafetyGate() needs a generated plan
+ * (files_to_modify, deletions, etc.) and runs *after* the user clicks
+ * Approve & execute. By then it's too late — the user already faced a
+ * dead-end button. This pre-flight runs at /queue listing time using only
+ * the scanner's spec_snapshot (file_path + risk_class), so the UI can
+ * route findings the executor cannot act on into a manual-review lane
+ * before rendering the Approve button.
+ *
+ * It checks the two violations that are decidable from scanner data
+ * alone:
+ *   - risk_class_too_high (plan-independent)
+ *   - file_outside_allow_scope on the scanner-reported file_path
+ *     (the LLM may add more files when planning, but if the seed file
+ *      is already out of scope, no plan can rescue it)
+ *
+ * It does NOT enumerate later-stage gates (tests_missing, daily_budget,
+ * kill_switch, max_auto_fix_depth) — those depend on plan output, current
+ * counters, or runtime config the executor reads at approval time and are
+ * better surfaced through the existing post-approval failure banner.
+ */
+export interface PreflightInput {
+  /** Scanner's reported file path. Pass an empty string if unknown — the
+   *  preflight will return auto_actionable=false with reason
+   *  'file_path_unknown' since we can't gate without it. */
+  file_path: string;
+  /** Risk class on the recommendation row. Defaults to 'medium' upstream
+   *  if missing (matching the gate). */
+  risk_class: RiskClass;
+  /** Allow- and deny-globs from dev_autopilot_config. */
+  allow_scope: string[];
+  deny_scope: string[];
+}
+
+export type PreflightBlockReason =
+  | 'risk_class_too_high'
+  | 'file_outside_allow_scope'
+  | 'file_in_deny_scope'
+  | 'file_path_unknown';
+
+export interface PreflightResult {
+  /** false → UI should hide Approve & execute, route to manual lane. */
+  auto_actionable: boolean;
+  /** First reason the preflight blocked, in stable priority order:
+   *    risk_class_too_high → file_outside_allow_scope → file_in_deny_scope.
+   *  Null when auto_actionable=true. */
+  block_reason: PreflightBlockReason | null;
+  /** Short human-readable explanation suitable for inline UI rendering. */
+  block_message: string | null;
+}
+
+export function dryRunPreflight(input: PreflightInput): PreflightResult {
+  if (input.risk_class === 'high') {
+    return {
+      auto_actionable: false,
+      block_reason: 'risk_class_too_high',
+      block_message:
+        'High-risk findings require a human-written PR. Auto-execution is gated off; use Reject + handle manually.',
+    };
+  }
+
+  if (!input.file_path) {
+    return {
+      auto_actionable: false,
+      block_reason: 'file_path_unknown',
+      block_message:
+        'Scanner did not record a target file_path; the executor cannot scope a fix automatically.',
+    };
+  }
+
+  if (matchesAnyGlob(input.file_path, input.deny_scope)) {
+    return {
+      auto_actionable: false,
+      block_reason: 'file_in_deny_scope',
+      block_message: `${input.file_path} is in the executor's deny-scope. Manual fix required.`,
+    };
+  }
+
+  if (!matchesAnyGlob(input.file_path, input.allow_scope)) {
+    return {
+      auto_actionable: false,
+      block_reason: 'file_outside_allow_scope',
+      block_message: `${input.file_path} is outside the executor's allow-scope. Manual fix required.`,
+    };
+  }
+
+  return { auto_actionable: true, block_reason: null, block_message: null };
+}
+
 // Intentional log tag for service boot tracing consistency
 export { LOG_PREFIX };
