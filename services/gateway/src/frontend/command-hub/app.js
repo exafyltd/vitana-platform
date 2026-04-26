@@ -2796,6 +2796,14 @@ const NAVIGATION_CONFIG = [
             { "key": "workforce", "path": "/command-hub/docs/workforce/" },
             { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" }
         ]
+    },
+    {
+        "section": "routines",
+        "basePath": "/command-hub/routines/",
+        "tabs": [
+            { "key": "catalog", "path": "/command-hub/routines/catalog/" },
+            { "key": "history", "path": "/command-hub/routines/history/" }
+        ]
     }
 ];
 
@@ -2818,7 +2826,8 @@ const SECTION_LABELS = {
     'models-evaluations': 'Models & Evaluations',
     'testing-qa': 'Testing & QA',
     'intelligence-memory-dev': 'Intelligence & Memory (Dev)',
-    'docs': 'Docs'
+    'docs': 'Docs',
+    'routines': 'Routines'
 };
 
 const splitScreenCombos = [
@@ -3478,6 +3487,20 @@ const state = {
         showRawSubagents: false,
         showRawSkills: false,
         showRawRegistry: false
+    },
+
+    // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
+    routines: {
+        catalog: null,           // GET /api/v1/routines response
+        catalogLoading: false,
+        catalogError: null,
+        catalogFetched: false,
+        selectedName: null,      // routine name selected in History tab
+        detail: null,            // GET /api/v1/routines/:name response
+        detailLoading: false,
+        detailError: null,
+        expandedRunId: null,     // which run row is expanded with full findings
+        runDetails: {}           // cache: runId -> full run JSON (with findings)
     },
 
     // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
@@ -6054,6 +6077,12 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'diagnostics' && tab === 'voice-lab') {
         // VTID-01218E: Voice LAB - ORB Live Observability
         container.appendChild(renderVoiceLabView());
+    } else if (moduleKey === 'routines' && tab === 'catalog') {
+        // VTID-01981: Routines Catalog — every daily Claude Code remote agent + last-run summary
+        container.appendChild(renderRoutinesCatalogView());
+    } else if (moduleKey === 'routines' && tab === 'history') {
+        // VTID-01981: Routines History — drill into a single routine's run history + findings
+        container.appendChild(renderRoutinesHistoryView());
 
     // ──── Overview Module ────
     } else if (moduleKey === 'overview' && tab === 'system-overview') {
@@ -42288,5 +42317,473 @@ function renderAssistantOverviewView() {
     }
     container.appendChild(errCard);
 
+    return container;
+}
+
+// =============================================================================
+// VTID-01981: Routines — daily Claude Code remote agents
+// =============================================================================
+
+function routinesHumanCron(expr) {
+    if (!expr) return '';
+    var m = String(expr).trim().match(/^(\d+)\s+(\d+)\s+\*\s+\*\s+\*$/);
+    if (!m) return expr;
+    var hh = String(m[2]).padStart(2, '0');
+    var mm = String(m[1]).padStart(2, '0');
+    return 'daily at ' + hh + ':' + mm + ' UTC';
+}
+
+function routinesStatusPill(status) {
+    var pill = document.createElement('span');
+    pill.style.cssText = 'display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;';
+    var label = status || 'never run';
+    var bg, fg;
+    switch (status) {
+        case 'success': bg = 'rgba(34,197,94,.15)';  fg = '#16a34a'; break;
+        case 'failure': bg = 'rgba(239,68,68,.15)';  fg = '#dc2626'; break;
+        case 'partial': bg = 'rgba(234,179,8,.15)';  fg = '#ca8a04'; break;
+        case 'running': bg = 'rgba(59,130,246,.15)'; fg = '#2563eb'; break;
+        default:        bg = 'rgba(107,114,128,.15)'; fg = '#4b5563';
+    }
+    pill.style.background = bg;
+    pill.style.color = fg;
+    pill.textContent = label;
+    return pill;
+}
+
+async function fetchRoutinesCatalog() {
+    if (state.routines.catalogLoading) return;
+    state.routines.catalogLoading = true;
+    state.routines.catalogError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/routines', { headers: buildContextHeaders({}) });
+        if (!response.ok) {
+            var text = await response.text().catch(function () { return ''; });
+            state.routines.catalogError = response.status + ': ' + text.slice(0, 300);
+        } else {
+            state.routines.catalog = await response.json();
+        }
+    } catch (e) {
+        state.routines.catalogError = String(e && e.message ? e.message : e);
+    } finally {
+        state.routines.catalogLoading = false;
+        state.routines.catalogFetched = true;
+        renderApp();
+    }
+}
+
+async function fetchRoutineDetail(name) {
+    if (!name) return;
+    state.routines.detailLoading = true;
+    state.routines.detailError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/routines/' + encodeURIComponent(name), {
+            headers: buildContextHeaders({})
+        });
+        if (!response.ok) {
+            var text = await response.text().catch(function () { return ''; });
+            state.routines.detailError = response.status + ': ' + text.slice(0, 300);
+        } else {
+            state.routines.detail = await response.json();
+        }
+    } catch (e) {
+        state.routines.detailError = String(e && e.message ? e.message : e);
+    } finally {
+        state.routines.detailLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchRoutineRunDetail(name, runId) {
+    if (!name || !runId) return;
+    if (state.routines.runDetails[runId]) return;
+    try {
+        var response = await fetch(
+            '/api/v1/routines/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId),
+            { headers: buildContextHeaders({}) }
+        );
+        if (response.ok) {
+            var json = await response.json();
+            if (json && json.run) {
+                state.routines.runDetails[runId] = json.run;
+                renderApp();
+            }
+        }
+    } catch (e) {
+        // best-effort — surface absence as "no findings yet" in the UI
+    }
+}
+
+function renderRoutinesCountsStrip(counts) {
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0;padding:.75rem 1rem;background:var(--color-surface-secondary);border:1px solid var(--color-border);border-radius:8px;';
+    function chip(label, value) {
+        var c = document.createElement('div');
+        c.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;';
+        var v = document.createElement('div');
+        v.style.cssText = 'font-size:1.1rem;font-weight:700;color:var(--color-text-primary);';
+        v.textContent = String(value);
+        var l = document.createElement('div');
+        l.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;';
+        l.textContent = label;
+        c.appendChild(v);
+        c.appendChild(l);
+        return c;
+    }
+    strip.appendChild(chip('Total', counts.total || 0));
+    strip.appendChild(chip('Enabled', counts.enabled || 0));
+    var bs = counts.by_status || {};
+    strip.appendChild(chip('Success', bs.success || 0));
+    strip.appendChild(chip('Failure', bs.failure || 0));
+    strip.appendChild(chip('Partial', bs.partial || 0));
+    strip.appendChild(chip('Running', bs.running || 0));
+    strip.appendChild(chip('Never run', bs.never_run || 0));
+    return strip;
+}
+
+function renderRoutinesCatalogView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+
+    if (!state.routines.catalogFetched && !state.routines.catalogLoading) {
+        fetchRoutinesCatalog();
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.style.cssText = 'margin:0;';
+    title.textContent = 'Routines';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.style.cssText = 'margin:.25rem 0 0;color:var(--color-text-secondary);font-size:.85rem;max-width:60ch;';
+    subtitle.textContent = 'Daily Claude Code remote agents that triage, audit, and improve the platform without human intervention. Each routine runs in a sandbox, calls gateway APIs read-only, and posts findings here.';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.routines.catalogLoading ? 'Loading…' : 'Refresh';
+    refreshBtn.disabled = state.routines.catalogLoading;
+    refreshBtn.onclick = function () {
+        state.routines.catalogFetched = false;
+        fetchRoutinesCatalog();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    if (state.routines.catalogError) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:.75rem;margin:1rem 0;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#dc2626;font-family:monospace;font-size:.8rem;';
+        err.textContent = 'Failed to load routines: ' + state.routines.catalogError;
+        container.appendChild(err);
+        return container;
+    }
+
+    if (state.routines.catalogLoading && !state.routines.catalog) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading routines catalog…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    var data = state.routines.catalog;
+    if (!data || !data.ok) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        empty.innerHTML = '<p>No routines catalog response.</p>' +
+            '<p style="font-size:.8rem;">Confirm <code>GET /api/v1/routines</code> is reachable and the <code>routines</code> migration has been applied.</p>';
+        container.appendChild(empty);
+        return container;
+    }
+
+    container.appendChild(renderRoutinesCountsStrip(data.counts || {}));
+
+    var routines = (data.routines || []);
+    if (routines.length === 0) {
+        var emptyCatalog = document.createElement('div');
+        emptyCatalog.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        emptyCatalog.innerHTML = '<p>No routines registered yet.</p>' +
+            '<p style="font-size:.8rem;">Seed the <code>routines</code> table to register your first daily agent.</p>';
+        container.appendChild(emptyCatalog);
+        return container;
+    }
+
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:1rem;margin-top:.5rem;';
+
+    routines.forEach(function (r) {
+        var card = document.createElement('div');
+        card.style.cssText = 'padding:1rem;background:var(--color-surface-primary);border:1px solid var(--color-border);border-radius:8px;display:flex;flex-direction:column;gap:.5rem;';
+
+        var topRow = document.createElement('div');
+        topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;';
+        var nameWrap = document.createElement('div');
+        var name = document.createElement('div');
+        name.style.cssText = 'font-weight:700;font-size:1rem;color:var(--color-text-primary);';
+        name.textContent = r.display_name || r.name;
+        nameWrap.appendChild(name);
+        var schedLine = document.createElement('div');
+        schedLine.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);';
+        schedLine.textContent = routinesHumanCron(r.cron_schedule) +
+            (r.enabled ? '' : ' • DISABLED');
+        nameWrap.appendChild(schedLine);
+        topRow.appendChild(nameWrap);
+        topRow.appendChild(routinesStatusPill(r.last_run_status));
+        card.appendChild(topRow);
+
+        if (r.description) {
+            var desc = document.createElement('div');
+            desc.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);line-height:1.4;';
+            desc.textContent = r.description;
+            card.appendChild(desc);
+        }
+
+        var summary = document.createElement('div');
+        summary.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);padding:.5rem;background:var(--color-surface-secondary);border-radius:4px;min-height:2.4em;';
+        if (r.last_run_summary) {
+            summary.textContent = r.last_run_summary;
+        } else {
+            summary.style.color = 'var(--color-text-secondary)';
+            summary.style.fontStyle = 'italic';
+            summary.textContent = r.last_run_at ? 'No summary recorded for last run.' : 'Routine has not run yet.';
+        }
+        card.appendChild(summary);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.75rem;color:var(--color-text-secondary);';
+        var lastRunLine = document.createElement('div');
+        lastRunLine.textContent = r.last_run_at
+            ? 'Last run: ' + new Date(r.last_run_at).toLocaleString()
+            : 'Never run';
+        if (r.consecutive_failures > 0) {
+            lastRunLine.textContent += ' • ' + r.consecutive_failures + ' consecutive failures';
+            lastRunLine.style.color = '#dc2626';
+        }
+        footer.appendChild(lastRunLine);
+        var historyBtn = document.createElement('button');
+        historyBtn.className = 'btn btn-secondary';
+        historyBtn.style.cssText = 'padding:.25rem .6rem;font-size:.75rem;';
+        historyBtn.textContent = 'View history →';
+        historyBtn.onclick = function () {
+            state.routines.selectedName = r.name;
+            state.routines.detail = null;
+            state.routines.expandedRunId = null;
+            fetchRoutineDetail(r.name);
+            handleTabClick('history');
+        };
+        footer.appendChild(historyBtn);
+        card.appendChild(footer);
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+function renderRoutinesHistoryView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+
+    if (!state.routines.catalogFetched && !state.routines.catalogLoading) {
+        fetchRoutinesCatalog();
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.style.cssText = 'margin:0;';
+    title.textContent = 'Routine Run History';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.style.cssText = 'margin:.25rem 0 0;color:var(--color-text-secondary);font-size:.85rem;';
+    subtitle.textContent = 'Pick a routine to see its last 30 runs and inspect each one’s findings.';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+
+    var routinesList = (state.routines.catalog && state.routines.catalog.routines) || [];
+    var picker = document.createElement('select');
+    picker.style.cssText = 'padding:.4rem .6rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-surface-primary);color:var(--color-text-primary);font-size:.85rem;min-width:240px;';
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '— Select a routine —';
+    picker.appendChild(blank);
+    routinesList.forEach(function (r) {
+        var opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.display_name || r.name;
+        if (state.routines.selectedName === r.name) opt.selected = true;
+        picker.appendChild(opt);
+    });
+    picker.onchange = function () {
+        state.routines.selectedName = picker.value || null;
+        state.routines.detail = null;
+        state.routines.expandedRunId = null;
+        if (picker.value) fetchRoutineDetail(picker.value);
+        renderApp();
+    };
+    header.appendChild(picker);
+    container.appendChild(header);
+
+    if (!state.routines.selectedName) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);background:var(--color-surface-secondary);border-radius:8px;';
+        hint.textContent = 'Pick a routine from the dropdown above to load its run history.';
+        container.appendChild(hint);
+        return container;
+    }
+
+    if (state.routines.detailLoading && !state.routines.detail) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading run history…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.routines.detailError) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:.75rem;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#dc2626;font-family:monospace;font-size:.8rem;';
+        err.textContent = 'Failed to load detail: ' + state.routines.detailError;
+        container.appendChild(err);
+        return container;
+    }
+
+    var detail = state.routines.detail;
+    if (!detail || !detail.ok) return container;
+
+    var routineCard = document.createElement('div');
+    routineCard.style.cssText = 'padding:1rem;background:var(--color-surface-secondary);border:1px solid var(--color-border);border-radius:8px;margin-bottom:1rem;';
+    var rcTitle = document.createElement('div');
+    rcTitle.style.cssText = 'font-weight:700;font-size:1.05rem;';
+    rcTitle.textContent = detail.routine.display_name || detail.routine.name;
+    routineCard.appendChild(rcTitle);
+    var rcMeta = document.createElement('div');
+    rcMeta.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);margin-top:.25rem;';
+    rcMeta.textContent = routinesHumanCron(detail.routine.cron_schedule) +
+        ' • ' + (detail.routine.enabled ? 'enabled' : 'disabled');
+    routineCard.appendChild(rcMeta);
+    if (detail.routine.description) {
+        var rcDesc = document.createElement('div');
+        rcDesc.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);margin-top:.5rem;line-height:1.4;';
+        rcDesc.textContent = detail.routine.description;
+        routineCard.appendChild(rcDesc);
+    }
+    container.appendChild(routineCard);
+
+    var runs = detail.runs || [];
+    if (runs.length === 0) {
+        var emptyRuns = document.createElement('div');
+        emptyRuns.style.cssText = 'padding:1.5rem;text-align:center;color:var(--color-text-secondary);';
+        emptyRuns.textContent = 'No runs yet for this routine.';
+        container.appendChild(emptyRuns);
+        return container;
+    }
+
+    var runsHeader = document.createElement('h3');
+    runsHeader.style.cssText = 'margin:1rem 0 .5rem;font-size:1rem;';
+    runsHeader.textContent = 'Recent runs (' + runs.length + ')';
+    container.appendChild(runsHeader);
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+
+    runs.forEach(function (run) {
+        var row = document.createElement('div');
+        row.style.cssText = 'border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface-primary);overflow:hidden;';
+
+        var top = document.createElement('div');
+        top.style.cssText = 'padding:.6rem .8rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:.5rem;flex-wrap:wrap;';
+        top.onclick = function () {
+            if (state.routines.expandedRunId === run.id) {
+                state.routines.expandedRunId = null;
+            } else {
+                state.routines.expandedRunId = run.id;
+                fetchRoutineRunDetail(detail.routine.name, run.id);
+            }
+            renderApp();
+        };
+
+        var leftSide = document.createElement('div');
+        leftSide.style.cssText = 'display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;';
+        leftSide.appendChild(routinesStatusPill(run.status));
+        var when = document.createElement('span');
+        when.style.cssText = 'font-size:.8rem;color:var(--color-text-primary);';
+        when.textContent = new Date(run.started_at).toLocaleString();
+        leftSide.appendChild(when);
+        var trig = document.createElement('span');
+        trig.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;';
+        trig.textContent = run.trigger || 'cron';
+        leftSide.appendChild(trig);
+        if (run.duration_ms != null) {
+            var dur = document.createElement('span');
+            dur.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);';
+            dur.textContent = (run.duration_ms / 1000).toFixed(1) + 's';
+            leftSide.appendChild(dur);
+        }
+        top.appendChild(leftSide);
+
+        var summarySpan = document.createElement('span');
+        summarySpan.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);max-width:50%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        summarySpan.textContent = run.summary || '';
+        top.appendChild(summarySpan);
+
+        row.appendChild(top);
+
+        if (state.routines.expandedRunId === run.id) {
+            var body = document.createElement('div');
+            body.style.cssText = 'padding:.75rem 1rem;background:var(--color-surface-secondary);border-top:1px solid var(--color-border);';
+            var fullRun = state.routines.runDetails[run.id];
+            if (!fullRun) {
+                var loadingFindings = document.createElement('div');
+                loadingFindings.style.cssText = 'color:var(--color-text-secondary);font-size:.8rem;font-style:italic;';
+                loadingFindings.textContent = 'Loading findings…';
+                body.appendChild(loadingFindings);
+            } else {
+                if (fullRun.summary) {
+                    var sumHead = document.createElement('div');
+                    sumHead.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);margin-bottom:.5rem;line-height:1.4;';
+                    sumHead.textContent = fullRun.summary;
+                    body.appendChild(sumHead);
+                }
+                if (fullRun.error) {
+                    var errBlock = document.createElement('pre');
+                    errBlock.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#dc2626;padding:.5rem;border-radius:4px;font-size:.75rem;white-space:pre-wrap;word-break:break-word;margin:.25rem 0;';
+                    errBlock.textContent = fullRun.error;
+                    body.appendChild(errBlock);
+                }
+                if (fullRun.findings) {
+                    var findHead = document.createElement('div');
+                    findHead.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;margin:.5rem 0 .25rem;';
+                    findHead.textContent = 'Findings';
+                    body.appendChild(findHead);
+                    var findPre = document.createElement('pre');
+                    findPre.style.cssText = 'background:var(--color-surface-primary);border:1px solid var(--color-border);padding:.5rem;border-radius:4px;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow:auto;margin:0;';
+                    findPre.textContent = JSON.stringify(fullRun.findings, null, 2);
+                    body.appendChild(findPre);
+                }
+                if (fullRun.artifacts && Object.keys(fullRun.artifacts).length > 0) {
+                    var artHead = document.createElement('div');
+                    artHead.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;margin:.5rem 0 .25rem;';
+                    artHead.textContent = 'Artifacts';
+                    body.appendChild(artHead);
+                    var artPre = document.createElement('pre');
+                    artPre.style.cssText = 'background:var(--color-surface-primary);border:1px solid var(--color-border);padding:.5rem;border-radius:4px;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;margin:0;';
+                    artPre.textContent = JSON.stringify(fullRun.artifacts, null, 2);
+                    body.appendChild(artPre);
+                }
+            }
+            row.appendChild(body);
+        }
+
+        list.appendChild(row);
+    });
+
+    container.appendChild(list);
     return container;
 }
