@@ -37004,6 +37004,38 @@ function renderDevAutopilotActions(findingId) {
         wrap.appendChild(banner);
     }
 
+    // Pre-flight (VTID-01974): the /queue endpoint annotates each finding
+    // with auto_actionable + block_reason + block_message. When false, the
+    // executor literally cannot act — the safety gate would block any
+    // approve attempt — so we surface a manual-review callout up front and
+    // hide Approve & execute / Continue planning. Reject + Snooze stay
+    // available because the operator still needs to clear the row.
+    var queue = (state.devAutopilot && state.devAutopilot.queue) || [];
+    var finding = null;
+    for (var i = 0; i < queue.length; i++) {
+        if (queue[i] && queue[i].id === findingId) { finding = queue[i]; break; }
+    }
+    var autoActionable = !finding || finding.auto_actionable !== false;
+    if (!autoActionable) {
+        var manual = document.createElement('div');
+        manual.style.cssText = 'margin-top: 10px; padding: 10px 12px; background: rgba(234,179,8,0.10); border: 1px solid rgba(234,179,8,0.40); border-radius: 4px; color: #eab308; font-size: 13px; line-height: 1.45;';
+        var manualTitle = document.createElement('div');
+        manualTitle.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+        manualTitle.textContent = '⚑ Manual review required';
+        manual.appendChild(manualTitle);
+        var manualBody = document.createElement('div');
+        manualBody.style.cssText = 'font-size: 12px; color: #fde68a;';
+        manualBody.textContent = (finding && finding.block_message)
+            || 'This finding is outside the executor\'s allow-scope or above the auto-fix risk cap. Open a manual PR or Reject.';
+        manual.appendChild(manualBody);
+        var manualHint = document.createElement('div');
+        manualHint.style.cssText = 'font-size: 11px; color: var(--text-secondary, #aaa); margin-top: 6px;';
+        manualHint.textContent = 'Reason: ' + ((finding && finding.block_reason) || 'unknown')
+            + ' · Approve & execute hidden because the safety gate would block dispatch.';
+        manual.appendChild(manualHint);
+        wrap.appendChild(manual);
+    }
+
     var row = document.createElement('div');
     row.style.cssText = 'display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));';
 
@@ -37017,22 +37049,24 @@ function renderDevAutopilotActions(findingId) {
         return btn;
     }
 
-    row.appendChild(mkBtn('Approve & execute', '#22c55e', function () {
-        if (window.confirm('Approve and queue auto-execution? Cooldown ~10 min.')) {
-            devAutopilotApproveOne(findingId);
-        }
-    }, 'approve:' + findingId));
+    if (autoActionable) {
+        row.appendChild(mkBtn('Approve & execute', '#22c55e', function () {
+            if (window.confirm('Approve and queue auto-execution? Cooldown ~10 min.')) {
+                devAutopilotApproveOne(findingId);
+            }
+        }, 'approve:' + findingId));
 
-    row.appendChild(mkBtn(state.devAutopilot.continuePlanningId === findingId ? 'Cancel' : 'Continue planning…', '#3b82f6', function () {
-        if (state.devAutopilot.continuePlanningId === findingId) {
-            state.devAutopilot.continuePlanningId = null;
-            state.devAutopilot.continuePlanningDraft = '';
-        } else {
-            state.devAutopilot.continuePlanningId = findingId;
-            state.devAutopilot.continuePlanningDraft = '';
-        }
-        renderApp();
-    }, 'continue:' + findingId));
+        row.appendChild(mkBtn(state.devAutopilot.continuePlanningId === findingId ? 'Cancel' : 'Continue planning…', '#3b82f6', function () {
+            if (state.devAutopilot.continuePlanningId === findingId) {
+                state.devAutopilot.continuePlanningId = null;
+                state.devAutopilot.continuePlanningDraft = '';
+            } else {
+                state.devAutopilot.continuePlanningId = findingId;
+                state.devAutopilot.continuePlanningDraft = '';
+            }
+            renderApp();
+        }, 'continue:' + findingId));
+    }
 
     row.appendChild(mkBtn('Snooze 24h', '#eab308', function () {
         devAutopilotSnoozeOne(findingId, 24);

@@ -17,6 +17,7 @@ import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
+import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
@@ -635,7 +636,40 @@ router.get('/queue', requireDevRole, async (req: Request, res: Response) => {
   const path = `/rest/v1/autopilot_recommendations?${qs.toString()}`;
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  return res.json({ ok: true, findings: r.data || [] });
+
+  // Pre-flight the safety gate (VTID-01974). High-risk and out-of-allow-scope
+  // findings render as Approve & execute cards otherwise; the gate only fires
+  // post-approval, so the user faced dead-end buttons. Annotating each row
+  // with auto_actionable + block_reason + block_message lets the UI route
+  // un-actionable rows into a manual-review lane up front.
+  const cfgR = await supaGet<Array<{ allow_scope: string[]; deny_scope: string[] }>>(
+    supa,
+    `/rest/v1/dev_autopilot_config?id=eq.1&select=allow_scope,deny_scope&limit=1`,
+  );
+  const cfg = cfgR.ok && cfgR.data && cfgR.data[0]
+    ? cfgR.data[0]
+    : { allow_scope: [] as string[], deny_scope: [] as string[] };
+
+  const findings = (r.data as Array<Record<string, unknown>> | undefined) || [];
+  const annotated = findings.map((f) => {
+    const spec = (f.spec_snapshot as Record<string, unknown> | undefined) || {};
+    const filePath = typeof spec.file_path === 'string' ? spec.file_path : '';
+    const riskClass = (typeof f.risk_class === 'string' ? f.risk_class : 'medium') as RiskClass;
+    const pf = dryRunPreflight({
+      file_path: filePath,
+      risk_class: riskClass,
+      allow_scope: cfg.allow_scope || [],
+      deny_scope: cfg.deny_scope || [],
+    });
+    return {
+      ...f,
+      auto_actionable: pf.auto_actionable,
+      block_reason: pf.block_reason,
+      block_message: pf.block_message,
+    };
+  });
+
+  return res.json({ ok: true, findings: annotated });
 });
 
 // =============================================================================
