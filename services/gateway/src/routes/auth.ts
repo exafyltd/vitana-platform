@@ -431,16 +431,24 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   );
 
   // VTID-01186: Fetch profile and memberships from database
-  let profile: { display_name?: string; avatar_url?: string; bio?: string } = {};
+  // VTID-01967: also expose vitana_id (from app_users mirror) and vitana_id_locked (from profiles).
+  let profile: {
+    display_name?: string;
+    avatar_url?: string;
+    bio?: string;
+    vitana_id?: string;
+    vitana_id_locked?: boolean;
+  } = {};
   let memberships: Array<{ tenant_id: string; role: string; is_primary: boolean }> = [];
 
   const supabase = getSupabase();
   if (supabase && identity.user_id) {
     try {
-      // Fetch user profile from app_users
+      // Fetch user profile from app_users — vitana_id is mirrored here by the
+      // Release A trigger profiles_vitana_id_mirror_trigger.
       const { data: profileData, error: profileError } = await supabase
         .from('app_users')
-        .select('display_name, avatar_url, bio')
+        .select('display_name, avatar_url, bio, vitana_id')
         .eq('user_id', identity.user_id)
         .single();
 
@@ -449,7 +457,28 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
           display_name: profileData.display_name || undefined,
           avatar_url: profileData.avatar_url || undefined,
           bio: profileData.bio || undefined,
+          vitana_id: (profileData as any).vitana_id || undefined,
         };
+      }
+
+      // VTID-01967: vitana_id_locked lives only on profiles (not mirrored).
+      // Parallel fetch — null-tolerant (column may not exist before Release A).
+      try {
+        const { data: lockData } = await supabase
+          .from('profiles')
+          .select('vitana_id_locked, vitana_id')
+          .eq('user_id', identity.user_id)
+          .maybeSingle();
+        if (lockData) {
+          profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
+          // Profiles is the source of truth; if app_users mirror is stale (or
+          // not yet provisioned), prefer profiles.vitana_id.
+          if (!profile.vitana_id && (lockData as any).vitana_id) {
+            profile.vitana_id = (lockData as any).vitana_id;
+          }
+        }
+      } catch (_lockErr) {
+        // Silent — profiles.vitana_id_locked may not exist on this env yet.
       }
 
       // VTID-01230-FIX: Match /auth/login fallback chain for avatar_url.

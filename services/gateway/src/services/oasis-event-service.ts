@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto';
 import { CicdEventType, CicdOasisEvent } from '../types/cicd';
 import { projectOasisEventToTimeline } from './timeline-projector';
+import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
 
 /**
  * VTID-01874: Infer task_stage from event type when not explicitly set.
@@ -43,6 +44,15 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
   const eventId = randomUUID();
   const timestamp = new Date().toISOString();
 
+  // VTID-01967: Auto-resolve vitana_id from actor_id when caller didn't pass it.
+  // Cached in resolveVitanaId(), so this is ~0ms after first lookup per user.
+  // Null-tolerant: if the column doesn't exist or app_users hasn't been mirrored
+  // yet, the field stays undefined and the INSERT just omits it.
+  let vitanaId: string | null | undefined = event.vitana_id;
+  if (vitanaId === undefined && event.actor_id) {
+    vitanaId = await resolveVitanaId(event.actor_id);
+  }
+
   const payload: Record<string, unknown> = {
     id: eventId,
     created_at: timestamp,
@@ -64,6 +74,8 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     // VTID-01874: Explicit stage annotation for correct timeline mapping
     // Uses explicit task_stage if set, otherwise infers from event type
     ...((event.task_stage || inferTaskStageFromType(event.type)) ? { task_stage: event.task_stage || inferTaskStageFromType(event.type) } : {}),
+    // VTID-01967: Denormalized canonical Vitana ID for support / audit queries.
+    ...(vitanaId && { vitana_id: vitanaId }),
   };
 
   try {
