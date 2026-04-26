@@ -51,6 +51,9 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01091: Location extraction from diary entries
 import { processLocationMentionsFromDiary } from './locations';
+// VTID-01977: pattern-matching health-feature extraction from diary text
+import { getSupabase } from '../lib/supabase';
+import { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } from '../services/diary-health-extractor';
 
 const router = Router();
 
@@ -1687,6 +1690,44 @@ router.post('/diary', async (req: Request, res: Response) => {
       });
     }
 
+    // VTID-01977: extract health features from diary text and write them to
+    // health_features_daily so the user's Vitana Index reflects the diary
+    // entry on the next compute. Pattern-matching only (no LLM); idempotent
+    // via (tenant_id, user_id, date, feature_key) upsert. Recomputes Index
+    // inline so the header badge moves before the user closes the diary.
+    let diaryFeatureWrites = 0;
+    try {
+      const writes = extractHealthFeaturesFromDiary(raw_text);
+      const admin = getSupabase();
+      const userIdForFeatures = data?.user_id as string | undefined;
+      const tenantIdForFeatures = (data?.tenant_id as string | undefined) ?? '00000000-0000-0000-0000-000000000000';
+      if (admin && userIdForFeatures && writes.length > 0) {
+        const { written } = await persistDiaryHealthFeatures(
+          admin,
+          userIdForFeatures,
+          tenantIdForFeatures,
+          entry_date,
+          writes,
+        );
+        diaryFeatureWrites = written;
+        if (written > 0) {
+          // Recompute Index for today so the diary entry is reflected on the
+          // header badge / profile / Index Detail without waiting for the
+          // nightly job. Best-effort: failures don't fail the diary write.
+          try {
+            await admin.rpc('health_compute_vitana_index_for_user', {
+              p_user_id: userIdForFeatures,
+              p_date: entry_date,
+            });
+          } catch (recErr: any) {
+            console.warn(`[VTID-01977] Index recompute failed (non-fatal): ${recErr?.message ?? recErr}`);
+          }
+        }
+      }
+    } catch (extractErr: any) {
+      console.warn(`[VTID-01977] diary health extraction failed (non-fatal): ${extractErr?.message ?? extractErr}`);
+    }
+
     // Emit OASIS event: memory.diary.created
     await emitMemoryGardenEvent(
       'memory.diary.created',
@@ -1712,7 +1753,11 @@ router.post('/diary', async (req: Request, res: Response) => {
       ok: true,
       id: data?.id,
       entry_date,
-      entry_type
+      entry_type,
+      // VTID-01977: how many structured health features the extractor
+      // wrote from this diary entry. 0 means no Index movement; >0 means
+      // health_features_daily got rows and the Index was recomputed.
+      health_features_written: diaryFeatureWrites,
     });
   } catch (err: any) {
     console.error('[VTID-01082] Diary entry error:', err.message);
