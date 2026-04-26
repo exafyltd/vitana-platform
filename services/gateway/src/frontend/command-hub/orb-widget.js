@@ -173,7 +173,20 @@
     _disconnectReason: null,         // 'mic' | 'network' | 'connection' | 'offline'
     _preDisconnectVoiceState: null,  // voiceState captured before we force-muted for the alert
     _audioSendFailCount: 0,          // consecutive _sendAudio failures
-    _audioSendFailWindowStart: 0     // timestamp of first fail in current window
+    _audioSendFailWindowStart: 0,    // timestamp of first fail in current window
+
+    // BOOTSTRAP-ORB-MODERN-RECOVERY: cached neural-voice MP3 alert clips +
+    // hardened reconnect state. _alertBuffers holds AudioBuffers preloaded
+    // at widget init so they play even when the network is dead.
+    // _isReconnecting is distinct from _disconnectActive: an alert can be
+    // up while no reconnect is currently scheduled, and vice versa.
+    // _disconnectStuck means the auto-retry budget is exhausted and the
+    // overlay is showing "Tap the orb to reconnect".
+    _alertBuffers: {},               // clip id → AudioBuffer
+    _alertBuffersLoaded: false,
+    _isReconnecting: false,
+    _recoveryWatchdog: null,         // 60s self-test recovery timer handle
+    _disconnectStuck: false
   };
 
   // VTID-OFFLINE: Instant offline/online detection via browser events
@@ -190,8 +203,14 @@
     console.log('[VTOrb] Browser back online');
     _s._isOffline = false;
     if (_s.active || _s.overlayVisible) {
-      // Reset reconnect count so we get fresh attempts after coming back online
+      // BOOTSTRAP-ORB-MODERN-RECOVERY: a real `online` event is the strongest
+      // signal we have that the user's connectivity is back. Treat it as a
+      // full reset: zero the retry budget AND clear any "stuck" state so the
+      // next _attemptReconnect cycle can run without inheriting a spent
+      // budget from earlier offline-period failures.
       _s._reconnectCount = 0;
+      _s._isReconnecting = false;
+      _s._disconnectStuck = false;
       _attemptReconnect();
     }
   });
@@ -439,7 +458,8 @@
   }
 
   // ============================================================
-  // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT)
+  // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT
+  //                       + BOOTSTRAP-ORB-MODERN-RECOVERY)
   //
   // When a session silently drops (mic denied, SSE closed, upstream WS dead,
   // network blip), the UI used to keep showing "Listening..." while the user
@@ -447,9 +467,18 @@
   // cue — tone + spoken phrase + visual state + mic gate — so they stop talking.
   // _clearDisconnect reverses it on successful reconnect and speaks a short
   // "we're back" phrase so the user knows it's safe to continue.
+  //
+  // The phrases are pre-rendered MP3 clips in Chirp3-HD voices (modern neural
+  // family — same one vitana-v1 uses for non-Live TTS). They're eagerly
+  // preloaded into AudioBuffers when the widget initializes, so they play
+  // instantly even when the network is dead. We deliberately do NOT fall back
+  // to window.speechSynthesis: the OS default robotic voice (Hazel/David/etc)
+  // is worse than silence, so missing-clip means tone + visible status only.
   // ============================================================
 
-  var _DISCONNECT_PHRASES = {
+  // Display-only labels for the visible status text under the orb. The audio
+  // is rendered separately from these MP3 clips, but the wording matches.
+  var _DISCONNECT_LABELS = {
     mic: {
       en: "One moment, I can't hear your microphone.",
       de: "Einen Moment, Mikrofon-Problem."
@@ -468,40 +497,105 @@
     }
   };
 
-  // Recovery phrases — named by the cause that was announced, so the user
-  // understands what was fixed. Two variants per bucket; picked randomly.
-  var _RECOVERY_PHRASES = {
-    network: [
-      { en: "Okay, we're back online. I'm listening.", de: "ok, Netz ist wieder da. Ich höre zu." },
-      { en: "Connection is back. Go ahead.",            de: "Internet ist wieder da. Du kannst weitermachen." }
-    ],
-    offline: [
-      { en: "Okay, we're back online. I'm listening.", de: "ok, Netz ist wieder da. Ich höre zu." },
-      { en: "Connection is back. Go ahead.",            de: "Internet ist wieder da. Du kannst weitermachen." }
-    ],
-    mic: [
-      { en: "Okay, the microphone is working again. Let's continue.", de: "ok, Mikrofon funktioniert wieder. Wir können weiter machen." },
-      { en: "Mic is back. I can hear you again.",                      de: "Mikrofon ist wieder da. Ich höre dich wieder." }
-    ],
-    connection: [
-      { en: "Okay, sorry for the interruption. I'm listening.",          de: "ok, entschuldige die Störung. Ich höre zu." },
-      { en: "Sorry, brief interruption. Fixed now, I'm listening again.", de: "Sorry, Unterbrechung. Ist jetzt behoben und höre dir wieder zu." }
-    ]
+  var _RECOVERY_LABELS = {
+    mic: {
+      en: "Okay, the microphone is working again. Let's continue.",
+      de: "Okay, das Mikrofon funktioniert wieder. Wir können weitermachen."
+    },
+    network: {
+      en: "Okay, we're back online. I'm listening.",
+      de: "Okay, das Netz ist wieder da. Ich höre zu."
+    },
+    offline: {
+      en: "Okay, we're back online. I'm listening.",
+      de: "Okay, das Netz ist wieder da. Ich höre zu."
+    },
+    connection: {
+      en: "Okay, sorry for the interruption. I'm listening.",
+      de: "Okay, entschuldige die Unterbrechung. Ich höre zu."
+    }
   };
+
+  // Catalog of MP3 clips rendered by services/gateway/scripts/render-orb-alert-clips.ts.
+  // Re-render that script if you change the wording of any label above.
+  var _ALERT_CLIPS = [
+    'disconnect-mic-en', 'disconnect-mic-de',
+    'disconnect-network-en', 'disconnect-network-de',
+    'disconnect-connection-en', 'disconnect-connection-de',
+    'disconnect-offline-en', 'disconnect-offline-de',
+    'recovery-mic-en', 'recovery-mic-de',
+    'recovery-network-en', 'recovery-network-de',
+    'recovery-connection-en', 'recovery-connection-de'
+  ];
 
   function _pickLang() { return (_cfg.lang || 'en').startsWith('de') ? 'de' : 'en'; }
 
-  function _speak(phrase) {
+  function _alertClipBaseUrl() {
+    // Gateway mounts the command-hub static dir at /command-hub (see
+    // src/index.ts: app.use('/command-hub', express.static(...))), so the
+    // clips committed under src/frontend/command-hub/sounds/orb-alert/ are
+    // served at {gw}/command-hub/sounds/orb-alert/<id>.mp3.
+    return (_cfg.gw || '') + '/command-hub/sounds/orb-alert/';
+  }
+
+  // Eager-decode all 14 alert clips into AudioBuffers up front. Called from
+  // init() before any network can drop, so they're guaranteed to be in memory
+  // when an alert needs to fire. Best-effort — failed clips just mean that
+  // alert plays the error tone without a voice line. No SpeechSynthesis fallback.
+  function _preloadAlertClips() {
+    if (_s._alertBuffersLoaded) return;
+    _s._alertBuffersLoaded = true; // prevent overlapping calls
+
+    if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+      try {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.warn('[VTOrb] _preloadAlertClips: cannot create AudioContext, skipping');
+        _s._alertBuffersLoaded = false;
+        return;
+      }
+    }
+
+    var base = _alertClipBaseUrl();
+    var loaded = 0;
+    _ALERT_CLIPS.forEach(function (id) {
+      fetch(base + id + '.mp3', { cache: 'force-cache' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(function (ab) { return _s.playbackCtx.decodeAudioData(ab.slice(0)); })
+        .then(function (buf) {
+          _s._alertBuffers[id] = buf;
+          loaded++;
+          if (loaded === _ALERT_CLIPS.length) {
+            console.log('[VTOrb] Alert clips preloaded: ' + loaded + '/' + _ALERT_CLIPS.length);
+          }
+        })
+        .catch(function (e) {
+          console.warn('[VTOrb] Failed to preload alert clip ' + id + ':', e && e.message);
+        });
+    });
+  }
+
+  // Play a cached alert clip. Returns the BufferSource so the caller can chain
+  // an onended handler (used by _clearDisconnect to ring the ready beep after
+  // the recovery phrase). Returns null if the clip is missing — caller is
+  // responsible for handling silence (we never speak via the OS robot voice).
+  function _playAlert(id) {
+    var buf = _s._alertBuffers[id];
+    if (!buf || !_s.playbackCtx) {
+      console.warn('[VTOrb] _playAlert: clip not loaded yet:', id);
+      return null;
+    }
     try {
-      if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== 'function') return null;
-      try { window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
-      var u = new window.SpeechSynthesisUtterance(phrase);
-      u.lang = _pickLang() === 'de' ? 'de-DE' : 'en-US';
-      u.rate = 1.0;
-      u.volume = 1.0;
-      window.speechSynthesis.speak(u);
-      return u;
+      if (_s.playbackCtx.state === 'suspended') {
+        _s.playbackCtx.resume().catch(function () {});
+      }
+      var src = _s.playbackCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(_s.playbackCtx.destination);
+      src.start(0);
+      return src;
     } catch (e) {
+      console.warn('[VTOrb] _playAlert failed for ' + id + ':', e && e.message);
       return null;
     }
   }
@@ -512,6 +606,8 @@
     _s._disconnectReason = reason;
     _s._preDisconnectVoiceState = _s.voiceState;
 
+    console.warn('[VTOrb] _announceDisconnect: reason=' + reason);
+
     // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
     // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
     _s.voiceState = 'MUTED';
@@ -519,18 +615,31 @@
     clearTimeout(_s._listeningIdleTimer);
     clearTimeout(_s.thinkingDelayTimer);
 
-    // Tone first — guaranteed <50ms even if TTS is slow to init
+    // Tone first — guaranteed <50ms even if the clip buffer is missing
     _playErrorTone();
 
     var lang = _pickLang();
-    var bucket = _DISCONNECT_PHRASES[reason] || _DISCONNECT_PHRASES.connection;
-    var phrase = bucket[lang] || bucket.en;
+    var labelBucket = _DISCONNECT_LABELS[reason] || _DISCONNECT_LABELS.connection;
+    var label = labelBucket[lang] || labelBucket.en;
 
     _setOrbState('paused');
-    _setStatus(phrase);
+    _setStatus(label);
     _updateUI();
 
-    _speak(phrase);
+    _playAlert('disconnect-' + reason + '-' + lang);
+
+    // BOOTSTRAP-ORB-MODERN-RECOVERY: belt-and-suspenders self-test. If we're
+    // still in the disconnect state 60 seconds from now AND the browser
+    // believes it's online, force a full reconnect cycle. This catches the
+    // pathological case where every other recovery path silently failed
+    // (online event missed, SSE never reopened, etc).
+    clearTimeout(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = setTimeout(function () {
+      if (_s._disconnectActive && navigator.onLine) {
+        console.warn('[VTOrb] 60s recovery watchdog fired — forcing _resetAndReconnect');
+        _resetAndReconnect();
+      }
+    }, 60000);
   }
 
   function _clearDisconnect() {
@@ -541,8 +650,11 @@
     _s._audioSendErrorLogged = false;
     _s._audioSendFailCount = 0;
     _s._audioSendFailWindowStart = 0;
+    _s._disconnectStuck = false;
+    clearTimeout(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = null;
 
-    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    console.log('[VTOrb] _clearDisconnect: recovering from reason=' + reason);
 
     // Restore voice state — but honor a user-initiated mute from before the outage.
     if (_s._preDisconnectVoiceState && _s._preDisconnectVoiceState !== 'MUTED') {
@@ -551,16 +663,15 @@
     _s._preDisconnectVoiceState = null;
 
     var lang = _pickLang();
-    var variants = _RECOVERY_PHRASES[reason] || _RECOVERY_PHRASES.connection;
-    var variant = variants[Math.floor(Math.random() * variants.length)];
-    var phrase = variant[lang] || variant.en;
+    var labelBucket = _RECOVERY_LABELS[reason] || _RECOVERY_LABELS.connection;
+    var label = labelBucket[lang] || labelBucket.en;
 
     _setOrbState('listening');
     _s.voiceState = (_s.voiceState === 'MUTED') ? _s.voiceState : 'LISTENING';
-    _setStatus(phrase);
+    _setStatus(label);
     _updateUI();
 
-    var u = _speak(phrase);
+    var src = _playAlert('recovery-' + reason + '-' + lang);
     var rangBeep = false;
     function ringReady() {
       if (rangBeep) return;
@@ -568,14 +679,50 @@
       _playReadyBeep();
       _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
     }
-    if (u) {
-      u.onend = ringReady;
-      u.onerror = ringReady;
-      // Safety: if TTS never fires onend (e.g. voice pack missing), ring the beep anyway
-      setTimeout(ringReady, 3500);
+    if (src) {
+      src.onended = ringReady;
+      // Safety: if onended never fires (clip corruption etc), ring the beep anyway
+      setTimeout(ringReady, 4000);
     } else {
       ringReady();
     }
+  }
+
+  // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
+  // by the orb-tap handler when the user taps an orb that's stuck on the
+  // disconnect display, and by the 60s watchdog as a last-resort recovery.
+  function _resetAndReconnect() {
+    console.log('[VTOrb] _resetAndReconnect: forcing full session restart');
+    _stopWatchdog();
+    if (_s.captureStream) {
+      try { _s.captureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
+      _s.captureStream = null;
+    }
+    if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
+    if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
+    if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+
+    _s.sessionId = null;
+    _s.active = false;
+    _s.liveError = null;
+    _s.greetingAudioReceived = false;
+    _s._reconnectCount = 0;
+    _s._isReconnecting = false;
+    _s._disconnectStuck = false;
+    // Keep _disconnectActive true so the UI doesn't flash to a usable state
+    // before the new session lands; _clearDisconnect on success will undo it.
+
+    var lang = _pickLang();
+    _setOrbState('connecting');
+    _setStatus(lang === 'de' ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+
+    _sessionStart().then(function () {
+      if (_s.active && _s._disconnectActive) _clearDisconnect();
+    }).catch(function (err) {
+      console.error('[VTOrb] _resetAndReconnect: _sessionStart failed:', err && err.message);
+      // Hand back to the normal scheduled reconnect loop
+      _attemptReconnect();
+    });
   }
 
   // ============================================================
@@ -796,17 +943,13 @@
       es.onerror = function () {
         if (es.readyState === EventSource.CLOSED) {
           _stopWatchdog();
-          // VTID-RECONNECT: Try auto-reconnect instead of just dying
-          if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
-            _announceDisconnect('connection');
-            _attemptReconnect();
-          } else {
-            _s.liveError = 'Connection lost.';
-            _setOrbState('error');
-            _playErrorTone();
-            _updateUI();
-            setTimeout(_sessionStop, 3000);
-          }
+          // BOOTSTRAP-ORB-MODERN-RECOVERY: a real SSE-level CLOSED is the
+          // signal that the upstream session is gone. Always announce the
+          // disconnect and hand to _attemptReconnect — the reconnect loop
+          // owns the budget logic and the eventual tap-to-reconnect fallback,
+          // so we never call _sessionStop here (which would kill the orb).
+          _announceDisconnect('connection');
+          _attemptReconnect();
         }
       };
       _s.eventSource = es;
@@ -831,13 +974,17 @@
     _stopWatchdog();
     clearTimeout(_s._listeningIdleTimer);
 
-    // Cancel any pending disconnect TTS silently — session is ending, so no
-    // "we're back" phrase.
+    // Cancel any pending disconnect alert silently — session is ending, so no
+    // "we're back" phrase. (Alert clips are short BufferSources that finish
+    // on their own; we don't track them for explicit cancellation.)
     if (_s._disconnectActive) {
       _s._disconnectActive = false;
       _s._disconnectReason = null;
       _s._preDisconnectVoiceState = null;
-      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+      _s._disconnectStuck = false;
+      _s._isReconnecting = false;
+      clearTimeout(_s._recoveryWatchdog);
+      _s._recoveryWatchdog = null;
     }
 
     // Stop mic
@@ -1093,10 +1240,14 @@
 
       case 'connection_alert':
       case 'reconnecting':
-        // Backend is transparently reconnecting upstream (Vertex Live API), or
-        // signalling an upstream WS close. Either way, give the user a loud,
-        // spoken cue to stop talking until the connection is back.
-        console.warn('[VTOrb] Upstream ' + msg.type + ' — announcing disconnect');
+        // Backend is transparently reconnecting upstream (Vertex Live API).
+        // Give the user a loud, spoken cue to stop talking until the
+        // connection is back. Do NOT call _attemptReconnect here — the server
+        // owns the upstream reconnect; we wait for either a 'reconnected'
+        // message (success) or a real SSE-level CLOSED (genuine failure,
+        // handled by the EventSource onerror path). This prevents the client
+        // retry budget from being burned on every transparent server hiccup.
+        console.warn('[VTOrb] Upstream ' + msg.type + ' — announcing disconnect (server-side reconnect in progress)');
         clearTimeout(_s._listeningIdleTimer);
         _s._preReconnectVoiceState = _s.voiceState;
         _announceDisconnect('connection');
@@ -1120,18 +1271,13 @@
 
       case 'connection_issue':
       case 'live_api_disconnected':
-        // VTID-RECONNECT: Try auto-reconnect before giving up
-        if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
-          console.warn('[VTOrb] Connection issue — attempting reconnect');
-          _attemptReconnect();
-        } else {
-          _s.liveError = msg.message || 'Connection lost.';
-          _setOrbState('error');
-          _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren.' : 'Connection lost.');
-          _playErrorTone();
-          _updateUI();
-          setTimeout(_sessionStop, 3000);
-        }
+        // BOOTSTRAP-ORB-MODERN-RECOVERY: server explicitly told us upstream
+        // is dead. Hand to _attemptReconnect — it owns the budget logic and
+        // the tap-to-reconnect fallback when the budget is spent. We never
+        // auto-_sessionStop here; killing the orb forces a page refresh.
+        console.warn('[VTOrb] Server reported connection issue — attempting reconnect');
+        _announceDisconnect('connection');
+        _attemptReconnect();
         break;
 
       case 'session_ended':
@@ -1501,19 +1647,12 @@
       if (!_s.active) { _stopWatchdog(); return; }
       if (Date.now() - _s.clientLastActivityAt > WATCHDOG_TIMEOUT) {
         _stopWatchdog();
-        // VTID-RECONNECT: Try auto-reconnect before giving up
-        if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
-          console.warn('[VTOrb] Watchdog fired — attempting reconnect');
-          _announceDisconnect('connection');
-          _attemptReconnect();
-        } else {
-          _s.liveError = 'Connection lost.';
-          _setOrbState('error');
-          _setStatus(_cfg.lang.startsWith('de') ? 'Keine Antwort vom Server.' : 'No response from server.');
-          _playErrorTone();
-          _updateUI();
-          setTimeout(_sessionStop, 3000);
-        }
+        // BOOTSTRAP-ORB-MODERN-RECOVERY: 30s of SSE silence while session is
+        // active. Hand to _attemptReconnect — it owns the budget logic and
+        // tap-to-reconnect fallback, so we never auto-_sessionStop here.
+        console.warn('[VTOrb] Watchdog fired — attempting reconnect');
+        _announceDisconnect('connection');
+        _attemptReconnect();
       }
     }, 5000);
   }
@@ -1580,7 +1719,13 @@
     // Sphere (on top of auras)
     var orb = document.createElement('div');
     orb.className = 'vtorb-large';
-    orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;z-index:1;';
+    orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;z-index:1;cursor:pointer;';
+    // BOOTSTRAP-ORB-MODERN-RECOVERY: tap-to-reconnect when stuck. The orb is
+    // a button when _disconnectStuck=true; otherwise the tap is a no-op so
+    // we don't accidentally interrupt active sessions.
+    orb.addEventListener('click', function () {
+      if (_s._disconnectStuck) _resetAndReconnect();
+    });
     shell.appendChild(orb);
     _root.appendChild(shell);
 
@@ -1850,60 +1995,105 @@
   var MAX_WIDGET_RECONNECTS = 3;
   var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
 
-  async function _attemptReconnect() {
-    // VTID-OFFLINE: Don't try reconnecting if browser is offline — wait for 'online' event
+  // BOOTSTRAP-ORB-MODERN-RECOVERY: scheduled-loop reconnect.
+  //
+  // Old behavior: recursive _attemptReconnect on failure burned the budget
+  // in 3 attempts even when `online` kept firing, then exited without
+  // clearing _disconnectActive — orb stuck in 'paused' aura forever.
+  //
+  // New behavior:
+  //   - `online` event fully resets the budget AND clears _isReconnecting
+  //   - one in-flight attempt at a time (gated by _isReconnecting)
+  //   - failure schedules the NEXT attempt via setTimeout (not recursion)
+  //   - on budget exhaustion, _enterStuckState() flips to a usable
+  //     tap-to-reconnect display; the orb sphere becomes a button that
+  //     calls _resetAndReconnect on tap
+  //   - the 60s recovery watchdog (set by _announceDisconnect) is the
+  //     belt-and-suspenders fallback for the user-reported "stuck forever"
+  //     case — fires regardless of state if navigator.onLine is true
+  function _attemptReconnect() {
+    // Defensive: _isOffline can be stale on captive-portal recoveries where
+    // the 'online' event doesn't always fire. Trust navigator.onLine here.
+    if (navigator.onLine) _s._isOffline = false;
+
     if (_s._isOffline) {
-      console.log('[VTOrb] Skipping reconnect — browser is offline. Will retry when online.');
+      console.log('[VTOrb] _attemptReconnect: skipping — browser is offline. Will retry when online.');
       _setOrbState('offline');
       _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
       return;
     }
 
+    if (_s._isReconnecting) {
+      console.log('[VTOrb] _attemptReconnect: already in-flight, ignoring');
+      return;
+    }
+
     if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
-      console.warn('[VTOrb] Max reconnection attempts reached');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren. Bitte erneut starten.' : 'Connection lost. Please restart.');
-      _setOrbState('error');
+      _enterStuckState();
       return;
     }
 
     var delay = RECONNECT_DELAYS[_s._reconnectCount] || 8000;
     _s._reconnectCount++;
-    console.log('[VTOrb] Reconnecting in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
+    _s._isReconnecting = true;
+    console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
     _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
     _setOrbState('connecting');
 
-    setTimeout(async function () {
-      if (!_s.overlayVisible) return; // User closed overlay
-
-      try {
-        // Clean up old session resources
-        if (_s.captureStream) {
-          _s.captureStream.getTracks().forEach(function (t) { t.stop(); });
-          _s.captureStream = null;
-        }
-        if (_s.captureProcessor) { _s.captureProcessor.disconnect(); _s.captureProcessor = null; }
-        if (_s.captureCtx) { _s.captureCtx.close().catch(function () {}); _s.captureCtx = null; }
-        if (_s.eventSource) { _s.eventSource.close(); _s.eventSource = null; }
-
-        // Keep playback context and transcript history alive
-        _s.sessionId = null;
-        _s.active = false;
-        _s.liveError = null;
-        _s._audioSendErrorLogged = false;
-        _s.greetingAudioReceived = false;
-
-        // Restart session
-        await _sessionStart();
-        if (_s.active) {
-          _s._reconnectCount = 0; // Reset on successful reconnect
-          console.log('[VTOrb] Reconnected successfully');
-          if (_s._disconnectActive) _clearDisconnect();
-        }
-      } catch (err) {
-        console.error('[VTOrb] Reconnection failed:', err);
-        _attemptReconnect(); // Try again
+    setTimeout(function () {
+      if (!_s.overlayVisible) {
+        _s._isReconnecting = false;
+        return; // User closed overlay
       }
+
+      // Clean up old session resources before retry
+      if (_s.captureStream) {
+        try { _s.captureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+        _s.captureStream = null;
+      }
+      if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
+      if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
+      if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+
+      _s.sessionId = null;
+      _s.active = false;
+      _s.liveError = null;
+      _s._audioSendErrorLogged = false;
+      _s.greetingAudioReceived = false;
+
+      _sessionStart().then(function () {
+        _s._isReconnecting = false;
+        if (_s.active) {
+          _s._reconnectCount = 0;
+          console.log('[VTOrb] _attemptReconnect: succeeded');
+          if (_s._disconnectActive) _clearDisconnect();
+        } else {
+          // _sessionStart returned without throwing but didn't set active
+          console.warn('[VTOrb] _attemptReconnect: _sessionStart returned but session not active');
+          _attemptReconnect();
+        }
+      }).catch(function (err) {
+        console.error('[VTOrb] _attemptReconnect: _sessionStart failed:', err && err.message);
+        _s._isReconnecting = false;
+        _attemptReconnect(); // Schedule next attempt (NOT a recursion — this is from a setTimeout callback)
+      });
     }, delay);
+  }
+
+  // BOOTSTRAP-ORB-MODERN-RECOVERY: terminal state when the auto-retry budget
+  // is exhausted. The orb leaves the 'paused' aura (which is for transient
+  // disconnects, not give-up state) and enters an 'error' aura with a clear
+  // tap-to-reconnect call to action. The orb sphere itself becomes the
+  // button (see _renderOverlay tap handler). The 60s watchdog still runs in
+  // parallel as a true belt-and-suspenders auto-recovery.
+  function _enterStuckState() {
+    console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
+    _s._isReconnecting = false;
+    _s._disconnectStuck = true;
+    var lang = _pickLang();
+    _setOrbState('error');
+    _setStatus(lang === 'de' ? 'Tippen zum Neu verbinden' : 'Tap the orb to reconnect');
+    _updateUI();
   }
 
   // ============================================================
@@ -2030,6 +2220,9 @@
       _injectStyles();
       _renderOverlay();
       if (_cfg.showFab) _renderFab();
+      // BOOTSTRAP-ORB-MODERN-RECOVERY: preload alert clips eagerly while the
+      // network is fine, so they're in memory if/when the network drops.
+      _preloadAlertClips();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
