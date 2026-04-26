@@ -37,8 +37,9 @@ import { emitOasisEvent } from './oasis-event-service';
 const VTID = 'VTID-01184';
 const SERVICE_NAME = 'supabase-semantic-memory';
 
-// Embedding dimensions (must match migration)
-const EMBEDDING_DIMENSIONS = 768;
+// Embedding dimensions (must match memory_items.embedding column = vector(1536)
+// and OpenAI text-embedding-3-small). VTID-01978: corrected from 768.
+const EMBEDDING_DIMENSIONS = 1536;
 
 // Default embedding model
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
