@@ -20,12 +20,11 @@ import type { UserAwareness } from './types';
 import type { FeatureKey, FeatureIntroduction } from './feature-introductions';
 
 export type IndexPillar =
-  | 'Physical'
-  | 'Mental'
-  | 'Nutritional'
-  | 'Social'
-  | 'Environmental'
-  | 'Prosperity';
+  | 'Nutrition'
+  | 'Hydration'
+  | 'Exercise'
+  | 'Sleep'
+  | 'Mental';
 
 export type TipPillarLink = IndexPillar | 'meta';
 
@@ -87,12 +86,12 @@ export const DYK_TIP_REGISTRY: DidYouKnowTip[] = [
     max_usage_day: 30,
     priority: 100,
     voice_opener:
-      'Did you know that your Vitana Index is a single number — zero to 999 — that measures your quality of life across five pillars?',
+      'Did you know that your Vitana Index is a single number — zero to 999 — that measures your longevity across five pillars?',
     voice_confirm: 'Want me to show you how it works?',
     voice_on_nav:
-      "Here it is. Your Index is built from Physical, Mental, Nutritional, Social, and Environmental — five pillars, each scored live. The number moves as you do.",
+      "Here it is. Your Index is built from Nutrition, Hydration, Exercise, Sleep, and Mental — five pillars, each scored live. The number moves as you do.",
     card_copy:
-      'Your Vitana Index is one number across five pillars — Physical, Mental, Nutritional, Social, Environmental. Want to see it?',
+      'Your Vitana Index is one number across five pillars — Nutrition, Hydration, Exercise, Sleep, Mental. Want to see it?',
     cta_label: 'Show me my Index',
     cta_url: '/health/vitana-index',
   },
@@ -126,7 +125,7 @@ export const DYK_TIP_REGISTRY: DidYouKnowTip[] = [
       "Did you know you have a Life Compass goal set — I seeded the default longevity goal for you — and that goal actually re-weights how your Vitana Index is scored?",
     voice_confirm: 'Want to see it and maybe pick your own?',
     voice_on_nav:
-      "This is Life Compass. Change the goal and your Index re-weights — a career goal boosts Prosperity's weight, a health goal boosts Physical. Pick the one that matches where you are.",
+      "This is Life Compass. Change the goal and your Index re-weights across the five pillars — a sleep-focused goal boosts Sleep, a nutrition goal boosts Nutrition. Pick the one that matches where you are.",
     card_copy:
       'Your Life Compass goal re-weights every pillar of your Vitana Index. I set a default — you can change it any time.',
     cta_label: 'Open Life Compass',
@@ -151,21 +150,21 @@ export const DYK_TIP_REGISTRY: DidYouKnowTip[] = [
     cta_url: '/health/vitana-index',
   },
 
-  // ─── Usage day 2: Health (Physical pillar) ──────────────────────────────
+  // ─── Usage day 2: Health (Exercise + Sleep + Nutrition + Hydration) ────
   {
     tip_key: 'dyk_health_section_day2',
     feature_key: 'health_section',
-    index_pillar_link: 'Physical',
+    index_pillar_link: 'Exercise',
     min_usage_day: 2,
     max_usage_day: 30,
     priority: 90,
     voice_opener:
-      'Did you know that everything you log in Health — sleep, movement, nutrition — feeds directly into the Physical pillar of your Vitana Index?',
+      'Did you know that everything you log in Health — sleep, movement, hydration, nutrition — feeds directly into four of the five pillars of your Vitana Index?',
     voice_confirm: 'Want me to show you the Health section?',
     voice_on_nav:
-      "Here's Health. Every entry — a walk, a meal, a sleep log — lifts your Physical pillar, and the Physical pillar is the biggest single lever on your Vitana Index.",
+      "Here's Health. A walk lifts Exercise. A sleep log lifts Sleep. A meal lifts Nutrition. Water lifts Hydration. Four of the five pillars of your Vitana Index move from this one screen.",
     card_copy:
-      'Sleep, movement, nutrition — everything you log in Health lifts your Physical pillar of the Vitana Index.',
+      'Sleep, movement, hydration, nutrition — every entry in Health lifts a pillar of your Vitana Index.',
     cta_label: 'Open Health',
     cta_url: '/health',
   },
@@ -208,21 +207,21 @@ export const DYK_TIP_REGISTRY: DidYouKnowTip[] = [
     eligibility_probe: (a) => !!a.journey.current_wave,
   },
 
-  // ─── Usage day 5: Calendar (Physical + Nutritional) ────────────────────
+  // ─── Usage day 5: Calendar (Exercise + Sleep + Mental + Nutrition) ─────
   {
     tip_key: 'dyk_calendar_index_impact_day5',
     feature_key: 'calendar_index_impact',
-    index_pillar_link: 'Physical',
+    index_pillar_link: 'Exercise',
     min_usage_day: 5,
     max_usage_day: 30,
     priority: 75,
     voice_opener:
-      'Did you know every event you complete in your Calendar is scored by the pillar it touches — a 30-minute walk lifts Physical, a meditation slot lifts Mental — and your Vitana Index updates within the hour?',
+      'Did you know every event you complete in your Calendar is scored by the pillar it touches — a 30-minute walk lifts Exercise, a meditation slot lifts Mental, an early bedtime lifts Sleep — and your Vitana Index updates within the hour?',
     voice_confirm: "Want to see today's Calendar?",
     voice_on_nav:
-      'This is your Calendar. Each completed event pushes its matched pillar up — the Index recomputes automatically. Show up, score up.',
+      'This is your Calendar. Each completed event pushes its matched pillar up — Exercise, Sleep, Mental, Nutrition, or Hydration — and the Index recomputes automatically. Show up, score up.',
     card_copy:
-      'Every completed Calendar event lifts its matched pillar — walk = Physical, meditation = Mental. Your Vitana Index recomputes automatically.',
+      'Every completed Calendar event lifts a pillar — walk = Exercise, meditation = Mental, water = Hydration. Your Vitana Index recomputes automatically.',
     cta_label: 'Open Calendar',
     cta_url: '/autopilot?tab=calendar',
     eligibility_probe: (a) =>
@@ -248,42 +247,49 @@ export const DYK_TIP_REGISTRY: DidYouKnowTip[] = [
     cta_url: '/memory',
   },
 
-  // ─── Usage day 10: Community (Social pillar) ───────────────────────────
+  // ─── Usage day 10: Community (Mental pillar — community=mental bridge) ─
+  // Per Phase G9 of the Index work, social engagement feeds the Mental pillar
+  // (the canonical 5-pillar set has no separate Social pillar). Community
+  // connections are scored as Mental-pillar inputs.
   {
     tip_key: 'dyk_community_day10',
     feature_key: 'community',
-    index_pillar_link: 'Social',
+    index_pillar_link: 'Mental',
     min_usage_day: 10,
     max_usage_day: 30,
     priority: 65,
     voice_opener:
-      "Did you know the Social pillar of your Vitana Index doesn't move until you have real connections — and Community is where you find them?",
+      "Did you know that real connections lift the Mental pillar of your Vitana Index? Loneliness is one of the strongest negative predictors of longevity — Community is where the antidote lives.",
     voice_confirm: 'Want me to show you?',
     voice_on_nav:
-      'Community. Every connection you build lifts your Social pillar — and the Social pillar is historically one of the strongest longevity predictors there is.',
+      'Community. Every connection, group, and conversation you build feeds your Mental pillar — and Mental is one of the most stable longevity predictors there is.',
     card_copy:
-      "Your Social pillar can't move without connections. Community is where they happen.",
+      "Connections lift the Mental pillar of your Vitana Index. Community is where they happen.",
     cta_label: 'Open Community',
     cta_url: '/community',
     eligibility_probe: (a) => a.community_signals.connection_count === 0,
   },
 
-  // ─── Usage day 14: Business Hub (Prosperity pillar) + Navigator ────────
+  // ─── Usage day 14: Business Hub (Mental pillar — stress/mastery) ──────
+  // Business Hub doesn't have its own Index pillar in the canonical 5-set
+  // (Prosperity was retired). The Mental pillar absorbs work-related
+  // stress + mastery / sense-of-progress signals; that's the meaningful
+  // longevity link.
   {
     tip_key: 'dyk_business_hub_day14',
     feature_key: 'business_hub',
-    index_pillar_link: 'Prosperity',
+    index_pillar_link: 'Mental',
     min_usage_day: 14,
     max_usage_day: 30,
     goal_categories: ['career', 'financial_freedom', 'Advance Career', 'Build Financial Freedom'],
     priority: 70,
     voice_opener:
-      "Did you know Business Hub feeds the Prosperity pillar of your Vitana Index? Your career moves and financial decisions are scored too, not just your sleep.",
+      "Did you know Business Hub indirectly lifts the Mental pillar of your Vitana Index? Career mastery and reduced financial stress are durable longevity inputs.",
     voice_confirm: 'Want me to open Business Hub?',
     voice_on_nav:
-      'Business Hub. Every deal, every skill milestone, every financial decision lifts the Prosperity pillar. Longevity is not only biology.',
+      'Business Hub. Skill milestones, deals, and reduced financial stress all flow into the Mental pillar of your Index over time. Longevity is not only biology.',
     card_copy:
-      'Business Hub lifts the Prosperity pillar of your Vitana Index — career and finance matter to longevity too.',
+      'Business Hub feeds the Mental pillar of your Vitana Index — career mastery and reduced stress are real longevity inputs.',
     cta_label: 'Open Business Hub',
     cta_url: '/business',
   },
@@ -429,14 +435,21 @@ export function tourHintFromTip(tip: DidYouKnowTip): {
  * test needs to verify that every tip's copy mentions the Index or a pillar,
  * it can pass each string through this check.
  */
+/**
+ * Tokens that must appear in every tip's voice_on_nav and card_copy strings.
+ * Enforces the "Index-centric framing" rule from the plan: every tip
+ * connects its feature back to the Vitana Index or one of its canonical
+ * 5 pillars. The retired 6-pillar names (Physical / Nutritional / Social /
+ * Environmental / Prosperity) are NOT included — using them would echo
+ * deprecated terminology back to users.
+ */
 export const INDEX_FRAMING_TOKENS: readonly string[] = [
   'Index',
-  'Physical',
+  'Nutrition',
+  'Hydration',
+  'Exercise',
+  'Sleep',
   'Mental',
-  'Nutritional',
-  'Social',
-  'Environmental',
-  'Prosperity',
 ];
 
 export function mentionsIndexOrPillar(text: string): boolean {
