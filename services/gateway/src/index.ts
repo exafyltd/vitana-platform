@@ -267,6 +267,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
   const chatRouter = require('./routes/chat').default;
+  // VTID-01967: Vitana ID — voice resolver, admin lookup, onboarding pick
+  const usersResolveRouter = require('./routes/users-resolve').default;
+  const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
+  const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
@@ -742,6 +746,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Chat — User-to-user direct messaging
   mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });
+
+  // VTID-01967: Vitana ID resolver + onboarding pick + admin lookup.
+  // Mounted under /api/v1/users so /resolve and /me/vitana-id/* are siblings;
+  // admin lookup is at /api/v1/admin (gated by exafy_admin role).
+  mountRouterSync(app, '/api/v1/users', usersResolveRouter, { owner: 'users-resolve' });
+  mountRouterSync(app, '/api/v1/users', usersVitanaIdRouter, { owner: 'users-vitana-id' });
+  mountRouterSync(app, '/api/v1/admin', adminUsersLookupRouter, { owner: 'admin-users-lookup' });
 
   // Admin: Signup Funnel Tracking & Outreach
   mountRouterSync(app, '/api/v1/admin/signups', adminSignupsRouter, { owner: 'admin-signups' });

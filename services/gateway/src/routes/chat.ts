@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import {
   requireAuth,
   requireTenant,
+  resolveVitanaId,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
@@ -48,6 +49,17 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const supabase = getSupabase();
+
+  // VTID-01967: denormalize sender + receiver vitana_id at insert time so
+  // support engineers and voice tooling can quote @<id> without joining
+  // profiles. Both lookups are cached. Null-tolerant: if either user has
+  // no vitana_id (pre-Release-A signup, or app_users not yet provisioned),
+  // the column stays NULL and downstream code falls back to display_name.
+  const [sender_vitana_id, receiver_vitana_id] = await Promise.all([
+    identity.vitana_id ? Promise.resolve(identity.vitana_id) : resolveVitanaId(identity.user_id),
+    resolveVitanaId(receiver_id),
+  ]);
+
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -55,6 +67,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       sender_id: identity.user_id,
       receiver_id,
       content: content.trim(),
+      ...(sender_vitana_id && { sender_vitana_id }),
+      ...(receiver_vitana_id && { receiver_vitana_id }),
     })
     .select()
     .single();
