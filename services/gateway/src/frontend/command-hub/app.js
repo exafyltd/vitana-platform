@@ -25363,9 +25363,15 @@ async function fetchServiceHealth(silentRefresh) {
     ];
 
     try {
+        // VTID-01982: send the operator's bearer token so health probes against
+        // routers gated by requireAuth/requireExafyAdmin (diary, automations,
+        // capacity, alignment, routing, situational, availability, mobility,
+        // user-prefs, taste, overload, mitigation, opportunities,
+        // vtid-terminalize) don't return 401 and trip a false "down" badge.
+        var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
         var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
             var start = Date.now();
-            return fetchWT(ep.url, {}, 6000)
+            return fetchWT(ep.url, { headers: probeHeaders }, 6000)
                 .then(function (r) {
                     var latency = Date.now() - start;
                     var ok = r.ok;
@@ -27618,9 +27624,11 @@ async function fetchOverviewDashboard() {
                 { name: 'Autopilot', url: '/api/v1/autopilot/health' },
                 { name: 'Assistant', url: '/api/v1/assistant/health' }
             ];
+        // VTID-01982: pass the operator's bearer token to /health probes
+        var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
             var start = Date.now();
-            return fetchWT(ep.url)
+            return fetchWT(ep.url, { headers: dashHeaders })
                 .then(function (r) {
                     var latency = Date.now() - start;
                     var ok = r.ok;
