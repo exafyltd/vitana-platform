@@ -2239,6 +2239,89 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['recipient_user_id', 'recipient_label', 'target_url', 'target_kind'],
           },
         },
+        // ─── VTID-01975 — Vitana Intent Engine ───
+        // Single voice tool that handles all six intent kinds. Same
+        // confirmation contract as send_chat_message: classify → extract →
+        // read back → only post on explicit verbal confirmation.
+        {
+          name: 'post_intent',
+          description: [
+            'Register an intent in the Vitana community catalog. Use this',
+            'whenever the user expresses a need, an offering, a desire to find',
+            'an activity partner / life partner / mentor, or willingness to',
+            'lend / borrow / give / receive. The classifier picks the kind',
+            'automatically; you can pass kind_hint when the user is explicit.',
+            '',
+            'CONFIRMATION CONTRACT (mandatory):',
+            '1. Call post_intent(utterance) WITHOUT confirmed=true. Server',
+            '   classifies + extracts + returns a structured summary.',
+            '2. Read the summary back verbatim ("Posting: ...").',
+            '3. Wait for explicit confirmation (post/yes/confirm/ja).',
+            '4. Call post_intent again WITH confirmed=true.',
+            '',
+            'For partner_seek: explain matches are revealed only after both',
+            'parties express interest (privacy protocol).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              utterance: { type: 'string', description: 'The user\'s words verbatim.' },
+              kind_hint: {
+                type: 'string',
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+              },
+              confirmed: { type: 'boolean' },
+            },
+            required: ['utterance'],
+          },
+        },
+        {
+          name: 'view_intent_matches',
+          description: 'Pull the top-N matches for one of the user\'s open intents. partner_seek matches show "(redacted)" until both parties express interest.',
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_id: { type: 'string' },
+              limit: { type: 'integer' },
+            },
+            required: ['intent_id'],
+          },
+        },
+        {
+          name: 'list_my_intents',
+          description: 'List the user\'s open intents. Optional kind filter.',
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_kind: {
+                type: 'string',
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+              },
+            },
+          },
+        },
+        {
+          name: 'respond_to_match',
+          description: 'Express interest or decline a match. CONFIRMATION CONTRACT: read summary back, only call with confirmed=true after explicit user response. partner_seek mutual interest unlocks reciprocal-reveal.',
+          parameters: {
+            type: 'object',
+            properties: {
+              match_id: { type: 'string' },
+              response: { type: 'string', enum: ['express_interest', 'decline'] },
+              confirmed: { type: 'boolean' },
+            },
+            required: ['match_id', 'response'],
+          },
+        },
+        {
+          name: 'mark_intent_fulfilled',
+          description: 'Close one of the user\'s intents because they got what they were looking for.',
+          parameters: {
+            type: 'object',
+            properties: { intent_id: { type: 'string' } },
+            required: ['intent_id'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -4490,6 +4573,326 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── VTID-01975 — Vitana Intent Engine voice tools ───
+      case 'post_intent': {
+        const utterance = String(args.utterance || '').trim();
+        const kindHint = (args.kind_hint as string) || undefined;
+        const confirmed = args.confirmed === true;
+        if (!utterance) {
+          return { success: false, result: '', error: 'utterance is required' };
+        }
+        try {
+          const { classifyIntentKind } = await import('../services/intent-classifier');
+          const { extractIntent } = await import('../services/intent-extractor');
+          const { embedIntent } = await import('../services/intent-embedding');
+          const { computeForIntent, surfaceTopMatches } = await import('../services/intent-matcher');
+          const { checkIntentContent } = await import('../services/intent-content-filter');
+          const { canPostIntent } = await import('../services/intent-throttle');
+          const { gateCommercialBudget } = await import('../services/intent-tier-gate');
+          const { notifyMatchSurfaced } = await import('../services/intent-notifier');
+          const { writeIntentFacts } = await import('../services/intent-memory-hooks');
+          const { getActiveCompassGoal } = await import('../services/intent-compass-lens');
+          const { createClient } = await import('@supabase/supabase-js');
+
+          // Classify (or use kind_hint).
+          let intentKind = kindHint as any;
+          if (!intentKind) {
+            const cls = await classifyIntentKind(utterance);
+            if (!cls.intent_kind || cls.confidence < 0.7) {
+              return {
+                success: true,
+                result: JSON.stringify({
+                  ok: false,
+                  reason: 'classify_low_confidence',
+                  classifier_confidence: cls.confidence,
+                  message: 'Could not confidently classify the utterance. Ask the user to clarify what kind of intent they want to post.',
+                }),
+              };
+            }
+            intentKind = cls.intent_kind;
+          }
+
+          // Extract.
+          const extract = await extractIntent(utterance, intentKind);
+          const summary = {
+            intent_kind: intentKind,
+            category: extract.category,
+            title: extract.title,
+            scope: extract.scope,
+            kind_payload: extract.kind_payload,
+            confidence: extract.confidence,
+            missing_critical: extract.missing_critical,
+          };
+
+          // Step 1 (no confirmed): return the summary for verbal read-back.
+          if (!confirmed) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                ok: true,
+                stage: 'awaiting_confirmation',
+                summary,
+                instructions: 'Read the summary back to the user verbatim, then call post_intent again with confirmed=true after they say post/yes/confirm/ja.',
+              }),
+            };
+          }
+
+          // Step 2 (confirmed=true): validate + write.
+          if (extract.missing_critical.length > 0 || extract.confidence < 0.6) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                ok: false,
+                reason: 'extract_incomplete',
+                summary,
+                message: 'Single-shot extraction missed required fields. Ask the user for ' + extract.missing_critical.join(', '),
+              }),
+            };
+          }
+
+          const cf = checkIntentContent({ kind: intentKind, title: extract.title!, scope: extract.scope! });
+          if (!cf.ok) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, reason: 'content_filter_blocked', reasons: cf.reasons }),
+            };
+          }
+
+          const budgetMax = (extract.kind_payload?.budget_max as number) ?? null;
+          const throttle = await canPostIntent({
+            userId: session.identity!.user_id,
+            kind: intentKind,
+            budgetMaxEur: typeof budgetMax === 'number' ? budgetMax : null,
+          });
+          if (!throttle.ok) {
+            return { success: true, result: JSON.stringify({ ok: false, reason: throttle.reason, message: throttle.detail }) };
+          }
+
+          if ((intentKind === 'commercial_buy' || intentKind === 'commercial_sell') && typeof budgetMax === 'number') {
+            const gate = await gateCommercialBudget(session.identity!.user_id, budgetMax);
+            if (!gate.ok) {
+              return { success: true, result: JSON.stringify({ ok: false, reason: 'tier_required', tier: gate.tier, required: gate.required, message: gate.reason }) };
+            }
+          }
+
+          const compass = await getActiveCompassGoal(session.identity!.user_id);
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+
+          const { data: inserted, error: insErr } = await supabase
+            .from('user_intents')
+            .insert({
+              requester_user_id: session.identity!.user_id,
+              tenant_id: session.identity!.tenant_id,
+              intent_kind: intentKind,
+              category: extract.category,
+              title: extract.title,
+              scope: extract.scope,
+              kind_payload: extract.kind_payload,
+              compass_alignment_at_post: compass?.category ?? null,
+              status: 'open',
+            })
+            .select('intent_id, requester_vitana_id')
+            .single();
+
+          if (insErr || !inserted) {
+            console.error('[VTID-01975] post_intent insert failed', insErr);
+            return { success: false, result: '', error: insErr?.message ?? 'insert_failed' };
+          }
+
+          const intentId = (inserted as any).intent_id;
+          const vid = (inserted as any).requester_vitana_id;
+
+          const embedding = await embedIntent({ intent_kind: intentKind, category: extract.category, title: extract.title!, scope: extract.scope!, kind_payload: extract.kind_payload });
+          if (embedding) {
+            await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+          }
+          writeIntentFacts({
+            user_id: session.identity!.user_id,
+            tenant_id: session.identity!.tenant_id!,
+            intent_kind: intentKind,
+            category: extract.category,
+            title: extract.title!,
+            scope: extract.scope!,
+            kind_payload: extract.kind_payload,
+          }).catch((err) => console.warn(`[VTID-01975] writeIntentFacts non-fatal: ${err?.message}`));
+
+          let matchCount = 0;
+          let topMatches: any[] = [];
+          try {
+            matchCount = await computeForIntent(intentId);
+            if (matchCount > 0) {
+              topMatches = await surfaceTopMatches(intentId, 3);
+              for (const m of topMatches) {
+                await notifyMatchSurfaced({ match: m, kind: intentKind });
+              }
+            }
+          } catch (err: any) {
+            console.warn(`[VTID-01975] post_intent match compute failed: ${err.message}`);
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'posted',
+              intent_id: intentId,
+              vitana_id: vid,
+              intent_kind: intentKind,
+              match_count: matchCount,
+              top_matches: topMatches.map((m: any) => ({
+                match_id: m.match_id,
+                vitana_id_b: intentKind === 'partner_seek' ? null : m.vitana_id_b,
+                score: m.score,
+                kind_pairing: m.kind_pairing,
+              })),
+              compass_aligned: !!compass?.category,
+              partner_seek_redacted: intentKind === 'partner_seek',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01975] post_intent error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'view_intent_matches': {
+        const intentId = String(args.intent_id || '').trim();
+        const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 10);
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        try {
+          const { surfaceTopMatches } = await import('../services/intent-matcher');
+          const { redactMatchForReader } = await import('../services/intent-mutual-reveal');
+          const matches = await surfaceTopMatches(intentId, limit);
+          const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, session.identity!.user_id)));
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              matches: redacted.map((m) => ({
+                match_id: m.match_id,
+                vitana_id_b: m.vitana_id_b,
+                score: m.score,
+                kind_pairing: m.kind_pairing,
+                state: m.state,
+                redacted: m.redacted,
+              })),
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01975] view_intent_matches error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'list_my_intents': {
+        const kindFilter = (args.intent_kind as string) || undefined;
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          let q = supabase
+            .from('user_intents')
+            .select('intent_id, intent_kind, category, title, status, match_count, created_at')
+            .eq('requester_user_id', session.identity!.user_id)
+            .in('status', ['open', 'matched', 'engaged'])
+            .order('created_at', { ascending: false })
+            .limit(20);
+          if (kindFilter) q = q.eq('intent_kind', kindFilter);
+          const { data, error } = await q;
+          if (error) return { success: false, result: '', error: error.message };
+          return {
+            success: true,
+            result: JSON.stringify({ ok: true, intents: data ?? [] }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01975] list_my_intents error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'respond_to_match': {
+        const matchId = String(args.match_id || '').trim();
+        const response = String(args.response || '').trim() as 'express_interest' | 'decline';
+        const confirmed = args.confirmed === true;
+        if (!matchId || !['express_interest', 'decline'].includes(response)) {
+          return { success: false, result: '', error: 'match_id and response (express_interest|decline) required' };
+        }
+        if (!confirmed) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'awaiting_confirmation',
+              instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
+            }),
+          };
+        }
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+
+          const { data: m } = await supabase
+            .from('intent_matches')
+            .select('match_id, intent_a_id, intent_b_id, state, kind_pairing')
+            .eq('match_id', matchId)
+            .maybeSingle();
+          if (!m) return { success: false, result: '', error: 'match_not_found' };
+
+          const { data: aOwner } = await supabase
+            .from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_a_id).maybeSingle();
+          const isA = aOwner && (aOwner as any).requester_user_id === session.identity!.user_id;
+          const stateField = response === 'express_interest'
+            ? (isA ? 'responded_by_a' : 'responded_by_b')
+            : 'declined';
+
+          let nextState: string = stateField;
+          if (response === 'express_interest') {
+            if ((m as any).state === 'responded_by_b' && stateField === 'responded_by_a') nextState = 'mutual_interest';
+            if ((m as any).state === 'responded_by_a' && stateField === 'responded_by_b') nextState = 'mutual_interest';
+          }
+
+          await supabase.from('intent_matches').update({ state: nextState }).eq('match_id', matchId);
+
+          if (nextState === 'mutual_interest') {
+            const { tryUnlockReveal } = await import('../services/intent-mutual-reveal');
+            const { notifyMutualInterest } = await import('../services/intent-notifier');
+            await tryUnlockReveal(matchId);
+            await notifyMutualInterest(matchId);
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'updated',
+              state: nextState,
+              mutual_interest_unlocked: nextState === 'mutual_interest',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01975] respond_to_match error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'mark_intent_fulfilled': {
+        const intentId = String(args.intent_id || '').trim();
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          const { error } = await supabase
+            .from('user_intents')
+            .update({ status: 'fulfilled' })
+            .eq('intent_id', intentId)
+            .eq('requester_user_id', session.identity!.user_id);
+          if (error) return { success: false, result: '', error: error.message };
+          return { success: true, result: JSON.stringify({ ok: true, intent_id: intentId, status: 'fulfilled' }) };
+        } catch (err: any) {
+          console.error('[VTID-01975] mark_intent_fulfilled error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -5720,6 +6123,30 @@ function detectAuthIntent(text: string): 'signup' | 'login' | null {
     if (pattern.test(lower)) return 'signup';
   }
   return null;
+}
+
+// VTID-01975: Intent Engine signal detector. Broad regex covering all six
+// intent kinds in EN + DE. Returns true on first match — the actual kind
+// disambiguation happens in intent-classifier.ts (Gemini call).
+const INTENT_SIGNAL_PATTERNS_EN = [
+  /\b(i (need|want|am looking for)|looking for someone|hire|find me)\b/i,
+  /\b(i (can offer|sell|provide|do this|am a)|i'd like to (sell|offer))\b/i,
+  /\b(anyone (want|interested|up for)|looking for (a partner|someone to))\b/i,
+  /\b(life partner|find a (girlfriend|boyfriend|partner)|looking for (love|relationship))\b/i,
+  /\b(coffee chat|looking for a mentor|connect with|networking)\b/i,
+  /\b(can lend|can borrow|free moving help|i can give|can i borrow)\b/i,
+];
+const INTENT_SIGNAL_PATTERNS_DE = [
+  /\b(ich (brauche|suche|will|möchte|biete|kann|verkaufe))\b/i,
+  /\b(jemand (zum|für))\b/i,
+  /\b(partner fürs leben)\b/i,
+];
+
+function detectIntentSignal(text: string): boolean {
+  if (!text) return false;
+  for (const p of INTENT_SIGNAL_PATTERNS_EN) if (p.test(text)) return true;
+  for (const p of INTENT_SIGNAL_PATTERNS_DE) if (p.test(text)) return true;
+  return false;
 }
 
 /**
@@ -9232,6 +9659,35 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
             }
           }
         }
+      }
+    }
+
+    // VTID-01975: Intent Engine proactive signal — fires alongside the
+    // task-creation check. Emits OASIS audit so we can measure how often
+    // the broad detector catches buying/selling/partner/activity/social/
+    // mutual-aid signals during normal chat. The actual proactive prompt
+    // to the user is handled by Gemini (system instructions guide it to
+    // call post_intent with confirmed=false on these signals).
+    if (process.env.FEATURE_INTENT_ENGINE_A === 'true' && detectIntentSignal(inputText)) {
+      try {
+        const { emitOasisEvent } = await import('../services/oasis-event-service');
+        await emitOasisEvent({
+          vtid: 'VTID-01975',
+          type: 'voice.message.sent',
+          source: 'orb-live-intent-signal',
+          status: 'info',
+          message: 'intent.proactive_signal.observed',
+          payload: {
+            session_id: orbSessionId,
+            utterance_length: inputText.length,
+            in_active_intake: hasActiveIntake(orbSessionId),
+          },
+          actor_id: identity?.user_id,
+          surface: 'orb',
+          vitana_id: (identity as any)?.vitana_id ?? undefined,
+        });
+      } catch (err: any) {
+        console.warn(`[VTID-01975] intent signal audit failed: ${err.message}`);
       }
     }
 
