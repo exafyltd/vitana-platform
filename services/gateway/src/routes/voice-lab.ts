@@ -20,6 +20,10 @@ import {
 import { spawnInvestigator } from '../services/voice-architecture-investigator';
 import { setMode } from '../services/voice-shadow-mode';
 import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
+import {
+  buildHealingSummary,
+  buildShadowComparison,
+} from '../services/voice-healing-summary';
 
 const router = Router();
 
@@ -741,6 +745,50 @@ router.post('/healing/mode', async (req: Request, res: Response) => {
   }
   const r = await setMode(next, actorVtid);
   return res.json(r);
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/summary (VTID-01965, PR #8)
+ *
+ * Aggregated dashboard view: per-class 24h/7d/30d dispatch counts,
+ * fix success rate (probe-verified), avg time-to-recurrence, rollback
+ * count, quarantine status, probation status, latest investigation
+ * report ID, and unknown-class debt percentage with the SLO band.
+ *
+ * Read-only and side-effect-free; safe to poll from the dashboard.
+ */
+router.get('/healing/summary', async (_req: Request, res: Response) => {
+  try {
+    const s = await buildHealingSummary();
+    return res.json({ ok: true, ...s });
+  } catch (err: any) {
+    console.error('[VTID-01965] /healing/summary error:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/shadow-comparison?window_hours=48 (VTID-01965, PR #8)
+ *
+ * Joins voice_healing_shadow_log decisions in the window with the
+ * actual outcomes captured in voice_healing_history for the same
+ * (class, normalized_signature) pair (±15 min match window).
+ *
+ * Used during the ≥48h shadow observation period before flipping
+ * mode=live. The match_rate field is the headline number ops watches.
+ */
+router.get('/healing/shadow-comparison', async (req: Request, res: Response) => {
+  const window_hours = Math.min(
+    Math.max(Number(req.query.window_hours) || 48, 1),
+    24 * 30,
+  );
+  try {
+    const c = await buildShadowComparison(window_hours);
+    return res.json({ ok: true, ...c });
+  } catch (err: any) {
+    console.error('[VTID-01965] /healing/shadow-comparison error:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 /**
