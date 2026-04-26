@@ -222,6 +222,16 @@ const VoiceLab = (function() {
             <div class="vlab-detail-label">Transport</div>
             <div class="vlab-detail-value">${s.transport}</div>
           </div>
+          ${(s.vitana_id || s.user_id) ? `
+          <div class="vlab-detail-item">
+            <div class="vlab-detail-label">User</div>
+            <div class="vlab-detail-value" title="${s.user_id || ''}">
+              ${s.vitana_id ? `<strong class="vlab-vitana-id">@${escapeHtml(s.vitana_id)}</strong>` : ''}
+              ${s.vitana_id && s.user_id ? '<span class="vlab-detail-secondary"> · </span>' : ''}
+              ${s.user_id ? `<span class="vlab-detail-secondary">${truncateId(s.user_id)}</span>` : ''}
+            </div>
+          </div>
+          ` : ''}
         </div>
       </div>
 
