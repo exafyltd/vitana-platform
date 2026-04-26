@@ -311,14 +311,22 @@ triageAgentRouter.get('/:sessionId/stream', async (req: Request, res: Response) 
             break;
 
           case 'agent.custom_tool_use': {
-            // Handle query_oasis_events — execute with our Supabase creds
+            // The Anthropic event uses `name` (not `tool_name`); fall back to
+            // `tool_name` defensively in case a future API rev renames it.
+            const toolName: string | undefined = event.name || event.tool_name;
+
+            // Handle query_oasis_events — execute with our Supabase creds.
+            // Forward to the browser AND keep the legacy `tool_name` key in
+            // the SSE payload for backwards compat with the existing UI;
+            // also expose `name` so future UI code can match the API field.
             sendSSE('agent.custom_tool_use', {
               id: event.id,
-              tool_name: event.tool_name,
+              name: toolName,
+              tool_name: toolName,
               input: event.input,
             });
 
-            if (event.tool_name === 'query_oasis_events') {
+            if (toolName === 'query_oasis_events') {
               const oasisResult = await queryOasisEvents(
                 event.input?.session_id || '',
                 event.input?.limit || 100
