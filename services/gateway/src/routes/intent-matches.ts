@@ -206,4 +206,40 @@ router.post('/:id/decline', requireAuth, requireTenant, async (req: Request, res
   return res.json({ ok: true, state: 'declined' });
 });
 
+// ── POST /intent-matches/:id/dispute ─────────────────────────
+// VTID-01976 (P2-C): raise a dispute on a match. Either party can raise;
+// admin resolves via /api/v1/admin/intent-engine/disputes/* routes.
+
+router.post('/:id/dispute', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const reasonCategory = String(req.body?.reason_category ?? '').trim();
+  const reasonDetail = String(req.body?.reason_detail ?? '').trim();
+  const allowedCategories = ['no_show', 'misrepresented', 'safety', 'payment', 'other'];
+  if (!allowedCategories.includes(reasonCategory)) {
+    return res.status(400).json({ ok: false, error: 'invalid_reason_category', allowed: allowedCategories });
+  }
+  if (reasonDetail.length < 10 || reasonDetail.length > 2000) {
+    return res.status(400).json({ ok: false, error: 'reason_detail must be 10-2000 chars' });
+  }
+
+  try {
+    const { raiseDispute } = await import('../services/intent-dispute-service');
+    const dispute = await raiseDispute({
+      match_id: req.params.id,
+      raised_by: identity.user_id,
+      reason_category: reasonCategory as any,
+      reason_detail: reasonDetail,
+      vitana_id_hint: identity.vitana_id ?? null,
+    });
+    return res.status(201).json({ ok: true, dispute });
+  } catch (err: any) {
+    const msg = err?.message ?? 'unknown';
+    if (msg === 'match_not_found') return res.status(404).json({ ok: false, error: msg });
+    if (msg === 'not_a_party') return res.status(403).json({ ok: false, error: msg });
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
+
 export default router;
