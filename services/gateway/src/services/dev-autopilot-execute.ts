@@ -39,6 +39,7 @@ import {
 import { extractFilePaths, generatePlanVersion } from './dev-autopilot-planning';
 import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure } from './dev-autopilot-self-heal-log';
+import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -417,6 +418,15 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
       plan_version: plan.version,
       execute_after: executeAfter.toISOString(),
     },
+  });
+
+  // Outcomes substrate: one row per decision. approved_by present → human
+  // approval; absent → auto-exec via autoApproveTick. exec_outcome is
+  // backfilled later when the worker reports completion/failure.
+  await recordOutcome({
+    finding_id: input.finding_id,
+    decision: input.approved_by ? 'approved' : 'auto_exec',
+    approver_user_id: input.approved_by || null,
   });
 
   return {
@@ -1105,6 +1115,28 @@ async function patchExecution(
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
   });
+  // Outcomes substrate: when an execution reaches a terminal state, look up
+  // its finding_id and backfill the open outcome row. Centralizing here
+  // covers all 9+ patch-to-terminal call sites without per-site changes.
+  if (r.ok && (fields.status === 'completed' || fields.status === 'failed')) {
+    void (async () => {
+      try {
+        const lookupR = await supa<Array<{ finding_id: string }>>(
+          s,
+          `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id&limit=1`,
+        );
+        const finding_id = lookupR.ok && lookupR.data?.[0]?.finding_id;
+        if (finding_id) {
+          await recordExecOutcome(
+            finding_id,
+            fields.status === 'completed' ? 'success' : 'failure',
+          );
+        }
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} outcome backfill error for ${id.slice(0, 8)}:`, err);
+      }
+    })();
+  }
   return { ok: r.ok, error: r.error };
 }
 

@@ -211,11 +211,16 @@ function scoreSignal(signal: DevAutopilotSignal): {
   const impact = SEVERITY_IMPACT[signal.severity];
   const effort = TYPE_EFFORT[signal.type];
   const risk = TYPE_RISK_CLASS[signal.type];
+  // Conservative triage: only low-risk findings with non-trivial impact
+  // bypass the human-approval queue. Medium-risk signals (todo, missing_tests,
+  // rls_gap, schema_drift, product_gap, ...) always require human review.
+  // The dispatcher does a final destructive-op grep on the plan content
+  // before actually executing, so this rule is the first of two gates.
   return {
     impact_score: impact,
     effort_score: effort,
     risk_class: risk,
-    auto_exec_eligible: risk !== 'high',
+    auto_exec_eligible: risk === 'low' && impact >= 5,
   };
 }
 
