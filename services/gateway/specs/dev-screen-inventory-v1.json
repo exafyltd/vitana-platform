@@ -175,7 +175,7 @@
   "screen_inventory": {
     "total_screens": 110,
     "total_entries": 289,
-    "last_synced": "2026-04-25",
+    "last_synced": "2026-04-26",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
       "DEVELOPER": 110,
