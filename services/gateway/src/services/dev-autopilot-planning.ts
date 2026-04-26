@@ -120,45 +120,41 @@ interface MessagesResponse {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase D): plan-gen direct-API call now goes through
+ * the provider router. The router reads llm_routing_policy.policy.planner
+ * and dispatches to the configured provider (default Vertex / gemini-3.1-pro
+ * with Anthropic / claude-opus-4-7 fallback). Operators flip providers via
+ * the Command Hub dropdown without code edits.
+ *
+ * This path only fires when the worker queue is unavailable (worker daemon
+ * dead, binary missing) — the worker queue path at runPlanningSession()
+ * remains the primary, free Claude-subscription route.
+ *
+ * Return shape preserved so callers don't change.
+ */
 async function callMessagesApi(
   prompt: string,
+  vtid?: string | null,
 ): Promise<{ ok: boolean; text?: string; usage?: MessagesResponse['usage']; error?: string }> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), MESSAGES_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${ANTHROPIC_BASE}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: PLANNING_MODEL,
-        max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      signal: ctl.signal,
-    });
-    if (!res.ok) {
-      return { ok: false, error: `${res.status}: ${(await res.text()).slice(0, 500)}` };
-    }
-    const data = (await res.json()) as MessagesResponse;
-    const text = (data.content || [])
-      .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text as string)
-      .join('\n')
-      .trim();
-    if (!text) return { ok: false, error: 'Messages API returned no text content', usage: data.usage };
-    return { ok: true, text, usage: data.usage };
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      return { ok: false, error: `Messages API aborted after ${MESSAGES_TIMEOUT_MS / 1000}s` };
-    }
-    return { ok: false, error: String(err) };
-  } finally {
-    clearTimeout(timer);
+  // Lazy import to avoid a circular dep at module init time.
+  const { callViaRouter } = await import('./llm-router');
+  const r = await callViaRouter('planner', prompt, {
+    vtid: vtid ?? null,
+    service: 'dev-autopilot-planning',
+    allowFallback: true,
+    maxTokens: 8000,
+  });
+  if (!r.ok) {
+    return { ok: false, error: r.error || 'router returned ok=false' };
   }
+  return {
+    ok: true,
+    text: r.text,
+    usage: r.usage
+      ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
+      : undefined,
+  };
 }
 
 async function fetchFileFromGitHub(
@@ -646,7 +642,7 @@ async function runPlanningSession(
         },
         { timeoutMs: MESSAGES_TIMEOUT_MS },
       )
-    : await callMessagesApi(prompt);
+    : await callMessagesApi(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
 
   // Auto-fallback for the worker-binary-missing failure: when the worker
   // can't spawn the Claude Code CLI (ENOENT, binary path stale after an
@@ -658,7 +654,7 @@ async function runPlanningSession(
   let fallback_used = false;
   if (!call.ok && isWorkerQueueEnabled() && isWorkerBinaryMissing(call.error) && ANTHROPIC_API_KEY) {
     console.warn(`${LOG_PREFIX} worker binary missing — falling back to Messages API for ${finding.id}`);
-    call = await callMessagesApi(prompt);
+    call = await callMessagesApi(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
     fallback_used = true;
   }
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
