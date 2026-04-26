@@ -1,0 +1,55 @@
+name: Set OPENAI_API_KEY on Cloud Run gateway (VTID-01972 follow-up)
+# One-shot workflow_dispatch — sets the OPENAI_API_KEY env var on the
+# Cloud Run gateway service so memory_items embedding backfill can
+# reach OpenAI text-embedding-3-small.
+#
+# Security: the key value is masked in logs via `::add-mask::` BEFORE
+# any subsequent step prints it. The workflow run is only visible to
+# repo admins.
+
+on:
+  workflow_dispatch:
+    inputs:
+      openai_key:
+        description: 'OpenAI API key (sk-... — will be masked in logs)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  set-key:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mask the input value in all subsequent log output
+        run: echo "::add-mask::${{ inputs.openai_key }}"
+
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Update gateway env var
+        env:
+          OPENAI_KEY: ${{ inputs.openai_key }}
+        run: |
+          set -euo pipefail
+          gcloud run services update gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --update-env-vars=OPENAI_API_KEY="$OPENAI_KEY"
+          echo "OPENAI_API_KEY set on gateway"
+
+      - name: Verify (curl /alive — should still be 200)
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" https://gateway-q74ibpv6ia-uc.a.run.app/alive)
+          echo "Gateway /alive HTTP $STATUS"
+          [ "$STATUS" = "200" ] || { echo "::error::gateway not healthy after env update"; exit 1; }
