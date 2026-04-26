@@ -2109,6 +2109,136 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['topic'],
           },
         },
+        // ─── VTID-01967 — Vitana ID voice messaging ───
+        // Three tools that let the user say "send a message to alex3700"
+        // or "share this link with maria2307" and have ORB resolve the
+        // recipient, confirm verbally, and send. These tools enforce a
+        // strict confirmation contract: ALWAYS resolve first, ALWAYS
+        // read back, ONLY send on explicit verbal confirmation.
+        {
+          name: 'resolve_recipient',
+          description: [
+            'Resolve a spoken recipient name or Vitana ID to a real user.',
+            'Call this FIRST any time the user says "send a message to X",',
+            '"text X", "share this with X", "tell X that ...", "invite X",',
+            'or any other phrase where X is meant to be another Vitana user.',
+            '',
+            'Returns ranked candidates. Each has:',
+            '  - user_id (opaque UUID — pass to send_chat_message / share_link)',
+            '  - vitana_id (speakable, e.g. "alex3700" — read this to the user)',
+            '  - display_name (their full name)',
+            '  - score (0.00-1.10; 1.0 = exact vitana_id match)',
+            '  - reason ("vitana_id_exact" | "legacy_handle" | "fuzzy_name")',
+            '',
+            'Also returns top_confidence and ambiguous (boolean).',
+            '',
+            'BEHAVIOR:',
+            '  1. If candidates is empty: tell the user you couldn\'t find',
+            '     anyone matching that name and ask them to repeat or spell',
+            '     the Vitana ID.',
+            '  2. If ambiguous=false AND top_confidence >= 0.85 AND only ONE',
+            '     candidate: silently pick candidates[0] and proceed to step 4.',
+            '  3. If ambiguous=true OR multiple candidates: read up to 3',
+            '     options to the user — "I see {N} matches: @<vid1>',
+            '     ({display_name1}), @<vid2> ({display_name2}). Which one?"',
+            '     Wait for them to pick by Vitana ID, by name, or by',
+            '     position ("the first one", "Daniela Müller").',
+            '  4. After a recipient is chosen, NEVER call send_chat_message',
+            '     or share_link directly — first read the message back to',
+            '     the user verbatim and ask "say send to confirm or cancel',
+            '     to stop". Only on explicit confirmation, call the send',
+            '     tool.',
+            '',
+            'NEVER resolve to the user\'s own ID — the resolver excludes self.',
+            'NEVER skip this step before sending; the send tools assume a',
+            'pre-resolved user_id from this call.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              spoken_name: {
+                type: 'string',
+                description: 'The recipient name / Vitana ID exactly as the user said it. Examples: "Daniela", "alex3700", "@alex3700", "Branislav". Strip leading @ if present (the resolver normalizes).',
+              },
+              limit: {
+                type: 'integer',
+                description: 'Maximum candidates to return (default 5). Keep low for voice — 3 is plenty.',
+              },
+            },
+            required: ['spoken_name'],
+          },
+        },
+        {
+          name: 'send_chat_message',
+          description: [
+            'Send a direct message to another Vitana user. ONLY call this',
+            'after resolve_recipient has returned a candidate AND the user',
+            'has verbally confirmed both the recipient AND the message body',
+            '(e.g. "yes send it", "send", "confirm", "ja schick es").',
+            '',
+            'NEVER call this without resolve_recipient first.',
+            'NEVER auto-fire on "I want to message X" — always read back and wait.',
+            '',
+            'After a successful send, acknowledge briefly: "Sent to @<vid>."',
+            'If the response says rate_limited, tell the user: "I can\'t send',
+            'any more messages this session — please open the app to continue."',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              recipient_user_id: {
+                type: 'string',
+                description: 'Opaque user_id from resolve_recipient candidates[i].user_id. Never derive this any other way.',
+              },
+              recipient_label: {
+                type: 'string',
+                description: 'The vitana_id of the recipient, used in the OASIS audit trail and acknowledgement (e.g. "alex3700"). Pass candidates[i].vitana_id verbatim.',
+              },
+              body: {
+                type: 'string',
+                description: 'The message body, exactly as the user dictated it. Do not rephrase or summarize.',
+              },
+            },
+            required: ['recipient_user_id', 'recipient_label', 'body'],
+          },
+        },
+        {
+          name: 'share_link',
+          description: [
+            'Share a link with another Vitana user as a chat message with a',
+            'link-card preview. Same confirmation contract as send_chat_message:',
+            'ALWAYS resolve_recipient first, ALWAYS read back the link target',
+            'and recipient, ONLY send on explicit confirmation.',
+            '',
+            'Use this when the user says "share this with X", "send the page',
+            'to X", "invite X to this", or similar. If the user is on a',
+            'specific screen, call get_current_screen first to learn the',
+            'target_url and target_kind ("event", "post", "profile", etc.),',
+            'then read both back to the user before sending.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              recipient_user_id: {
+                type: 'string',
+                description: 'Opaque user_id from resolve_recipient candidates[i].user_id.',
+              },
+              recipient_label: {
+                type: 'string',
+                description: 'Recipient vitana_id (e.g. "alex3700").',
+              },
+              target_url: {
+                type: 'string',
+                description: 'Full URL of the resource to share (e.g. https://vitanaland.com/events/abc).',
+              },
+              target_kind: {
+                type: 'string',
+                description: 'What is being shared. Examples: "event", "meetup", "post", "profile", "product", "campaign", "page".',
+              },
+            },
+            required: ['recipient_user_id', 'recipient_label', 'target_url', 'target_kind'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -4164,6 +4294,198 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[explain_feature] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-01967 — Vitana ID voice messaging ───
+      case 'resolve_recipient': {
+        const spoken = String(args.spoken_name || '').trim();
+        const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
+        if (!spoken) {
+          return { success: false, result: '', error: 'spoken_name is required' };
+        }
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE!,
+          );
+          const { data, error } = await supabase.rpc('resolve_recipient_candidates', {
+            p_actor: session.identity.user_id,
+            p_token: spoken,
+            p_limit: limit,
+            p_global: false,
+          });
+          if (error) {
+            console.error('[VTID-01967] resolve_recipient RPC error:', error.message);
+            return { success: false, result: '', error: error.message };
+          }
+          const candidates = (data || []) as Array<{
+            user_id: string;
+            vitana_id: string | null;
+            display_name: string | null;
+            score: number;
+            reason: string;
+          }>;
+          const top_confidence = candidates.length > 0 ? Number(candidates[0].score) : 0;
+          const ambiguous =
+            candidates.length === 0 ||
+            top_confidence < 0.85 ||
+            (candidates.length > 1 && Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
+          return {
+            success: true,
+            result: JSON.stringify({
+              candidates,
+              top_confidence,
+              ambiguous,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01967] resolve_recipient error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'send_chat_message': {
+        const recipientUserId = String(args.recipient_user_id || '').trim();
+        const recipientLabel = String(args.recipient_label || '').trim();
+        const body = String(args.body || '').trim();
+        if (!recipientUserId || !body) {
+          return { success: false, result: '', error: 'recipient_user_id and body are required' };
+        }
+        if (recipientUserId === session.identity.user_id) {
+          return { success: false, result: '', error: 'cannot message yourself' };
+        }
+        try {
+          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
+          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+          const recipientVitanaId = await resolveVitanaId(recipientUserId);
+          const quota = await checkVoiceSendQuota({
+            session_id: session.sessionId,
+            actor_id: session.identity.user_id,
+            vitana_id: session.identity.vitana_id,
+            recipient_user_id: recipientUserId,
+            recipient_vitana_id: recipientVitanaId,
+            kind: 'message',
+            body_length: body.length,
+          });
+          if (!quota.allowed) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
+            };
+          }
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE!,
+          );
+          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
+          const { error: insErr } = await supabase
+            .from('chat_messages')
+            .insert({
+              tenant_id: session.identity.tenant_id,
+              sender_id: session.identity.user_id,
+              receiver_id: recipientUserId,
+              content: body,
+              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+              metadata: {
+                source: 'voice',
+                session_id: session.sessionId,
+                recipient_label: recipientLabel || recipientVitanaId,
+              },
+            });
+          if (insErr) {
+            console.error('[VTID-01967] send_chat_message insert error:', insErr.message);
+            return { success: false, result: '', error: insErr.message };
+          }
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
+              remaining: quota.remaining,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01967] send_chat_message error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'share_link': {
+        const recipientUserId = String(args.recipient_user_id || '').trim();
+        const recipientLabel = String(args.recipient_label || '').trim();
+        const targetUrl = String(args.target_url || '').trim();
+        const targetKind = String(args.target_kind || 'page').trim();
+        if (!recipientUserId || !targetUrl) {
+          return { success: false, result: '', error: 'recipient_user_id and target_url are required' };
+        }
+        if (recipientUserId === session.identity.user_id) {
+          return { success: false, result: '', error: 'cannot share with yourself' };
+        }
+        try {
+          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
+          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+          const recipientVitanaId = await resolveVitanaId(recipientUserId);
+          const quota = await checkVoiceSendQuota({
+            session_id: session.sessionId,
+            actor_id: session.identity.user_id,
+            vitana_id: session.identity.vitana_id,
+            recipient_user_id: recipientUserId,
+            recipient_vitana_id: recipientVitanaId,
+            kind: 'share_link',
+            target_url: targetUrl,
+          });
+          if (!quota.allowed) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
+            };
+          }
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE!,
+          );
+          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
+          const previewBody = `🔗 ${targetUrl}`;
+          const { error: insErr } = await supabase
+            .from('chat_messages')
+            .insert({
+              tenant_id: session.identity.tenant_id,
+              sender_id: session.identity.user_id,
+              receiver_id: recipientUserId,
+              content: previewBody,
+              message_type: 'link_share',
+              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+              metadata: {
+                source: 'voice',
+                session_id: session.sessionId,
+                kind: 'shared_link',
+                target_url: targetUrl,
+                target_kind: targetKind,
+                recipient_label: recipientLabel || recipientVitanaId,
+              },
+            });
+          if (insErr) {
+            console.error('[VTID-01967] share_link insert error:', insErr.message);
+            return { success: false, result: '', error: insErr.message };
+          }
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
+              target_kind: targetKind,
+              remaining: quota.remaining,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[VTID-01967] share_link error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

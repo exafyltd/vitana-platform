@@ -686,7 +686,13 @@ export type CicdEventType =
   // OAuth WebView fix Phase 5: background OAuth token refresher
   | 'oauth.token.refresh.succeeded'
   | 'oauth.token.refresh.failed'
-  | 'oauth.token.refresh.tombstoned';
+  | 'oauth.token.refresh.tombstoned'
+  // VTID-01967: Vitana ID voice messaging
+  | 'voice.message.sent'
+  | 'voice.message.rate_limited'
+  | 'voice.message.misroute'
+  | 'voice.message.share_link_sent'
+  | 'vitana_id.confirmed';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -703,6 +709,10 @@ export interface CicdOasisEvent {
   conversation_turn_id?: string;
   // VTID-01874: Explicit stage annotation for correct timeline mapping
   task_stage?: 'PLANNER' | 'WORKER' | 'VALIDATOR' | 'DEPLOY';
+  // VTID-01967: Canonical Vitana ID denormalized for support / audit queries.
+  // Auto-resolved from actor_id if omitted by caller (cached lookup in
+  // emitOasisEvent). Null when the event has no human actor (system/cron).
+  vitana_id?: string | null;
 }
 
 // ==================== Allowed Services for Deploy ====================
