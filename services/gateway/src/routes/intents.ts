@@ -33,6 +33,7 @@ import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
 import { redactMatchForReader } from '../services/intent-mutual-reveal';
 import { notifyMatchSurfaced } from '../services/intent-notifier';
+import { writeIntentFacts } from '../services/intent-memory-hooks';
 import { getActiveCompassGoal } from '../services/intent-compass-lens';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
@@ -174,13 +175,25 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
   }
 
+  // VTID-01975 (P2-B): kind-discriminated Memory Garden write hooks.
+  // Fire-and-forget so the post path is never blocked by memory persistence.
+  writeIntentFacts({
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id!,
+    intent_kind: intentKind,
+    category,
+    title: title!,
+    scope: scope!,
+    kind_payload: kindPayload,
+  }).catch((err) => console.warn(`[VTID-01975] writeIntentFacts non-fatal: ${err?.message}`));
+
   // Compute matches now (best-effort; daily recompute catches misses).
   let matchCount = 0;
   try {
     matchCount = await computeForIntent((inserted as any).intent_id);
     if (matchCount > 0) {
       const top = await surfaceTopMatches((inserted as any).intent_id, 5);
-      // Audit each surfaced match (P2-A: no push — that's P2-B).
+      // VTID-01975 (P2-B): real push fan-out replaces P2-A audit-only stub.
       for (const m of top) {
         await notifyMatchSurfaced({ match: m, kind: intentKind });
       }
