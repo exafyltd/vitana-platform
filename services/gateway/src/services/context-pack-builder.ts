@@ -48,6 +48,8 @@ import { formatSessionBufferForLLM, getSessionContext } from './session-memory-b
 // VTID-01955: Tier 0 Memorystore Redis turn buffer (multi-instance shared) — gated by tier0_redis_enabled flag.
 import { getSessionContextRedis, formatRedisBufferForLLM } from './redis-turn-buffer';
 import { isTier0RedisEnabled } from './system-controls-service';
+// VTID-01966 Phase 2: HIPAA-grade audit on every memory read.
+import { auditMemoryRead } from './memory-audit';
 // VTID-02000: Marketplace context primitive
 import { getUserHealthContext } from './user-health-context';
 
@@ -1444,6 +1446,39 @@ export async function buildContextPack(
     },
   }).catch(err => {
     console.warn(`[VTID-01216] Failed to log context pack event: ${err.message}`);
+  });
+
+  // VTID-01966 Phase 2: HIPAA-grade audit log entry for every memory read.
+  // Fire-and-forget — never blocks the LLM call. Health-scoped writes get the
+  // dedicated index for fast HIPAA replay.
+  auditMemoryRead({
+    tenant_id: input.lens.tenant_id,
+    user_id: input.lens.user_id,
+    tier: 'context-pack-builder',
+    actor_id: `conversation-${input.channel}`,
+    source_engine: 'context-pack-builder',
+    source_event_id: packId,
+    health_scope: hitCounts.memory_garden > 0,  // memory garden hits often touch health
+    details: {
+      intent: input.query?.slice(0, 80) ?? null,
+      blocks_returned: [
+        ...(memoryHits.length > 0 ? ['MEMORY'] : []),
+        ...(knowledgeHits.length > 0 ? ['KNOWLEDGE'] : []),
+        ...(webHits.length > 0 ? ['WEB'] : []),
+        ...(relationshipContext.length > 0 ? ['RELATIONSHIPS'] : []),
+        ...(calendarContext ? ['CALENDAR'] : []),
+        ...(oasisContext ? ['OASIS'] : []),
+        ...(sessionBufferData && sessionBufferData.turn_count > 0 ? ['SESSION_BUFFER'] : []),
+      ],
+      item_counts: hitCounts,
+      latency_ms: pack.assembly_duration_ms,
+      cache_hit: bufferSource === 'redis',
+      tokens_used: tokensUsed,
+      channel: input.channel,
+      thread_id: input.thread_id,
+      router_decision_rule: input.router_decision?.matched_rule,
+      router_decision_sources: input.router_decision?.sources_to_query,
+    },
   });
 
   return pack;
