@@ -15,6 +15,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { redactMatchForReader, tryUnlockReveal } from '../services/intent-mutual-reveal';
+import { notifyMutualInterest } from '../services/intent-notifier';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { MatchRow } from '../services/intent-matcher';
 
@@ -129,9 +130,11 @@ router.post('/:id/state', requireAuth, requireTenant, async (req: Request, res: 
     .eq('match_id', req.params.id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  // If transitioned to mutual_interest, try the reveal protocol.
+  // If transitioned to mutual_interest, try the reveal protocol AND fire
+  // bilateral push notifications + auto-thread seed (P2-B).
   if (computedNextState === 'mutual_interest') {
     await tryUnlockReveal(req.params.id);
+    await notifyMutualInterest(req.params.id);
   }
 
   await emitOasisEvent({

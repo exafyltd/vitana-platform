@@ -147,6 +147,16 @@ const TYPE_META: Record<string, TypeMeta> = {
   referral_signup:             { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
   referral_reward_earned:      { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
   share_countdown_prompt:      { channel: 'inapp',          priority: 'p2', category: 'growth' },
+  // VTID-01975: Vitana Intent Engine (P2-B). Category 'opportunity' so users
+  // can silence the whole bucket via existing notification preferences.
+  // p0 reserved for partner_seek reciprocal-reveal — high stakes + rare.
+  intent_match_found_for_dictator:    { channel: 'push_and_inapp', priority: 'p1', category: 'opportunity' },
+  intent_lead_for_counterparty:       { channel: 'push_and_inapp', priority: 'p1', category: 'opportunity' },
+  intent_mutual_interest:             { channel: 'push_and_inapp', priority: 'p1', category: 'opportunity' },
+  intent_partner_reciprocal_revealed: { channel: 'push_and_inapp', priority: 'p0', category: 'opportunity' },
+  intent_compass_change_resurface:    { channel: 'inapp',          priority: 'p2', category: 'opportunity' },
+  intent_throttled:                   { channel: 'inapp',          priority: 'p2', category: 'opportunity' },
+  intent_proactive_prompt_summary:    { channel: 'inapp',          priority: 'p3', category: 'system' },
 };
 
 // Category → preference column in user_notification_preferences
