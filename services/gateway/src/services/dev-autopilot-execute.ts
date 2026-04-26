@@ -789,48 +789,39 @@ function buildExecutionPrompt(
   return lines.join('\n');
 }
 
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase E): execute direct-API call now goes through
+ * the provider router. The router reads llm_routing_policy.policy.worker
+ * and dispatches to the configured fallback provider (default Vertex /
+ * gemini-3.1-pro with Anthropic / claude-opus-4-7 secondary fallback).
+ *
+ * This path only fires when the worker queue is unavailable (worker daemon
+ * dead, binary missing) — the worker queue path at runExecutionSession()
+ * remains the primary, free Claude-subscription route. Code generation
+ * quality matters most here, which is why the worker (Claude subscription)
+ * stays primary; Gemini 3.1 Pro is the fallback floor.
+ */
 async function callMessagesApi(
   prompt: string,
+  vtid?: string | null,
 ): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), MESSAGES_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${ANTHROPIC_BASE}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: EXECUTION_MODEL,
-        max_tokens: MESSAGES_MAX_TOKENS,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      signal: ctl.signal,
-    });
-    if (!res.ok) {
-      return { ok: false, error: `${res.status}: ${(await res.text()).slice(0, 500)}` };
-    }
-    const data = (await res.json()) as {
-      content: Array<{ type: string; text?: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
-    };
-    const text = (data.content || [])
-      .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text as string)
-      .join('\n')
-      .trim();
-    if (!text) return { ok: false, error: 'Messages API returned no text content', usage: data.usage };
-    return { ok: true, text, usage: data.usage };
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      return { ok: false, error: `Messages API aborted after ${MESSAGES_TIMEOUT_MS / 1000}s` };
-    }
-    return { ok: false, error: String(err) };
-  } finally {
-    clearTimeout(timer);
+  const { callViaRouter } = await import('./llm-router');
+  const r = await callViaRouter('worker', prompt, {
+    vtid: vtid ?? null,
+    service: 'dev-autopilot-execute',
+    allowFallback: true,
+    maxTokens: MESSAGES_MAX_TOKENS,
+  });
+  if (!r.ok) {
+    return { ok: false, error: r.error || 'router returned ok=false' };
   }
+  return {
+    ok: true,
+    text: r.text,
+    usage: r.usage
+      ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
+      : undefined,
+  };
 }
 
 async function runExecutionSession(
@@ -940,7 +931,7 @@ async function runExecutionSession(
           },
           { timeoutMs: MESSAGES_TIMEOUT_MS },
         )
-      : await callMessagesApi(prompt);
+      : await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation
