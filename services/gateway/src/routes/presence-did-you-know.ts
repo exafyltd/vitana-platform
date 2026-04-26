@@ -49,10 +49,23 @@ async function resolveIdentity(req: Request): Promise<{
     if (error || !data) {
       return { user_id: null, tenant_id: null, error: error?.message || 'no_context' };
     }
-    return {
-      user_id: data.user_id || data.id || null,
-      tenant_id: data.tenant_id || null,
-    };
+    const userId = data.user_id || data.id || null;
+    let tenantId = data.tenant_id || null;
+    // Fallback: me_context returns tenant_id=null for users whose
+    // app_metadata.active_tenant_id was never populated, even when a
+    // primary user_tenants row exists. Match the behavior of the
+    // gateway's requireAuthWithTenant middleware (auth-supabase-jwt.ts).
+    if (!tenantId && userId) {
+      const { data: tenantRow } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', userId)
+        .eq('is_primary', true)
+        .limit(1)
+        .maybeSingle();
+      tenantId = tenantRow?.tenant_id || null;
+    }
+    return { user_id: userId, tenant_id: tenantId };
   } catch (err: any) {
     return { user_id: null, tenant_id: null, error: err.message };
   }
