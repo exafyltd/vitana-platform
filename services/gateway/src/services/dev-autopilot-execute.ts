@@ -1648,7 +1648,14 @@ export async function autoApproveTick(): Promise<void> {
     );
     if (!planR.ok || !planR.data || planR.data.length === 0) continue;
 
-    const result = await approveAutoExecute({ finding_id: f.id, approved_by: 'auto' });
+    // Pass undefined so the INSERT writes approved_by=NULL.
+    // Earlier code passed the string literal 'auto', but approved_by is a
+    // UUID column — Postgres rejected every autonomous approval with
+    // "invalid input syntax for type uuid". Net: auto-approve has been
+    // silently no-op since the feature shipped. NULL is a valid sentinel
+    // for "approved by the system" — the OASIS event below is the audit
+    // trail for non-human approvals.
+    const result = await approveAutoExecute({ finding_id: f.id });
     if (!result.ok || !result.execution) {
       // A safety-gate rejection here is EXPECTED for findings that cite
       // files outside allow_scope — just log and move on. The operator
@@ -1720,7 +1727,14 @@ export async function autoApproveTick(): Promise<void> {
             continue;
           }
 
-          const result = await approveAutoExecute({ finding_id: f.id, approved_by: 'auto' });
+          // Pass undefined so the INSERT writes approved_by=NULL.
+    // Earlier code passed the string literal 'auto', but approved_by is a
+    // UUID column — Postgres rejected every autonomous approval with
+    // "invalid input syntax for type uuid". Net: auto-approve has been
+    // silently no-op since the feature shipped. NULL is a valid sentinel
+    // for "approved by the system" — the OASIS event below is the audit
+    // trail for non-human approvals.
+    const result = await approveAutoExecute({ finding_id: f.id });
           if (!result.ok || !result.execution) {
             console.log(`${LOG_PREFIX} auto-approve (impact) skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
             continue;
