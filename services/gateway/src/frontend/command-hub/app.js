@@ -3636,6 +3636,19 @@ const state = {
     // Integrations module
     integrationsMcp: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     integrationsLlm: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
+    // BOOTSTRAP-LLM-ROUTER-UI: routing-policy editor state
+    llmRouting: {
+      loading: false,
+      error: null,
+      fetched: false,
+      policy: null,           // current saved policy from /api/v1/llm/routing-policy
+      pending: null,          // operator-edited copy (only persisted on Save)
+      providers: [],          // from /api/v1/llm/routing-policy
+      models: [],             // from /api/v1/llm/routing-policy (with tier field)
+      saving: false,
+      saveError: null,
+      lastSavedAt: null,
+    },
     integrationsTools: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     integrationsPlugins: { items: [], loading: false, error: null, fetched: false },
 
@@ -31282,6 +31295,298 @@ function fetchIntegrationsLlm() {
         });
 }
 
+// =============================================================================
+// BOOTSTRAP-LLM-ROUTER-UI: Routing-policy editor
+//
+// Backend: GET /api/v1/llm/routing-policy returns { policy, providers, models }.
+// POST /api/v1/llm/routing-policy applies the new policy + writes audit log.
+// Per-stage row layout: stage label | primary provider+model | fallback provider+model | Save.
+// When the operator switches provider, the model dropdown auto-jumps to that
+// provider's flagship (the row with tier='flagship') so flips never land on
+// a weaker option.
+// =============================================================================
+
+var ROUTING_STAGES = [
+  { key: 'planner',    label: 'Planner',    desc: 'Autopilot plan generation' },
+  { key: 'worker',     label: 'Worker',     desc: 'Autopilot code execution' },
+  { key: 'triage',     label: 'Triage',     desc: 'Self-healing diagnosis' },
+  { key: 'vision',     label: 'Vision',     desc: 'Image / video frame analysis' },
+  { key: 'classifier', label: 'Classifier', desc: 'Fact extraction, scoring, hints' },
+  { key: 'operator',   label: 'Operator',   desc: 'ORB conversational layer' },
+  { key: 'memory',     label: 'Memory',     desc: 'Memory garden + retrieval' },
+  { key: 'validator',  label: 'Validator',  desc: 'Spec / governance checks' },
+];
+
+function fetchLlmRoutingPolicy() {
+  if (state.llmRouting.loading) return;
+  state.llmRouting.loading = true;
+  state.llmRouting.error = null;
+  renderApp();
+  fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' })
+    .then(function (r) { return r.json(); })
+    .then(function (resp) {
+      if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'fetch failed');
+      var data = resp.data || {};
+      state.llmRouting.loading = false;
+      state.llmRouting.fetched = true;
+      // Server may return policy nested in `data.policy.policy` (the row's `policy` JSONB field)
+      // or directly as `data.policy` (flat). Handle both.
+      var policyRow = data.policy || null;
+      var policyDoc = (policyRow && policyRow.policy) ? policyRow.policy : policyRow;
+      state.llmRouting.policy = policyDoc;
+      state.llmRouting.pending = JSON.parse(JSON.stringify(policyDoc || {}));
+      state.llmRouting.providers = data.providers || [];
+      state.llmRouting.models = data.models || [];
+      renderApp();
+    })
+    .catch(function (err) {
+      state.llmRouting.loading = false;
+      state.llmRouting.error = String(err);
+      renderApp();
+    });
+}
+
+function getFlagshipModelForProvider(providerKey) {
+  var models = state.llmRouting.models || [];
+  for (var i = 0; i < models.length; i++) {
+    var m = models[i];
+    if (m.provider_key === providerKey && m.tier === 'flagship') return m.model_id;
+  }
+  // Fallback: first model for that provider
+  for (var j = 0; j < models.length; j++) {
+    if (models[j].provider_key === providerKey) return models[j].model_id;
+  }
+  return null;
+}
+
+function getModelsForProvider(providerKey) {
+  return (state.llmRouting.models || []).filter(function (m) { return m.provider_key === providerKey; });
+}
+
+function saveLlmRoutingPolicy() {
+  if (state.llmRouting.saving) return;
+  state.llmRouting.saving = true;
+  state.llmRouting.saveError = null;
+  renderApp();
+  fetch('/api/v1/llm/routing-policy?environment=DEV', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'x-actor-id': 'command-hub-ui', 'x-actor-role': 'developer' },
+    body: JSON.stringify({ policy: state.llmRouting.pending, reason: 'Updated via Command Hub LLM Providers UI' }),
+  })
+    .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+    .then(function (resp) {
+      state.llmRouting.saving = false;
+      if (resp.status >= 200 && resp.status < 300 && resp.body && resp.body.ok) {
+        // Refresh from server so we pick up the new version + audit row
+        state.llmRouting.fetched = false;
+        state.llmRouting.lastSavedAt = new Date().toISOString();
+        showToast('Routing policy saved');
+        fetchLlmRoutingPolicy();
+      } else {
+        state.llmRouting.saveError = (resp.body && (resp.body.error || JSON.stringify(resp.body.details))) || ('HTTP ' + resp.status);
+        renderApp();
+      }
+    })
+    .catch(function (err) {
+      state.llmRouting.saving = false;
+      state.llmRouting.saveError = String(err);
+      renderApp();
+    });
+}
+
+function renderRoutingPolicyPanel() {
+  var panel = document.createElement('div');
+  panel.className = 'infra-section';
+  panel.style.cssText = 'margin-top:24px;padding:20px;background:var(--bg-elevated,#1a1d24);border:1px solid var(--border,#2a2e36);border-radius:8px;';
+
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'margin-bottom:16px;';
+  hdr.innerHTML = '<h3 style="margin:0 0 4px;font-size:1.1rem;">Routing Policy</h3>'
+    + '<p style="margin:0;color:var(--text-muted,#7a7e87);font-size:0.85rem;">Pick a provider per stage. Flagship model auto-selects on provider change. Defaults are flagship-only.</p>';
+  panel.appendChild(hdr);
+
+  if (!state.llmRouting.fetched && !state.llmRouting.loading) {
+    fetchLlmRoutingPolicy();
+  }
+
+  if (state.llmRouting.loading) {
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:20px;text-align:center;color:var(--text-muted,#7a7e87);';
+    loading.textContent = 'Loading routing policy...';
+    panel.appendChild(loading);
+    return panel;
+  }
+  if (state.llmRouting.error) {
+    var errDiv = document.createElement('div');
+    errDiv.style.cssText = 'padding:20px;color:#ff6b6b;';
+    errDiv.textContent = 'Error: ' + state.llmRouting.error;
+    panel.appendChild(errDiv);
+    return panel;
+  }
+  if (!state.llmRouting.pending) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'padding:20px;color:var(--text-muted,#7a7e87);';
+    empty.textContent = 'No active policy found for DEV. Apply the bootstrap migration first.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  // Build a row per stage
+  var pending = state.llmRouting.pending;
+  var providers = state.llmRouting.providers || [];
+
+  // Activated providers only
+  var activeProviders = providers.filter(function (p) { return p.is_active !== false; });
+
+  ROUTING_STAGES.forEach(function (stage) {
+    var stageCfg = pending[stage.key] || {
+      primary_provider: 'vertex',
+      primary_model: 'gemini-3.1-pro',
+      fallback_provider: null,
+      fallback_model: null,
+    };
+    if (!pending[stage.key]) pending[stage.key] = stageCfg;
+
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:160px 1fr 1fr;gap:12px;align-items:start;padding:14px 0;border-bottom:1px solid var(--border-subtle,#23262d);';
+
+    // Stage label
+    var labelCol = document.createElement('div');
+    labelCol.innerHTML = '<div style="font-weight:600;font-size:0.95rem;">' + escapeHtml(stage.label) + '</div>'
+      + '<div style="color:var(--text-muted,#7a7e87);font-size:0.8rem;margin-top:2px;">' + escapeHtml(stage.desc) + '</div>';
+    row.appendChild(labelCol);
+
+    row.appendChild(buildPickerCell('Primary', stage.key, 'primary', activeProviders, stageCfg));
+    row.appendChild(buildPickerCell('Fallback', stage.key, 'fallback', activeProviders, stageCfg));
+
+    panel.appendChild(row);
+  });
+
+  // Save button + status
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:20px;';
+
+  var saveBtn = document.createElement('button');
+  saveBtn.textContent = state.llmRouting.saving ? 'Saving...' : 'Save Policy';
+  saveBtn.disabled = state.llmRouting.saving;
+  saveBtn.style.cssText = 'padding:8px 18px;background:var(--accent,#3b82f6);color:white;border:0;border-radius:6px;cursor:pointer;font-weight:600;';
+  saveBtn.addEventListener('click', saveLlmRoutingPolicy);
+  actions.appendChild(saveBtn);
+
+  if (state.llmRouting.saveError) {
+    var errMsg = document.createElement('span');
+    errMsg.style.cssText = 'color:#ff6b6b;font-size:0.85rem;';
+    errMsg.textContent = state.llmRouting.saveError;
+    actions.appendChild(errMsg);
+  } else if (state.llmRouting.lastSavedAt) {
+    var savedMsg = document.createElement('span');
+    savedMsg.style.cssText = 'color:var(--text-muted,#7a7e87);font-size:0.85rem;';
+    savedMsg.textContent = 'Last saved ' + new Date(state.llmRouting.lastSavedAt).toLocaleTimeString();
+    actions.appendChild(savedMsg);
+  }
+
+  panel.appendChild(actions);
+  return panel;
+}
+
+function buildPickerCell(slotLabel, stageKey, slot, providers, stageCfg) {
+  var col = document.createElement('div');
+  col.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+  var lbl = document.createElement('div');
+  lbl.style.cssText = 'font-size:0.75rem;color:var(--text-muted,#7a7e87);text-transform:uppercase;letter-spacing:0.05em;';
+  lbl.textContent = slotLabel;
+  col.appendChild(lbl);
+
+  // Provider <select>
+  var providerSelect = document.createElement('select');
+  providerSelect.className = 'telemetry-filter-select';
+  providerSelect.style.cssText = 'padding:6px 8px;background:var(--bg-input,#11141a);color:white;border:1px solid var(--border,#2a2e36);border-radius:4px;';
+
+  if (slot === 'fallback') {
+    var noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(no fallback)';
+    providerSelect.appendChild(noneOpt);
+  }
+
+  providers.forEach(function (p) {
+    var opt = document.createElement('option');
+    opt.value = p.provider_key;
+    opt.textContent = p.display_name || p.provider_key;
+    providerSelect.appendChild(opt);
+  });
+
+  var currentProvider = stageCfg[slot + '_provider'];
+  providerSelect.value = currentProvider || '';
+  col.appendChild(providerSelect);
+
+  // Model <select>
+  var modelSelect = document.createElement('select');
+  modelSelect.className = 'telemetry-filter-select';
+  modelSelect.style.cssText = 'padding:6px 8px;background:var(--bg-input,#11141a);color:white;border:1px solid var(--border,#2a2e36);border-radius:4px;';
+  populateModelOptions(modelSelect, currentProvider, stageCfg[slot + '_model']);
+  col.appendChild(modelSelect);
+
+  // Wire up — provider change auto-selects flagship
+  providerSelect.addEventListener('change', function (e) {
+    var newProv = e.target.value || null;
+    state.llmRouting.pending[stageKey][slot + '_provider'] = newProv;
+    if (newProv) {
+      var flagship = getFlagshipModelForProvider(newProv);
+      state.llmRouting.pending[stageKey][slot + '_model'] = flagship;
+      populateModelOptions(modelSelect, newProv, flagship);
+    } else {
+      state.llmRouting.pending[stageKey][slot + '_model'] = null;
+      populateModelOptions(modelSelect, null, null);
+    }
+  });
+
+  modelSelect.addEventListener('change', function (e) {
+    state.llmRouting.pending[stageKey][slot + '_model'] = e.target.value || null;
+  });
+
+  return col;
+}
+
+function populateModelOptions(select, providerKey, currentModel) {
+  select.innerHTML = '';
+  if (!providerKey) {
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = '(no model)';
+    select.appendChild(none);
+    select.value = '';
+    return;
+  }
+  var models = getModelsForProvider(providerKey);
+  if (models.length === 0) {
+    var nm = document.createElement('option');
+    nm.value = currentModel || '';
+    nm.textContent = currentModel || '(no models registered)';
+    select.appendChild(nm);
+    select.value = currentModel || '';
+    return;
+  }
+  // Sort: flagship first, then mid, then light, then alphabetical
+  var tierOrder = { flagship: 0, mid: 1, light: 2 };
+  models.sort(function (a, b) {
+    var ta = tierOrder[a.tier] !== undefined ? tierOrder[a.tier] : 3;
+    var tb = tierOrder[b.tier] !== undefined ? tierOrder[b.tier] : 3;
+    if (ta !== tb) return ta - tb;
+    return (a.model_id || '').localeCompare(b.model_id || '');
+  });
+  models.forEach(function (m) {
+    var opt = document.createElement('option');
+    opt.value = m.model_id;
+    var marker = m.tier === 'flagship' ? '★ ' : '';
+    opt.textContent = marker + (m.display_name || m.model_id);
+    select.appendChild(opt);
+  });
+  select.value = currentModel || (models[0] && models[0].model_id) || '';
+}
+
 function renderIntegrationsLlmProvidersView() {
     var container = document.createElement('div');
     container.className = 'infra-services-container';
@@ -31434,6 +31739,11 @@ function renderIntegrationsLlmProvidersView() {
 
     container.appendChild(grid);
     autoAddLoadMore(container, 'integrationsLlm');
+
+    // BOOTSTRAP-LLM-ROUTER-UI: per-stage routing-policy editor below the
+    // read-only provider grid. Reads + writes /api/v1/llm/routing-policy.
+    container.appendChild(renderRoutingPolicyPanel());
+
     return container;
 }
 
