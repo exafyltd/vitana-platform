@@ -479,6 +479,12 @@ export async function notifyUser(
   let inappWritten = false;
   let notificationId: string | null = null;
   if (shouldWriteInapp) {
+    // VTID-01969: denormalize recipient_vitana_id at insert time so support
+    // tooling can quote @<id> without joining profiles. Cached lookup is
+    // null-tolerant (Release B middleware contract).
+    const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+    const recipientVitanaId = await resolveVitanaId(userId);
+
     const insertData: Record<string, any> = {
       user_id: userId,
       tenant_id: tenantId,
@@ -488,6 +494,7 @@ export async function notifyUser(
       title: payload.title,
       body: payload.body,
       data: payload.data || {},
+      ...(recipientVitanaId && { recipient_vitana_id: recipientVitanaId }),
     };
     if (shouldSendPush) {
       insertData.push_sent_at = new Date().toISOString();

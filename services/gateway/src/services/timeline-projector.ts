@@ -110,7 +110,17 @@ export async function writeTimelineRow(input: ProjectorInput): Promise<void> {
     return;
   }
 
-  const row = {
+  // VTID-01969: denormalize actor_vitana_id so support tooling and Voice Lab
+  // can render @<id> without joining profiles. Cached lookup is null-tolerant.
+  let actorVitanaId: string | null = null;
+  try {
+    const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+    actorVitanaId = await resolveVitanaId(input.user_id);
+  } catch {
+    // Silent — fallback is null, support reads still work via user_id join.
+  }
+
+  const row: Record<string, unknown> = {
     id: randomUUID(),
     user_id: input.user_id,
     activity_type: input.activity_type,
@@ -119,6 +129,7 @@ export async function writeTimelineRow(input: ProjectorInput): Promise<void> {
     dedupe_key: input.dedupe_key,
     session_id: input.session_id,
     source: input.source,
+    ...(actorVitanaId && { actor_vitana_id: actorVitanaId }),
   };
 
   try {
