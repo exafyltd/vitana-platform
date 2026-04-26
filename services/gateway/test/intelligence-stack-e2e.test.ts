@@ -272,13 +272,17 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
         active_role: 'community',
       });
 
-      const routerDecision = computeRetrievalRouterDecision('Tell me about myself', {
+      // Use a personal_history query (routes to memory_garden as primary source).
+      // "Tell me about myself" was changed here because the teach_intent routing rule
+      // (priority 93, added by BOOTSTRAP-TEACH-BEFORE-REDIRECT) intercepts that phrase
+      // via /\b(tell me about)\b/i and sets secondary_sources:[] — excluding memory_garden.
+      const routerDecision = computeRetrievalRouterDecision('What do you remember about me?', {
         channel: 'orb',
       });
 
       const input: BuildContextPackInput = {
         lens,
-        query: 'Tell me about myself',
+        query: 'What do you remember about me?',
         channel: 'orb',
         thread_id: 'test-thread',
         turn_number: 1,
