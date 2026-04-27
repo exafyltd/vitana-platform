@@ -39327,8 +39327,23 @@ function renderSelfHealingView() {
                 ? 'Detected (failure first reported)\nISO: ' + item.created_at
                 : 'No detection timestamp';
 
+            // The Resolved column was rendering ANY non-pending row as
+            // "<timestamp> \u00b7 took N min", because the writer at
+            // dev-autopilot-self-heal-log.ts:127 sets resolved_at=now() for
+            // every non-pending outcome \u2014 including `escalated`. That made
+            // 288/288 escalated rows look like instant fixes. Truth-table:
+            //   - successful resolution (fixed / success / reconciled-recovered
+            //     / rolled_back) \u2192 show timestamp + duration ("Resolved at \u2026 \u00b7 took N min")
+            //   - escalated / failed / skipped / paused \u2192 show "\u2014" because the
+            //     row was NOT resolved; the Result column already carries the
+            //     red-flag outcome label
+            //   - pending (resolved_at null) \u2192 "still pending"
+            var SH_RESOLVED_OUTCOMES = ['fixed', 'success', 'rolled_back'];
+            var didResolve = isReconciledRecovered ||
+                (item.resolved_at && SH_RESOLVED_OUTCOMES.indexOf(item.outcome) !== -1);
+
             var resolvedCell, resolvedTitle;
-            if (item.resolved_at) {
+            if (didResolve) {
                 var durMs = new Date(item.resolved_at).getTime() - new Date(item.created_at).getTime();
                 var durMin = isFinite(durMs) ? Math.round(durMs / 60000) : null;
                 var durStr = durMin == null
@@ -39340,10 +39355,20 @@ function renderSelfHealingView() {
                     (durStr ? ' \u00b7 took ' + escapeHtml(durStr) : '') + '</div>';
                 resolvedTitle = 'Resolved (outcome committed)\nISO: ' + item.resolved_at +
                     (durStr ? '\nDuration pending\u2192resolved: ' + durStr : '');
-            } else {
+            } else if (!item.resolved_at) {
                 resolvedCell = '<span style="color:#facc15;">\u23f3 still pending</span>' +
                     '<div style="font-size:11px;color:#888;">created ' + escapeHtml(shFmtRel(item.created_at)) + '</div>';
                 resolvedTitle = 'Row is still in pending state.\nReconciler runs every 10 min on rows older than 1 h.';
+            } else {
+                // Terminal but NOT resolved (escalated / failed / skipped / paused).
+                // Don't pretend it was fixed \u2014 em-dash with explanatory tooltip.
+                resolvedCell =
+                    '<span style="color:#888;">\u2014</span>' +
+                    '<div style="font-size:11px;color:#888;">' +
+                        escapeHtml(item.outcome || 'closed') + ' \u00b7 not resolved</div>';
+                resolvedTitle = 'Row was committed to outcome `' + (item.outcome || 'unknown') +
+                    '` without being resolved.\nClosed at: ' + item.resolved_at +
+                    '\n\nResolved column only shows a timestamp for outcomes that actually fixed the failure (fixed, success, rolled_back, or reconciler-recovered).';
             }
 
             tr.innerHTML =
