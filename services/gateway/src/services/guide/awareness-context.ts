@@ -24,7 +24,7 @@ import {
 import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
 import { describeTimeSince, fetchLastSessionInfo, type LastInteraction } from './temporal-bucket';
 import { getFeatureIntroductions } from './feature-introductions';
-import { getRecentSessionSummaries } from './session-summaries';
+import { getRecentSessionSummaries, getSessionsTodayAndYesterday } from './session-summaries';
 import { getAdaptationStatus } from './adaptation-applier';
 import { getUserRoutines } from './pattern-extractor';
 import { countActiveUsageDays } from './active-usage';
@@ -53,12 +53,19 @@ const cache = new Map<string, CacheEntry>();
  *
  * All sub-queries run in parallel. Any failing branch returns sensible defaults
  * rather than throwing — awareness is best-effort, brain must always get a result.
+ *
+ * VTID-01990: optional userTz threaded through to bucket today/yesterday session
+ * summaries in the user's local timezone. UTC fallback is safe for users whose
+ * surface didn't supply a timezone.
  */
 export async function getAwarenessContext(
   userId: string,
   tenantId: string,
+  userTz: string = 'UTC',
 ): Promise<UserAwareness> {
-  const cacheKey = `${tenantId}::${userId}`;
+  // Cache key includes tz so a tz-agnostic caller and a tz-aware caller don't
+  // share a stale today/yesterday split.
+  const cacheKey = `${tenantId}::${userId}::${userTz}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expires_at > Date.now()) {
     return cached.awareness;
@@ -81,6 +88,7 @@ export async function getAwarenessContext(
     adaptationStatus,
     userRoutines,
     activeUsageDays,
+    sessionsTodayAndYesterday,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
@@ -91,6 +99,7 @@ export async function getAwarenessContext(
     getAdaptationStatus(userId).catch(() => null),
     getUserRoutines(userId, 8).catch(() => []),
     countActiveUsageDays(userId).catch(() => 0),
+    getSessionsTodayAndYesterday(userId, userTz).catch(() => ({ today: [], yesterday_last: null })),
   ]);
 
   const tenure = buildTenure(userContext, activeUsageDays);
@@ -122,6 +131,25 @@ export async function getAwarenessContext(
       confidence: r.confidence,
     })),
     tastes_preferences: null,
+    sessions_today: {
+      count: sessionsTodayAndYesterday.today.length,
+      entries: sessionsTodayAndYesterday.today.map((s) => ({
+        session_id: s.session_id,
+        channel: s.channel,
+        summary: s.summary,
+        themes: s.themes,
+        ended_at: s.ended_at,
+      })),
+    },
+    last_session_yesterday: sessionsTodayAndYesterday.yesterday_last
+      ? {
+          session_id: sessionsTodayAndYesterday.yesterday_last.session_id,
+          channel: sessionsTodayAndYesterday.yesterday_last.channel,
+          summary: sessionsTodayAndYesterday.yesterday_last.summary,
+          themes: sessionsTodayAndYesterday.yesterday_last.themes,
+          ended_at: sessionsTodayAndYesterday.yesterday_last.ended_at,
+        }
+      : null,
   };
 
   cache.set(cacheKey, { awareness, expires_at: Date.now() + CACHE_TTL_MS });
@@ -133,7 +161,11 @@ export async function getAwarenessContext(
  */
 export function clearAwarenessCache(userId?: string, tenantId?: string): void {
   if (userId && tenantId) {
-    cache.delete(`${tenantId}::${userId}`);
+    // Clear all tz-suffixed keys for this (tenant, user)
+    const prefix = `${tenantId}::${userId}::`;
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) cache.delete(key);
+    }
   } else {
     cache.clear();
   }
@@ -329,5 +361,7 @@ function skeletalAwareness(): UserAwareness {
     adaptation_plans: null,
     routines: [],
     tastes_preferences: null,
+    sessions_today: { count: 0, entries: [] },
+    last_session_yesterday: null,
   };
 }

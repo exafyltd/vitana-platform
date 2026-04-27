@@ -55,6 +55,8 @@ function makeAwareness(overrides: Partial<UserAwareness> = {}): UserAwareness {
     adaptation_plans: null,
     routines: [],
     tastes_preferences: null,
+    sessions_today: { count: 0, entries: [] },
+    last_session_yesterday: null,
   };
   return {
     ...base,

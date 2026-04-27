@@ -187,6 +187,34 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
       vtid: 'VTID-01085',
     },
   ],
+  [
+    'recall_conversation_at_time',
+    {
+      name: 'recall_conversation_at_time',
+      description:
+        'Retrieve a past conversation by time reference. Call this when the user mentions a past conversation by time — e.g. "we talked yesterday morning about my company", "earlier today we discussed sleep", "last Tuesday afternoon you said...". Resolves the time hint to a window in the user\'s local timezone and returns the matching session summary, the actual conversation turns, and any facts extracted in that window. Use the returned excerpts to quote what was actually said — do not paraphrase from the summary alone.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          time_hint: {
+            type: 'string',
+            description:
+              'Free-text time reference exactly as the user phrased it. Examples: "yesterday morning", "this morning", "last Tuesday afternoon", "2 days ago", "yesterday", "tonight". German also supported: "gestern morgen", "heute abend", "letzten Montag", "vor 3 Tagen".',
+          },
+          topic_hint: {
+            type: 'string',
+            description:
+              'Optional topic the user mentioned, used to disambiguate when multiple sessions match the time window. Examples: "my company", "sleep", "weight goal".',
+          },
+        },
+        required: ['time_hint'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer', 'user', 'system'],
+      enabled: true,
+      category: 'memory',
+      vtid: 'VTID-01990',
+    },
+  ],
 
   // ===== System Tools =====
   [
@@ -1092,7 +1120,7 @@ export async function runToolHealthChecks(): Promise<ToolHealthResponse> {
   const supabaseAvailable = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
 
   // Update health for Supabase-dependent tools
-  const supabaseTools = ['autopilot_create_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
+  const supabaseTools = ['autopilot_create_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
   for (const toolName of supabaseTools) {
     updateToolHealth(
       toolName,

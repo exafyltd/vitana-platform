@@ -308,7 +308,12 @@ export async function processConversationTurn(
       try {
         const { getAwarenessContext } = await import('./guide/awareness-context');
         const { formatAwarenessForPrompt } = await import('./guide/awareness-prompt');
-        const awareness = await getAwarenessContext(input.user_id, input.tenant_id);
+        // VTID-01990: thread the user's timezone (if the surface supplied
+        // one via ui_context.metadata.timezone) into awareness so the
+        // sessions-today bucketing is local-day correct. UTC fallback.
+        const userTz =
+          (input.ui_context?.metadata?.timezone as string | undefined) || 'UTC';
+        const awareness = await getAwarenessContext(input.user_id, input.tenant_id, userTz);
         awarenessBlock = formatAwarenessForPrompt(awareness, { compact: true });
       } catch (e: any) {
         console.warn('[conversation-client] awareness inject failed:', e?.message);
