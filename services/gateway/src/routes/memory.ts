@@ -1769,6 +1769,143 @@ router.post('/diary', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /diary/sync-index -> POST /api/v1/memory/diary/sync-index (VTID-01983)
+ *
+ * Lightweight companion to POST /diary. Accepts {raw_text, entry_date?} and
+ * runs the deployed VTID-01977 health-feature extractor + persist + Index
+ * recompute pipeline against it — WITHOUT writing to memory_diary_entries.
+ *
+ * Why a separate endpoint: the frontend Diary writers (TextDiaryEditor,
+ * VoiceDiaryRecorder, PhotoDiaryUploader) write to the legacy `diary_entries`
+ * table; many readers (useMemoryTimeline, buildOrbContext, useKnowledgeBase)
+ * still consume that table. Replacing those writes with POST /diary would
+ * orphan the readers. This endpoint lets the frontend keep its existing
+ * write path and add a fire-and-forget call after success so the Index
+ * reflects the diary text.
+ *
+ * Returns: { ok, health_features_written, pillars_after, index_delta }
+ */
+router.post('/diary/sync-index', async (req: Request, res: Response) => {
+  console.log('[VTID-01983] POST /memory/diary/sync-index');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const rawText = typeof req.body?.raw_text === 'string' ? req.body.raw_text : '';
+  const entryDate = typeof req.body?.entry_date === 'string'
+    ? req.body.entry_date
+    : new Date().toISOString().slice(0, 10);
+  if (!rawText.trim()) {
+    return res.status(400).json({ ok: false, error: 'INVALID_RAW_TEXT' });
+  }
+
+  try {
+    // Resolve user from the bearer token using the same anon-client pattern
+    // the rest of this route file uses (createUserSupabaseClient).
+    const userClient = createUserSupabaseClient(token);
+    const { data: userData } = await userClient.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+
+    // Resolve tenant via user_tenants (same fallback as the manual-log endpoint
+    // uses; bypasses the current_tenant_id() JWT-claim path so the sync works
+    // for users whose JWT doesn't carry app_metadata.active_tenant_id).
+    const admin = getSupabase();
+    if (!admin) {
+      return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+    }
+    const { data: tenantRow } = await admin
+      .from('user_tenants')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    const tenantId = (tenantRow?.tenant_id as string | undefined)
+      ?? '00000000-0000-0000-0000-000000000000';
+
+    // Read the user's pre-write Index so we can compute a per-pillar delta
+    // for the response (drives the celebration toast + voice "what moved").
+    const { data: beforeRow } = await admin
+      .from('vitana_index_scores')
+      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+      .eq('user_id', userId)
+      .eq('date', entryDate)
+      .maybeSingle();
+    const before = beforeRow as {
+      score_total?: number;
+      score_nutrition?: number;
+      score_hydration?: number;
+      score_exercise?: number;
+      score_sleep?: number;
+      score_mental?: number;
+    } | null;
+
+    // Run extractor → persist → recompute. Same path as POST /diary's hook.
+    const writes = extractHealthFeaturesFromDiary(rawText);
+    let health_features_written = 0;
+    if (writes.length > 0) {
+      const { written } = await persistDiaryHealthFeatures(
+        admin,
+        userId,
+        tenantId,
+        entryDate,
+        writes,
+      );
+      health_features_written = written;
+    }
+
+    // Always recompute (even if 0 writes — entry still counts as journal_entry
+    // via the extractor's unconditional emit; recompute makes the new row
+    // visible).
+    let pillars_after: Record<string, number> | null = null;
+    try {
+      const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
+        p_user_id: userId,
+        p_date: entryDate,
+      });
+      const r = rec as any;
+      if (r && r.ok !== false) {
+        pillars_after = {
+          total: Number(r.score_total ?? 0),
+          nutrition: Number(r.score_nutrition ?? 0),
+          hydration: Number(r.score_hydration ?? 0),
+          exercise:  Number(r.score_exercise  ?? 0),
+          sleep:     Number(r.score_sleep     ?? 0),
+          mental:    Number(r.score_mental    ?? 0),
+        };
+      }
+    } catch (recErr: any) {
+      console.warn(`[VTID-01983] Index recompute failed (non-fatal): ${recErr?.message ?? recErr}`);
+    }
+
+    // Per-pillar delta — for the celebration UX. Defaults to 0 if no before row.
+    const index_delta = pillars_after ? {
+      total:     pillars_after.total     - Number(before?.score_total     ?? 0),
+      nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
+      hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
+      exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
+      sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
+      mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
+    } : null;
+
+    return res.status(200).json({
+      ok: true,
+      entry_date: entryDate,
+      health_features_written,
+      pillars_after,
+      index_delta,
+    });
+  } catch (err: any) {
+    console.error('[VTID-01983] /diary/sync-index error:', err?.message ?? err);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'UNKNOWN' });
+  }
+});
+
+/**
  * GET /diary -> GET /api/v1/memory/diary?from=&to=
  *
  * Get diary entries for the current user with optional date range.
