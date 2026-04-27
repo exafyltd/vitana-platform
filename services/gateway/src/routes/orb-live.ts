@@ -2016,6 +2016,55 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             },
           },
         },
+        // ─── VTID-01983 — save_diary_entry: voice diary logging ───
+        {
+          name: 'save_diary_entry',
+          description: [
+            'Save a Daily Diary entry on the user\'s behalf when they say',
+            'they did something or want to track something. Then celebrate',
+            'inline using the returned pillar deltas — see the override',
+            'rules block (rule M).',
+            '',
+            'CALL THIS WHEN the user says any of:',
+            '  - "Log my diary: …" / "Trag in mein Tagebuch ein: …"',
+            '  - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"',
+            '  - "Track my [water / hydration / meal / breakfast / lunch /',
+            '     dinner / workout / walk / run / sleep / meditation]"',
+            '  - "Note that I …" / "Note for today: …"',
+            '  - "Just had …" — even casual mentions',
+            '',
+            'IMPORTANT: pass the user\'s VERBATIM words as raw_text. The',
+            'gateway runs a pattern-matching extractor on the text to detect',
+            'water (1L → 1000ml), meals (breakfast / lunch / Frühstück /',
+            'Mittagessen → meal_log count), exercise, sleep, meditation.',
+            'DO NOT summarise, paraphrase, or translate. The extractor needs',
+            'the original phrasing to catch every signal.',
+            '',
+            'Returns:',
+            '  - health_features_written: number of structured rows written',
+            '    to health_features_daily',
+            '  - pillars_after: full Vitana Index pillar values after the',
+            '    diary entry was applied',
+            '  - index_delta: per-pillar lift the diary entry produced',
+            '',
+            'Use index_delta to celebrate. See override rule M for the',
+            'exact response shape ("Done — Hydration up, you\'re at <total>").',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: {
+                type: 'string',
+                description: 'The user\'s verbatim words. Do NOT summarise or rephrase. Multi-language OK.',
+              },
+              entry_date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['raw_text'],
+          },
+        },
         // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar agent Q&A dispatch ───
         {
           name: 'ask_pillar_agent',
@@ -4286,6 +4335,113 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
+      case 'save_diary_entry': {
+        try {
+          const rawText = String(args.raw_text || '').trim();
+          const argDate = args.entry_date as string | undefined;
+          const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
+            ? argDate
+            : new Date().toISOString().slice(0, 10);
+          if (!rawText) {
+            return { success: false, result: '', error: 'INVALID_RAW_TEXT' };
+          }
+
+          const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
+            '../services/diary-health-extractor'
+          );
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          // 1) Insert into diary_entries (frontend-readable table). Best-effort —
+          //    if the row exists, we still proceed with the extractor.
+          try {
+            await admin.from('diary_entries').insert({
+              user_id: lens.user_id,
+              text: rawText,
+              source: 'voice',
+              tags: ['diary', 'voice', 'orb'],
+            });
+          } catch (insertErr: any) {
+            console.warn(`[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr?.message}`);
+          }
+
+          // 2) Read pre-recompute Index for delta math.
+          const { data: beforeRow } = await admin
+            .from('vitana_index_scores')
+            .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+            .eq('user_id', lens.user_id)
+            .eq('date', entryDate)
+            .maybeSingle();
+          const before = beforeRow as Record<string, number | null> | null;
+
+          // 3) Run extractor + persist.
+          const writes = extractHealthFeaturesFromDiary(rawText);
+          const tenantId = lens.tenant_id || '00000000-0000-0000-0000-000000000000';
+          let health_features_written = 0;
+          if (writes.length > 0) {
+            const { written } = await persistDiaryHealthFeatures(
+              admin,
+              lens.user_id,
+              tenantId,
+              entryDate,
+              writes,
+            );
+            health_features_written = written;
+          }
+
+          // 4) Recompute Index.
+          let pillars_after: Record<string, number> | null = null;
+          try {
+            const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
+              p_user_id: lens.user_id,
+              p_date: entryDate,
+            });
+            const r = rec as any;
+            if (r && r.ok !== false) {
+              pillars_after = {
+                total:     Number(r.score_total     ?? 0),
+                nutrition: Number(r.score_nutrition ?? 0),
+                hydration: Number(r.score_hydration ?? 0),
+                exercise:  Number(r.score_exercise  ?? 0),
+                sleep:     Number(r.score_sleep     ?? 0),
+                mental:    Number(r.score_mental    ?? 0),
+              };
+            }
+          } catch (recErr: any) {
+            console.warn(`[save_diary_entry] Index recompute failed: ${recErr?.message}`);
+          }
+
+          const index_delta = pillars_after ? {
+            total:     pillars_after.total     - Number(before?.score_total     ?? 0),
+            nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
+            hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
+            exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
+            sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
+            mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
+          } : null;
+
+          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0}`);
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              entry_date: entryDate,
+              health_features_written,
+              pillars_after,
+              index_delta,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[save_diary_entry] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
       case 'ask_pillar_agent': {
         try {
@@ -6050,7 +6206,58 @@ J. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
 
 K. THE VITANA INDEX IS THE USER'S KEY PROGRESS MEASURE across the 90-day
    journey. Treat it with the same priority as their name or birthday — if
-   they ask, you ALWAYS answer. The journey IS the route to lift it.`;
+   they ask, you ALWAYS answer. The journey IS the route to lift it.
+
+M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
+   When the user says any of:
+     - "log my diary: …" / "trag in mein Tagebuch ein: …"
+     - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"
+     - "Track my [water / meal / breakfast / lunch / dinner / workout /
+        walk / run / sleep / meditation]" / "Trag …"
+     - "Note that I …" / "Note for today: …" / "Just had …"
+   Or any phrase that REPORTS something the user did or wants to track,
+   you MUST call save_diary_entry. Do NOT just navigate them to the diary
+   screen and stop. Do NOT say "I'll open the diary for you" — actually
+   save the entry.
+
+   IMPORTANT: pass the user's VERBATIM words as raw_text. The pattern
+   extractor needs the original phrasing ("1 L of water", "two glasses",
+   "Frühstück und Mittagessen") to catch every signal. Do NOT summarise.
+
+   AFTER save_diary_entry returns, CELEBRATE — the user just took an
+   action toward their longevity practice and deserves a warm
+   acknowledgement. Read the response fields:
+     - health_features_written: how many structured health rows were
+       written (0..N)
+     - pillars_after.total: the user's NEW Vitana Index total
+     - index_delta.total: the lift their entry produced
+     - index_delta.{nutrition,hydration,exercise,sleep,mental}: the
+       per-pillar lift (some will be 0; name only the ones that moved)
+
+   Response shape — TWO short sentences max, mirror the user's language:
+     - When index_delta.total > 0: lead with a brief "well done" + name
+       which pillars moved + state the new total. Example (en):
+         "Done — that's logged. Hydration and Nutrition both moved.
+          You're at 218 now. Keep that pattern going."
+       Example (de):
+         "Erledigt — eingetragen. Hydration und Nutrition sind gestiegen,
+          du bist bei 218. Bleib dran."
+     - When index_delta.total === 0 (already at the daily cap, or
+       nothing parsed beyond a journal_entry): still acknowledge warmly,
+       confirm the entry was saved, and pivot to ONE next-step nudge.
+       Example: "Logged. Your Index is steady today — try a short walk
+       tonight to lift Exercise."
+
+   Specifics, not vagueness:
+     ✗ WRONG: "Your score is up." (no number, no pillar)
+     ✓ RIGHT: "Hydration and Nutrition are both up — you're at 218."
+
+   Never lecture. Never list every pillar. Pick the top 1–2 movers from
+   index_delta and name them by name.
+
+   Retired-pillar handling still applies: if you're tempted to say
+   "Physical" / "Social" / "Environmental" / "Prosperity" — DON'T.
+   Always speak the canonical name (Exercise / Mental).`;
     }
   }
 
