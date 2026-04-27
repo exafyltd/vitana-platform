@@ -38,7 +38,7 @@ import {
 } from './dev-autopilot-safety';
 import { extractFilePaths, generatePlanVersion } from './dev-autopilot-planning';
 import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
-import { writeAutopilotFailure } from './dev-autopilot-self-heal-log';
+import { writeAutopilotFailure, writeAutopilotSuccess } from './dev-autopilot-self-heal-log';
 import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
@@ -1134,6 +1134,75 @@ async function patchExecution(
         }
       } catch (err) {
         console.warn(`${LOG_PREFIX} outcome backfill error for ${id.slice(0, 8)}:`, err);
+      }
+    })();
+  }
+
+  // VTID-02001: surface successful auto-fixes to the Self-Healing screen.
+  // self_healing_log was a failure-only log; without this the screen shows
+  // 100% escalation and the user can't tell autonomy is actually closing
+  // findings. We record `fixed` for `completed` and `rolled_back` for
+  // `reverted`. `failed_escalated` is already covered by the bridge writer
+  // and `failed`/`cancelled` aren't healing outcomes worth surfacing as
+  // distinct rows.
+  if (
+    r.ok &&
+    (fields.status === 'completed' || fields.status === 'reverted')
+  ) {
+    void (async () => {
+      try {
+        const lookupR = await supa<
+          Array<{
+            finding_id: string;
+            plan_version: number | null;
+            pr_url: string | null;
+            completed_at: string | null;
+            created_at: string | null;
+          }>
+        >(
+          s,
+          `/rest/v1/dev_autopilot_executions?id=eq.${id}` +
+            `&select=finding_id,plan_version,pr_url,completed_at,created_at&limit=1`,
+        );
+        const exec = lookupR.ok ? lookupR.data?.[0] : null;
+        if (!exec) return;
+
+        let endpoint = `autopilot.execute`;
+        if (exec.finding_id) {
+          const fR = await supa<Array<{ spec_snapshot: { file_path?: string } | null }>>(
+            s,
+            `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot&limit=1`,
+          );
+          const fp = fR.ok && fR.data?.[0]?.spec_snapshot?.file_path;
+          if (fp) endpoint = String(fp);
+        }
+
+        const outcome: 'fixed' | 'rolled_back' =
+          fields.status === 'completed' ? 'fixed' : 'rolled_back';
+
+        await writeAutopilotSuccess(s, {
+          vtid: `VTID-DA-${id.slice(0, 8)}`,
+          endpoint,
+          outcome,
+          diagnosis: {
+            summary:
+              outcome === 'fixed'
+                ? `Auto-fix applied via ${exec.pr_url || 'PR'} (plan v${exec.plan_version ?? '?'})`
+                : `Auto-fix reverted via ${exec.pr_url || 'PR'} (plan v${exec.plan_version ?? '?'}) — verifier or watchdog rolled back`,
+            execution_id: id,
+            finding_id: exec.finding_id,
+            plan_version: exec.plan_version ?? null,
+            pr_url: exec.pr_url ?? null,
+            completed_at: exec.completed_at ?? null,
+          },
+          createdAtIso: exec.created_at || undefined,
+          resolvedAtIso: exec.completed_at || undefined,
+        });
+      } catch (err) {
+        console.warn(
+          `${LOG_PREFIX} self_healing_log success-write error for ${id.slice(0, 8)}:`,
+          err,
+        );
       }
     })();
   }
