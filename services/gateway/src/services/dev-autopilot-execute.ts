@@ -803,7 +803,7 @@ function buildExecutionPrompt(
  * BOOTSTRAP-LLM-ROUTER (Phase E): execute direct-API call now goes through
  * the provider router. The router reads llm_routing_policy.policy.worker
  * and dispatches to the configured fallback provider (default Vertex /
- * gemini-3.1-pro with Anthropic / claude-opus-4-7 secondary fallback).
+ * gemini-2.5-pro with Anthropic / claude-opus-4-7 secondary fallback).
  *
  * This path only fires when the worker queue is unavailable (worker daemon
  * dead, binary missing) — the worker queue path at runExecutionSession()
