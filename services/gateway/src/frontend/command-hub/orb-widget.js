@@ -185,7 +185,7 @@
     _alertBuffers: {},               // clip id → AudioBuffer
     _alertBuffersLoaded: false,
     _isReconnecting: false,
-    _recoveryWatchdog: null,         // 60s self-test recovery timer handle
+    _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
     _disconnectStuck: false
   };
 
@@ -628,18 +628,46 @@
 
     _playAlert('disconnect-' + reason + '-' + lang);
 
-    // BOOTSTRAP-ORB-MODERN-RECOVERY: belt-and-suspenders self-test. If we're
-    // still in the disconnect state 60 seconds from now AND the browser
-    // believes it's online, force a full reconnect cycle. This catches the
-    // pathological case where every other recovery path silently failed
-    // (online event missed, SSE never reopened, etc).
-    clearTimeout(_s._recoveryWatchdog);
-    _s._recoveryWatchdog = setTimeout(function () {
-      if (_s._disconnectActive && navigator.onLine) {
-        console.warn('[VTOrb] 60s recovery watchdog fired — forcing _resetAndReconnect');
-        _resetAndReconnect();
+    // VTID-01987: active 5-second health probe replaces the previous 60s
+    // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
+    // 'online'/'offline' events unreliably and EventSource.onerror often
+    // never reports CLOSED — so we cannot trust passive signals. Instead,
+    // every 5s while a disconnect alert is up, actively probe the gateway:
+    // as soon as it answers, declare the connection back and reconnect in
+    // place. setInterval is preferred over a single setTimeout because the
+    // probe fetch itself may need to be retried under flaky mobile radio.
+    clearInterval(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = setInterval(function () {
+      if (!_s._disconnectActive) {
+        clearInterval(_s._recoveryWatchdog);
+        _s._recoveryWatchdog = null;
+        return;
       }
-    }, 60000);
+      // If a reconnect is already in flight, let it finish — don't double up.
+      if (_s._isReconnecting) return;
+      // Probe the gateway with a short timeout. Any 2xx/3xx/4xx is a "we
+      // can reach the network" signal — only fetch rejection (network
+      // unreachable, abort) means we should keep waiting.
+      var ctrl;
+      try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+      var timer = setTimeout(function () { try { ctrl && ctrl.abort(); } catch (e) {} }, 3000);
+      fetch(_cfg.gw + '/api/v1/orb/health', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: ctrl ? ctrl.signal : undefined
+      }).then(function (resp) {
+        clearTimeout(timer);
+        if (!_s._disconnectActive) return; // raced with manual recovery
+        console.log('[VTOrb] health-probe OK (status=' + resp.status + ') — forcing _resetAndReconnect');
+        _resetAndReconnect();
+      }).catch(function (err) {
+        clearTimeout(timer);
+        // Stay quiet on the expected unreachable case; only log unexpected.
+        if (err && err.name !== 'AbortError') {
+          console.log('[VTOrb] health-probe still unreachable: ' + (err.message || err.name));
+        }
+      });
+    }, 5000);
   }
 
   function _clearDisconnect() {
@@ -651,7 +679,7 @@
     _s._audioSendFailCount = 0;
     _s._audioSendFailWindowStart = 0;
     _s._disconnectStuck = false;
-    clearTimeout(_s._recoveryWatchdog);
+    clearInterval(_s._recoveryWatchdog);
     _s._recoveryWatchdog = null;
 
     console.log('[VTOrb] _clearDisconnect: recovering from reason=' + reason);
@@ -911,11 +939,29 @@
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
+      // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
+      // dead TCP connection can hang indefinitely, which used to leave the
+      // reconnect promise pending forever and the orb stuck on the disconnect
+      // screen. AbortSignal.timeout is supported on all WebViews we target;
+      // if it's somehow missing, fall back to AbortController + setTimeout.
+      var startSignal;
+      var startTimer;
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        startSignal = AbortSignal.timeout(8000);
+      } else {
+        try {
+          var ctrl = new AbortController();
+          startTimer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 8000);
+          startSignal = ctrl.signal;
+        } catch (e) { startSignal = undefined; }
+      }
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify(startPayload)
+        body: JSON.stringify(startPayload),
+        signal: startSignal
       });
+      if (startTimer) clearTimeout(startTimer);
 
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Failed to start session');
@@ -983,7 +1029,7 @@
       _s._preDisconnectVoiceState = null;
       _s._disconnectStuck = false;
       _s._isReconnecting = false;
-      clearTimeout(_s._recoveryWatchdog);
+      clearInterval(_s._recoveryWatchdog);
       _s._recoveryWatchdog = null;
     }
 
@@ -1720,11 +1766,14 @@
     var orb = document.createElement('div');
     orb.className = 'vtorb-large';
     orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;z-index:1;cursor:pointer;';
-    // BOOTSTRAP-ORB-MODERN-RECOVERY: tap-to-reconnect when stuck. The orb is
-    // a button when _disconnectStuck=true; otherwise the tap is a no-op so
-    // we don't accidentally interrupt active sessions.
+    // VTID-01987: always-on tap-to-reconnect during ANY disconnect state, not
+    // just budget-exhausted "stuck". On mobile, users tap the orb the moment
+    // they see the "internet issues" message — making them wait for the 5s
+    // health probe is bad UX. Any tap while _disconnectActive forces an
+    // immediate fresh-session restart in place. We still gate this so taps
+    // during a healthy session don't interrupt a live conversation.
     orb.addEventListener('click', function () {
-      if (_s._disconnectStuck) _resetAndReconnect();
+      if (_s._disconnectActive || _s._disconnectStuck) _resetAndReconnect();
     });
     shell.appendChild(orb);
     _root.appendChild(shell);
@@ -1992,8 +2041,12 @@
   // 13. AUTO-RECONNECT
   // ============================================================
 
-  var MAX_WIDGET_RECONNECTS = 3;
-  var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
+  // VTID-01987: bumped from 3 to 5 retries with shorter delays. Mobile WebViews
+  // routinely produce 2-3 spurious failures during a WiFi/cellular handoff
+  // before the new socket actually opens — 3 was too tight. The 5s health
+  // probe (above) is the primary recovery path; this is the fallback.
+  var MAX_WIDGET_RECONNECTS = 5;
+  var RECONNECT_DELAYS = [1500, 3000, 5000, 8000, 12000];
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: scheduled-loop reconnect.
   //
