@@ -36402,11 +36402,18 @@ function fetchSelfHealingData() {
     state.selfHealing.error = null;
     renderApp();
 
+    var shHeaders = buildContextHeaders();
+    function shFetchJson(url) {
+        return fetch(url, { headers: shHeaders }).then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+            return r.json();
+        });
+    }
     Promise.all([
-        fetch('/api/v1/self-healing/config').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/active').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/history?limit=20').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/pending-approval').then(function(r) { return r.json(); })
+        shFetchJson('/api/v1/self-healing/config'),
+        shFetchJson('/api/v1/self-healing/active'),
+        shFetchJson('/api/v1/self-healing/history?limit=20'),
+        shFetchJson('/api/v1/self-healing/pending-approval')
     ]).then(function(results) {
         state.selfHealing.config = results[0];
         state.selfHealing.active = (results[1] && results[1].tasks) || [];
@@ -38485,7 +38492,7 @@ function renderSelfHealingView() {
         killBtn.textContent = 'Processing...';
         fetch('/api/v1/self-healing/kill-switch', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ action: action, operator: 'command-hub' })
         }).then(function(r) { return r.json(); }).then(function() {
             state.selfHealing.fetched = false;
@@ -38557,7 +38564,7 @@ function renderSelfHealingView() {
     levelSelect.onchange = function() {
         fetch('/api/v1/self-healing/config', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ autonomy_level: parseInt(levelSelect.value), operator: 'command-hub' })
         }).then(function() {
             state.selfHealing.fetched = false;
@@ -38618,7 +38625,7 @@ function renderSelfHealingView() {
                 approveBtn.textContent = 'DISPATCHING…';
                 fetch('/api/v1/self-healing/approve', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ id: row.id, operator: 'command-hub' })
                 }).then(function(r) { return r.json(); }).then(function(result) {
                     state.selfHealing.fetched = false;
@@ -38646,7 +38653,7 @@ function renderSelfHealingView() {
                 rejectBtn.textContent = 'REJECTING…';
                 fetch('/api/v1/self-healing/reject', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ id: row.id, operator: 'command-hub', reason: reason || '' })
                 }).then(function(r) { return r.json(); }).then(function(result) {
                     state.selfHealing.fetched = false;
@@ -38746,7 +38753,7 @@ function renderSelfHealingView() {
                 rejectBtn.className = 'infra-btn infra-btn--danger';
                 rejectBtn.textContent = 'REJECT';
                 rejectBtn.onclick = function() {
-                    fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                    fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST', headers: buildContextHeaders() }).then(function() {
                         state.selfHealing.fetched = false;
                         fetchSelfHealingData();
                         showToast('Rejected ' + task.vtid, 'info');
@@ -38760,7 +38767,7 @@ function renderSelfHealingView() {
             rollbackBtn.textContent = 'ROLLBACK';
             rollbackBtn.onclick = function() {
                 if (!confirm('Rollback ' + task.vtid + '?')) return;
-                fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST', headers: buildContextHeaders() }).then(function() {
                     state.selfHealing.fetched = false;
                     fetchSelfHealingData();
                     showToast('Rollback requested for ' + task.vtid, 'warning');
