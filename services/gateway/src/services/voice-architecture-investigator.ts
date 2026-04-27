@@ -492,27 +492,43 @@ const RESPONSE_SCHEMA = {
   ],
 };
 
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase G): the investigator now routes through the
+ * provider router instead of calling Vertex directly. Operator picks the
+ * provider per `classifier` stage from the Command Hub dropdown. We use
+ * the router's tool-use mode (forceTool) to get structured output across
+ * any provider — Anthropic, OpenAI, Vertex/Gemini, DeepSeek all support
+ * function calling. The report shape is unchanged; we just parse from
+ * `toolCall.arguments` instead of from a JSON-mode text response.
+ */
 async function callVertexInvestigator(prompt: string): Promise<InvestigatorReport | null> {
-  if (!vertexAI) return null;
   try {
-    const model = vertexAI.getGenerativeModel({
-      model: INVESTIGATOR_MODEL,
-      generationConfig: {
-        temperature: 0.4,
-        topP: 0.95,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA as any,
-      },
+    const { callViaRouter } = await import('./llm-router');
+    const r = await callViaRouter('classifier', prompt, {
+      service: 'voice-architecture-investigator',
+      maxTokens: 8192,
+      tools: [{
+        name: 'emit_investigator_report',
+        description: 'Emit the structured investigator report. Always invoke this tool with a complete report rather than replying in plain text.',
+        inputSchema: RESPONSE_SCHEMA as Record<string, unknown>,
+      }],
+      forceTool: 0,
     });
-    const r = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const text = r.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    return JSON.parse(text) as InvestigatorReport;
+    if (!r.ok) {
+      console.warn(`[voice-architecture-investigator] router call failed: ${r.error}`);
+      return null;
+    }
+    if (r.toolCall && r.toolCall.name === 'emit_investigator_report') {
+      return r.toolCall.arguments as unknown as InvestigatorReport;
+    }
+    // Some providers may return JSON in the text body when forceTool isn't
+    // honored. Try to parse as a fallback so we don't lose the call.
+    if (r.text) {
+      try { return JSON.parse(r.text) as InvestigatorReport; } catch { /* fall through */ }
+    }
+    return null;
   } catch (err: any) {
-    console.warn(`[voice-architecture-investigator] Vertex call failed: ${err.message}`);
+    console.warn(`[voice-architecture-investigator] router threw: ${err?.message ?? err}`);
     return null;
   }
 }

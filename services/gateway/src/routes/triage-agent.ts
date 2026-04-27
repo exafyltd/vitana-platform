@@ -120,6 +120,51 @@ interface InvestigateRequest {
   };
 }
 
+// =============================================================================
+// BOOTSTRAP-LLM-ROUTER (Phase C): provider-aware /investigate
+//
+// When llm_routing_policy.policy.triage.primary_provider === 'anthropic', the
+// route falls through to the existing Managed Agents flow (multi-step session
+// with repo mount + custom tool dispatch + SSE streaming). For every other
+// provider (vertex, openai, deepseek), we do a single-shot LLM call via the
+// router and stash the result in an in-memory cache keyed by a synthetic
+// session_id (`router-<uuid>`). The /stream handler below detects the
+// `router-` prefix and serves the cached result as a single SSE event.
+//
+// Anthropic users see the same progressive UI as today. Non-anthropic users
+// get the result without per-token streaming but the UI still renders it via
+// the same EventSource handlers.
+// =============================================================================
+
+import { randomUUID } from 'crypto';
+import { getActivePolicy } from '../services/llm-routing-policy-service';
+
+interface CachedRouterTriageResult {
+  orb_session_id: string;
+  text: string;
+  provider: string;
+  model: string;
+  createdAt: number;
+}
+const ROUTER_CACHE_TTL_MS = 10 * 60 * 1000;
+const routerTriageCache = new Map<string, CachedRouterTriageResult>();
+function pruneRouterTriageCache() {
+  const cutoff = Date.now() - ROUTER_CACHE_TTL_MS;
+  for (const [k, v] of routerTriageCache) {
+    if (v.createdAt < cutoff) routerTriageCache.delete(k);
+  }
+}
+
+async function getTriagePrimaryProvider(): Promise<string> {
+  try {
+    const row = await getActivePolicy('DEV');
+    const policy = row?.policy as { triage?: { primary_provider?: string } } | undefined;
+    return policy?.triage?.primary_provider || 'anthropic';
+  } catch {
+    return 'anthropic';
+  }
+}
+
 triageAgentRouter.post('/investigate', async (req: Request, res: Response) => {
   try {
     const body = req.body as InvestigateRequest;
@@ -128,10 +173,79 @@ triageAgentRouter.post('/investigate', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'session_id is required' });
     }
 
+    pruneRouterTriageCache();
+
+    // Read policy: if triage stage is NOT anthropic, dispatch through the
+    // router and short-circuit. Anthropic falls through to Managed Agents.
+    const triageProvider = await getTriagePrimaryProvider();
+    if (triageProvider !== 'anthropic') {
+      const flagsList = body.flags.length > 0
+        ? body.flags.map((f: string) => `  - ${f}`).join('\n')
+        : '  (no diagnostic flags)';
+      const prompt = [
+        `Investigate this ORB voice session.`,
+        ``,
+        `## Session: ${body.session_id}`,
+        ``,
+        `## Diagnostic Flags`,
+        flagsList,
+        ``,
+        `## Metrics`,
+        `- Duration: ${body.metrics.duration_ms ? Math.round(body.metrics.duration_ms / 1000) + 's' : 'unknown'}`,
+        `- Audio in chunks: ${body.metrics.audio_in_chunks ?? 'unknown'}`,
+        `- Audio out chunks: ${body.metrics.audio_out_chunks ?? 'unknown'}`,
+        `- Turns: ${body.metrics.turn_count ?? 'unknown'}`,
+        `- Errors: ${body.metrics.error_count ?? 'unknown'}`,
+        `- Interrupts: ${body.metrics.interrupted_count ?? 'unknown'}`,
+        ``,
+        `## Summary`,
+        body.diagnostic_summary || 'No summary provided.',
+        ``,
+        `## OASIS events for session ${body.session_id} (last 100)`,
+        await queryOasisEvents(body.session_id, 100),
+        ``,
+        `Produce a structured triage report with: severity, root cause hypothesis, affected component, evidence (bulleted list), recommended fix, and confidence (low|medium|high).`,
+      ].join('\n');
+
+      const { callViaRouter } = await import('../services/llm-router');
+      const r = await callViaRouter('triage', prompt, {
+        service: 'triage-agent-investigate',
+        maxTokens: 4000,
+      });
+
+      const synthSessionId = `router-${randomUUID()}`;
+      if (r.ok && r.text) {
+        routerTriageCache.set(synthSessionId, {
+          orb_session_id: body.session_id,
+          text: r.text,
+          provider: r.provider || triageProvider,
+          model: r.model || '',
+          createdAt: Date.now(),
+        });
+      } else {
+        routerTriageCache.set(synthSessionId, {
+          orb_session_id: body.session_id,
+          text: `Triage failed via ${r.provider || triageProvider}: ${r.error || 'unknown error'}`,
+          provider: r.provider || triageProvider,
+          model: r.model || '',
+          createdAt: Date.now(),
+        });
+      }
+      return res.status(200).json({
+        ok: true,
+        session_id: synthSessionId,
+        orb_session_id: body.session_id,
+        stream_url: `/api/v1/agents/triage/${synthSessionId}/stream`,
+        provider: r.provider || triageProvider,
+        model: r.model || '',
+      });
+    }
+
+    // === Anthropic Managed Agents path (unchanged) ===
     if (!ANTHROPIC_API_KEY) {
       return res.status(503).json({
         ok: false,
-        error: 'Incident triage is not configured — ANTHROPIC_API_KEY is not set on this gateway instance.',
+        error: 'Triage policy points to Anthropic but ANTHROPIC_API_KEY is not set. Pick a different provider in Command Hub → LLM Providers → triage.',
       });
     }
 
@@ -237,16 +351,46 @@ triageAgentRouter.post('/investigate', async (req: Request, res: Response) => {
 triageAgentRouter.get('/:sessionId/stream', async (req: Request, res: Response) => {
   const { sessionId } = req.params;
 
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(503).json({ ok: false, error: 'ANTHROPIC_API_KEY not set' });
-  }
-
-  // Set up SSE headers
+  // Set up SSE headers up front — same shape for both router and Anthropic paths.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+
+  // BOOTSTRAP-LLM-ROUTER (Phase C): synthetic session_ids prefixed `router-`
+  // were produced by /investigate when the active triage policy is non-anthropic.
+  // Serve the cached one-shot result as a single agent.message event.
+  if (sessionId.startsWith('router-')) {
+    pruneRouterTriageCache();
+    const cached = routerTriageCache.get(sessionId);
+    const sendSSE = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    if (!cached) {
+      sendSSE('error', { error: 'Router triage result expired or not found. Re-run /investigate.' });
+      sendSSE('session.complete', { reason: 'cache_miss' });
+      res.end();
+      return;
+    }
+    sendSSE('agent.message', {
+      id: sessionId + '-msg',
+      content: [{ type: 'text', text: cached.text }],
+      provider: cached.provider,
+      model: cached.model,
+    });
+    sendSSE('session.complete', {
+      reason: 'completed',
+      provider: cached.provider,
+      model: cached.model,
+    });
+    res.end();
+    return;
+  }
+
+  if (!ANTHROPIC_API_KEY) {
+    return res.status(503).json({ ok: false, error: 'ANTHROPIC_API_KEY not set' });
+  }
 
   console.log(`${LOG_PREFIX} Stream opened for session ${sessionId}`);
 
