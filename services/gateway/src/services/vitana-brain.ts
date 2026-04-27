@@ -981,64 +981,78 @@ async function buildProactiveInitiativeOffer(
     channel: 'voice',
   }).catch(() => {});
 
-  // Build the on-yes/on-no instruction tail. Two-turn dictation flows
-  // need explicit "hold turn" guidance because Gemini Live wants to
-  // close the turn after each tool result.
-  const dictationTail = initiative.requires_user_dictation
+  // After-consent guidance. Two-turn dictation flows need explicit "hold
+  // turn" wording because Gemini Live wants to close the turn after each
+  // tool result. CRITICAL: this section describes what to do AFTER the
+  // user has consented — never as the first utterance.
+  const afterConsentBlock = initiative.requires_user_dictation
     ? `
-ON YES (any clear consent — "yes", "ok", "sure", "ja", "do it"):
-  1. Speak this prompt VERBATIM (sanctioned):
+=== AFTER THE USER CONSENTS (only after they have said yes/ok/sure/ja to step 1) ===
+
+  Step 2. Now (and only now) speak this follow-up prompt VERBATIM:
      "${initiative.voice_on_consent ?? 'Go ahead.'}"
-  2. HOLD THE TURN. Do NOT call any tool yet. Wait for the user's next
-     utterance, which carries the content / confirmation.
-  3. On the user's NEXT turn:
-     - If the on_yes_tool is 'send_chat_message': the user is confirming
-       the proposed message body. Only call \`send_chat_message\` if
-       they say yes to your draft. If they want to change the body,
-       speak a revised draft and ask again.
-     - Otherwise (e.g. save_diary_entry): call the tool with the
+  Step 3. HOLD THE TURN. Do NOT call any tool yet. Wait for the user's
+     NEXT utterance, which carries the content / confirmation.
+  Step 4. On the user's next turn:
+     - If on_yes_tool is 'send_chat_message': the user is confirming
+       the proposed message body. Only call \`send_chat_message\` when
+       they say yes to your draft. If they want to revise, speak a
+       new draft and ask again.
+     - Otherwise (save_diary_entry): call the tool with their
        captured content.
      Tool: ${initiative.on_yes_tool}
      Payload guidance: ${initiative.on_yes_payload_hint}
-  4. After tool success, speak a celebratory close (sanctioned template):
+  Step 5. After tool success, speak this celebratory close (sanctioned):
      "${initiative.build_voice_on_complete(target)}"
      If the tool returned an Index delta, splice it into {index_delta}
      and {pillar_value} naturally.`
     : `
-ON YES (any clear consent — "yes", "ok", "sure", "ja", "do it"):
-  1. Call the tool: ${initiative.on_yes_tool}
+=== AFTER THE USER CONSENTS (only after they have said yes/ok/sure/ja to step 1) ===
+
+  Step 2. Call the tool: ${initiative.on_yes_tool}
      Payload guidance: ${initiative.on_yes_payload_hint}
-  2. After tool success, speak a celebratory close (sanctioned template):
+  Step 3. After tool success, speak this celebratory close (sanctioned):
      "${initiative.build_voice_on_complete(target)}"
      Splice tool-result fields ({index_delta}, {pillar_value}, etc.)
      naturally where the template uses them.`;
 
   return `
 
-=== PROACTIVE INITIATIVE OFFER (V2 — APPEND-ONLY, ONE SHOT PER SESSION) ===
+=== PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
 
-You have ONE sanctioned proactive offer this session — an executable
-action paired with a real Vitana Index payoff. This REPLACES the
-Did-You-Know tour hint for this session (mutual exclusion); do not
-combine with another proposal.
+This block OVERRIDES the PROACTIVE OPENER CANDIDATE block above and
+REPLACES the Did-You-Know tour hint. Your FIRST utterance this session
+MUST be the offer below — not the candidate, not "How can I help",
+not "Go ahead", not anything else.
 
 Initiative key: ${initiative.initiative_key}
 Pillar link: ${initiative.pillar_link}
 On-yes tool: ${initiative.on_yes_tool}
 ${target ? `Pre-picked target: ${target.display_name ?? target.id ?? '(unnamed)'}` : ''}
 
-EXACT phrasing for the offer (use the user's language, but DO NOT
-paraphrase the structure — these strings are sanctioned):
-  Opener: "${voice_opener}"
-  Confirm: "${initiative.voice_confirm}"
-${dictationTail}
+=== STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase) ===
 
-ON NO (any decline — "skip", "not now", "later", "nein", "no thanks"):
+Speak BOTH sentences below as a single turn — opener immediately followed
+by the confirm question. Use the user's language naturally (DE/EN/etc.)
+but keep the structure (proposal + yes/no question) intact. You may add
+a brief warm greeting like "Hi" or the user's first name before the
+opener if appropriate to the time of day, but do not skip or shorten the
+offer itself:
+
+  "${voice_opener} ${initiative.voice_confirm}"
+
+DO NOT speak the AFTER-CONSENT lines below until the user has actually
+said yes/ok/sure/ja/do-it. They are the SECOND turn, not the first.
+${afterConsentBlock}
+
+=== ON NO (any decline — "skip", "not now", "later", "nein", "no thanks") ===
+
   Call pause_proactive_guidance with scope="nudge_key",
   scope_value="${initiative.initiative_key}", duration_minutes=1440.
   Then pivot naturally — no apology, no "I'll stop now" speech.
 
-ON HARDER REFUSAL ("not today", "quiet", "give me space"):
+=== ON HARDER REFUSAL ("not today", "quiet", "give me space") ===
+
   Call pause_proactive_guidance with scope="all" and the appropriate
   duration per the dismissal tool description. Pivot.
 
