@@ -283,12 +283,13 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
-            # VTID-01184: OpenAI API key for embedding generation (primary provider)
-            # NOTE: Requires 'OPENAI_API_KEY' secret in GCP Secret Manager.
-            # Uncomment once created: gcloud secrets create OPENAI_API_KEY --data-file=-
-            # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
-            # Remove stale OPENAI_API_KEY binding from previous revision (secret doesn't exist in GCP)
-            SECRETS_ARGS+=(--remove-secrets=OPENAI_API_KEY)
+            # VTID-01184 + BOOTSTRAP-LLM-ROUTER: OpenAI API key — used for
+            # embeddings (VTID-01184) AND for the llm-router's openai adapter
+            # so the operator can pick OpenAI per stage from the Command Hub
+            # dropdown. Bound from a GitHub Actions secret rather than GCP
+            # Secret Manager (no GCP secret needed; same pattern as
+            # ANTHROPIC_API_KEY and DEEPSEEK_API_KEY).
+            EXTRA_ENV_ARGS+=(--update-env-vars=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }})
             # GitHub PAT for workflow dispatch (test runs, ORB monitor, CI/CD integration)
             EXTRA_ENV_ARGS+=(--update-env-vars=GITHUB_SAFE_MERGE_TOKEN=${{ secrets.SAFE_MERGE_TOKEN }})
             # Bind other required secrets
