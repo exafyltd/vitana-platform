@@ -2275,6 +2275,36 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
           },
         },
         {
+          // V2 — Proactive Initiative Engine
+          name: 'activate_recommendation',
+          description: [
+            'Activate an Autopilot recommendation on the user\'s behalf —',
+            'marks the recommendation as activated and brings it to the',
+            'top of their active list. Use ONLY when the user has consented',
+            'to a Proactive Initiative offer where the on_yes_tool is',
+            '`activate_recommendation`. The recommendation id is pre-picked',
+            'at initiative-resolution time — pass it through unchanged.',
+            '',
+            'After success, speak the sanctioned celebratory close from the',
+            'initiative\'s `build_voice_on_complete` template.',
+            '',
+            'Returns { ok, title, completion_message }. If ok=false, briefly',
+            'acknowledge ("Hmm, couldn\'t schedule that one") and offer to',
+            'open the Autopilot screen instead via navigate_to_screen.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description:
+                  'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
+              },
+            },
+            required: ['id'],
+          },
+        },
+        {
           name: 'share_link',
           description: [
             'Share a link with another Vitana user as a chat message with a',
@@ -4678,6 +4708,86 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[VTID-01967] send_chat_message error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // V2 — Proactive Initiative Engine: activate an Autopilot recommendation.
+      // Minimal v1 implementation: status='activated' update + return title +
+      // a generic completion message. The full activation flow (calendar
+      // event creation, push notifications, queue replenishment) lives in
+      // /api/v1/autopilot/recommendations/:id/activate; that flow remains
+      // the authoritative path and runs on its own when the user opens the
+      // app. This tool dispatch only covers the voice-handshake case.
+      case 'activate_recommendation': {
+        const recId = String(args.id || '').trim();
+        if (!recId) {
+          return { success: false, result: '', error: 'id is required' };
+        }
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE!,
+          );
+
+          // Verify ownership + fetch title for the celebratory close.
+          const { data: rec, error: fetchErr } = await supabase
+            .from('autopilot_recommendations')
+            .select('id, title, summary, status, user_id')
+            .eq('id', recId)
+            .maybeSingle();
+
+          if (fetchErr) {
+            return { success: false, result: '', error: fetchErr.message };
+          }
+          if (!rec) {
+            return { success: false, result: '', error: 'recommendation_not_found' };
+          }
+          if (rec.user_id && rec.user_id !== session.identity!.user_id) {
+            return {
+              success: false,
+              result: '',
+              error: 'recommendation_belongs_to_another_user',
+            };
+          }
+
+          const alreadyActive = rec.status === 'activated';
+          if (!alreadyActive) {
+            const { error: updErr } = await supabase
+              .from('autopilot_recommendations')
+              .update({ status: 'activated', updated_at: new Date().toISOString() })
+              .eq('id', recId);
+            if (updErr) {
+              return { success: false, result: '', error: updErr.message };
+            }
+          }
+
+          // Telemetry — fire-and-forget. Mirrors the consented/executed split
+          // from the initiative-engine plan so dashboards can compute funnel.
+          import('../services/guide').then(({ emitGuideTelemetry }) => {
+            emitGuideTelemetry('guide.initiative.executed', {
+              user_id: session.identity!.user_id,
+              initiative_key: 'autopilot_top_recommendation',
+              on_yes_tool: 'activate_recommendation',
+              recommendation_id: recId,
+              already_active: alreadyActive,
+            }).catch(() => {});
+          }).catch(() => {});
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              title: rec.title,
+              already_active: alreadyActive,
+              completion_message: alreadyActive
+                ? `"${rec.title}" was already on your active list — I'll keep it there.`
+                : `Done — "${rec.title}" is on your active list. Open Autopilot when you're ready to start it.`,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[V2-INITIATIVE] activate_recommendation error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
