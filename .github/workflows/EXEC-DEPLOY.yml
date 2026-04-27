@@ -647,10 +647,21 @@ jobs:
 
           echo "Writing terminal completion for VTID: $VTID"
 
+          # VTID-01984: Fetch Supabase service token from GCP Secret Manager.
+          # gcloud WIF auth runs at workflow start so secrets are accessible here.
+          SUPABASE_SERVICE_ROLE=$(gcloud secrets versions access latest \
+            --secret=SUPABASE_SERVICE_ROLE \
+            --project=lovable-vitana-vers1 2>/dev/null || echo "")
+          if [ -z "$SUPABASE_SERVICE_ROLE" ]; then
+            echo "::error::VTID-01984: Cannot fetch SUPABASE_SERVICE_ROLE from Secret Manager — terminal gate cannot authenticate"
+            exit 1
+          fi
+
           # Step 1: Call terminal completion endpoint
           RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
             -H "Content-Type: application/json" \
             -H "X-VTID: $VTID" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
             -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
 
           echo "Terminal completion response: $RESPONSE"
@@ -762,9 +773,14 @@ jobs:
           # This resets the task to 'scheduled' for retry (if under max failure count)
           if [[ "$VTID" != BOOTSTRAP-* ]] && [ -n "$GATEWAY_URL" ]; then
             echo "VTID-01841: Calling completion endpoint to trigger retry-reset"
+            # VTID-01984: Fetch auth token for retry-reset call (same gate as terminal completion)
+            SUPABASE_SVC_ROLE_FAIL=$(gcloud secrets versions access latest \
+              --secret=SUPABASE_SERVICE_ROLE \
+              --project=lovable-vitana-vers1 2>/dev/null || echo "")
             RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
               -H "Content-Type: application/json" \
               -H "X-VTID: $VTID" \
+              -H "Authorization: Bearer $SUPABASE_SVC_ROLE_FAIL" \
               -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
             echo "VTID-01841: Retry-reset response: $RETRY_RESPONSE"
           fi
