@@ -734,6 +734,10 @@
     _s.active = false;
     _s.liveError = null;
     _s.greetingAudioReceived = false;
+    // VTID-01988 (mic restart fix): reset greetingComplete so the new session's
+    // turn_complete handler will re-trigger _startAudioCapture(). Without this,
+    // recovery only updated the display — the mic stream stayed torn down.
+    _s.greetingComplete = false;
     _s._reconnectCount = 0;
     _s._isReconnecting = false;
     _s._disconnectStuck = false;
@@ -873,6 +877,13 @@
     console.log('[VTOrb] Starting Gemini Live session...');
 
     _s.greetingAudioReceived = false;
+    // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
+    // call. It used to only get reset in _sessionStop (full session teardown),
+    // so reconnects via _resetAndReconnect / _attemptReconnect kept it as true
+    // and the new session never re-acquired the mic. Reset it here so every
+    // fresh _sessionStart correctly arms the post-greeting mic-startup path,
+    // regardless of which caller invokes it.
+    _s.greetingComplete = false;
     _s._audioSendErrorLogged = false;
     _s._inputTranscriptBuffer = '';
     _s._outputTranscriptBuffer = '';
@@ -2113,6 +2124,8 @@
       _s.liveError = null;
       _s._audioSendErrorLogged = false;
       _s.greetingAudioReceived = false;
+      // VTID-01988 (mic restart fix): see _resetAndReconnect for context.
+      _s.greetingComplete = false;
 
       _sessionStart().then(function () {
         _s._isReconnecting = false;
