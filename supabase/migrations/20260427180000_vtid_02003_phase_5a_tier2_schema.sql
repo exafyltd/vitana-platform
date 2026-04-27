@@ -381,53 +381,79 @@ CREATE INDEX IF NOT EXISTS vitana_index_trajectory_user ON public.vitana_index_t
 -- 4. ALTERs (additive)
 -- ============================================================================
 
--- Stream 5 — relationship_edges rolling stats
-ALTER TABLE public.relationship_edges
-  ADD COLUMN IF NOT EXISTS mention_count_30d int NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS mention_count_90d int NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS last_mentioned_at timestamptz,
-  ADD COLUMN IF NOT EXISTS sentiment_avg     real,
-  ADD COLUMN IF NOT EXISTS recent_topics     jsonb;
+-- ALTERs on legacy tables — guarded by to_regclass() so a missing table
+-- doesn't abort the whole transaction. Tables that don't exist yet
+-- (e.g., community_recommendations) are skipped silently; the matching
+-- columns will get added when those tables are eventually created.
+DO $alters$
+BEGIN
+  -- Stream 5 — relationship_edges rolling stats
+  IF to_regclass('public.relationship_edges') IS NOT NULL THEN
+    ALTER TABLE public.relationship_edges
+      ADD COLUMN IF NOT EXISTS mention_count_30d int NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS mention_count_90d int NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS last_mentioned_at timestamptz,
+      ADD COLUMN IF NOT EXISTS sentiment_avg     real,
+      ADD COLUMN IF NOT EXISTS recent_topics     jsonb;
+  END IF;
 
--- Stream 4 — user_device_tokens capability flags
-ALTER TABLE public.user_device_tokens
-  ADD COLUMN IF NOT EXISTS device_type             text,
-  ADD COLUMN IF NOT EXISTS os_version              text,
-  ADD COLUMN IF NOT EXISTS app_version             text,
-  ADD COLUMN IF NOT EXISTS paired_wearables        jsonb,
-  ADD COLUMN IF NOT EXISTS last_active_at          timestamptz,
-  ADD COLUMN IF NOT EXISTS last_session_modality   text,
-  ADD COLUMN IF NOT EXISTS last_known_timezone     text,
-  ADD COLUMN IF NOT EXISTS notification_capability text;
+  -- Stream 4 — user_device_tokens capability flags
+  IF to_regclass('public.user_device_tokens') IS NOT NULL THEN
+    ALTER TABLE public.user_device_tokens
+      ADD COLUMN IF NOT EXISTS device_type             text,
+      ADD COLUMN IF NOT EXISTS os_version              text,
+      ADD COLUMN IF NOT EXISTS app_version             text,
+      ADD COLUMN IF NOT EXISTS paired_wearables        jsonb,
+      ADD COLUMN IF NOT EXISTS last_active_at          timestamptz,
+      ADD COLUMN IF NOT EXISTS last_session_modality   text,
+      ADD COLUMN IF NOT EXISTS last_known_timezone     text,
+      ADD COLUMN IF NOT EXISTS notification_capability text;
+  END IF;
 
--- Provenance closure
-ALTER TABLE public.memory_items
-  ADD COLUMN IF NOT EXISTS provenance_source     text,
-  ADD COLUMN IF NOT EXISTS provenance_confidence real,
-  ADD COLUMN IF NOT EXISTS source_engine         text;
+  -- Provenance closure
+  IF to_regclass('public.memory_items') IS NOT NULL THEN
+    ALTER TABLE public.memory_items
+      ADD COLUMN IF NOT EXISTS provenance_source     text,
+      ADD COLUMN IF NOT EXISTS provenance_confidence real,
+      ADD COLUMN IF NOT EXISTS source_engine         text;
+  END IF;
 
-ALTER TABLE public.live_rooms
-  ADD COLUMN IF NOT EXISTS transcription_confidence    real,
-  ADD COLUMN IF NOT EXISTS transcription_model_version text,
-  ADD COLUMN IF NOT EXISTS audio_quality_metrics       jsonb;
+  IF to_regclass('public.live_rooms') IS NOT NULL THEN
+    ALTER TABLE public.live_rooms
+      ADD COLUMN IF NOT EXISTS transcription_confidence    real,
+      ADD COLUMN IF NOT EXISTS transcription_model_version text,
+      ADD COLUMN IF NOT EXISTS audio_quality_metrics       jsonb;
+  END IF;
 
-ALTER TABLE public.thread_summaries
-  ADD COLUMN IF NOT EXISTS summary_confidence    real,
-  ADD COLUMN IF NOT EXISTS summary_model_version text;
+  IF to_regclass('public.thread_summaries') IS NOT NULL THEN
+    ALTER TABLE public.thread_summaries
+      ADD COLUMN IF NOT EXISTS summary_confidence    real,
+      ADD COLUMN IF NOT EXISTS summary_model_version text;
+  END IF;
 
-ALTER TABLE public.user_session_summaries
-  ADD COLUMN IF NOT EXISTS summary_confidence    real,
-  ADD COLUMN IF NOT EXISTS summary_model_version text;
+  IF to_regclass('public.user_session_summaries') IS NOT NULL THEN
+    ALTER TABLE public.user_session_summaries
+      ADD COLUMN IF NOT EXISTS summary_confidence    real,
+      ADD COLUMN IF NOT EXISTS summary_model_version text;
+  END IF;
 
-ALTER TABLE public.user_preferences
-  ADD COLUMN IF NOT EXISTS source                    text,
-  ADD COLUMN IF NOT EXISTS confidence                real,
-  ADD COLUMN IF NOT EXISTS inferred_from_sample_size int;
+  IF to_regclass('public.user_preferences') IS NOT NULL THEN
+    ALTER TABLE public.user_preferences
+      ADD COLUMN IF NOT EXISTS source                    text,
+      ADD COLUMN IF NOT EXISTS confidence                real,
+      ADD COLUMN IF NOT EXISTS inferred_from_sample_size int;
+  END IF;
 
-ALTER TABLE public.community_recommendations
-  ADD COLUMN IF NOT EXISTS engine_version   text,
-  ADD COLUMN IF NOT EXISTS algorithm_type   text,
-  ADD COLUMN IF NOT EXISTS confidence_score real;
+  IF to_regclass('public.community_recommendations') IS NOT NULL THEN
+    ALTER TABLE public.community_recommendations
+      ADD COLUMN IF NOT EXISTS engine_version   text,
+      ADD COLUMN IF NOT EXISTS algorithm_type   text,
+      ADD COLUMN IF NOT EXISTS confidence_score real;
+  ELSE
+    RAISE NOTICE 'skipping community_recommendations ALTERs — table does not exist';
+  END IF;
+END
+$alters$;
 
 -- ============================================================================
 -- 5. RLS — enable + basic tenant+user policy on every new table
