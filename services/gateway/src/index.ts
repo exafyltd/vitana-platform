@@ -1100,6 +1100,21 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
       }
 
+      // VTID-01992: Async intent embedding worker. Polls for un-embedded
+      // user_intents rows and backfills via Gemini. Acts as insurance
+      // when inline is on; primary embedder when FEATURE_INTENT_EMBEDDING_ASYNC=true.
+      try {
+        const embedWorkerEnabled = process.env.INTENT_EMBEDDING_WORKER_ENABLED !== 'false';
+        if (embedWorkerEnabled) {
+          const { startIntentEmbeddingWorker } = require('./services/intent-embedding-worker');
+          startIntentEmbeddingWorker();
+        } else {
+          console.log('⏸️ Intent embedding worker disabled (INTENT_EMBEDDING_WORKER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Intent embedding worker initialization failed (non-fatal):', error);
+      }
+
       // OAuth WebView fix Phase 5: refresh expiring social_connections
       // tokens ahead of expiry so ORB/Autopilot stop hitting silent 401s.
       try {
