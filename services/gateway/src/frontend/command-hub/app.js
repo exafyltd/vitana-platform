@@ -3649,7 +3649,7 @@ const state = {
     infraDeployments: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraLogs: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraConfig: { data: null, loading: false, error: null, fetched: false },
-    selfHealing: { config: null, active: [], history: [], pendingApproval: [], loading: false, error: null, fetched: false },
+    selfHealing: { config: null, active: [], history: [], historyTotal: 0, historyOffset: 0, historyFilterClass: '', historyClasses: [], historyLoadingMore: false, pendingApproval: [], loading: false, error: null, fetched: false },
 
     // Security module
     securityPolicies: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -36426,9 +36426,20 @@ function fetchSecurityPolicies() {
 // Self-Healing Dashboard
 // ═══════════════════════════════════════════════════════════════════
 
+var SH_HISTORY_PAGE_SIZE = 20;
+
+// Build the /history URL with the current pagination + filter state.
+function shHistoryUrl(offset) {
+    var params = 'limit=' + SH_HISTORY_PAGE_SIZE + '&offset=' + (offset || 0);
+    var fc = state.selfHealing.historyFilterClass;
+    if (fc) params += '&failure_class=' + encodeURIComponent(fc);
+    return '/api/v1/self-healing/history?' + params;
+}
+
 function fetchSelfHealingData() {
     state.selfHealing.loading = true;
     state.selfHealing.error = null;
+    state.selfHealing.historyOffset = 0;
     renderApp();
 
     var shHeaders = buildContextHeaders();
@@ -36441,13 +36452,17 @@ function fetchSelfHealingData() {
     Promise.all([
         shFetchJson('/api/v1/self-healing/config'),
         shFetchJson('/api/v1/self-healing/active'),
-        shFetchJson('/api/v1/self-healing/history?limit=20'),
-        shFetchJson('/api/v1/self-healing/pending-approval')
+        shFetchJson(shHistoryUrl(0)),
+        shFetchJson('/api/v1/self-healing/pending-approval'),
+        shFetchJson('/api/v1/self-healing/history/classes')
     ]).then(function(results) {
         state.selfHealing.config = results[0];
         state.selfHealing.active = (results[1] && results[1].tasks) || [];
         state.selfHealing.history = (results[2] && results[2].items) || [];
+        state.selfHealing.historyTotal = (results[2] && results[2].total) || state.selfHealing.history.length;
+        state.selfHealing.historyOffset = state.selfHealing.history.length;
         state.selfHealing.pendingApproval = (results[3] && results[3].items) || [];
+        state.selfHealing.historyClasses = (results[4] && results[4].classes) || [];
         state.selfHealing.loading = false;
         state.selfHealing.fetched = true;
         renderApp();
@@ -36456,6 +36471,33 @@ function fetchSelfHealingData() {
         state.selfHealing.loading = false;
         renderApp();
     });
+}
+
+// Load the next page and append to state.selfHealing.history. Used by Load More.
+function loadMoreSelfHealingHistory() {
+    if (state.selfHealing.historyLoadingMore) return;
+    state.selfHealing.historyLoadingMore = true;
+    renderApp();
+
+    var headers = buildContextHeaders();
+    fetch(shHistoryUrl(state.selfHealing.historyOffset || 0), { headers: headers })
+        .then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(function(j) {
+            var more = (j && j.items) || [];
+            state.selfHealing.history = (state.selfHealing.history || []).concat(more);
+            state.selfHealing.historyTotal = (j && j.total) || state.selfHealing.historyTotal;
+            state.selfHealing.historyOffset = state.selfHealing.history.length;
+            state.selfHealing.historyLoadingMore = false;
+            renderApp();
+        })
+        .catch(function(err) {
+            state.selfHealing.historyLoadingMore = false;
+            showToast('Load More failed: ' + err.message, 'error');
+            renderApp();
+        });
 }
 
 // =============================================================================
@@ -39085,6 +39127,53 @@ function renderSelfHealingView() {
     historyH3.textContent = 'Self-Healing History';
     container.appendChild(historyH3);
 
+    // Filter toolbar — class dropdown + page-size summary.
+    var historyToolbar = document.createElement('div');
+    historyToolbar.className = 'infra-toolbar';
+    historyToolbar.style.display = 'flex';
+    historyToolbar.style.alignItems = 'center';
+    historyToolbar.style.gap = '12px';
+    historyToolbar.style.marginBottom = '8px';
+
+    var classLabel = document.createElement('label');
+    classLabel.textContent = 'Failure class:';
+    classLabel.style.fontSize = '0.8rem';
+    classLabel.style.color = 'var(--color-text-secondary)';
+    historyToolbar.appendChild(classLabel);
+
+    var classSelect = document.createElement('select');
+    classSelect.className = 'infra-select';
+    classSelect.autocomplete = 'off';
+    var allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All (' + (state.selfHealing.historyTotal || 0) + ')';
+    classSelect.appendChild(allOpt);
+    (state.selfHealing.historyClasses || []).forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.class;
+        opt.textContent = c.class + ' (' + c.count + ')';
+        classSelect.appendChild(opt);
+    });
+    classSelect.value = state.selfHealing.historyFilterClass || '';
+    classSelect.onchange = function() {
+        state.selfHealing.historyFilterClass = classSelect.value;
+        // Re-fetch from offset 0 with the new filter; keep classes list stable.
+        state.selfHealing.fetched = false;
+        fetchSelfHealingData();
+    };
+    historyToolbar.appendChild(classSelect);
+
+    var summary = document.createElement('span');
+    summary.style.marginLeft = 'auto';
+    summary.style.fontSize = '0.8rem';
+    summary.style.color = 'var(--color-text-secondary)';
+    var shownCount = (state.selfHealing.history || []).length;
+    var totalCount = state.selfHealing.historyTotal || shownCount;
+    summary.textContent = 'Showing ' + shownCount + ' of ' + totalCount;
+    historyToolbar.appendChild(summary);
+
+    container.appendChild(historyToolbar);
+
     var historyItems = state.selfHealing.history || [];
     if (historyItems.length === 0) {
         var emptyDiv = document.createElement('div');
@@ -39236,16 +39325,36 @@ function renderSelfHealingView() {
         container.appendChild(tableWrapper);
     }
 
-    // Refresh button
+    // Action row: Load More (when more rows are available) + Refresh.
+    var actionRow = document.createElement('div');
+    actionRow.style.marginTop = '16px';
+    actionRow.style.display = 'flex';
+    actionRow.style.gap = '8px';
+    actionRow.style.alignItems = 'center';
+
+    var shHistoryShown = (state.selfHealing.history || []).length;
+    var shHistoryTotal = state.selfHealing.historyTotal || shHistoryShown;
+    if (shHistoryShown < shHistoryTotal) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'infra-btn';
+        loadMoreBtn.textContent = state.selfHealing.historyLoadingMore
+            ? 'Loading…'
+            : 'Load More (' + (shHistoryTotal - shHistoryShown) + ' remaining)';
+        loadMoreBtn.disabled = !!state.selfHealing.historyLoadingMore;
+        loadMoreBtn.onclick = function() { loadMoreSelfHealingHistory(); };
+        actionRow.appendChild(loadMoreBtn);
+    }
+
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'infra-btn infra-btn--ghost';
-    refreshBtn.style.marginTop = '16px';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function() {
         state.selfHealing.fetched = false;
         fetchSelfHealingData();
     };
-    container.appendChild(refreshBtn);
+    actionRow.appendChild(refreshBtn);
+
+    container.appendChild(actionRow);
 
     return container;
 }
