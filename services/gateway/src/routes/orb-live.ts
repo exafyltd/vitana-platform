@@ -4424,7 +4424,11 @@ async function executeLiveApiToolInner(
             mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
           } : null;
 
-          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0}`);
+          // H.5 — diary streak celebration (best-effort, non-blocking).
+          const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
+          const streak = await celebrateDiaryStreak(admin, lens.user_id, tenantId);
+
+          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} streak=${streak ? streak.tier_days : '-'}`);
 
           return {
             success: true,
@@ -4434,6 +4438,7 @@ async function executeLiveApiToolInner(
               health_features_written,
               pillars_after,
               index_delta,
+              streak,
             }),
           };
         } catch (err: any) {

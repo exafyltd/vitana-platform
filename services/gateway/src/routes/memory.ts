@@ -1892,12 +1892,17 @@ router.post('/diary/sync-index', async (req: Request, res: Response) => {
       mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
     } : null;
 
+    // H.5 — diary streak celebration (best-effort, non-blocking).
+    const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
+    const streak = await celebrateDiaryStreak(admin, userId, tenantId);
+
     return res.status(200).json({
       ok: true,
       entry_date: entryDate,
       health_features_written,
       pillars_after,
       index_delta,
+      streak,
     });
   } catch (err: any) {
     console.error('[VTID-01983] /diary/sync-index error:', err?.message ?? err);
