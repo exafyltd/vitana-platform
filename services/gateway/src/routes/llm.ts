@@ -19,7 +19,7 @@ import {
   getPolicyAuditHistory,
 } from '../services/llm-routing-policy-service';
 import { queryLLMTelemetry } from '../services/llm-telemetry-service';
-import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS } from '../constants/llm-defaults';
+import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS, type LLMProvider } from '../constants/llm-defaults';
 import { getSupabase } from '../lib/supabase';
 
 const router = Router();
@@ -353,6 +353,51 @@ router.get('/telemetry', async (req: Request, res: Response) => {
 // VTID-02403: Return static catalog of LLM providers + live user_connections_count
 // for AI-assistant providers (ChatGPT, Claude). Command Hub consumes this.
 // =============================================================================
+// =============================================================================
+// GET /api/v1/llm/providers/health
+//
+// BOOTSTRAP-LLM-ROUTER: report which router providers actually have credentials
+// configured on this gateway instance. The Command Hub dropdown reads this
+// and grays out unavailable providers + shows a tooltip, so the UI can never
+// again silently mislead by listing a provider that would fail at call time.
+// =============================================================================
+router.get('/providers/health', (_req: Request, res: Response) => {
+  const providers: Array<{ provider: LLMProvider; available: boolean; reason?: string }> = [
+    {
+      provider: 'anthropic',
+      available: Boolean(process.env.ANTHROPIC_API_KEY),
+      reason: process.env.ANTHROPIC_API_KEY ? undefined : 'ANTHROPIC_API_KEY not set on gateway',
+    },
+    {
+      provider: 'openai',
+      available: Boolean(process.env.OPENAI_API_KEY),
+      reason: process.env.OPENAI_API_KEY ? undefined : 'OPENAI_API_KEY not set on gateway',
+    },
+    {
+      provider: 'vertex',
+      available: Boolean(process.env.GOOGLE_CLOUD_PROJECT) || Boolean(process.env.GOOGLE_GEMINI_API_KEY),
+      reason:
+        process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_GEMINI_API_KEY
+          ? undefined
+          : 'No Vertex/Google AI credentials',
+    },
+    {
+      provider: 'deepseek',
+      available: Boolean(process.env.DEEPSEEK_API_KEY),
+      reason: process.env.DEEPSEEK_API_KEY ? undefined : 'DEEPSEEK_API_KEY not set on gateway',
+    },
+    {
+      provider: 'claude_subscription',
+      available: (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true',
+      reason:
+        (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true'
+          ? undefined
+          : 'DEV_AUTOPILOT_USE_WORKER=true required (worker queue disabled)',
+    },
+  ];
+  res.json({ ok: true, data: providers });
+});
+
 router.get('/models', async (req: Request, res: Response) => {
   // Static catalog (mirrors prior front-end defaults so existing UI still works)
   const staticModels: Array<{

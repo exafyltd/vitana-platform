@@ -3668,6 +3668,11 @@ const state = {
       pending: null,          // operator-edited copy (only persisted on Save)
       providers: [],          // from /api/v1/llm/routing-policy
       models: [],             // from /api/v1/llm/routing-policy (with tier field)
+      // BOOTSTRAP-LLM-ROUTER-CFG: provider availability from /api/v1/llm/providers/health.
+      // Map of provider_key -> { available: bool, reason?: string }. Drives the
+      // dropdown gray-out so the UI never lists a provider that has no
+      // credentials configured on the gateway.
+      health: {},
       saving: false,
       saveError: null,
       lastSavedAt: null,
@@ -31359,21 +31364,34 @@ function fetchLlmRoutingPolicy() {
   state.llmRouting.loading = true;
   state.llmRouting.error = null;
   renderApp();
-  fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' })
-    .then(function (r) { return r.json(); })
-    .then(function (resp) {
+  // Fetch policy + provider health in parallel — health drives dropdown gray-out.
+  Promise.all([
+    fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' }).then(function (r) { return r.json(); }),
+    fetch('/api/v1/llm/providers/health', { credentials: 'include' })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false }; }),
+  ])
+    .then(function (results) {
+      var resp = results[0];
+      var healthResp = results[1];
       if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'fetch failed');
       var data = resp.data || {};
       state.llmRouting.loading = false;
       state.llmRouting.fetched = true;
-      // Server may return policy nested in `data.policy.policy` (the row's `policy` JSONB field)
-      // or directly as `data.policy` (flat). Handle both.
       var policyRow = data.policy || null;
       var policyDoc = (policyRow && policyRow.policy) ? policyRow.policy : policyRow;
       state.llmRouting.policy = policyDoc;
       state.llmRouting.pending = JSON.parse(JSON.stringify(policyDoc || {}));
       state.llmRouting.providers = data.providers || [];
       state.llmRouting.models = data.models || [];
+      // Health: turn the array into a map keyed by provider key for O(1) lookup
+      var healthMap = {};
+      if (healthResp && healthResp.ok && Array.isArray(healthResp.data)) {
+        healthResp.data.forEach(function (h) {
+          healthMap[h.provider] = { available: !!h.available, reason: h.reason || null };
+        });
+      }
+      state.llmRouting.health = healthMap;
       renderApp();
     })
     .catch(function (err) {
@@ -31551,12 +31569,32 @@ function buildPickerCell(slotLabel, stageKey, slot, providers, stageCfg) {
   providers.forEach(function (p) {
     var opt = document.createElement('option');
     opt.value = p.provider_key;
-    opt.textContent = p.display_name || p.provider_key;
+    var label = p.display_name || p.provider_key;
+    // BOOTSTRAP-LLM-ROUTER-CFG: gray out + annotate providers without
+    // credentials configured on the gateway. Operator can still select them
+    // (in case they're about to set the secret), but the UI is honest about
+    // current availability.
+    var health = state.llmRouting.health[p.provider_key];
+    if (health && !health.available) {
+      opt.disabled = true;
+      label = label + ' (no API key)';
+      opt.title = health.reason || 'No credentials configured';
+    } else {
+      opt.title = '';
+    }
+    opt.textContent = label;
     providerSelect.appendChild(opt);
   });
 
   var currentProvider = stageCfg[slot + '_provider'];
   providerSelect.value = currentProvider || '';
+  // If the saved policy points at an unavailable provider, surface that on the
+  // select itself so the operator sees the warning even before opening the menu.
+  var currentHealth = currentProvider ? state.llmRouting.health[currentProvider] : null;
+  if (currentHealth && !currentHealth.available) {
+    providerSelect.style.cssText += 'border-color:#ff6b6b;color:#ff9f9f;';
+    providerSelect.title = currentHealth.reason || 'Provider has no credentials configured';
+  }
   col.appendChild(providerSelect);
 
   // Model <select>
