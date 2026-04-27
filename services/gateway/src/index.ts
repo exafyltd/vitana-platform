@@ -224,6 +224,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // Agents Registry — single source of truth for every LLM-powered workload
   const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
+  // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
+  const { routinesRouter } = require('./routes/routines');
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab investigations
   const { triageAgentRouter } = require('./routes/triage-agent');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
@@ -546,6 +548,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Agents Registry — replaces the hardcoded subagents array with a real, queryable registry
   mountRouterSync(app, '/', agentsRegistryRouter, { owner: 'agents-registry' });
+
+  // VTID-01981: Routines — catalog + run history for daily Claude Code remote agents
+  mountRouterSync(app, '/', routinesRouter, { owner: 'routines' });
 
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab
   mountRouterSync(app, '/api/v1/agents/triage', triageAgentRouter, { owner: 'triage-agent' });

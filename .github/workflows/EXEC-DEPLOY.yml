@@ -343,6 +343,9 @@ jobs:
             # Callback base URL (gateway) and post-OAuth redirect base (community-app).
             EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_PUBLIC_URL=https://gateway-q74ibpv6ia-uc.a.run.app)
             EXTRA_ENV_ARGS+=(--update-env-vars=APP_URL=https://community-app-q74ibpv6ia-uc.a.run.app)
+            # VTID-01981: Routines ingest token — required by /api/v1/routines POST/PATCH
+            # so daily Claude Code remote agents can authenticate without user JWTs.
+            EXTRA_ENV_ARGS+=(--update-env-vars=ROUTINE_INGEST_TOKEN=${{ secrets.ROUTINE_INGEST_TOKEN }})
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
