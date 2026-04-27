@@ -5617,6 +5617,11 @@ function buildLiveSystemInstruction(
   currentRoute?: string | null,
   recentRoutes?: string[] | null,
   clientContext?: ClientContext,
+  // VTID-01967: Canonical Vitana ID handle for this user (e.g. "@alex3700").
+  // When present, pinned at the top of the prompt as the ONLY identifier the
+  // model may emit when asked "what is my user ID?". Null/undefined for
+  // sessions where the handle hasn't been provisioned yet.
+  vitanaId?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -5668,7 +5673,29 @@ honestly that you do not see a role in this session.
 
 `;
 
-  let instruction = `${roleHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+  // VTID-01967: Pin the canonical Vitana ID at the top of the prompt so the
+  // model can answer "what is my user ID?" / "what's my handle?" with the
+  // @-prefixed handle instead of hallucinating a UUID. Mirrors the role
+  // header pattern above so the directive isn't buried.
+  const vitanaIdHeader = vitanaId
+    ? `=== AUTHORITATIVE USER VITANA ID ===
+The user's Vitana ID handle is: ${vitanaId}
+This is the ONLY identifier you may share when the user asks "what is my user ID",
+"what is my handle", "what is my Vitana ID", or "who am I". Do NOT speak the
+internal UUID under any circumstance — it is a private system identifier.
+=====================================
+
+`
+    : `=== AUTHORITATIVE USER VITANA ID ===
+No Vitana ID handle is provisioned for this session. If the user asks "what is
+my user ID", "what is my handle", or "what is my Vitana ID", tell them honestly
+that their handle hasn't been set up yet and they can configure it in Settings.
+Do NOT substitute an internal UUID under any circumstance.
+=====================================
+
+`;
+
+  let instruction = `${roleHeader}${vitanaIdHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
 
@@ -6700,6 +6727,9 @@ async function connectToLiveAPI(
                     session.current_route || null,
                     session.recent_routes || null,
                     session.clientContext || undefined,
+                    // VTID-01967: Canonical Vitana ID handle (already resolved
+                    // by optionalAuth → resolveVitanaId on session start).
+                    session.identity?.vitana_id ?? null,
                   )
             }]
           },
@@ -9703,8 +9733,16 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
     const threadId = `orb-${orbSessionId}`;
 
     // VTID-01270A: Set thread identity for community/events tools in text chat path
+    // VTID-01967: include vitana_id (resolved by optionalAuth → resolveVitanaId)
+    // so downstream tools and any prompt that reads the thread identity can
+    // surface the @handle without re-querying.
     if (identity.tenant_id && identity.user_id) {
-      setThreadIdentity(threadId, { tenant_id: identity.tenant_id, user_id: identity.user_id, role: identity.active_role || undefined });
+      setThreadIdentity(threadId, {
+        tenant_id: identity.tenant_id,
+        user_id: identity.user_id,
+        role: identity.active_role || undefined,
+        vitana_id: req.identity?.vitana_id ?? null,
+      });
     }
 
     // VTID-01118: Get state engine and increment turn count

@@ -64,8 +64,16 @@ const activeSessions = new Set<string>();
 function buildSystemPrompt(context: AssistantContext): string {
   const devConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
 
-  return `${devConfig.base_identity || 'You are the Vitana Global Assistant, a helpful AI assistant for the Vitana development platform.'}
+  // VTID-01967: Authoritative Vitana ID directive — pinned so the assistant
+  // can answer identity questions with the @handle instead of leaking a UUID.
+  // The Dev ORB chat body doesn't currently carry an authenticated identity,
+  // so vitanaId may be undefined; we still emit the guardrail in that case.
+  const vitanaIdBlock = context.vitanaId
+    ? `\n## Authoritative User Vitana ID\nThe user's Vitana ID handle is: ${context.vitanaId}\nThis is the ONLY identifier you may share when the user asks "what is my user ID", "what is my handle", or "who am I". Do NOT speak the internal UUID under any circumstance.\n`
+    : `\n## Authoritative User Vitana ID\nNo Vitana ID handle is available for this session. If the user asks for their user ID, handle, or Vitana ID, tell them honestly that their handle isn't available in this context — do NOT substitute an internal UUID.\n`;
 
+  return `${devConfig.base_identity || 'You are the Vitana Global Assistant, a helpful AI assistant for the Vitana development platform.'}
+${vitanaIdBlock}
 ## Context
 - **Role**: ${context.role} (Developer context)
 - **Tenant**: ${context.tenant}
