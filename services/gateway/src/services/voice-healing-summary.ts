@@ -1,5 +1,5 @@
 /**
- * Voice Healing Summary + Shadow Comparison (VTID-01965, PR #8)
+ * Voice Healing Summary + Shadow Comparison + Live Monitor (VTID-01965, VTID-01991)
  *
  * Aggregates the Voice Self-Healing Loop's state for the dashboard:
  *
@@ -14,6 +14,12 @@
  *     ACTUAL outcomes captured in voice_healing_history for the same
  *     (class, signature) pair. Used during the ≥48h shadow observation
  *     period before flipping mode=live.
+ *
+ *   buildLiveMonitor() (VTID-01991):
+ *     Real-time view for the Command Hub Voice tab. Recent voice
+ *     session-stops with audio_in/audio_out ratios, 24h rollup of
+ *     BAD/warn/OK counts, and watchdog telemetry (watchdog_skipped vs
+ *     watchdog_fired) so ops can see the VTID-01984 watchdog fix working.
  *
  * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
@@ -360,5 +366,171 @@ export async function buildShadowComparison(windowHours: number): Promise<Shadow
     rows: rows.slice(0, 200), // cap response size
     by_action,
     match_rate,
+  };
+}
+
+// =============================================================================
+// Live Monitor (VTID-01991)
+// =============================================================================
+
+export type SessionHealth = 'ok' | 'warn' | 'bad';
+
+export interface LiveSessionRow {
+  session_id: string;
+  ended_at: string;
+  audio_in_chunks: number;
+  audio_out_chunks: number;
+  ratio: number;
+  turn_count: number;
+  duration_ms: number;
+  user_id: string | null;
+  reason: string | null;
+  health: SessionHealth;
+}
+
+export interface LiveMonitorRollup {
+  total_sessions: number;
+  ok_count: number;
+  warn_count: number;
+  bad_count: number;
+  bad_pct: number;
+}
+
+export interface LiveMonitor {
+  generated_at: string;
+  recent_sessions: LiveSessionRow[];
+  rollup_24h: LiveMonitorRollup;
+  /** Count of orb.live.diag events with stage='watchdog_skipped' in last 24h. >0 means VTID-01984 fix is firing. */
+  watchdog_skipped_24h: number;
+  /** Count of orb.live.diag events with stage='watchdog_fired' AND reason='forwarding_no_ack' in last 24h. Should drop near zero post-VTID-01984. */
+  watchdog_fired_forwarding_24h: number;
+  /** Total watchdog_fired events (any reason) in last 24h, for context. */
+  watchdog_fired_any_24h: number;
+}
+
+function ratioHealth(ratio: number): SessionHealth {
+  if (ratio > 5) return 'bad';
+  if (ratio > 3) return 'warn';
+  return 'ok';
+}
+
+interface SessionStopRow {
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+async function fetchSessionStops(sinceIso: string, limit: number): Promise<SessionStopRow[]> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return [];
+  const url =
+    `${SUPABASE_URL}/rest/v1/oasis_events?` +
+    `topic=eq.vtid.live.session.stop&` +
+    `created_at=gte.${encodeURIComponent(sinceIso)}&` +
+    `select=created_at,metadata&order=created_at.desc&limit=${limit}`;
+  try {
+    const res = await fetch(url, { headers: supabaseHeaders() });
+    if (!res.ok) return [];
+    return (await res.json()) as SessionStopRow[];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchDiagCount(stage: string, sinceIso: string, extraFilter = ''): Promise<number> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return 0;
+  const url =
+    `${SUPABASE_URL}/rest/v1/oasis_events?` +
+    `topic=eq.orb.live.diag&` +
+    `metadata->>stage=eq.${encodeURIComponent(stage)}&` +
+    `created_at=gte.${encodeURIComponent(sinceIso)}` +
+    extraFilter +
+    `&select=id`;
+  try {
+    const res = await fetch(url, {
+      headers: { ...supabaseHeaders(), Prefer: 'count=exact' },
+    });
+    if (!res.ok) return 0;
+    const cr = res.headers.get('content-range') || '';
+    const m = /\/(\d+)$/.exec(cr);
+    return m ? parseInt(m[1], 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function rowFromStop(stop: SessionStopRow): LiveSessionRow {
+  const m = stop.metadata || {};
+  const ai = Number(m.audio_in_chunks ?? 0);
+  const ao = Number(m.audio_out_chunks ?? 0);
+  const ratio = ao > 0 ? ai / ao : ai > 0 ? ai : 0;
+  return {
+    session_id: String(m.session_id ?? '(unknown)'),
+    ended_at: stop.created_at,
+    audio_in_chunks: ai,
+    audio_out_chunks: ao,
+    ratio: Number(ratio.toFixed(1)),
+    turn_count: Number(m.turn_count ?? 0),
+    duration_ms: Number(m.duration_ms ?? 0),
+    user_id: (m.user_id as string | null) ?? null,
+    reason: (m.reason as string | null) ?? null,
+    health: ratioHealth(ratio),
+  };
+}
+
+/**
+ * Live Monitor for the Command Hub Voice Self-Healing tab. Shows recent
+ * session-stops with audio_in/audio_out ratios + 24h health rollup +
+ * watchdog telemetry (proves VTID-01984 fix is firing).
+ */
+export async function buildLiveMonitor(): Promise<LiveMonitor> {
+  const since24hIso = isoMinusHours(24);
+
+  const [stops24h, recentStops, watchdogSkipped, watchdogFiredFwd, watchdogFiredAny] =
+    await Promise.all([
+      fetchSessionStops(since24hIso, 500),
+      fetchSessionStops(since24hIso, 20),
+      fetchDiagCount('watchdog_skipped', since24hIso),
+      // forwarding_no_ack: filter on metadata->>reason
+      fetchDiagCount(
+        'watchdog_fired',
+        since24hIso,
+        '&metadata->>reason=eq.forwarding_no_ack',
+      ),
+      fetchDiagCount('watchdog_fired', since24hIso),
+    ]);
+
+  // Compute rollup over the 24h dataset, but only count sessions that
+  // actually exchanged audio (audio_in_chunks > 0). Sessions that ended
+  // immediately (mic permission denied, abandoned) skew BAD% otherwise.
+  let total = 0;
+  let ok = 0;
+  let warn = 0;
+  let bad = 0;
+  for (const s of stops24h) {
+    const ai = Number(s.metadata?.audio_in_chunks ?? 0);
+    const ao = Number(s.metadata?.audio_out_chunks ?? 0);
+    if (ai === 0 && ao === 0) continue;
+    if (ai < 50) continue; // session too short to be a real conversation
+    total++;
+    const ratio = ao > 0 ? ai / ao : ai;
+    const h = ratioHealth(ratio);
+    if (h === 'ok') ok++;
+    else if (h === 'warn') warn++;
+    else bad++;
+  }
+  const bad_pct = total > 0 ? Number(((bad / total) * 100).toFixed(1)) : 0;
+
+  return {
+    generated_at: new Date().toISOString(),
+    recent_sessions: recentStops.map(rowFromStop),
+    rollup_24h: {
+      total_sessions: total,
+      ok_count: ok,
+      warn_count: warn,
+      bad_count: bad,
+      bad_pct,
+    },
+    watchdog_skipped_24h: watchdogSkipped,
+    watchdog_fired_forwarding_24h: watchdogFiredFwd,
+    watchdog_fired_any_24h: watchdogFiredAny,
   };
 }
