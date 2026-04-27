@@ -1,15 +1,19 @@
 # Routine: self-healing-triage
 
-**Schedule:** `0 4 * * *` (daily 04:00 UTC)
+**Schedule:** `0 4 * * *` (daily 04:00 UTC, scheduler jitter pads to ~04:08)
+**Trigger ID:** `trig_01TS53Lb7QjjMBePGYfNdRSa` (claude.ai/code/routines)
+**Catalog row:** `routines.name = 'self-healing-triage'`
 
-**Purpose:** Pre-digest every sub-0.8 quarantined fix from the self-healing reconciler into a 6-line Approval Brief — recommendation, rationale, risk note, similar-fix history. Cuts review time per row from ~5 minutes to <30 seconds.
+## Autonomy contract
 
-**Required environment:**
+Every sub-0.8 row in the self-healing pending-approval queue MUST be cleared by this run. The routine auto-decides APPROVE or REJECT and immediately calls the matching gateway endpoint. **No briefs for human review. No row left pending.** Either everything is green or self-healing's reconciler is already fixing it.
+
+This is the first instance of the project-wide rule: every daily routine has exactly two terminal states — green pass or self-heal handoff. See `feedback_routines_no_human_briefs.md` in user memory.
+
+## Required environment
+
 - `GATEWAY_URL` = `https://gateway-q74ibpv6ia-uc.a.run.app`
-- `ROUTINE_INGEST_TOKEN` (matches the gateway's `ROUTINE_INGEST_TOKEN` env var; set as a routine secret)
-- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` for direct table reads
-
----
+- `ROUTINE_INGEST_TOKEN` (matches the gateway env var; embedded in the routine prompt as a constant — no env-var support in CCR sandboxes today)
 
 ## Steps
 
@@ -22,92 +26,75 @@ B: { "trigger": "cron" }
 → { ok: true, run: { id: "<run_id>", ... } }
 ```
 
-Capture `run.id`. If this fails (network/auth/server), abort the routine — do not proceed.
+If non-2xx: ABORT (the gateway is the only thing the sandbox can talk to).
 
 ### 2. Fetch the queue
 
 ```
 GET $GATEWAY_URL/api/v1/self-healing/pending-approval?limit=50
-→ { ok: true, items: [ { id, vtid, endpoint, failure_class, confidence, diagnosis, created_at, attempt_number }, ... ] }
+→ { ok: true, items: [ { id, vtid, endpoint, failure_class, confidence, diagnosis, attempt_number, created_at } ], count }
 ```
 
-If `items.length === 0`, skip to step 6 with `summary: "✅ Queue empty — nothing to triage"` and `findings: { briefs: [] }`.
+If `items.length === 0`: skip to step 4 with `summary: "✅ Queue empty — nothing to triage"` and `findings: { queue_size: 0, decisions: [], approved: 0, rejected: 0, errors: [] }`.
 
-Cap at the first **10** rows by `created_at desc` (the rest will roll into tomorrow's run).
+Otherwise sort by `created_at desc` and process the first 10.
 
-### 3. For each pending row — gather context
+### 3. Auto-decide every row, then dispatch
 
-For row `{ id, vtid, endpoint, failure_class, confidence, diagnosis, attempt_number }`:
+Classification (deterministic — no LLM judgement):
 
-a. **Snapshots** — `GET $GATEWAY_URL/api/v1/self-healing/snapshots/$vtid` for pre/post endpoint state.
+**APPROVE** if ALL:
+- `attempt_number ≤ 2`
+- `confidence ≥ 0.5`
+- `diagnosis.spec_quarantined !== true`
+- `diagnosis.human_decision` is unset
 
-b. **OASIS recent activity** — query `oasis_events` directly via Supabase REST for the last 7 days on this endpoint:
-   ```
-   GET $SUPABASE_URL/rest/v1/oasis_events?service=eq.gateway&payload->>endpoint=eq.$endpoint&created_at=gte.<7d_ago>&select=type,topic,status,created_at&order=created_at.desc&limit=100
-   ```
-   Count: total events, errors, novel topics (topics not seen in the prior 7d window).
+→ `POST $GATEWAY_URL/api/v1/self-healing/approve` with `{ id: <row.id>, operator: "self-healing-triage-routine" }`
 
-c. **Similar-fix history** — same endpoint or same `failure_class` in `self_healing_log`:
-   ```
-   GET $SUPABASE_URL/rest/v1/self_healing_log?or=(endpoint.eq.$endpoint,failure_class.eq.$failure_class)&select=outcome,confidence,created_at&order=created_at.desc&limit=50
-   ```
-   Count outcomes: `resolved`, `regressed`, `tombstoned`.
+**REJECT** otherwise (routes the row to the existing escalation/tombstone path):
+- `attempt_number ≥ 3` → reason `"attempt limit reached (≥3) — escalating to architecture investigator"`
+- `diagnosis.spec_quarantined === true` → reason `"spec quarantined by Memory Gate — escalating"`
+- else → reason `"insufficient confidence (<0.5) — escalating"`
 
-d. **Spec Memory Gate / quarantine** — check if the proposed spec is currently quarantined. The Spec Memory Gate state lives alongside self_healing_log; if the row's `diagnosis.spec_quarantined === true` or attempt_number ≥ 3, flag for escalation, not approval.
+→ `POST $GATEWAY_URL/api/v1/self-healing/reject` with `{ id: <row.id>, operator: "self-healing-triage-routine", reason: "<reason>" }`
 
-### 4. Compose an Approval Brief per row
+Capture HTTP status of every call.
 
-Format each as:
+### 4. Close the run
 
-```
-VTID-XXXXX  •  endpoint $endpoint  •  confidence $confidence  •  attempt $attempt_number
-Recommendation: APPROVE | REJECT | ESCALATE
-Why: <1-2 sentences citing similar-fix counts and OASIS topic burn rate>
-Risk: <1 sentence — what to watch in the next 24h>
-History: $resolved resolved / $regressed regressed / $tombstoned tombstoned
-```
+`PATCH $GATEWAY_URL/api/v1/routines/self-healing-triage/runs/{run_id}` with `X-Routine-Token: $ROUTINE_INGEST_TOKEN`.
 
-Heuristics for the recommendation:
-- **APPROVE** if `resolved >= 2 && regressed === 0 && !spec_quarantined && attempt_number <= 2 && novel_topics === 0`.
-- **ESCALATE** if `attempt_number >= 3 || spec_quarantined === true || regressed >= 1`.
-- **REJECT** otherwise.
+| Outcome | status | summary |
+|---|---|---|
+| Every dispatch 2xx | `success` | `"✅ Cleared queue: A approved (dispatched), R rejected (escalated)"` |
+| Some dispatch errors | `partial` | `"⚠️ Cleared X of N — Y dispatch errors. Self-healing reconciler will pick up the rest on next tick."` |
+| Couldn't fetch queue or open run | `failure` | `"❌ Routine failed before any decisions — see error."` |
 
-### 5. Post a single PATCH with all briefs
-
-```
-PATCH $GATEWAY_URL/api/v1/routines/self-healing-triage/runs/<run_id>
-H: X-Routine-Token: $ROUTINE_INGEST_TOKEN
-B: {
-  "status": "success",
-  "summary": "Triaged $N pending fixes — $A APPROVE, $R REJECT, $E ESCALATE",
-  "findings": {
-    "queue_size": <items.length>,
-    "triaged": $N,
-    "skipped_overflow": <items.length - 10>,
-    "briefs": [ { vtid, endpoint, confidence, recommendation, why, risk, history: { resolved, regressed, tombstoned } }, ... ]
-  },
-  "artifacts": {}
+`findings` is an audit log, not a brief queue:
+```json
+{
+  "queue_size": <int>,
+  "cap": 10,
+  "decisions": [
+    { "vtid", "endpoint", "confidence", "attempt_number", "action": "approve"|"reject", "reason", "dispatch_http_status" }
+  ],
+  "approved": <int>,
+  "rejected": <int>,
+  "errors": [ { "id", "vtid", "dispatch_http_status", "error_text" } ]
 }
 ```
 
-### 6. On any failure mid-routine
+## Hard rules
 
-If steps 2–4 throw, still PATCH the run with `status: "failure"` and `error: <message>` so the Catalog tile shows the failed status. **Never leave a run stuck in `running`.**
+- Never produce 'briefs' for human review. The `findings.decisions` array is an audit log of decisions the routine already made and dispatched — nobody is going to read it row-by-row.
+- Never leave a row pending. Every row touched is either /approve'd or /reject'ed.
+- Never invoke an LLM. Classification is the deterministic heuristic above.
+- Never write code, open PRs, or comment on GitHub. Only side-effects allowed are gateway HTTP calls.
+- Plain `curl` only. No Python, no Node. Wall-clock cap 5 minutes.
+- If the queue has more than 10 rows, the rest stay until the next cron tick (or a manual `run` from the routines web UI).
 
-### 7. On empty queue
+## Where output lands
 
-If step 2 returned 0 items, PATCH with:
-```
-{ "status": "success", "summary": "✅ Queue empty — nothing to triage", "findings": { "queue_size": 0, "briefs": [] } }
-```
-
----
-
-## Cost / token budget
-
-- Cap at 10 briefs per day so the routine stays well under 5 minutes wall-clock and under one cache window.
-- All gathering work is plain HTTP — no LLM calls inside this routine. Recommendations are heuristic.
-
-## Output goes to
-
-Command Hub → **Routines** → **Catalog** (status pill + summary on the routine tile) and **History** (full briefs JSON in the expandable run row).
+- **Catalog tile** (Command Hub → Routines → Catalog): green pill = success/queue cleared. Anything else = look at History.
+- **History** (per-routine drill-down): full `findings` JSON for forensics. Not a thing the user has to read every day — only when investigating.
+- **Self-healing reconciler**: receives the /approve and /reject calls and dispatches/escalates the actual fixes. The routine's job is done the moment it has cleared the queue.
