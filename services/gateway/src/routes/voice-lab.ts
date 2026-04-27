@@ -731,6 +731,72 @@ router.get('/healing/reports/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * PATCH /api/v1/voice-lab/healing/reports/:id (VTID-01999)
+ *
+ * Update a report's decision state. Used by the inline drawer in the
+ * Voice Self-Healing panel — operator reads the report, decides
+ * acknowledged / accepted / rejected, and submits decision_notes.
+ *
+ * Body: { status: 'acknowledged'|'accepted'|'rejected', decision_notes?: string, acknowledged_by?: string }
+ */
+router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const body = (req.body || {}) as Record<string, unknown>;
+  const status = body.status;
+  if (status !== 'acknowledged' && status !== 'accepted' && status !== 'rejected' && status !== 'open') {
+    return res.status(400).json({
+      ok: false,
+      error: 'status must be one of open|acknowledged|accepted|rejected',
+    });
+  }
+  const decision_notes = typeof body.decision_notes === 'string' ? body.decision_notes : null;
+  const acknowledged_by = typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
+
+  const id = req.params.id;
+  const patch: Record<string, unknown> = {
+    status,
+    decision_notes,
+  };
+  // Only stamp acknowledged_at/by when transitioning AWAY from 'open'.
+  if (status !== 'open') {
+    patch.acknowledged_by = acknowledged_by;
+    patch.acknowledged_at = new Date().toISOString();
+  } else {
+    patch.acknowledged_by = null;
+    patch.acknowledged_at = null;
+  }
+  try {
+    const resp = await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(patch),
+      },
+    );
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = (await resp.json()) as any[];
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'report not found' });
+    }
+    return res.json({ ok: true, report: rows[0] });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/v1/voice-lab/healing/mode (VTID-01964, PR #7)
  *
  * Returns the current voice self-healing mode (off / shadow / live).

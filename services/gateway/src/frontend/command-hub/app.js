@@ -38640,6 +38640,258 @@ function flipVoiceHealingMode(nextMode, allocatedVtid) {
     });
 }
 
+// =============================================================================
+// VTID-01999: Voice Healing Report Drawer
+// =============================================================================
+// Slide-in side drawer that renders an Architecture Investigator report
+// inline, with decision actions (Acknowledge / Accept / Reject + notes).
+// No navigation away from the Self-Healing screen.
+
+function _vhEsc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+}
+
+function closeVoiceHealingReportDrawer() {
+    var existing = document.getElementById('vh-report-drawer-root');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+}
+
+async function openVoiceHealingReportDrawer(reportId) {
+    closeVoiceHealingReportDrawer();
+
+    var root = document.createElement('div');
+    root.id = 'vh-report-drawer-root';
+    root.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;justify-content:flex-end;';
+
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.55);';
+    backdrop.onclick = closeVoiceHealingReportDrawer;
+    root.appendChild(backdrop);
+
+    var drawer = document.createElement('div');
+    drawer.style.cssText = 'position:relative;width:min(720px,90vw);height:100%;background:#0f172a;border-left:1px solid #1e293b;color:#e2e8f0;overflow-y:auto;box-shadow:-8px 0 24px rgba(0,0,0,0.5);';
+    drawer.innerHTML = '<div style="padding:18px 22px;color:#94a3b8;">Loading report ' + _vhEsc(reportId) + '…</div>';
+    root.appendChild(drawer);
+    document.body.appendChild(root);
+
+    var resp;
+    try {
+        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId));
+    } catch (err) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
+        return;
+    }
+    if (!resp.ok) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">HTTP ' + resp.status + ' — ' + _vhEsc(await resp.text()) + '</div>';
+        return;
+    }
+    var body = await resp.json();
+    if (!body.ok || !body.report) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Report not available.</div>';
+        return;
+    }
+    drawer.innerHTML = '';
+    drawer.appendChild(_vhRenderReportContent(body.report));
+}
+
+function _vhRenderReportContent(row) {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:0;display:flex;flex-direction:column;height:100%;';
+
+    var report = row.report || {};
+    var isStub = row.schema_version === 'v1-stub' || report.investigator_status === 'failed';
+    var rec = report.recommendation || {};
+    var hyps = (report.internal_findings && report.internal_findings.hypotheses) || [];
+    var alts = report.alternatives || [];
+    var ev = report.evidence || {};
+
+    // ── Sticky header ──
+    var header = document.createElement('div');
+    header.style.cssText = 'position:sticky;top:0;background:#0f172a;border-bottom:1px solid #1e293b;padding:18px 22px 14px 22px;z-index:1;';
+    var statusColor = row.status === 'open' ? '#fbbf24' :
+                      row.status === 'accepted' ? '#4ade80' :
+                      row.status === 'rejected' ? '#f87171' :
+                      row.status === 'acknowledged' ? '#60a5fa' : '#94a3b8';
+    header.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+            '<div>' +
+                '<div style="font-size:0.7rem;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">Architecture Investigator Report' + (isStub ? ' — STUB (investigator failed)' : '') + '</div>' +
+                '<div style="font-size:1.05rem;font-weight:bold;color:#e2e8f0;">' + _vhEsc(row.class) + '</div>' +
+                '<div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">' +
+                    'signature: <code style="color:#cbd5e1;">' + _vhEsc(row.normalized_signature || '—') + '</code>' +
+                    ' · trigger: <code style="color:#cbd5e1;">' + _vhEsc(row.trigger_reason) + '</code>' +
+                    ' · ' + new Date(row.generated_at).toLocaleString() +
+                '</div>' +
+            '</div>' +
+            '<button id="vh-drawer-close" style="background:transparent;border:1px solid #334155;color:#94a3b8;padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.85rem;">✕ Close</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
+            '<span style="padding:3px 8px;border:1px solid ' + statusColor + ';color:' + statusColor + ';border-radius:3px;font-size:0.7rem;letter-spacing:0.05em;">STATUS: ' + (row.status || 'open').toUpperCase() + '</span>' +
+            (row.acknowledged_by ? '<span style="font-size:0.72rem;color:#94a3b8;">by ' + _vhEsc(row.acknowledged_by) + ' at ' + new Date(row.acknowledged_at).toLocaleString() + '</span>' : '') +
+        '</div>';
+    c.appendChild(header);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:18px 22px;flex:1;font-size:0.85rem;line-height:1.55;';
+
+    if (isStub) {
+        body.innerHTML =
+            '<div style="background:#7c2d12;border:1px solid #ea580c;color:#fed7aa;padding:12px 14px;border-radius:6px;margin-bottom:16px;">' +
+                '<strong>Investigator could not produce a structured report.</strong><br>' +
+                '<span style="font-size:0.8rem;">Reason: <code>' + _vhEsc(report.failure_reason) + '</code></span>' +
+            '</div>' +
+            '<div style="margin-bottom:14px;"><strong>Failure detail:</strong></div>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.78rem;color:#cbd5e1;overflow-x:auto;white-space:pre-wrap;">' + _vhEsc(report.failure_detail || '(none)') + '</pre>' +
+            '<div style="margin-top:18px;margin-bottom:8px;"><strong>Evidence at failure:</strong></div>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.74rem;color:#94a3b8;overflow-x:auto;">' + _vhEsc(JSON.stringify(report.evidence_at_failure || {}, null, 2)) + '</pre>';
+    } else {
+        // ── Recommendation (lead) ──
+        var trackColor = rec.track === 'replace_vendor' ? '#f87171' :
+                         rec.track === 'redesign_pipeline' ? '#fbbf24' :
+                         rec.track === 'patch_around' ? '#fbbf24' :
+                         rec.track === 'stay_and_patch' ? '#4ade80' :
+                         '#94a3b8';
+        var recHtml =
+            '<div style="background:#1e293b;border:1px solid ' + trackColor + ';border-radius:6px;padding:14px;margin-bottom:18px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                    '<strong style="color:' + trackColor + ';font-size:0.95rem;">RECOMMENDATION: ' + _vhEsc(rec.track || '?').toUpperCase().replace(/_/g, ' ') + '</strong>' +
+                    '<span style="color:#94a3b8;font-size:0.78rem;">confidence: <strong style="color:' + (rec.confidence >= 0.7 ? '#4ade80' : rec.confidence >= 0.5 ? '#fbbf24' : '#f87171') + ';">' + (typeof rec.confidence === 'number' ? rec.confidence.toFixed(2) : '?') + '</strong></span>' +
+                '</div>' +
+                '<div style="color:#e2e8f0;margin-bottom:8px;font-weight:500;">' + _vhEsc(rec.summary || '') + '</div>' +
+                '<div style="color:#cbd5e1;font-size:0.82rem;margin-bottom:8px;"><strong>Rationale:</strong> ' + _vhEsc(rec.rationale || '') + '</div>' +
+                (rec.contradiction_check ? '<div style="color:#94a3b8;font-size:0.78rem;font-style:italic;border-top:1px dashed #334155;padding-top:8px;margin-top:8px;"><strong>What would change my mind:</strong> ' + _vhEsc(rec.contradiction_check) + '</div>' : '') +
+            '</div>';
+
+        // ── Proposed next steps ──
+        if (rec.proposed_next_steps && rec.proposed_next_steps.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Proposed next steps</div>' +
+                '<ul style="margin:0;padding-left:20px;">' +
+                rec.proposed_next_steps.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
+                '</ul></div>';
+        }
+
+        // ── Required human decisions ──
+        if (rec.required_human_decisions && rec.required_human_decisions.length) {
+            recHtml += '<div style="margin-bottom:18px;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;">' +
+                '<div style="color:#fbbf24;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">⚠ Required human decisions</div>' +
+                '<ul style="margin:0;padding-left:20px;">' +
+                rec.required_human_decisions.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
+                '</ul></div>';
+        }
+
+        // ── Hypotheses ──
+        if (hyps.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Top hypotheses (' + hyps.length + ')</div>';
+            hyps.slice(0, 4).forEach(function(h) {
+                var hConf = typeof h.confidence === 'number' ? h.confidence : 0;
+                var hConfColor = hConf >= 0.7 ? '#4ade80' : hConf >= 0.5 ? '#fbbf24' : '#f87171';
+                recHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;margin-bottom:8px;">' +
+                    '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;"><strong style="color:#cbd5e1;font-size:0.85rem;">' + _vhEsc(h.hypothesis) + '</strong><span style="color:' + hConfColor + ';font-size:0.78rem;flex-shrink:0;">' + hConf.toFixed(2) + '</span></div>';
+                if (h.top_3_disconfirming_data_points && h.top_3_disconfirming_data_points.length) {
+                    recHtml += '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;"><strong>Disconfirming evidence:</strong></div>' +
+                        '<ul style="margin:2px 0 0 0;padding-left:18px;color:#94a3b8;font-size:0.74rem;">' +
+                        h.top_3_disconfirming_data_points.map(function(d) { return '<li>' + _vhEsc(d) + '</li>'; }).join('') +
+                        '</ul>';
+                }
+                recHtml += '</div>';
+            });
+            recHtml += '</div>';
+        }
+
+        // ── Alternatives ──
+        if (alts.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Alternative architectures (' + alts.length + ')</div>' +
+                '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">' +
+                '<thead><tr style="text-align:left;color:#94a3b8;border-bottom:1px solid #334155;"><th style="padding:4px 6px;">Name</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Latency</th><th style="padding:4px 6px;">Effort</th></tr></thead><tbody>';
+            alts.forEach(function(a) {
+                recHtml += '<tr style="border-bottom:1px solid #1e293b;"><td style="padding:5px 6px;">' + _vhEsc(a.name) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.vendor_or_oss) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.latency_profile) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.integration_effort) + '</td></tr>';
+                if (a.pros && a.pros.length) {
+                    recHtml += '<tr><td colspan="4" style="padding:0 6px 6px 12px;color:#cbd5e1;font-size:0.74rem;"><strong>Pros:</strong> ' + a.pros.map(_vhEsc).join('; ') + (a.cons && a.cons.length ? ' · <strong>Cons:</strong> ' + a.cons.map(_vhEsc).join('; ') : '') + (a.links && a.links.length ? ' · <strong>Links:</strong> ' + a.links.map(function(l) { return '<a href="' + _vhEsc(l) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + _vhEsc(l) + '</a>'; }).join(' ') : '') + '</td></tr>';
+                }
+            });
+            recHtml += '</tbody></table></div>';
+        }
+
+        // ── Raw evidence ──
+        recHtml += '<details style="margin-bottom:18px;">' +
+            '<summary style="cursor:pointer;color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Raw evidence</summary>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.72rem;color:#94a3b8;margin-top:8px;overflow-x:auto;">' + _vhEsc(JSON.stringify(ev, null, 2)) + '</pre>' +
+            '</details>';
+
+        body.innerHTML = recHtml;
+    }
+    c.appendChild(body);
+
+    // ── Decision footer (sticky) ──
+    var footer = document.createElement('div');
+    footer.style.cssText = 'position:sticky;bottom:0;background:#0f172a;border-top:1px solid #1e293b;padding:14px 22px;';
+    if (row.decision_notes) {
+        var prevNotes = document.createElement('div');
+        prevNotes.style.cssText = 'color:#94a3b8;font-size:0.78rem;margin-bottom:8px;';
+        prevNotes.innerHTML = '<strong>Prior notes:</strong> ' + _vhEsc(row.decision_notes);
+        footer.appendChild(prevNotes);
+    }
+    var notesArea = document.createElement('textarea');
+    notesArea.placeholder = 'Decision notes (optional) — will be saved with status change';
+    notesArea.style.cssText = 'width:100%;min-height:48px;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:0.82rem;box-sizing:border-box;resize:vertical;';
+    footer.appendChild(notesArea);
+
+    var actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap;';
+    var actionDefs = [
+        { status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
+        { status: 'accepted', label: 'Accept (we\'ll act on this)', color: '#4ade80' },
+        { status: 'rejected', label: 'Reject', color: '#f87171' },
+    ];
+    actionDefs.forEach(function(def) {
+        var btn = document.createElement('button');
+        btn.textContent = def.label;
+        btn.style.cssText = 'padding:8px 14px;background:' + def.color + '22;border:1px solid ' + def.color + ';color:' + def.color + ';cursor:pointer;border-radius:4px;font-size:0.82rem;';
+        btn.onclick = async function() {
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            try {
+                var r = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id), {
+                    method: 'PATCH',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ status: def.status, decision_notes: notesArea.value || null }),
+                });
+                var data = await r.json();
+                if (data && data.ok) {
+                    showToast('Report ' + def.status, 'success');
+                    closeVoiceHealingReportDrawer();
+                    fetchVoiceHealingPanel();
+                } else {
+                    showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
+                    btn.disabled = false;
+                    btn.textContent = def.label;
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = def.label;
+            }
+        };
+        actions.appendChild(btn);
+    });
+    footer.appendChild(actions);
+    c.appendChild(footer);
+
+    // Close button binding (delegated within drawer DOM)
+    setTimeout(function() {
+        var closeBtn = document.getElementById('vh-drawer-close');
+        if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
+    }, 0);
+
+    return c;
+}
+
 function renderVoiceSelfHealingPanel() {
     var panel = document.createElement('section');
     panel.className = 'vh-panel';
@@ -38761,7 +39013,7 @@ function renderVoiceSelfHealingPanel() {
                 '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_30d + '</td>' +
                 '<td style="padding:4px 6px;text-align:right;">' + (c.fix_success_rate_7d !== null ? c.fix_success_rate_7d + '%' : '-') + '</td>' +
                 '<td style="padding:4px 6px;color:' + qColor + ';">' + c.quarantine_status + '</td>' +
-                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" onclick="alert(\'Report ID: ' + c.latest_investigation_report_id + '\\n\\nFetch: GET /api/v1/voice-lab/healing/reports/' + c.latest_investigation_report_id + '\'); return false;">view</a>' : '-') + '</td>';
+                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" data-vh-report="' + c.latest_investigation_report_id + '">view</a>' : '-') + '</td>';
             tbody.appendChild(tr);
         });
         tbl.appendChild(tbody);
@@ -38823,6 +39075,17 @@ function renderVoiceSelfHealingPanel() {
     if (!vh.pollingTimer) {
         startVoiceHealingPolling();
     }
+
+    // VTID-01999: Delegated click handler so [data-vh-report="<id>"] links open
+    // the inline drawer instead of switching screens.
+    panel.addEventListener('click', function(e) {
+        var t = e.target;
+        if (t && t.getAttribute && t.getAttribute('data-vh-report')) {
+            e.preventDefault();
+            var rid = t.getAttribute('data-vh-report');
+            openVoiceHealingReportDrawer(rid);
+        }
+    });
 
     return panel;
 }
