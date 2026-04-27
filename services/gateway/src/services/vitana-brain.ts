@@ -359,6 +359,7 @@ export async function buildBrainSystemInstruction(input: {
       tenant_id: input.tenant_id,
       role: input.role,
       channel: input.channel,
+      user_timezone: input.user_timezone,
     }),
     buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
   ]);
@@ -491,6 +492,8 @@ export async function buildProactiveGuideBlock(input: {
   tenant_id: string;
   role: string;
   channel: ConversationChannel;
+  /** VTID-01990: optional IANA tz so awareness today/yesterday bucketing is local-day correct */
+  user_timezone?: string;
 }): Promise<string> {
   const flag = await getSystemControl('vitana_proactive_opener_enabled').catch(() => null);
   if (!flag || !flag.enabled) {
@@ -503,7 +506,7 @@ export async function buildProactiveGuideBlock(input: {
   // Compute the unified awareness picture ONCE — every downstream signal flows from it
   let awareness: UserAwareness | null = null;
   try {
-    awareness = await getAwarenessContext(input.user_id, input.tenant_id);
+    awareness = await getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone || 'UTC');
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
   }
@@ -1018,6 +1021,46 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     }
     lines.push(
       'Weave one of these into the conversation when natural — never recite the summary verbatim. Examples: "last time we talked about your sleep — how did that wind-down ritual go?", "you mentioned the business hub yesterday — any progress?".',
+    );
+  }
+
+  // VTID-01990 — cross-surface conversation tracking. Surfaces "this is your
+  // Nth session today" + per-session timestamps + yesterday's last session
+  // so Vitana feels persistent across sessions. When the user references a
+  // past time ("we talked yesterday morning..."), the recall_conversation_at_time
+  // tool resolves the window and fetches actual turns; this block tells the
+  // brain that recall is possible.
+  const sessionsToday = awareness.sessions_today;
+  const yesterdayLast = awareness.last_session_yesterday;
+  if ((sessionsToday && sessionsToday.count > 0) || yesterdayLast) {
+    if (sessionsToday && sessionsToday.count > 0) {
+      const n = sessionsToday.count + 1;
+      const suffix = (() => {
+        const v = n % 100;
+        if (v >= 11 && v <= 13) return 'th';
+        const last = n % 10;
+        return last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th';
+      })();
+      lines.push(`Sessions today: ${sessionsToday.count} prior (this is the ${n}${suffix}).`);
+      const entries = sessionsToday.entries.slice(-4);
+      for (const e of entries) {
+        const hhmm = e.ended_at.slice(11, 16);
+        const themes = (e.themes || []).slice(0, 3).join(', ');
+        const summary = e.summary && e.summary.length > 240 ? e.summary.slice(0, 239) + '…' : e.summary || '';
+        lines.push(`  - ${hhmm} (${e.channel})${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+      }
+    }
+    if (yesterdayLast) {
+      const hhmm = yesterdayLast.ended_at.slice(11, 16);
+      const themes = (yesterdayLast.themes || []).slice(0, 3).join(', ');
+      const summary =
+        yesterdayLast.summary && yesterdayLast.summary.length > 240
+          ? yesterdayLast.summary.slice(0, 239) + '…'
+          : yesterdayLast.summary || '';
+      lines.push(`Yesterday's last session ${hhmm}${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+    }
+    lines.push(
+      'When the user references a past conversation by time ("we talked yesterday morning...", "earlier today we discussed..."), call recall_conversation_at_time to fetch the actual turns. Do not invent details from these summaries alone.',
     );
   }
 

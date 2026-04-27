@@ -75,6 +75,15 @@ export function formatAwarenessForPrompt(
     }
   }
 
+  // VTID-01990 — cross-surface conversation tracking. Surfaces "this is your
+  // Nth session today, last at HH:MM" + a one-liner per prior session today
+  // and yesterday's last session. Lets Vitana feel persistent across
+  // sessions and lets users say "we talked yesterday morning about X" and
+  // have it actually work (the recall_conversation_at_time tool resolves the
+  // window; this block is what makes the assistant know it's possible).
+  const sessionsBlock = renderSessionsTrackingBlock(awareness);
+  if (sessionsBlock) lines.push(sessionsBlock);
+
   if (!compact) {
     lines.push(
       '',
@@ -84,4 +93,65 @@ export function formatAwarenessForPrompt(
   }
 
   return lines.join('\n');
+}
+
+function renderSessionsTrackingBlock(awareness: UserAwareness): string {
+  const today = awareness.sessions_today;
+  const yesterday = awareness.last_session_yesterday;
+  if ((!today || today.count === 0) && !yesterday) return '';
+
+  const out: string[] = [];
+
+  if (today && today.count > 0) {
+    out.push(`Sessions today: ${today.count} prior (this is the ${ordinal(today.count + 1)}).`);
+    // Up to 4 most recent today entries, oldest first so the trail reads chronologically
+    const entries = today.entries.slice(-4);
+    for (const e of entries) {
+      const hhmm = formatLocalHHMM(e.ended_at);
+      const themes = (e.themes || []).slice(0, 3).join(', ');
+      const summary = truncateSummary(e.summary || '', 240);
+      const channelTag = e.channel === 'voice' ? 'voice' : 'text';
+      out.push(`  - ${hhmm} (${channelTag})${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+    }
+  }
+
+  if (yesterday) {
+    const hhmm = formatLocalHHMM(yesterday.ended_at);
+    const themes = (yesterday.themes || []).slice(0, 3).join(', ');
+    const summary = truncateSummary(yesterday.summary || '', 240);
+    out.push(`Yesterday's last session ${hhmm}${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+  }
+
+  if (out.length > 0) {
+    out.push(
+      'When the user references a past conversation by time ("we talked yesterday morning..."), call recall_conversation_at_time to fetch the actual turns. Do not invent details from these summaries alone.',
+    );
+  }
+
+  return out.join('\n');
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+function formatLocalHHMM(iso: string): string {
+  // ISO timestamp -> HH:MM in UTC. The brain's user_timezone-aware formatter
+  // would be richer, but the awareness block is read by both compact and
+  // verbose paths and we don't want to thread tz here. UTC is acceptable —
+  // the times are still ordered correctly and "around 2pm" is fine.
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso.slice(11, 16);
+    return d.toISOString().slice(11, 16);
+  } catch {
+    return iso.slice(11, 16);
+  }
+}
+
+function truncateSummary(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + '…';
 }

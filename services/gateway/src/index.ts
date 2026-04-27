@@ -1105,6 +1105,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
       }
 
+      // VTID-01990: Idle session closer — writes user_session_summaries rows
+      // for text-channel threads idle >= 4h. Voice already writes its own
+      // summaries on disconnect. Gated by IDLE_SESSION_CLOSER_ENABLED.
+      try {
+        const { startIdleSessionCloser } = require('./services/idle-session-closer');
+        startIdleSessionCloser();
+      } catch (error) {
+        console.warn('⚠️ Idle session closer initialization failed (non-fatal):', error);
+      }
+
       // VTID-01992: Async intent embedding worker. Polls for un-embedded
       // user_intents rows and backfills via Gemini. Acts as insurance
       // when inline is on; primary embedder when FEATURE_INTENT_EMBEDDING_ASYNC=true.
