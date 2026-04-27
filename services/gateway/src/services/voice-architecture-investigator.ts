@@ -75,6 +75,7 @@ const ALTERNATIVE_ARCHITECTURES_REFERENCE = `
 export type InvestigatorTriggerReason =
   | 'sentinel_quarantine'
   | 'spec_memory_blocked'
+  | 'quality_failure'
   | 'manual';
 
 export interface InvestigatorInput {

@@ -27,8 +27,8 @@ describe('VTID-01958: Voice Failure Taxonomy', () => {
       expect(SIGNATURE_VERSION.length).toBeGreaterThan(0);
     });
 
-    test('VOICE_FAILURE_CLASSES contains all 11 expected classes', () => {
-      expect(VOICE_FAILURE_CLASSES).toHaveLength(11);
+    test('VOICE_FAILURE_CLASSES contains all 14 expected classes (incl. VTID-01994 quality classes)', () => {
+      expect(VOICE_FAILURE_CLASSES).toHaveLength(14);
       const expected = [
         'voice.config_missing',
         'voice.config_fallback_active',
@@ -40,6 +40,9 @@ describe('VTID-01958: Voice Failure Taxonomy', () => {
         'voice.tool_loop',
         'voice.audio_one_way',
         'voice.permission_denied',
+        'voice.model_under_responds',
+        'voice.no_engagement',
+        'voice.low_turn_progression',
         'voice.unknown',
       ];
       for (const c of expected) {
@@ -356,6 +359,83 @@ describe('VTID-01958: Voice Failure Taxonomy', () => {
       expect(
         detectAudioOneWay({ audio_in_chunks: 0, audio_out_chunks: 0, stall_type: null }),
       ).toBeNull();
+    });
+  });
+
+  describe('VTID-01994: classifyQualityFromSessionStop', () => {
+    const { classifyQualityFromSessionStop } = require('../src/services/voice-failure-taxonomy');
+
+    test('the worst-case session (585:5:1) → voice.model_under_responds with high-ratio bucket', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 585,
+        audio_out_chunks: 5,
+        duration_ms: 93700,
+        turn_count: 1,
+      });
+      expect(r?.class).toBe('voice.model_under_responds');
+      expect(r?.normalized_signature).toBe('model_under_responds_r100plus');
+    });
+
+    test('the 945:46 session → voice.model_under_responds with mid-ratio bucket', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 945,
+        audio_out_chunks: 46,
+        duration_ms: 80000,
+        turn_count: 5,
+      });
+      expect(r?.class).toBe('voice.model_under_responds');
+      expect(r?.normalized_signature).toBe('model_under_responds_r20to100');
+    });
+
+    test('user spoke but model never started turn → voice.no_engagement', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 200,
+        audio_out_chunks: 5,
+        duration_ms: 60000,
+        turn_count: 0,
+      });
+      expect(r?.class).toBe('voice.no_engagement');
+      expect(r?.normalized_signature).toBe('no_engagement_user_active');
+    });
+
+    test('long session, few turns → voice.low_turn_progression', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 80,
+        audio_out_chunks: 30,
+        duration_ms: 120000,
+        turn_count: 1,
+      });
+      expect(r?.class).toBe('voice.low_turn_progression');
+    });
+
+    test('healthy ratio session → null (no quality failure)', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 200,
+        audio_out_chunks: 100,
+        duration_ms: 60000,
+        turn_count: 5,
+      });
+      expect(r).toBeNull();
+    });
+
+    test('very brief session (mic test) → null (not a real conversation)', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 5,
+        audio_out_chunks: 50,
+        duration_ms: 4000,
+        turn_count: 0,
+      });
+      expect(r).toBeNull();
+    });
+
+    test('healthy short conversation → null', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 100,
+        audio_out_chunks: 60,
+        duration_ms: 25000,
+        turn_count: 3,
+      });
+      expect(r).toBeNull();
     });
   });
 });

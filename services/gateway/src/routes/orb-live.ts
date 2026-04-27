@@ -951,11 +951,19 @@ setInterval(() => {
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
-      // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+      // VTID-01994: pass session metrics so quality classifier can detect
+      // failures regardless of mode and route to investigator.
       dispatchVoiceFailureFireAndForget({
         sessionId: sid,
         tenantScope: s.identity?.tenant_id || 'global',
         metadata: { synthetic: (s as any).synthetic === true },
+        sessionMetrics: {
+          audio_in_chunks: s.audioInChunks,
+          audio_out_chunks: s.audioOutChunks,
+          duration_ms: Date.now() - s.createdAt.getTime(),
+          turn_count: s.turn_count,
+        },
       });
       s.active = false;
       liveSessions.delete(sid);
@@ -1038,11 +1046,18 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
-    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+    // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
       sessionId: sid,
       tenantScope: existingSession.identity?.tenant_id || 'global',
       metadata: { synthetic: (existingSession as any).synthetic === true },
+      sessionMetrics: {
+        audio_in_chunks: existingSession.audioInChunks,
+        audio_out_chunks: existingSession.audioOutChunks,
+        duration_ms: Date.now() - existingSession.createdAt.getTime(),
+        turn_count: existingSession.turn_count,
+      },
     });
   }
   return terminated;
@@ -5662,7 +5677,10 @@ VOICE STYLE: ${voiceStyle}
 ${roleSection}
 
 GENERAL BEHAVIOR:
-${voiceLiveConfig.general_behavior || '- Be warm, patient, and empathetic\n- Keep responses concise for voice interaction (2-3 sentences max)\n- Use natural conversational tone'}
+${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
+- Match response length to the question: a quick yes/no question gets a sentence; a substantive question ("how is my sleep trending?", "what should I focus on this week?", "tell me about X") gets a substantive answer (4-8 sentences). Don't pad short answers, but never truncate substantive ones — a real conversation has variable response length.
+- Use natural conversational tone, not bullet points
+- Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
 
 GREETING RULES (CRITICAL):
 ${isReconnect
@@ -12128,11 +12146,20 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
   });
-  // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+  // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+  // VTID-01994: pass session metrics for mode-independent quality classifier.
   dispatchVoiceFailureFireAndForget({
     sessionId: session_id,
     tenantScope: session.identity?.tenant_id || 'global',
     metadata: { synthetic: (session as any).synthetic === true },
+    sessionMetrics: {
+      audio_in_chunks: session.audioInChunks,
+      audio_out_chunks: session.audioOutChunks,
+      duration_ms: Date.now() - session.createdAt.getTime(),
+      turn_count: session.turn_count,
+      user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
+      model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
+    },
   });
 
   // VTID-01225: Fire-and-forget entity extraction from live session
@@ -14303,11 +14330,20 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
-    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+    // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
       sessionId,
       tenantScope: liveSession.identity?.tenant_id || 'global',
       metadata: { synthetic: (liveSession as any).synthetic === true },
+      sessionMetrics: {
+        audio_in_chunks: liveSession.audioInChunks,
+        audio_out_chunks: liveSession.audioOutChunks,
+        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        turn_count: liveSession.turn_count,
+        user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
+        model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
+      },
     });
 
     liveSessions.delete(sessionId);
