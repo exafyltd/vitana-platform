@@ -810,6 +810,14 @@ interface GeminiLiveSession {
   // safe when the reason is 'forwarding_no_ack' — a model-response watchdog
   // must not be reset by user audio or we'd suppress legitimate stalls.
   responseWatchdogReason?: string;
+  // VTID-01984 (R5): true once Vertex has shown ANY sign of life on this
+  // session — first input_transcription, first model_start_speaking, or
+  // first audio_out chunk. The audio-forwarding paths skip the
+  // forwarding_no_ack watchdog entirely once this is true, because the
+  // upstream WS is demonstrably healthy and a 15-45 s "no ack" window is
+  // simply Vertex computing a response, not a stall. Native WS error /
+  // close handlers still catch real connection failures.
+  vertexHasShownLife?: boolean;
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
@@ -7258,6 +7266,11 @@ async function connectToLiveAPI(
                   session.isModelSpeaking = true;
                   // VTID-TOOLGUARD: Model produced audio — reset tool call counter
                   session.consecutiveToolCalls = 0;
+                  // VTID-01984 (R5): Vertex has spoken — upstream WS is healthy.
+                  // Once true, the audio-forwarding paths skip arming the
+                  // forwarding_no_ack watchdog so we never kill a healthy
+                  // session in the middle of Vertex computing a follow-up turn.
+                  session.vertexHasShownLife = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   emitDiag(session, 'model_start_speaking');
                   // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
@@ -7335,6 +7348,12 @@ async function connectToLiveAPI(
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
+              // VTID-01984 (R5): Vertex's VAD fired and produced a transcription —
+              // upstream WS is demonstrably healthy. Mark life signal so subsequent
+              // user-audio chunks don't arm the forwarding_no_ack watchdog (which
+              // was destroying healthy sessions when first-turn inference exceeded
+              // 15 s). Real WS failures are still caught by native handlers.
+              session.vertexHasShownLife = true;
               emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
                 session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
@@ -12652,10 +12671,22 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
           // model-response watchdog must NOT be reset by user audio or we'd
           // suppress legitimate mid-stream model stalls.
           if (!session.isModelSpeaking) {
-            const canSlide = !session.responseWatchdogTimer
-              || session.responseWatchdogReason === 'forwarding_no_ack';
-            if (canSlide) {
-              startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+            // VTID-01984 (R5): once Vertex has shown life this session, the
+            // upstream WS is healthy by definition. A "no ack" window is just
+            // Vertex computing — not a stall. Skip arming the watchdog here.
+            // Native ws.onclose / ws.onerror still catch real connection failures.
+            // Periodically emit a watchdog_skipped diag so we can confirm in
+            // production how many sessions this saves.
+            if (session.vertexHasShownLife) {
+              if (session.audioInChunks % 200 === 0) {
+                emitDiag(session, 'watchdog_skipped', { reason: 'vertex_alive' });
+              }
+            } else {
+              const canSlide = !session.responseWatchdogTimer
+                || session.responseWatchdogReason === 'forwarding_no_ack';
+              if (canSlide) {
+                startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+              }
             }
           }
           // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
@@ -14068,10 +14099,19 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       // WS and SSE transports stay in lockstep until Phase 3 collapses
       // them onto one adapter.
       if (!liveSession.isModelSpeaking) {
-        const canSlide = !liveSession.responseWatchdogTimer
-          || liveSession.responseWatchdogReason === 'forwarding_no_ack';
-        if (canSlide) {
-          startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+        // VTID-01984 (R5): mirror of SSE-path gate — once Vertex has shown
+        // life, skip arming the forwarding_no_ack watchdog. Healthy WS does
+        // not need a 15-45 s heuristic to detect Vertex's compute window.
+        if (liveSession.vertexHasShownLife) {
+          if (liveSession.audioInChunks % 200 === 0) {
+            emitDiag(liveSession, 'watchdog_skipped', { reason: 'vertex_alive' });
+          }
+        } else {
+          const canSlide = !liveSession.responseWatchdogTimer
+            || liveSession.responseWatchdogReason === 'forwarding_no_ack';
+          if (canSlide) {
+            startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+          }
         }
       }
     } else {
