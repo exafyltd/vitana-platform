@@ -38,7 +38,7 @@ describe('VTID-01965: Healing Summary', () => {
       throw new Error('unexpected: ' + url);
     });
     const s = await buildHealingSummary();
-    expect(s.per_class.length).toBe(11);
+    expect(s.per_class.length).toBe(14);
     for (const c of s.per_class) {
       expect(c.dispatch_count_24h).toBe(0);
       expect(c.fix_success_rate_7d).toBeNull();
