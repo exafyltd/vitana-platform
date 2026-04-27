@@ -332,11 +332,16 @@ Return JSON only.`;
 // Vertex call with structured output
 // =============================================================================
 
+// VTID-01996: Vertex Gemini structured-output mode rejects JSON-Schema union
+// types like `type: ['string', 'null']`. Use `nullable: true` instead, which
+// is the OpenAPI 3 / Vertex-supported way to allow null. (Encountered when
+// 5 quality-failure investigator spawns produced 0 persisted reports —
+// Vertex was silently rejecting the schema.)
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     class: { type: 'string' },
-    signature: { type: ['string', 'null'] },
+    signature: { type: 'string', nullable: true },
     evidence: {
       type: 'object',
       properties: {
@@ -502,7 +507,13 @@ const RESPONSE_SCHEMA = {
  * function calling. The report shape is unchanged; we just parse from
  * `toolCall.arguments` instead of from a JSON-mode text response.
  */
-async function callVertexInvestigator(prompt: string): Promise<InvestigatorReport | null> {
+interface VertexInvestigatorResult {
+  report: InvestigatorReport | null;
+  error: string | null;
+  raw_text?: string;
+}
+
+async function callVertexInvestigator(prompt: string): Promise<VertexInvestigatorResult> {
   try {
     const { callViaRouter } = await import('./llm-router');
     const r = await callViaRouter('classifier', prompt, {
@@ -516,21 +527,34 @@ async function callVertexInvestigator(prompt: string): Promise<InvestigatorRepor
       forceTool: 0,
     });
     if (!r.ok) {
-      console.warn(`[voice-architecture-investigator] router call failed: ${r.error}`);
-      return null;
+      const detail = `router_error: ${r.error ?? 'unknown'}`;
+      console.warn(`[voice-architecture-investigator] ${detail}`);
+      return { report: null, error: detail };
     }
     if (r.toolCall && r.toolCall.name === 'emit_investigator_report') {
-      return r.toolCall.arguments as unknown as InvestigatorReport;
+      return { report: r.toolCall.arguments as unknown as InvestigatorReport, error: null };
     }
     // Some providers may return JSON in the text body when forceTool isn't
     // honored. Try to parse as a fallback so we don't lose the call.
     if (r.text) {
-      try { return JSON.parse(r.text) as InvestigatorReport; } catch { /* fall through */ }
+      try {
+        return { report: JSON.parse(r.text) as InvestigatorReport, error: null, raw_text: r.text };
+      } catch {
+        return {
+          report: null,
+          error: `model_returned_text_not_tool_call: ${r.text.slice(0, 200)}`,
+          raw_text: r.text,
+        };
+      }
     }
-    return null;
+    return {
+      report: null,
+      error: `model_returned_neither_tool_nor_text: toolName=${r.toolCall?.name ?? 'none'}`,
+    };
   } catch (err: any) {
-    console.warn(`[voice-architecture-investigator] router threw: ${err?.message ?? err}`);
-    return null;
+    const detail = `router_threw: ${err?.message ?? String(err)}`;
+    console.warn(`[voice-architecture-investigator] ${detail}`);
+    return { report: null, error: detail };
   }
 }
 
@@ -595,6 +619,55 @@ async function persistReport(input: InvestigatorInput, report: InvestigatorRepor
   }
 }
 
+/**
+ * VTID-01996: Persist a failure stub when the investigator can't produce a
+ * valid report. Without this, investigator failures were silent — 5 spawns
+ * resulted in 0 rows and ops had no signal of WHY. The stub stores the
+ * error string and the evidence we DID gather so ops can iterate the prompt
+ * or model config.
+ */
+async function persistFailureStub(
+  input: InvestigatorInput,
+  reason: string,
+  detail: string,
+  evidenceSummary: ReturnType<typeof summarizeEvidence>,
+): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return null;
+  const stubReport = {
+    investigator_status: 'failed',
+    failure_reason: reason,
+    failure_detail: detail.slice(0, 4000),
+    class: input.class,
+    signature: input.normalized_signature,
+    trigger_reason: input.trigger_reason,
+    notes: input.notes,
+    evidence_at_failure: evidenceSummary,
+    captured_at: new Date().toISOString(),
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/voice_architecture_reports`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(), Prefer: 'return=representation' },
+      body: JSON.stringify({
+        class: input.class,
+        normalized_signature: input.normalized_signature,
+        trigger_reason: input.trigger_reason,
+        schema_version: 'v1-stub',
+        report: stubReport,
+        related_quarantine_class: input.class,
+        related_quarantine_signature: input.normalized_signature,
+        related_spec_hash: input.related_spec_hash ?? null,
+        related_vtid: input.related_vtid ?? null,
+      }),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ id: string }>;
+    return rows[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // Public entry point
 // =============================================================================
@@ -616,9 +689,17 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   const summary = summarizeEvidence(input, ev);
 
   if (!vertexAI) {
+    // VTID-01996: persist stub even when client uninitialized so ops can see
+    // the failure pattern (currently only mode==test or env misconfig).
+    const stubId = await persistFailureStub(
+      input,
+      'vertex_unavailable',
+      'Vertex client not initialized at module load; investigator skipped.',
+      summary,
+    );
     return {
       ok: false,
-      report_id: null,
+      report_id: stubId,
       validation: { ok: false, reason: 'vertex_unavailable' },
       vertex_responded: false,
       detail: 'Vertex client not initialized; investigator skipped.',
@@ -626,26 +707,36 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   }
 
   const prompt = buildPrompt(input, ev, summary);
-  const report = await callVertexInvestigator(prompt);
+  const callResult = await callVertexInvestigator(prompt);
 
-  if (!report) {
+  if (!callResult.report) {
+    // VTID-01996: persist a failure stub so ops sees WHY the investigator
+    // didn't produce a report. Without this, 5 quality-failure spawns
+    // produced 0 visible rows and the gap was invisible.
+    const stubId = await persistFailureStub(
+      input,
+      'vertex_no_response',
+      callResult.error ?? 'Vertex returned no parseable JSON and no error captured.',
+      summary,
+    );
     return {
       ok: false,
-      report_id: null,
+      report_id: stubId,
       validation: { ok: false, reason: 'vertex_no_response' },
       vertex_responded: false,
-      detail: 'Vertex returned no parseable JSON.',
+      detail: `Vertex no usable response: ${callResult.error ?? 'unknown'}`,
     };
   }
 
+  const report = callResult.report;
   const validation = validateReport(report);
   if (!validation.ok) {
     // Persist anyway — schema-violating reports are still useful for ops to
     // see what the agent produced and iterate the prompt.
-    await persistReport(input, report);
+    const persistedId = await persistReport(input, report);
     return {
       ok: false,
-      report_id: null,
+      report_id: persistedId,
       validation,
       vertex_responded: true,
       detail: `Schema validation failed: ${validation.reason}`,
