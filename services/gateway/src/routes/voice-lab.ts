@@ -23,6 +23,7 @@ import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter'
 import {
   buildHealingSummary,
   buildShadowComparison,
+  buildLiveMonitor,
 } from '../services/voice-healing-summary';
 
 const router = Router();
@@ -797,6 +798,24 @@ router.get('/healing/shadow-comparison', async (req: Request, res: Response) => 
     return res.json({ ok: true, ...c });
   } catch (err: any) {
     console.error('[VTID-01965] /healing/shadow-comparison error:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/live-monitor (VTID-01991)
+ *
+ * Real-time view for the Command Hub Voice tab. Recent voice session-stops
+ * with audio_in/audio_out ratios + 24h health rollup + watchdog telemetry
+ * (watchdog_skipped vs watchdog_fired) so ops can see the VTID-01984
+ * watchdog fix working.
+ */
+router.get('/healing/live-monitor', async (_req: Request, res: Response) => {
+  try {
+    const m = await buildLiveMonitor();
+    return res.json({ ok: true, ...m });
+  } catch (err: any) {
+    console.error('[VTID-01991] /healing/live-monitor error:', err.message);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });

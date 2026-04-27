@@ -18,27 +18,18 @@
  *    throw a typed error and the caller surfaces it to the client.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+// BOOTSTRAP-LLM-ROUTER (Phase F): vision now goes through callViaRouter
+// instead of the @anthropic-ai/sdk client. The model identifier is whatever
+// the active llm_routing_policy.policy.vision row picks; the constant below
+// is only used as a label for log lines if the router doesn't surface one.
 import { SHORTS_TAG_IDS, SHORTS_TAG_SET } from '../constants/shorts-tags';
 
-const VISION_MODEL = 'claude-sonnet-4-6';
+const VISION_MODEL = 'router-managed';
 const CALL_TIMEOUT_MS = 20_000;
 const MAX_TITLE_CHARS = 80;
 const MAX_DESCRIPTION_CHARS = 300;
 const MAX_TAGS = 5;
 const FALLBACK_CATEGORY = 'wellness';
-
-let client: Anthropic | null = null;
-
-function getClient(): Anthropic {
-  if (client) return client;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new VisionClientError('MISSING_API_KEY', 'ANTHROPIC_API_KEY is not configured');
-  }
-  client = new Anthropic({ apiKey });
-  return client;
-}
 
 export type KeyframeInput = {
   position_ratio: number;
@@ -176,78 +167,92 @@ export type AnalyzeResult = ShortMetadata & {
 };
 
 export async function analyzeShortFrames(input: AnalyzeInput): Promise<AnalyzeResult> {
-  const anthropic = getClient();
+  // BOOTSTRAP-LLM-ROUTER (Phase F): vision now goes through the provider
+  // router. The router reads llm_routing_policy.policy.vision and picks
+  // among Anthropic / OpenAI / Vertex (Google). DeepSeek is not a vision
+  // provider so the router will return ok=false if the operator picks it
+  // for the vision stage — caller falls through to the fallback provider.
+  const { callViaRouter } = await import('./llm-router');
 
   const safeFilename = String(input.filename ?? '').slice(0, 100).replace(/["\\]/g, '');
   const durationLabel = Number.isFinite(input.durationSeconds)
     ? `${Math.round(input.durationSeconds * 10) / 10}s`
     : 'unknown';
 
-  const imageBlocks = input.frames.map((f) => {
+  const images = input.frames.map((f) => {
     const { mediaType, base64 } = parseDataUrl(f.data_url);
-    return {
-      type: 'image' as const,
-      source: { type: 'base64' as const, media_type: mediaType, data: base64 },
-    };
+    return { base64, mimeType: mediaType };
   });
 
-  const userContent = [
-    {
-      type: 'text' as const,
-      text: `Duration: ${durationLabel}. Filename: "${safeFilename}". Analyze these ${imageBlocks.length} keyframes and emit metadata via the tool.`,
-    },
-    ...imageBlocks,
-  ];
+  const userText =
+    `Duration: ${durationLabel}. Filename: "${safeFilename}". Analyze these ${images.length} keyframes and emit metadata via the tool.`;
 
   const startedAt = Date.now();
-  let response;
-  try {
-    response = await anthropic.messages.create(
-      {
-        model: VISION_MODEL,
-        max_tokens: 1024,
-        system: [
-          {
-            type: 'text',
-            text: SYSTEM_PROMPT,
-            cache_control: { type: 'ephemeral' },
+  const r = await callViaRouter('vision', userText, {
+    service: 'anthropic-vision-client',
+    systemPrompt: SYSTEM_PROMPT,
+    maxTokens: 1024,
+    images,
+    tools: [{
+      name: 'emit_short_metadata',
+      description: 'Emit auto-generated metadata for a Shorts video based on keyframes.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            maxLength: MAX_TITLE_CHARS,
+            description: 'Punchy, human-friendly title, <= 80 chars, no emoji, no hashtags.',
           },
-        ],
-        tools: buildTool(),
-        tool_choice: { type: 'tool', name: 'emit_short_metadata' },
-        messages: [{ role: 'user', content: userContent }],
+          description: {
+            type: 'string',
+            maxLength: MAX_DESCRIPTION_CHARS,
+            description: 'One or two neutral sentences describing visible content.',
+          },
+          category: {
+            type: 'string',
+            enum: [...SHORTS_TAG_IDS],
+            description: 'Best-fit single category from the allowed list.',
+          },
+          tags: {
+            type: 'array',
+            items: { type: 'string', enum: [...SHORTS_TAG_IDS] },
+            minItems: 1,
+            maxItems: MAX_TAGS,
+            uniqueItems: true,
+            description: 'Between 1 and 5 tags from the allowed list.',
+          },
+        },
+        required: ['title', 'description', 'category', 'tags'],
       },
-      { timeout: CALL_TIMEOUT_MS },
-    );
-  } catch (err: any) {
-    const latencyMs = Date.now() - startedAt;
-    const status = err?.status ?? err?.response?.status;
-    const msg = err?.message ?? String(err);
-    // Rule 19: log provider, model, latency for AI calls.
-    console.warn(
-      `[shorts-auto-metadata] provider=anthropic model=${VISION_MODEL} latency_ms=${latencyMs} status=${status ?? 'n/a'} error=${msg}`,
-    );
-    if (err?.name === 'APIConnectionTimeoutError' || /timeout/i.test(msg)) {
-      throw new VisionClientError('TIMEOUT', `Vision call timed out after ${CALL_TIMEOUT_MS}ms`);
-    }
-    if (status === 429) {
-      throw new VisionClientError('RATE_LIMIT', 'Anthropic rate limit exceeded');
-    }
-    throw new VisionClientError('LLM_ERROR', msg);
-  }
+    }],
+    forceTool: 0,
+  });
 
   const latencyMs = Date.now() - startedAt;
-  const toolUseBlock = response.content.find(
-    (b) => b.type === 'tool_use' && b.name === 'emit_short_metadata',
-  );
-  if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
+  const provider = r.provider || 'unknown';
+  const model = r.model || VISION_MODEL;
+
+  if (!r.ok) {
     console.warn(
-      `[shorts-auto-metadata] provider=anthropic model=${VISION_MODEL} latency_ms=${latencyMs} stop_reason=${response.stop_reason} no_tool_use=true`,
+      `[shorts-auto-metadata] provider=${provider} model=${model} latency_ms=${latencyMs} error=${r.error}`,
+    );
+    if (r.error && /timeout/i.test(r.error)) {
+      throw new VisionClientError('TIMEOUT', `Vision call timed out after ${CALL_TIMEOUT_MS}ms`);
+    }
+    if (r.error && /\b429\b/.test(r.error)) {
+      throw new VisionClientError('RATE_LIMIT', `${provider} rate limit exceeded`);
+    }
+    throw new VisionClientError('LLM_ERROR', r.error || 'router returned ok=false');
+  }
+  if (!r.toolCall || r.toolCall.name !== 'emit_short_metadata') {
+    console.warn(
+      `[shorts-auto-metadata] provider=${provider} model=${model} latency_ms=${latencyMs} no_tool_use=true`,
     );
     throw new VisionClientError('EMPTY_OUTPUT', 'Model returned no emit_short_metadata call');
   }
 
-  const raw = toolUseBlock.input as Record<string, unknown>;
+  const raw = r.toolCall.arguments;
   const title = sanitizeTitle(raw.title);
   const description = sanitizeDescription(raw.description);
   const category = sanitizeCategory(raw.category);
@@ -259,16 +264,15 @@ export async function analyzeShortFrames(input: AnalyzeInput): Promise<AnalyzeRe
   }
 
   const usage = {
-    input_tokens: response.usage.input_tokens ?? 0,
-    output_tokens: response.usage.output_tokens ?? 0,
-    cache_read_input_tokens: (response.usage as any).cache_read_input_tokens ?? 0,
-    cache_creation_input_tokens: (response.usage as any).cache_creation_input_tokens ?? 0,
+    input_tokens: r.usage?.inputTokens ?? 0,
+    output_tokens: r.usage?.outputTokens ?? 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
   };
 
   console.log(
-    `[shorts-auto-metadata] provider=anthropic model=${VISION_MODEL} latency_ms=${latencyMs} ` +
-      `input_tokens=${usage.input_tokens} output_tokens=${usage.output_tokens} ` +
-      `cache_read=${usage.cache_read_input_tokens} cache_write=${usage.cache_creation_input_tokens}`,
+    `[shorts-auto-metadata] provider=${provider} model=${model} latency_ms=${latencyMs} ` +
+      `input_tokens=${usage.input_tokens} output_tokens=${usage.output_tokens}`,
   );
 
   return {
@@ -276,7 +280,7 @@ export async function analyzeShortFrames(input: AnalyzeInput): Promise<AnalyzeRe
     description,
     category,
     tags,
-    model: VISION_MODEL,
+    model,
     latencyMs,
     usage,
   };

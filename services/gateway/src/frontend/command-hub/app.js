@@ -38455,6 +38455,269 @@ function autonomyTraceFormatTs(iso) {
     } catch (_e) { return iso; }
 }
 
+// VTID-01991: Voice Self-Healing panel state. Polls live-monitor + summary
+// every 10s. State pinned to window so polling survives view re-renders.
+if (!state.voiceHealing) {
+    state.voiceHealing = {
+        mode: null,
+        modeLoading: false,
+        summary: null,
+        liveMonitor: null,
+        loading: true,
+        error: null,
+        pollingTimer: null,
+        lastFetchAt: 0,
+    };
+}
+
+async function fetchVoiceHealingPanel() {
+    var vh = state.voiceHealing;
+    vh.lastFetchAt = Date.now();
+    try {
+        var [modeRes, summaryRes, liveRes] = await Promise.all([
+            fetch('/api/v1/voice-lab/healing/mode').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+            fetch('/api/v1/voice-lab/healing/summary').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+            fetch('/api/v1/voice-lab/healing/live-monitor').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+        ]);
+        vh.mode = modeRes && modeRes.mode ? modeRes.mode : null;
+        vh.summary = summaryRes && summaryRes.ok ? summaryRes : null;
+        vh.liveMonitor = liveRes && liveRes.ok ? liveRes : null;
+        vh.loading = false;
+        vh.error = null;
+    } catch (err) {
+        vh.error = err && err.message ? err.message : String(err);
+        vh.loading = false;
+    }
+    // Re-render the panel in place (queryselector to find existing node).
+    var existing = document.querySelector('.vh-panel');
+    if (existing && existing.parentNode) {
+        var fresh = renderVoiceSelfHealingPanel();
+        existing.parentNode.replaceChild(fresh, existing);
+    }
+}
+
+function startVoiceHealingPolling() {
+    var vh = state.voiceHealing;
+    if (vh.pollingTimer) return;
+    vh.pollingTimer = setInterval(function() {
+        // Only poll if the panel is currently in the DOM
+        if (document.querySelector('.vh-panel')) {
+            fetchVoiceHealingPanel();
+        } else {
+            clearInterval(vh.pollingTimer);
+            vh.pollingTimer = null;
+        }
+    }, 10_000);
+}
+
+function flipVoiceHealingMode(nextMode, allocatedVtid) {
+    var vh = state.voiceHealing;
+    vh.modeLoading = true;
+    fetch('/api/v1/voice-lab/healing/mode', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ mode: nextMode, vtid: allocatedVtid || 'VTID-VOICE-HEALING' }),
+    }).then(function(r) { return r.json(); }).then(function(r) {
+        vh.modeLoading = false;
+        if (r && r.ok) {
+            showToast('Mode flipped: ' + (r.previous || '?') + ' → ' + r.new, 'success');
+            fetchVoiceHealingPanel();
+        } else {
+            showToast('Mode flip failed: ' + (r && r.error ? r.error : 'unknown'), 'error');
+        }
+    }).catch(function(err) {
+        vh.modeLoading = false;
+        showToast('Mode flip error: ' + err.message, 'error');
+    });
+}
+
+function renderVoiceSelfHealingPanel() {
+    var panel = document.createElement('section');
+    panel.className = 'vh-panel';
+    panel.style.cssText = 'margin-bottom:24px;padding:16px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;';
+
+    var vh = state.voiceHealing;
+
+    // ── Header ──
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;';
+    var titleDiv = document.createElement('div');
+    titleDiv.innerHTML = '<h3 style="margin:0;color:#e2e8f0;">ORB Voice Self-Healing</h3>' +
+        '<p style="margin:4px 0 0 0;color:#94a3b8;font-size:0.85rem;">Live monitor + healing loop state. VTID-01984 watchdog fix verification + VTID-01956..01965 self-healing infrastructure.</p>';
+    header.appendChild(titleDiv);
+
+    // Mode badge + flip control
+    var modeWrap = document.createElement('div');
+    modeWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    var modeColor = vh.mode === 'live' ? '#4ade80' : (vh.mode === 'shadow' ? '#fbbf24' : '#94a3b8');
+    var modeBadge = document.createElement('span');
+    modeBadge.style.cssText = 'padding:4px 10px;background:' + modeColor + '22;color:' + modeColor + ';border:1px solid ' + modeColor + ';border-radius:4px;font-size:0.75rem;font-weight:bold;letter-spacing:0.05em;';
+    modeBadge.textContent = 'MODE: ' + (vh.mode || '...').toUpperCase();
+    modeWrap.appendChild(modeBadge);
+
+    if (vh.mode && !vh.modeLoading) {
+        var nextMap = { off: 'shadow', shadow: 'live', live: 'off' };
+        var nextMode = nextMap[vh.mode];
+        var flipBtn = document.createElement('button');
+        flipBtn.className = 'infra-btn infra-btn--small';
+        flipBtn.textContent = 'Flip → ' + nextMode;
+        flipBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
+        flipBtn.onclick = function() {
+            var promptVtid = window.prompt(
+                'Allocate a fresh VTID first (Vitana governance), then paste it here. ' +
+                'Format: VTID-NNNNN.\\n\\n' +
+                'Or click OK to use the placeholder VTID-VOICE-HEALING.',
+                'VTID-VOICE-HEALING'
+            );
+            if (promptVtid === null) return; // cancelled
+            if (!confirm('Flip voice self-healing mode: ' + vh.mode + ' → ' + nextMode + '?')) return;
+            flipVoiceHealingMode(nextMode, promptVtid.trim());
+        };
+        modeWrap.appendChild(flipBtn);
+    }
+    header.appendChild(modeWrap);
+    panel.appendChild(header);
+
+    if (vh.loading) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'color:#94a3b8;padding:8px 0;font-size:0.85rem;';
+        loading.textContent = 'Loading voice healing state...';
+        panel.appendChild(loading);
+        if (!vh.lastFetchAt) {
+            fetchVoiceHealingPanel();
+            startVoiceHealingPolling();
+        }
+        return panel;
+    }
+
+    // ── Watchdog Fix Verification (VTID-01984) ──
+    var lm = vh.liveMonitor;
+    if (lm) {
+        var watchdogBox = document.createElement('div');
+        watchdogBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
+        var fixWorking = lm.watchdog_skipped_24h > 0 && lm.rollup_24h.bad_pct < 50;
+        var verdictColor = fixWorking ? '#4ade80' : (lm.watchdog_skipped_24h > 0 ? '#fbbf24' : '#94a3b8');
+        watchdogBox.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<strong style="color:#e2e8f0;font-size:0.9rem;">Watchdog Fix Verification (VTID-01984)</strong>' +
+                '<span style="color:' + verdictColor + ';font-size:0.8rem;">' +
+                    (fixWorking ? '✓ Fix is working' : (lm.watchdog_skipped_24h > 0 ? '~ Partial — monitoring' : '⏳ No data yet')) +
+                '</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.8rem;color:#cbd5e1;">' +
+                '<span>Watchdog skipped (24h): <strong style="color:#4ade80;">' + lm.watchdog_skipped_24h + '</strong></span>' +
+                '<span>Watchdog fired forwarding (24h): <strong style="color:' + (lm.watchdog_fired_forwarding_24h > 5 ? '#f87171' : '#cbd5e1') + ';">' + lm.watchdog_fired_forwarding_24h + '</strong></span>' +
+                '<span>Watchdog fired any (24h): ' + lm.watchdog_fired_any_24h + '</span>' +
+                '<span>BAD-ratio sessions (24h): <strong style="color:' + (lm.rollup_24h.bad_pct > 30 ? '#f87171' : '#4ade80') + ';">' + lm.rollup_24h.bad_count + '/' + lm.rollup_24h.total_sessions + ' (' + lm.rollup_24h.bad_pct + '%)</strong></span>' +
+            '</div>';
+        panel.appendChild(watchdogBox);
+    }
+
+    // ── Per-class summary table ──
+    var summary = vh.summary;
+    if (summary && summary.per_class) {
+        var summaryBox = document.createElement('div');
+        summaryBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
+        var debt = summary.unknown_class_debt;
+        var debtColor = debt && debt.slo_band === 'over_slo' ? '#f87171' : (debt && debt.slo_band === 'week1' ? '#fbbf24' : '#4ade80');
+        summaryBox.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<strong style="color:#e2e8f0;font-size:0.9rem;">Per-Class Status</strong>' +
+                '<span style="color:#94a3b8;font-size:0.75rem;">' +
+                    'Unknown debt: <span style="color:' + debtColor + ';">' + (debt ? debt.unknown_pct_24h + '% (' + debt.slo_band + ')' : '-') +
+                    '</span></span>' +
+            '</div>';
+        var tbl = document.createElement('table');
+        tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;color:#cbd5e1;';
+        tbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
+            '<th style="padding:4px 6px;">Class</th>' +
+            '<th style="padding:4px 6px;text-align:right;">24h</th>' +
+            '<th style="padding:4px 6px;text-align:right;">7d</th>' +
+            '<th style="padding:4px 6px;text-align:right;">30d</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Success</th>' +
+            '<th style="padding:4px 6px;">Quarantine</th>' +
+            '<th style="padding:4px 6px;">Investigation</th>' +
+            '</tr></thead>';
+        var tbody = document.createElement('tbody');
+        summary.per_class.forEach(function(c) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var qColor = c.quarantine_status === 'quarantined' ? '#f87171' :
+                         c.quarantine_status === 'probation' ? '#fbbf24' :
+                         c.quarantine_status === 'released' ? '#94a3b8' : '#cbd5e1';
+            tr.innerHTML =
+                '<td style="padding:4px 6px;font-family:monospace;">' + escapeHtml(c.class) + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_24h + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_7d + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_30d + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + (c.fix_success_rate_7d !== null ? c.fix_success_rate_7d + '%' : '-') + '</td>' +
+                '<td style="padding:4px 6px;color:' + qColor + ';">' + c.quarantine_status + '</td>' +
+                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" onclick="alert(\'Report ID: ' + c.latest_investigation_report_id + '\\n\\nFetch: GET /api/v1/voice-lab/healing/reports/' + c.latest_investigation_report_id + '\'); return false;">view</a>' : '-') + '</td>';
+            tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+        summaryBox.appendChild(tbl);
+        panel.appendChild(summaryBox);
+    }
+
+    // ── Recent ORB sessions (live monitor) ──
+    if (lm && lm.recent_sessions && lm.recent_sessions.length > 0) {
+        var sessionsBox = document.createElement('div');
+        sessionsBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
+        var headLine = document.createElement('div');
+        headLine.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+        headLine.innerHTML =
+            '<strong style="color:#e2e8f0;font-size:0.9rem;">Recent ORB Sessions (last 20)</strong>' +
+            '<span style="color:#94a3b8;font-size:0.75rem;">Auto-refresh every 10s — last updated ' + new Date(lm.generated_at).toLocaleTimeString() + '</span>';
+        sessionsBox.appendChild(headLine);
+        var stbl = document.createElement('table');
+        stbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.78rem;color:#cbd5e1;';
+        stbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
+            '<th style="padding:4px 6px;">Ended</th>' +
+            '<th style="padding:4px 6px;">Session</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Audio in</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Audio out</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Ratio</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Turns</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Dur</th>' +
+            '<th style="padding:4px 6px;">Health</th>' +
+            '</tr></thead>';
+        var stbody = document.createElement('tbody');
+        lm.recent_sessions.forEach(function(s) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var hColor = s.health === 'bad' ? '#f87171' : (s.health === 'warn' ? '#fbbf24' : '#4ade80');
+            var ended = new Date(s.ended_at).toLocaleTimeString();
+            var sid = s.session_id.length > 16 ? s.session_id.substring(0, 16) + '…' : s.session_id;
+            tr.innerHTML =
+                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;color:#94a3b8;">' + escapeHtml(ended) + '</td>' +
+                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;">' + escapeHtml(sid) + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.audio_in_chunks + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.audio_out_chunks + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;color:' + hColor + ';">' + s.ratio + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.turn_count + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + Math.round(s.duration_ms / 1000) + 's</td>' +
+                '<td style="padding:4px 6px;color:' + hColor + ';font-weight:bold;text-transform:uppercase;font-size:0.7rem;">' + s.health + '</td>';
+            stbody.appendChild(tr);
+        });
+        stbl.appendChild(stbody);
+        sessionsBox.appendChild(stbl);
+        panel.appendChild(sessionsBox);
+    } else if (lm) {
+        var emptyMsg = document.createElement('div');
+        emptyMsg.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.85rem;';
+        emptyMsg.textContent = 'No recent ORB sessions in the last 24h.';
+        panel.appendChild(emptyMsg);
+    }
+
+    // Start polling on first render
+    if (!vh.pollingTimer) {
+        startVoiceHealingPolling();
+    }
+
+    return panel;
+}
+
 function renderSelfHealingView() {
     var container = document.createElement('div');
     container.className = 'self-healing-container';
@@ -38463,6 +38726,11 @@ function renderSelfHealingView() {
     if (!state.selfHealing.fetched && !state.selfHealing.loading) {
         fetchSelfHealingData();
     }
+
+    // VTID-01991: Voice Self-Healing panel pinned at top — gives ops live
+    // visibility into ORB voice health, the watchdog fix verification,
+    // per-class healing state, and the mode flip control.
+    container.appendChild(renderVoiceSelfHealingPanel());
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');

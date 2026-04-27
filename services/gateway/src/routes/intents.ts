@@ -169,10 +169,18 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(500).json({ ok: false, error: insErr?.message ?? 'insert_failed' });
   }
 
-  // Embed (inline; P2-C moves to a worker).
-  const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
-  if (embedding) {
-    await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
+  // VTID-01992: Embedding path is now flag-controlled.
+  //   FEATURE_INTENT_EMBEDDING_ASYNC=true  → skip inline; the embedding
+  //                                         worker (intent-embedding-worker.ts)
+  //                                         will pick up the row within ~5s.
+  //   default (unset / false)              → keep inline behavior. Worker
+  //                                         still runs as a safety net for
+  //                                         rows that slip past inline.
+  if (process.env.FEATURE_INTENT_EMBEDDING_ASYNC !== 'true') {
+    const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
+    if (embedding) {
+      await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
+    }
   }
 
   // VTID-01975 (P2-B): kind-discriminated Memory Garden write hooks.

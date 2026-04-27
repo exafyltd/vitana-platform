@@ -123,7 +123,7 @@ interface MessagesResponse {
 /**
  * BOOTSTRAP-LLM-ROUTER (Phase D): plan-gen direct-API call now goes through
  * the provider router. The router reads llm_routing_policy.policy.planner
- * and dispatches to the configured provider (default Vertex / gemini-3.1-pro
+ * and dispatches to the configured provider (default Vertex / gemini-2.5-pro
  * with Anthropic / claude-opus-4-7 fallback). Operators flip providers via
  * the Command Hub dropdown without code edits.
  *

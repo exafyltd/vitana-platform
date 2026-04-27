@@ -304,137 +304,78 @@ function parseTriageReport(
 // Main entry point: spawnTriageAgent
 // =============================================================================
 
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase C): triage now goes through the provider
+ * router. The router reads llm_routing_policy.policy.triage and dispatches
+ * to the configured provider (Vertex / Anthropic / OpenAI / DeepSeek).
+ *
+ * Architectural change vs the prior Managed Agents flow: instead of giving
+ * the model a `query_oasis_events` tool that fires mid-session, we
+ * pre-fetch the OASIS events for the failure session up front and attach
+ * them to the prompt. This is lossless for the diagnosis path (the agent
+ * always called the tool with the same session_id from `input.diagnosis`)
+ * and works across every provider — no Managed Agents dependency.
+ *
+ * The repo-mount feature is dropped — for the diagnosis use case the model
+ * doesn't need to read code on demand; failure context + recent events is
+ * sufficient. If a stage genuinely needs repo browsing in future, that's a
+ * separate router extension.
+ */
 export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult> {
-  if (!ANTHROPIC_API_KEY) {
-    console.warn(`${LOG_PREFIX} ANTHROPIC_API_KEY not set — skipping triage`);
-    return { ok: false, error: 'ANTHROPIC_API_KEY not set' };
-  }
-
   const startTime = Date.now();
-  console.log(`${LOG_PREFIX} Spawning triage agent for ${input.vtid} (mode=${input.mode})`);
+  console.log(`${LOG_PREFIX} Triage for ${input.vtid} (mode=${input.mode})`);
 
-  // 1. Create session with repo mounted
-  const sessionResult = await anthropicRequest<any>('/v1/sessions', {
-    method: 'POST',
-    body: {
-      agent: { type: 'agent', id: AGENT_ID, version: 1 },
-      environment_id: ENVIRONMENT_ID,
-      title: `Self-healing triage: ${input.vtid} (${input.mode})`,
-      resources: [
-        {
-          type: 'github_repository',
-          url: 'https://github.com/exafyltd/vitana-platform',
-          authorization_token: process.env.GITHUB_SAFE_MERGE_TOKEN || '',
-          mount_path: '/workspace/repo',
-          checkout: { type: 'branch', name: 'main' },
-        },
-      ],
-    },
-  });
-
-  if (!sessionResult.ok || !sessionResult.data) {
-    console.error(`${LOG_PREFIX} Session creation failed:`, sessionResult.error);
-    return { ok: false, error: `Session creation failed: ${sessionResult.error}` };
-  }
-
-  const sessionId = sessionResult.data.id;
-  console.log(`${LOG_PREFIX} Session created: ${sessionId}`);
-
-  // 2. Send the investigation prompt
-  const prompt = buildPrompt(input);
-  await anthropicRequest(`/v1/sessions/${sessionId}/events`, {
-    method: 'POST',
-    body: {
-      events: [
-        { type: 'user.message', content: [{ type: 'text', text: prompt }] },
-      ],
-    },
-  });
-
-  // 3. Poll events until done, handling custom tools along the way
-  let done = false;
-  const seenIds = new Set<string>();
-  const textParts: string[] = [];
-  const deadline = Date.now() + SESSION_TIMEOUT_MS;
-
-  while (!done && Date.now() < deadline) {
-    const eventsResult = await anthropicRequest<any>(
-      `/v1/sessions/${sessionId}/events`
-    );
-
-    if (!eventsResult.ok || !eventsResult.data) {
-      console.error(`${LOG_PREFIX} Events poll failed:`, eventsResult.error);
-      break;
-    }
-
-    const events = eventsResult.data.data || [];
-
-    for (const event of events) {
-      if (seenIds.has(event.id)) continue;
-      seenIds.add(event.id);
-
-      switch (event.type) {
-        case 'agent.message':
-          if (event.content) {
-            for (const block of event.content) {
-              if (block.type === 'text') {
-                textParts.push(block.text);
-              }
-            }
-          }
-          break;
-
-        case 'agent.custom_tool_use':
-          if (event.tool_name === 'query_oasis_events') {
-            const result = await queryOasisEvents(
-              event.input?.session_id || '',
-              event.input?.limit || 100
-            );
-            await anthropicRequest(`/v1/sessions/${sessionId}/events`, {
-              method: 'POST',
-              body: {
-                events: [
-                  {
-                    type: 'user.custom_tool_result',
-                    custom_tool_use_id: event.id,
-                    content: [{ type: 'text', text: result }],
-                  },
-                ],
-              },
-            });
-          }
-          break;
-
-        case 'session.status_idle': {
-          const stopReason = event.stop_reason?.type;
-          if (stopReason !== 'requires_action') {
-            done = true;
-          }
-          break;
-        }
-
-        case 'session.status_terminated':
-          done = true;
-          break;
-      }
-    }
-
-    if (!done && events.length === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+  // 1. Pre-fetch OASIS events keyed off any session_id mentioned in the
+  //    diagnosis. The original Managed Agents path did this lazily via a
+  //    custom tool; we just pull them upfront and inline.
+  const sessionIdHint = (input.diagnosis as Record<string, unknown> | undefined)?.session_id
+    || (input.diagnosis as Record<string, unknown> | undefined)?.sessionId
+    || '';
+  let oasisEventsBlock = '';
+  if (typeof sessionIdHint === 'string' && sessionIdHint) {
+    try {
+      const eventsJson = await queryOasisEvents(sessionIdHint, 50);
+      oasisEventsBlock = `\n### OASIS events for session ${sessionIdHint} (most recent 50):\n${eventsJson}\n`;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} OASIS prefetch failed:`, err);
     }
   }
+
+  // 2. Build the prompt — same per-mode template as before, plus the
+  //    pre-fetched events if any.
+  const prompt = buildPrompt(input) + oasisEventsBlock;
+
+  // 3. Single-shot call via router. Provider chosen by llm_routing_policy.
+  //    `pseudoSessionId` is just a correlation id for the parser — there is
+  //    no real session.
+  const pseudoSessionId = `triage-${input.vtid}-${Date.now()}`;
+  const r = await (async () => {
+    const { callViaRouter } = await import('./llm-router');
+    return callViaRouter('triage', prompt, {
+      vtid: input.vtid,
+      service: 'self-healing-triage',
+      systemPrompt: 'You are a self-healing triage agent. Investigate the failure and produce a structured report with: Severity, Root Cause Hypothesis, Affected Component, Evidence (bulleted list), Recommended Fix, Confidence (low|medium|high). Use plain markdown headings (## Severity, ## Root Cause Hypothesis, etc.).',
+      maxTokens: 4000,
+      allowFallback: true,
+    });
+  })();
 
   const elapsedMs = Date.now() - startTime;
-  const rawOutput = textParts.join('\n');
 
-  if (!rawOutput) {
-    console.warn(`${LOG_PREFIX} Agent produced no text output for ${input.vtid}`);
-    return { ok: false, error: 'Agent produced no output' };
+  if (!r.ok) {
+    console.warn(`${LOG_PREFIX} Triage router call failed for ${input.vtid}: ${r.error}`);
+    return { ok: false, error: r.error || 'router returned ok=false' };
   }
 
-  const report = parseTriageReport(rawOutput, sessionId, input.mode, elapsedMs);
+  const rawOutput = r.text || '';
+  if (!rawOutput) {
+    console.warn(`${LOG_PREFIX} Triage produced no text for ${input.vtid}`);
+    return { ok: false, error: 'Triage produced no output' };
+  }
+
+  const report = parseTriageReport(rawOutput, pseudoSessionId, input.mode, elapsedMs);
   console.log(
-    `${LOG_PREFIX} Triage complete for ${input.vtid}: confidence=${report.confidence} (${report.confidence_numeric}), elapsed=${elapsedMs}ms`
+    `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
   );
 
   return { ok: true, report };
