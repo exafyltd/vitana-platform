@@ -255,7 +255,8 @@ CREATE TABLE IF NOT EXISTS public.biometric_events (
   acknowledged_at timestamptz,
   policy_version  text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS biometric_events_active ON public.biometric_events (tenant_id, user_id, observed_at DESC) WHERE acknowledged_at IS NULL AND (expires_at IS NULL OR expires_at > now());
+-- Partial index can't use now() (must be IMMUTABLE); filter expires_at at query time.
+CREATE INDEX IF NOT EXISTS biometric_events_active ON public.biometric_events (tenant_id, user_id, observed_at DESC) WHERE acknowledged_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS public.user_location_settings (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -358,12 +359,13 @@ CREATE TABLE IF NOT EXISTS public.index_delta_observations (
 );
 CREATE INDEX IF NOT EXISTS index_delta_observations_user ON public.index_delta_observations (tenant_id, user_id, created_at DESC);
 
+-- "window" is a reserved keyword; using time_window instead.
 CREATE TABLE IF NOT EXISTS public.vitana_index_trajectory_snapshots (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       uuid NOT NULL,
   user_id         uuid NOT NULL,
   snapshot_date   date NOT NULL,
-  window          text NOT NULL CHECK (window IN ('7d','30d','90d')),
+  time_window     text NOT NULL CHECK (time_window IN ('7d','30d','90d')),
   narrative       text NOT NULL,
   pillars_snapshot jsonb NOT NULL,
   balance_factor_avg real NOT NULL,
@@ -371,7 +373,7 @@ CREATE TABLE IF NOT EXISTS public.vitana_index_trajectory_snapshots (
   tier_at_end     text NOT NULL,
   trajectory_class text NOT NULL CHECK (trajectory_class IN ('improving','stable','regressing','volatile')),
   created_at      timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, user_id, snapshot_date, window)
+  UNIQUE (tenant_id, user_id, snapshot_date, time_window)
 );
 CREATE INDEX IF NOT EXISTS vitana_index_trajectory_user ON public.vitana_index_trajectory_snapshots (tenant_id, user_id, snapshot_date DESC);
 
