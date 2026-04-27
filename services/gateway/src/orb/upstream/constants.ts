@@ -76,7 +76,24 @@ export const TURN_RESPONSE_TIMEOUT_MS = 10_000;     // 10s after user speech
 //     safe because "N seconds without Vertex response" then means "N seconds
 //     after last audio with Vertex still silent" which is the real stall
 //     condition. Until that ships, 15 s is the safest known-good value.
-export const FORWARDING_ACK_TIMEOUT_MS = 15_000;
+//   R5 (VTID-01984): production data (24h, 14/20 sessions BAD, 1 session
+//     53s of speech with 0 turns) showed 15 s was still destroying healthy
+//     sessions during legitimate first-turn inference. With 15K-char system
+//     instruction + 16 tools, Vertex first-turn latency is 8-12 s; add
+//     1.2 s VAD trigger time + audio chunking; 15 s is right on the edge
+//     and frequently fires inside Vertex's compute window — destroying the
+//     in-flight utterance via reconnect. Two changes:
+//       (1) The arm site now skips this watchdog entirely once Vertex has
+//           shown ANY sign of life this session (input_transcription /
+//           model_start_speaking / audio_out chunk). Native WS handlers
+//           still close on real connection failures; we don't need a 15 s
+//           heuristic to "detect" a Vertex pause between turns when the
+//           WS itself is healthy.
+//       (2) For genuine first-turn (vertexHasShownLife=false), bump from
+//           15 s to 45 s. Real Vertex stalls before any life signal are
+//           rare and 45 s won't make them invisible — but it will stop
+//           the false positives that were truncating greetings.
+export const FORWARDING_ACK_TIMEOUT_MS = 45_000;
 
 // =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
