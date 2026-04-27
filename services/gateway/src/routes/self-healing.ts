@@ -603,21 +603,7 @@ router.get('/history', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'Failed to query history' });
     }
 
-    const raw = (await resp.json()) as any[];
-    // Filter out phantom/test endpoints that aren't in the gateway route map.
-    // Synthetic `autopilot.*` identifiers (from dev-autopilot self-heal-log writes)
-    // are NOT route URLs — they're stage tags ("autopilot.scan_ingest",
-    // "autopilot.worker_queue.plan", "autopilot.plan_gen"). Pass them through
-    // unconditionally so the Self-Healing screen surfaces autopilot failures
-    // alongside route-class failures.
-    const known = new Set(Object.keys(ENDPOINT_FILE_MAP));
-    known.add('/alive');
-    known.add('/api/v1/self-healing/health');
-    const items = raw.filter((r: any) =>
-      !r.endpoint
-      || known.has(r.endpoint)
-      || (typeof r.endpoint === 'string' && r.endpoint.startsWith('autopilot.'))
-    );
+    const items = (await resp.json()) as any[];
     const countHeader = resp.headers.get('content-range');
     const total = countHeader ? parseInt(countHeader.split('/')[1] || '0', 10) : items.length;
 
