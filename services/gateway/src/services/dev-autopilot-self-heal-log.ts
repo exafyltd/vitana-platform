@@ -136,6 +136,109 @@ export async function writeAutopilotFailure(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Success / rolled-back writer (VTID-02001)
+//
+//  self_healing_log used to be a failure-only log: writeAutopilotFailure
+//  was the only writer, so the Self-Healing screen showed escalations
+//  forever and never showed a single fix landing — even though
+//  dev_autopilot_executions had `completed` and `reverted` rows. This
+//  writer surfaces the success side of the pipeline.
+//
+//  Conventions:
+//    - vtid       = `VTID-DA-<exec-short>` (matches failure VTID format)
+//    - endpoint   = the finding's file_path (matches failure rows for that
+//                   finding so they sit together in the table)
+//    - failure_class = `auto_fix_applied` | `auto_fix_reverted` (kept in
+//                      the failure_class column because the schema reuses
+//                      it; the outcome column is the source of truth)
+//    - confidence = 1.0 for completed (the executor + verifier both
+//                   passed), 0.5 for reverted (the executor passed but
+//                   the verifier rolled it back)
+//    - outcome    = `fixed` | `rolled_back`
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AutopilotSuccessArgs {
+  /** `VTID-DA-<exec-short>` */
+  vtid: string;
+  /** Finding's file_path; falls back to `autopilot.execute` if unknown. */
+  endpoint: string;
+  /** 'fixed' for completed, 'rolled_back' for reverted. */
+  outcome: 'fixed' | 'rolled_back';
+  /** Structured diagnosis: include pr_url, plan_version, completed_at, etc. */
+  diagnosis: Record<string, unknown>;
+  /** Override the default confidence if needed. */
+  confidence?: number;
+  /** Override resolved_at (for backfill). Defaults to now(). */
+  resolvedAtIso?: string;
+  /** Override created_at (for backfill so timeline reflects when the fix
+   *  actually happened, not when we backfilled). */
+  createdAtIso?: string;
+}
+
+export async function writeAutopilotSuccess(
+  s: SupaConfig,
+  args: AutopilotSuccessArgs,
+): Promise<void> {
+  const failure_class =
+    args.outcome === 'fixed' ? 'auto_fix_applied' : 'auto_fix_reverted';
+  const confidence =
+    args.confidence ?? (args.outcome === 'fixed' ? 1.0 : 0.5);
+  try {
+    // Dedup: same vtid + endpoint + failure_class within DEDUP_WINDOW_MS.
+    // Success rows shouldn't repeat for the same execution — patchExecution
+    // can fire twice if a transient PostgREST retry happens — so the dedup
+    // saves us from double-counting.
+    const sinceIso = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+    const dedupQuery =
+      `?vtid=eq.${encodeURIComponent(args.vtid)}` +
+      `&endpoint=eq.${encodeURIComponent(args.endpoint)}` +
+      `&failure_class=eq.${encodeURIComponent(failure_class)}` +
+      `&created_at=gte.${encodeURIComponent(sinceIso)}` +
+      `&select=id&limit=1`;
+    const dedupRes = await fetch(`${s.url}/rest/v1/self_healing_log${dedupQuery}`, {
+      headers: { apikey: s.key, Authorization: `Bearer ${s.key}` },
+    });
+    if (dedupRes.ok) {
+      const existing = (await dedupRes.json()) as Array<{ id: string }>;
+      if (Array.isArray(existing) && existing.length > 0) {
+        return;
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      vtid: args.vtid,
+      endpoint: args.endpoint,
+      failure_class,
+      confidence,
+      diagnosis: { stage: 'execute_run', ...args.diagnosis },
+      outcome: args.outcome,
+      attempt_number: 1,
+      resolved_at: args.resolvedAtIso || new Date().toISOString(),
+    };
+    if (args.createdAtIso) body.created_at = args.createdAtIso;
+
+    const res = await fetch(`${s.url}/rest/v1/self_healing_log`, {
+      method: 'POST',
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn(
+        `${LOG_PREFIX} self_healing_log success POST failed (${res.status}): ${text.slice(0, 200)}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} self_healing_log success POST threw:`, err);
+  }
+}
+
 /**
  * Detect the worker spawn error pattern that's been silently failing plan
  * generation: `failed to spawn ...claude... ENOENT`. When the worker can't
