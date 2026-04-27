@@ -514,45 +514,48 @@ interface VertexInvestigatorResult {
 }
 
 async function callVertexInvestigator(prompt: string): Promise<VertexInvestigatorResult> {
+  // VTID-02002: was using callViaRouter('classifier', ...) — but that router's
+  // primary (deepseek-reasoner) doesn't support forced tool_choice and its
+  // fallback was pointing at a non-existent model name (gemini-3-pro-preview),
+  // so 100% of automatic investigator spawns failed silently into stub reports.
+  // Bypass the router and call Vertex directly with the same pattern
+  // self-healing-spec-service.ts uses successfully in production today
+  // (vertexAI.getGenerativeModel + gemini-2.5-pro + responseSchema).
+  if (!vertexAI) {
+    return { report: null, error: 'vertex_not_initialized' };
+  }
   try {
-    const { callViaRouter } = await import('./llm-router');
-    const r = await callViaRouter('classifier', prompt, {
-      service: 'voice-architecture-investigator',
-      maxTokens: 8192,
-      tools: [{
-        name: 'emit_investigator_report',
-        description: 'Emit the structured investigator report. Always invoke this tool with a complete report rather than replying in plain text.',
-        inputSchema: RESPONSE_SCHEMA as Record<string, unknown>,
-      }],
-      forceTool: 0,
+    const model = vertexAI.getGenerativeModel({
+      model: INVESTIGATOR_MODEL,
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 8192,
+        topP: 0.9,
+        responseMimeType: 'application/json',
+        responseSchema: RESPONSE_SCHEMA as any,
+      },
     });
-    if (!r.ok) {
-      const detail = `router_error: ${r.error ?? 'unknown'}`;
-      console.warn(`[voice-architecture-investigator] ${detail}`);
-      return { report: null, error: detail };
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      return {
+        report: null,
+        error: `vertex_no_text_in_response: candidates=${result.response?.candidates?.length ?? 0}`,
+      };
     }
-    if (r.toolCall && r.toolCall.name === 'emit_investigator_report') {
-      return { report: r.toolCall.arguments as unknown as InvestigatorReport, error: null };
+    try {
+      return { report: JSON.parse(text) as InvestigatorReport, error: null, raw_text: text };
+    } catch (parseErr: any) {
+      return {
+        report: null,
+        error: `vertex_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
+        raw_text: text.slice(0, 4000),
+      };
     }
-    // Some providers may return JSON in the text body when forceTool isn't
-    // honored. Try to parse as a fallback so we don't lose the call.
-    if (r.text) {
-      try {
-        return { report: JSON.parse(r.text) as InvestigatorReport, error: null, raw_text: r.text };
-      } catch {
-        return {
-          report: null,
-          error: `model_returned_text_not_tool_call: ${r.text.slice(0, 200)}`,
-          raw_text: r.text,
-        };
-      }
-    }
-    return {
-      report: null,
-      error: `model_returned_neither_tool_nor_text: toolName=${r.toolCall?.name ?? 'none'}`,
-    };
   } catch (err: any) {
-    const detail = `router_threw: ${err?.message ?? String(err)}`;
+    const detail = `vertex_threw: ${err?.message ?? String(err)}`;
     console.warn(`[voice-architecture-investigator] ${detail}`);
     return { report: null, error: detail };
   }
