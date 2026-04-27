@@ -66,6 +66,20 @@ export {
   type TipPillarLink,
   type ResolveOptions,
 } from './tip-curriculum';
+// V2 — Proactive Initiative Engine
+export {
+  INITIATIVE_REGISTRY,
+  pickProactiveInitiative,
+  getInitiativeByKey,
+  INITIATIVE_FRAMING_TOKENS,
+  mentionsIndexOrPillar as initiativeMentionsIndexOrPillar,
+  type ProactiveInitiative,
+  type InitiativeOnYesTool,
+  type InitiativeTarget,
+  type InitiativePillarLink,
+  type ResolvedInitiative,
+  type ResolverContext as InitiativeResolverContext,
+} from './initiative-registry';
 export {
   describeTimeSince,
   fetchLastSessionInfo,

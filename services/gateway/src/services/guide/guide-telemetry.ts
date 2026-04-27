@@ -34,7 +34,13 @@ export type GuideEventType =
   | 'guide.did_you_know.offered'
   | 'guide.did_you_know.accepted'
   | 'guide.did_you_know.declined'
-  | 'guide.did_you_know.flag_disabled';
+  | 'guide.did_you_know.flag_disabled'
+  // V2 — Proactive Initiative Engine
+  | 'guide.initiative.offered'
+  | 'guide.initiative.consented'
+  | 'guide.initiative.executed'
+  | 'guide.initiative.declined'
+  | 'guide.initiative.flag_disabled';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,

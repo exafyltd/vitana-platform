@@ -646,6 +646,12 @@ export type CicdEventType =
   | 'guide.did_you_know.accepted'
   | 'guide.did_you_know.declined'
   | 'guide.did_you_know.flag_disabled'
+  // V2 — Proactive Initiative Engine
+  | 'guide.initiative.offered'
+  | 'guide.initiative.consented'
+  | 'guide.initiative.executed'
+  | 'guide.initiative.declined'
+  | 'guide.initiative.flag_disabled'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

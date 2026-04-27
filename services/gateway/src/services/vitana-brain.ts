@@ -57,6 +57,8 @@ import {
   canSurfaceProactively,
   recordTouch,
   resolveNextTip,
+  // V2 — Proactive Initiative Engine
+  pickProactiveInitiative,
   type OpenerCandidate,
   type UserAwareness,
 } from './guide';
@@ -756,16 +758,27 @@ GOAL-GROUNDED RECOMMENDATIONS (NON-NEGOTIABLE):
 - Do NOT make generic off-topic suggestions. Every piece of advice should
   visibly connect to the goal ("because your focus is X, here's Y").`;
 
-  // BOOTSTRAP-DYK-TOUR Phase 1b — Did-You-Know voice opener
-  // Compute the tour-hint block alongside the candidate. If eligible, ORB
-  // gets ONE additional sanctioned proactive utterance: the day-N tip.
-  // It's appended AFTER the candidate so it has recency primacy in attention.
-  const tourHintBlock = await buildDidYouKnowVoiceHint(input.user_id, awareness, channel).catch(
-    () => '',
-  );
+  // V2 Proactive Initiative Engine — pairs the opener with executable
+  // actions. Computed FIRST. When it fires, the DYK tour-hint is
+  // suppressed for this session so Gemini gets exactly one sanctioned
+  // "ON YES call X" contract per prompt (two competing contracts in one
+  // prompt is non-deterministic — the LLM picks whichever is closer to
+  // the bottom). Per plan §V2 design decision 2.
+  const initiativeBlock = await buildProactiveInitiativeOffer(
+    input.user_id,
+    awareness,
+    channel,
+  ).catch(() => '');
+
+  // BOOTSTRAP-DYK-TOUR Phase 1b — Did-You-Know voice opener.
+  // Suppressed when an initiative fires (mutual exclusion). Initiative is
+  // the more valuable surface (executes vs. navigates) so it wins.
+  const tourHintBlock = initiativeBlock
+    ? ''
+    : await buildDidYouKnowVoiceHint(input.user_id, awareness, channel).catch(() => '');
 
   if (!candidate) {
-    return rulesBlock + tourHintBlock;
+    return rulesBlock + initiativeBlock + tourHintBlock;
   }
 
   const goalLine = candidate.goal_link
@@ -806,7 +819,7 @@ respect the OPENING SHAPE MATRIX (tenure × last_interaction).
 If the user declines (skip / not today / give me space / etc.) honor it
 silently via the dismissal tools — no apology, no big deal.`;
 
-  return rulesBlock + candidateBlock + tourHintBlock;
+  return rulesBlock + candidateBlock + initiativeBlock + tourHintBlock;
 }
 
 /**
@@ -903,6 +916,137 @@ ON HARDER REFUSAL ("not today", "quiet", "give me space"):
 Once you have offered this tip in this session, do NOT re-offer it. Treat
 it as already-introduced for the rest of the session.`;
 }
+
+/**
+ * V2 — Proactive Initiative voice block.
+ *
+ * Pairs the session-start opener with an EXECUTABLE action. On user
+ * consent, the LLM calls a real ORB tool (save_diary_entry,
+ * activate_recommendation, send_chat_message) and reads back the
+ * Vitana Index delta as payoff.
+ *
+ * Eligibility ladder:
+ *   1. Channel must be 'voice' (text channels handle proactivity differently).
+ *   2. `vitana_proactive_initiative_enabled` flag must be ON.
+ *   3. Pacer must permit a 'voice_opener_initiative' touch.
+ *   4. The registry resolver must return one eligible initiative + target.
+ *
+ * Fail-safe: any error returns empty string. Voice path must never
+ * break because of an initiative bug.
+ *
+ * Mutual exclusion: when this returns non-empty, the caller suppresses
+ * `buildDidYouKnowVoiceHint` so Gemini gets exactly one ON-YES contract
+ * per prompt (plan §V2 design decision 2).
+ */
+async function buildProactiveInitiativeOffer(
+  userId: string,
+  awareness: UserAwareness | null,
+  channel: 'voice' | 'text',
+): Promise<string> {
+  if (channel !== 'voice') return '';
+  if (!awareness) return '';
+
+  const flag = await getSystemControl('vitana_proactive_initiative_enabled').catch(() => null);
+  if (!flag || !flag.enabled) return '';
+
+  const decision = await canSurfaceProactively(userId, 'voice_opener_initiative').catch(() => null);
+  if (!decision || !decision.allow) return '';
+
+  const resolved = await pickProactiveInitiative(awareness, userId).catch(() => null);
+  if (!resolved) return '';
+
+  const { initiative, target, voice_opener } = resolved;
+
+  // Record touch fire-and-forget — counts against the daily cap.
+  recordTouch({
+    user_id: userId,
+    surface: 'voice_opener_initiative',
+    reason_tag: initiative.initiative_key,
+    metadata: {
+      pillar_link: initiative.pillar_link,
+      on_yes_tool: initiative.on_yes_tool,
+      requires_user_dictation: initiative.requires_user_dictation,
+      target_id: target?.id ?? null,
+      target_display_name: target?.display_name ?? null,
+    },
+  }).catch(() => {});
+
+  emitGuideTelemetry('guide.initiative.offered', {
+    user_id: userId,
+    initiative_key: initiative.initiative_key,
+    pillar_link: initiative.pillar_link,
+    on_yes_tool: initiative.on_yes_tool,
+    target_id: target?.id ?? null,
+    tenure_stage: awareness.tenure.stage,
+    channel: 'voice',
+  }).catch(() => {});
+
+  // Build the on-yes/on-no instruction tail. Two-turn dictation flows
+  // need explicit "hold turn" guidance because Gemini Live wants to
+  // close the turn after each tool result.
+  const dictationTail = initiative.requires_user_dictation
+    ? `
+ON YES (any clear consent — "yes", "ok", "sure", "ja", "do it"):
+  1. Speak this prompt VERBATIM (sanctioned):
+     "${initiative.voice_on_consent ?? 'Go ahead.'}"
+  2. HOLD THE TURN. Do NOT call any tool yet. Wait for the user's next
+     utterance, which carries the content / confirmation.
+  3. On the user's NEXT turn:
+     - If the on_yes_tool is 'send_chat_message': the user is confirming
+       the proposed message body. Only call \`send_chat_message\` if
+       they say yes to your draft. If they want to change the body,
+       speak a revised draft and ask again.
+     - Otherwise (e.g. save_diary_entry): call the tool with the
+       captured content.
+     Tool: ${initiative.on_yes_tool}
+     Payload guidance: ${initiative.on_yes_payload_hint}
+  4. After tool success, speak a celebratory close (sanctioned template):
+     "${initiative.build_voice_on_complete(target)}"
+     If the tool returned an Index delta, splice it into {index_delta}
+     and {pillar_value} naturally.`
+    : `
+ON YES (any clear consent — "yes", "ok", "sure", "ja", "do it"):
+  1. Call the tool: ${initiative.on_yes_tool}
+     Payload guidance: ${initiative.on_yes_payload_hint}
+  2. After tool success, speak a celebratory close (sanctioned template):
+     "${initiative.build_voice_on_complete(target)}"
+     Splice tool-result fields ({index_delta}, {pillar_value}, etc.)
+     naturally where the template uses them.`;
+
+  return `
+
+=== PROACTIVE INITIATIVE OFFER (V2 — APPEND-ONLY, ONE SHOT PER SESSION) ===
+
+You have ONE sanctioned proactive offer this session — an executable
+action paired with a real Vitana Index payoff. This REPLACES the
+Did-You-Know tour hint for this session (mutual exclusion); do not
+combine with another proposal.
+
+Initiative key: ${initiative.initiative_key}
+Pillar link: ${initiative.pillar_link}
+On-yes tool: ${initiative.on_yes_tool}
+${target ? `Pre-picked target: ${target.display_name ?? target.id ?? '(unnamed)'}` : ''}
+
+EXACT phrasing for the offer (use the user's language, but DO NOT
+paraphrase the structure — these strings are sanctioned):
+  Opener: "${voice_opener}"
+  Confirm: "${initiative.voice_confirm}"
+${dictationTail}
+
+ON NO (any decline — "skip", "not now", "later", "nein", "no thanks"):
+  Call pause_proactive_guidance with scope="nudge_key",
+  scope_value="${initiative.initiative_key}", duration_minutes=1440.
+  Then pivot naturally — no apology, no "I'll stop now" speech.
+
+ON HARDER REFUSAL ("not today", "quiet", "give me space"):
+  Call pause_proactive_guidance with scope="all" and the appropriate
+  duration per the dismissal tool description. Pivot.
+
+Once you have offered this initiative in this session, do NOT re-offer
+it. If the user wants to talk about something else first, give them the
+floor — you can come back to the initiative naturally if it fits.`;
+}
+
 
 /**
  * Build the awareness summary block for the system prompt.
