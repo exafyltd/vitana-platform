@@ -432,12 +432,14 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
 
   // VTID-01186: Fetch profile and memberships from database
   // VTID-01967: also expose vitana_id (from app_users mirror) and vitana_id_locked (from profiles).
+  // VTID-01987: also expose registration_seq (the user's chronological signup rank).
   let profile: {
     display_name?: string;
     avatar_url?: string;
     bio?: string;
     vitana_id?: string;
     vitana_id_locked?: boolean;
+    registration_seq?: number;
   } = {};
   let memberships: Array<{ tenant_id: string; role: string; is_primary: boolean }> = [];
 
@@ -461,24 +463,27 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         };
       }
 
-      // VTID-01967: vitana_id_locked lives only on profiles (not mirrored).
-      // Parallel fetch — null-tolerant (column may not exist before Release A).
+      // VTID-01967 + VTID-01987: vitana_id_locked + registration_seq live only
+      // on profiles (not mirrored). Parallel fetch — null-tolerant (columns
+      // may not exist before Release A / v2 backfill).
       try {
         const { data: lockData } = await supabase
           .from('profiles')
-          .select('vitana_id_locked, vitana_id')
+          .select('vitana_id_locked, vitana_id, registration_seq')
           .eq('user_id', identity.user_id)
           .maybeSingle();
         if (lockData) {
           profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
-          // Profiles is the source of truth; if app_users mirror is stale (or
-          // not yet provisioned), prefer profiles.vitana_id.
           if (!profile.vitana_id && (lockData as any).vitana_id) {
             profile.vitana_id = (lockData as any).vitana_id;
           }
+          if (typeof (lockData as any).registration_seq === 'number') {
+            profile.registration_seq = (lockData as any).registration_seq;
+          }
         }
       } catch (_lockErr) {
-        // Silent — profiles.vitana_id_locked may not exist on this env yet.
+        // Silent — profiles.vitana_id_locked / registration_seq may not exist
+        // on this env yet.
       }
 
       // VTID-01230-FIX: Match /auth/login fallback chain for avatar_url.
