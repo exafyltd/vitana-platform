@@ -283,6 +283,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const intentBoardRouter = intentEngineEnabled ? require('./routes/intent-board').default : null;
   const intentCategoriesRouter = intentEngineEnabled ? require('./routes/intent-categories').default : null;
   const adminIntentEngineRouter = intentEngineEnabled ? require('./routes/admin-intent-engine').default : null;
+  // VTID-DANCE-D4: public community members directory (always on)
+  const communityMembersRouter = require('./routes/community-members').default;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
@@ -777,6 +779,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   if (intentMatchesRouter) mountRouterSync(app, '/api/v1/intent-matches', intentMatchesRouter, { owner: 'intent-matches' });
   if (intentBoardRouter) mountRouterSync(app, '/api/v1/intent-board', intentBoardRouter, { owner: 'intent-board' });
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
+  // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
+  mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   if (adminIntentEngineRouter) mountRouterSync(app, '/api/v1/admin/intent-engine', adminIntentEngineRouter, { owner: 'admin-intent-engine' });
 
   // Admin: Signup Funnel Tracking & Outreach
