@@ -647,11 +647,32 @@ jobs:
 
           echo "Writing terminal completion for VTID: $VTID"
 
+          # VTID-01984 (hardened): Fetch Supabase service token for bearer auth.
+          # Graceful: if Secret Manager access is unavailable the gate still runs
+          # unauthenticated — the /complete endpoint carries no auth guard, but having
+          # the token makes the call durable against any future route-level auth additions.
+          _SVC_TOKEN=$(gcloud secrets versions access latest \
+            --secret=SUPABASE_SERVICE_ROLE \
+            --project=lovable-vitana-vers1 2>/dev/null || echo "")
+          if [ -z "$_SVC_TOKEN" ]; then
+            echo "Note: SUPABASE_SERVICE_ROLE unavailable from Secret Manager — calling /complete without auth"
+          else
+            echo "Note: SUPABASE_SERVICE_ROLE fetched — calling /complete with bearer auth"
+          fi
+
           # Step 1: Call terminal completion endpoint
-          RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
-            -H "Content-Type: application/json" \
-            -H "X-VTID: $VTID" \
-            -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          if [ -n "$_SVC_TOKEN" ]; then
+            RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -H "Authorization: Bearer $_SVC_TOKEN" \
+              -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          else
+            RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          fi
 
           echo "Terminal completion response: $RESPONSE"
 
@@ -762,10 +783,21 @@ jobs:
           # This resets the task to 'scheduled' for retry (if under max failure count)
           if [[ "$VTID" != BOOTSTRAP-* ]] && [ -n "$GATEWAY_URL" ]; then
             echo "VTID-01841: Calling completion endpoint to trigger retry-reset"
-            RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
-              -H "Content-Type: application/json" \
-              -H "X-VTID: $VTID" \
-              -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            _FAIL_TOKEN=$(gcloud secrets versions access latest \
+              --secret=SUPABASE_SERVICE_ROLE \
+              --project=lovable-vitana-vers1 2>/dev/null || echo "")
+            if [ -n "$_FAIL_TOKEN" ]; then
+              RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+                -H "Content-Type: application/json" \
+                -H "X-VTID: $VTID" \
+                -H "Authorization: Bearer $_FAIL_TOKEN" \
+                -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            else
+              RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+                -H "Content-Type: application/json" \
+                -H "X-VTID: $VTID" \
+                -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            fi
             echo "VTID-01841: Retry-reset response: $RETRY_RESPONSE"
           fi
 
