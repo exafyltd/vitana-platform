@@ -38657,9 +38657,83 @@ function _vhEsc(s) {
 function closeVoiceHealingReportDrawer() {
     var existing = document.getElementById('vh-report-drawer-root');
     if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    if (typeof _vhStopExecPoll === 'function') _vhStopExecPoll();
+}
+
+// VTID-02021: Execution Progress polling state. Lives outside the drawer
+// render so it survives re-renders. Cleared when drawer closes.
+var _vhExecPollTimer = null;
+function _vhStopExecPoll() {
+    if (_vhExecPollTimer) { clearInterval(_vhExecPollTimer); _vhExecPollTimer = null; }
+}
+async function _vhFetchAndRenderExecution(reportId) {
+    var section = document.getElementById('vh-execution-progress');
+    if (!section) { _vhStopExecPoll(); return; }
+    var resp;
+    try {
+        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId) + '/execution');
+    } catch (err) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#f87171;font-size:0.82rem;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
+        return;
+    }
+    if (!resp.ok) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#f87171;font-size:0.82rem;">HTTP ' + resp.status + '</div>';
+        return;
+    }
+    var data = await resp.json();
+    var vtids = (data && data.vtids) || [];
+    var statusColor = function(s, t) {
+        if (t === true) return '#4ade80';
+        if (s === 'in_progress') return '#fbbf24';
+        if (s === 'failed' || s === 'blocked' || s === 'cancelled') return '#f87171';
+        if (s === 'completed') return '#4ade80';
+        return '#94a3b8';
+    };
+    if (vtids.length === 0) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.82rem;">No work items linked to this report yet.</div>';
+        return;
+    }
+    var done = vtids.filter(function(v) { return v.is_terminal; }).length;
+    var rowsHtml = vtids.map(function(v) {
+        var color = statusColor(v.status, v.is_terminal);
+        var stepIdx = v.metadata && v.metadata.step_index;
+        var stepLabel = (typeof stepIdx === 'number') ? ('#' + (stepIdx + 1) + ' ') : '';
+        var statusLabel = v.is_terminal ? (v.terminal_outcome || v.status) : v.status;
+        var titleClean = (v.title || '').replace(/^INVESTIGATOR:\s*/, '');
+        return '<a href="/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(v.vtid) + '" target="_blank" rel="noopener" style="display:block;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:4px;margin-bottom:6px;color:#e2e8f0;text-decoration:none;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.8rem;">' +
+                '<span style="color:#cbd5e1;">' + _vhEsc(stepLabel) + '<code style="color:#60a5fa;">' + _vhEsc(v.vtid) + '</code></span>' +
+                '<span style="color:' + color + ';font-weight:bold;font-size:0.7rem;letter-spacing:0.05em;text-transform:uppercase;">' + _vhEsc(statusLabel) + '</span>' +
+            '</div>' +
+            '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;">' + _vhEsc(titleClean.slice(0, 160)) + (titleClean.length > 160 ? '…' : '') + '</div>' +
+            (v.claimed_by ? '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">claimed by ' + _vhEsc(v.claimed_by) + '</div>' : '') +
+            '</a>';
+    }).join('');
+    section.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.74rem;">' + done + '/' + vtids.length + ' done · auto-refresh 10s · ' + new Date().toLocaleTimeString() + '</div>' +
+        '</div>' +
+        rowsHtml +
+        '<div style="margin-top:6px;color:#94a3b8;font-size:0.72rem;">Click a row to open the standard VTID Ledger detail view in a new tab.</div>';
+}
+function loadVoiceHealingExecution(reportId) {
+    _vhStopExecPoll();
+    _vhFetchAndRenderExecution(reportId);
+    _vhExecPollTimer = setInterval(function() {
+        if (!document.getElementById('vh-execution-progress')) {
+            _vhStopExecPoll();
+            return;
+        }
+        _vhFetchAndRenderExecution(reportId);
+    }, 10000);
 }
 
 async function openVoiceHealingReportDrawer(reportId) {
+    _vhStopExecPoll();
     closeVoiceHealingReportDrawer();
 
     var root = document.createElement('div');
@@ -38828,6 +38902,22 @@ function _vhRenderReportContent(row) {
     }
     c.appendChild(body);
 
+    // ── VTID-02021: Execution Progress section (only for accepted reports) ──
+    // After Accept & Execute, this section appears showing the live status of
+    // every VTID created from the report's proposed_next_steps. Polls every
+    // 10s. Each row is a click-through to the standard VTID Ledger detail
+    // view.
+    if (row.status === 'accepted' || row.status === 'acknowledged') {
+        var execSection = document.createElement('div');
+        execSection.id = 'vh-execution-progress';
+        execSection.style.cssText = 'padding:14px 22px;border-top:1px solid #1e293b;background:#0b1220;';
+        execSection.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.82rem;">Loading…</div>';
+        c.appendChild(execSection);
+        // Kick off fetch + poll
+        loadVoiceHealingExecution(row.id);
+    }
+
     // ── Decision footer (sticky) ──
     var footer = document.createElement('div');
     footer.style.cssText = 'position:sticky;bottom:0;background:#0f172a;border-top:1px solid #1e293b;padding:14px 22px;';
@@ -38844,28 +38934,64 @@ function _vhRenderReportContent(row) {
 
     var actions = document.createElement('div');
     actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap;';
+    // VTID-02021: three buttons with distinct semantics.
+    //   Acknowledge — "I read it" (no work created). PATCH only.
+    //   Accept & Execute — "I approve, schedule the work." POSTs /execute,
+    //     creates one VTID per proposed_next_step, opens the Execution
+    //     Progress section, polls live status. ONLY available for non-stub
+    //     reports with at least one proposed step.
+    //   Reject — "Don't act on this." PATCH only.
+    var hasExecutableSteps =
+        !isStub &&
+        rec.proposed_next_steps &&
+        Array.isArray(rec.proposed_next_steps) &&
+        rec.proposed_next_steps.length > 0;
     var actionDefs = [
-        { status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
-        { status: 'accepted', label: 'Accept (we\'ll act on this)', color: '#4ade80' },
-        { status: 'rejected', label: 'Reject', color: '#f87171' },
+        { kind: 'patch', status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
     ];
+    if (hasExecutableSteps) {
+        actionDefs.push({
+            kind: 'execute',
+            label: 'Accept & Execute (' + rec.proposed_next_steps.length + ' step' + (rec.proposed_next_steps.length === 1 ? '' : 's') + ')',
+            color: '#4ade80',
+        });
+    } else {
+        actionDefs.push({ kind: 'patch', status: 'accepted', label: 'Accept (no executable steps)', color: '#4ade80' });
+    }
+    actionDefs.push({ kind: 'patch', status: 'rejected', label: 'Reject', color: '#f87171' });
     actionDefs.forEach(function(def) {
         var btn = document.createElement('button');
         btn.textContent = def.label;
         btn.style.cssText = 'padding:8px 14px;background:' + def.color + '22;border:1px solid ' + def.color + ';color:' + def.color + ';cursor:pointer;border-radius:4px;font-size:0.82rem;';
         btn.onclick = async function() {
             btn.disabled = true;
-            btn.textContent = 'Saving...';
+            btn.textContent = def.kind === 'execute' ? 'Scheduling…' : 'Saving…';
             try {
-                var r = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id), {
-                    method: 'PATCH',
+                var url, method, body;
+                if (def.kind === 'execute') {
+                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id) + '/execute';
+                    method = 'POST';
+                    body = JSON.stringify({ decision_notes: notesArea.value || null });
+                } else {
+                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id);
+                    method = 'PATCH';
+                    body = JSON.stringify({ status: def.status, decision_notes: notesArea.value || null });
+                }
+                var r = await fetch(url, {
+                    method: method,
                     headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ status: def.status, decision_notes: notesArea.value || null }),
+                    body: body,
                 });
                 var data = await r.json();
                 if (data && data.ok) {
-                    showToast('Report ' + def.status, 'success');
-                    closeVoiceHealingReportDrawer();
+                    if (def.kind === 'execute') {
+                        showToast('Scheduled ' + (data.executed_vtids ? data.executed_vtids.length : 0) + ' work item(s)', 'success');
+                        // Re-open drawer to show the new Execution Progress section
+                        openVoiceHealingReportDrawer(row.id);
+                    } else {
+                        showToast('Report ' + (def.status || 'updated'), 'success');
+                        closeVoiceHealingReportDrawer();
+                    }
                     fetchVoiceHealingPanel();
                 } else {
                     showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
