@@ -193,7 +193,9 @@ BEGIN
       END AS user_id,
       re.source_type, re.source_id, re.target_type, re.target_id,
       re.edge_type,
-      COALESCE(re.strength, 0.5) AS strength,
+      -- Clamp into [0, 1] (mem_graph_edges has CHECK strength BETWEEN 0 AND 1;
+      -- legacy relationship_edges schema is unconstrained, some rows have 10).
+      LEAST(GREATEST(COALESCE(re.strength, 0.5), 0)::real, 1)::real AS strength,
       COALESCE(re.metadata, '{}'::jsonb) AS metadata,
       re.last_interaction_at,
       COALESCE(re.created_at, now()) AS valid_from,
@@ -257,7 +259,8 @@ BEGIN
       NEW.tenant_id, v_user_id,
       NEW.source_type, NEW.source_id, NEW.target_type, NEW.target_id,
       NEW.edge_type,
-      COALESCE(NEW.strength, 0.5),
+      -- Clamp strength to [0, 1] for the mem_graph_edges CHECK constraint.
+      LEAST(GREATEST(COALESCE(NEW.strength, 0.5), 0)::real, 1)::real,
       COALESCE(NEW.metadata, '{}'::jsonb),
       NEW.last_interaction_at,
       COALESCE(NEW.created_at, now()),
