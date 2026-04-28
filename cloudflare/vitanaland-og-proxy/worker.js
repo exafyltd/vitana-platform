@@ -9,7 +9,7 @@ function isCrawler(ua) {
 }
 
 function parseRoute(pathname) {
-  const match = pathname.match(/^\/(events|profiles|rooms|matches|products)\/(.+)$/);
+  const match = pathname.match(/^\/(events|profiles|rooms|matches|products|shorts)\/(.+)$/);
   if (match) return { type: match[1], identifier: match[2] };
   // Handle /pub/events/{id} format
   const pubMatch = pathname.match(/^\/pub\/events\/(.+)$/);
@@ -231,6 +231,8 @@ function getOgFunctionUrl(type, identifier) {
       return `${SUPABASE_FUNCTIONS}/og-room?id=${encodeURIComponent(identifier)}`;
     case 'matches':
       return `${SUPABASE_FUNCTIONS}/og-match?id=${encodeURIComponent(identifier)}`;
+    case 'shorts':
+      return `${SUPABASE_FUNCTIONS}/og-short?id=${encodeURIComponent(identifier)}`;
     // products handled inline below via renderProductOg() — no Supabase Function needed
     default:
       return null;
@@ -253,6 +255,8 @@ function getRedirectUrl(type, identifier) {
       return `https://vitanaland.com/discover?m=${encodeURIComponent(identifier)}`;
     case 'products':
       return `https://vitanaland.com/discover/product/${encodeURIComponent(identifier)}`;
+    case 'shorts':
+      return `https://vitanaland.com/comm/media-hub?short=${encodeURIComponent(identifier)}`;
     default:
       return 'https://vitanaland.com';
   }
