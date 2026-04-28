@@ -2446,6 +2446,40 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['intent_id'],
           },
         },
+        // VTID-DANCE-D10: voice-driven direct invite.
+        {
+          name: 'share_intent_post',
+          description: [
+            'Direct-share one of the user\'s intent posts to specific community members.',
+            'Use when the user says "share my <topic> post with @maria3 and @daniel4" or',
+            '"send my salsa request to my friends Anna and Boris".',
+            '',
+            'CONFIRMATION CONTRACT (mandatory):',
+            '1. Resolve each spoken name via resolve_recipient first to get the @vitana_id.',
+            '2. Read back: "I\'ll share your <intent title> with @maria3 and @daniel4. Say send to confirm."',
+            '3. Wait for explicit user confirmation (send/yes/confirm/ja).',
+            '4. Call share_intent_post with confirmed=true.',
+            '',
+            'For partner_seek posts: warn the user that sharing reveals their identity to the recipient.',
+            'For private posts: only the post owner can share — others should use the public link.',
+            '',
+            'Server is idempotent: re-sharing to the same recipient is a no-op (matches_created=0).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_id: { type: 'string', description: 'The user\'s intent_id to share. Pull from list_my_intents if needed.' },
+              recipient_vitana_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Up to 20 vitana_ids (without leading @).',
+              },
+              note: { type: 'string', description: 'Optional short note to include with the share (≤280 chars).' },
+              confirmed: { type: 'boolean' },
+            },
+            required: ['intent_id', 'recipient_vitana_ids'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -5236,6 +5270,62 @@ async function executeLiveApiToolInner(
           return { success: true, result: JSON.stringify({ ok: true, intent_id: intentId, status: 'fulfilled' }) };
         } catch (err: any) {
           console.error('[VTID-01975] mark_intent_fulfilled error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // VTID-DANCE-D10: voice-driven direct invite.
+      case 'share_intent_post': {
+        const intentId = String(args.intent_id || '').trim();
+        const recipients = Array.isArray(args.recipient_vitana_ids)
+          ? args.recipient_vitana_ids
+              .map((r: any) => String(r ?? '').trim().replace(/^@/, '').toLowerCase())
+              .filter((r: string) => /^[a-z][a-z0-9]{3,15}$/.test(r))
+          : [];
+        const note = typeof args.note === 'string' ? args.note.slice(0, 280) : null;
+        const confirmed = Boolean(args.confirmed);
+
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        if (recipients.length === 0) return { success: false, result: '', error: 'recipient_vitana_ids must include at least one valid id' };
+
+        // Stage 1: read-back without dispatching.
+        if (!confirmed) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'confirmation',
+              intent_id: intentId,
+              recipients,
+              note,
+              instructions: `Read back the recipients (@${recipients.join(', @')}) and ask the user to confirm. Then call share_intent_post again with confirmed=true.`,
+            }),
+          };
+        }
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${intentId}/share`;
+          // Forward the user's JWT so route auth + tier checks apply.
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const fetchRes = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+            },
+            body: JSON.stringify({
+              recipient_vitana_ids: recipients,
+              note: note || undefined,
+              channel: 'in_app',
+            }),
+          });
+          const data = await fetchRes.json();
+          if (!fetchRes.ok) {
+            return { success: false, result: '', error: (data as any)?.error || 'share_failed' };
+          }
+          return { success: true, result: JSON.stringify(data) };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
