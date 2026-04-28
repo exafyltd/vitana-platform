@@ -9847,11 +9847,22 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
     // so downstream tools and any prompt that reads the thread identity can
     // surface the @handle without re-querying.
     if (identity.tenant_id && identity.user_id) {
+      // VTID-02019: forward user_timezone so recall_conversation_at_time resolves
+      // time hints in the caller's local tz. Live ORB session has clientContext
+      // with tz from IP geolocation; this /chat route falls back to whatever the
+      // body supplies. Either way, undefined → Europe/Berlin downstream.
+      const liveSession = sessions.get(orbSessionId) as any;
+      const orbUserTz =
+        liveSession?.clientContext?.timezone ||
+        (body as any)?.timezone ||
+        (body as any)?.user_timezone ||
+        undefined;
       setThreadIdentity(threadId, {
         tenant_id: identity.tenant_id,
         user_id: identity.user_id,
         role: identity.active_role || undefined,
         vitana_id: req.identity?.vitana_id ?? null,
+        user_timezone: orbUserTz,
       });
     }
 

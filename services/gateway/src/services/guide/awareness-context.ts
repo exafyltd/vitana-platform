@@ -25,6 +25,7 @@ import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
 import { describeTimeSince, fetchLastSessionInfo, type LastInteraction } from './temporal-bucket';
 import { getFeatureIntroductions } from './feature-introductions';
 import { getRecentSessionSummaries, getSessionsTodayAndYesterday } from './session-summaries';
+import { resolveUserTimezone } from './user-timezone';
 import { getAdaptationStatus } from './adaptation-applier';
 import { getUserRoutines } from './pattern-extractor';
 import { countActiveUsageDays } from './active-usage';
@@ -61,11 +62,17 @@ const cache = new Map<string, CacheEntry>();
 export async function getAwarenessContext(
   userId: string,
   tenantId: string,
-  userTz: string = 'UTC',
+  userTz?: string,
 ): Promise<UserAwareness> {
+  // VTID-02019: resolve the user's timezone up-front. If the caller didn't
+  // pass one (or passed 'UTC' as a gateway-internal fallback), we substitute
+  // the system default (Europe/Berlin). The resolved tz is both used for the
+  // today/yesterday bucketing query AND attached to the returned awareness
+  // object so prompt formatters render HH:MM in the user's local time.
+  const resolvedTz = resolveUserTimezone(userTz);
   // Cache key includes tz so a tz-agnostic caller and a tz-aware caller don't
   // share a stale today/yesterday split.
-  const cacheKey = `${tenantId}::${userId}::${userTz}`;
+  const cacheKey = `${tenantId}::${userId}::${resolvedTz}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expires_at > Date.now()) {
     return cached.awareness;
@@ -99,7 +106,7 @@ export async function getAwarenessContext(
     getAdaptationStatus(userId).catch(() => null),
     getUserRoutines(userId, 8).catch(() => []),
     countActiveUsageDays(userId).catch(() => 0),
-    getSessionsTodayAndYesterday(userId, userTz).catch(() => ({ today: [], yesterday_last: null })),
+    getSessionsTodayAndYesterday(userId, resolvedTz).catch(() => ({ today: [], yesterday_last: null })),
   ]);
 
   const tenure = buildTenure(userContext, activeUsageDays);
@@ -150,6 +157,7 @@ export async function getAwarenessContext(
           ended_at: sessionsTodayAndYesterday.yesterday_last.ended_at,
         }
       : null,
+    user_timezone: resolvedTz,
   };
 
   cache.set(cacheKey, { awareness, expires_at: Date.now() + CACHE_TTL_MS });
@@ -363,5 +371,6 @@ function skeletalAwareness(): UserAwareness {
     tastes_preferences: null,
     sessions_today: { count: 0, entries: [] },
     last_session_yesterday: null,
+    user_timezone: resolveUserTimezone(undefined),
   };
 }
