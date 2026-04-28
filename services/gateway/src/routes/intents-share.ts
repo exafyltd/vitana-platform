@@ -129,35 +129,52 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
     return res.status(404).json({ ok: false, error: 'NO_VALID_RECIPIENTS' });
   }
 
-  // 4. Insert intent_matches rows (kind_pairing='direct_share', score=1.00).
-  // ON CONFLICT DO NOTHING via the partial unique index (D10 migration).
-  const matchRows = validRecipients.map((r: any) => ({
-    intent_a_id: intentId,
-    intent_b_id: null,
-    vitana_id_a: (srcIntent as any).requester_vitana_id,
-    vitana_id_b: r.vitana_id,
-    external_target_kind: null,
-    external_target_id: null,
-    kind_pairing: 'direct_share',
-    score: 1.0,
-    match_reasons: { direct_share: true, sharer_vitana_id: identity.vitana_id ?? null, note },
-    compass_aligned: false,
-    state: 'new',
-  }));
-
-  const { data: insertedMatches, error: matchInsErr } = await supabase
+  // 4. Pre-filter recipients to skip those already direct-shared (Supabase
+  // upsert can't target partial UNIQUE indexes via onConflict). Plain INSERT
+  // with idempotency enforced manually.
+  const recipientVids = validRecipients.map((r: any) => r.vitana_id);
+  const { data: existingDirect } = await supabase
     .from('intent_matches')
-    .upsert(matchRows as any, { onConflict: 'intent_a_id,vitana_id_b', ignoreDuplicates: true })
-    .select('match_id, vitana_id_b');
+    .select('vitana_id_b')
+    .eq('intent_a_id', intentId)
+    .eq('kind_pairing', 'direct_share')
+    .in('vitana_id_b', recipientVids);
+  const alreadySharedTo = new Set<string>((existingDirect || []).map((r: any) => String(r.vitana_id_b)));
+  const fanout = validRecipients.filter((r: any) => !alreadySharedTo.has(String(r.vitana_id)));
 
-  if (matchInsErr) {
-    console.error('[VTID-DANCE-D10] match insert failed', matchInsErr);
-    return res.status(500).json({ ok: false, error: matchInsErr.message });
+  let insertedMatches: Array<{ match_id?: string; vitana_id_b?: string }> = [];
+  if (fanout.length > 0) {
+    const matchRows = fanout.map((r: any) => ({
+      intent_a_id: intentId,
+      intent_b_id: null,
+      vitana_id_a: (srcIntent as any).requester_vitana_id,
+      vitana_id_b: r.vitana_id,
+      external_target_kind: null,
+      external_target_id: null,
+      kind_pairing: 'direct_share',
+      score: 1.0,
+      match_reasons: { direct_share: true, sharer_vitana_id: identity.vitana_id ?? null, note },
+      compass_aligned: false,
+      state: 'new',
+    }));
+
+    const { data, error: matchInsErr } = await supabase
+      .from('intent_matches')
+      .insert(matchRows as any)
+      .select('match_id, vitana_id_b');
+
+    if (matchInsErr) {
+      console.error('[VTID-DANCE-D10] match insert failed', matchInsErr);
+      return res.status(500).json({ ok: false, error: matchInsErr.message });
+    }
+    insertedMatches = (data || []) as any;
   }
 
-  // 5. Insert chat_messages rows (DM card preview). Best-effort.
-  if (channel === 'in_app') {
-    const messageRows = validRecipients.map((r: any) => ({
+  // 5. Insert chat_messages rows (DM card preview) only for newly fanned-out
+  // recipients (idempotent — re-shares to the same person don't spam).
+  // Best-effort.
+  if (channel === 'in_app' && fanout.length > 0) {
+    const messageRows = fanout.map((r: any) => ({
       sender_id: identity.user_id,
       receiver_id: r.user_id,
       sender_vitana_id: identity.vitana_id ?? null,
@@ -187,7 +204,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
     type: 'voice.message.share_link_sent', // closest existing event taxonomy
     source: 'intents-share',
     status: 'success',
-    message: `Direct-shared intent ${intentId} to ${validRecipients.length} recipients via ${channel}`,
+    message: `Direct-shared intent ${intentId} to ${fanout.length} new recipients (${alreadySharedTo.size} already had a share) via ${channel}`,
     payload: {
       intent_id: intentId,
       sharer_vitana_id: identity.vitana_id ?? null,
@@ -206,8 +223,9 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
     intent_id: intentId,
     recipients_resolved: validRecipients.length,
     recipients_skipped: recipientIds.length - validRecipients.length,
+    recipients_already_shared: alreadySharedTo.size,
     channel,
-    matches_created: (insertedMatches || []).length,
+    matches_created: insertedMatches.length,
   });
 });
 
