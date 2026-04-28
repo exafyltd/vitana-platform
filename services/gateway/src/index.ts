@@ -180,6 +180,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const feedbackCorrectionRouter = require('./routes/feedback-correction').default;
   // VTID-01097: Diary Templates Gateway - guided diary templates
   const diaryRouter = require('./routes/diary').default;
+  // VTID-02047: Unified Feedback Pipeline - bug reports, support, claims, account
+  const feedbackRouter = require('./routes/feedback').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
@@ -878,6 +880,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
+
+  // VTID-02047: Unified Feedback Pipeline - single inbox for user-originated signals
+  // Mounted under /tickets because /api/v1/feedback is already the VTID-01121
+  // feedback-correction router (different concept, same word).
+  mountRouterSync(app, '/api/v1/feedback/tickets', feedbackRouter, { owner: 'feedback-tickets' });
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });

@@ -698,7 +698,15 @@ export type CicdEventType =
   | 'voice.message.rate_limited'
   | 'voice.message.misroute'
   | 'voice.message.share_link_sent'
-  | 'vitana_id.confirmed';
+  | 'vitana_id.confirmed'
+  // VTID-02047: Unified Feedback Pipeline events
+  | 'feedback.ticket.created'
+  | 'feedback.ticket.status_changed'
+  | 'feedback.ticket.triaged'
+  | 'feedback.ticket.resolved'
+  | 'feedback.ticket.user_confirmed'
+  | 'feedback.handoff.started'
+  | 'feedback.handoff.completed';
 
 export interface CicdOasisEvent {
   vtid: string;
