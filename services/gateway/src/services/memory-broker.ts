@@ -89,6 +89,10 @@ export interface MemoryReadInput {
   // Lens overrides — most callers leave this empty
   lens?: Partial<ContextLens>;
   ui_context?: { surface?: string; weakest_pillar?: string; active_goal_category?: string };
+  // Phase 6b: when present, EPISODIC switches from recency-order to
+  // semantic-rank using mem_episodes_semantic_search (cosine + recency
+  // boost combined_score). Empty/short query falls back to recency.
+  query?: string;
 }
 
 export interface IdentityBlock {
@@ -148,7 +152,109 @@ export interface SemanticBlock {
   fetched_at: string;
 }
 
-export type MemoryBlock = IdentityBlock | EpisodicBlock | SemanticBlock;
+// Phase 6b — Five additional first-class blocks. Each is a thin read view
+// over a Phase 5a/5c-populated table. All gracefully empty out when the
+// underlying table has no rows for this user.
+
+export interface TrajectoryDay {
+  date: string;
+  score_total: number | null;
+  score_sleep: number | null;
+  score_nutrition: number | null;
+  score_exercise: number | null;
+  score_hydration: number | null;
+  score_mental: number | null;
+}
+
+export interface TrajectoryBlock {
+  kind: 'TRAJECTORY';
+  days: TrajectoryDay[];          // most recent 30, oldest first
+  latest_total: number | null;
+  source: 'vitana_index_scores';
+  fetched_at: string;
+}
+
+export interface NetworkPerson {
+  node_id: string;
+  display_name: string | null;
+  node_type: string;
+  edge_type: string | null;
+  strength: number | null;
+  last_interaction_at: string | null;
+}
+
+export interface NetworkBlock {
+  kind: 'NETWORK';
+  people: NetworkPerson[];
+  source: 'mem_graph_edges';
+  fetched_at: string;
+}
+
+export interface LocationCurrent {
+  location_type: string;
+  locality: string | null;
+  country: string | null;
+  timezone: string;
+  source: string;
+  valid_from: string;
+}
+
+export interface LocationBlock {
+  kind: 'LOCATION';
+  current: LocationCurrent | null;
+  named_places: Array<{ name: string; locality: string | null; country: string | null; timezone: string | null; user_confirmed: boolean }>;
+  source: 'user_location_history+user_location_settings';
+  fetched_at: string;
+}
+
+export interface BiometricsTrend {
+  feature_key: string;
+  pillar: string;
+  trend_class: string;
+  latest: number | null;
+  mean_30d: number | null;
+  anomaly_flag: boolean;
+}
+
+export interface BiometricsEvent {
+  event_type: string;
+  feature_key: string;
+  pillar: string;
+  observed_at: string;
+  detail: Record<string, unknown>;
+}
+
+export interface BiometricsBlock {
+  kind: 'BIOMETRICS';
+  trends: BiometricsTrend[];
+  events: BiometricsEvent[];
+  source: 'biometric_trends+biometric_events';
+  fetched_at: string;
+}
+
+export interface DiaryEntry {
+  id: string;
+  occurred_at: string;
+  category_key: string | null;
+  content: string;
+}
+
+export interface DiaryBlock {
+  kind: 'DIARY';
+  entries: DiaryEntry[];
+  source: 'memory_diary_entries';
+  fetched_at: string;
+}
+
+export type MemoryBlock =
+  | IdentityBlock
+  | EpisodicBlock
+  | SemanticBlock
+  | TrajectoryBlock
+  | NetworkBlock
+  | LocationBlock
+  | BiometricsBlock
+  | DiaryBlock;
 
 export interface MemoryPack {
   ok: boolean;
@@ -169,19 +275,21 @@ export interface MemoryPack {
 // Default block selection per intent (Phase 6a covers a subset; rest in 6b)
 // =============================================================================
 
+// Phase 6b: full per-intent default block selection from the plan
+// (Part 6, Layer 1 Semantic API). IDENTITY is implicitly added to every
+// intent except system_introspect — modeled here as an explicit entry.
 const DEFAULT_BLOCKS_BY_INTENT: Record<MemoryIntent, MemoryBlockKind[]> = {
-  recall_recent:     ['IDENTITY', 'EPISODIC'],
-  recall_history:    ['IDENTITY', 'EPISODIC', 'SEMANTIC'],
+  recall_recent:     ['IDENTITY', 'EPISODIC', 'DIARY'],
+  recall_history:    ['IDENTITY', 'EPISODIC', 'DIARY', 'NETWORK', 'SEMANTIC', 'TRAJECTORY'],
   identity:          ['IDENTITY', 'SEMANTIC'],
-  // Phase 6b will fully populate these:
-  plan_next_action:  ['IDENTITY', 'EPISODIC', 'SEMANTIC'],
-  open_session:      ['IDENTITY', 'EPISODIC', 'SEMANTIC'],
-  health_query:      ['IDENTITY', 'SEMANTIC'],
-  index_status:      ['IDENTITY'],
-  goal_check:        ['IDENTITY', 'SEMANTIC'],
-  social_query:      ['IDENTITY', 'SEMANTIC'],
-  community_intent:  ['IDENTITY', 'SEMANTIC'],
-  system_introspect: ['IDENTITY'],
+  plan_next_action:  ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'LOCATION', 'SEMANTIC', 'NETWORK'],
+  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK'],
+  health_query:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'SEMANTIC'],
+  index_status:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS'],
+  goal_check:        ['IDENTITY', 'SEMANTIC', 'TRAJECTORY', 'DIARY'],
+  social_query:      ['IDENTITY', 'NETWORK', 'EPISODIC', 'DIARY'],
+  community_intent:  ['IDENTITY', 'NETWORK', 'LOCATION'],
+  system_introspect: ['IDENTITY', 'EPISODIC'],
 };
 
 // =============================================================================
@@ -273,6 +381,20 @@ async function fetchEpisodicBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
+  // Phase 6b: when caller passes a query string, switch to semantic-rank
+  // via mem_episodes_semantic_search RPC (cosine + recency-boosted
+  // combined_score). Otherwise fall back to recency-order.
+  const trimmedQuery = (input.query ?? '').trim();
+  if (trimmedQuery.length > 5) {
+    const semantic = await fetchEpisodicSemantic(
+      input, trimmedQuery, limit, maxAgeHours
+    );
+    if (semantic.ok) {
+      return { block: semantic.block, latency_ms: Date.now() - t0 };
+    }
+    // Embedding generation or RPC failed — fall through to recency-order.
+  }
+
   let query = supabase
     .from('mem_episodes')
     .select('id, kind, content, category_key, source, importance, occurred_at, actor_id, conversation_id')
@@ -348,6 +470,319 @@ async function fetchSemanticBlock(
       asserted_at: r.asserted_at,
     })),
     source: 'mem_facts',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// EPISODIC semantic mode — calls mem_episodes_semantic_search RPC
+// -----------------------------------------------------------------------------
+
+async function fetchEpisodicSemantic(
+  input: MemoryReadInput,
+  query: string,
+  limit: number,
+  maxAgeHours: number | null
+): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
+  // Lazy-import to avoid a hard dep when EPISODIC isn't requested.
+  const { generateEmbedding } = await import('./embedding-service');
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, block: null };
+
+  const emb = await generateEmbedding(query);
+  if (!emb.ok || !emb.embedding) return { ok: false, block: null };
+
+  const { data, error } = await supabase.rpc('mem_episodes_semantic_search', {
+    p_query_embedding: '[' + emb.embedding.join(',') + ']',
+    p_top_k: limit,
+    p_tenant_id: input.tenant_id,
+    p_user_id: input.user_id,
+    p_workspace_scope: null,
+    p_active_role: null,
+    p_categories: null,
+    p_visibility_scope: 'private',
+    p_max_age_hours: maxAgeHours ?? null,
+    p_recency_boost: true,
+  });
+
+  if (error) {
+    console.warn(`[${VTID}] mem_episodes_semantic_search RPC failed: ${error.message}`);
+    return { ok: false, block: null };
+  }
+
+  const block: EpisodicBlock = {
+    kind: 'EPISODIC',
+    hits: (data ?? []).map((r: any) => ({
+      id: r.id,
+      kind: 'utterance',
+      content: (r.content ?? '').slice(0, 400),
+      category_key: r.category_key,
+      source: r.source,
+      importance: r.importance ?? 30,
+      occurred_at: r.occurred_at,
+      actor_id: r.actor_id,
+      conversation_id: r.conversation_id,
+    })),
+    source: 'mem_episodes',
+    fetched_at: new Date().toISOString(),
+  };
+  return { ok: true, block };
+}
+
+// -----------------------------------------------------------------------------
+// TRAJECTORY — vitana_index_scores last 30 days
+// -----------------------------------------------------------------------------
+
+async function fetchTrajectoryBlock(
+  input: MemoryReadInput
+): Promise<{ block: TrajectoryBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('vitana_index_scores')
+    .select('date, score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
+    .eq('tenant_id', input.tenant_id)
+    .eq('user_id', input.user_id)
+    .gte('date', cutoff)
+    .order('date', { ascending: true })
+    .limit(40);
+
+  if (error) {
+    console.warn(`[${VTID}] vitana_index_scores query failed: ${error.message}`);
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const days = (data ?? []).map(r => ({
+    date: r.date,
+    score_total: r.score_total,
+    score_sleep: r.score_sleep,
+    score_nutrition: r.score_nutrition,
+    score_exercise: r.score_exercise,
+    score_hydration: r.score_hydration,
+    score_mental: r.score_mental,
+  }));
+  const latest = days.length ? days[days.length - 1].score_total : null;
+
+  const block: TrajectoryBlock = {
+    kind: 'TRAJECTORY',
+    days,
+    latest_total: latest,
+    source: 'vitana_index_scores',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// NETWORK — mem_graph_edges + relationship_nodes (closest people)
+// -----------------------------------------------------------------------------
+
+async function fetchNetworkBlock(
+  input: MemoryReadInput,
+  limit: number
+): Promise<{ block: NetworkBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // Active edges where the user is one endpoint, ordered by strength then
+  // recent interaction. Resolve target node via relationship_nodes.
+  const { data: edges, error } = await supabase
+    .from('mem_graph_edges')
+    .select('source_type, source_id, target_type, target_id, edge_type, strength, last_interaction_at')
+    .eq('tenant_id', input.tenant_id)
+    .eq('user_id', input.user_id)
+    .is('valid_to', null)
+    .order('strength', { ascending: false })
+    .order('last_interaction_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    console.warn(`[${VTID}] mem_graph_edges query failed: ${error.message}`);
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  // Resolve "the other side" of each edge into relationship_nodes for display name.
+  const nodeIds = Array.from(new Set(
+    (edges ?? []).map(e => e.target_type === 'user' || e.target_type === 'person' ? e.target_id : e.source_id)
+  ));
+
+  let nodesById: Record<string, { display_name: string | null; node_type: string }> = {};
+  if (nodeIds.length > 0) {
+    const { data: nodes } = await supabase
+      .from('relationship_nodes')
+      .select('id, display_name, node_type')
+      .in('id', nodeIds);
+    nodesById = Object.fromEntries(
+      (nodes ?? []).map(n => [n.id, { display_name: n.display_name, node_type: n.node_type }])
+    );
+  }
+
+  const people: NetworkPerson[] = (edges ?? []).map(e => {
+    const isOutbound = e.source_type === 'user' || e.source_type === 'person';
+    const otherNodeId = isOutbound ? e.target_id : e.source_id;
+    const otherNodeType = isOutbound ? e.target_type : e.source_type;
+    const node = nodesById[otherNodeId];
+    return {
+      node_id: otherNodeId,
+      display_name: node?.display_name ?? null,
+      node_type: node?.node_type ?? otherNodeType,
+      edge_type: e.edge_type,
+      strength: e.strength,
+      last_interaction_at: e.last_interaction_at,
+    };
+  });
+
+  const block: NetworkBlock = {
+    kind: 'NETWORK',
+    people,
+    source: 'mem_graph_edges',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// LOCATION — current location + named places
+// -----------------------------------------------------------------------------
+
+async function fetchLocationBlock(
+  input: MemoryReadInput
+): Promise<{ block: LocationBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const [historyRes, settingsRes] = await Promise.all([
+    supabase
+      .from('user_location_history')
+      .select('location_type, locality, country, timezone, source, valid_from')
+      .eq('tenant_id', input.tenant_id)
+      .eq('user_id', input.user_id)
+      .is('valid_to', null)
+      .order('valid_from', { ascending: false })
+      .limit(1),
+    supabase
+      .from('user_location_settings')
+      .select('name, locality, country, timezone, user_confirmed')
+      .eq('tenant_id', input.tenant_id)
+      .eq('user_id', input.user_id)
+      .order('is_primary_home', { ascending: false })
+      .limit(20),
+  ]);
+
+  const current = (historyRes.data?.[0] ?? null) as LocationCurrent | null;
+  const named = (settingsRes.data ?? []).map(p => ({
+    name: p.name,
+    locality: p.locality,
+    country: p.country,
+    timezone: p.timezone,
+    user_confirmed: p.user_confirmed,
+  }));
+
+  const block: LocationBlock = {
+    kind: 'LOCATION',
+    current,
+    named_places: named,
+    source: 'user_location_history+user_location_settings',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// BIOMETRICS — current trends + active anomaly events
+// -----------------------------------------------------------------------------
+
+async function fetchBiometricsBlock(
+  input: MemoryReadInput
+): Promise<{ block: BiometricsBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const [trendsRes, eventsRes] = await Promise.all([
+    supabase
+      .from('biometric_trends')
+      .select('feature_key, pillar, trend_class, latest, mean_30d, anomaly_flag')
+      .eq('tenant_id', input.tenant_id)
+      .eq('user_id', input.user_id)
+      .order('computed_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('biometric_events')
+      .select('event_type, feature_key, pillar, observed_at, detail')
+      .eq('tenant_id', input.tenant_id)
+      .eq('user_id', input.user_id)
+      .is('acknowledged_at', null)
+      .order('observed_at', { ascending: false })
+      .limit(10),
+  ]);
+
+  const block: BiometricsBlock = {
+    kind: 'BIOMETRICS',
+    trends: (trendsRes.data ?? []).map(t => ({
+      feature_key: t.feature_key,
+      pillar: t.pillar,
+      trend_class: t.trend_class,
+      latest: t.latest,
+      mean_30d: t.mean_30d,
+      anomaly_flag: t.anomaly_flag,
+    })),
+    events: (eventsRes.data ?? []).map(e => ({
+      event_type: e.event_type,
+      feature_key: e.feature_key,
+      pillar: e.pillar,
+      observed_at: e.observed_at,
+      detail: e.detail ?? {},
+    })),
+    source: 'biometric_trends+biometric_events',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// DIARY — memory_diary_entries (legacy; Phase 8 will migrate to mem_episodes)
+// -----------------------------------------------------------------------------
+
+async function fetchDiaryBlock(
+  input: MemoryReadInput,
+  daysBack: number,
+  limit: number
+): Promise<{ block: DiaryBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const cutoff = new Date(Date.now() - daysBack * 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('memory_diary_entries')
+    .select('id, occurred_at, category_key, content')
+    .eq('tenant_id', input.tenant_id)
+    .eq('user_id', input.user_id)
+    .gte('occurred_at', cutoff)
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    // Table may not exist on all environments — graceful empty.
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const block: DiaryBlock = {
+    kind: 'DIARY',
+    entries: (data ?? []).map(e => ({
+      id: e.id,
+      occurred_at: e.occurred_at,
+      category_key: e.category_key,
+      content: (e.content ?? '').slice(0, 400),
+    })),
+    source: 'memory_diary_entries',
     fetched_at: new Date().toISOString(),
   };
   return { block, latency_ms: Date.now() - t0 };
@@ -460,6 +895,87 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
           blocks['SEMANTIC'] = r.value.block;
           streamsHit.push('mem_facts');
           latencyPerStream['mem_facts'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  // Phase 6b — five new blocks. Each follows the same withBudget pattern;
+  // any block whose source table is empty just returns a block with empty
+  // arrays (fetched_at populated), which is fine — consumers see "no data
+  // yet" rather than a missing block.
+
+  if (blocksWanted.includes('TRAJECTORY')) {
+    fetchers.push(
+      withBudget(fetchTrajectoryBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['vitana_index_scores'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['TRAJECTORY'] = r.value.block;
+          streamsHit.push('vitana_index_scores');
+          latencyPerStream['vitana_index_scores'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('NETWORK')) {
+    fetchers.push(
+      withBudget(fetchNetworkBlock(input, 20), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['mem_graph_edges'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['NETWORK'] = r.value.block;
+          streamsHit.push('mem_graph_edges');
+          latencyPerStream['mem_graph_edges'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('LOCATION')) {
+    fetchers.push(
+      withBudget(fetchLocationBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['user_location_history'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['LOCATION'] = r.value.block;
+          streamsHit.push('user_location_history');
+          latencyPerStream['user_location_history'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('BIOMETRICS')) {
+    fetchers.push(
+      withBudget(fetchBiometricsBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['biometric_trends'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['BIOMETRICS'] = r.value.block;
+          streamsHit.push('biometric_trends');
+          latencyPerStream['biometric_trends'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('DIARY')) {
+    // Last 14 days of diary highlights (per Part 6 plan default).
+    fetchers.push(
+      withBudget(fetchDiaryBlock(input, 14, 30), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['memory_diary_entries'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['DIARY'] = r.value.block;
+          streamsHit.push('memory_diary_entries');
+          latencyPerStream['memory_diary_entries'] = r.value.latency_ms;
         }
       })
     );
