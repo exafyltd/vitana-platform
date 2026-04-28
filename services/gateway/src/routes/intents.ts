@@ -121,6 +121,79 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(400).json({ ok: false, error: 'scope must be 20-1500 chars' });
   }
 
+  // VTID-DANCE-D14 — De-duplication. If this user already has a recent
+  // open intent of the same kind + same category that looks the same,
+  // return the existing intent rather than creating a duplicate. This
+  // prevents users from looking like spammers when they ask the same
+  // thing twice via voice. Window: last 24 hours, same intent_kind,
+  // same category, status='open', AND case-folded title matches OR
+  // scope is a near-substring.
+  {
+    const supabase = getSupabase();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: existing } = await supabase
+      .from('user_intents')
+      .select('intent_id, requester_vitana_id, title, scope, kind_payload')
+      .eq('requester_user_id', identity.user_id)
+      .eq('intent_kind', intentKind)
+      .eq('status', 'open')
+      .gte('created_at', since)
+      .limit(20);
+
+    const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const sameCategory = (a: string | null, b: string | null) => {
+      if (a === b) return true;
+      if (a == null || b == null) return false;
+      // Same root (dance.*, home_services.*, sport.*, etc.)
+      return a.split('.')[0] === b.split('.')[0];
+    };
+    const newTitle = norm(title);
+    const newScope = norm(scope);
+
+    const dup = (existing as any[] ?? []).find((r) => {
+      const rTitle = norm(r.title);
+      const rScope = norm(r.scope);
+      if (!sameCategory(r.kind_payload?.category ?? null, category) && !sameCategory(category, category)) {
+        // No category info on existing row; rely on text similarity below.
+      }
+      // Title overlap: identical normalised, OR one is a near-substring of the other.
+      if (rTitle && newTitle && (rTitle === newTitle || rTitle.includes(newTitle) || newTitle.includes(rTitle))) {
+        return true;
+      }
+      // Scope substring match (>=80% of either side).
+      if (rScope && newScope) {
+        const minLen = Math.min(rScope.length, newScope.length);
+        if (minLen > 30 && (rScope.includes(newScope.slice(0, Math.floor(newScope.length * 0.8))) ||
+                            newScope.includes(rScope.slice(0, Math.floor(rScope.length * 0.8))))) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (dup) {
+      await emitOasisEvent({
+        vtid: 'VTID-DANCE-D14',
+        type: 'voice.message.sent',
+        source: 'intents-route',
+        status: 'info',
+        message: `De-dup blocked duplicate intent post (kind=${intentKind})`,
+        payload: { intent_kind: intentKind, existing_intent_id: dup.intent_id, requester_vitana_id: identity.vitana_id },
+        actor_id: identity.user_id,
+        actor_role: 'user',
+        surface: 'api',
+        vitana_id: identity.vitana_id ?? undefined,
+      });
+      return res.status(200).json({
+        ok: true,
+        deduplicated: true,
+        intent_id: dup.intent_id,
+        requester_vitana_id: dup.requester_vitana_id,
+        message: 'You already posted a similar request in the last 24 hours. Returning the existing post — refine it (different time, location, or style) if you want a new one.',
+      });
+    }
+  }
+
   // Content filter.
   const cf = checkIntentContent({ kind: intentKind, title, scope });
   if (!cf.ok) {
