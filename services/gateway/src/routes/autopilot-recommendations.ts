@@ -470,6 +470,16 @@ router.get('/', async (req: Request, res: Response) => {
             rec.wave_id = 'wave-1';
             rec.wave_order = 1;
           }
+          // Derive a stable `horizon` field for frontend bucketing on the My
+          // Journey path. Source: wave timeline.start_day. Buckets the
+          // frontend renders are: today / next3 / thisWeek / month / future.
+          const waveDef = DEFAULT_WAVE_CONFIG.find(w => w.id === rec.wave_id);
+          const startDay = waveDef?.timeline.start_day ?? 0;
+          rec.horizon =
+            startDay <= 0  ? 'today'    :
+            startDay <= 3  ? 'next3'    :
+            startDay <= 7  ? 'thisWeek' :
+            startDay <= 30 ? 'month'    : 'future';
         }
         // Include enabled waves in response
         waves = DEFAULT_WAVE_CONFIG
