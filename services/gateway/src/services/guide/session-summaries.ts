@@ -248,7 +248,9 @@ async function fetchTodayWindow(userId: string, userTz: string): Promise<TodayWi
         apikey: SUPABASE_SERVICE_ROLE,
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
       },
-      body: JSON.stringify({ p_user_id: userId, p_user_tz: userTz || 'UTC' }),
+      // VTID-02019: caller is responsible for resolving tz; we pass it through
+      // verbatim so the RPC bounds match what the prompt formatter renders.
+      body: JSON.stringify({ p_user_id: userId, p_user_tz: userTz }),
     });
     if (!res.ok) return null;
     const arr = (await res.json()) as TodayWindow[];
@@ -275,14 +277,18 @@ export interface SessionsTodayAndYesterday {
  */
 export async function getSessionsTodayAndYesterday(
   userId: string,
-  userTz: string = 'UTC',
+  userTz?: string,
 ): Promise<SessionsTodayAndYesterday> {
   const empty: SessionsTodayAndYesterday = { today: [], yesterday_last: null };
 
   const supabase = getSupabase();
   if (!supabase) return empty;
 
-  const window = await fetchTodayWindow(userId, userTz);
+  // VTID-02019: lazy import so the type module stays free of side effects
+  const { resolveUserTimezone } = await import('./user-timezone');
+  const tz = resolveUserTimezone(userTz);
+
+  const window = await fetchTodayWindow(userId, tz);
   if (!window) return empty;
 
   // Pull a small range covering both yesterday and today; bucket in JS.
