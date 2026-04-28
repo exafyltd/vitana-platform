@@ -287,6 +287,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityMembersRouter = require('./routes/community-members').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
   const intentOpenAsksRouter = intentEngineEnabled ? require('./routes/intent-open-asks').default : null;
+  // VTID-DANCE-D11.B: pre-post candidate scan
+  const intentScanRouter = intentEngineEnabled ? require('./routes/intent-scan').default : null;
   // VTID-DANCE-D7: auto-templated demands (composer prefill source)
   const intentTemplatesRouter = intentEngineEnabled ? require('./routes/intent-templates').default : null;
   // VTID-DANCE-D6: admin trust-tier flip (operator only)
@@ -794,6 +796,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
+  if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
   if (intentTemplatesRouter) mountRouterSync(app, '/api/v1', intentTemplatesRouter, { owner: 'intent-templates' });
   mountRouterSync(app, '/api/v1', adminTrustTierRouter, { owner: 'admin-trust-tier' });
   // Stripe webhook lives at root, no /api/v1 prefix.

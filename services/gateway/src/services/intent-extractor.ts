@@ -68,12 +68,22 @@ Leave fields null when unclear. Confidence reflects extraction certainty, not sl
   "confidence": <0-1>
 }`,
   activity_seek: `Extract an activity_seek intent. Return JSON only:
-{ "category": "<one of: sport.tennis, sport.running, sport.hiking, sport.cycling, sport.yoga, sport.gym, creative.music, creative.painting, learning.language, learning.book_club, OR null>",
+{ "category": "<one of: sport.tennis, sport.running, sport.hiking, sport.cycling, sport.yoga, sport.gym, creative.music, creative.painting, learning.language, learning.book_club, dance.social_partner, dance.group_outing, dance.practice, dance.flash_mob, OR null>",
   "title": "<headline ≤140>",
   "scope": "<description 20-1500>",
   "kind_payload": { "activity": "<canonical activity name>", "time_windows": [<array of strings like 'tue 18:00-20:00'>], "location_label": "<city/area or null>", "group_size_pref": "<1on1|small_group|large_group|null>", "skill_level": "<beginner|intermediate|advanced|null>" },
   "confidence": <0-1>
-}`,
+}
+
+DANCE category routing for activity_seek:
+- "dance partner / someone to dance with" → dance.social_partner
+- "going out dancing / Saturday night / nightclub" → dance.group_outing
+- "practice / training / weekly sessions" → dance.practice
+- "flash mob / crew / group performance" → dance.flash_mob
+
+When category starts with dance.*, ALSO include a top-level "dance" object in kind_payload:
+  "dance": { "variety": "<salsa|tango|bachata|kizomba|swing|ballroom|hiphop|contemporary|other|null>", "level_target": "<beginner|social|intermediate|advanced|professional|null>", "role_pref": "<lead|follow|either|null>", "formality": "<casual|social|professional|null>" }
+Leave fields null when not stated. The matcher reads dance.variety + dance.level_target + dance.role_pref for fine-grained scoring.`,
   partner_seek: `Extract a partner_seek intent. Return JSON only — be PII-light and respect privacy:
 { "category": "<life_partner|dating|companionship|null>",
   "title": "<short tasteful headline ≤140>",

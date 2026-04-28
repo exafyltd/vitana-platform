@@ -29,6 +29,8 @@ import { extractIntent } from '../services/intent-extractor';
 import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
 import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher';
+// VTID-DANCE-D12 — Layer 2 over the SQL matcher.
+import { runMatchmakerForIntent } from '../services/matchmaker-agent';
 import { checkIntentContent } from '../services/intent-content-filter';
 import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
@@ -243,6 +245,17 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     console.warn(`[VTID-01973] post-insert match compute failed: ${err.message}`);
   }
 
+  // VTID-DANCE-D12 — Layer 2 matchmaker agent (Gemini 2.5 Pro).
+  // Re-ranks the top-K, generates voice-friendly readback + counter-questions,
+  // and if SQL returned 0 candidates, falls back to profile.dance_preferences
+  // as a supply pool. Best-effort; SQL result is the authoritative shape.
+  let matchmakerResult: Awaited<ReturnType<typeof runMatchmakerForIntent>> | null = null;
+  try {
+    matchmakerResult = await runMatchmakerForIntent((inserted as any).intent_id);
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D12] matchmaker agent failed (non-fatal): ${err?.message}`);
+  }
+
   await emitOasisEvent({
     vtid: 'VTID-01973',
     type: 'voice.message.sent',
@@ -267,6 +280,9 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     intent_id: (inserted as any).intent_id,
     requester_vitana_id: (inserted as any).requester_vitana_id,
     match_count: matchCount,
+    // D12 — agent result piggy-backs on the post response so ORB / clients
+    // get it in one round-trip. Null when the agent was unavailable.
+    matchmaker: matchmakerResult,
   });
 });
 
