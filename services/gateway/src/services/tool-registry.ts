@@ -209,7 +209,13 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
         },
         required: ['time_hint'],
       },
-      allowed_roles: ['operator', 'admin', 'developer', 'user', 'system'],
+      // VTID-02052: Recall is a basic memory primitive — every authenticated
+      // surface needs it, including community/mobile. Without 'community' here,
+      // mobile (which is force-pinned to community role) gets the awareness
+      // prompt advisory but no tool declaration → Gemini Live emits a call
+      // for a tool that isn't declared → upstream WS closes → frontend shows
+      // "internet issues".
+      allowed_roles: ['operator', 'admin', 'developer', 'user', 'system', 'community'],
       enabled: true,
       category: 'memory',
       vtid: 'VTID-01990',
