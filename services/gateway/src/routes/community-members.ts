@@ -56,15 +56,22 @@ router.get('/community/members', requireAuth, requireTenant, async (req: Request
   }
 
   // Pull from profiles (the source of truth for vitana_id + registration_seq
-  // + dance_preferences) joined with global_community_profiles for the
-  // is_visible gate. We exclude the requesting user from their own list.
+  // + dance_preferences). We exclude the requesting user from their own list.
+  // Visibility gate: separately fetch hidden user_ids and filter them out
+  // (PostgREST doesn't expose a FK between profiles and
+  // global_community_profiles to inner-join here). Default for new signups
+  // is is_visible=true so the hidden list is normally tiny / empty.
+  const { data: hiddenRows } = await supabase
+    .from('global_community_profiles')
+    .select('user_id')
+    .eq('is_visible', false);
+  const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
+
   let q = supabase
     .from('profiles')
     .select(
-      'user_id, vitana_id, registration_seq, display_name, full_name, avatar_url, location, dance_preferences, created_at, global_community_profiles!inner(is_visible)',
-      { count: 'exact' }
+      'user_id, vitana_id, registration_seq, display_name, full_name, avatar_url, location, dance_preferences, created_at'
     )
-    .eq('global_community_profiles.is_visible', true)
     .neq('user_id', identity.user_id);
 
   if (sort === 'newest') {
@@ -88,8 +95,10 @@ router.get('/community/members', requireAuth, requireTenant, async (req: Request
 
   const rows = (data || []) as any[];
 
+  // Drop hidden users (those with global_community_profiles.is_visible=false).
+  let filtered = rows.filter((r) => !hiddenIds.has(String(r.user_id)));
+
   // Apply dance filter in TS (small N today; promote to SQL when matters).
-  let filtered = rows;
   if (danceFilter) {
     filtered = rows.filter((r) => {
       const prefs = r.dance_preferences || {};
