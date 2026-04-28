@@ -90,6 +90,11 @@ $backfill_episodes$;
 --    (tenant, user, entity, fact_key) has superseded_at NULL in memory_facts.
 -- ============================================================================
 
+-- Note: memory_facts.embedding is vector(768) but mem_facts.embedding is
+-- vector(1536). Different dimensions = pgvector rejects an INSERT...SELECT
+-- mapping. Drop the embedding columns from this backfill — the dual-writer
+-- (Phase 5b) populates them correctly with 1536-dim vectors on new writes,
+-- and a future re-embed pass can fill the historical NULLs.
 DO $backfill_facts$
 DECLARE
   v_inserted bigint;
@@ -97,7 +102,6 @@ BEGIN
   WITH inserted AS (
     INSERT INTO public.mem_facts (
       tenant_id, user_id, entity, fact_key, fact_value, fact_value_type,
-      embedding, embedding_model, embedding_updated_at,
       valid_from, valid_to, asserted_at,
       actor_id, confidence, source_event_id,
       policy_version, source_engine, classification,
@@ -108,7 +112,6 @@ BEGIN
       COALESCE(mf.entity, 'self') AS entity,
       mf.fact_key, mf.fact_value,
       COALESCE(mf.fact_value_type, 'text') AS fact_value_type,
-      mf.embedding, mf.embedding_model, mf.embedding_updated_at,
       mf.extracted_at AS valid_from,
       mf.superseded_at AS valid_to,
       mf.extracted_at AS asserted_at,
