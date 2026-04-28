@@ -226,6 +226,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
   // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
   const { routinesRouter } = require('./routes/routines');
+  // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B routines
+  const { routineAuditsRouter } = require('./routes/routine-audits');
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab investigations
   const { triageAgentRouter } = require('./routes/triage-agent');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
@@ -551,6 +553,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01981: Routines — catalog + run history for daily Claude Code remote agents
   mountRouterSync(app, '/', routinesRouter, { owner: 'routines' });
+
+  // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B
+  mountRouterSync(app, '/', routineAuditsRouter, { owner: 'routine-audits' });
 
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab
   mountRouterSync(app, '/api/v1/agents/triage', triageAgentRouter, { owner: 'triage-agent' });
