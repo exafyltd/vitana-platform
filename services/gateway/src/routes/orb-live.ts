@@ -1520,13 +1520,28 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
         },
         {
           name: 'search_knowledge',
-          description: 'Search the Vitana knowledge base for information about health topics, longevity research, and the Vitana platform.',
+          description: [
+            'Search the Vitana knowledge base for explanations, how-tos, and platform concepts.',
+            'Use this WHENEVER the user asks "how does X work?", "what is Y?", "can you explain ...?",',
+            '"how do I find/learn/teach/share ...?", "why are matches sparse?", or "what is the privacy here?"',
+            '',
+            "It's the default tool for any orientation, onboarding, or curious question — first-time users",
+            'deserve a real explanation, not a one-line transactional reply. Pull from this knowledge base',
+            'BEFORE answering, then synthesize into a 15-30 second voice response (~80-200 words) that',
+            'sounds natural, not robotic.',
+            '',
+            'Topics covered include: matchmaking overview, finding a dance partner, learning dance from',
+            'a teacher, offering dance lessons, why early-stage matches are sparse, sharing posts,',
+            'privacy in matchmaking, the Open Asks feed, the Vitana Index, longevity research, and the',
+            "Vitana platform itself. Supervisors keep adding documents, so always search before assuming",
+            "something isn't covered.",
+          ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'The search query to find relevant knowledge',
+                description: "The search query — paraphrase the user's question into the topical keywords. E.g. \"how do I find a dance partner\" or \"why am I getting no matches\".",
               },
             },
             required: ['query'],
