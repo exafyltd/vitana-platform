@@ -285,6 +285,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminIntentEngineRouter = intentEngineEnabled ? require('./routes/admin-intent-engine').default : null;
   // VTID-DANCE-D4: public community members directory (always on)
   const communityMembersRouter = require('./routes/community-members').default;
+  // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
+  const intentOpenAsksRouter = intentEngineEnabled ? require('./routes/intent-open-asks').default : null;
   // VTID-DANCE-D10: shareable intent posts + public /p/:id viewer
   const intentsShareRouter = intentEngineEnabled ? require('./routes/intents-share').default : null;
   // Admin: Signup Funnel Tracking & Outreach
@@ -785,6 +787,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
+  if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   // VTID-DANCE-D10: mounted at root for both /api/v1/intents/:id/share AND /p/:id (the share router defines absolute paths)
   if (intentsShareRouter) mountRouterSync(app, '/', intentsShareRouter, { owner: 'intents-share' });
   if (adminIntentEngineRouter) mountRouterSync(app, '/api/v1/admin/intent-engine', adminIntentEngineRouter, { owner: 'admin-intent-engine' });
