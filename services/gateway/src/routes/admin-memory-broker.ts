@@ -21,8 +21,12 @@ import {
 import { getMemoryContext, MemoryIntent, MemoryBlockKind } from '../services/memory-broker';
 
 const router = Router();
-router.use(requireAuth);
-router.use(requireExafyAdmin);
+// VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
+// for every /api/v1/* request because this router is mounted at /api/v1.
+// That intercepts unrelated public endpoints and 401s them. Restrict to
+// the actual admin paths.
+router.use('/admin/memory', requireAuth);
+router.use('/admin/memory', requireExafyAdmin);
 
 const VALID_INTENTS: MemoryIntent[] = [
   'recall_recent',

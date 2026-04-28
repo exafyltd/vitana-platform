@@ -31,8 +31,12 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 
-router.use(requireAuth);
-router.use(requireExafyAdmin);
+// VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
+// for every /api/v1/* request because this router is mounted at /api/v1.
+// That intercepts unrelated public endpoints (events ingest, voice-lab, etc.)
+// and 401s them. Restrict to the actual admin paths.
+router.use('/admin/embeddings', requireAuth);
+router.use('/admin/embeddings', requireExafyAdmin);
 
 const VTID = 'VTID-01972';
 
