@@ -2480,6 +2480,60 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['intent_id', 'recipient_vitana_ids'],
           },
         },
+        // VTID-DANCE-D11.B — pre-post candidate scan.
+        {
+          name: 'scan_existing_matches',
+          description: [
+            'BEFORE posting an intent, call this to see who is already in the catalog with a similar ask.',
+            'Use the same intent_kind you would pass to post_intent + the category_prefix (e.g. dance.) and',
+            'the dance variety when known.',
+            '',
+            'Returns: { open_intents[], dance_pref_members[], total }.',
+            'If total > 0: read back the names + offer "Want to see them, share with them, or post yours so they can find you too?"',
+            'If total == 0: proceed with post_intent and use the always-post readback.',
+            '',
+            'This call is read-only and cheap — always safe to call before post_intent.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_kind: {
+                type: 'string',
+                enum: ['commercial_buy','commercial_sell','activity_seek','partner_seek','social_seek','mutual_aid','learning_seek','mentor_seek'],
+              },
+              category_prefix: {
+                type: 'string',
+                description: 'e.g. "dance." for any dance category, "home_services." for any home service. Optional.',
+              },
+              variety: {
+                type: 'string',
+                description: 'For dance: salsa | tango | bachata | kizomba | swing | ballroom | hiphop | contemporary. Optional.',
+              },
+            },
+            required: ['intent_kind'],
+          },
+        },
+        // VTID-DANCE-D12 — poll for the matchmaker agent's polished result.
+        {
+          name: 'get_matchmaker_result',
+          description: [
+            'After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.',
+            'Call this 3 seconds after post_intent to fetch the polished result. status will be:',
+            '  pending/running — call again in 3 seconds',
+            '  complete — read back voice_readback verbatim, then offer next steps',
+            '  error — fall back to the SQL match summary already returned by post_intent',
+            '',
+            'The polished result includes counter_questions when the user gave a vague intent.',
+            'If counter_questions is non-empty, ASK them progressively (variety → time → location)',
+            'BEFORE reading back the candidate list. The user can always say "just show me matches"',
+            'to skip — never insist on filling all slots.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { intent_id: { type: 'string' } },
+            required: ['intent_id'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -5326,6 +5380,55 @@ async function executeLiveApiToolInner(
           return { success: true, result: JSON.stringify(data) };
         } catch (err: any) {
           console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // VTID-DANCE-D11.B — pre-post candidate scan.
+      case 'scan_existing_matches': {
+        const intentKind = String(args.intent_kind || '').trim();
+        if (!intentKind) return { success: false, result: '', error: 'intent_kind is required' };
+        const params = new URLSearchParams({ intent_kind: intentKind });
+        if (args.category_prefix) params.set('category_prefix', String(args.category_prefix));
+        if (args.variety) params.set('variety', String(args.variety));
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intent-scan?${params.toString()}`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          });
+          const data = await res.json();
+          return {
+            success: res.ok,
+            result: JSON.stringify(data),
+            error: res.ok ? undefined : (data as any)?.error || 'scan_failed',
+          };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D11.B] scan_existing_matches error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
+      case 'get_matchmaker_result': {
+        const intentId = String(args.intent_id || '').trim();
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${encodeURIComponent(intentId)}/matchmaker`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          });
+          const data = await res.json();
+          return {
+            success: res.ok,
+            result: JSON.stringify(data),
+            error: res.ok ? undefined : (data as any)?.error || 'poll_failed',
+          };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D12] get_matchmaker_result error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

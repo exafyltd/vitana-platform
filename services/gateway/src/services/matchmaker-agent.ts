@@ -104,6 +104,160 @@ interface ProfileFallbackCandidate {
 
 const SENSITIVE_KINDS = new Set(['partner_seek']);
 
+/**
+ * D12 async wrapper: kick off matchmaker as fire-and-forget. The synchronous
+ * POST /intents path calls THIS — it persists a 'pending' row in
+ * intent_match_recommendations immediately, then runs the agent in the
+ * background and updates the row when complete. Clients poll
+ * GET /api/v1/intents/:id/matchmaker for the polished result.
+ */
+export function runMatchmakerAsync(intentId: string): void {
+  // Mark pending immediately so the poll endpoint has a row to return.
+  void markRecommendationStatus(intentId, 'pending');
+
+  // setImmediate keeps the work off the request thread without blocking the
+  // Node event loop on a long-running sync callback.
+  setImmediate(async () => {
+    const start = Date.now();
+    try {
+      await markRecommendationStatus(intentId, 'running');
+      const result = await runMatchmakerForIntent(intentId);
+      await persistRecommendation(intentId, result, Date.now() - start);
+      await persistProfileFallbackMatches(intentId, result);
+    } catch (err: any) {
+      await markRecommendationError(intentId, err?.message || 'unknown', Date.now() - start);
+    }
+  });
+}
+
+async function markRecommendationStatus(intentId: string, status: 'pending' | 'running' | 'skipped'): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase
+      .from('intent_match_recommendations')
+      .upsert(
+        { intent_id: intentId, status, updated_at: new Date().toISOString() } as any,
+        { onConflict: 'intent_id' }
+      );
+  } catch { /* best-effort */ }
+}
+
+async function persistRecommendation(intentId: string, result: MatchmakerResult, latencyMs: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase
+      .from('intent_match_recommendations')
+      .upsert(
+        {
+          intent_id: intentId,
+          status: 'complete',
+          mode: result.mode,
+          pool_size: result.pool_size,
+          candidates: result.candidates as any,
+          counter_questions: result.counter_questions as any,
+          voice_readback: result.voice_readback,
+          reasoning_summary: result.reasoning_summary,
+          used_fallback: result.used_fallback,
+          model: PRIMARY_MODEL,
+          latency_ms: latencyMs,
+          computed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as any,
+        { onConflict: 'intent_id' }
+      );
+  } catch { /* best-effort */ }
+}
+
+async function markRecommendationError(intentId: string, error: string, latencyMs: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase
+      .from('intent_match_recommendations')
+      .upsert(
+        {
+          intent_id: intentId,
+          status: 'error',
+          error: error.slice(0, 1000),
+          latency_ms: latencyMs,
+          updated_at: new Date().toISOString(),
+        } as any,
+        { onConflict: 'intent_id' }
+      );
+  } catch { /* best-effort */ }
+}
+
+/**
+ * D11.E persistence: when the agent surfaced profile_fallback candidates,
+ * write them as intent_matches rows with external_target_kind='profile_match'
+ * so the standard match lifecycle (Express interest, decline, OASIS audit)
+ * applies. Idempotent per (intent, target_user).
+ */
+async function persistProfileFallbackMatches(intentId: string, result: MatchmakerResult): Promise<void> {
+  if (!result.used_fallback) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  const fallbackRows = result.candidates
+    .filter((c) => c.source === 'profile_fallback' && c.vitana_id)
+    .map((c) => ({
+      vitana_id: c.vitana_id as string,
+      agent_score: c.agent_score,
+      reason: c.reason,
+    }));
+  if (fallbackRows.length === 0) return;
+
+  // Look up user_ids for the vitana_ids.
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('user_id, vitana_id')
+    .in('vitana_id', fallbackRows.map((f) => f.vitana_id));
+
+  const vidToUid = new Map<string, string>(
+    ((profs as any[]) || []).map((p) => [String(p.vitana_id), String(p.user_id)])
+  );
+
+  // Pull source for vitana_id_a + intent_kind.
+  const { data: src } = await supabase
+    .from('user_intents')
+    .select('requester_vitana_id, intent_kind')
+    .eq('intent_id', intentId)
+    .maybeSingle();
+  const vitanaIdA = (src as any)?.requester_vitana_id as string | null;
+  const intentKind = (src as any)?.intent_kind as string | null;
+
+  const rows = fallbackRows
+    .map((f) => {
+      const uid = vidToUid.get(f.vitana_id);
+      if (!uid || !vitanaIdA) return null;
+      return {
+        intent_a_id: intentId,
+        intent_b_id: null,
+        vitana_id_a: vitanaIdA,
+        vitana_id_b: f.vitana_id,
+        external_target_kind: 'profile_match',
+        external_target_id: uid,
+        kind_pairing: `${intentKind ?? 'unknown'}::profile_match`,
+        score: f.agent_score,
+        match_reasons: { source: 'profile_fallback', agent_reason: f.reason } as any,
+        compass_aligned: false,
+        state: 'new',
+      };
+    })
+    .filter(Boolean) as any[];
+
+  if (rows.length === 0) return;
+  try {
+    await supabase
+      .from('intent_matches')
+      .upsert(rows, { onConflict: 'intent_a_id,external_target_kind,external_target_id', ignoreDuplicates: true });
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D11.E] profile_match persist failed: ${err.message}`);
+  }
+}
+
 /** Top-level entry: run the matchmaker over a fresh intent. */
 export async function runMatchmakerForIntent(intentId: string): Promise<MatchmakerResult> {
   const ctx = await loadContext(intentId);
