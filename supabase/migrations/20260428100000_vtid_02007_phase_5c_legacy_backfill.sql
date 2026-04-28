@@ -99,7 +99,21 @@ DO $backfill_facts$
 DECLARE
   v_inserted bigint;
 BEGIN
-  WITH inserted AS (
+  WITH ranked AS (
+    -- Order rows per (tenant, user, entity, fact_key) by extracted_at DESC.
+    -- The most recent row (rn=1) becomes the canonical active mirror in
+    -- mem_facts. Older "active" rows in memory_facts (where someone forgot
+    -- to set superseded_at) get a synthetic valid_to so the partial unique
+    -- index WHERE valid_to IS NULL is never violated.
+    SELECT
+      mf.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY mf.tenant_id, mf.user_id, COALESCE(mf.entity, 'self'), mf.fact_key
+        ORDER BY mf.extracted_at DESC, mf.id DESC
+      ) AS rn
+    FROM public.memory_facts mf
+  ),
+  inserted AS (
     INSERT INTO public.mem_facts (
       tenant_id, user_id, entity, fact_key, fact_value, fact_value_type,
       valid_from, valid_to, asserted_at,
@@ -108,37 +122,40 @@ BEGIN
       extracted_at, vtid
     )
     SELECT
-      mf.tenant_id, mf.user_id,
-      COALESCE(mf.entity, 'self') AS entity,
-      mf.fact_key, mf.fact_value,
-      COALESCE(mf.fact_value_type, 'text') AS fact_value_type,
-      mf.extracted_at AS valid_from,
-      mf.superseded_at AS valid_to,
-      mf.extracted_at AS asserted_at,
-      COALESCE(mf.provenance_source, 'user_stated') AS actor_id,
-      COALESCE(mf.provenance_confidence, 1.0) AS confidence,
-      mf.id::text AS source_event_id,
+      r.tenant_id, r.user_id,
+      COALESCE(r.entity, 'self') AS entity,
+      r.fact_key, r.fact_value,
+      COALESCE(r.fact_value_type, 'text') AS fact_value_type,
+      r.extracted_at AS valid_from,
+      -- Canonical active row gets NULL; everything else gets a synthetic
+      -- valid_to (real superseded_at if present, or extracted_at+1s).
+      CASE
+        WHEN r.rn = 1 AND r.superseded_at IS NULL THEN NULL
+        ELSE COALESCE(r.superseded_at, r.extracted_at + interval '1 second')
+      END AS valid_to,
+      r.extracted_at AS asserted_at,
+      COALESCE(r.provenance_source, 'user_stated') AS actor_id,
+      COALESCE(r.provenance_confidence, 1.0) AS confidence,
+      r.id::text AS source_event_id,
       'mem-2026.04' AS policy_version,
       'legacy_backfill_phase_5c' AS source_engine,
       '{}'::jsonb AS classification,
-      mf.extracted_at, mf.vtid
-    FROM public.memory_facts mf
+      r.extracted_at, r.vtid
+    FROM ranked r
     WHERE NOT EXISTS (
       SELECT 1 FROM public.mem_facts mft
-      WHERE mft.source_event_id = mf.id::text
+      WHERE mft.source_event_id = r.id::text
     )
     -- Skip rows that would conflict with an already-mirrored ACTIVE fact
-    -- (Phase 5b dual-writer or earlier backfill run). The unique partial
-    -- index would reject these anyway; filter explicitly to keep the
-    -- migration log clean.
+    -- (e.g. a row written by the Phase 5b dual-writer after the flag flipped).
     AND NOT (
-      mf.superseded_at IS NULL
+      r.rn = 1 AND r.superseded_at IS NULL
       AND EXISTS (
         SELECT 1 FROM public.mem_facts mft
-        WHERE mft.tenant_id = mf.tenant_id
-          AND mft.user_id   = mf.user_id
-          AND mft.entity    = COALESCE(mf.entity, 'self')
-          AND mft.fact_key  = mf.fact_key
+        WHERE mft.tenant_id = r.tenant_id
+          AND mft.user_id   = r.user_id
+          AND mft.entity    = COALESCE(r.entity, 'self')
+          AND mft.fact_key  = r.fact_key
           AND mft.valid_to IS NULL
       )
     )
