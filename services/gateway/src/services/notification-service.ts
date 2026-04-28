@@ -524,15 +524,32 @@ export async function notifyUser(
   // Only send ONE push per user to avoid duplicate notifications.
   // FCM covers desktop Chrome + mobile Chrome; Appilix covers Maxina app
   // users who have no FCM tokens registered.
+  //
+  // Exception: chat-category notifications go Appilix-only on users who
+  // have the mobile app installed. The reason is deep-linking — when the
+  // user taps a chat push, they should land directly in the conversation
+  // inside the Maxina app (where they're already signed in). FCM web push
+  // opens the link in the user's browser, which is a different session
+  // from the app and forces the user through `/maxina` sign-in. iOS
+  // Universal Links + Android App Links can only fire when the OS
+  // delivers the URL to the app, which Appilix push does and FCM web push
+  // doesn't. Trade-off: a desktop-browser-only user with no Appilix app
+  // installed will not see a chat browser pop-up; they'll still see the
+  // in-app red dot + bell when they next open the app.
+  const isChatCategory = meta.category === 'chat';
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
-    // Try FCM first (delivers to all registered device tokens)
-    pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-
-    // Appilix native push only if no FCM tokens delivered
-    if (pushed === 0) {
+    if (isChatCategory) {
       appilixSent = await sendAppilixPush(userId, payload);
+    } else {
+      // Try FCM first (delivers to all registered device tokens)
+      pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+
+      // Appilix native push only if no FCM tokens delivered
+      if (pushed === 0) {
+        appilixSent = await sendAppilixPush(userId, payload);
+      }
     }
   }
 
