@@ -105,6 +105,12 @@ export interface UserAwareness {
     ended_at: string;
   } | null;
 
+  // VTID-02019 — IANA tz used for any user-facing timestamp rendering
+  // (HH:MM, "this morning"/"yesterday afternoon" buckets, etc.). Resolved by
+  // resolveUserTimezone() — if the surface didn't supply one, this is the
+  // system default (Europe/Berlin) so prompts never show UTC clock values.
+  user_timezone: string;
+
   // Phase E — D43 adaptation status (VTID-01935)
   // Null when adaptation_plans table doesn't exist yet (D43 doesn't write
   // there yet). When populated, shows pending vs applied plans.

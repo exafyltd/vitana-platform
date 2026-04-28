@@ -57,6 +57,7 @@ function makeAwareness(overrides: Partial<UserAwareness> = {}): UserAwareness {
     tastes_preferences: null,
     sessions_today: { count: 0, entries: [] },
     last_session_yesterday: null,
+    user_timezone: 'Europe/Berlin',
   };
   return {
     ...base,

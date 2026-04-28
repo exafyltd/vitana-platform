@@ -325,7 +325,18 @@ router.post('/turn', async (req: Request, res: Response) => {
 
     // VTID-DEV-ASSIST: Set thread identity with role for tool-level role enforcement
     // VTID-01967: include vitana_id so downstream tools see the canonical handle.
-    setThreadIdentity(thread.thread_id, { tenant_id, user_id, role, vitana_id: vitanaId });
+    // VTID-02019: include user_timezone so recall_conversation_at_time resolves
+    // free-text time hints in the user's local time (falls back to Europe/Berlin
+    // when undefined).
+    const reqUserTz =
+      (req.body?.ui_context?.metadata?.timezone as string | undefined) || undefined;
+    setThreadIdentity(thread.thread_id, {
+      tenant_id,
+      user_id,
+      role,
+      vitana_id: vitanaId,
+      user_timezone: reqUserTz,
+    });
 
     // Create context lens for memory access
     const lens: ContextLens = createContextLens(tenant_id, user_id, {

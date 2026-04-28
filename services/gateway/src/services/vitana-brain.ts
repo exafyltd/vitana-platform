@@ -506,9 +506,12 @@ export async function buildProactiveGuideBlock(input: {
   const guideRole = mapRoleForGuide(input.role);
 
   // Compute the unified awareness picture ONCE — every downstream signal flows from it
+  // VTID-02019: pass the user's tz through so HH:MM in the awareness block
+  // renders local. If the surface didn't supply one, awareness resolves to
+  // Europe/Berlin (system default).
   let awareness: UserAwareness | null = null;
   try {
-    awareness = await getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone || 'UTC');
+    awareness = await getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone);
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
   }
@@ -1184,13 +1187,29 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
 
   // VTID-01990 — cross-surface conversation tracking. Surfaces "this is your
   // Nth session today" + per-session timestamps + yesterday's last session
-  // so Vitana feels persistent across sessions. When the user references a
-  // past time ("we talked yesterday morning..."), the recall_conversation_at_time
-  // tool resolves the window and fetches actual turns; this block tells the
-  // brain that recall is possible.
+  // so Vitana feels persistent across sessions.
+  // VTID-02019 — all timestamps rendered in awareness.user_timezone (default
+  // Europe/Berlin), never UTC. Anytime Vitana quotes a clock value to the
+  // user it must be in the user's local time.
   const sessionsToday = awareness.sessions_today;
   const yesterdayLast = awareness.last_session_yesterday;
   if ((sessionsToday && sessionsToday.count > 0) || yesterdayLast) {
+    const tz = awareness.user_timezone;
+    const fmtHHMM = (iso: string): string => {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso.slice(11, 16);
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).format(d);
+      } catch {
+        return iso.slice(11, 16);
+      }
+    };
+
     if (sessionsToday && sessionsToday.count > 0) {
       const n = sessionsToday.count + 1;
       const suffix = (() => {
@@ -1202,14 +1221,14 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
       lines.push(`Sessions today: ${sessionsToday.count} prior (this is the ${n}${suffix}).`);
       const entries = sessionsToday.entries.slice(-4);
       for (const e of entries) {
-        const hhmm = e.ended_at.slice(11, 16);
+        const hhmm = fmtHHMM(e.ended_at);
         const themes = (e.themes || []).slice(0, 3).join(', ');
         const summary = e.summary && e.summary.length > 240 ? e.summary.slice(0, 239) + '…' : e.summary || '';
         lines.push(`  - ${hhmm} (${e.channel})${themes ? ` themes: ${themes}` : ''} — ${summary}`);
       }
     }
     if (yesterdayLast) {
-      const hhmm = yesterdayLast.ended_at.slice(11, 16);
+      const hhmm = fmtHHMM(yesterdayLast.ended_at);
       const themes = (yesterdayLast.themes || []).slice(0, 3).join(', ');
       const summary =
         yesterdayLast.summary && yesterdayLast.summary.length > 240
@@ -1218,6 +1237,7 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
       lines.push(`Yesterday's last session ${hhmm}${themes ? ` themes: ${themes}` : ''} — ${summary}`);
     }
     lines.push(
+      `(All session times are local to the user — ${tz}. Always quote times in this timezone, never UTC.)`,
       'When the user references a past conversation by time ("we talked yesterday morning...", "earlier today we discussed..."), call recall_conversation_at_time to fetch the actual turns. Do not invent details from these summaries alone.',
     );
   }

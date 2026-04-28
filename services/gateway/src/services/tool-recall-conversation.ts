@@ -14,6 +14,8 @@
  * Read-only. Safe by construction — RPC scopes by user_id internally.
  */
 
+import { resolveUserTimezone } from './guide/user-timezone';
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -53,17 +55,22 @@ export interface RecallToolResult {
  */
 export function resolveTimeHint(
   hint: string,
-  userTz: string = 'UTC',
+  userTz?: string,
   now: Date = new Date(),
 ): { since: Date; until: Date; label: string } | null {
   const raw = hint.trim().toLowerCase();
   if (!raw) return null;
 
+  // VTID-02019: 'UTC' or unspecified means "we don't know the user's tz" —
+  // resolve to the system default (Europe/Berlin). 10k+ users are CET so
+  // when they say "yesterday morning" they mean CET morning.
+  const tz = resolveUserTimezone(userTz);
+
   // Buckets in the user's local day. Anchored to local midnight.
   // Computed in UTC against a virtual local-midnight.
-  const tzNow = localDayParts(now, userTz);
+  const tzNow = localDayParts(now, tz);
 
-  const todayStartUTC = utcInstantOfLocalMidnight(tzNow.localYear, tzNow.localMonth, tzNow.localDay, userTz);
+  const todayStartUTC = utcInstantOfLocalMidnight(tzNow.localYear, tzNow.localMonth, tzNow.localDay, tz);
   const oneDay = 24 * 3600 * 1000;
 
   type TimeBucket = { startHour: number; endHour: number; label: string };
@@ -240,7 +247,10 @@ export async function executeRecallConversationAtTime(
     return { ok: false, error: 'storage_unavailable' };
   }
 
-  const tz = context.user_timezone || 'UTC';
+  // VTID-02019: pass through whatever tz the executor placed on the thread
+  // identity; resolveTimeHint() will substitute Europe/Berlin if it's UTC or
+  // missing.
+  const tz = context.user_timezone;
   const window = resolveTimeHint(args.time_hint, tz);
   if (!window) {
     return { ok: false, error: 'ambiguous_time' };
