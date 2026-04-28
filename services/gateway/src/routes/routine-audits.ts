@@ -345,3 +345,233 @@ routineAuditsRouter.get(
     }
   }
 );
+
+// =============================================================================
+// VTID-02018 — Tier C-2 audit endpoints
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/routines/audits/knowledge-docs-staleness
+// Used by: knowledge-docs-freshness routine
+// -----------------------------------------------------------------------------
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/knowledge-docs-staleness',
+  requireRoutineToken,
+  async (req: Request, res: Response) => {
+    try {
+      const staleAfterDays =
+        Math.min(parseInt(req.query.stale_after_days as string) || 180, 730);
+      const staleCutoff = new Date(Date.now() - staleAfterDays * 24 * 60 * 60 * 1000).toISOString();
+
+      const totalCount = await supaCount('/rest/v1/knowledge_docs');
+      // Stale = updated_at older than cutoff (or created_at if updated_at missing)
+      const staleCount = await supaCount(
+        `/rest/v1/knowledge_docs?updated_at=lt.${staleCutoff}`
+      );
+
+      // Sample of the stalest entries for the audit log
+      const sample = await supaFetch<Array<{
+        id: string;
+        title?: string;
+        path?: string;
+        updated_at?: string;
+        created_at?: string;
+      }>>(
+        `/rest/v1/knowledge_docs?updated_at=lt.${staleCutoff}` +
+          `&select=id,title,path,updated_at,created_at` +
+          `&order=updated_at.asc&limit=10`
+      );
+
+      // If the table doesn't exist totalCount will be null; surface that as `feature_pending`.
+      const featurePending = totalCount === null;
+
+      return res.json({
+        ok: true,
+        feature_pending: featurePending,
+        total_docs: totalCount ?? 0,
+        stale_count: staleCount ?? 0,
+        stale_after_days: staleAfterDays,
+        sample_stalest: sample ?? [],
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} knowledge-docs-staleness error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/routines/audits/push-pipeline
+// Used by: push-pipeline-probe routine
+// -----------------------------------------------------------------------------
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/push-pipeline',
+  requireRoutineToken,
+  async (_req: Request, res: Response) => {
+    try {
+      const totalTokens = await supaCount('/rest/v1/user_device_tokens');
+      const webTokens = await supaCount(
+        '/rest/v1/user_device_tokens?platform=in.(web,chrome,firefox,safari)'
+      );
+      const mobileTokens = await supaCount(
+        '/rest/v1/user_device_tokens?platform=in.(android,ios,appilix)'
+      );
+      const recentTokens = await supaCount(
+        `/rest/v1/user_device_tokens?created_at=gte.${hoursAgoIso(24)}`
+      );
+
+      const featurePending = totalTokens === null;
+
+      return res.json({
+        ok: true,
+        feature_pending: featurePending,
+        total_tokens: totalTokens ?? 0,
+        web_tokens: webTokens ?? 0,
+        mobile_tokens: mobileTokens ?? 0,
+        new_tokens_last_24h: recentTokens ?? 0,
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} push-pipeline error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/routines/audits/migration-backlog
+// Used by: migration-backlog routine
+// -----------------------------------------------------------------------------
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/migration-backlog',
+  requireRoutineToken,
+  async (_req: Request, res: Response) => {
+    try {
+      // Supabase stores applied migrations under schema=supabase_migrations,
+      // table=schema_migrations. Use the schema-qualified PostgREST header.
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE;
+      if (!url || !key) {
+        return res.status(503).json({ ok: false, error: 'Supabase env not configured' });
+      }
+      const resp = await fetch(
+        `${url}/rest/v1/schema_migrations?select=version,name,statements&limit=1000&order=version.desc`,
+        {
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${key}`,
+            'Accept-Profile': 'supabase_migrations',
+          },
+        }
+      );
+      let applied: Array<{ version: string; name?: string }> = [];
+      if (resp.ok) {
+        applied = (await resp.json()) as Array<{ version: string; name?: string }>;
+      }
+
+      return res.json({
+        ok: true,
+        applied_count: applied.length,
+        applied_versions: applied.map((m) => m.version),
+        latest_applied: applied[0]?.version ?? null,
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} migration-backlog error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/routines/audits/dyk-tour-progress
+// Used by: dyk-tour-progress routine
+// -----------------------------------------------------------------------------
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/dyk-tour-progress',
+  requireRoutineToken,
+  async (_req: Request, res: Response) => {
+    try {
+      // dyk_user_active_days tracks per-user usage day counters.
+      // Some installs track tour state in a sibling table; we read what exists.
+      const totalTracked = await supaCount('/rest/v1/dyk_user_active_days');
+      // Distribution of active_day values (1..30) — pull a sample.
+      const sample = await supaFetch<Array<{ user_id?: string; active_day?: number }>>(
+        '/rest/v1/dyk_user_active_days?select=user_id,active_day&order=active_day.desc&limit=2000'
+      );
+      const dayDistribution: Record<number, number> = {};
+      let maxDay = 0;
+      for (const row of sample ?? []) {
+        const d = row.active_day ?? 0;
+        dayDistribution[d] = (dayDistribution[d] || 0) + 1;
+        if (d > maxDay) maxDay = d;
+      }
+
+      const featurePending = totalTracked === null;
+
+      return res.json({
+        ok: true,
+        feature_pending: featurePending,
+        total_tracked: totalTracked ?? 0,
+        day_distribution: dayDistribution,
+        max_day_seen: maxDay,
+        sample_size: sample?.length ?? 0,
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} dyk-tour-progress error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/routines/audits/spec-memory-quarantine
+// Used by: spec-memory-quarantine routine
+// -----------------------------------------------------------------------------
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/spec-memory-quarantine',
+  requireRoutineToken,
+  async (_req: Request, res: Response) => {
+    try {
+      // The voice self-healing loop uses a shadow log; quarantined entries
+      // have outcome='quarantined' or status='quarantined'.
+      const totalShadow = await supaCount('/rest/v1/voice_healing_shadow_log');
+      const quarantinedNow = await supaCount(
+        '/rest/v1/voice_healing_shadow_log?outcome=eq.quarantined'
+      );
+      const quarantinedRecent = await supaCount(
+        `/rest/v1/voice_healing_shadow_log?outcome=eq.quarantined&created_at=gte.${hoursAgoIso(7 * 24)}`
+      );
+
+      // Sample the oldest quarantined entries for the audit log
+      const sample = await supaFetch<Array<{
+        id?: string;
+        endpoint?: string;
+        failure_class?: string;
+        outcome?: string;
+        created_at?: string;
+      }>>(
+        '/rest/v1/voice_healing_shadow_log?outcome=eq.quarantined' +
+          '&select=id,endpoint,failure_class,outcome,created_at' +
+          '&order=created_at.asc&limit=10'
+      );
+
+      const featurePending = totalShadow === null;
+
+      return res.json({
+        ok: true,
+        feature_pending: featurePending,
+        total_shadow_log: totalShadow ?? 0,
+        quarantined_now: quarantinedNow ?? 0,
+        quarantined_recent_7d: quarantinedRecent ?? 0,
+        sample_oldest: sample ?? [],
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} spec-memory-quarantine error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
