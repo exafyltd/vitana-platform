@@ -5,7 +5,7 @@
  * what already exists in the catalog. Cheap query — no Gemini, just a SQL
  * read across user_intents + intent_compatibility + profile.dance_preferences.
  *
- *   GET /api/v1/intents/scan?intent_kind=&category_prefix=&variety=
+ *   GET /api/v1/intent-scan?intent_kind=&category_prefix=&variety=
  *
  * Returns up to 5 open compatible intents + up to 5 dance-pref community
  * members that match. Powers the voice readback "Before I post, I see N
@@ -18,7 +18,7 @@ import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
-router.get('/intents/scan', requireAuth, requireTenant, async (req: Request, res: Response) => {
+router.get('/intent-scan', requireAuth, requireTenant, async (req: Request, res: Response) => {
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
