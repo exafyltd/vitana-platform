@@ -33,9 +33,11 @@ const router = Router();
 const MAX_RECIPIENTS_PER_BATCH_FREE = 20;
 const MAX_SHARES_PER_POST_FREE = 50;
 
-// ── POST /intents/:intent_id/share ─────────────────────────────
+// ── POST /api/v1/intents/:intent_id/share ──────────────────────
+// Absolute path so we can keep this router mounted at '/' and serve the
+// public /p/:id viewer from the same module.
 
-router.post('/intents/:intent_id/share', requireAuth, requireTenant, async (req: Request, res: Response) => {
+router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, async (req: Request, res: Response) => {
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
