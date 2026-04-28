@@ -797,6 +797,234 @@ router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/v1/voice-lab/healing/reports/:id/execute (VTID-02021)
+ *
+ * Materialize the report's recommendation into actual work items. For each
+ * proposed_next_step, allocates a VTID via the canonical RPC, populates the
+ * vtid_ledger row (status=scheduled, spec_status=approved, layer=INFRA,
+ * module=GATEWAY) with the step text as title/summary, and stamps
+ * metadata.source_report_id so we can join back later.
+ *
+ * The caller's intent: "I read the plan, I approve it, execute it." Sets
+ * voice_architecture_reports.status = accepted and emits a
+ * voice.healing.report.executed OASIS event.
+ *
+ * Body: { acknowledged_by?: string, decision_notes?: string }
+ *
+ * Returns: { ok, executed_vtids, report_id, step_count }
+ */
+router.post('/healing/reports/:id/execute', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const reportId = req.params.id;
+  const body = (req.body || {}) as Record<string, unknown>;
+  const acknowledgedBy =
+    typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
+  const decisionNotes =
+    typeof body.decision_notes === 'string' ? body.decision_notes : null;
+
+  // 1. Fetch report
+  let report: any = null;
+  try {
+    const r = await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}&limit=1`,
+      { headers: { apikey: config.key, Authorization: `Bearer ${config.key}` } },
+    );
+    if (!r.ok) {
+      return res.status(r.status).json({ ok: false, error: await r.text() });
+    }
+    const rows = (await r.json()) as any[];
+    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'report not found' });
+    report = rows[0];
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+
+  // 2. Extract proposed steps
+  const steps = (report.report?.recommendation?.proposed_next_steps || []) as string[];
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'report has no recommendation.proposed_next_steps to execute',
+    });
+  }
+
+  const reportClass = String(report.class || 'voice.unknown');
+  const reportSig = report.normalized_signature ?? null;
+
+  // 3. For each step: allocate VTID + populate ledger row
+  const executedVtids: string[] = [];
+  const failures: Array<{ step: string; error: string }> = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = String(steps[i] || '').trim();
+    if (!step) continue;
+    try {
+      // 3a. Allocate VTID via RPC
+      const allocResp = await fetch(`${config.url}/rest/v1/rpc/allocate_global_vtid`, {
+        method: 'POST',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_source: 'voice-investigator-execute',
+          p_layer: 'INFRA',
+          p_module: 'GATEWAY',
+        }),
+      });
+      if (!allocResp.ok) {
+        failures.push({ step: step.slice(0, 80), error: `alloc_${allocResp.status}` });
+        continue;
+      }
+      const allocRows = (await allocResp.json()) as Array<{ vtid: string }>;
+      const newVtid = allocRows[0]?.vtid;
+      if (!newVtid) {
+        failures.push({ step: step.slice(0, 80), error: 'alloc_no_vtid_returned' });
+        continue;
+      }
+
+      // 3b. Populate the ledger row (the RPC creates an allocated stub)
+      const title = `INVESTIGATOR: ${step.slice(0, 180)}`;
+      const summary =
+        `${step}\n\n---\n` +
+        `Source: voice-architecture-investigator report ${reportId}\n` +
+        `Class: ${reportClass}\n` +
+        `Signature: ${reportSig ?? '(none)'}\n` +
+        `Step ${i + 1} of ${steps.length}`;
+      const patchResp = await fetch(
+        `${config.url}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(newVtid)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: config.key,
+            Authorization: `Bearer ${config.key}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            title,
+            summary,
+            layer: 'INFRA',
+            module: 'GATEWAY',
+            status: 'scheduled',
+            spec_status: 'approved',
+            assigned_to: 'autopilot',
+            metadata: {
+              source: 'voice-investigator-execute',
+              source_report_id: reportId,
+              source_report_class: reportClass,
+              source_report_signature: reportSig,
+              step_index: i,
+              step_total: steps.length,
+            },
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      if (!patchResp.ok) {
+        failures.push({ step: step.slice(0, 80), error: `patch_${patchResp.status}` });
+        continue;
+      }
+      executedVtids.push(newVtid);
+    } catch (err: any) {
+      failures.push({ step: step.slice(0, 80), error: err?.message ?? 'unknown' });
+    }
+  }
+
+  // 4. Update the report row to accepted
+  try {
+    await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'accepted',
+          acknowledged_by: acknowledgedBy,
+          acknowledged_at: new Date().toISOString(),
+          decision_notes: decisionNotes,
+        }),
+      },
+    );
+  } catch {
+    /* best-effort — VTIDs are already created so the user has visible work */
+  }
+
+  // 5. Emit OASIS event for audit
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-VOICE-HEALING',
+      type: 'voice.healing.investigation.completed',
+      source: 'voice-lab',
+      status: 'success',
+      message: `Investigator report accepted and executed (${executedVtids.length} VTIDs scheduled${failures.length ? `, ${failures.length} failed` : ''})`,
+      payload: {
+        report_id: reportId,
+        class: reportClass,
+        normalized_signature: reportSig,
+        executed_vtids: executedVtids,
+        failures,
+        acknowledged_by: acknowledgedBy,
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+
+  return res.json({
+    ok: true,
+    report_id: reportId,
+    step_count: steps.length,
+    executed_vtids: executedVtids,
+    failures: failures.length > 0 ? failures : undefined,
+  });
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/reports/:id/execution (VTID-02021)
+ *
+ * Returns the live status of every VTID created from this report's
+ * Accept-and-Execute action. Drives the drawer's "Execution Progress"
+ * polling — operator sees scheduled → in_progress → completed/failed
+ * without leaving the Self-Healing screen.
+ */
+router.get('/healing/reports/:id/execution', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const reportId = req.params.id;
+  // PostgREST: filter on JSONB key value via metadata->>source_report_id=eq.<id>
+  const url =
+    `${config.url}/rest/v1/vtid_ledger?` +
+    `metadata->>source_report_id=eq.${encodeURIComponent(reportId)}&` +
+    `select=vtid,title,status,spec_status,is_terminal,terminal_outcome,claimed_by,updated_at,metadata&` +
+    `order=metadata->step_index.asc.nullslast,vtid.asc&limit=50`;
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = (await resp.json()) as any[];
+    return res.json({ ok: true, report_id: reportId, vtids: rows });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/v1/voice-lab/healing/mode (VTID-01964, PR #7)
  *
  * Returns the current voice self-healing mode (off / shadow / live).
