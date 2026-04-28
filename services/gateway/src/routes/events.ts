@@ -130,24 +130,41 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
       (body.status === 'warning' || body.status === 'error');
     if (isRoutineBreach) {
       try {
-        // Allocate VTID via canonical RPC.
-        const allocResp = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
-          },
-          body: JSON.stringify({
-            p_source: body.source,
-            p_layer: 'DEV',
-            p_module: 'COMHU',
-          }),
-        });
-        if (allocResp.ok) {
-          const alloc = (await allocResp.json()) as Array<{ vtid?: string }>;
-          selfHealingVtid =
-            Array.isArray(alloc) && alloc[0]?.vtid ? alloc[0].vtid : null;
+        // Allocate VTID via canonical RPC. The allocator's `global_vtid_seq`
+        // can fall behind reality if other paths insert VTIDs without the
+        // sequence — manifests as duplicate-key 23505 errors. Retry up to
+        // 20 times so the sequence catches up to the next free slot.
+        for (let attempt = 0; attempt < 20 && !selfHealingVtid; attempt++) {
+          const allocResp = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+            },
+            body: JSON.stringify({
+              p_source: body.source,
+              p_layer: 'DEV',
+              p_module: 'COMHU',
+            }),
+          });
+          if (allocResp.ok) {
+            const alloc = (await allocResp.json()) as Array<{ vtid?: string }>;
+            selfHealingVtid =
+              Array.isArray(alloc) && alloc[0]?.vtid ? alloc[0].vtid : null;
+            break;
+          }
+          // Read body to know if it's a duplicate-key conflict (retryable)
+          const errText = await allocResp.text();
+          if (allocResp.status === 409 || errText.includes('"code":"23505"')) {
+            // sequence advanced by 1 on the failed call; loop and try again
+            continue;
+          }
+          // Other error — give up, log
+          console.warn(
+            `[events.ingest] allocator failed (${allocResp.status}): ${errText.slice(0, 200)}`
+          );
+          break;
         }
 
         if (selfHealingVtid) {
