@@ -492,58 +492,93 @@ routinesRouter.post(
         }
       }
 
-      // 2. Forward a synthetic HealthReport to /api/v1/self-healing/report so the
-      //    full pipeline (diagnose, allocate VTID, auto-fix or escalate) runs.
+      // 2. Insert a self_healing_log row directly so the existing reconciler
+      //    + the self-healing-triage daily routine pick it up. Confidence 0.5
+      //    means triage's APPROVE heuristic (attempt<=2 AND confidence>=0.5
+      //    AND not quarantined) fires, which dispatches the fix via the
+      //    existing /api/v1/self-healing/approve flow. We allocate a VTID
+      //    first via the canonical allocator RPC.
       const syntheticEndpoint =
         source_endpoint && source_endpoint.startsWith('/')
           ? source_endpoint
           : `routine-incident://${routine_name}/${topic.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      const port = process.env.PORT || '8080';
-      const internalUrl = `http://localhost:${port}/api/v1/self-healing/report`;
-      const healthReport = {
-        timestamp: new Date().toISOString(),
-        total: 1,
-        live: 0,
-        services: [
-          {
-            name: `routine.${routine_name}`,
-            endpoint: syntheticEndpoint,
-            status: 'down',
-            http_status: null,
-            response_body: '',
-            response_time_ms: 0,
-            error_message: `${message} | payload=${JSON.stringify(payload ?? {}).slice(0, 1500)}`,
-          },
-        ],
-      };
-
-      let selfHealingResult: any = null;
+      let selfHealingVtid: string | null = null;
+      let selfHealingLogId: string | null = null;
       let selfHealingError: string | null = null;
-      try {
-        const r = await fetch(internalUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(healthReport),
-        });
-        const text = await r.text();
+
+      if (supabaseUrl && svcKey) {
         try {
-          selfHealingResult = text ? JSON.parse(text) : null;
-        } catch {
-          selfHealingResult = { raw: text.slice(0, 500) };
+          // 2a. Allocate VTID for the incident.
+          const allocResp = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+            },
+            body: JSON.stringify({
+              p_source: `routine.${routine_name}`,
+              p_layer: 'DEV',
+              p_module: 'COMHU',
+            }),
+          });
+          if (allocResp.ok) {
+            const data = (await allocResp.json()) as Array<{ vtid?: string }>;
+            selfHealingVtid = Array.isArray(data) && data[0]?.vtid ? data[0].vtid : null;
+          }
+
+          // 2b. Insert self_healing_log row.
+          if (selfHealingVtid) {
+            const logResp = await fetch(`${supabaseUrl}/rest/v1/self_healing_log`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: svcKey,
+                Authorization: `Bearer ${svcKey}`,
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify({
+                vtid: selfHealingVtid,
+                endpoint: syntheticEndpoint,
+                failure_class: `routine.${routine_name}`,
+                confidence: 0.5,
+                diagnosis: {
+                  source: 'routine',
+                  routine_name,
+                  topic,
+                  severity: severity ?? 'warning',
+                  message,
+                  payload: payload ?? {},
+                  oasis_event_id: oasisEventId,
+                  routed_at: new Date().toISOString(),
+                },
+                outcome: 'pending',
+                attempt_number: 1,
+                blast_radius: severity === 'critical' ? 'critical' : 'contained',
+              }),
+            });
+            if (logResp.ok) {
+              const logData = (await logResp.json()) as Array<{ id?: string }>;
+              selfHealingLogId =
+                Array.isArray(logData) && logData[0]?.id ? logData[0].id : null;
+            } else {
+              selfHealingError = `${logResp.status}: ${(await logResp.text()).slice(0, 200)}`;
+            }
+          } else {
+            selfHealingError = 'VTID allocation failed';
+          }
+        } catch (e: any) {
+          selfHealingError = e.message;
         }
-        if (!r.ok) {
-          selfHealingError = `${r.status}: ${text.slice(0, 200)}`;
-        }
-      } catch (e: any) {
-        selfHealingError = e.message;
       }
 
       return res.status(200).json({
         ok: true,
         oasis_event_id: oasisEventId,
         synthetic_endpoint: syntheticEndpoint,
-        self_healing: selfHealingResult,
+        self_healing_vtid: selfHealingVtid,
+        self_healing_log_id: selfHealingLogId,
         self_healing_error: selfHealingError,
       });
     } catch (error: any) {
