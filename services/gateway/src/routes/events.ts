@@ -115,106 +115,63 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
 
     console.log(`✅ Event ingested: ${eventId} - ${body.vtid}/${body.type}`);
 
-    // VTID-02032: Auto-route routine-emitted breaches into self-healing.
-    // When a daily routine ingests an event with source=routine.* AND
-    // status=warning|critical, that's a detected breach. Write a
-    // self_healing_log row so the existing reconciler + self-healing-triage
-    // routine pick it up and dispatch the fix. Closes the autonomy loop:
-    // routine detects → event ingests → self-healing activates → triage
-    // approves (confidence 0.5) → worker dispatched.
-    let selfHealingVtid: string | null = null;
-    let selfHealingLogId: string | null = null;
+    // VTID-02032: Auto-route routine-emitted breaches through the FULL
+    // self-healing pipeline (LLM diagnosis + auto-fix-or-escalate). When a
+    // daily routine ingests an event with source=routine.* AND
+    // status=warning|error, that's a detected breach. Calling
+    // processFailingService runs the same flow real health-probe failures
+    // take: dedup/circuit-breaker → beginDiagnosis (allocates VTID + LLM
+    // generates a fix spec) → auto-apply if confidence ≥ threshold OR deep
+    // triage → escalate. Without this, rows just sat in self_healing_log
+    // with no spec and the reconciler escalated them after 1h.
+    let selfHealingResult: {
+      action?: string;
+      vtid?: string;
+      reason?: string;
+    } = {};
     const isRoutineBreach =
       typeof body.source === 'string' &&
       body.source.startsWith('routine.') &&
       (body.status === 'warning' || body.status === 'error');
     if (isRoutineBreach) {
       try {
-        // Allocate VTID via canonical RPC. The allocator's `global_vtid_seq`
-        // can fall behind reality if other paths insert VTIDs without the
-        // sequence — manifests as duplicate-key 23505 errors. Retry up to
-        // 20 times so the sequence catches up to the next free slot.
-        for (let attempt = 0; attempt < 20 && !selfHealingVtid; attempt++) {
-          const allocResp = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: svcKey,
-              Authorization: `Bearer ${svcKey}`,
-            },
-            body: JSON.stringify({
-              p_source: body.source,
-              p_layer: 'DEV',
-              p_module: 'COMHU',
-            }),
-          });
-          if (allocResp.ok) {
-            const alloc = (await allocResp.json()) as Array<{ vtid?: string }>;
-            selfHealingVtid =
-              Array.isArray(alloc) && alloc[0]?.vtid ? alloc[0].vtid : null;
-            break;
-          }
-          // Read body to know if it's a duplicate-key conflict (retryable)
-          const errText = await allocResp.text();
-          if (allocResp.status === 409 || errText.includes('"code":"23505"')) {
-            // sequence advanced by 1 on the failed call; loop and try again
-            continue;
-          }
-          // Other error — give up, log
-          console.warn(
-            `[events.ingest] allocator failed (${allocResp.status}): ${errText.slice(0, 200)}`
+        const safeTopic = (body.type || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeRoutine = body.source
+          .replace(/^routine\./, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+        const syntheticEndpoint = `routine-incident://${safeRoutine}/${safeTopic}`;
+
+        // Lazy-load processFailingService + getAutonomyLevel from
+        // self-healing.ts to avoid a module-load cycle (events.ts is loaded
+        // earlier than self-healing.ts in some boot paths).
+        const selfHealingMod = require('./self-healing');
+        const { processFailingService, getAutonomyLevel } = selfHealingMod;
+        const AutonomyLevels = require('../types/self-healing').AutonomyLevel;
+        if (typeof processFailingService === 'function' && typeof getAutonomyLevel === 'function') {
+          const autonomyLevel = await getAutonomyLevel();
+          const synthetic = {
+            name: body.source,
+            endpoint: syntheticEndpoint,
+            status: 'down' as const,
+            http_status: null,
+            response_body: '',
+            response_time_ms: 0,
+            error_message: `${body.message} | payload=${JSON.stringify(body.payload ?? {}).slice(0, 1500)}`,
+          };
+          const result = await processFailingService(synthetic, autonomyLevel);
+          selfHealingResult = result;
+          console.log(
+            `[events.ingest] Routine breach → processFailingService: action=${result.action} vtid=${result.vtid ?? 'none'}`
           );
-          break;
-        }
-
-        if (selfHealingVtid) {
-          // Synthetic endpoint pattern matches ROUTINE_SYNTHETIC_ENDPOINT in
-          // self-healing.ts so /report would accept it too if invoked.
-          const safeTopic = (body.type || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
-          const safeRoutine = body.source.replace(/^routine\./, '').replace(/[^a-zA-Z0-9._-]/g, '_');
-          const syntheticEndpoint = `routine-incident://${safeRoutine}/${safeTopic}`;
-
-          const logResp = await fetch(`${supabaseUrl}/rest/v1/self_healing_log`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: svcKey,
-              Authorization: `Bearer ${svcKey}`,
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify({
-              vtid: selfHealingVtid,
-              endpoint: syntheticEndpoint,
-              failure_class: body.source,
-              confidence: 0.5,
-              diagnosis: {
-                source: 'routine.events.ingest.auto-route',
-                routine_source: body.source,
-                topic: body.type,
-                severity: body.status,
-                message: body.message,
-                payload: body.payload || {},
-                oasis_event_id: insertedEvent.id,
-                routed_at: new Date().toISOString(),
-              },
-              outcome: 'pending',
-              attempt_number: 1,
-              blast_radius: body.status === 'error' ? 'critical' : 'contained',
-            }),
-          });
-          if (logResp.ok) {
-            const logData = (await logResp.json()) as Array<{ id?: string }>;
-            selfHealingLogId =
-              Array.isArray(logData) && logData[0]?.id ? logData[0].id : null;
-            console.log(
-              `[events.ingest] Auto-routed routine breach → self_healing_log ${selfHealingLogId} (${selfHealingVtid})`
-            );
-          }
+        } else {
+          console.warn(
+            '[events.ingest] processFailingService not exported — falling back to OASIS-only ingest'
+          );
         }
       } catch (autoRouteErr: any) {
         // Best-effort; don't fail the OASIS event ingest if self-healing routing fails.
         console.warn(
-          `[events.ingest] Self-healing auto-route failed (non-fatal): ${autoRouteErr.message}`
+          `[events.ingest] Self-healing pipeline failed (non-fatal): ${autoRouteErr.message}`
         );
       }
     }
@@ -222,8 +179,9 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
     return res.status(200).json({
       ok: true,
       event_id: insertedEvent.id,
-      self_healing_vtid: selfHealingVtid,
-      self_healing_log_id: selfHealingLogId,
+      self_healing_action: selfHealingResult.action ?? null,
+      self_healing_vtid: selfHealingResult.vtid ?? null,
+      self_healing_reason: selfHealingResult.reason ?? null,
     });
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);
