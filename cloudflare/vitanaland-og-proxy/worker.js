@@ -262,9 +262,62 @@ function getRedirectUrl(type, identifier) {
   }
 }
 
+// iOS Universal Links + Android App Links discovery files. iOS / Android
+// verifiers fetch these well-known paths on the SAME host the user tapped
+// — so they must work on `e.vitanaland.com` (the share-link host) and not
+// only on `vitanaland.com`. Without them, tapping
+// `e.vitanaland.com/shorts/<id>` from WhatsApp falls through to WhatsApp's
+// in-app browser instead of opening the Maxina app where the user is
+// already signed in. Both verifiers require a 200 OK with no redirects.
+//
+// Source of truth: exafyltd/vitana-v1 `public/.well-known/`. Keep these
+// payloads in sync with that file when the appID, package name, or signing
+// fingerprints change.
+const APPLE_APP_SITE_ASSOCIATION = {
+  applinks: {
+    apps: [],
+    details: [
+      { appID: '62Q26QSEJW.com.exafy.maxina', paths: ['*'] }
+    ]
+  }
+};
+
+const ANDROID_ASSETLINKS = [{
+  relation: ['delegate_permission/common.handle_all_urls'],
+  target: {
+    namespace: 'android_app',
+    package_name: 'com.vitanaland.app',
+    sha256_cert_fingerprints: [
+      '84:4B:CC:0F:D6:3A:F5:E0:8C:8D:A5:B1:E1:9C:EF:EC:95:92:86:C8:B7:22:0B:F1:4C:91:BE:C1:3B:6D:D8:DB',
+      'AF:E4:E9:8D:AA:E2:DF:AF:73:2F:06:B3:34:99:70:7F:CB:00:42:89:4E:23:25:9C:BC:1F:A1:1D:17:37:76:6B'
+    ]
+  }
+}];
+
+function wellKnownResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+
+    // Universal Links (iOS) + App Links (Android). Must be served before
+    // parseRoute() — its bare-slug fallback would otherwise treat
+    // `/.well-known/apple-app-site-association` as an event slug and 302
+    // it to vitanaland.com, which iOS / Android both reject.
+    if (url.pathname === '/.well-known/apple-app-site-association') {
+      return wellKnownResponse(APPLE_APP_SITE_ASSOCIATION);
+    }
+    if (url.pathname === '/.well-known/assetlinks.json') {
+      return wellKnownResponse(ANDROID_ASSETLINKS);
+    }
+
     const ua = request.headers.get('user-agent') || '';
     const route = parseRoute(url.pathname);
 
