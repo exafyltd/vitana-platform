@@ -76,7 +76,9 @@ async function isSelfHealingEnabled(): Promise<boolean> {
   }
 }
 
-async function getAutonomyLevel(): Promise<AutonomyLevel> {
+// VTID-02032: Exported alongside processFailingService so the routines
+// bridge runs at the same autonomy level as the canonical /report path.
+export async function getAutonomyLevel(): Promise<AutonomyLevel> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return AutonomyLevel.AUTO_FIX_SIMPLE;
   try {
     const resp = await fetch(
@@ -153,7 +155,12 @@ async function shouldBeginDiagnosis(endpoint: string): Promise<{ proceed: boolea
 // Process a single failing service through the pipeline
 // ═══════════════════════════════════════════════════════════════════
 
-async function processFailingService(
+// VTID-02032: Exported so the routines bridge can run a routine-detected
+// breach through the same LLM-diagnosis + auto-fix-or-escalate pipeline as
+// real health-probe failures. Without this, rows inserted directly into
+// self_healing_log have no spec and the reconciler escalates them after 1h
+// of no progress.
+export async function processFailingService(
   failure: ServiceStatus,
   autonomyLevel: AutonomyLevel,
 ): Promise<{ action: 'created' | 'skipped' | 'escalated' | 'disabled'; vtid?: string; reason?: string }> {
