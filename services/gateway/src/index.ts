@@ -287,6 +287,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityMembersRouter = require('./routes/community-members').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
   const intentOpenAsksRouter = intentEngineEnabled ? require('./routes/intent-open-asks').default : null;
+  // VTID-DANCE-D7: auto-templated demands (composer prefill source)
+  const intentTemplatesRouter = intentEngineEnabled ? require('./routes/intent-templates').default : null;
+  // VTID-DANCE-D6: admin trust-tier flip (operator only)
+  const adminTrustTierRouter = require('./routes/admin-trust-tier').default;
+  // VTID-DANCE-D6: Stripe Connect webhook scaffold
+  const paymentsStripeWebhookRouter = require('./routes/payments-stripe-webhook').default;
   // VTID-DANCE-D10: shareable intent posts + public /p/:id viewer
   const intentsShareRouter = intentEngineEnabled ? require('./routes/intents-share').default : null;
   // Admin: Signup Funnel Tracking & Outreach
@@ -788,6 +794,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
+  if (intentTemplatesRouter) mountRouterSync(app, '/api/v1', intentTemplatesRouter, { owner: 'intent-templates' });
+  mountRouterSync(app, '/api/v1', adminTrustTierRouter, { owner: 'admin-trust-tier' });
+  // Stripe webhook lives at root, no /api/v1 prefix.
+  mountRouterSync(app, '/', paymentsStripeWebhookRouter, { owner: 'payments-stripe-webhook' });
   // VTID-DANCE-D10: mounted at root for both /api/v1/intents/:id/share AND /p/:id (the share router defines absolute paths)
   if (intentsShareRouter) mountRouterSync(app, '/', intentsShareRouter, { owner: 'intents-share' });
   if (adminIntentEngineRouter) mountRouterSync(app, '/api/v1/admin/intent-engine', adminIntentEngineRouter, { owner: 'admin-intent-engine' });

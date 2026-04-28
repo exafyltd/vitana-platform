@@ -32,6 +32,7 @@ import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher'
 import { checkIntentContent } from '../services/intent-content-filter';
 import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
+import { gateIntentByTier } from '../services/intent-trust-gate';
 import { redactMatchForReader } from '../services/intent-mutual-reveal';
 import { notifyMatchSurfaced } from '../services/intent-notifier';
 import { writeIntentFacts } from '../services/intent-memory-hooks';
@@ -147,12 +148,32 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(429).json({ ok: false, error: throttle.reason, message: throttle.detail });
   }
 
-  // Tier gate (commercial only).
+  // Tier gate (commercial only — legacy budget-based check kept for backwards compat).
   if ((intentKind === 'commercial_buy' || intentKind === 'commercial_sell') && typeof budgetMax === 'number') {
     const gate = await gateCommercialBudget(identity.user_id, budgetMax);
     if (!gate.ok) {
       return res.status(403).json({ ok: false, error: 'TIER_REQUIRED', tier: gate.tier, required: gate.required, message: gate.reason });
     }
+  }
+
+  // VTID-DANCE-D6: per-kind/category trust-tier gate (data-driven via
+  // intent_tier_required). Operator role bypasses entirely.
+  const isOperator = Boolean((identity as any).exafy_admin) || (identity as any).role === 'service_role';
+  const trustGate = await gateIntentByTier({
+    user_id: identity.user_id,
+    intent_kind: intentKind,
+    category,
+    kind_payload: kindPayload,
+    is_operator: isOperator,
+  });
+  if (!trustGate.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: 'INSUFFICIENT_TRUST_TIER',
+      required: trustGate.required_tier,
+      current: trustGate.current_tier,
+      message: trustGate.reason,
+    });
   }
 
   // Snapshot the user's active compass at post time (for telemetry).
