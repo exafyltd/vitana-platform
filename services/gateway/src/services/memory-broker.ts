@@ -224,9 +224,14 @@ async function fetchIdentityBlock(input: MemoryReadInput): Promise<{
 
   // Canonical identity comes from app_users — NEVER memory_facts (Identity
   // Lock invariant, VTID-01952).
+  //
+  // The actual app_users schema stores name/dob/etc inside the `profile`
+  // JSONB blob plus a few flat columns (display_name, email, locale,
+  // vitana_id). We unpack profile into the IdentityBlock shape so callers
+  // get a stable contract regardless of the backing layout.
   const { data, error } = await supabase
     .from('app_users')
-    .select('user_id, first_name, last_name, full_name, preferred_name, email, date_of_birth, gender, pronouns, locale, vitana_id')
+    .select('user_id, display_name, email, locale, vitana_id, profile')
     .eq('user_id', input.user_id)
     .eq('tenant_id', input.tenant_id)
     .maybeSingle();
@@ -235,19 +240,23 @@ async function fetchIdentityBlock(input: MemoryReadInput): Promise<{
     return { block: null, latency_ms: Date.now() - t0 };
   }
 
+  const profile = ((data as any).profile ?? {}) as Record<string, any>;
+  const fullName: string | null = (data as any).display_name
+    ?? profile.full_name ?? profile.display_name ?? null;
+
   const block: IdentityBlock = {
     kind: 'IDENTITY',
     user_id: data.user_id,
     tenant_id: input.tenant_id,
-    first_name: (data as any).first_name ?? null,
-    last_name: (data as any).last_name ?? null,
-    full_name: (data as any).full_name ?? null,
-    preferred_name: (data as any).preferred_name ?? null,
-    email: (data as any).email ?? null,
-    date_of_birth: (data as any).date_of_birth ?? null,
-    gender: (data as any).gender ?? null,
-    pronouns: (data as any).pronouns ?? null,
-    locale: (data as any).locale ?? null,
+    first_name: profile.first_name ?? null,
+    last_name: profile.last_name ?? null,
+    full_name: fullName,
+    preferred_name: profile.preferred_name ?? profile.preferred_first_name ?? null,
+    email: (data as any).email ?? profile.email ?? null,
+    date_of_birth: profile.date_of_birth ?? profile.dob ?? null,
+    gender: profile.gender ?? null,
+    pronouns: profile.pronouns ?? null,
+    locale: (data as any).locale ?? profile.locale ?? null,
     vitana_id: (data as any).vitana_id ?? null,
     source: 'app_users',
     asserted_at: new Date().toISOString(),
