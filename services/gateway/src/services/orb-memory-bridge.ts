@@ -19,6 +19,8 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-02005 Phase 5b: Tier 2 dual-writer
+import { mirrorEpisode } from './mem-tier2-writer';
 import {
   scoreAndRankMemories,
   emitScoringEvent,
@@ -715,6 +717,35 @@ export async function writeMemoryItemWithIdentity(
     }
 
     console.log(`[VTID-01186] Memory written: ${data?.id} (user=${identity.user_id.substring(0,8)}..., tenant=${identity.tenant_id.substring(0,8)}...)`);
+
+    // VTID-02005 Phase 5b: fan out to mem_episodes (Tier 2 mirror).
+    // Fire-and-forget. Never blocks the primary write. Skipped when the
+    // mem_tier2_dual_write_enabled flag is off (default).
+    void mirrorEpisode({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      source_event_id: data?.id,
+      conversation_id: (params.content_json?.conversation_id as string | undefined) ?? undefined,
+      session_id: (params.content_json?.session_id as string | undefined) ?? undefined,
+      kind: 'utterance',
+      content: params.content,
+      content_json: contentJson,
+      importance: adjustedImportance,
+      category_key: categoryKey,
+      source: params.source,
+      workspace_scope: params.workspace_scope ?? 'dev',
+      active_role: identity.active_role ?? undefined,
+      visibility_scope: 'private',
+      origin_service: 'orb-memory-bridge',
+      occurred_at: occurredAt,
+      // Provenance: actor_id distinguishes user-spoken from assistant-said
+      // (`direction` was already read earlier in this function for importance)
+      actor_id: direction === 'assistant' ? 'assistant' : 'user',
+      confidence: 1.0,
+      source_engine: params.source,
+      classification: { health: false, ephemeral: false },
+    });
+
     return { ok: true, id: data?.id, category_key: categoryKey };
 
   } catch (err: any) {
