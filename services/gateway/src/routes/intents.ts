@@ -26,6 +26,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { classifyIntentKind, type IntentKind } from '../services/intent-classifier';
 import { extractIntent } from '../services/intent-extractor';
+import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
 import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher';
 import { checkIntentContent } from '../services/intent-content-filter';
@@ -46,6 +47,8 @@ function getSupabase() {
 const VALID_KINDS: IntentKind[] = [
   'commercial_buy', 'commercial_sell', 'activity_seek',
   'partner_seek', 'social_seek', 'mutual_aid',
+  // VTID-DANCE-D2
+  'learning_seek', 'mentor_seek',
 ];
 
 // ── POST /intents ────────────────────────────────────────────
@@ -94,6 +97,15 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
       }
     }
   }
+
+  // VTID-DANCE-D2: dance facet enrichment (no-op for non-dance categories).
+  // Canonicalises any dance.* fields in kind_payload + back-fills from
+  // profile.dance_preferences when the user has set them.
+  kindPayload = await enrichDancePayload({
+    user_id: identity.user_id,
+    category,
+    kind_payload: kindPayload,
+  });
 
   // Validation.
   if (!intentKind || !VALID_KINDS.includes(intentKind)) {

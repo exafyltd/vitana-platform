@@ -2371,6 +2371,20 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             '',
             'For partner_seek: explain matches are revealed only after both',
             'parties express interest (privacy protocol).',
+            '',
+            'DANCE matchmaking (learning_seek / mentor_seek / activity_seek with dance.* category):',
+            '- "I want to learn salsa, find a teacher" → learning_seek + dance.learning.salsa',
+            '- "I teach salsa Tuesdays" → mentor_seek + dance.teaching.salsa',
+            '- "Find me a salsa partner Saturday night" → activity_seek + dance.social_partner',
+            '- "Going out dancing this weekend" → activity_seek + dance.group_outing',
+            'When the user gives constraints like gender / age range / location radius / max price,',
+            'put them in kind_payload.counterparty_filter.',
+            '',
+            'ALWAYS-POST contract: every dictated intent gets posted regardless of match count.',
+            'When matches=0, do NOT say "no matches found." Say:',
+            '"I posted your request — you\'re the first one looking for this in our community right now.',
+            ' I\'ll let you know the moment someone matches. Your post is also visible on the board so',
+            ' anyone can see it."',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2378,7 +2392,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
               utterance: { type: 'string', description: 'The user\'s words verbatim.' },
               kind_hint: {
                 type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
               },
               confirmed: { type: 'boolean' },
             },
@@ -2405,7 +2419,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             properties: {
               intent_kind: {
                 type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
               },
             },
           },
@@ -5032,6 +5046,34 @@ async function executeLiveApiToolInner(
             console.warn(`[VTID-01975] post_intent match compute failed: ${err.message}`);
           }
 
+          // VTID-DANCE-D3: always-post telemetry. Every dictated intent posts;
+          // match_count=0 is its own signal that needs an explicit "you're the
+          // first" readback (the voice tool description tells Gemini how).
+          if (matchCount === 0) {
+            try {
+              await emitOasisEvent({
+                vtid: 'VTID-DANCE-D3',
+                type: 'voice.message.sent',
+                source: 'orb-live',
+                status: 'info',
+                message: `Intent posted with zero matches (cold-start); kind=${intentKind} category=${extract.category ?? 'null'}`,
+                payload: {
+                  intent_id: intentId,
+                  intent_kind: intentKind,
+                  category: extract.category,
+                  always_post: true,
+                  reason: 'no_matches_yet',
+                },
+                actor_id: session.identity!.user_id,
+                actor_role: 'user',
+                surface: 'orb',
+                vitana_id: vid,
+              });
+            } catch {
+              // best effort
+            }
+          }
+
           return {
             success: true,
             result: JSON.stringify({
@@ -5049,6 +5091,9 @@ async function executeLiveApiToolInner(
               })),
               compass_aligned: !!compass?.category,
               partner_seek_redacted: intentKind === 'partner_seek',
+              // Hint to the model: when match_count=0, read back the
+              // "you're the first" message from the voice-tool description.
+              cold_start: matchCount === 0,
             }),
           };
         } catch (err: any) {
@@ -6518,11 +6563,20 @@ const INTENT_SIGNAL_PATTERNS_EN = [
   /\b(life partner|find a (girlfriend|boyfriend|partner)|looking for (love|relationship))\b/i,
   /\b(coffee chat|looking for a mentor|connect with|networking)\b/i,
   /\b(can lend|can borrow|free moving help|i can give|can i borrow)\b/i,
+  // VTID-DANCE-D3: dance-specific signals.
+  /\b(want|like|love)\s+to\s+(learn|dance)\b/i,                  // "want to learn", "love to dance"
+  /\b(teach me|teach you|teaching|i teach|i'm a teacher|instructor|coach)\b/i,
+  /\b(salsa|tango|bachata|kizomba|swing|ballroom|hip[\s-]?hop|contemporary|ballet)\b/i,
+  /\b(dance partner|dance class|going (out )?danc(ing|e)|dance lesson|dance teacher|dance instructor)\b/i,
 ];
 const INTENT_SIGNAL_PATTERNS_DE = [
   /\b(ich (brauche|suche|will|möchte|biete|kann|verkaufe))\b/i,
   /\b(jemand (zum|für))\b/i,
   /\b(partner fürs leben)\b/i,
+  // VTID-DANCE-D3: dance signals in DE.
+  /\b(ich\s+m[oö]chte\s+(\w+\s+)?lernen|ich\s+lerne|tanzlehrer|tanzpartner|tanzkurs)\b/i,
+  /\b(salsa|tango|bachata|kizomba|walzer|standardtanz)\b/i,
+  /\b(tanzen\s+gehen|tanzen\s+lernen|biete\s+tanz)\b/i,
 ];
 
 function detectIntentSignal(text: string): boolean {
