@@ -30,7 +30,7 @@ import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
 import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher';
 // VTID-DANCE-D12 — Layer 2 over the SQL matcher.
-import { runMatchmakerForIntent } from '../services/matchmaker-agent';
+import { runMatchmakerAsync } from '../services/matchmaker-agent';
 import { checkIntentContent } from '../services/intent-content-filter';
 import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
@@ -245,15 +245,15 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     console.warn(`[VTID-01973] post-insert match compute failed: ${err.message}`);
   }
 
-  // VTID-DANCE-D12 — Layer 2 matchmaker agent (Gemini 2.5 Pro).
-  // Re-ranks the top-K, generates voice-friendly readback + counter-questions,
-  // and if SQL returned 0 candidates, falls back to profile.dance_preferences
-  // as a supply pool. Best-effort; SQL result is the authoritative shape.
-  let matchmakerResult: Awaited<ReturnType<typeof runMatchmakerForIntent>> | null = null;
+  // VTID-DANCE-D12 — Layer 2 matchmaker agent (Gemini 2.5 Pro), async.
+  // Kicks off a background re-rank. Clients poll
+  // GET /api/v1/intents/:id/matchmaker for the polished result (~20s).
+  // The SQL match_count + intent_id are returned NOW so voice flow
+  // doesn't block on Gemini latency.
   try {
-    matchmakerResult = await runMatchmakerForIntent((inserted as any).intent_id);
+    runMatchmakerAsync((inserted as any).intent_id);
   } catch (err: any) {
-    console.warn(`[VTID-DANCE-D12] matchmaker agent failed (non-fatal): ${err?.message}`);
+    console.warn(`[VTID-DANCE-D12] matchmaker async kick failed (non-fatal): ${err?.message}`);
   }
 
   await emitOasisEvent({
@@ -280,9 +280,65 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     intent_id: (inserted as any).intent_id,
     requester_vitana_id: (inserted as any).requester_vitana_id,
     match_count: matchCount,
-    // D12 — agent result piggy-backs on the post response so ORB / clients
-    // get it in one round-trip. Null when the agent was unavailable.
-    matchmaker: matchmakerResult,
+    // D12 async: status is 'pending' immediately after post. Poll
+    // GET /api/v1/intents/:id/matchmaker for the polished re-rank.
+    matchmaker_status: 'pending',
+  });
+});
+
+// ── GET /intents/:id/matchmaker (D12 poll endpoint) ─────────
+
+router.get('/:id/matchmaker', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const intentId = String(req.params.id || '').trim();
+  if (!intentId) return res.status(400).json({ ok: false, error: 'INTENT_ID_REQUIRED' });
+
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+
+  // Visibility gate: requester must own the intent OR the intent is public.
+  const { data: src } = await supabase
+    .from('user_intents')
+    .select('intent_id, requester_user_id, visibility')
+    .eq('intent_id', intentId)
+    .maybeSingle();
+  if (!src) return res.status(404).json({ ok: false, error: 'INTENT_NOT_FOUND' });
+
+  const isOwner = (src as any).requester_user_id === identity.user_id;
+  const visibility = String((src as any).visibility || 'public');
+  if (!isOwner && visibility !== 'public') {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+
+  const { data: rec } = await supabase
+    .from('intent_match_recommendations')
+    .select('intent_id, status, mode, pool_size, candidates, counter_questions, voice_readback, reasoning_summary, used_fallback, model, latency_ms, error, computed_at, updated_at')
+    .eq('intent_id', intentId)
+    .maybeSingle();
+
+  if (!rec) {
+    return res.json({ ok: true, status: 'not_started', poll_again_ms: 2000 });
+  }
+
+  const status = String((rec as any).status);
+  return res.json({
+    ok: true,
+    status,
+    mode: (rec as any).mode,
+    pool_size: (rec as any).pool_size,
+    candidates: (rec as any).candidates ?? [],
+    counter_questions: (rec as any).counter_questions ?? [],
+    voice_readback: (rec as any).voice_readback,
+    reasoning_summary: (rec as any).reasoning_summary,
+    used_fallback: (rec as any).used_fallback,
+    model: (rec as any).model,
+    latency_ms: (rec as any).latency_ms,
+    error: (rec as any).error,
+    computed_at: (rec as any).computed_at,
+    // Tell the client when to poll again (only if still computing).
+    poll_again_ms: status === 'pending' || status === 'running' ? 3000 : null,
   });
 });
 
