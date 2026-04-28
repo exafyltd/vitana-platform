@@ -2400,6 +2400,16 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             '"I posted your request — you\'re the first one looking for this in our community right now.',
             ' I\'ll let you know the moment someone matches. Your post is also visible on the board so',
             ' anyone can see it."',
+            '',
+            'DEDUP BEHAVIOR: if the user asks the same thing twice in a session ("looking for a dance partner"',
+            'after they already posted that), the server returns deduplicated:true with the existing intent_id.',
+            'When you see deduplicated:true, do NOT post again. Tell the user: "You already posted this',
+            'earlier today. Refine it (different time, location, or style) if you want a new one — or open',
+            'the existing post and I can show you who responded." Then call list_my_intents OR navigate_to_screen',
+            'with target=my_intents so they can SEE their existing post.',
+            '',
+            'NEVER repeat-post the same generic ask. If the user repeats verbatim, treat it as "show me my',
+            'existing post" — call list_my_intents and surface what they already have.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2493,6 +2503,50 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
               confirmed: { type: 'boolean' },
             },
             required: ['intent_id', 'recipient_vitana_ids'],
+          },
+        },
+        // VTID-DANCE-D14 — voice navigation. ORB returns a relative URL
+        // the frontend listens for and routes to. Use whenever the user
+        // says "show me my posts", "open the dance board", "where can I
+        // see this", "take me to the members list", etc.
+        {
+          name: 'navigate_to_screen',
+          description: [
+            'Return a navigation target (relative URL) for the frontend to route to.',
+            'Use whenever the user asks to be shown a screen, list, or detail page —',
+            '"show me my posts", "open the dance board", "where can I see this", "take me to members".',
+            '',
+            'Available targets:',
+            "  my_intents               → /intents/mine (my own posts list)",
+            "  intent_board             → /intents/board (all community posts, kind tabs)",
+            "  intent_board_dance       → /intents/board?filter=dance (dance tab pre-selected)",
+            "  open_asks                → /comm/open-asks (community-wide unmatched posts)",
+            "  members                  → /comm/members (community members directory)",
+            "  intent_match_detail      → /intents/match/<match_id> (a specific match)",
+            "  intent_post_public       → /p/<intent_id> (public viewer for a specific post)",
+            "  edit_dance_preferences   → /profile/edit?drawer=dance",
+            "  events_meetups           → /comm/events-meetups",
+            "  community_feed           → /comm/feed",
+            '',
+            'After calling, ORB should ALSO say a short voice cue ("Opening your posts now") so',
+            'the user knows the screen change is intentional. The frontend handles the actual route push.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                enum: [
+                  'my_intents','intent_board','intent_board_dance',
+                  'open_asks','members',
+                  'intent_match_detail','intent_post_public',
+                  'edit_dance_preferences','events_meetups','community_feed',
+                ],
+              },
+              intent_id: { type: 'string', description: 'For intent_post_public target.' },
+              match_id: { type: 'string', description: 'For intent_match_detail target.' },
+            },
+            required: ['target'],
           },
         },
         // VTID-DANCE-D11.B — pre-post candidate scan.
@@ -5397,6 +5451,58 @@ async function executeLiveApiToolInner(
           console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
+      }
+
+      // VTID-DANCE-D14 — frontend navigation tool. Returns a relative URL
+      // the client routes to. The frontend listens for navigate_to events
+      // emitted on the ORB session channel.
+      case 'navigate_to_screen': {
+        const target = String(args.target || '').trim();
+        const intentId = args.intent_id ? String(args.intent_id).trim() : null;
+        const matchId = args.match_id ? String(args.match_id).trim() : null;
+        if (!target) return { success: false, result: '', error: 'target is required' };
+
+        let url = '';
+        let title = '';
+        switch (target) {
+          case 'my_intents':              url = '/intents/mine'; title = 'My posts'; break;
+          case 'intent_board':             url = '/intents/board'; title = 'Community board'; break;
+          case 'intent_board_dance':       url = '/intents/board?filter=dance'; title = 'Dance posts'; break;
+          case 'open_asks':                url = '/comm/open-asks'; title = 'Open asks'; break;
+          case 'members':                  url = '/comm/members'; title = 'Community members'; break;
+          case 'intent_match_detail':
+            if (!matchId) return { success: false, result: '', error: 'match_id is required for intent_match_detail' };
+            url = `/intents/match/${encodeURIComponent(matchId)}`; title = 'Match detail'; break;
+          case 'intent_post_public':
+            if (!intentId) return { success: false, result: '', error: 'intent_id is required for intent_post_public' };
+            url = `/p/${encodeURIComponent(intentId)}`; title = 'Post detail'; break;
+          case 'edit_dance_preferences':   url = '/profile/edit?drawer=dance'; title = 'Dance preferences'; break;
+          case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
+          case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
+          default:
+            return { success: false, result: '', error: `Unknown target: ${target}` };
+        }
+
+        // Emit a session event so the frontend can listen + route.
+        try {
+          await emitOasisEvent({
+            vtid: 'VTID-DANCE-D14',
+            type: 'voice.message.sent',
+            source: 'orb-live',
+            status: 'info',
+            message: `Voice navigate_to_screen: ${target}`,
+            payload: { target, url, title, intent_id: intentId, match_id: matchId },
+            actor_id: session.identity?.user_id,
+            actor_role: 'user',
+            surface: 'orb',
+            vitana_id: session.identity?.vitana_id ?? undefined,
+          });
+        } catch { /* best-effort */ }
+
+        return {
+          success: true,
+          result: JSON.stringify({ ok: true, navigate_to: url, title }),
+        };
       }
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
