@@ -186,7 +186,14 @@
     _alertBuffersLoaded: false,
     _isReconnecting: false,
     _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
-    _disconnectStuck: false
+    _disconnectStuck: false,
+    // VTID-02020: contextual recovery state. _preDisconnectStage captures what
+    // the user was doing when the network dropped (idle / listening_user_speaking
+    // / thinking / speaking) so the backend's recovery prompt can decide
+    // whether to answer / ask-to-repeat / resume. conversationId is pinned by
+    // the backend on first /live/session/start and reused across reconnects.
+    _preDisconnectStage: null,
+    conversationId: null
   };
 
   // VTID-OFFLINE: Instant offline/online detection via browser events
@@ -606,7 +613,27 @@
     _s._disconnectReason = reason;
     _s._preDisconnectVoiceState = _s.voiceState;
 
-    console.warn('[VTOrb] _announceDisconnect: reason=' + reason);
+    // VTID-02020: capture WHAT the user was doing when the connection dropped.
+    // Used by the backend's contextual recovery prompt to decide whether to
+    // (A) acknowledge the disconnect + answer the in-flight question,
+    // (B) ask the user to repeat (they were mid-utterance),
+    // (C) resume mid-answer (the assistant was the one talking when cut off).
+    var stage;
+    if (_s.voiceState === 'LISTENING' && !_s.audioPlaying) {
+      // user was actively talking — likely mid-question (case B)
+      stage = 'listening_user_speaking';
+    } else if (_s.voiceState === 'THINKING') {
+      // user just finished, model hadn't started speaking yet (case A)
+      stage = 'thinking';
+    } else if (_s.voiceState === 'SPEAKING' || _s.audioPlaying) {
+      // model was mid-answer (case C)
+      stage = 'speaking';
+    } else {
+      stage = 'idle';
+    }
+    _s._preDisconnectStage = stage;
+
+    console.warn('[VTOrb] _announceDisconnect: reason=' + reason + ', stage=' + stage);
 
     // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
     // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
@@ -699,21 +726,15 @@
     _setStatus(label);
     _updateUI();
 
-    var src = _playAlert('recovery-' + reason + '-' + lang);
-    var rangBeep = false;
-    function ringReady() {
-      if (rangBeep) return;
-      rangBeep = true;
-      _playReadyBeep();
-      _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
-    }
-    if (src) {
-      src.onended = ringReady;
-      // Safety: if onended never fires (clip corruption etc), ring the beep anyway
-      setTimeout(ringReady, 4000);
-    } else {
-      ringReady();
-    }
+    // VTID-02020: NO client-side recovery voice. The backend's contextual
+    // recovery prompt (sendReconnectRecoveryPromptToLiveAPI) is now the single
+    // voice that acknowledges the disconnect — in the user's actual Vertex
+    // Live voice, with knowledge of what they were saying when we got cut off.
+    // We just play a brief non-voice ready beep + flip the status to
+    // "Listening..." so the visual transition is unambiguous; the assistant
+    // voice will speak shortly after.
+    _playReadyBeep();
+    _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
   }
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
@@ -950,6 +971,27 @@
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
+      // VTID-02020: when this _sessionStart is happening as part of a reconnect
+      // (NOT a first-time session), send the conversation history + the
+      // pre-disconnect stage so the backend can route to the contextual
+      // recovery prompt instead of the generic greeting. Detected via the
+      // presence of accumulated transcript history OR an explicit pre-stage
+      // flag — both survive _resetAndReconnect (kept in module-scoped _s).
+      var hasHistory = _s._transcriptHistory && _s._transcriptHistory.length > 0;
+      var hasStage = !!_s._preDisconnectStage;
+      if (hasHistory || hasStage) {
+        if (hasHistory) {
+          startPayload.transcript_history = _s._transcriptHistory.slice(-20).map(function (t) {
+            return { role: t.role, text: t.text };
+          });
+        }
+        startPayload.reconnect_stage = _s._preDisconnectStage || 'idle';
+        if (_s.conversationId) startPayload.conversation_id = _s.conversationId;
+        console.log('[VTOrb] _sessionStart: reconnect context — stage=' + startPayload.reconnect_stage
+          + ', transcript=' + (startPayload.transcript_history ? startPayload.transcript_history.length : 0) + ' turns'
+          + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
+      }
+
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
       // dead TCP connection can hang indefinitely, which used to leave the
       // reconnect promise pending forever and the orb stuck on the disconnect
@@ -979,6 +1021,15 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // VTID-02020: pin the conversation_id returned by the backend so future
+      // reconnects can re-thread the same conversation. The backend will
+      // either echo back the one we sent or mint a fresh UUID on first start.
+      if (data.conversation_id) _s.conversationId = data.conversation_id;
+      // VTID-02020: the pre-disconnect stage was now consumed by the new
+      // session; clear it so a non-reconnect _sessionStart later doesn't
+      // accidentally route to the recovery prompt. transcript_history and
+      // conversation_id ARE preserved across the rest of the session lifetime.
+      _s._preDisconnectStage = null;
       if (_cfg.onSessionStart) try { _cfg.onSessionStart(_s.sessionId); } catch (e) { /* ignore */ }
 
       // Connect SSE stream
@@ -1101,6 +1152,10 @@
     _s._outputTranscriptBuffer = '';
     _s._transcriptHistory = [];
     _s._reconnectCount = 0;
+    // VTID-02020: clear conversation pin + stage on full close so the next
+    // open is a true fresh start (greeting flow, not recovery flow).
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
 
     _updateUI();
   }

@@ -893,6 +893,14 @@ interface LiveSessionStartRequest {
   // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms).
   // Allows clients to tune response latency vs. pause tolerance.
   vad_silence_ms?: number;
+  // VTID-02020: contextual recovery — when the client is re-starting after a
+  // disconnect, it sends the last few transcript turns + the stage the user
+  // was in (idle / listening_user_speaking / thinking / speaking) so the
+  // backend can route to the contextual recovery prompt instead of the
+  // standard greeting. conversation_id is the pinned thread identifier.
+  transcript_history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+  reconnect_stage?: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking';
+  conversation_id?: string;
 }
 
 /**
@@ -8279,6 +8287,133 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 }
 
 /**
+ * VTID-02020: Contextual recovery prompt for reconnects.
+ *
+ * After a network disconnect, the orb-widget client tears down the dead SSE
+ * and creates a fresh /live/session/start that includes the last 20 transcript
+ * turns + a "reconnect_stage" hint describing what the user was doing when
+ * the connection dropped (idle / listening_user_speaking / thinking / speaking).
+ *
+ * Instead of the standard greeting (which is jarring — sounds like a second
+ * voice introducing itself), this prompt asks Gemini to acknowledge the
+ * disconnect and take the appropriate action based on the stage:
+ *   - "thinking"                  → "Sorry, we got disconnected. You asked
+ *                                    about [topic]. Here's the answer: …"
+ *   - "listening_user_speaking"   → "Sorry, we got interrupted. Could you
+ *                                    please repeat what you were saying?"
+ *   - "speaking"                  → "Sorry, we got disconnected while I was
+ *                                    answering. Let me continue: …"
+ *   - "idle" (or unknown)         → "I'm back. What would you like to talk
+ *                                    about?"
+ *
+ * Gemini's response is the SINGLE voice the user hears post-reconnect —
+ * no client-side MP3 plays. The transcript history is already injected into
+ * the system instruction (see buildLiveSystemInstruction's transcriptTurns
+ * arg), so Gemini has full context.
+ */
+function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession): boolean {
+  if (ws.readyState !== WebSocket.OPEN) {
+    console.warn('[VTID-02020] Cannot send recovery prompt — WebSocket not open');
+    return false;
+  }
+  if (session.greetingSent) {
+    console.log('[VTID-02020] Recovery prompt already sent, skipping');
+    return false;
+  }
+
+  const lang = session.lang;
+  const stage = ((session as any).reconnectStage as string) || 'idle';
+  const reconnectCount = ((session as any)._reconnectCount || 0);
+
+  // Localized "Sorry, …" intros. Kept short on purpose — single sentence.
+  // Gemini will follow the structural instructions for the rest.
+  const intros: Record<string, Record<string, string>> = {
+    en: {
+      thinking: "Sorry, we got disconnected. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
+      listening_user_speaking: "Sorry, we got interrupted before I caught your full question. Could you please repeat what you were saying? I'm here and listening.",
+      speaking: "Sorry, we got disconnected while I was answering. Let me continue:",
+      idle: "I'm back. What would you like to talk about?"
+    },
+    de: {
+      thinking: "Entschuldige, die Verbindung war unterbrochen. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
+      listening_user_speaking: "Entschuldige, wir wurden unterbrochen, bevor ich deine ganze Frage gehört habe. Könntest du bitte wiederholen, was du gesagt hast? Ich höre zu.",
+      speaking: "Entschuldige, die Verbindung war unterbrochen, während ich geantwortet habe. Ich mache weiter:",
+      idle: "Ich bin wieder da. Worüber möchtest du sprechen?"
+    },
+    fr: {
+      thinking: "Désolé, nous avons été déconnectés. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
+      listening_user_speaking: "Désolé, nous avons été interrompus avant que je n'entende votre question complète. Pouvez-vous la répéter ? Je vous écoute.",
+      speaking: "Désolé, nous avons été déconnectés pendant que je répondais. Je continue :",
+      idle: "Je suis de retour. De quoi voulez-vous parler ?"
+    },
+    es: {
+      thinking: "Perdón, nos desconectamos. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
+      listening_user_speaking: "Perdón, nos interrumpimos antes de que oyera tu pregunta completa. ¿Podrías repetirla? Te escucho.",
+      speaking: "Perdón, nos desconectamos mientras yo respondía. Continúo:",
+      idle: "Estoy de vuelta. ¿De qué quieres hablar?"
+    }
+  };
+
+  const stageIntros = intros[lang] || intros['en'];
+  const introTemplate = stageIntros[stage] || stageIntros['idle'];
+
+  // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
+  // open AND what to do next (answer / wait / continue) based on the stage.
+  const prompt = [
+    'You are recovering from a brief network disconnect that interrupted a live voice conversation.',
+    '',
+    'Read the conversation history that has been injected into your system instruction.',
+    '',
+    `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
+    '',
+    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action:',
+    `- For stage "thinking": open with "${stageIntros.thinking}" and IMMEDIATELY answer the user's last question using the conversation history. Replace the placeholder with a brief 3-6 word paraphrase of the user's actual last turn topic. Do NOT repeat their words verbatim. Keep the answer focused and concise.`,
+    `- For stage "listening_user_speaking": say "${stageIntros.listening_user_speaking}" and then STOP and wait for the user. Do NOT guess what they were going to ask.`,
+    `- For stage "speaking": say "${stageIntros.speaking}" and then RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
+    `- For stage "idle" or unknown: say "${stageIntros.idle}" and wait.`,
+    '',
+    'CRITICAL RULES:',
+    '- Speak in the user\'s language (it is set in your system instruction).',
+    '- Do NOT introduce yourself.',
+    '- Do NOT say "Hello", "Hi", or the user\'s name.',
+    '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
+    '- Use the word "Sorry" / equivalent ONCE, not repeatedly.',
+    '- Speak immediately when this prompt arrives.',
+    '',
+    `Now produce the recovery line for stage "${stage}" and any follow-up action.`
+  ].join('\n');
+
+  const message = {
+    client_content: {
+      turns: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }],
+      turn_complete: true
+    }
+  };
+
+  ws.send(JSON.stringify(message));
+
+  // Reuse greetingSent so future stalls / accidental greeting calls don't double-fire.
+  session.greetingSent = true;
+  session.greetingTurnIndex = session.turn_count;
+  console.log(`[VTID-02020] Recovery prompt sent — lang=${lang}, stage=${stage}, reconnectCount=${reconnectCount}, transcriptTurns=${session.transcriptTurns?.length || 0}`);
+  emitDiag(session, 'recovery_prompt_sent', {
+    lang,
+    stage,
+    reconnect_count: reconnectCount,
+    transcript_turns: session.transcriptTurns?.length || 0
+  });
+
+  // Watchdog so a missing recovery response surfaces as a recoverable diag,
+  // matching the greeting path's behavior.
+  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'recovery_prompt_timeout');
+
+  return true;
+}
+
+/**
  * VTID-01155: Convert raw PCM audio data to WAV format
  * Gemini TTS returns audio/L16;codec=pcm;rate=24000 (16-bit PCM at 24kHz mono)
  * Browser Audio element cannot play raw PCM, needs WAV headers
@@ -11881,6 +12016,30 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;
+  // VTID-02020: contextual recovery hints sent by the orb-widget on reconnect.
+  // Empty / absent on first-time sessions, in which case the standard greeting
+  // path runs unchanged. When present, _resumedFromHistory is set on the session
+  // object so the /live/stream handler routes to sendReconnectRecoveryPromptToLiveAPI.
+  const reconnectTranscriptHistory: Array<{ role: 'user' | 'assistant'; text: string }> =
+    Array.isArray(body.transcript_history)
+      ? body.transcript_history
+          .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
+          .slice(-20)
+      : [];
+  const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
+    typeof body.reconnect_stage === 'string'
+    && (body.reconnect_stage === 'idle' || body.reconnect_stage === 'listening_user_speaking'
+        || body.reconnect_stage === 'thinking' || body.reconnect_stage === 'speaking')
+      ? body.reconnect_stage
+      : 'idle';
+  const incomingConversationId: string | null =
+    typeof body.conversation_id === 'string' && body.conversation_id.length > 0
+      ? body.conversation_id : null;
+  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
+  const resolvedConversationId = incomingConversationId || randomUUID();
+  if (isReconnectStart) {
+    console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
+  }
 
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
@@ -12113,8 +12272,13 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     contextBootstrapSkippedReason,
     contextBootstrapBuiltAt: Date.now(),
     contextReadyPromise,
-    // VTID-01225: Transcript accumulation for Cognee extraction
-    transcriptTurns: [],
+    // VTID-01225: Transcript accumulation for Cognee extraction.
+    // VTID-02020: seeded from request body when this is a reconnect, so the
+    // post-greeting recovery prompt + the system-instruction history block
+    // both have the previous turns immediately available.
+    transcriptTurns: reconnectTranscriptHistory.length > 0
+      ? reconnectTranscriptHistory.map(t => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
+      : [],
     outputTranscriptBuffer: '',
     pendingEventLinks: [],
     // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
@@ -12178,6 +12342,16 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     }
   }
 
+  // VTID-02020: pin the conversation_id (echoed back to the client) and
+  // mark this session as resumed-from-history when the client sent context.
+  // The /live/stream handler reads `resumedFromHistory` to route to the
+  // contextual recovery prompt instead of the standard greeting.
+  session.conversation_id = resolvedConversationId;
+  if (isReconnectStart) {
+    (session as any).resumedFromHistory = true;
+    (session as any).reconnectStage = reconnectStage;
+  }
+
   // Store session
   liveSessions.set(sessionId, session);
 
@@ -12201,6 +12375,9 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   return res.status(200).json({
     ok: true,
     session_id: sessionId,
+    // VTID-02020: echo the pinned conversation_id so the client can persist it
+    // and re-send on the next reconnect to keep the same conversation thread.
+    conversation_id: resolvedConversationId,
     meta: {
       lang,
       voice: getVoiceForLang(lang),
@@ -12637,8 +12814,20 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         }
       }
 
-      // Send greeting prompt — Gemini generates it with the real Live API voice
-      sendGreetingPromptToLiveAPI(ws, session);
+      // VTID-02020: route greeting vs. contextual recovery prompt.
+      // - First-time session (no resumedFromHistory, no _reconnectCount): standard greeting.
+      // - Reconnect from client-side session restart (_resumedFromHistory=true): contextual recovery.
+      // - Backend transparent reconnect (_reconnectCount>0): also contextual recovery.
+      // The recovery prompt is the SINGLE voice the user hears post-reconnect — no
+      // client MP3 plays, no generic greeting fires. Gemini speaks the acknowledgment
+      // + either answers the in-flight question, asks user to repeat, or resumes mid-answer.
+      const isReconnectGreetingSkip = ((session as any).resumedFromHistory === true)
+        || (((session as any)._reconnectCount || 0) > 0);
+      if (isReconnectGreetingSkip) {
+        sendReconnectRecoveryPromptToLiveAPI(ws, session);
+      } else {
+        sendGreetingPromptToLiveAPI(ws, session);
+      }
     }).catch((err: any) => {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
