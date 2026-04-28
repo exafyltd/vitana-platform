@@ -18,6 +18,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
+import { mirrorFact } from './mem-tier2-writer'; // VTID-02005 Phase 5b Tier 2 mirror
 
 // =============================================================================
 // Configuration
@@ -226,6 +227,23 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
     });
 
     console.log(`[${VTID}] Fact written: ${request.fact_key} = ${request.fact_value.substring(0, 50)}...`);
+
+    // VTID-02005 Phase 5b: mirror to mem_facts (Tier 2). Fire-and-forget.
+    void mirrorFact({
+      tenant_id: request.tenant_id,
+      user_id: request.user_id,
+      source_event_id: typeof data === 'string' ? data : undefined,
+      entity: request.entity || 'self',
+      fact_key: request.fact_key,
+      fact_value: request.fact_value,
+      fact_value_type: request.fact_value_type || 'text',
+      vtid: VTID,
+      // Provenance: actor_id reflects the legacy provenance_source taxonomy
+      actor_id: request.provenance_source || 'user_stated',
+      confidence,
+      source_engine: SERVICE_NAME,
+      classification: {},
+    });
 
     return {
       ok: true,
