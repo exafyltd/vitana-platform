@@ -388,10 +388,15 @@ router.post('/report', async (req: Request, res: Response) => {
     // ORB voice failures through the same diagnose/inject/dispatch chain.
     // Subsequent PRs add the adapter, deterministic specs, and synthetic probe.
     const VOICE_SYNTHETIC_ENDPOINT = /^voice-error:\/\/[a-z._-]+$/;
+    // VTID-02032: Routine incidents — synthetic endpoint pattern for breaches detected
+    // by the daily routines, so the self-healing pipeline picks them up via the same
+    // diagnose/spec/dispatch chain that handles voice-synthetic errors.
+    const ROUTINE_SYNTHETIC_ENDPOINT = /^routine-incident:\/\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 
     for (const failure of downServices) {
       const isVoiceSynthetic = VOICE_SYNTHETIC_ENDPOINT.test(failure.endpoint);
-      if (!isVoiceSynthetic && !knownEndpoints.has(failure.endpoint)) {
+      const isRoutineSynthetic = ROUTINE_SYNTHETIC_ENDPOINT.test(failure.endpoint);
+      if (!isVoiceSynthetic && !isRoutineSynthetic && !knownEndpoints.has(failure.endpoint)) {
         console.log(`[self-healing] Rejecting unknown endpoint: ${failure.endpoint}`);
         details.push({
           service: failure.name,

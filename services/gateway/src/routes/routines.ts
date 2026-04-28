@@ -413,3 +413,142 @@ routinesRouter.patch(
     }
   }
 );
+
+// =============================================================================
+// VTID-02032 — Routine → self-healing bridge
+// =============================================================================
+// When a routine detects a breach, calling this endpoint:
+//   1. Emits an OASIS event (audit trail)
+//   2. Forwards a synthetic HealthReport into POST /api/v1/self-healing/report
+//      so the existing self-healing pipeline (LLM diagnosis + auto-fix-or-
+//      escalate) actually runs on the breach.
+//
+// This closes the gap where routines emitted OASIS events with nothing
+// listening. The autonomy contract: every breach activates self-healing.
+
+const escalateSchema = z.object({
+  routine_name: z.string().min(1).max(64),
+  topic: z.string().min(1).max(128),
+  source_endpoint: z.string().min(1).max(512).optional(),
+  severity: z.enum(['warning', 'critical']).optional(),
+  message: z.string().max(2000),
+  payload: z.unknown().optional(),
+  vtid_for_event: z.string().optional(),
+});
+
+routinesRouter.post(
+  '/api/v1/routines/escalate-incident',
+  requireRoutineToken,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = escalateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ ok: false, error: 'Invalid body', details: parsed.error.flatten() });
+      }
+      const {
+        routine_name,
+        topic,
+        source_endpoint,
+        severity,
+        message,
+        payload,
+        vtid_for_event,
+      } = parsed.data;
+
+      // 1. Emit OASIS event (audit trail) — same shape as /api/v1/events/ingest.
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+      let oasisEventId: string | null = null;
+      if (supabaseUrl && svcKey) {
+        try {
+          const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify({
+              vtid: vtid_for_event ?? 'SYSTEM',
+              topic,
+              service: `routine.${routine_name}`,
+              role: 'API',
+              model: 'routine-escalate-incident',
+              status: severity ?? 'warning',
+              message,
+              metadata: payload ?? {},
+              created_at: new Date().toISOString(),
+            }),
+          });
+          if (eventResp.ok) {
+            const data = (await eventResp.json()) as Array<{ id?: string }>;
+            oasisEventId = Array.isArray(data) && data[0]?.id ? data[0].id : null;
+          }
+        } catch (e) {
+          console.warn(`${LOG_PREFIX} oasis ingest failed (non-fatal):`, e);
+        }
+      }
+
+      // 2. Forward a synthetic HealthReport to /api/v1/self-healing/report so the
+      //    full pipeline (diagnose, allocate VTID, auto-fix or escalate) runs.
+      const syntheticEndpoint =
+        source_endpoint && source_endpoint.startsWith('/')
+          ? source_endpoint
+          : `routine-incident://${routine_name}/${topic.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+      const port = process.env.PORT || '8080';
+      const internalUrl = `http://localhost:${port}/api/v1/self-healing/report`;
+      const healthReport = {
+        timestamp: new Date().toISOString(),
+        total: 1,
+        live: 0,
+        services: [
+          {
+            name: `routine.${routine_name}`,
+            endpoint: syntheticEndpoint,
+            status: 'down',
+            http_status: null,
+            response_body: '',
+            response_time_ms: 0,
+            error_message: `${message} | payload=${JSON.stringify(payload ?? {}).slice(0, 1500)}`,
+          },
+        ],
+      };
+
+      let selfHealingResult: any = null;
+      let selfHealingError: string | null = null;
+      try {
+        const r = await fetch(internalUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(healthReport),
+        });
+        const text = await r.text();
+        try {
+          selfHealingResult = text ? JSON.parse(text) : null;
+        } catch {
+          selfHealingResult = { raw: text.slice(0, 500) };
+        }
+        if (!r.ok) {
+          selfHealingError = `${r.status}: ${text.slice(0, 200)}`;
+        }
+      } catch (e: any) {
+        selfHealingError = e.message;
+      }
+
+      return res.status(200).json({
+        ok: true,
+        oasis_event_id: oasisEventId,
+        synthetic_endpoint: syntheticEndpoint,
+        self_healing: selfHealingResult,
+        self_healing_error: selfHealingError,
+      });
+    } catch (error: any) {
+      console.error(`${LOG_PREFIX} escalate-incident error:`, error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
