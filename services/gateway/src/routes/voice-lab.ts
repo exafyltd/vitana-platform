@@ -929,6 +929,68 @@ router.post('/healing/reports/:id/execute', async (req: Request, res: Response) 
         continue;
       }
       executedVtids.push(newVtid);
+
+      // VTID-02029: cross-cutting visibility. Insert into self_healing_log
+      // and emit self-healing.task.injected so this VTID appears in the
+      // existing Self-Healing History list and Autonomy Trace timeline
+      // alongside dev-autopilot self-heals — operator doesn't have to
+      // know about a separate voice silo.
+      const recommendation = report.report?.recommendation || {};
+      const recConfidence =
+        typeof recommendation.confidence === 'number' ? recommendation.confidence : 0.5;
+      const shlogEndpoint = `voice-error://${reportClass}`;
+      fetch(`${config.url}/rest/v1/self_healing_log`, {
+        method: 'POST',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          vtid: newVtid,
+          endpoint: shlogEndpoint,
+          failure_class: reportClass,
+          confidence: recConfidence,
+          diagnosis: {
+            source: 'voice-investigator-execute',
+            source_report_id: reportId,
+            normalized_signature: reportSig,
+            recommendation_track: recommendation.track || null,
+            step_index: i,
+            step_total: steps.length,
+            step_text: step.slice(0, 500),
+          },
+          outcome: 'pending',
+          blast_radius: 'none',
+          attempt_number: 1,
+        }),
+      }).catch(() => { /* best-effort */ });
+
+      // Emit self-healing.task.injected so Autonomy Trace + downstream
+      // listeners see the same event the canonical injector emits.
+      try {
+        const { emitOasisEvent } = await import('../services/oasis-event-service');
+        await emitOasisEvent({
+          vtid: newVtid,
+          type: 'self-healing.task.injected',
+          source: 'voice-investigator-execute',
+          status: 'info',
+          message: `Voice investigator step ${i + 1}/${steps.length} injected: ${title.slice(0, 100)}`,
+          payload: {
+            service: 'orb-voice',
+            endpoint: shlogEndpoint,
+            failure_class: reportClass,
+            confidence: recConfidence,
+            source_report_id: reportId,
+            normalized_signature: reportSig,
+            step_index: i,
+            step_total: steps.length,
+            recommendation_track: recommendation.track || null,
+            auto_approved: true,
+          },
+        });
+      } catch { /* best-effort */ }
     } catch (err: any) {
       failures.push({ step: step.slice(0, 80), error: err?.message ?? 'unknown' });
     }
