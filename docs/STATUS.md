@@ -1,7 +1,7 @@
 # Vitana Platform — Live Status
 
-**Updated:** 2026-04-28T12:24:00.129263Z
-**Summary:** 40/54 services live
+**Updated:** 2026-04-28T17:42:02.540869Z
+**Summary:** 54/54 services live
 
 ## Service Health
 
@@ -27,12 +27,12 @@
 | Autopilot Pipeline | ✅ Live | 200 |
 | Autopilot Prompts | ✅ Live | 200 |
 | Autopilot Recommendations | ✅ Live | 200 |
-| Automations | ❌ Down | 401 |
+| Automations | ✅ Live | 200 |
 | Recommendation Inbox | ✅ Live | 200 |
 | Memory | ✅ Live | 200 |
 | Semantic Memory | ✅ Live | 200 |
-| Diary | ❌ Down | 401 |
-| Health Capacity | ❌ Down | 401 |
+| Diary | ✅ Live | 200 |
+| Health Capacity | ✅ Live | 200 |
 | Scheduler | ✅ Live | 200 |
 | Scheduled Notifications | ✅ Live | 200 |
 | Email Intake | ✅ Live | 200 |
@@ -43,40 +43,25 @@
 | Live Rooms | ✅ Live | 200 |
 | Social Context | ✅ Live | 200 |
 | Social Connect | ✅ Live | 200 |
-| Social Alignment | ❌ Down | 401 |
+| Social Alignment | ✅ Live | 200 |
 | Topics | ✅ Live | 200 |
-| Domain Routing | ❌ Down | 401 |
+| Domain Routing | ✅ Live | 200 |
 | Locations | ✅ Live | 200 |
 | Offers | ✅ Live | 200 |
 | Feedback Correction | ✅ Live | 200 |
 | Voice Feedback | ✅ Live | 200 |
-| Situational Awareness | ❌ Down | 401 |
-| Availability & Readiness | ❌ Down | 401 |
-| Environmental Mobility | ❌ Down | 401 |
-| User Preferences | ❌ Down | 401 |
-| Taste Alignment | ❌ Down | 401 |
-| Overload Detection | ❌ Down | 401 |
-| Risk Mitigation | ❌ Down | 401 |
-| Opportunity Surfacing | ❌ Down | 401 |
+| Situational Awareness | ✅ Live | 200 |
+| Availability & Readiness | ✅ Live | 200 |
+| Environmental Mobility | ✅ Live | 200 |
+| User Preferences | ✅ Live | 200 |
+| Taste Alignment | ✅ Live | 200 |
+| Overload Detection | ✅ Live | 200 |
+| Risk Mitigation | ✅ Live | 200 |
+| Opportunity Surfacing | ✅ Live | 200 |
 | Visual Interactive | ✅ Live | 200 |
-| VTID Terminalize | ❌ Down | 401 |
+| VTID Terminalize | ✅ Live | 200 |
 | VTID | ✅ Live | 200 |
 
-### ⚠️ Down Services
-- Automations
-- Diary
-- Health Capacity
-- Social Alignment
-- Domain Routing
-- Situational Awareness
-- Availability & Readiness
-- Environmental Mobility
-- User Preferences
-- Taste Alignment
-- Overload Detection
-- Risk Mitigation
-- Opportunity Surfacing
-- VTID Terminalize
 
 
 ---
