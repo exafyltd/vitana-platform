@@ -44,6 +44,27 @@ export function getVisibleContexts(role: string | null): CalendarRoleContext[] |
 }
 
 // =============================================================================
+// Vitana Pillars (calendar → Index linkage)
+// =============================================================================
+
+export type CalendarPillarKey = 'nutrition' | 'hydration' | 'exercise' | 'sleep' | 'mental';
+
+export const CALENDAR_PILLAR_KEYS: readonly CalendarPillarKey[] = [
+  'nutrition', 'hydration', 'exercise', 'sleep', 'mental',
+] as const;
+
+/**
+ * Per-pillar Δ a successful event completion will add to the Vitana Index.
+ * Mirrors `AutopilotRecommendation.contribution_vector` shape so producers can
+ * use a single helper across both surfaces.
+ */
+export type ContributionVector = Partial<Record<CalendarPillarKey, number>>;
+
+const ContributionVectorSchema = z
+  .record(z.enum(['nutrition', 'hydration', 'exercise', 'sleep', 'mental']), z.number().nonnegative())
+  .refine((v) => Object.keys(v).length > 0, { message: 'contribution_vector must have ≥1 pillar' });
+
+// =============================================================================
 // Calendar Event (Full Row)
 // =============================================================================
 
@@ -80,6 +101,11 @@ export interface CalendarEvent {
   reschedule_count: number;
   priority_score: number;
   wellness_tags: string[];
+
+  // Vitana Index linkage (typed columns; legacy events leave both null and
+  // consumers fall back to a `pillar:*` entry inside wellness_tags).
+  pillar: CalendarPillarKey | null;
+  contribution_vector: ContributionVector | null;
 }
 
 // =============================================================================
@@ -97,6 +123,8 @@ export interface CalendarEventSummary {
   completion_status: string | null;
   priority_score: number;
   wellness_tags: string[];
+  pillar: CalendarPillarKey | null;
+  contribution_vector: ContributionVector | null;
 }
 
 // =============================================================================
@@ -152,6 +180,8 @@ export const CreateCalendarEventSchema = z.object({
   metadata: z.record(z.any()).optional().default({}),
   is_recurring: z.boolean().default(false),
   recurring_pattern: z.record(z.any()).optional().nullable(),
+  pillar: z.enum(['nutrition', 'hydration', 'exercise', 'sleep', 'mental']).optional().nullable(),
+  contribution_vector: ContributionVectorSchema.optional().nullable(),
 });
 
 export type CreateCalendarEventInput = z.infer<typeof CreateCalendarEventSchema>;
@@ -167,6 +197,8 @@ export const UpdateCalendarEventSchema = z.object({
   priority_score: z.number().int().min(0).max(100).optional(),
   wellness_tags: z.array(z.string()).optional(),
   metadata: z.record(z.any()).optional(),
+  pillar: z.enum(['nutrition', 'hydration', 'exercise', 'sleep', 'mental']).optional().nullable(),
+  contribution_vector: ContributionVectorSchema.optional().nullable(),
 });
 
 export const ListCalendarEventsSchema = z.object({

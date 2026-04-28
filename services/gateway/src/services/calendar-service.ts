@@ -463,6 +463,8 @@ export function toSummary(event: CalendarEvent): CalendarEventSummary {
     completion_status: event.completion_status,
     priority_score: event.priority_score,
     wellness_tags: event.wellness_tags,
+    pillar: event.pillar ?? null,
+    contribution_vector: event.contribution_vector ?? null,
   };
 }
 
