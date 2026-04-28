@@ -770,6 +770,36 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
     /* best-effort emit */
   }
 
+  // VTID-02030: ping ops via Gchat for architectural recommendations only —
+  // tracks like stay_and_patch keep running through the auto-loop, but
+  // tracks that require a human team (replace_vendor / redesign_pipeline /
+  // "Redesign & Replace" / patch_around) need a supervisor to read & act.
+  // Reuses the same notifyGChat() helper used by existing self-healing pings.
+  const ARCHITECTURAL_TRACKS = new Set([
+    'replace_vendor',
+    'redesign_pipeline',
+    'redesign_replace',
+    'Redesign & Replace',
+    'patch_around',
+  ]);
+  if (ARCHITECTURAL_TRACKS.has(report.recommendation.track)) {
+    try {
+      const { notifyGChat } = await import('./self-healing-snapshot-service');
+      const summary = (report.recommendation.summary || '').slice(0, 280);
+      await notifyGChat(
+        `🧠 *Voice — architectural action recommended*\n` +
+        `Class: \`${input.class}\`\n` +
+        `Track: *${report.recommendation.track}* ` +
+        `(confidence ${(report.recommendation.confidence * 100).toFixed(0)}%)\n` +
+        `Trigger: ${input.trigger_reason}\n` +
+        `${summary}\n` +
+        `Report ID: \`${reportId}\` — open Voice Lab → Healing tab to read & Accept & Execute`,
+      );
+    } catch {
+      /* best-effort */
+    }
+  }
+
   return {
     ok: true,
     report_id: reportId,

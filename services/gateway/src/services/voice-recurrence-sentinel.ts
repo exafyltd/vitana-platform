@@ -317,6 +317,24 @@ export async function evaluateAndQuarantine(
     /* best-effort */
   }
 
+  // VTID-02030: ping ops via Gchat — quarantine means the auto-loop has
+  // stopped and the supervisor should look. Reuses the same notifyGChat()
+  // helper that powers existing self-healing pings (54-health-check stream).
+  try {
+    const { notifyGChat } = await import('./self-healing-snapshot-service');
+    await notifyGChat(
+      `🛑 *Voice class quarantined*\n` +
+      `Class: \`${klass}\`\n` +
+      `Signature: \`${signature}\`\n` +
+      `Reason: *${reason}* ` +
+      `(burst_24h=${counts.burst_24h}, persistence_7d=${counts.persistence_7d}, failed_fix_7d=${counts.failed_fix_7d}` +
+      `${inProbation ? ', from_probation=true' : ''})\n` +
+      `Investigator spawned. No further auto-dispatch on this class until released.`,
+    );
+  } catch {
+    /* best-effort */
+  }
+
   // VTID-01963 (PR #6): spawn the Architecture Investigator. Fire-and-forget
   // so we don't block the reconciler tick on the Vertex call. The
   // investigator persists a report row and emits voice.healing.investigation.completed.
