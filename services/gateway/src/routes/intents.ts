@@ -121,42 +121,50 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(400).json({ ok: false, error: 'scope must be 20-1500 chars' });
   }
 
-  // VTID-DANCE-D14 — De-duplication. If this user already has a recent
-  // open intent of the same kind + same category that looks the same,
-  // return the existing intent rather than creating a duplicate. This
-  // prevents users from looking like spammers when they ask the same
-  // thing twice via voice. Window: last 24 hours, same intent_kind,
-  // same category, status='open', AND case-folded title matches OR
-  // scope is a near-substring.
+  // VTID-DANCE-D14 — De-duplication (two-tier).
+  //
+  //   FAST RULE: same user + same intent_kind + same category + last 15
+  //   minutes → ALWAYS dedup. The user clearly meant the same thing they
+  //   just posted. No content matching needed.
+  //
+  //   WIDER RULE: last 24 hours, same kind, same category, status='open',
+  //   AND title-substring-match OR scope-substring-match (>=80%). Catches
+  //   cases where the user paraphrases ("looking for a dance partner"
+  //   then "want to dance with someone").
+  //
+  // Both rules return deduplicated:true with the existing intent_id. The
+  // voice tool description tells Gemini to surface the existing post via
+  // navigate_to_screen instead of trying to post again.
   {
     const supabase = getSupabase();
+    // Pull the requester's open intents from the same kind in the last 24h.
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: existing } = await supabase
       .from('user_intents')
-      .select('intent_id, requester_vitana_id, title, scope, kind_payload')
+      .select('intent_id, requester_vitana_id, title, scope, category, kind_payload, created_at')
       .eq('requester_user_id', identity.user_id)
       .eq('intent_kind', intentKind)
       .eq('status', 'open')
       .gte('created_at', since)
+      .order('created_at', { ascending: false })
       .limit(20);
 
     const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const sameCategory = (a: string | null, b: string | null) => {
-      if (a === b) return true;
-      if (a == null || b == null) return false;
-      // Same root (dance.*, home_services.*, sport.*, etc.)
-      return a.split('.')[0] === b.split('.')[0];
-    };
     const newTitle = norm(title);
     const newScope = norm(scope);
+    const FIFTEEN_MIN_AGO = Date.now() - 15 * 60 * 1000;
 
     const dup = (existing as any[] ?? []).find((r) => {
+      // FAST RULE: same kind + same category + last 15 minutes → dedup unconditionally.
+      const rCreatedAt = r.created_at ? new Date(r.created_at).getTime() : 0;
+      if (rCreatedAt > FIFTEEN_MIN_AGO && r.category === category) {
+        return true;
+      }
+
+      // WIDER RULE: same kind + 24h + textual similarity.
       const rTitle = norm(r.title);
       const rScope = norm(r.scope);
-      if (!sameCategory(r.kind_payload?.category ?? null, category) && !sameCategory(category, category)) {
-        // No category info on existing row; rely on text similarity below.
-      }
-      // Title overlap: identical normalised, OR one is a near-substring of the other.
+      // Title overlap.
       if (rTitle && newTitle && (rTitle === newTitle || rTitle.includes(newTitle) || newTitle.includes(rTitle))) {
         return true;
       }
