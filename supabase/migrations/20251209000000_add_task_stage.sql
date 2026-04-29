@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS public.oasis_events (
   task_stage    text
 );
 
+-- Step 1.1: Enable Row Level Security and add a default-deny policy for anon users
+-- This is a security hardening measure to prevent unauthenticated access.
+ALTER TABLE public.oasis_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "deny_unauthenticated" ON public.oasis_events
+  FOR ALL TO anon USING (false) WITH CHECK (false);
+
 -- Step 2: Add task_stage column if table existed but column doesn't
 -- (for existing Supabase instances where table was created manually)
 DO $$
