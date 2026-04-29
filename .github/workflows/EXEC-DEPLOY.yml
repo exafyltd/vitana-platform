@@ -355,7 +355,12 @@ jobs:
             # VTID-02030d: Google Chat webhook for human-in-the-loop pings
             # (voice quarantine, architectural recommendations, etc.).
             # Same secret used by DAILY-STATUS-UPDATE.yml's existing pings.
-            EXTRA_ENV_ARGS+=(--update-env-vars=GCHAT_COMMANDHUB_WEBHOOK=${{ secrets.VITANA_CHAT_WEBHOOK }})
+            # Quoted because Google Chat webhook URLs always contain `&`
+            # between query params (?key=...&token=...) and an unquoted `&`
+            # inside `()` is a bash background-job token → syntax error
+            # before the run even starts. PR #1070 missed the quoting and
+            # broke every gateway deploy until this fix.
+            EXTRA_ENV_ARGS+=("--update-env-vars=GCHAT_COMMANDHUB_WEBHOOK=${{ secrets.VITANA_CHAT_WEBHOOK }}")
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
