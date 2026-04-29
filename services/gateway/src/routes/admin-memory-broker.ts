@@ -19,6 +19,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getMemoryContext, MemoryIntent, MemoryBlockKind } from '../services/memory-broker';
+import { buildAgentProfile } from '../services/agent-profile-service';
 
 const router = Router();
 // VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
@@ -95,6 +96,50 @@ router.post('/admin/memory/context', async (req: AuthenticatedRequest, res: Resp
   });
 
   return res.json(pack);
+});
+
+// VTID-02631 — Phase 7b — agent profile smoke endpoint.
+// Exposes buildAgentProfile(tenant_id, user_id) so we can inspect the
+// rendered markdown digest before wiring it into the brain prompt.
+router.get('/admin/memory/profile', async (req: AuthenticatedRequest, res: Response) => {
+  const tenantId = String(req.query.tenant_id || '');
+  const userId   = String(req.query.user_id   || '');
+  const budget   = req.query.budget_ms ? Number(req.query.budget_ms) : 1500;
+  const maxChars = req.query.max_chars ? Number(req.query.max_chars) : undefined;
+
+  if (!tenantId || !userId) {
+    return res.status(400).json({ ok: false, error: 'tenant_id and user_id are required' });
+  }
+
+  const profile = await buildAgentProfile({
+    tenant_id: tenantId,
+    user_id: userId,
+    latency_budget_ms: budget,
+    max_chars: maxChars,
+  });
+
+  return res.json(profile);
+});
+
+router.post('/admin/memory/profile', async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body || {};
+  const tenantId = String(body.tenant_id || '');
+  const userId   = String(body.user_id   || '');
+  const budget   = typeof body.latency_budget_ms === 'number' ? body.latency_budget_ms : 1500;
+  const maxChars = typeof body.max_chars === 'number' ? body.max_chars : undefined;
+
+  if (!tenantId || !userId) {
+    return res.status(400).json({ ok: false, error: 'tenant_id and user_id are required' });
+  }
+
+  const profile = await buildAgentProfile({
+    tenant_id: tenantId,
+    user_id: userId,
+    latency_budget_ms: budget,
+    max_chars: maxChars,
+  });
+
+  return res.json(profile);
 });
 
 export default router;
