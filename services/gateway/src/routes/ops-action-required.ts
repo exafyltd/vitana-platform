@@ -22,7 +22,21 @@ import { Router, Request, Response } from 'express';
 
 const router = Router();
 
-const ITEM_LOOKBACK_HOURS = 72; // window for self-heal escalations
+// VTID-02031b: tightened to 24h lookback so the panel surfaces only fresh
+// items needing supervisor action. Older escalations live in the dedicated
+// Self-Healing screen.
+const ITEM_LOOKBACK_HOURS = 24;
+// Cap the total list so the panel never dominates the Overview view.
+// Sorted by severity desc → detected_at desc, so critical-and-fresh wins.
+const MAX_ITEMS = 20;
+// VTID-02031b: dev-autopilot self-heals have their own dedicated dashboard
+// (Autopilot Developer + Self-Healing History) — surfacing them here too
+// just creates a duplicate signal. The panel is for *unique* human-action
+// items. Filter out endpoints that begin with these prefixes.
+const SELF_HEAL_ENDPOINT_BLOCKLIST = [
+  'dev_autopilot.',
+  'autopilot.', // generic autopilot.* heals also routine
+];
 
 function getSupabaseConfig(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL;
@@ -143,25 +157,30 @@ async function fetchSelfHealEscalations(
       created_at: string;
       diagnosis: any;
     }>;
-    return rows.map((row) => {
-      const reason =
-        row.diagnosis?.reason ??
-        row.diagnosis?.tombstone_reason ??
-        row.outcome;
-      return {
-        id: `self-heal:${row.vtid}`,
-        severity: row.outcome === 'rolled_back' ? 'critical' : ('warning' as 'critical' | 'warning'),
-        category: 'self-heal',
-        title: `Self-healing ${row.outcome}: ${row.endpoint}`,
-        summary:
-          `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — ${reason}.` +
-          ` Endpoint still requires manual investigation.`,
-        detected_at: row.created_at,
-        deeplink: `/command-hub/autonomy/self-healing/?vtid=${encodeURIComponent(row.vtid)}`,
-        source_table: 'self_healing_log',
-        source_id: row.vtid,
-      };
-    });
+    return rows
+      .filter((row) => {
+        const ep = row.endpoint || '';
+        return !SELF_HEAL_ENDPOINT_BLOCKLIST.some((prefix) => ep.startsWith(prefix));
+      })
+      .map((row) => {
+        const reason =
+          row.diagnosis?.reason ??
+          row.diagnosis?.tombstone_reason ??
+          row.outcome;
+        return {
+          id: `self-heal:${row.vtid}`,
+          severity: row.outcome === 'rolled_back' ? 'critical' : ('warning' as 'critical' | 'warning'),
+          category: 'self-heal',
+          title: `Self-healing ${row.outcome}: ${row.endpoint}`,
+          summary:
+            `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — ${reason}.` +
+            ` Endpoint still requires manual investigation.`,
+          detected_at: row.created_at,
+          deeplink: `/command-hub/autonomy/self-healing/?vtid=${encodeURIComponent(row.vtid)}`,
+          source_table: 'self_healing_log',
+          source_id: row.vtid,
+        };
+      });
   } catch {
     return [];
   }
@@ -180,18 +199,29 @@ router.get('/', async (_req: Request, res: Response) => {
     fetchSelfHealEscalations(config),
   ]);
 
-  // Concatenate and sort by detected_at desc (most recent first).
-  const items: ActionItem[] = [...quarantines, ...reports, ...escalations].sort(
-    (a, b) => (a.detected_at < b.detected_at ? 1 : -1),
+  // Sort: critical first, then by detected_at desc within each severity.
+  const all: ActionItem[] = [...quarantines, ...reports, ...escalations].sort(
+    (a, b) => {
+      if (a.severity !== b.severity) {
+        return a.severity === 'critical' ? -1 : 1;
+      }
+      return a.detected_at < b.detected_at ? 1 : -1;
+    },
   );
 
-  const count_critical = items.filter((i) => i.severity === 'critical').length;
+  const count_total = all.length;
+  const count_critical = all.filter((i) => i.severity === 'critical').length;
+  // VTID-02031b: cap surfaced items so the panel never dominates the view.
+  // Total count + critical count are still reported truthfully so the
+  // operator knows there's more if they want to drill in.
+  const items = all.slice(0, MAX_ITEMS);
 
   return res.json({
     ok: true,
     generated_at: new Date().toISOString(),
-    count_total: items.length,
+    count_total,
     count_critical,
+    items_returned: items.length,
     items,
   });
 });
