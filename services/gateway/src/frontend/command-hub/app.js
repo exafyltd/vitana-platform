@@ -39168,6 +39168,35 @@ function _vhRenderReportContent(row) {
     //     Progress section, polls live status. ONLY available for non-stub
     //     reports with at least one proposed step.
     //   Reject — "Don't act on this." PATCH only.
+    // VTID-02032: once a report has been decided (accepted/rejected/
+    // acknowledged) the action buttons must not reappear. Show a clear
+    // "already processed" notice instead of re-actionable buttons. The
+    // backend /execute endpoint also returns 409 to defend against races.
+    var alreadyDecided = row.status && row.status !== 'open';
+    if (alreadyDecided) {
+        var processedNotice = document.createElement('div');
+        processedNotice.style.cssText = 'padding:10px 14px;margin-top:8px;background:rgba(74,222,128,0.08);' +
+            'border:1px solid rgba(74,222,128,0.30);border-radius:6px;color:#86efac;font-size:0.85rem;line-height:1.5;';
+        var processedTitle = document.createElement('strong');
+        processedTitle.textContent = 'Report already ' + row.status;
+        if (row.acknowledged_by) {
+            processedTitle.textContent += ' by ' + row.acknowledged_by;
+        }
+        processedNotice.appendChild(processedTitle);
+        var processedHint = document.createElement('div');
+        processedHint.style.cssText = 'margin-top:4px;color:rgba(229,231,235,0.78);font-style:italic;';
+        processedHint.textContent = row.status === 'accepted'
+            ? 'The proposed steps were scheduled. See Execution Progress above for live status.'
+            : 'No action will be taken on this recommendation.';
+        processedNotice.appendChild(processedHint);
+        footer.appendChild(processedNotice);
+        c.appendChild(footer);
+        setTimeout(function() {
+            var closeBtn = document.getElementById('vh-drawer-close');
+            if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
+        }, 0);
+        return c;
+    }
     var hasExecutableSteps =
         !isStub &&
         rec.proposed_next_steps &&
@@ -39212,13 +39241,39 @@ function _vhRenderReportContent(row) {
                 var data = await r.json();
                 if (data && data.ok) {
                     if (def.kind === 'execute') {
-                        showToast('Scheduled ' + (data.executed_vtids ? data.executed_vtids.length : 0) + ' work item(s)', 'success');
-                        // Re-open drawer to show the new Execution Progress section
-                        openVoiceHealingReportDrawer(row.id);
+                        var n = data.executed_vtids ? data.executed_vtids.length : 0;
+                        showToast(
+                            'Scheduled ' + n + ' work item(s) — track them in Self-Healing History',
+                            'success',
+                        );
                     } else {
                         showToast('Report ' + (def.status || 'updated'), 'success');
-                        closeVoiceHealingReportDrawer();
                     }
+                    // VTID-02032: regardless of action kind, close the drawer
+                    // and refresh the panel. The report row now has status
+                    // != 'open' so it drops out of the open-list naturally;
+                    // re-opening would just show the "already processed"
+                    // notice — closing is the cleaner outcome.
+                    closeVoiceHealingReportDrawer();
+                    fetchVoiceHealingPanel();
+                    if (typeof state !== 'undefined' && state.actionRequired) {
+                        // Bump the Action Required panel so the closed
+                        // report drops off promptly.
+                        state.actionRequired.fetched = false;
+                        if (typeof fetchActionRequired === 'function') fetchActionRequired(true);
+                    }
+                } else if (r.status === 409 && data && data.status) {
+                    // VTID-02032: backend reports the row was already decided
+                    // by someone else (or a duplicate click). Don't error —
+                    // close the drawer and treat as a no-op, since the
+                    // intended outcome (status != 'open') is already true.
+                    showToast(
+                        'Report was already ' + data.status +
+                        (data.acknowledged_by ? ' by ' + data.acknowledged_by : '') +
+                        ' — no duplicate action created',
+                        'info',
+                    );
+                    closeVoiceHealingReportDrawer();
                     fetchVoiceHealingPanel();
                 } else {
                     showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
