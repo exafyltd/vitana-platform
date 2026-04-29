@@ -843,6 +843,22 @@ router.post('/healing/reports/:id/execute', async (req: Request, res: Response) 
     return res.status(500).json({ ok: false, error: err.message });
   }
 
+  // VTID-02032: idempotency. Once a report has been accepted (or rejected),
+  // a second click on Accept & Execute must NOT create a duplicate batch.
+  // Return 409 with a clear message + a hint to the /execution endpoint
+  // so the frontend can route the operator to the existing in-progress
+  // tasks instead.
+  if (report.status && report.status !== 'open') {
+    return res.status(409).json({
+      ok: false,
+      error: `report already ${report.status}`,
+      status: report.status,
+      acknowledged_by: report.acknowledged_by ?? null,
+      acknowledged_at: report.acknowledged_at ?? null,
+      execution_endpoint: `/api/v1/voice-lab/healing/reports/${reportId}/execution`,
+    });
+  }
+
   // 2. Extract proposed steps
   const steps = (report.report?.recommendation?.proposed_next_steps || []) as string[];
   if (!Array.isArray(steps) || steps.length === 0) {
