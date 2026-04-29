@@ -770,19 +770,15 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
     /* best-effort emit */
   }
 
-  // VTID-02030: ping ops via Gchat for architectural recommendations only —
-  // tracks like stay_and_patch keep running through the auto-loop, but
-  // tracks that require a human team (replace_vendor / redesign_pipeline /
-  // "Redesign & Replace" / patch_around) need a supervisor to read & act.
-  // Reuses the same notifyGChat() helper used by existing self-healing pings.
-  const ARCHITECTURAL_TRACKS = new Set([
-    'replace_vendor',
-    'redesign_pipeline',
-    'redesign_replace',
-    'Redesign & Replace',
-    'patch_around',
-  ]);
-  if (ARCHITECTURAL_TRACKS.has(report.recommendation.track)) {
+  // VTID-02030: ping ops via Gchat for any recommendation that ISN'T
+  // stay_and_patch. The auto-loop only handles stay_and_patch autonomously
+  // (it flows through Accept & Execute); anything else (patch_around,
+  // replace_vendor, redesign_pipeline, "Architectural", "Redesign & Replace",
+  // or any unexpected free-text track the LLM returns) needs a supervisor.
+  // Inverting the rule means a non-conforming track defaults to "page the
+  // human" rather than "stay quiet" — fail-loud is the safer default.
+  const STAY_AND_PATCH_TRACKS = new Set(['stay_and_patch']);
+  if (!STAY_AND_PATCH_TRACKS.has(report.recommendation.track)) {
     try {
       const { notifyGChat } = await import('./self-healing-snapshot-service');
       const summary = (report.recommendation.summary || '').slice(0, 280);
