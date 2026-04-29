@@ -46,6 +46,15 @@ function defaultKindsForCompass(category: string | null): IntentKind[] {
   }
 }
 
+/**
+ * E6 — surface-aware redaction. When `surface=find_a_partner` is present,
+ * partner_seek rows are returned UNREDACTED (posting under Find a Partner
+ * is implicit consent for that surface). The default `/intents/board`
+ * surface keeps the existing redaction. Per-user `account_visibility`
+ * overrides still win for any field a subject has marked private (E5).
+ */
+type Surface = 'default' | 'find_a_partner';
+
 router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) => {
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
@@ -53,6 +62,22 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   const explicitKind = req.query.kind as string | undefined;
   const category = req.query.category as string | undefined;
   const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const surface: Surface = req.query.surface === 'find_a_partner' ? 'find_a_partner' : 'default';
+
+  // Optional `categories` array (comma-separated). Each entry can be an
+  // exact match (`activity_seek`) or a prefix glob (`dance.*`, `fitness.*`).
+  const categoriesParam = req.query.categories as string | undefined;
+  const categoryPrefixes: string[] = [];
+  const categoryExacts: string[] = [];
+  if (categoriesParam) {
+    for (const raw of categoriesParam.split(',').map((s) => s.trim()).filter(Boolean)) {
+      if (raw.endsWith('.*')) {
+        categoryPrefixes.push(raw.slice(0, -1)); // 'dance.*' → 'dance.'
+      } else {
+        categoryExacts.push(raw);
+      }
+    }
+  }
 
   const compass = await getActiveCompassGoal(identity.user_id);
   const kinds = explicitKind
@@ -70,25 +95,31 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  // For partner_seek, only return rows whose visibility is mutual_reveal
-  // (they're the only kind allowed there) AND redact scope/title.
-  // For all other kinds, the visibility check is enforced by RLS on the
-  // user_intents table (only public rows surface to non-owners).
-  if (kinds.includes('partner_seek')) {
-    // Only allow partner_seek when explicitly requested via ?kind=partner_seek.
+  // For partner_seek on the default surface, only return rows when
+  // explicitly requested. On the find_a_partner surface, include
+  // partner_seek freely — posting there is implicit consent.
+  if (kinds.includes('partner_seek') && surface === 'default') {
     if (!explicitKind || explicitKind !== 'partner_seek') {
       q = q.neq('intent_kind', 'partner_seek');
     }
   }
 
-  if (category) q = q.eq('category', category);
+  if (category) {
+    q = q.eq('category', category);
+  } else if (categoryPrefixes.length > 0 || categoryExacts.length > 0) {
+    // Build an OR clause: exact matches OR prefix LIKEs.
+    const clauses: string[] = [];
+    for (const exact of categoryExacts) clauses.push(`category.eq.${exact}`);
+    for (const prefix of categoryPrefixes) clauses.push(`category.like.${prefix}%`);
+    q = q.or(clauses.join(','));
+  }
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  // Redact partner_seek rows (no scope text on board, just kind + category).
+  // Redaction: default surface redacts partner_seek; find_a_partner does not.
   const result = (data ?? []).map((row: any) => {
-    if (row.intent_kind === 'partner_seek') {
+    if (row.intent_kind === 'partner_seek' && surface === 'default') {
       return {
         intent_id: row.intent_id,
         intent_kind: row.intent_kind,
@@ -106,6 +137,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     ok: true,
     compass: compass?.category ?? null,
     kinds_shown: kinds,
+    surface,
     intents: result,
   });
 });

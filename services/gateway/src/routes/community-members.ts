@@ -38,6 +38,42 @@ interface MemberRow {
   dance_preview: { variety: string | null; level: string | null; role: string | null } | null;
 }
 
+/**
+ * E6 — Members count. Powers the Find a Partner "Members" sub-tab gate
+ * (visible only while community total ≤ 1000). Reuses the same
+ * is_visible filter as the list endpoint.
+ */
+router.get('/community/members/count', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+  }
+
+  const { data: hiddenRows } = await supabase
+    .from('global_community_profiles')
+    .select('user_id')
+    .eq('is_visible', false);
+  const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
+
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('user_id', { count: 'exact', head: true })
+    .neq('user_id', identity.user_id);
+
+  if (error) {
+    console.error('[E6] community/members/count failed', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // The count above is the total profiles minus self. Subtract hidden ones.
+  // For small N this is fine; promote to a SQL-side view if it ever matters.
+  const total = Math.max(0, (count ?? 0) - hiddenIds.size);
+  return res.json({ ok: true, total });
+});
+
 router.get('/community/members', requireAuth, requireTenant, async (req: Request, res: Response) => {
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
