@@ -12,6 +12,11 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import {
+  applyAccountVisibility,
+  getViewerRelationship,
+  type FieldVisibility,
+} from '../lib/account-visibility';
 
 const router = Router();
 
@@ -163,6 +168,94 @@ router.get('/profiles/me/prefs', requireAuth, requireTenant, async (req: Request
     partner_preferences: (data as any)?.partner_preferences ?? {},
     service_offerings: (data as any)?.service_offerings ?? {},
     account_visibility: (data as any)?.account_visibility ?? {},
+  });
+});
+
+/**
+ * E5 server-side filter: cross-user GET that returns the SUBJECT's prefs
+ * filtered through their account_visibility map and the viewer's
+ * relationship. Self-reads return the full payload.
+ */
+router.get('/profiles/:vitana_id/prefs', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const rawVid = String(req.params.vitana_id || '').replace(/^@/, '').toLowerCase().trim();
+  if (!rawVid) return res.status(400).json({ ok: false, error: 'vitana_id_required' });
+
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+
+  const { data: subject, error } = await supabase
+    .from('profiles')
+    .select('user_id, partner_preferences, service_offerings, account_visibility')
+    .eq('vitana_id', rawVid)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  if (!subject) return res.status(404).json({ ok: false, error: 'profile_not_found' });
+
+  const subjectUserId = (subject as any).user_id as string;
+  const visMap = ((subject as any).account_visibility ?? {}) as Record<string, FieldVisibility>;
+  const partnerPrefs = ((subject as any).partner_preferences ?? {}) as Record<string, any>;
+  const serviceOfferings = ((subject as any).service_offerings ?? {}) as Record<string, any>;
+
+  const relationship = await getViewerRelationship(identity.user_id, subjectUserId);
+
+  // Section gates first.
+  const partnerSectionAllowed =
+    relationship === 'self' ||
+    visMap['partnerPreferences'] === 'public' ||
+    (visMap['partnerPreferences'] === 'connections' && relationship === 'connection');
+
+  const serviceSectionAllowed =
+    relationship === 'self' ||
+    // service_offerings defaults to 'public'.
+    visMap['serviceOfferings'] !== 'private' &&
+      !(visMap['serviceOfferings'] === 'connections' && relationship === 'stranger');
+
+  // Sub-field-level redaction inside an allowed partner section.
+  const partnerFiltered = partnerSectionAllowed
+    ? applyAccountVisibility(
+        partnerPrefs,
+        visMap,
+        relationship,
+        {
+          age_range: 'partnerPreferences.ageRange',
+          gender_pref: 'partnerPreferences.gender',
+          relationship_intent: 'partnerPreferences.relationshipIntent',
+          location_label: 'partnerPreferences.locationRadius',
+          max_radius_km: 'partnerPreferences.locationRadius',
+          // unknown key → falls back to private default → stripped for non-self.
+          deal_breakers: 'partnerPreferences.dealBreakers__self_only',
+        }
+      )
+    : {};
+
+  // Service offerings: hide priceRange when its tier blocks the viewer.
+  let serviceFiltered: Record<string, any> = {};
+  if (serviceSectionAllowed) {
+    const showPrice =
+      relationship === 'self' ||
+      visMap['serviceOfferings.priceRange'] === 'public' ||
+      (visMap['serviceOfferings.priceRange'] === 'connections' && relationship === 'connection') ||
+      visMap['serviceOfferings.priceRange'] === undefined; // default public
+    const offers = Array.isArray(serviceOfferings.offers) ? serviceOfferings.offers : [];
+    serviceFiltered = {
+      offers: offers.map((o: any) =>
+        showPrice
+          ? o
+          : { ...o, price_min_cents: null, price_max_cents: null, currency: null }
+      ),
+    };
+  }
+
+  return res.json({
+    ok: true,
+    vitana_id: rawVid,
+    relationship,
+    partner_preferences: partnerFiltered,
+    service_offerings: serviceFiltered,
   });
 });
 
