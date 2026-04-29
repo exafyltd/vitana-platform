@@ -578,8 +578,8 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
     const { data: events } = await supabase
       .from('oasis_events_v1')
-      .select('payload, type, created_at')
-      .like('type', 'orb.navigator.%')
+      .select('payload, event_type, created_at')
+      .like('event_type', 'orb.navigator.%')
       .gte('created_at', since)
       .limit(10000);
 
@@ -626,8 +626,8 @@ router.get('/telemetry', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { data: events, error } = await supabase
       .from('oasis_events_v1')
-      .select('type, payload, created_at')
-      .like('type', 'orb.navigator.%')
+      .select('payload, event_type, created_at')
+      .like('event_type', 'orb.navigator.%')
       .gte('created_at', since)
       .order('created_at', { ascending: false })
       .limit(5000);
@@ -639,7 +639,7 @@ router.get('/telemetry', async (req: AuthenticatedRequest, res: Response) => {
     const nearMisses: Array<{ utterance: string; picked: any; runner_up: any; delta: number }> = [];
 
     for (const ev of (events as any[]) || []) {
-      byType[ev.type] = (byType[ev.type] || 0) + 1;
+      byType[ev.event_type] = (byType[ev.event_type] || 0) + 1;
       const payload = (ev.payload || {}) as any;
       const picks: any[] = payload.top_picks || (payload.primary ? [payload.primary] : []);
       for (const p of picks) {
