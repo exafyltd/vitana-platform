@@ -2111,6 +2111,124 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['raw_text'],
           },
         },
+        // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
+        {
+          name: 'set_reminder',
+          description: [
+            "Set a one-time reminder when the user asks. CRITICAL: when the user says",
+            "'remind me at X to Y', 'set a reminder for Z', 'erinnere mich um X', or similar,",
+            "you MUST call this tool. Do NOT tell the user 'okay, I'll remind you' without",
+            "calling this tool — without the tool call, NO reminder is created.",
+            '',
+            "You compute the absolute UTC timestamp yourself from the user's words and",
+            "their local timezone (provided in your system context as user_tz). Examples:",
+            "  'today at 8pm'        → user's tz, today, 20:00 → convert to UTC ISO",
+            "  'in 2 hours'          → now + 2h ISO",
+            "  'tomorrow morning'    → ASK 'what time tomorrow morning?' before calling",
+            '',
+            "If a phrase is ambiguous (vague time, no day), ASK the user to clarify",
+            "before calling. Do not guess.",
+            '',
+            "Generate `spoken_message` as a friendly sentence in the user's language",
+            "that will be spoken aloud at fire time (e.g. 'Time to take your magnesium',",
+            "'Zeit für deine Magnesium-Tabletten').",
+            '',
+            "After the tool returns, confirm verbally with result.human_time and the",
+            "action_text (e.g. 'Okay, I'll remind you at 8 PM to take your magnesium.').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              action_text: {
+                type: 'string',
+                description: "Short label, max 60 chars. e.g. 'Take magnesium'",
+              },
+              spoken_message: {
+                type: 'string',
+                description: "Friendly sentence to speak aloud at fire time, in the user's language.",
+              },
+              scheduled_for_iso: {
+                type: 'string',
+                description: 'Absolute UTC ISO 8601 timestamp. Min 60s in future, max 90 days out.',
+              },
+              description: {
+                type: 'string',
+                description: 'Optional extended details',
+              },
+            },
+            required: ['action_text', 'spoken_message', 'scheduled_for_iso'],
+          },
+        },
+        // ─── VTID-02601 — find_reminders: read-only lookup ───
+        {
+          name: 'find_reminders',
+          description: [
+            "Search the user's active reminders by free-text query. Use BEFORE delete_reminder",
+            "to find which reminder the user means, and to read back the count when they say",
+            "'delete all'. Returns up to 10 matches.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: "Free-text. Empty string = all active reminders.",
+              },
+              include_fired: {
+                type: 'boolean',
+                description: 'Include already-fired but unacked reminders. Default false.',
+              },
+            },
+            required: ['query'],
+          },
+        },
+        // ─── VTID-02601 — delete_reminder: destructive, requires verbal confirmation ───
+        {
+          name: 'delete_reminder',
+          description: [
+            "Delete one reminder OR all the user's reminders. CRITICAL SAFETY RULES:",
+            '',
+            "1. You MUST verbally confirm before calling this tool. Say something like:",
+            "   - single: 'Are you sure you want to delete the magnesium reminder at 8pm?'",
+            "   - all:    'Are you sure you want to delete all 5 of your reminders?'",
+            '',
+            "2. Only call this tool with confirmed=true AFTER the user explicitly says",
+            "   yes / ja / sí / yes please / definitely / go ahead. Vague answers like",
+            "   'maybe' or 'I think so' are NOT confirmation — re-ask.",
+            '',
+            "3. NEVER skip step 1 even if the user sounds urgent. Deleting reminders",
+            "   is destructive and the user wants you to double-check.",
+            '',
+            "4. For single deletion: first call find_reminders to get the reminder_id.",
+            "   For 'delete all': call find_reminders with empty query first, read back",
+            "   the count in the confirmation question.",
+            '',
+            "5. Soft delete only — sets status='cancelled', user can recover via UI.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              mode: {
+                type: 'string',
+                enum: ['single', 'all'],
+                description: "'single' = one reminder by id; 'all' = all active reminders",
+              },
+              reminder_id: {
+                type: 'string',
+                description: "Required when mode='single'. UUID from find_reminders result.",
+              },
+              confirmed: {
+                type: 'boolean',
+                description: 'Must be true. Set ONLY after explicit user yes.',
+              },
+              user_confirmation_phrase: {
+                type: 'string',
+                description: "Verbatim user phrase that confirmed (e.g. 'yes, delete it'). For audit.",
+              },
+            },
+            required: ['mode', 'confirmed', 'user_confirmation_phrase'],
+          },
+        },
         // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar agent Q&A dispatch ───
         {
           name: 'ask_pillar_agent',
@@ -4716,6 +4834,158 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
+      case 'set_reminder': {
+        try {
+          const { createReminder, formatTimeForVoice, ReminderValidationError } = await import(
+            '../services/reminders-service'
+          );
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const userTz = (session as any)?.clientContext?.timezone || 'UTC';
+          const lang = ((session as any)?.lang || (session as any)?.clientContext?.locale || 'en').slice(0, 5);
+
+          try {
+            const reminder = await createReminder(admin, {
+              user_id: lens.user_id,
+              tenant_id: lens.tenant_id,
+              action_text: String(args.action_text || ''),
+              spoken_message: String(args.spoken_message || ''),
+              scheduled_for_iso: String(args.scheduled_for_iso || ''),
+              user_tz: userTz,
+              lang,
+              description: typeof args.description === 'string' ? args.description : undefined,
+              created_via: 'voice',
+            });
+            const fireAt = new Date(reminder.next_fire_at);
+            return {
+              success: true,
+              result: JSON.stringify({
+                ok: true,
+                reminder_id: reminder.id,
+                action_text: reminder.action_text,
+                scheduled_for_iso: reminder.next_fire_at,
+                human_time: formatTimeForVoice(fireAt, userTz, lang),
+              }),
+            };
+          } catch (innerErr: any) {
+            if (innerErr instanceof ReminderValidationError) {
+              return { success: false, result: '', error: innerErr.message };
+            }
+            throw innerErr;
+          }
+        } catch (err: any) {
+          console.error('[set_reminder] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02601 — find_reminders: read-only lookup ───
+      case 'find_reminders': {
+        try {
+          const { findReminders, formatTimeForVoice } = await import('../services/reminders-service');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const userTz = (session as any)?.clientContext?.timezone || 'UTC';
+          const lang = ((session as any)?.lang || (session as any)?.clientContext?.locale || 'en').slice(0, 5);
+
+          const data = await findReminders(admin, lens.user_id, {
+            query: typeof args.query === 'string' ? args.query : '',
+            include_fired: !!args.include_fired,
+            limit: 10,
+          });
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              count: data.length,
+              reminders: data.map((r) => ({
+                reminder_id: r.id,
+                action_text: r.action_text,
+                spoken_message: r.spoken_message,
+                human_time: formatTimeForVoice(new Date(r.next_fire_at), userTz, lang),
+                status: r.status,
+              })),
+            }),
+          };
+        } catch (err: any) {
+          console.error('[find_reminders] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02601 — delete_reminder: requires verbal confirmation ───
+      case 'delete_reminder': {
+        try {
+          const { softDeleteReminders } = await import('../services/reminders-service');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const mode = String(args.mode || '');
+          const confirmed = !!args.confirmed;
+          const phrase = String(args.user_confirmation_phrase || '').trim();
+
+          if (!confirmed || !phrase) {
+            return {
+              success: false,
+              result: '',
+              error: 'Refusing to delete without explicit user confirmation. Ask the user "are you sure?" first, then call again with confirmed=true and the user_confirmation_phrase.',
+            };
+          }
+
+          if (mode === 'single') {
+            const reminderId = String(args.reminder_id || '');
+            if (!reminderId) {
+              return { success: false, result: '', error: 'reminder_id is required for mode=single' };
+            }
+            const result = await softDeleteReminders(
+              admin,
+              lens.user_id,
+              { mode: 'single', reminder_id: reminderId },
+              'voice',
+              { confirmation: phrase },
+            );
+            if (result.deleted === 0) {
+              return { success: false, result: '', error: 'Reminder not found or already cancelled' };
+            }
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, deleted: 1, action_text: result.action_text }),
+            };
+          }
+
+          if (mode === 'all') {
+            const result = await softDeleteReminders(
+              admin,
+              lens.user_id,
+              { mode: 'all' },
+              'voice',
+              { confirmation: phrase },
+            );
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, deleted: result.deleted }),
+            };
+          }
+
+          return { success: false, result: '', error: `Unknown mode: ${mode}` };
+        } catch (err: any) {
+          console.error('[delete_reminder] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
       case 'ask_pillar_agent': {
         try {
@@ -6238,6 +6508,9 @@ TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
 - Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
 - Use create_calendar_event to add, schedule, or book new events in the user's calendar
+- Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
+- Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
+- Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
