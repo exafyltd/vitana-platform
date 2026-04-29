@@ -2652,6 +2652,11 @@ function buildLiveApiTools(
             "  intent_match_detail      → /intents/match/<match_id> (a specific match)",
             "  intent_post_public       → /p/<intent_id> (public viewer for a specific post)",
             "  edit_dance_preferences   → /profile/edit?drawer=dance",
+            "  edit_partner_preferences → /me/profile?drawer=partner (private-by-default partner-finding prefs)",
+            "  edit_service_offerings   → /me/profile?drawer=offerings (services I offer)",
+            "  privacy_settings         → /profile/me/privacy (per-section visibility toggles)",
+            "  profile_with_match       → /u/<vitana_id>?match_intent=<intent_id> (matched user's profile with the matched post anchored)",
+            "  discover_marketplace     → /discover/marketplace (commercial intents)",
             "  events_meetups           → /comm/events-meetups",
             "  community_feed           → /comm/feed",
             '',
@@ -2672,12 +2677,15 @@ function buildLiveApiTools(
                   'find_partner','find_partner_matches','find_partner_board','find_partner_posts',
                   'my_intents','intent_board','intent_board_dance',
                   'open_asks','members',
-                  'intent_match_detail','intent_post_public',
-                  'edit_dance_preferences','events_meetups','community_feed',
+                  'intent_match_detail','intent_post_public','profile_with_match',
+                  'edit_dance_preferences','edit_partner_preferences','edit_service_offerings',
+                  'privacy_settings','discover_marketplace',
+                  'events_meetups','community_feed',
                 ],
               },
-              intent_id: { type: 'string', description: 'For intent_post_public target.' },
+              intent_id: { type: 'string', description: 'For intent_post_public + profile_with_match (the matched intent_id).' },
               match_id: { type: 'string', description: 'For intent_match_detail target.' },
+              vitana_id: { type: 'string', description: 'For profile_with_match — the counterparty\'s vitana_id (without leading @).' },
             },
             required: ['target'],
           },
@@ -5788,6 +5796,7 @@ async function executeLiveApiToolInner(
         const target = String(args.target || '').trim();
         const intentId = args.intent_id ? String(args.intent_id).trim() : null;
         const matchId = args.match_id ? String(args.match_id).trim() : null;
+        const vitanaIdArg = args.vitana_id ? String(args.vitana_id).trim().replace(/^@/, '') : null;
         if (!target) return { success: false, result: '', error: 'target is required' };
 
         let url = '';
@@ -5808,7 +5817,22 @@ async function executeLiveApiToolInner(
           case 'intent_post_public':
             if (!intentId) return { success: false, result: '', error: 'intent_id is required for intent_post_public' };
             url = `/p/${encodeURIComponent(intentId)}`; title = 'Post detail'; break;
+          // E3 — profile-first match presentation. Lands on the matched
+          // user's PublicProfilePage with the matched post anchored.
+          case 'profile_with_match': {
+            if (!vitanaIdArg) return { success: false, result: '', error: 'vitana_id is required for profile_with_match' };
+            const params = new URLSearchParams();
+            if (intentId) params.set('match_intent', intentId);
+            const qs = params.toString();
+            url = `/u/${encodeURIComponent(vitanaIdArg)}${qs ? '?' + qs : ''}`;
+            title = 'Profile';
+            break;
+          }
           case 'edit_dance_preferences':   url = '/profile/edit?drawer=dance'; title = 'Dance preferences'; break;
+          case 'edit_partner_preferences': url = '/me/profile?drawer=partner'; title = 'Partner preferences'; break;
+          case 'edit_service_offerings':   url = '/me/profile?drawer=offerings'; title = 'Service offerings'; break;
+          case 'privacy_settings':         url = '/profile/me/privacy'; title = 'Privacy & Visibility'; break;
+          case 'discover_marketplace':     url = '/discover/marketplace'; title = 'Marketplace'; break;
           case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
           case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
           default:

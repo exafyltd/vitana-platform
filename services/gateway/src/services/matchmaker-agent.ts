@@ -300,10 +300,31 @@ export async function runMatchmakerForIntent(intentId: string): Promise<Matchmak
     pool_size: poolSize,
     candidates: agentResponse.candidates,
     counter_questions: agentResponse.counter_questions,
-    voice_readback: agentResponse.voice_readback,
+    voice_readback: applyExpectationCopy(agentResponse.voice_readback, mode, poolSize),
     reasoning_summary: agentResponse.reasoning_summary,
     used_fallback: profileFallback.length > 0,
   };
+}
+
+/**
+ * E3 — time-bound expectation copy. Until 2026-09-01 we append a short
+ * honesty paragraph to the voice readback for solo/early modes so users
+ * understand match approximation reflects community size, not engine
+ * quality. Sunsets automatically — after 2026-09-01 the function
+ * returns the readback unchanged.
+ */
+const EXPECTATION_SUNSET = Date.parse('2026-09-01T00:00:00Z');
+const EXPECTATION_COPY =
+  " Quick note — our community is still growing. The more precise you are about style, time and location, the better your matches, but I'll find you something even with broad criteria. Match quality sharpens as more people join.";
+
+function applyExpectationCopy(readback: string, mode: 'solo' | 'early' | 'growth', poolSize: number): string {
+  if (!readback) return readback;
+  if (Date.now() >= EXPECTATION_SUNSET) return readback;
+  if (mode === 'growth' && poolSize >= 50) return readback;
+  // Don't double-append if the model already mentioned community size.
+  const lower = readback.toLowerCase();
+  if (lower.includes('community is still growing') || lower.includes('still growing')) return readback;
+  return readback.trimEnd() + EXPECTATION_COPY;
 }
 
 // ─── Context loaders ────────────────────────────────────────────

@@ -239,7 +239,8 @@ export const NAVIGATION_CONFIG = [
     tabs: [
       { key: "inbox", label: "Inbox" },
       { key: "handoffs", label: "Live Handoffs" },
-      { key: "kpis", label: "KPIs" }
+      { key: "kpis", label: "KPIs" },
+      { key: "audit", label: "Audit Log" }
     ]
   }
 ];

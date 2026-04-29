@@ -20,6 +20,126 @@
 console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
 // ===========================================================================
+// BOOTSTRAP-DEV-6H-SESSION (v2): Global fetch interceptor
+//
+// Why this exists: the Command Hub fires a swarm of polling fetches (tasks /5s,
+// approvals /20s, OASIS /5s, executions /10s, etc.). When the Supabase JWT
+// expires (~1h), each of those returns 401 and the various 401 handlers in
+// app.js call doLogout(). My first attempt at this feature only ran a 30s
+// expiry-check loop that ALSO called doLogout when refresh failed, so the
+// developer kept getting kicked the moment a polling tick ran into the
+// expired token.
+//
+// This interceptor wraps window.fetch BEFORE any other code runs. For any
+// non-/auth/* request that comes back 401 in a developer session, it tries
+// /api/v1/auth/refresh once (concurrent calls share a single in-flight
+// promise so the single-use refresh token isn't burned twice), then replays
+// the original request with a fresh Authorization header. The caller never
+// sees the 401, so the existing "401 → doLogout()" handlers stay untouched
+// and only fire when refresh genuinely fails.
+//
+// Non-developer roles (community, admin, staff, professional, patient) still
+// get their original 401 → doLogout() flow because the interceptor short-
+// circuits when active_role !== 'developer'.
+// ===========================================================================
+(function installAuthFetchInterceptor() {
+    if (!window.fetch) return;
+    if (window.__vitanaFetchInterceptorInstalled) return;
+    window.__vitanaFetchInterceptorInstalled = true;
+
+    var origFetch = window.fetch.bind(window);
+    var refreshingPromise = null;
+
+    function getActiveRole() {
+        var s = window.__vitana_state;
+        return (s && s.meContext && s.meContext.active_role) || null;
+    }
+    function getRefreshToken() {
+        var s = window.__vitana_state;
+        if (s && s.refreshToken) return s.refreshToken;
+        try { return localStorage.getItem('vitana.refreshToken'); } catch (_) { return null; }
+    }
+
+    function performRefresh() {
+        if (refreshingPromise) return refreshingPromise;
+        refreshingPromise = (async function () {
+            var rt = getRefreshToken();
+            if (!rt) return null;
+            try {
+                var resp = await origFetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: rt })
+                });
+                if (!resp.ok) {
+                    console.warn('[DEV-6H-SESSION] refresh HTTP ' + resp.status);
+                    return null;
+                }
+                var data = await resp.json();
+                if (!data.ok || !data.access_token) {
+                    console.warn('[DEV-6H-SESSION] refresh body bad', data && data.error);
+                    return null;
+                }
+                try { localStorage.setItem('vitana.authToken', data.access_token); } catch (_) {}
+                if (data.refresh_token) {
+                    try { localStorage.setItem('vitana.refreshToken', data.refresh_token); } catch (_) {}
+                }
+                var s = window.__vitana_state;
+                if (s) {
+                    s.authToken = data.access_token;
+                    if (data.refresh_token) s.refreshToken = data.refresh_token;
+                }
+                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
+                    try { window.VitanaOrb.setAuth(data.access_token); } catch (_) {}
+                }
+                console.log('[DEV-6H-SESSION] silent refresh ok');
+                return data.access_token;
+            } catch (err) {
+                console.warn('[DEV-6H-SESSION] silent refresh threw', err && err.message);
+                return null;
+            } finally {
+                // Release the lock shortly after settle so concurrent callers
+                // that arrived during the in-flight refresh see the same result,
+                // but a fresh later call (e.g. after the next expiry) starts new.
+                setTimeout(function () { refreshingPromise = null; }, 100);
+            }
+        })();
+        return refreshingPromise;
+    }
+    window.__vitana_performRefresh = performRefresh;
+
+    function isAuthEndpoint(url) {
+        return url.indexOf('/api/v1/auth/refresh') !== -1 ||
+               url.indexOf('/api/v1/auth/login') !== -1 ||
+               url.indexOf('/api/v1/auth/config') !== -1;
+    }
+
+    window.fetch = async function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (isAuthEndpoint(url)) return origFetch(input, init);
+
+        var resp = await origFetch(input, init);
+        if (resp.status !== 401) return resp;
+        if (getActiveRole() !== 'developer') return resp;
+
+        var newToken = await performRefresh();
+        if (!newToken) return resp;
+
+        // Replay with the new token. Build a fresh init/headers so we don't
+        // mutate the caller's object.
+        var newInit = init ? Object.assign({}, init) : {};
+        var srcHeaders = newInit.headers || (typeof input !== 'string' && input && input.headers) || {};
+        var headers = new Headers(srcHeaders);
+        if (headers.has('Authorization') || headers.has('authorization')) {
+            headers.set('Authorization', 'Bearer ' + newToken);
+        }
+        newInit.headers = headers;
+        var url2 = typeof input === 'string' ? input : input.url;
+        return origFetch(url2, newInit);
+    };
+})();
+
+// ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
 // ===========================================================================
 const TARGET_ROLES = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'];
@@ -3763,6 +3883,14 @@ const state = {
     docsApiInventory: { endpoints: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } }
 };
 
+// BOOTSTRAP-DEV-6H-SESSION (v2): expose live state to the fetch interceptor
+// installed at the top of this file. The interceptor reads
+// __vitana_state.meContext.active_role to gate the refresh-on-401 path to
+// developer sessions only, and writes back __vitana_state.authToken /
+// .refreshToken after a successful refresh so subsequent requests use the
+// rotated token without ever triggering doLogout().
+window.__vitana_state = state;
+
 // --- VTID-0527: Task Stage Timeline Model ---
 
 /**
@@ -6260,6 +6388,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderFeedbackHandoffsView());
     } else if (moduleKey === 'feedback' && tab === 'kpis') {
         container.appendChild(renderFeedbackKpisView());
+    } else if (moduleKey === 'feedback' && tab === 'audit') {
+        container.appendChild(renderFeedbackAuditView());
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
@@ -35549,62 +35679,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION: Active session health monitor.
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2): session monitor.
         //
-        // Baseline (all roles): JWT expires (~1h for Supabase) → doLogout().
+        // The actual JWT refresh is now handled by the global fetch interceptor
+        // installed at the top of this file (it catches any 401 in a developer
+        // session, refreshes via /api/v1/auth/refresh, and replays the request
+        // transparently). This loop has two remaining jobs:
         //
-        // Developer override: if active_role === 'developer', silently refresh
-        // the access token via /api/v1/auth/refresh whenever it's within 5 min
-        // of expiry, so the developer stays signed in while working. Only log
-        // out after 6 hours of true user inactivity (no mousedown/keydown/
-        // scroll/touchstart) OR when refresh fails (e.g. refresh token revoked
-        // server-side). This is scoped to developer only — community, admin,
-        // staff, professional, patient keep the stricter 1h hard expiry.
-        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;  // 6 hours
-        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;     // refresh if <5m left
+        //   1. For developer sessions: enforce a 6-hour idle-logout — if the
+        //      user hasn't done anything (mousedown/keydown/scroll/touchstart)
+        //      in 6h, log them out. We also proactively top up the token a
+        //      few minutes before expiry so polling fetches don't have to eat
+        //      a 401 round-trip.
+        //   2. For non-developer roles: keep the previous "logout when JWT
+        //      exp passes" behavior so community/admin/staff sessions still
+        //      end at the 1h Supabase expiry as before.
+        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;   // 6 hours
+        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;      // top up if <5m left
 
         function isDeveloperSession() {
             return (state.meContext && state.meContext.active_role === 'developer');
         }
-
         function markActivity() { state.lastActivityAt = Date.now(); }
         ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
             document.addEventListener(evt, markActivity, { passive: true, capture: true });
         });
-
-        async function refreshAccessToken() {
-            if (state.refreshingToken) return false;
-            if (!state.refreshToken) return false;
-            state.refreshingToken = true;
-            try {
-                var resp = await fetch('/api/v1/auth/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: state.refreshToken })
-                });
-                var data = await resp.json();
-                if (!resp.ok || !data.ok || !data.access_token) {
-                    console.warn('[DEV-6H-SESSION] refresh failed:', data && (data.message || data.error));
-                    return false;
-                }
-                state.authToken = data.access_token;
-                localStorage.setItem('vitana.authToken', data.access_token);
-                if (data.refresh_token) {
-                    state.refreshToken = data.refresh_token;
-                    localStorage.setItem('vitana.refreshToken', data.refresh_token);
-                }
-                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
-                    window.VitanaOrb.setAuth(data.access_token);
-                }
-                console.log('[DEV-6H-SESSION] access token refreshed silently');
-                return true;
-            } catch (err) {
-                console.warn('[DEV-6H-SESSION] refresh threw:', err && err.message);
-                return false;
-            } finally {
-                state.refreshingToken = false;
-            }
-        }
 
         async function checkTokenExpiry() {
             if (!state.authToken) return;
@@ -35623,21 +35722,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             var now = Date.now();
 
             if (isDeveloperSession()) {
-                // Developer: enforce 6h idle logout FIRST — if idle for 6h,
-                // don't bother refreshing, just sign out.
                 var idleMs = now - (state.lastActivityAt || now);
                 if (idleMs >= DEV_IDLE_LOGOUT_MS) {
                     console.warn('[DEV-6H-SESSION] idle ' + Math.round(idleMs / 60000) + 'm — logging out');
                     doLogout();
                     return;
                 }
-                // Token fresh enough — nothing to do.
-                if (expMs && expMs - now > TOKEN_REFRESH_LEAD_MS) return;
-                // Token expired or near expiry — try silent refresh.
-                var refreshed = await refreshAccessToken();
-                if (!refreshed) {
-                    console.warn('[DEV-6H-SESSION] cannot refresh — logging out');
-                    doLogout();
+                // Proactively refresh if we're inside the lead window; if it
+                // fails, the next polling 401 will give the interceptor a
+                // second chance, and only after THAT fails will the existing
+                // 401 → doLogout() handlers fire.
+                if (expMs && expMs - now <= TOKEN_REFRESH_LEAD_MS && typeof window.__vitana_performRefresh === 'function') {
+                    try { await window.__vitana_performRefresh(); } catch (_) {}
                 }
                 return;
             }
@@ -35652,7 +35748,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInterval(checkTokenExpiry, 30000);
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
-                // Returning to the tab counts as activity for developers.
                 if (isDeveloperSession()) markActivity();
                 checkTokenExpiry();
             }
@@ -44251,18 +44346,19 @@ function renderDocsSpecialistsView() {
     container.appendChild(h);
     var note = document.createElement('p');
     note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
-    note.textContent = 'The team Vitana hands off to. v1 is read-only; persona editor + tool/KB binding land in Phase 5 PR 16-19.';
+    note.textContent = 'The team Vitana hands off to. Click Edit on any card to open the Persona Editor (prompt, voice, tools, KB bindings, version history).';
     container.appendChild(note);
     var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
     container.appendChild(loading);
-    fetchFeedbackJSON('/api/v1/admin/feedback/personas').then(function (data) {
+    fetchFeedbackJSON('/api/v1/admin/specialists/').then(function (data) {
         container.removeChild(loading);
         var personas = data.personas || [];
         var grid = document.createElement('div');
         grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.75rem;';
         personas.forEach(function (p) {
             var card = document.createElement('div');
-            card.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:1rem;';
+            card.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:1rem;cursor:pointer;';
+            card.onclick = function () { openSpecialistEditor(p.key); };
             var head = document.createElement('div');
             head.style.cssText = 'display:flex;justify-content:space-between;align-items:start;margin-bottom:.5rem;';
             var nameBox = document.createElement('div');
@@ -44278,9 +44374,367 @@ function renderDocsSpecialistsView() {
             var kinds = document.createElement('div'); kinds.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);margin-top:.5rem;'; kinds.textContent = 'Handles: ' + ((p.handles_kinds || []).join(', ') || '—'); card.appendChild(kinds);
             var voice = document.createElement('div'); voice.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);'; voice.textContent = 'Voice: ' + (p.voice_id || '(not set)'); card.appendChild(voice);
             var ver = document.createElement('div'); ver.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.5rem;'; ver.textContent = 'v' + p.version + ' · last updated ' + (p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'); card.appendChild(ver);
+            var bindings = document.createElement('div');
+            bindings.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.25rem;';
+            var nTools = (p.tool_bindings || []).length;
+            var nKbs = (p.kb_bindings || []).length;
+            var nConns = (p.connections || []).length;
+            bindings.textContent = 'Bound: ' + nTools + ' tools · ' + nKbs + ' KB scopes · ' + nConns + ' connections';
+            card.appendChild(bindings);
+            var editBtn = document.createElement('button');
+            editBtn.textContent = 'Edit →';
+            editBtn.style.cssText = 'margin-top:.75rem;background:transparent;border:1px solid var(--color-border);color:var(--color-text-secondary);padding:.3rem .6rem;border-radius:.25rem;font-size:.75rem;cursor:pointer;';
+            editBtn.onclick = function (e) { e.stopPropagation(); openSpecialistEditor(p.key); };
+            card.appendChild(editBtn);
             grid.appendChild(card);
         });
         container.appendChild(grid);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
+    return container;
+}
+
+// ===========================================================================
+// VTID-02047 Phase 5: Persona Editor + Tool/KB Bindings + Audit Log
+// ===========================================================================
+
+function openSpecialistEditor(personaKey) {
+    var existing = document.getElementById('specialist-editor-drawer');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'specialist-editor-drawer';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;justify-content:flex-end;';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'width:min(820px,100%);height:100%;background:var(--color-surface-primary);overflow-y:auto;padding:1.5rem;box-shadow:-4px 0 20px rgba(0,0,0,.2);';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = 'float:right;background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--color-text-secondary);';
+    closeBtn.onclick = function () { overlay.remove(); };
+    panel.appendChild(closeBtn);
+
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    panel.appendChild(loading);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    Promise.all([
+        fetchFeedbackJSON('/api/v1/admin/specialists/' + personaKey),
+        fetchFeedbackJSON('/api/v1/admin/specialists/tools'),
+    ]).then(function (results) {
+        var detail = results[0];
+        var allTools = results[1].tools || [];
+        var p = detail.persona;
+        var boundToolKeys = (detail.tool_bindings || []).filter(function (b) { return b.enabled !== false; }).map(function (b) { return b.tool_key; });
+        var boundKbScopes = (detail.kb_bindings || []).filter(function (b) { return b.enabled !== false; }).map(function (b) { return b.kb_scope; });
+
+        panel.removeChild(loading);
+
+        // Header
+        var head = document.createElement('div');
+        head.style.cssText = 'margin-bottom:1.5rem;';
+        var title = document.createElement('h2');
+        title.style.cssText = 'margin:0 0 .25rem;font-size:1.5rem;';
+        title.textContent = p.display_name + ' (' + p.key + ')';
+        head.appendChild(title);
+        var statusRow = document.createElement('div');
+        statusRow.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;color:var(--color-text-secondary);';
+        var statusPill = document.createElement('span');
+        var sc = p.status === 'active' ? '#16a34a' : (p.status === 'draft' ? '#f59e0b' : '#64748b');
+        statusPill.style.cssText = 'background:' + sc + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+        statusPill.textContent = p.status;
+        statusRow.appendChild(statusPill);
+        var ver = document.createElement('span');
+        ver.textContent = 'v' + p.version + ' · last updated ' + (p.updated_at ? new Date(p.updated_at).toLocaleString() : '—');
+        statusRow.appendChild(ver);
+        head.appendChild(statusRow);
+        panel.appendChild(head);
+
+        function fieldRow(label, controlEl) {
+            var row = document.createElement('div');
+            row.style.cssText = 'margin-bottom:1rem;';
+            var l = document.createElement('label');
+            l.style.cssText = 'display:block;font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.25rem;letter-spacing:.04em;';
+            l.textContent = label;
+            row.appendChild(l);
+            row.appendChild(controlEl);
+            return row;
+        }
+
+        // Display name + role
+        var nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = p.display_name || '';
+        nameInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Display name', nameInput));
+
+        var roleInput = document.createElement('input');
+        roleInput.type = 'text';
+        roleInput.value = p.role || '';
+        roleInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Role', roleInput));
+
+        // Voice id
+        var voiceInput = document.createElement('input');
+        voiceInput.type = 'text';
+        voiceInput.value = p.voice_id || '';
+        voiceInput.placeholder = 'Gemini Live voice id (leave empty to inherit)';
+        voiceInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;';
+        panel.appendChild(fieldRow('Voice id (Gemini Live)', voiceInput));
+
+        // System prompt
+        var promptInput = document.createElement('textarea');
+        promptInput.value = p.system_prompt || '';
+        promptInput.rows = 12;
+        promptInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;font-size:.85rem;resize:vertical;';
+        panel.appendChild(fieldRow('System prompt', promptInput));
+
+        // Status
+        var statusSelect = document.createElement('select');
+        ['draft','active','disabled'].forEach(function (s) {
+            var opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            if (s === p.status) opt.selected = true;
+            statusSelect.appendChild(opt);
+        });
+        statusSelect.style.cssText = 'padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Status', statusSelect));
+
+        // Handles kinds
+        var kindsInput = document.createElement('input');
+        kindsInput.type = 'text';
+        kindsInput.value = (p.handles_kinds || []).join(', ');
+        kindsInput.placeholder = 'bug, ux_issue';
+        kindsInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Handles kinds (comma-separated)', kindsInput));
+
+        // Handoff keywords
+        var keywordsInput = document.createElement('textarea');
+        keywordsInput.value = (p.handoff_keywords || []).join(', ');
+        keywordsInput.rows = 3;
+        keywordsInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;font-size:.85rem;';
+        panel.appendChild(fieldRow('Handoff keywords (comma-separated)', keywordsInput));
+
+        // Tool bindings
+        var toolsBox = document.createElement('div');
+        toolsBox.style.cssText = 'border:1px solid var(--color-border);border-radius:.25rem;padding:.5rem;max-height:200px;overflow-y:auto;background:var(--color-surface-secondary);';
+        var toolCheckboxes = {};
+        allTools.forEach(function (t) {
+            var row = document.createElement('label');
+            row.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;padding:.15rem 0;cursor:pointer;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = boundToolKeys.indexOf(t.key) !== -1;
+            toolCheckboxes[t.key] = cb;
+            row.appendChild(cb);
+            var label = document.createElement('span');
+            var radColor = t.blast_radius === 'read' ? '#10b981' : (t.blast_radius === 'write-low' ? '#f59e0b' : '#ef4444');
+            label.innerHTML = '<strong>' + t.display_name + '</strong> <span style="color:' + radColor + ';font-size:.7rem;">[' + t.blast_radius + ']</span> <span style="color:var(--color-text-secondary);font-size:.75rem;">' + (t.description || '') + '</span>';
+            row.appendChild(label);
+            toolsBox.appendChild(row);
+        });
+        panel.appendChild(fieldRow('Tool bindings', toolsBox));
+
+        // KB bindings
+        var kbBox = document.createElement('div');
+        kbBox.style.cssText = 'border:1px solid var(--color-border);border-radius:.25rem;padding:.5rem;background:var(--color-surface-secondary);';
+        var kbCheckboxes = {};
+        ['system','baseline','tenant'].forEach(function (s) {
+            var row = document.createElement('label');
+            row.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;padding:.15rem 0;cursor:pointer;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = boundKbScopes.indexOf(s) !== -1;
+            kbCheckboxes[s] = cb;
+            row.appendChild(cb);
+            row.appendChild(Object.assign(document.createElement('span'), { textContent: s }));
+            kbBox.appendChild(row);
+        });
+        panel.appendChild(fieldRow('KB scope bindings', kbBox));
+
+        // Save buttons
+        var btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.5rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--color-border);';
+
+        async function saveAll() {
+            try {
+                var newKinds = kindsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                var newKeywords = keywordsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                var personaPatch = {
+                    display_name: nameInput.value,
+                    role: roleInput.value,
+                    voice_id: voiceInput.value || null,
+                    system_prompt: promptInput.value,
+                    status: statusSelect.value,
+                    handles_kinds: newKinds,
+                    handoff_keywords: newKeywords,
+                    change_note: 'Edited via Persona Editor',
+                };
+                var personaResp = await fetch('/api/v1/admin/specialists/' + personaKey, {
+                    method: 'PUT',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(personaPatch),
+                });
+                if (!personaResp.ok) throw new Error('persona save: HTTP ' + personaResp.status);
+
+                var checkedTools = Object.keys(toolCheckboxes).filter(function (k) { return toolCheckboxes[k].checked; });
+                var checkedKbs = Object.keys(kbCheckboxes).filter(function (k) { return kbCheckboxes[k].checked; });
+                await Promise.all([
+                    fetch('/api/v1/admin/specialists/' + personaKey + '/tools', {
+                        method: 'PUT', headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ keys: checkedTools }),
+                    }),
+                    fetch('/api/v1/admin/specialists/' + personaKey + '/kb', {
+                        method: 'PUT', headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ keys: checkedKbs }),
+                    }),
+                ]);
+
+                overlay.remove();
+                showToast('Persona saved ✓', 'success');
+            } catch (err) {
+                showToast('Save failed: ' + err.message, 'error');
+            }
+        }
+
+        var saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save (creates v' + (p.version + 1) + ')';
+        saveBtn.style.cssText = 'background:#10b981;color:#fff;border:none;padding:.5rem 1rem;border-radius:.25rem;font-weight:600;cursor:pointer;';
+        saveBtn.onclick = saveAll;
+        btnRow.appendChild(saveBtn);
+
+        var cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border);padding:.5rem 1rem;border-radius:.25rem;cursor:pointer;';
+        cancelBtn.onclick = function () { overlay.remove(); };
+        btnRow.appendChild(cancelBtn);
+
+        var versionsBtn = document.createElement('button');
+        versionsBtn.textContent = 'Versions (' + (detail.versions || []).length + ')';
+        versionsBtn.style.cssText = 'background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border);padding:.5rem 1rem;border-radius:.25rem;cursor:pointer;margin-left:auto;';
+        versionsBtn.onclick = function () { openPersonaVersionsDrawer(personaKey); };
+        btnRow.appendChild(versionsBtn);
+
+        panel.appendChild(btnRow);
+    }).catch(function (err) {
+        panel.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;';
+        error.textContent = 'Failed: ' + err.message;
+        panel.appendChild(error);
+    });
+}
+
+function openPersonaVersionsDrawer(personaKey) {
+    var existing = document.getElementById('persona-versions-drawer');
+    if (existing) existing.remove();
+    var modal = document.createElement('div');
+    modal.id = 'persona-versions-drawer';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.onclick = function (e) { if (e.target === modal) modal.remove(); };
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--color-surface-primary);border-radius:.5rem;padding:1.5rem;width:min(720px,90%);max-height:80vh;overflow-y:auto;';
+    box.innerHTML = '<h3 style="margin:0 0 1rem;">Versions for ' + personaKey + '</h3>';
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    fetchFeedbackJSON('/api/v1/admin/specialists/' + personaKey + '/versions').then(function (data) {
+        var versions = data.versions || [];
+        if (versions.length === 0) {
+            box.appendChild(Object.assign(document.createElement('div'), { textContent: 'No prior versions yet.', style: { color: 'var(--color-text-secondary)' } }));
+            return;
+        }
+        versions.forEach(function (v) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;';
+            row.innerHTML = '<div style="flex:1;"><div style="font-family:monospace;font-weight:600;">v' + v.version + '</div>' +
+                '<div style="font-size:.75rem;color:var(--color-text-secondary);">' + new Date(v.created_at).toLocaleString() + '</div>' +
+                (v.change_note ? '<div style="font-size:.8rem;margin-top:.25rem;font-style:italic;">"' + v.change_note + '"</div>' : '') +
+                '</div>';
+            var rb = document.createElement('button');
+            rb.textContent = 'Rollback to v' + v.version;
+            rb.style.cssText = 'background:#ef4444;color:#fff;border:none;padding:.4rem .8rem;border-radius:.25rem;font-size:.75rem;font-weight:600;cursor:pointer;';
+            rb.onclick = async function () {
+                if (!confirm('Roll back to v' + v.version + '? This creates a new version with that snapshot.')) return;
+                try {
+                    var resp = await fetch('/api/v1/admin/specialists/' + personaKey + '/rollback/' + v.version, {
+                        method: 'POST',
+                        headers: buildContextHeaders({})
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    modal.remove();
+                    document.getElementById('specialist-editor-drawer')?.remove();
+                    showToast('Rolled back to v' + v.version, 'success');
+                } catch (err) { showToast('Rollback failed: ' + err.message, 'error'); }
+            };
+            row.appendChild(rb);
+            box.appendChild(row);
+        });
+    });
+}
+
+// ──── Audit Log view ────
+
+function renderFeedbackAuditView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Specialists Audit Log';
+    container.appendChild(h);
+
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'Every persona / voice / prompt / tool / KB / connection change. Filter by persona using the dropdown.';
+    container.appendChild(note);
+
+    var loading = document.createElement('div');
+    loading.textContent = 'Loading…';
+    loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+
+    fetchFeedbackJSON('/api/v1/admin/specialists/audit?limit=200').then(function (data) {
+        container.removeChild(loading);
+        var rows = data.audit || [];
+        if (rows.length === 0) {
+            container.appendChild(Object.assign(document.createElement('div'), { textContent: 'No audit entries yet.', style: { color: 'var(--color-text-secondary)' } }));
+            return;
+        }
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+        rows.forEach(function (r) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;font-size:.85rem;';
+            var head = document.createElement('div');
+            head.style.cssText = 'display:flex;gap:.75rem;align-items:center;';
+            head.innerHTML = '<span style="font-family:monospace;color:var(--color-text-secondary);">' + new Date(r.ts).toLocaleString() + '</span>' +
+                '<strong>' + r.action + '</strong>' +
+                '<span style="color:var(--color-text-secondary);font-size:.75rem;font-family:monospace;">persona ' + (r.persona_id || '—').slice(0, 8) + '</span>' +
+                '<span style="color:var(--color-text-secondary);font-size:.75rem;font-family:monospace;">actor ' + (r.actor_user_id || '—').slice(0, 8) + '</span>';
+            row.appendChild(head);
+            if (r.before_state || r.after_state) {
+                var details = document.createElement('details');
+                details.style.cssText = 'margin-top:.5rem;font-size:.75rem;';
+                var sum = document.createElement('summary');
+                sum.style.cssText = 'cursor:pointer;color:var(--color-text-secondary);';
+                sum.textContent = 'before / after';
+                details.appendChild(sum);
+                var pre = document.createElement('pre');
+                pre.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;overflow-x:auto;margin:.25rem 0 0;';
+                pre.textContent = JSON.stringify({ before: r.before_state, after: r.after_state }, null, 2);
+                details.appendChild(pre);
+                row.appendChild(details);
+            }
+            list.appendChild(row);
+        });
+        container.appendChild(list);
     }).catch(function (err) {
         container.removeChild(loading);
         var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
