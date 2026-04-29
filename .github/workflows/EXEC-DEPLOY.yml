@@ -352,6 +352,10 @@ jobs:
             # VTID-01981: Routines ingest token — required by /api/v1/routines POST/PATCH
             # so daily Claude Code remote agents can authenticate without user JWTs.
             EXTRA_ENV_ARGS+=(--update-env-vars=ROUTINE_INGEST_TOKEN=${{ secrets.ROUTINE_INGEST_TOKEN }})
+            # VTID-02030d: Google Chat webhook for human-in-the-loop pings
+            # (voice quarantine, architectural recommendations, etc.).
+            # Same secret used by DAILY-STATUS-UPDATE.yml's existing pings.
+            EXTRA_ENV_ARGS+=(--update-env-vars=GCHAT_COMMANDHUB_WEBHOOK=${{ secrets.VITANA_CHAT_WEBHOOK }})
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
