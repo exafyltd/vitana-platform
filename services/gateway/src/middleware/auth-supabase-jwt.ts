@@ -63,11 +63,11 @@ export async function resolveVitanaId(userId: string): Promise<string | null> {
 
     const { data } = await supabase
       .from('app_users')
-      .select('vitana_id')
+      .select('vuid')
       .eq('user_id', userId)
       .maybeSingle();
 
-    const vitanaId = (data && (data as any).vitana_id) || null;
+    const vitanaId = (data && (data as any).vuid) || null;
     vitanaIdCache.set(userId, {
       vitana_id: vitanaId,
       expires_at: Date.now() + VITANA_ID_CACHE_TTL_MS,
