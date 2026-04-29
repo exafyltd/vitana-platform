@@ -32,6 +32,7 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
+import { notifyGChat } from './self-healing-snapshot-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -320,8 +321,11 @@ export async function evaluateAndQuarantine(
   // VTID-02030: ping ops via Gchat — quarantine means the auto-loop has
   // stopped and the supervisor should look. Reuses the same notifyGChat()
   // helper that powers existing self-healing pings (54-health-check stream).
+  console.log(
+    `[voice-recurrence-sentinel] gchat-ping prep: class=${klass} reason=${reason} ` +
+    `webhook_set=${Boolean(process.env.GCHAT_COMMANDHUB_WEBHOOK)}`,
+  );
   try {
-    const { notifyGChat } = await import('./self-healing-snapshot-service');
     await notifyGChat(
       `🛑 *Voice class quarantined*\n` +
       `Class: \`${klass}\`\n` +
@@ -331,8 +335,13 @@ export async function evaluateAndQuarantine(
       `${inProbation ? ', from_probation=true' : ''})\n` +
       `Investigator spawned. No further auto-dispatch on this class until released.`,
     );
-  } catch {
-    /* best-effort */
+    console.log(
+      `[voice-recurrence-sentinel] gchat-ping sent for class=${klass}`,
+    );
+  } catch (err: any) {
+    console.error(
+      `[voice-recurrence-sentinel] gchat-ping FAILED: ${err?.message ?? err}`,
+    );
   }
 
   // VTID-01963 (PR #6): spawn the Architecture Investigator. Fire-and-forget

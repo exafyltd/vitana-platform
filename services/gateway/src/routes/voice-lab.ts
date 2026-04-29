@@ -18,6 +18,7 @@ import {
   getQuarantineState,
 } from '../services/voice-recurrence-sentinel';
 import { spawnInvestigator } from '../services/voice-architecture-investigator';
+import { notifyGChat } from '../services/self-healing-snapshot-service';
 import { setMode } from '../services/voice-shadow-mode';
 import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
 import {
@@ -1095,6 +1096,36 @@ router.get('/healing/reports/:id/execution', async (req: Request, res: Response)
 router.get('/healing/mode', async (_req: Request, res: Response) => {
   const mode = await getVoiceSelfHealingMode(true);
   return res.json({ ok: true, mode });
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/gchat-ping-test (VTID-02030c)
+ *
+ * Diagnostic only. Sends a single test message via the same notifyGChat()
+ * helper used by quarantine + investigator pings. Reports whether the
+ * env var is set and whether the fetch actually fired. No side effects
+ * other than the message itself.
+ */
+router.post('/healing/gchat-ping-test', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const note = typeof body.note === 'string' ? body.note : 'manual diagnostic';
+  const webhookSet = Boolean(process.env.GCHAT_COMMANDHUB_WEBHOOK);
+  const text =
+    `🔧 *Gchat ping diagnostic* (VTID-02030c)\n` +
+    `If you see this, the gateway → Gchat path works.\n` +
+    `Note: ${note}\n` +
+    `Time: ${new Date().toISOString()}`;
+  let sendError: string | null = null;
+  try {
+    await notifyGChat(text);
+  } catch (err: any) {
+    sendError = err?.message ?? String(err);
+  }
+  return res.json({
+    ok: sendError === null,
+    webhook_env_set: webhookSet,
+    send_error: sendError,
+  });
 });
 
 /**
