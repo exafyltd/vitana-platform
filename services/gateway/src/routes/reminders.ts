@@ -19,6 +19,7 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   createReminder,
   softDeleteReminders,
@@ -31,17 +32,19 @@ import { getReminderChimePcmB64 } from '../services/reminder-chime';
 const router = Router();
 const LOG_PREFIX = '[Reminders]';
 
+// Resolve user_id from (in order):
+//   1. req.identity (populated by optionalAuth from Bearer JWT) — frontend path
+//   2. X-User-ID / X-Vitana-User header — service-role / testing
+//   3. ?user_id= query param — EventSource SSE (no header support)
 function getUserId(req: Request): string | null {
-  // @ts-ignore
-  if (req.user?.id) return req.user.id;
-  // @ts-ignore
-  if (req.user?.sub) return req.user.sub;
+  const ident = (req as AuthenticatedRequest).identity;
+  if (ident?.user_id) return ident.user_id;
   return req.get('X-User-ID') || req.get('X-Vitana-User') || (req.query.user_id as string) || null;
 }
 
 function getTenantId(req: Request): string {
-  // @ts-ignore
-  if (req.user?.tenant_id) return req.user.tenant_id;
+  const ident = (req as AuthenticatedRequest).identity;
+  if (ident?.tenant_id) return ident.tenant_id;
   return (
     req.get('X-Tenant-ID') ||
     req.get('X-Vitana-Tenant') ||
@@ -49,6 +52,12 @@ function getTenantId(req: Request): string {
     '00000000-0000-0000-0000-000000000000'
   );
 }
+
+// Apply optionalAuth to every route on this router. It populates req.identity
+// when a valid Bearer token is present (the frontend's communityFetch path)
+// but does NOT 401 when absent — that lets X-User-ID + service-role-key paths
+// keep working for tests and for the SSE stream's query-param auth.
+router.use(optionalAuth);
 
 function getUserTz(req: Request): string {
   return (
