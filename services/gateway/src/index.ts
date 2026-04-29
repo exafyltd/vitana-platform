@@ -296,6 +296,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminIntentEngineRouter = intentEngineEnabled ? require('./routes/admin-intent-engine').default : null;
   // VTID-DANCE-D4: public community members directory (always on)
   const communityMembersRouter = require('./routes/community-members').default;
+  // E2: profile partner_preferences + service_offerings PATCH endpoints
+  const profilePrefsRouter = require('./routes/profile-prefs').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
   const intentOpenAsksRouter = intentEngineEnabled ? require('./routes/intent-open-asks').default : null;
   // VTID-DANCE-D11.B: pre-post candidate scan
@@ -809,6 +811,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
+  mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
   if (intentTemplatesRouter) mountRouterSync(app, '/api/v1', intentTemplatesRouter, { owner: 'intent-templates' });
