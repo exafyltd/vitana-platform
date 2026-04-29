@@ -191,6 +191,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02047: Feedback actions (supervisor draft/approve/reject + user confirm/reopen)
   const feedbackActionsAdmin = require('./routes/feedback-actions').adminRouter;
   const feedbackActionsUser = require('./routes/feedback-actions').userRouter;
+  // VTID-02047 Phase 5: Specialists management (persona editor, tool/KB bindings, audit)
+  const specialistsAdminRouter = require('./routes/specialists-admin').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
@@ -914,6 +916,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // mounted at distinct paths so each router's internal routes resolve.
   mountRouterSync(app, '/api/v1/admin/feedback', feedbackActionsAdmin, { owner: 'feedback-actions-admin' });
   mountRouterSync(app, '/api/v1/feedback/tickets', feedbackActionsUser, { owner: 'feedback-actions-user' });
+
+  // VTID-02047 Phase 5: Specialists management UI backend
+  mountRouterSync(app, '/api/v1/admin/specialists', specialistsAdminRouter, { owner: 'specialists-admin' });
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
