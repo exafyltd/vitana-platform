@@ -1,0 +1,193 @@
+/**
+ * VTID-02605: Unified Feedback Pipeline — supervisor (Command Hub) admin routes
+ * Parent plan PR 7.
+ *
+ * Endpoints (mounted at /api/v1/admin/feedback):
+ * - GET  /tickets       — paginated list with filters
+ * - GET  /tickets/:id   — full detail (transcript + messages + handoffs)
+ * - GET  /handoffs/recent — recent handoff events (Live Handoffs panel)
+ * - GET  /personas      — read-only roster (also feeds Specialists tab)
+ * - GET  /kpis          — aggregate KPIs by kind / specialist / week
+ *
+ * Auth: requires authenticated user; service role used for cross-tenant
+ * reads. The Command Hub is operator-only — TODO when role gating is wired,
+ * add an explicit `developer` / `operator` role check here. For now, the
+ * gateway's existing auth-supabase-jwt middleware enforces authentication.
+ */
+
+import { Router, Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
+
+const router = Router();
+const VTID = 'VTID-02605';
+
+function getServiceClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE missing');
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+function getBearerToken(req: Request): string | null {
+  const h = req.headers.authorization;
+  return h && h.startsWith('Bearer ') ? h.slice(7) : null;
+}
+
+function ensureAuth(req: Request, res: Response): boolean {
+  if (!getBearerToken(req)) {
+    res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// GET /tickets
+// ---------------------------------------------------------------------------
+
+router.get('/tickets', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const supabase = getServiceClient();
+
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  const status = req.query.status as string | undefined;
+  const kind = req.query.kind as string | undefined;
+  const priority = req.query.priority as string | undefined;
+  const surface = req.query.surface as string | undefined;
+  const resolverAgent = req.query.resolver_agent as string | undefined;
+
+  let q = supabase
+    .from('feedback_tickets')
+    .select('id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, classifier_meta, duplicate_of, resolver_agent, created_at, triaged_at, resolved_at, user_confirmed_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (status) q = q.eq('status', status);
+  if (kind) q = q.eq('kind', kind);
+  if (priority) q = q.eq('priority', priority);
+  if (surface) q = q.eq('surface', surface);
+  if (resolverAgent) q = q.eq('resolver_agent', resolverAgent);
+
+  const { data, error } = await q;
+  if (error) {
+    console.error(`[${VTID}] tickets list failed:`, error.message);
+    return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
+  }
+  return res.json({ ok: true, tickets: data ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// GET /tickets/:id
+// ---------------------------------------------------------------------------
+
+router.get('/tickets/:id', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const id = req.params.id;
+  const supabase = getServiceClient();
+
+  const { data: ticket, error } = await supabase
+    .from('feedback_tickets')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !ticket) {
+    return res.status(404).json({ ok: false, error: 'NOT_FOUND', details: error?.message });
+  }
+
+  const { data: handoffs } = await supabase
+    .from('feedback_handoff_events')
+    .select('id, from_agent, to_agent, reason, detected_intent, matched_keyword, confidence, ts')
+    .eq('ticket_id', id)
+    .order('ts', { ascending: true });
+
+  const { data: similar } = ticket.duplicate_of
+    ? await supabase.from('feedback_tickets').select('id, ticket_number, kind, status').eq('id', ticket.duplicate_of).maybeSingle().then(r => ({ data: r.data ? [r.data] : [] }))
+    : { data: [] };
+
+  return res.json({ ok: true, ticket, handoffs: handoffs ?? [], similar: similar ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// GET /handoffs/recent
+// ---------------------------------------------------------------------------
+
+router.get('/handoffs/recent', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  const supabase = getServiceClient();
+
+  const { data, error } = await supabase
+    .from('feedback_handoff_events')
+    .select('id, conversation_id, ticket_id, vitana_id, from_agent, to_agent, reason, detected_intent, matched_keyword, confidence, ts')
+    .order('ts', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
+  }
+  return res.json({ ok: true, handoffs: data ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// GET /personas
+// ---------------------------------------------------------------------------
+
+router.get('/personas', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from('agent_personas')
+    .select('id, key, display_name, role, voice_id, voice_sample_url, system_prompt, intake_schema_ref, handles_kinds, handoff_keywords, max_questions, max_duration_seconds, status, version, updated_at')
+    .order('key');
+  if (error) return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
+  return res.json({ ok: true, personas: data ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// GET /kpis
+// ---------------------------------------------------------------------------
+
+router.get('/kpis', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const supabase = getServiceClient();
+
+  // Total counts by status
+  const { data: byStatus } = await supabase
+    .from('feedback_tickets')
+    .select('status')
+    .gte('created_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
+
+  const { data: byKind } = await supabase
+    .from('feedback_tickets')
+    .select('kind')
+    .gte('created_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
+
+  const { data: byResolver } = await supabase
+    .from('feedback_tickets')
+    .select('resolver_agent')
+    .not('resolver_agent', 'is', null)
+    .gte('created_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
+
+  const { data: handoffCount } = await supabase
+    .from('feedback_handoff_events')
+    .select('to_agent', { count: 'exact', head: false })
+    .gte('ts', new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString());
+
+  const tally = (rows: Array<Record<string, unknown>> | null, col: string): Record<string, number> => {
+    const t: Record<string, number> = {};
+    (rows ?? []).forEach(r => { const k = String(r[col] ?? 'unknown'); t[k] = (t[k] ?? 0) + 1; });
+    return t;
+  };
+
+  return res.json({
+    ok: true,
+    window: '30d',
+    by_status: tally(byStatus as Array<Record<string, unknown>> | null, 'status'),
+    by_kind: tally(byKind as Array<Record<string, unknown>> | null, 'kind'),
+    by_resolver: tally(byResolver as Array<Record<string, unknown>> | null, 'resolver_agent'),
+    handoffs_7d: tally(handoffCount as Array<Record<string, unknown>> | null, 'to_agent'),
+  });
+});
+
+export default router;

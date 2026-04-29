@@ -6247,6 +6247,16 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDocsWorkforceView());
     } else if (moduleKey === 'docs' && tab === 'system-knowledge') {
         container.appendChild(renderDocsSystemKnowledgeView());
+    } else if (moduleKey === 'docs' && tab === 'specialists') {
+        container.appendChild(renderDocsSpecialistsView());
+
+    // ──── Feedback tabs (VTID-02605) ────
+    } else if (moduleKey === 'feedback' && tab === 'inbox') {
+        container.appendChild(renderFeedbackInboxView());
+    } else if (moduleKey === 'feedback' && tab === 'handoffs') {
+        container.appendChild(renderFeedbackHandoffsView());
+    } else if (moduleKey === 'feedback' && tab === 'kpis') {
+        container.appendChild(renderFeedbackKpisView());
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
@@ -43543,5 +43553,364 @@ function renderRoutinesHistoryView() {
     });
 
     container.appendChild(list);
+    return container;
+}
+
+// ===========================================================================
+// VTID-02605: Feedback Inbox + Live Handoffs + KPIs (parent plan PR 7)
+// VTID-02047: Specialists roster (Phase 5 PR 15 read-only baseline)
+// ===========================================================================
+
+async function fetchFeedbackJSON(path) {
+    var resp = await fetch(path, { headers: buildContextHeaders({}) });
+    if (!resp.ok) {
+        var errText = await resp.text().catch(function () { return ''; });
+        throw new Error('HTTP ' + resp.status + ' ' + errText);
+    }
+    return resp.json();
+}
+
+function feedbackStatusPill(status) {
+    var palette = {
+        'new': ['#94a3b8', 'New'],
+        'interviewing': ['#fbbf24', 'Interviewing'],
+        'triaged': ['#3b82f6', 'Triaged'],
+        'spec_pending': ['#a855f7', 'Spec pending'],
+        'spec_ready': ['#a855f7', 'Spec ready'],
+        'answer_pending': ['#06b6d4', 'Answer pending'],
+        'answer_ready': ['#06b6d4', 'Answer ready'],
+        'approved': ['#10b981', 'Approved'],
+        'in_progress': ['#10b981', 'In progress'],
+        'resolved': ['#22c55e', 'Resolved'],
+        'user_confirmed': ['#16a34a', 'Confirmed'],
+        'duplicate': ['#64748b', 'Duplicate'],
+        'rejected': ['#64748b', 'Rejected'],
+        'wont_fix': ['#64748b', "Won't fix"],
+        'needs_more_info': ['#f59e0b', 'Needs info'],
+        'reopened': ['#ef4444', 'Reopened']
+    };
+    var pair = palette[status] || ['#94a3b8', status];
+    var pill = document.createElement('span');
+    pill.style.cssText = 'background:' + pair[0] + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+    pill.textContent = pair[1];
+    return pill;
+}
+
+function renderFeedbackInboxView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Feedback Inbox';
+    header.appendChild(h);
+    var note = document.createElement('div');
+    note.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);';
+    note.textContent = 'User-originated tickets from /comm/talk-to-vitana — bugs, support, claims, account, feedback.';
+    header.appendChild(note);
+    container.appendChild(header);
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/tickets?limit=100').then(function (data) {
+        container.removeChild(loading);
+        var tickets = (data && data.tickets) || [];
+        if (tickets.length === 0) {
+            var empty = document.createElement('div');
+            empty.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+            empty.textContent = 'No tickets yet. The first user submission via /comm/talk-to-vitana will appear here.';
+            container.appendChild(empty);
+            return;
+        }
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr style="border-bottom:1px solid var(--color-border);text-align:left;font-size:.75rem;color:var(--color-text-secondary);text-transform:uppercase;">' +
+            '<th style="padding:.5rem .75rem;">Ticket</th>' +
+            '<th style="padding:.5rem .75rem;">Kind</th>' +
+            '<th style="padding:.5rem .75rem;">Priority</th>' +
+            '<th style="padding:.5rem .75rem;">Status</th>' +
+            '<th style="padding:.5rem .75rem;">Resolver</th>' +
+            '<th style="padding:.5rem .75rem;">Surface</th>' +
+            '<th style="padding:.5rem .75rem;">Excerpt</th>' +
+            '<th style="padding:.5rem .75rem;">Created</th></tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        tickets.forEach(function (t) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid var(--color-border-subtle);font-size:.85rem;cursor:pointer;';
+            tr.onmouseover = function () { tr.style.background = 'var(--color-surface-secondary)'; };
+            tr.onmouseout = function () { tr.style.background = ''; };
+            tr.onclick = function () { openFeedbackTicketDrawer(t.id); };
+            var num = document.createElement('td');
+            num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
+            num.textContent = t.ticket_number || '-';
+            tr.appendChild(num);
+            var kindCell = document.createElement('td'); kindCell.style.cssText = 'padding:.5rem .75rem;'; kindCell.textContent = t.kind; tr.appendChild(kindCell);
+            var priCell = document.createElement('td'); priCell.style.cssText = 'padding:.5rem .75rem;'; priCell.textContent = (t.priority || '').toUpperCase(); tr.appendChild(priCell);
+            var statusTd = document.createElement('td'); statusTd.style.cssText = 'padding:.5rem .75rem;'; statusTd.appendChild(feedbackStatusPill(t.status)); tr.appendChild(statusTd);
+            var resCell = document.createElement('td'); resCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);'; resCell.textContent = t.resolver_agent || '—'; tr.appendChild(resCell);
+            var surCell = document.createElement('td'); surCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);'; surCell.textContent = t.surface || '—'; tr.appendChild(surCell);
+            var excerpt = (t.raw_transcript || '').slice(0, 80); if ((t.raw_transcript || '').length > 80) excerpt += '…';
+            var excCell = document.createElement('td'); excCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; excCell.textContent = excerpt; tr.appendChild(excCell);
+            var created = document.createElement('td'); created.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);font-size:.75rem;white-space:nowrap;'; created.textContent = new Date(t.created_at).toLocaleString(); tr.appendChild(created);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid #ef4444;border-radius:.25rem;';
+        error.textContent = 'Failed to load tickets: ' + err.message;
+        container.appendChild(error);
+    });
+    return container;
+}
+
+function openFeedbackTicketDrawer(ticketId) {
+    var existing = document.getElementById('feedback-ticket-drawer');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'feedback-ticket-drawer';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;justify-content:flex-end;';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+    var panel = document.createElement('div');
+    panel.style.cssText = 'width:min(720px,100%);height:100%;background:var(--color-surface-primary);overflow-y:auto;padding:1.5rem;box-shadow:-4px 0 20px rgba(0,0,0,.2);';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = 'float:right;background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--color-text-secondary);';
+    closeBtn.onclick = function () { overlay.remove(); };
+    panel.appendChild(closeBtn);
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    panel.appendChild(loading);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    fetchFeedbackJSON('/api/v1/admin/feedback/tickets/' + ticketId).then(function (data) {
+        panel.removeChild(loading);
+        var t = data.ticket;
+        var handoffs = data.handoffs || [];
+        var head = document.createElement('div');
+        head.style.cssText = 'margin-bottom:1rem;';
+        var title = document.createElement('h2');
+        title.style.cssText = 'margin:0 0 .25rem;font-family:monospace;font-size:1.25rem;';
+        title.textContent = t.ticket_number;
+        head.appendChild(title);
+        var meta = document.createElement('div');
+        meta.style.cssText = 'display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.85rem;color:var(--color-text-secondary);';
+        meta.appendChild(feedbackStatusPill(t.status));
+        var kindSpan = document.createElement('span'); kindSpan.textContent = t.kind; meta.appendChild(kindSpan);
+        var priSpan = document.createElement('span'); priSpan.textContent = '· ' + (t.priority || 'p2').toUpperCase(); meta.appendChild(priSpan);
+        if (t.resolver_agent) { var rs = document.createElement('span'); rs.textContent = '· handled by ' + t.resolver_agent; meta.appendChild(rs); }
+        if (t.vitana_id) { var vs = document.createElement('span'); vs.textContent = '· ' + t.vitana_id; meta.appendChild(vs); }
+        head.appendChild(meta);
+        panel.appendChild(head);
+        function section(label, body) {
+            var s = document.createElement('div');
+            s.style.cssText = 'margin:1rem 0;';
+            var l = document.createElement('div');
+            l.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.25rem;letter-spacing:.04em;';
+            l.textContent = label;
+            s.appendChild(l);
+            s.appendChild(body);
+            panel.appendChild(s);
+        }
+        if (t.raw_transcript) {
+            var rt = document.createElement('div');
+            rt.style.cssText = 'background:var(--color-surface-secondary);padding:.75rem;border-radius:.25rem;font-size:.85rem;white-space:pre-wrap;';
+            rt.textContent = t.raw_transcript;
+            section('Transcript', rt);
+        }
+        if (Array.isArray(t.intake_messages) && t.intake_messages.length > 0) {
+            var msgs = document.createElement('div');
+            msgs.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+            t.intake_messages.forEach(function (m) {
+                var bubble = document.createElement('div');
+                var isUser = m.role === 'user';
+                bubble.style.cssText = 'padding:.5rem .75rem;border-radius:.5rem;font-size:.85rem;max-width:85%;' +
+                    (isUser ? 'background:var(--color-surface-secondary);align-self:flex-end;' : 'background:#3b82f6;color:#fff;align-self:flex-start;');
+                var name = document.createElement('div');
+                name.style.cssText = 'font-size:.65rem;font-weight:600;opacity:.7;margin-bottom:.15rem;text-transform:uppercase;';
+                name.textContent = m.agent || (isUser ? 'user' : 'assistant');
+                bubble.appendChild(name);
+                var content = document.createElement('div'); content.textContent = m.content; bubble.appendChild(content);
+                msgs.appendChild(bubble);
+            });
+            section('Intake conversation (' + t.intake_messages.length + ' turns)', msgs);
+        }
+        if (handoffs.length > 0) {
+            var hList = document.createElement('div');
+            hList.style.cssText = 'font-size:.8rem;display:flex;flex-direction:column;gap:.25rem;';
+            handoffs.forEach(function (h) {
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:.5rem;align-items:center;';
+                row.innerHTML = '<span style="font-family:monospace;color:var(--color-text-secondary);">' +
+                    new Date(h.ts).toLocaleTimeString() + '</span>' +
+                    '<span><strong>' + h.from_agent + '</strong> → <strong>' + h.to_agent + '</strong></span>' +
+                    '<span style="color:var(--color-text-secondary);">(' + h.reason + (h.matched_keyword ? ' · "' + h.matched_keyword + '"' : '') + ')</span>';
+                hList.appendChild(row);
+            });
+            section('Handoff timeline', hList);
+        }
+        if (t.classifier_meta) {
+            var pre = document.createElement('pre');
+            pre.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;font-size:.75rem;overflow-x:auto;';
+            pre.textContent = JSON.stringify(t.classifier_meta, null, 2);
+            section('Classifier', pre);
+        }
+        if (t.structured_fields && Object.keys(t.structured_fields).length > 0) {
+            var pre2 = document.createElement('pre');
+            pre2.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;font-size:.75rem;overflow-x:auto;';
+            pre2.textContent = JSON.stringify(t.structured_fields, null, 2);
+            section('Structured fields', pre2);
+        }
+        var ctx = document.createElement('div');
+        ctx.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);display:flex;flex-direction:column;gap:.15rem;';
+        if (t.screen_path) { var d1 = document.createElement('div'); d1.textContent = 'Screen: ' + t.screen_path; ctx.appendChild(d1); }
+        if (t.app_version) { var d2 = document.createElement('div'); d2.textContent = 'App version: ' + t.app_version; ctx.appendChild(d2); }
+        var d3 = document.createElement('div'); d3.textContent = 'Created: ' + new Date(t.created_at).toLocaleString(); ctx.appendChild(d3);
+        if (t.triaged_at) { var d4 = document.createElement('div'); d4.textContent = 'Triaged: ' + new Date(t.triaged_at).toLocaleString(); ctx.appendChild(d4); }
+        section('Context', ctx);
+    }).catch(function (err) {
+        panel.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;';
+        error.textContent = 'Failed: ' + err.message;
+        panel.appendChild(error);
+    });
+}
+
+function renderFeedbackHandoffsView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Live Handoffs';
+    container.appendChild(h);
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'Most recent Vitana → specialist channel swaps. Real-time SSE stream lands in Phase 5 PR 20.';
+    container.appendChild(note);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/handoffs/recent?limit=100').then(function (data) {
+        container.removeChild(loading);
+        var rows = (data && data.handoffs) || [];
+        if (rows.length === 0) {
+            var empty = document.createElement('div'); empty.textContent = 'No handoffs yet.'; empty.style.cssText = 'color:var(--color-text-secondary);padding:1rem;'; container.appendChild(empty); return;
+        }
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+        rows.forEach(function (r) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;display:flex;gap:.75rem;align-items:center;font-size:.85rem;';
+            var ts = document.createElement('span'); ts.style.cssText = 'font-family:monospace;color:var(--color-text-secondary);'; ts.textContent = new Date(r.ts).toLocaleTimeString(); row.appendChild(ts);
+            var arrow = document.createElement('span'); arrow.innerHTML = '<strong>' + r.from_agent + '</strong> → <strong>' + r.to_agent + '</strong>'; row.appendChild(arrow);
+            var reason = document.createElement('span'); reason.textContent = r.reason; reason.style.cssText = 'color:var(--color-text-secondary);'; row.appendChild(reason);
+            if (r.matched_keyword) { var kw = document.createElement('span'); kw.textContent = '"' + r.matched_keyword + '"'; kw.style.cssText = 'font-style:italic;color:var(--color-text-secondary);'; row.appendChild(kw); }
+            if (r.confidence != null) { var cf = document.createElement('span'); cf.textContent = 'conf ' + Number(r.confidence).toFixed(2); cf.style.cssText = 'color:var(--color-text-secondary);font-family:monospace;'; row.appendChild(cf); }
+            list.appendChild(row);
+        });
+        container.appendChild(list);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;padding:1rem;'; container.appendChild(e);
+    });
+    return container;
+}
+
+function renderFeedbackKpisView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Feedback KPIs (30 days)';
+    container.appendChild(h);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/kpis').then(function (data) {
+        container.removeChild(loading);
+        function bucket(label, obj) {
+            var box = document.createElement('div');
+            box.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;flex:1 1 240px;';
+            var t = document.createElement('div');
+            t.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.5rem;letter-spacing:.04em;';
+            t.textContent = label;
+            box.appendChild(t);
+            var rows = Object.entries(obj || {});
+            if (rows.length === 0) {
+                var empty = document.createElement('div'); empty.textContent = '(empty)'; empty.style.cssText = 'color:var(--color-text-secondary);font-size:.85rem;'; box.appendChild(empty);
+            } else {
+                rows.sort(function (a, b) { return b[1] - a[1]; });
+                rows.forEach(function (kv) {
+                    var r = document.createElement('div');
+                    r.style.cssText = 'display:flex;justify-content:space-between;font-size:.85rem;padding:.15rem 0;';
+                    r.innerHTML = '<span>' + kv[0] + '</span><span style="font-family:monospace;font-weight:600;">' + kv[1] + '</span>';
+                    box.appendChild(r);
+                });
+            }
+            return box;
+        }
+        var grid = document.createElement('div');
+        grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:.75rem;';
+        grid.appendChild(bucket('By status', data.by_status));
+        grid.appendChild(bucket('By kind', data.by_kind));
+        grid.appendChild(bucket('By resolver', data.by_resolver));
+        grid.appendChild(bucket('Handoffs (7d)', data.handoffs_7d));
+        container.appendChild(grid);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
+    return container;
+}
+
+function renderDocsSpecialistsView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 .25rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Specialists';
+    container.appendChild(h);
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'The team Vitana hands off to. v1 is read-only; persona editor + tool/KB binding land in Phase 5 PR 16-19.';
+    container.appendChild(note);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/personas').then(function (data) {
+        container.removeChild(loading);
+        var personas = data.personas || [];
+        var grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.75rem;';
+        personas.forEach(function (p) {
+            var card = document.createElement('div');
+            card.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:1rem;';
+            var head = document.createElement('div');
+            head.style.cssText = 'display:flex;justify-content:space-between;align-items:start;margin-bottom:.5rem;';
+            var nameBox = document.createElement('div');
+            var name = document.createElement('div'); name.style.cssText = 'font-size:1.1rem;font-weight:600;'; name.textContent = p.display_name; nameBox.appendChild(name);
+            var role = document.createElement('div'); role.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);'; role.textContent = p.role; nameBox.appendChild(role);
+            head.appendChild(nameBox);
+            var statusPill = document.createElement('span');
+            var statusColor = p.status === 'active' ? '#16a34a' : (p.status === 'draft' ? '#f59e0b' : '#64748b');
+            statusPill.style.cssText = 'background:' + statusColor + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+            statusPill.textContent = p.status;
+            head.appendChild(statusPill);
+            card.appendChild(head);
+            var kinds = document.createElement('div'); kinds.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);margin-top:.5rem;'; kinds.textContent = 'Handles: ' + ((p.handles_kinds || []).join(', ') || '—'); card.appendChild(kinds);
+            var voice = document.createElement('div'); voice.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);'; voice.textContent = 'Voice: ' + (p.voice_id || '(not set)'); card.appendChild(voice);
+            var ver = document.createElement('div'); ver.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.5rem;'; ver.textContent = 'v' + p.version + ' · last updated ' + (p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'); card.appendChild(ver);
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
     return container;
 }
