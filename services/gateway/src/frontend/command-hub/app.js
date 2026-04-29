@@ -28874,6 +28874,7 @@ async function fetchActionRequired(silentRefresh) {
             state.actionRequired.items = Array.isArray(body.items) ? body.items : [];
             state.actionRequired.countTotal = Number(body.count_total || 0);
             state.actionRequired.countCritical = Number(body.count_critical || 0);
+            state.actionRequired.itemsReturned = Number(body.items_returned || state.actionRequired.items.length);
         }
     } catch (err) {
         state.actionRequired.error = (err && err.message) ? err.message : String(err);
@@ -28957,6 +28958,16 @@ function renderActionRequiredPanel() {
         ar.items.forEach(function (item) {
             list.appendChild(renderActionRequiredCard(item));
         });
+        // VTID-02031b: when the backend capped the list, surface the residual
+        // count so the supervisor knows there's more if they want to drill in.
+        var returned = ar.itemsReturned || ar.items.length;
+        if (ar.countTotal > returned) {
+            var moreLine = document.createElement('div');
+            moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
+            moreLine.textContent = 'Showing top ' + returned + ' of ' + ar.countTotal +
+                ' open items — see Self-Healing screen for the full list';
+            list.appendChild(moreLine);
+        }
         wrapper.appendChild(list);
     }
 
