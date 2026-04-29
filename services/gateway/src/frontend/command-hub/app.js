@@ -43729,6 +43729,65 @@ function openFeedbackTicketDrawer(ticketId) {
         if (t.vitana_id) { var vs = document.createElement('span'); vs.textContent = '· ' + t.vitana_id; meta.appendChild(vs); }
         head.appendChild(meta);
         panel.appendChild(head);
+
+        // ──── Action buttons (VTID-02047 supervisor actions) ────
+        var actionBar = document.createElement('div');
+        actionBar.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;padding:.75rem;background:var(--color-surface-secondary);border-radius:.25rem;';
+        function makeBtn(label, color, handler) {
+            var b = document.createElement('button');
+            b.textContent = label;
+            b.style.cssText = 'background:' + color + ';color:#fff;border:none;padding:.4rem .8rem;border-radius:.25rem;font-size:.8rem;font-weight:600;cursor:pointer;';
+            b.onclick = handler;
+            return b;
+        }
+        async function runAction(label, path, body) {
+            var ok = body && body.confirm ? confirm(label + '?') : true;
+            if (!ok) return;
+            try {
+                var resp = await fetch(path, {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body && body.payload ? body.payload : {})
+                });
+                var json = await resp.json().catch(function () { return {}; });
+                if (!resp.ok) throw new Error(json.details || json.error || ('HTTP ' + resp.status));
+                // Re-render drawer with fresh state
+                document.getElementById('feedback-ticket-drawer').remove();
+                openFeedbackTicketDrawer(ticketId);
+                showToast(label + ' ✓', 'success');
+            } catch (err) {
+                showToast(label + ' failed: ' + err.message, 'error');
+            }
+        }
+        // Button availability matrix by status + kind
+        if (t.status === 'triaged' || t.status === 'new') {
+            if (t.kind === 'bug' || t.kind === 'ux_issue') {
+                actionBar.appendChild(makeBtn('Write Spec (Devon)', '#3b82f6', function () { runAction('Write Spec', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-spec'); }));
+            } else if (t.kind === 'support_question') {
+                actionBar.appendChild(makeBtn('Draft Answer (Sage)', '#06b6d4', function () { runAction('Draft Answer', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-answer'); }));
+            } else if (t.kind === 'account_issue' || t.kind === 'marketplace_claim') {
+                actionBar.appendChild(makeBtn('Draft Resolution', '#a855f7', function () { runAction('Draft Resolution', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-resolution'); }));
+            }
+        }
+        if (t.status === 'spec_ready') {
+            actionBar.appendChild(makeBtn('Approve & Fix', '#10b981', function () { runAction('Approve', '/api/v1/admin/feedback/tickets/' + ticketId + '/approve', { confirm: true }); }));
+        }
+        if (t.status === 'answer_ready') {
+            actionBar.appendChild(makeBtn('Send Answer', '#10b981', function () { runAction('Send Answer', '/api/v1/admin/feedback/tickets/' + ticketId + '/send-answer', { confirm: true }); }));
+        }
+        if (t.status === 'in_progress') {
+            actionBar.appendChild(makeBtn('Mark Resolved', '#16a34a', function () { runAction('Resolve', '/api/v1/admin/feedback/tickets/' + ticketId + '/resolve', { confirm: true }); }));
+        }
+        if (!['rejected','duplicate','user_confirmed','wont_fix'].includes(t.status)) {
+            actionBar.appendChild(makeBtn('Reject', '#ef4444', function () {
+                var reason = prompt('Reason for rejection?');
+                if (reason !== null) runAction('Reject', '/api/v1/admin/feedback/tickets/' + ticketId + '/reject', { payload: { reason: reason } });
+            }));
+        }
+        if (actionBar.childNodes.length > 0) {
+            panel.appendChild(actionBar);
+        }
+
         function section(label, body) {
             var s = document.createElement('div');
             s.style.cssText = 'margin:1rem 0;';
