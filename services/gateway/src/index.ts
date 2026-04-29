@@ -186,6 +186,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const feedbackRouter = require('./routes/feedback').default;
   // VTID-02603: Feedback intake & specialist handoff bridge
   const feedbackIntakeRouter = require('./routes/feedback-intake').default;
+  // VTID-02605: Feedback admin (Command Hub supervisor surfaces)
+  const feedbackAdminRouter = require('./routes/feedback-admin').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
@@ -898,6 +900,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02603: Feedback intake & specialist handoff bridge
   mountRouterSync(app, '/api/v1/feedback/intake', feedbackIntakeRouter, { owner: 'feedback-intake' });
+
+  // VTID-02605: Feedback admin (Command Hub supervisor)
+  mountRouterSync(app, '/api/v1/admin/feedback', feedbackAdminRouter, { owner: 'feedback-admin' });
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });

@@ -229,7 +229,17 @@ export const NAVIGATION_CONFIG = [
       { key: "database-schemas", label: "Database Schemas" },
       { key: "architecture", label: "Architecture" },
       { key: "workforce", label: "Workforce" },
-      { key: "system-knowledge", label: "System Knowledge" }
+      { key: "system-knowledge", label: "System Knowledge" },
+      { key: "specialists", label: "Specialists" }
+    ]
+  },
+  {
+    module: "feedback",
+    label: "Feedback",
+    tabs: [
+      { key: "inbox", label: "Inbox" },
+      { key: "handoffs", label: "Live Handoffs" },
+      { key: "kpis", label: "KPIs" }
     ]
   }
 ];
