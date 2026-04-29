@@ -363,6 +363,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
+  const opsActionRequiredRouter = require('./routes/ops-action-required').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -880,6 +882,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification
   mountRouterSync(app, '/api/v1/self-healing', selfHealingRouter, { owner: 'self-healing' });
+
+  // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
+  mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

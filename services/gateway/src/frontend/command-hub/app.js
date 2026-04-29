@@ -3615,6 +3615,17 @@ const state = {
         error: null
     },
 
+    // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
+    actionRequired: {
+        items: [],
+        countTotal: 0,
+        countCritical: 0,
+        lastRefreshed: null,
+        loading: false,
+        fetched: false,
+        error: null
+    },
+
     // Operator module — Supervision Dashboard
     operatorDashboard: { data: null, loading: false, error: null, fetched: false },
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
@@ -27903,6 +27914,24 @@ function renderOverviewSystemView() {
     if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
         fetchServiceHealth();
     }
+    // VTID-02031: pull surface for human-in-the-loop items (mirrors Gchat pings)
+    if (!state.actionRequired.fetched && !state.actionRequired.loading) {
+        fetchActionRequired();
+    }
+    // Auto-refresh every 30s while the Overview is mounted. Use a single
+    // timer keyed on the state to avoid stacking duplicates across renders.
+    if (!state._actionRequiredTimer) {
+        state._actionRequiredTimer = setInterval(function () {
+            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+                state.actionRequired.fetched = false;
+                fetchActionRequired(true);
+            }
+        }, 30000);
+    }
+
+    // VTID-02031: Action Required panel — pinned at very top so the
+    // supervisor sees what needs human action before anything else.
+    container.appendChild(renderActionRequiredPanel());
 
     var db = state.overviewDashboard;
 
@@ -28810,6 +28839,174 @@ function renderOverviewSystemView() {
     }
 
     return container;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-02031: fetchActionRequired — GET /api/v1/ops/action-required
+// Pull surface mirroring the Gchat pings (VTID-02030). Polled every 30s
+// while the Overview view is mounted.
+// ---------------------------------------------------------------------------
+async function fetchActionRequired(silentRefresh) {
+    if (state.actionRequired.loading) return;
+    var isInitialLoad = !state.actionRequired.fetched;
+    state.actionRequired.loading = true;
+    state.actionRequired.error = null;
+    if (isInitialLoad && !silentRefresh) renderApp();
+
+    try {
+        var r = await fetchWT('/api/v1/ops/action-required', {
+            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
+        });
+        if (!r.ok) {
+            state.actionRequired.error = 'HTTP ' + r.status;
+        } else {
+            var body = await r.json();
+            state.actionRequired.items = Array.isArray(body.items) ? body.items : [];
+            state.actionRequired.countTotal = Number(body.count_total || 0);
+            state.actionRequired.countCritical = Number(body.count_critical || 0);
+        }
+    } catch (err) {
+        state.actionRequired.error = (err && err.message) ? err.message : String(err);
+    }
+    state.actionRequired.lastRefreshed = new Date().toISOString();
+    state.actionRequired.loading = false;
+    state.actionRequired.fetched = true;
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        renderApp();
+    }
+}
+
+// VTID-02031: Render "Action Required" panel — pinned at the top of the
+// Overview view, above the system status banner. Empty state is collapsed,
+// non-empty shows expanded card list ordered by severity then recency.
+function renderActionRequiredPanel() {
+    var ar = state.actionRequired;
+    var wrapper = document.createElement('div');
+    wrapper.className = 'action-required-panel';
+    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
+
+    var hasItems = (ar.items || []).length > 0;
+    var bgColor = hasItems
+        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)')
+        : 'rgba(34,197,94,0.08)';
+    var borderColor = hasItems
+        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.45)')
+        : 'rgba(34,197,94,0.30)';
+    wrapper.style.background = bgColor;
+    wrapper.style.borderColor = borderColor;
+
+    // ── Header bar ──
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.7rem 0.95rem;font-size:0.9rem;';
+
+    var icon = document.createElement('span');
+    icon.style.cssText = 'font-size:1.05rem;';
+    icon.textContent = hasItems ? (ar.countCritical > 0 ? '🚨' : '⚠️') : '✅';
+    header.appendChild(icon);
+
+    var title = document.createElement('strong');
+    title.style.cssText = 'color:' + (hasItems ? (ar.countCritical > 0 ? '#fca5a5' : '#fcd34d') : '#86efac');
+    title.textContent = hasItems
+        ? ('Action Required — ' + ar.countTotal + ' open' + (ar.countCritical > 0 ? ' (' + ar.countCritical + ' critical)' : ''))
+        : 'All clear — 0 items needing attention';
+    header.appendChild(title);
+
+    var spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    header.appendChild(spacer);
+
+    if (ar.lastRefreshed) {
+        var refreshedAt = document.createElement('span');
+        refreshedAt.style.cssText = 'font-size:0.72rem;color:rgba(229,231,235,0.55);';
+        refreshedAt.textContent = 'updated ' + new Date(ar.lastRefreshed).toLocaleTimeString();
+        header.appendChild(refreshedAt);
+    }
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.style.cssText = 'padding:2px 8px;font-size:0.72rem;';
+    refreshBtn.textContent = ar.loading ? '…' : '↻';
+    refreshBtn.disabled = !!ar.loading;
+    refreshBtn.onclick = function () {
+        state.actionRequired.fetched = false;
+        fetchActionRequired();
+    };
+    header.appendChild(refreshBtn);
+    wrapper.appendChild(header);
+
+    if (ar.error) {
+        var errLine = document.createElement('div');
+        errLine.style.cssText = 'padding:0.5rem 0.95rem;font-size:0.78rem;color:#fca5a5;';
+        errLine.textContent = 'Error loading: ' + ar.error;
+        wrapper.appendChild(errLine);
+    }
+
+    if (hasItems) {
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
+        ar.items.forEach(function (item) {
+            list.appendChild(renderActionRequiredCard(item));
+        });
+        wrapper.appendChild(list);
+    }
+
+    return wrapper;
+}
+
+function renderActionRequiredCard(item) {
+    var card = document.createElement('a');
+    card.href = item.deeplink || '#';
+    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.65rem 0.85rem;' +
+        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
+        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
+    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
+    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
+
+    var sevBadge = document.createElement('span');
+    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;';
+    if (item.severity === 'critical') {
+        sevBadge.style.background = 'rgba(239,68,68,0.25)';
+        sevBadge.style.color = '#fca5a5';
+        sevBadge.textContent = 'critical';
+    } else {
+        sevBadge.style.background = 'rgba(245,158,11,0.22)';
+        sevBadge.style.color = '#fcd34d';
+        sevBadge.textContent = 'warning';
+    }
+    topRow.appendChild(sevBadge);
+
+    var catBadge = document.createElement('span');
+    catBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);';
+    catBadge.textContent = item.category;
+    topRow.appendChild(catBadge);
+
+    var titleEl = document.createElement('strong');
+    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;';
+    titleEl.textContent = item.title;
+    topRow.appendChild(titleEl);
+
+    if (item.detected_at) {
+        var time = document.createElement('span');
+        time.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);';
+        try {
+            time.textContent = new Date(item.detected_at).toLocaleString();
+        } catch (e) {
+            time.textContent = item.detected_at;
+        }
+        topRow.appendChild(time);
+    }
+    card.appendChild(topRow);
+
+    if (item.summary) {
+        var summary = document.createElement('div');
+        summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
+        summary.textContent = item.summary;
+        card.appendChild(summary);
+    }
+    return card;
 }
 
 // ---------------------------------------------------------------------------
