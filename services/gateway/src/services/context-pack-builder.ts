@@ -147,7 +147,17 @@ async function fetchMemoryHits(
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    // VTID-01230: Try semantic search first for meaningful queries
+    // VTID-02058 Phase 6c: when memory_broker_enabled is on, route the
+    // EPISODIC read through getMemoryContext (which reads mem_episodes via
+    // mem_episodes_semantic_search RPC). Falls back to the legacy
+    // memory_semantic_search path on disabled-flag, error, or empty result.
+    const brokerHits = await fetchMemoryHitsViaBroker(lens, query, limit);
+    if (brokerHits.length > 0) {
+      console.log(`[VTID-02058] Broker EPISODIC: ${brokerHits.length} hits (${Date.now() - startTime}ms)`);
+      return { hits: brokerHits, latency_ms: Date.now() - startTime };
+    }
+
+    // VTID-01230: Legacy semantic search over memory_items for meaningful queries
     if (query && query.trim().length > 5) {
       const semanticHits = await fetchMemoryHitsSemantic(
         SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit
@@ -164,6 +174,60 @@ async function fetchMemoryHits(
   } catch (error: any) {
     console.error(`[VTID-01216] Memory retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
+  }
+}
+
+/**
+ * VTID-02058 Phase 6c: ask the Memory Broker for the EPISODIC block.
+ *
+ * Broker is gated by system_controls.memory_broker_enabled (flipped on in
+ * Phase 6a). When the flag is off, getMemoryContext returns ok=false with
+ * error='memory_broker_disabled' and we silently fall through to the
+ * legacy semantic path. When the flag is on, the broker queries the
+ * Phase 5a/5c-populated mem_episodes via the mem_episodes_semantic_search
+ * RPC (which already cosine+recency ranks).
+ *
+ * If the EPISODIC block returns 0 hits or errors, we also fall through
+ * so canary callers never lose retrieval coverage during Phase 6c.
+ */
+async function fetchMemoryHitsViaBroker(
+  lens: ContextLens,
+  query: string,
+  limit: number
+): Promise<MemoryHit[]> {
+  try {
+    const { getMemoryContext } = await import('./memory-broker');
+    const pack = await getMemoryContext({
+      tenant_id: lens.tenant_id!,
+      user_id: lens.user_id!,
+      intent: 'recall_history',
+      channel: 'conversation',
+      role: 'community',
+      latency_budget_ms: 1500,
+      required_blocks: ['EPISODIC'],
+      query: query && query.trim().length > 5 ? query : undefined,
+    });
+
+    if (!pack.ok) return [];
+    const ep = (pack.blocks as any).EPISODIC;
+    if (!ep || !Array.isArray(ep.hits) || ep.hits.length === 0) return [];
+
+    return ep.hits.slice(0, limit).map((h: any, idx: number) => ({
+      id: h.id,
+      category_key: h.category_key ?? 'conversation',
+      content: (h.content ?? '').substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+      importance: h.importance ?? 30,
+      occurred_at: h.occurred_at,
+      source: h.source ?? 'mem_episodes',
+      // The broker's EPISODIC hits arrive in already-ranked order (semantic
+      // when query was set, recency otherwise). Encode that rank as a
+      // descending relevance_score so the context-pack ranker downstream
+      // preserves the broker's ordering.
+      relevance_score: Math.max(0, Math.min(1, 1 - (idx / Math.max(1, ep.hits.length)))),
+    }));
+  } catch (err: any) {
+    console.warn(`[VTID-02058] broker EPISODIC fetch failed, falling back: ${err?.message ?? err}`);
+    return [];
   }
 }
 
