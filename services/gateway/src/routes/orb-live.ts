@@ -2635,6 +2635,10 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             '"show me my posts", "open the dance board", "where can I see this", "take me to members".',
             '',
             'Available targets:',
+            "  find_partner             → /comm/find-partner (Find a Partner — unified dance + fitness destination, my matches by default)",
+            "  find_partner_matches     → /comm/find-partner?view=matches (only my matches)",
+            "  find_partner_board       → /comm/find-partner?view=board (community board, dance + fitness)",
+            "  find_partner_posts       → /comm/find-partner?view=posts (my dance/fitness wishes)",
             "  my_intents               → /intents/mine (my own posts list)",
             "  intent_board             → /intents/board (all community posts, kind tabs)",
             "  intent_board_dance       → /intents/board?filter=dance (dance tab pre-selected)",
@@ -2646,7 +2650,12 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             "  events_meetups           → /comm/events-meetups",
             "  community_feed           → /comm/feed",
             '',
-            'After calling, ORB should ALSO say a short voice cue ("Opening your posts now") so',
+            'PREFER find_partner_* over my_intents / intent_board / members for any dance- or fitness-partner request.',
+            'find_partner is the single destination that pulls dance + fitness matches into one ranked list, with',
+            'sub-tabs for board, my posts, and members. Use it when the user says: "show me my matches",',
+            '"who did you find for me", "who wants to dance", "find me a fitness buddy", "open Find a Partner".',
+            '',
+            'After calling, ORB should ALSO say a short voice cue ("Opening your matches") so',
             'the user knows the screen change is intentional. The frontend handles the actual route push.',
           ].join('\n'),
           parameters: {
@@ -2655,6 +2664,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
               target: {
                 type: 'string',
                 enum: [
+                  'find_partner','find_partner_matches','find_partner_board','find_partner_posts',
                   'my_intents','intent_board','intent_board_dance',
                   'open_asks','members',
                   'intent_match_detail','intent_post_public',
@@ -5772,6 +5782,10 @@ async function executeLiveApiToolInner(
         let url = '';
         let title = '';
         switch (target) {
+          case 'find_partner':             url = '/comm/find-partner'; title = 'Find a Partner'; break;
+          case 'find_partner_matches':     url = '/comm/find-partner?view=matches'; title = 'My matches'; break;
+          case 'find_partner_board':       url = '/comm/find-partner?view=board'; title = 'Find a Partner — board'; break;
+          case 'find_partner_posts':       url = '/comm/find-partner?view=posts'; title = 'My dance & fitness wishes'; break;
           case 'my_intents':              url = '/intents/mine'; title = 'My posts'; break;
           case 'intent_board':             url = '/intents/board'; title = 'Community board'; break;
           case 'intent_board_dance':       url = '/intents/board?filter=dance'; title = 'Dance posts'; break;
