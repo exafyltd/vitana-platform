@@ -20,6 +20,126 @@
 console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
 // ===========================================================================
+// BOOTSTRAP-DEV-6H-SESSION (v2): Global fetch interceptor
+//
+// Why this exists: the Command Hub fires a swarm of polling fetches (tasks /5s,
+// approvals /20s, OASIS /5s, executions /10s, etc.). When the Supabase JWT
+// expires (~1h), each of those returns 401 and the various 401 handlers in
+// app.js call doLogout(). My first attempt at this feature only ran a 30s
+// expiry-check loop that ALSO called doLogout when refresh failed, so the
+// developer kept getting kicked the moment a polling tick ran into the
+// expired token.
+//
+// This interceptor wraps window.fetch BEFORE any other code runs. For any
+// non-/auth/* request that comes back 401 in a developer session, it tries
+// /api/v1/auth/refresh once (concurrent calls share a single in-flight
+// promise so the single-use refresh token isn't burned twice), then replays
+// the original request with a fresh Authorization header. The caller never
+// sees the 401, so the existing "401 → doLogout()" handlers stay untouched
+// and only fire when refresh genuinely fails.
+//
+// Non-developer roles (community, admin, staff, professional, patient) still
+// get their original 401 → doLogout() flow because the interceptor short-
+// circuits when active_role !== 'developer'.
+// ===========================================================================
+(function installAuthFetchInterceptor() {
+    if (!window.fetch) return;
+    if (window.__vitanaFetchInterceptorInstalled) return;
+    window.__vitanaFetchInterceptorInstalled = true;
+
+    var origFetch = window.fetch.bind(window);
+    var refreshingPromise = null;
+
+    function getActiveRole() {
+        var s = window.__vitana_state;
+        return (s && s.meContext && s.meContext.active_role) || null;
+    }
+    function getRefreshToken() {
+        var s = window.__vitana_state;
+        if (s && s.refreshToken) return s.refreshToken;
+        try { return localStorage.getItem('vitana.refreshToken'); } catch (_) { return null; }
+    }
+
+    function performRefresh() {
+        if (refreshingPromise) return refreshingPromise;
+        refreshingPromise = (async function () {
+            var rt = getRefreshToken();
+            if (!rt) return null;
+            try {
+                var resp = await origFetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: rt })
+                });
+                if (!resp.ok) {
+                    console.warn('[DEV-6H-SESSION] refresh HTTP ' + resp.status);
+                    return null;
+                }
+                var data = await resp.json();
+                if (!data.ok || !data.access_token) {
+                    console.warn('[DEV-6H-SESSION] refresh body bad', data && data.error);
+                    return null;
+                }
+                try { localStorage.setItem('vitana.authToken', data.access_token); } catch (_) {}
+                if (data.refresh_token) {
+                    try { localStorage.setItem('vitana.refreshToken', data.refresh_token); } catch (_) {}
+                }
+                var s = window.__vitana_state;
+                if (s) {
+                    s.authToken = data.access_token;
+                    if (data.refresh_token) s.refreshToken = data.refresh_token;
+                }
+                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
+                    try { window.VitanaOrb.setAuth(data.access_token); } catch (_) {}
+                }
+                console.log('[DEV-6H-SESSION] silent refresh ok');
+                return data.access_token;
+            } catch (err) {
+                console.warn('[DEV-6H-SESSION] silent refresh threw', err && err.message);
+                return null;
+            } finally {
+                // Release the lock shortly after settle so concurrent callers
+                // that arrived during the in-flight refresh see the same result,
+                // but a fresh later call (e.g. after the next expiry) starts new.
+                setTimeout(function () { refreshingPromise = null; }, 100);
+            }
+        })();
+        return refreshingPromise;
+    }
+    window.__vitana_performRefresh = performRefresh;
+
+    function isAuthEndpoint(url) {
+        return url.indexOf('/api/v1/auth/refresh') !== -1 ||
+               url.indexOf('/api/v1/auth/login') !== -1 ||
+               url.indexOf('/api/v1/auth/config') !== -1;
+    }
+
+    window.fetch = async function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (isAuthEndpoint(url)) return origFetch(input, init);
+
+        var resp = await origFetch(input, init);
+        if (resp.status !== 401) return resp;
+        if (getActiveRole() !== 'developer') return resp;
+
+        var newToken = await performRefresh();
+        if (!newToken) return resp;
+
+        // Replay with the new token. Build a fresh init/headers so we don't
+        // mutate the caller's object.
+        var newInit = init ? Object.assign({}, init) : {};
+        var srcHeaders = newInit.headers || (typeof input !== 'string' && input && input.headers) || {};
+        var headers = new Headers(srcHeaders);
+        if (headers.has('Authorization') || headers.has('authorization')) {
+            headers.set('Authorization', 'Bearer ' + newToken);
+        }
+        newInit.headers = headers;
+        var url2 = typeof input === 'string' ? input : input.url;
+        return origFetch(url2, newInit);
+    };
+})();
+
+// ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
 // ===========================================================================
 const TARGET_ROLES = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'];
@@ -3762,6 +3882,14 @@ const state = {
     // Docs missing
     docsApiInventory: { endpoints: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } }
 };
+
+// BOOTSTRAP-DEV-6H-SESSION (v2): expose live state to the fetch interceptor
+// installed at the top of this file. The interceptor reads
+// __vitana_state.meContext.active_role to gate the refresh-on-401 path to
+// developer sessions only, and writes back __vitana_state.authToken /
+// .refreshToken after a successful refresh so subsequent requests use the
+// rotated token without ever triggering doLogout().
+window.__vitana_state = state;
 
 // --- VTID-0527: Task Stage Timeline Model ---
 
@@ -35549,62 +35677,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION: Active session health monitor.
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2): session monitor.
         //
-        // Baseline (all roles): JWT expires (~1h for Supabase) → doLogout().
+        // The actual JWT refresh is now handled by the global fetch interceptor
+        // installed at the top of this file (it catches any 401 in a developer
+        // session, refreshes via /api/v1/auth/refresh, and replays the request
+        // transparently). This loop has two remaining jobs:
         //
-        // Developer override: if active_role === 'developer', silently refresh
-        // the access token via /api/v1/auth/refresh whenever it's within 5 min
-        // of expiry, so the developer stays signed in while working. Only log
-        // out after 6 hours of true user inactivity (no mousedown/keydown/
-        // scroll/touchstart) OR when refresh fails (e.g. refresh token revoked
-        // server-side). This is scoped to developer only — community, admin,
-        // staff, professional, patient keep the stricter 1h hard expiry.
-        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;  // 6 hours
-        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;     // refresh if <5m left
+        //   1. For developer sessions: enforce a 6-hour idle-logout — if the
+        //      user hasn't done anything (mousedown/keydown/scroll/touchstart)
+        //      in 6h, log them out. We also proactively top up the token a
+        //      few minutes before expiry so polling fetches don't have to eat
+        //      a 401 round-trip.
+        //   2. For non-developer roles: keep the previous "logout when JWT
+        //      exp passes" behavior so community/admin/staff sessions still
+        //      end at the 1h Supabase expiry as before.
+        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;   // 6 hours
+        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;      // top up if <5m left
 
         function isDeveloperSession() {
             return (state.meContext && state.meContext.active_role === 'developer');
         }
-
         function markActivity() { state.lastActivityAt = Date.now(); }
         ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
             document.addEventListener(evt, markActivity, { passive: true, capture: true });
         });
-
-        async function refreshAccessToken() {
-            if (state.refreshingToken) return false;
-            if (!state.refreshToken) return false;
-            state.refreshingToken = true;
-            try {
-                var resp = await fetch('/api/v1/auth/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: state.refreshToken })
-                });
-                var data = await resp.json();
-                if (!resp.ok || !data.ok || !data.access_token) {
-                    console.warn('[DEV-6H-SESSION] refresh failed:', data && (data.message || data.error));
-                    return false;
-                }
-                state.authToken = data.access_token;
-                localStorage.setItem('vitana.authToken', data.access_token);
-                if (data.refresh_token) {
-                    state.refreshToken = data.refresh_token;
-                    localStorage.setItem('vitana.refreshToken', data.refresh_token);
-                }
-                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
-                    window.VitanaOrb.setAuth(data.access_token);
-                }
-                console.log('[DEV-6H-SESSION] access token refreshed silently');
-                return true;
-            } catch (err) {
-                console.warn('[DEV-6H-SESSION] refresh threw:', err && err.message);
-                return false;
-            } finally {
-                state.refreshingToken = false;
-            }
-        }
 
         async function checkTokenExpiry() {
             if (!state.authToken) return;
@@ -35623,21 +35720,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             var now = Date.now();
 
             if (isDeveloperSession()) {
-                // Developer: enforce 6h idle logout FIRST — if idle for 6h,
-                // don't bother refreshing, just sign out.
                 var idleMs = now - (state.lastActivityAt || now);
                 if (idleMs >= DEV_IDLE_LOGOUT_MS) {
                     console.warn('[DEV-6H-SESSION] idle ' + Math.round(idleMs / 60000) + 'm — logging out');
                     doLogout();
                     return;
                 }
-                // Token fresh enough — nothing to do.
-                if (expMs && expMs - now > TOKEN_REFRESH_LEAD_MS) return;
-                // Token expired or near expiry — try silent refresh.
-                var refreshed = await refreshAccessToken();
-                if (!refreshed) {
-                    console.warn('[DEV-6H-SESSION] cannot refresh — logging out');
-                    doLogout();
+                // Proactively refresh if we're inside the lead window; if it
+                // fails, the next polling 401 will give the interceptor a
+                // second chance, and only after THAT fails will the existing
+                // 401 → doLogout() handlers fire.
+                if (expMs && expMs - now <= TOKEN_REFRESH_LEAD_MS && typeof window.__vitana_performRefresh === 'function') {
+                    try { await window.__vitana_performRefresh(); } catch (_) {}
                 }
                 return;
             }
@@ -35652,7 +35746,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInterval(checkTokenExpiry, 30000);
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
-                // Returning to the tab counts as activity for developers.
                 if (isDeveloperSession()) markActivity();
                 checkTokenExpiry();
             }
