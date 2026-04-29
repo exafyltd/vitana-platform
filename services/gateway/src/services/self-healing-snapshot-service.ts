@@ -21,20 +21,38 @@ function supabaseHeaders(): Record<string, string> {
   };
 }
 
-export async function notifyGChat(message: string): Promise<void> {
+/**
+ * VTID-02030f: returns a structured result so callers (especially the
+ * diagnostic endpoint) can tell when fetch() resolved-but-the-message-
+ * never-arrived (401/403/404 from the webhook). Existing callers ignore
+ * the return value, so behavior for them is unchanged.
+ */
+export async function notifyGChat(
+  message: string,
+): Promise<{ ok: boolean; webhook_set: boolean; status?: number; body_excerpt?: string; error?: string }> {
   const webhook = process.env.GCHAT_COMMANDHUB_WEBHOOK;
   if (!webhook) {
     console.warn('[Self-Healing] GCHAT_COMMANDHUB_WEBHOOK not set, skipping notification');
-    return;
+    return { ok: false, webhook_set: false, error: 'webhook_not_set' };
   }
   try {
-    await fetch(webhook, {
+    const r = await fetch(webhook, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: message }),
     });
-  } catch (err) {
-    console.error('[Self-Healing] GChat notification failed:', err);
+    let body = '';
+    try { body = (await r.text()).slice(0, 400); } catch { /* ignore */ }
+    if (!r.ok) {
+      console.error(
+        `[Self-Healing] GChat webhook returned non-2xx: status=${r.status} body=${body}`,
+      );
+    }
+    return { ok: r.ok, webhook_set: true, status: r.status, body_excerpt: body };
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    console.error('[Self-Healing] GChat notification failed:', msg);
+    return { ok: false, webhook_set: true, error: msg };
   }
 }
 

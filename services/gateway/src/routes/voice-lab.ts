@@ -1109,22 +1109,31 @@ router.get('/healing/mode', async (_req: Request, res: Response) => {
 router.post('/healing/gchat-ping-test', async (req: Request, res: Response) => {
   const body = (req.body || {}) as Record<string, unknown>;
   const note = typeof body.note === 'string' ? body.note : 'manual diagnostic';
-  const webhookSet = Boolean(process.env.GCHAT_COMMANDHUB_WEBHOOK);
+  const webhook = process.env.GCHAT_COMMANDHUB_WEBHOOK || '';
   const text =
-    `🔧 *Gchat ping diagnostic* (VTID-02030c)\n` +
+    `🔧 *Gchat ping diagnostic* (VTID-02030f)\n` +
     `If you see this, the gateway → Gchat path works.\n` +
     `Note: ${note}\n` +
     `Time: ${new Date().toISOString()}`;
-  let sendError: string | null = null;
-  try {
-    await notifyGChat(text);
-  } catch (err: any) {
-    sendError = err?.message ?? String(err);
+  const result = await notifyGChat(text);
+  // Capture useful diagnostics about the webhook URL itself without leaking
+  // its full value: domain, path prefix, query-keys present.
+  let url_host: string | null = null;
+  let url_path_prefix: string | null = null;
+  let query_keys: string[] = [];
+  if (webhook) {
+    try {
+      const u = new URL(webhook);
+      url_host = u.host;
+      url_path_prefix = u.pathname.split('/').slice(0, 4).join('/');
+      query_keys = Array.from(u.searchParams.keys()).sort();
+    } catch { /* malformed url */ }
   }
   return res.json({
-    ok: sendError === null,
-    webhook_env_set: webhookSet,
-    send_error: sendError,
+    ...result,
+    webhook_url_host: url_host,
+    webhook_url_path_prefix: url_path_prefix,
+    webhook_query_keys: query_keys,
   });
 });
 
