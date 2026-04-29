@@ -30,31 +30,31 @@ export interface SupabaseIdentity {
   aud: string | null;       // Audience claim
   exp: number | null;       // Expiration timestamp
   iat: number | null;       // Issued at timestamp
-  // VTID-01967: Canonical Vitana ID — attached after JWT verify via cached
-  // lookup against app_users (mirrored from profiles by Release A trigger).
+  // VTID-01967: Canonical Vitana User ID (VUID) — attached after JWT verify via cached
+  // lookup against app_users (mirrored from profiles by trigger).
   // Null-tolerant: undefined if the lookup hasn't run yet or the user has no
   // app_users row yet. Callers must never block on this.
-  vitana_id?: string | null;
+  vuid?: string | null;
 }
 
-// VTID-01967: In-process cache for vitana_id lookup. Keyed by user_id, 5min TTL.
+// VTID-01967: In-process cache for vuid lookup. Keyed by user_id, 5min TTL.
 // Avoids hammering app_users on every authenticated request. Cleared lazily
 // when entries are read after expiration.
-const VITANA_ID_CACHE_TTL_MS = 5 * 60 * 1000;
-const vitanaIdCache = new Map<string, { vitana_id: string | null; expires_at: number }>();
+const VUID_CACHE_TTL_MS = 5 * 60 * 1000;
+const vuidCache = new Map<string, { vuid: string | null; expires_at: number }>();
 
 /**
- * VTID-01967: Resolve vitana_id for a user, with in-process caching.
+ * VTID-01967: Resolve vuid for a user, with in-process caching.
  * Returns null if not found / not yet mirrored — callers must be null-tolerant.
  * Public so callers (oasis-event-service, voice-message-guard) can resolve
  * the ID for a user_id outside the request lifecycle.
  */
-export async function resolveVitanaId(userId: string): Promise<string | null> {
+export async function resolveVuid(userId: string): Promise<string | null> {
   if (!userId) return null;
 
-  const cached = vitanaIdCache.get(userId);
+  const cached = vuidCache.get(userId);
   if (cached && cached.expires_at > Date.now()) {
-    return cached.vitana_id;
+    return cached.vuid;
   }
 
   try {
@@ -63,30 +63,30 @@ export async function resolveVitanaId(userId: string): Promise<string | null> {
 
     const { data } = await supabase
       .from('app_users')
-      .select('vitana_id')
+      .select('vuid')
       .eq('user_id', userId)
       .maybeSingle();
 
-    const vitanaId = (data && (data as any).vitana_id) || null;
-    vitanaIdCache.set(userId, {
-      vitana_id: vitanaId,
-      expires_at: Date.now() + VITANA_ID_CACHE_TTL_MS,
+    const vuid = (data && (data as any).vuid) || null;
+    vuidCache.set(userId, {
+      vuid: vuid,
+      expires_at: Date.now() + VUID_CACHE_TTL_MS,
     });
-    return vitanaId;
+    return vuid;
   } catch {
     // Null-tolerant: never block auth on this lookup. If the column doesn't
-    // exist yet (Release A migrations not applied), the catch swallows.
+    // exist yet (migrations not applied), the catch swallows.
     return null;
   }
 }
 
 /**
- * VTID-01967: Invalidate cached vitana_id for a user. Call this from the
+ * VTID-01967: Invalidate cached vuid for a user. Call this from the
  * /vitana-id/confirm endpoint after the user picks a different ID, so the
  * next authenticated request reads the new value.
  */
-export function invalidateVitanaIdCache(userId: string): void {
-  vitanaIdCache.delete(userId);
+export function invalidateVuidCache(userId: string): void {
+  vuidCache.delete(userId);
 }
 
 /**
@@ -232,9 +232,9 @@ export async function requireAuth(
     upsertActiveDay(result.identity.user_id).catch(() => {});
   }
 
-  // VTID-01967: Resolve vitana_id (cached, null-tolerant). Downstream code
-  // reads req.identity.vitana_id directly; on cache hit this is ~0ms.
-  req.identity.vitana_id = await resolveVitanaId(result.identity.user_id);
+  // VTID-01967: Resolve vuid (cached, null-tolerant). Downstream code
+  // reads req.identity.vuid directly; on cache hit this is ~0ms.
+  req.identity.vuid = await resolveVuid(result.identity.user_id);
 
   next();
 }
@@ -259,8 +259,8 @@ export async function optionalAuth(
       if (result.identity.user_id) {
         upsertActiveDay(result.identity.user_id).catch(() => {});
       }
-      // VTID-01967: vitana_id resolution
-      req.identity.vitana_id = await resolveVitanaId(result.identity.user_id);
+      // VTID-01967: vuid resolution
+      req.identity.vuid = await resolveVuid(result.identity.user_id);
     }
   }
 
@@ -401,8 +401,8 @@ export async function requireAuthWithTenant(
     upsertActiveDay(result.identity.user_id).catch(() => {});
   }
 
-  // VTID-01967: vitana_id resolution
-  req.identity.vitana_id = await resolveVitanaId(result.identity.user_id);
+  // VTID-01967: vuid resolution
+  req.identity.vuid = await resolveVuid(result.identity.user_id);
 
   // If tenant_id missing from JWT, resolve from user_tenants table
   if (!req.identity.tenant_id) {
@@ -487,8 +487,8 @@ export async function requireAdminAuth(
     upsertActiveDay(result.identity.user_id).catch(() => {});
   }
 
-  // VTID-01967: vitana_id resolution
-  req.identity.vitana_id = await resolveVitanaId(result.identity.user_id);
+  // VTID-01967: vuid resolution
+  req.identity.vuid = await resolveVuid(result.identity.user_id);
 
   // Then, require exafy_admin
   if (!req.identity.exafy_admin) {
