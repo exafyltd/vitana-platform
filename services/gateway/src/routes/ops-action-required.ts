@@ -55,6 +55,13 @@ interface ActionItem {
   deeplink: string;
   source_table: string;
   source_id: string | null;
+  // VTID-02031c: collapse duplicates that point at the same underlying
+  // problem (e.g. same voice class showing up via both quarantine row
+  // AND open architectural report). Items sharing a dedupe_key are
+  // merged in the main handler and the collapsed count is reported as
+  // related_count on the surviving item.
+  dedupe_key: string;
+  related_count?: number;
 }
 
 const ARCHITECTURAL_TRACKS_REGEX = /^(?!stay_and_patch$)/i;
@@ -76,8 +83,8 @@ async function fetchVoiceQuarantines(
     }>;
     return rows.map((row) => ({
       id: `voice-quarantine:${row.class}:${row.normalized_signature ?? '_'}`,
-      severity: 'critical',
-      category: 'voice',
+      severity: 'critical' as const,
+      category: 'voice' as const,
       title: `Voice class quarantined: ${row.class}`,
       summary:
         `Auto-loop stopped on this class. Reason: ${row.reason ?? 'thresholds tripped'}.` +
@@ -86,6 +93,7 @@ async function fetchVoiceQuarantines(
       deeplink: `/command-hub/diagnostics/voice-lab/?healing=quarantined&class=${encodeURIComponent(row.class)}`,
       source_table: 'voice_healing_quarantine',
       source_id: `${row.class}:${row.normalized_signature ?? '_'}`,
+      dedupe_key: `voice:${row.class}`,
     }));
   } catch {
     return [];
@@ -118,8 +126,8 @@ async function fetchOpenArchitecturalReports(
       const summary = String(rec.summary ?? '').slice(0, 220);
       items.push({
         id: `voice-investigation:${row.id}`,
-        severity: 'warning',
-        category: 'voice',
+        severity: 'warning' as const,
+        category: 'voice' as const,
         title: `Architectural recommendation: ${row.class}`,
         summary:
           `Track: ${track}` +
@@ -129,6 +137,7 @@ async function fetchOpenArchitecturalReports(
         deeplink: `/command-hub/diagnostics/voice-lab/?healing=report&id=${encodeURIComponent(row.id)}`,
         source_table: 'voice_architecture_reports',
         source_id: row.id,
+        dedupe_key: `voice:${row.class}`,
       });
     }
     return items;
@@ -169,8 +178,8 @@ async function fetchSelfHealEscalations(
           row.outcome;
         return {
           id: `self-heal:${row.vtid}`,
-          severity: row.outcome === 'rolled_back' ? 'critical' : ('warning' as 'critical' | 'warning'),
-          category: 'self-heal',
+          severity: (row.outcome === 'rolled_back' ? 'critical' : 'warning') as 'critical' | 'warning',
+          category: 'self-heal' as const,
           title: `Self-healing ${row.outcome}: ${row.endpoint}`,
           summary:
             `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — ${reason}.` +
@@ -179,6 +188,7 @@ async function fetchSelfHealEscalations(
           deeplink: `/command-hub/autonomy/self-healing/?vtid=${encodeURIComponent(row.vtid)}`,
           source_table: 'self_healing_log',
           source_id: row.vtid,
+          dedupe_key: `self-heal:${row.endpoint}`,
         };
       });
   } catch {
@@ -199,15 +209,34 @@ router.get('/', async (_req: Request, res: Response) => {
     fetchSelfHealEscalations(config),
   ]);
 
-  // Sort: critical first, then by detected_at desc within each severity.
-  const all: ActionItem[] = [...quarantines, ...reports, ...escalations].sort(
-    (a, b) => {
-      if (a.severity !== b.severity) {
-        return a.severity === 'critical' ? -1 : 1;
-      }
+  const raw: ActionItem[] = [...quarantines, ...reports, ...escalations];
+
+  // VTID-02031c: dedupe by dedupe_key. Within a group, keep the highest
+  // severity (critical > warning), then the most recent. The collapsed
+  // siblings contribute to related_count so the supervisor still sees
+  // there are linked items behind the surviving card.
+  const groups = new Map<string, ActionItem[]>();
+  for (const it of raw) {
+    const arr = groups.get(it.dedupe_key) ?? [];
+    arr.push(it);
+    groups.set(it.dedupe_key, arr);
+  }
+  const deduped: ActionItem[] = [];
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
       return a.detected_at < b.detected_at ? 1 : -1;
-    },
-  );
+    });
+    const winner = arr[0];
+    if (arr.length > 1) winner.related_count = arr.length - 1;
+    deduped.push(winner);
+  }
+
+  // Sort: critical first, then by detected_at desc within each severity.
+  const all = deduped.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+    return a.detected_at < b.detected_at ? 1 : -1;
+  });
 
   const count_total = all.length;
   const count_critical = all.filter((i) => i.severity === 'critical').length;

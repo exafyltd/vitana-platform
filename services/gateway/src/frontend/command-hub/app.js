@@ -29009,6 +29009,15 @@ function renderActionRequiredCard(item) {
     titleEl.textContent = item.title;
     topRow.appendChild(titleEl);
 
+    // VTID-02031c: related_count surfaces collapsed siblings so the
+    // supervisor knows multiple linked rows feed this card.
+    if (item.related_count && item.related_count > 0) {
+        var relBadge = document.createElement('span');
+        relBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.66rem;font-weight:500;background:rgba(99,102,241,0.18);color:#a5b4fc;';
+        relBadge.textContent = '+' + item.related_count + ' related';
+        topRow.appendChild(relBadge);
+    }
+
     if (item.detected_at) {
         var time = document.createElement('span');
         time.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);';
