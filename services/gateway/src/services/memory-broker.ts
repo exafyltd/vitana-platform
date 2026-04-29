@@ -278,6 +278,23 @@ export interface GovernanceBlock {
   fetched_at: string;
 }
 
+// Phase 8 — PROGRESSION block. Tells the brain which platform features the
+// user has already had introduced, so it never re-explains them.
+// Source: user_feature_introductions (VTID-01932).
+
+export interface FeatureIntroduction {
+  feature_key: string;
+  introduced_at: string;
+  channel: string;
+}
+
+export interface ProgressionBlock {
+  kind: 'PROGRESSION';
+  introduced_features: FeatureIntroduction[];
+  source: 'user_feature_introductions';
+  fetched_at: string;
+}
+
 export type MemoryBlock =
   | IdentityBlock
   | EpisodicBlock
@@ -287,7 +304,8 @@ export type MemoryBlock =
   | LocationBlock
   | BiometricsBlock
   | DiaryBlock
-  | GovernanceBlock;
+  | GovernanceBlock
+  | ProgressionBlock;
 
 export interface MemoryPack {
   ok: boolean;
@@ -319,7 +337,7 @@ const DEFAULT_BLOCKS_BY_INTENT: Record<MemoryIntent, MemoryBlockKind[]> = {
   recall_history:    ['IDENTITY', 'EPISODIC', 'DIARY', 'NETWORK', 'SEMANTIC', 'TRAJECTORY', 'GOVERNANCE'],
   identity:          ['IDENTITY', 'SEMANTIC'],
   plan_next_action:  ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'LOCATION', 'SEMANTIC', 'NETWORK', 'GOVERNANCE'],
-  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK', 'GOVERNANCE'],
+  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK', 'GOVERNANCE', 'PROGRESSION'],
   health_query:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'SEMANTIC'],
   index_status:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS'],
   goal_check:        ['IDENTITY', 'SEMANTIC', 'TRAJECTORY', 'DIARY'],
@@ -890,6 +908,38 @@ async function fetchGovernanceBlock(
   return { block, latency_ms: Date.now() - t0 };
 }
 
+// -----------------------------------------------------------------------------
+// PROGRESSION — features Vitana has already introduced (VTID-02632)
+// -----------------------------------------------------------------------------
+
+async function fetchProgressionBlock(
+  input: MemoryReadInput
+): Promise<{ block: ProgressionBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const { data, error } = await supabase
+    .from('user_feature_introductions')
+    .select('feature_key, introduced_at, channel')
+    .eq('user_id', input.user_id)
+    .order('introduced_at', { ascending: false })
+    .limit(50);
+  if (error) return { block: null, latency_ms: Date.now() - t0 };
+
+  const block: ProgressionBlock = {
+    kind: 'PROGRESSION',
+    introduced_features: ((data ?? []) as any[]).map(r => ({
+      feature_key: r.feature_key,
+      introduced_at: r.introduced_at,
+      channel: r.channel,
+    })),
+    source: 'user_feature_introductions',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -1093,6 +1143,21 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
           blocks['GOVERNANCE'] = r.value.block;
           streamsHit.push('autopilot_recommendations');
           latencyPerStream['autopilot_recommendations'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('PROGRESSION')) {
+    fetchers.push(
+      withBudget(fetchProgressionBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['user_feature_introductions'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['PROGRESSION'] = r.value.block;
+          streamsHit.push('user_feature_introductions');
+          latencyPerStream['user_feature_introductions'] = r.value.latency_ms;
         }
       })
     );

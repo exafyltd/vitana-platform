@@ -334,6 +334,30 @@ class CogneeExtractorClient {
       return;
     }
 
+    // VTID-02632 — Phase 8 — Cognee deprecation. Honors the runtime flag
+    // `cognee_extraction_enabled` (default false from this phase forward).
+    // The legacy code is preserved per CLAUDE.md governance; the flag turns
+    // it into a no-op until Loop 10 owns the equivalent extraction.
+    void this.checkCogneeFlag().then(allowed => {
+      if (!allowed) return;
+      this.runExtractAsync(request);
+    });
+  }
+
+  private async checkCogneeFlag(): Promise<boolean> {
+    try {
+      const { getSystemControl } = await import('./system-controls-service');
+      const flag = await getSystemControl('cognee_extraction_enabled');
+      // Strict opt-in: only enabled if the flag is explicitly true.
+      return !!(flag && flag.enabled);
+    } catch {
+      // Flag read fails => default to OFF for the deprecation phase.
+      return false;
+    }
+  }
+
+  private runExtractAsync(request: CogneeExtractionRequest): void {
+
     // Fire and forget - don't await
     this.extract(request)
       .then(async result => {

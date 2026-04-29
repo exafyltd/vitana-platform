@@ -49,6 +49,7 @@ export interface AgentProfile {
     biometric_signals: number;
     diary_entries_14d: number;
     governance_dismissals: number;
+    introduced_features: number;
   };
   // Source pack for traceability (block kinds + per-stream latency).
   pack_meta: MemoryPack['meta'];
@@ -84,6 +85,7 @@ export async function buildAgentProfile(
       'LOCATION',
       'NETWORK',
       'GOVERNANCE',
+      'PROGRESSION',
     ],
   });
 
@@ -103,6 +105,7 @@ export async function buildAgentProfile(
         biometric_signals: 0,
         diary_entries_14d: 0,
         governance_dismissals: 0,
+        introduced_features: 0,
       },
       pack_meta: pack.meta,
       generated_at: generatedAt,
@@ -118,6 +121,7 @@ export async function buildAgentProfile(
   const loc = blocks.LOCATION;
   const net = blocks.NETWORK;
   const gov = blocks.GOVERNANCE;
+  const prog = blocks.PROGRESSION;
 
   const sections: string[] = [];
 
@@ -228,6 +232,16 @@ export async function buildAgentProfile(
     sections.push(lines.join('\n'));
   }
 
+  // ---- ALREADY INTRODUCED (don't re-explain) ---------------------------
+  if (prog && Array.isArray(prog.introduced_features) && prog.introduced_features.length > 0) {
+    const lines: string[] = ['## Already introduced (do NOT re-explain these features)'];
+    for (const f of prog.introduced_features.slice(0, 12)) {
+      const date = f.introduced_at ? f.introduced_at.slice(0, 10) : '';
+      lines.push(`- ${f.feature_key}${date ? ` (${date})` : ''}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
   // ---- DON'T PITCH (governance dismissals) ------------------------------
   if (gov && Array.isArray(gov.dismissals) && gov.dismissals.length > 0) {
     const lines: string[] = ['## Do NOT pitch (recently dismissed)'];
@@ -259,6 +273,7 @@ export async function buildAgentProfile(
       biometric_signals: (bio?.trends?.length ?? 0) + (bio?.events?.length ?? 0),
       diary_entries_14d: 0, // DIARY block not pulled by open_session intent
       governance_dismissals: gov?.dismissals?.length ?? 0,
+      introduced_features: prog?.introduced_features?.length ?? 0,
     },
     pack_meta: pack.meta,
     generated_at: generatedAt,

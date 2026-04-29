@@ -20,6 +20,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { getMemoryContext, MemoryIntent, MemoryBlockKind } from '../services/memory-broker';
 import { buildAgentProfile } from '../services/agent-profile-service';
+import { runConsolidator, LoopId } from '../services/nightly-consolidator';
 
 const router = Router();
 // VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
@@ -28,6 +29,8 @@ const router = Router();
 // the actual admin paths.
 router.use('/admin/memory', requireAuth);
 router.use('/admin/memory', requireExafyAdmin);
+router.use('/admin/consolidator', requireAuth);
+router.use('/admin/consolidator', requireExafyAdmin);
 
 const VALID_INTENTS: MemoryIntent[] = [
   'recall_recent',
@@ -140,6 +143,30 @@ router.post('/admin/memory/profile', async (req: AuthenticatedRequest, res: Resp
   });
 
   return res.json(profile);
+});
+
+// VTID-02632 — Phase 8 — admin consolidator smoke endpoint.
+// Triggers the nightly consolidator on demand. Body:
+//   { tenant_id?, user_id?, loops?: LoopId[] }
+// If tenant_id+user_id are both supplied, the run is scoped to that user.
+// Otherwise it sweeps all users (heavy — only run from admin tooling).
+router.post('/admin/consolidator/run', async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body || {};
+  const tenantId = body.tenant_id ? String(body.tenant_id) : undefined;
+  const userId   = body.user_id   ? String(body.user_id)   : undefined;
+  const loops = Array.isArray(body.loops) ? (body.loops as LoopId[]) : undefined;
+
+  const userScope = (tenantId && userId)
+    ? { tenant_id: tenantId, user_id: userId }
+    : undefined;
+
+  const result = await runConsolidator({
+    triggered_by: 'admin',
+    user_scope: userScope,
+    loops,
+  });
+
+  return res.json(result);
 });
 
 export default router;

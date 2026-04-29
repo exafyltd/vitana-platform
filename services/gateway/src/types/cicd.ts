@@ -710,7 +710,11 @@ export type CicdEventType =
   | 'feedback.ticket.resolved'
   | 'feedback.ticket.user_confirmed'
   | 'feedback.handoff.started'
-  | 'feedback.handoff.completed';
+  | 'feedback.handoff.completed'
+  // VTID-02632: Phase 8 — Nightly consolidator events
+  | 'memory.consolidator.run.completed'
+  | 'memory.consolidator.loop.failed'
+  | 'memory.index_delta.observed';
 
 export interface CicdOasisEvent {
   vtid: string;
