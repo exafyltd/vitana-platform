@@ -155,6 +155,17 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     });
 
     // VTID-01058: Post-fetch filter: exclude rows with deleted/voided/cancelled status or metadata flags
+    // 2026-04-28 incident: also drop stale 'allocated' shell rows. The VTID
+    // allocator (operator-service.ts:1005) creates a placeholder row with
+    // title='Allocated - Pending Title' as the first leg of a 2-step
+    // allocate→update sequence, which normally completes in <1 second. When
+    // the second leg crashes (operator service died, supabase write race,
+    // self-heal triage path that doesn't fill in the title), the shell sits
+    // forever and pollutes the SCHEDULED column with phantom entries that
+    // can never be acted on. Anything still in 'allocated' for >5 minutes is
+    // an orphan — hide it.
+    const ALLOCATED_GRACE_MS = 5 * 60 * 1000;
+    const now = Date.now();
     const vtidRows = vtidRowsRaw.filter((row: any) => {
       const status = (row.status || '').toLowerCase();
       const isDeleted = status === 'deleted' || status === 'voided' || status === 'cancelled';
@@ -166,6 +177,15 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       if (isDeleted || hasDeletedAt || hasVoidedAt || metaDeleted) {
         console.log(`[VTID-01058] Filtering out ${row.vtid}: status=${status}, deleted_at=${row.deleted_at}, voided_at=${row.voided_at}`);
         return false;
+      }
+      if (status === 'allocated') {
+        const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0;
+        const ageMs = now - createdAt;
+        const placeholderTitle = !row.title || row.title === 'Allocated - Pending Title' || row.title === 'Pending Title';
+        if (placeholderTitle && ageMs > ALLOCATED_GRACE_MS) {
+          console.log(`[allocated-orphan] Hiding ${row.vtid}: stale shell, age=${Math.round(ageMs / 60000)}min`);
+          return false;
+        }
       }
       return true;
     });

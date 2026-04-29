@@ -445,6 +445,103 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   };
 }
 
+// =============================================================================
+// Bridge: operator-driven activation → execution row
+// =============================================================================
+//
+// When a user clicks "Activate" on a dev_autopilot* recommendation in the
+// Command Hub Autopilot popup, the activate route writes a vtid_ledger row
+// and kicks this bridge fire-and-forget. We:
+//   1. Generate a plan if none exists yet (dev_autopilot findings always
+//      have one eventually via lazyPlanTick, but the operator just said
+//      "go" — don't make them wait for the next 30s tick).
+//   2. Skip if an in-flight execution already exists (idempotent — a
+//      double-click or the reaper tick won't double-enqueue).
+//   3. Call approveAutoExecute + immediately patch execute_after to NOW
+//      so the next backgroundExecutorTick picks it up without a cooldown
+//      wait. The cooldown exists to give the operator a chance to cancel
+//      auto-approved findings; an explicit Activate click already IS the
+//      operator's go-ahead.
+//
+// Returns a discriminated result so the caller can log success/failure but
+// the activate-route response itself isn't gated on this — it's all
+// fire-and-forget. The reaper tick later catches any failures here and
+// retries them.
+export async function bridgeActivationToExecution(
+  findingId: string,
+  approvedBy: string | null = null,
+): Promise<{ ok: boolean; execution_id?: string; error?: string; skipped?: string }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+
+  // 1. Verify this is a dev_autopilot* finding (the activate route only
+  //    bridges those — community recs don't go through the executor).
+  const recR = await supa<Array<{ id: string; source_type: string; status: string }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=id,source_type,status&limit=1`,
+  );
+  if (!recR.ok || !recR.data || !recR.data[0]) {
+    return { ok: false, error: 'finding lookup failed' };
+  }
+  const rec = recR.data[0];
+  if (rec.source_type !== 'dev_autopilot' && rec.source_type !== 'dev_autopilot_impact') {
+    return { ok: false, skipped: `source_type=${rec.source_type} not bridgeable` };
+  }
+
+  // 2. Skip if any in-flight execution already exists for this finding.
+  //    Statuses we consider in-flight: cooling, running, ci, merging,
+  //    deploying, verifying. Terminal states (completed, failed, *) are fine
+  //    to re-enqueue from — but only the reaper does that, never this path
+  //    (operator activation should be a no-op on re-click).
+  const inflightR = await supa<Array<{ id: string; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}` +
+    `&status=in.(cooling,running,ci,merging,deploying,verifying)` +
+    `&select=id,status&limit=1`,
+  );
+  if (inflightR.ok && inflightR.data && inflightR.data[0]) {
+    return { ok: true, execution_id: inflightR.data[0].id, skipped: `existing ${inflightR.data[0].status} execution` };
+  }
+
+  // 3. Generate plan if none exists. lazyPlanTick would do this within 30s
+  //    but the operator clicked Activate — we owe them a faster path.
+  const planR = await supa<Array<{ version: number }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&select=version&limit=1`,
+  );
+  if (!planR.ok || !planR.data || planR.data.length === 0) {
+    const planResult = await generatePlanVersion(findingId);
+    if (!planResult.ok) {
+      return { ok: false, error: `plan generation failed: ${planResult.error}` };
+    }
+  }
+
+  // 4. Approve. approveAutoExecute creates the execution row with
+  //    execute_after = now + cooldown_minutes; we immediately patch
+  //    execute_after back to now so the next tick claims it.
+  const approval = await approveAutoExecute({ finding_id: findingId, approved_by: approvedBy || undefined });
+  if (!approval.ok || !approval.execution) {
+    return { ok: false, error: approval.error || 'approval failed' };
+  }
+  const execId = approval.execution.id;
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ execute_after: new Date().toISOString() }),
+  });
+
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.bridged',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: `Operator activation bridged finding ${findingId.slice(0, 8)} → execution ${execId.slice(0, 8)} (cooldown skipped)`,
+    payload: { execution_id: execId, finding_id: findingId, approved_by: approvedBy, source: 'operator_activate' },
+  });
+
+  return { ok: true, execution_id: execId };
+}
+
 /** Extract "delete" intent from the plan markdown — best-effort heuristic.
  *  Looks for bullet lines like "- delete services/.../foo.ts" in the Files
  *  section. Used by the safety gate to allow dead-code deletions without a
@@ -1955,6 +2052,118 @@ export async function lazyPlanTick(): Promise<void> {
   }
 }
 
+// =============================================================================
+// Activation reaper — recover dev_autopilot* recs activated but never executed
+// =============================================================================
+//
+// Operator clicks Activate → vtid_ledger row goes to IN_PROGRESS, the bridge
+// fires fire-and-forget, the user moves on. If the bridge call crashed (Cloud
+// Run container recycle, Supabase blip, Anthropic 5xx during plan
+// generation), the recommendation is left "activated" but no execution row
+// exists. The vtid_ledger card sits in IN PROGRESS forever — exactly what
+// the user reported (cards stuck for 2+ weeks).
+//
+// This tick scans for activated dev_autopilot* recs where:
+//   - autopilot_recommendations.status = 'activated'
+//   - source_type IN (dev_autopilot, dev_autopilot_impact)
+//   - activated_at < now - GRACE
+//   - no dev_autopilot_executions row exists for this finding (any status)
+// and re-runs the bridge for them. GRACE keeps the reaper from racing the
+// initial fire-and-forget bridge call from the activate route.
+const REAPER_GRACE_MS = 5 * 60 * 1000; // 5 min — well past plan-gen latency
+
+async function activationReaperTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  const cfg = await loadConfig(s);
+  if (!cfg || cfg.kill_switch) return;
+
+  const cutoff = new Date(Date.now() - REAPER_GRACE_MS).toISOString();
+  // Pull a small batch — we want to recover steadily, not flood the LLM
+  // budget with weeks of accumulated activations on the first tick.
+  const orphanedR = await supa<Array<{ id: string; activated_vtid: string | null; activated_at: string }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?source_type=in.(dev_autopilot,dev_autopilot_impact)` +
+    `&status=eq.activated&activated_at=lt.${cutoff}` +
+    `&select=id,activated_vtid,activated_at&order=activated_at.asc&limit=5`,
+  );
+  if (!orphanedR.ok || !orphanedR.data || orphanedR.data.length === 0) return;
+
+  for (const orphan of orphanedR.data) {
+    // Confirm no execution row exists (any status — a completed exec means
+    // the work was done and we shouldn't redo it; a failed/archived exec
+    // means self-heal has already had its turn).
+    const execR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${orphan.id}&select=id&limit=1`,
+    );
+    if (execR.ok && execR.data && execR.data.length > 0) continue;
+
+    console.log(`${LOG_PREFIX} reaper: recovering activated ${orphan.id.slice(0, 8)} (vtid=${orphan.activated_vtid}, age=${Math.round((Date.now() - new Date(orphan.activated_at).getTime()) / 60000)}m)`);
+    try {
+      const result = await bridgeActivationToExecution(orphan.id, null);
+      if (result.ok) {
+        await emitOasisEvent({
+          vtid: orphan.activated_vtid || EXEC_VTID,
+          type: 'dev_autopilot.execution.reaped',
+          source: 'dev-autopilot',
+          status: 'info',
+          message: `Reaper bridged orphaned activation ${orphan.id.slice(0, 8)} → execution ${result.execution_id?.slice(0, 8) || '?'}`,
+          payload: { finding_id: orphan.id, execution_id: result.execution_id, vtid: orphan.activated_vtid },
+        });
+      } else {
+        console.warn(`${LOG_PREFIX} reaper: bridge failed for ${orphan.id.slice(0, 8)}: ${result.error}`);
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} reaper: error on ${orphan.id.slice(0, 8)}:`, err);
+    }
+  }
+}
+
+// =============================================================================
+// Allocated-orphan reaper — tombstone stale "Allocated - Pending Title" shells
+// =============================================================================
+//
+// VTID-0542 allocator creates a placeholder row (status='allocated',
+// title='Allocated - Pending Title') as the first leg of a 2-step
+// allocate→update sequence. Normally the second leg lands within 1 second.
+// When it doesn't (caller crash, supabase write race, broken self-heal
+// triage path), the shell sits forever and pollutes the operator's Tasks
+// board. The board adapter hides these from view, but rows still accumulate
+// in the database. This tick promotes stale shells to status='deleted' so
+// they fall out of the ledger entirely.
+const ALLOCATED_REAPER_GRACE_MS = 10 * 60 * 1000; // 10 min — well past the
+// happy-path allocate→update latency, even on a slow Supabase day.
+
+async function allocatedOrphanReaperTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  const cutoff = new Date(Date.now() - ALLOCATED_REAPER_GRACE_MS).toISOString();
+  const orphansR = await supa<Array<{ vtid: string; created_at: string; title: string | null }>>(
+    s,
+    `/rest/v1/vtid_ledger?status=eq.allocated&created_at=lt.${cutoff}` +
+    `&or=(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title)` +
+    `&select=vtid,created_at,title&limit=50`,
+  );
+  if (!orphansR.ok || !orphansR.data || orphansR.data.length === 0) return;
+
+  for (const orphan of orphansR.data) {
+    const ageMin = Math.round((Date.now() - new Date(orphan.created_at).getTime()) / 60_000);
+    console.log(`${LOG_PREFIX} reaper: tombstoning orphan ${orphan.vtid} (age=${ageMin}min, title='${orphan.title}')`);
+    await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'deleted',
+        delete_reason: `allocated-orphan-reaper: shell never received title (age=${ageMin}min)`,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  }
+}
+
 let backgroundTickerStarted = false;
 export function startBackgroundExecutor(): void {
   if (backgroundTickerStarted) return;
@@ -1969,6 +2178,12 @@ export function startBackgroundExecutor(): void {
     });
     lazyPlanTick().catch((err) => {
       console.error(`${LOG_PREFIX} lazy-plan tick error:`, err);
+    });
+    activationReaperTick().catch((err) => {
+      console.error(`${LOG_PREFIX} activation-reaper tick error:`, err);
+    });
+    allocatedOrphanReaperTick().catch((err) => {
+      console.error(`${LOG_PREFIX} allocated-orphan-reaper tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }

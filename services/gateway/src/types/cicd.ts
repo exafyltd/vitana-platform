@@ -596,6 +596,8 @@ export type CicdEventType =
   | 'dev_autopilot.finding.snoozed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
+  | 'dev_autopilot.execution.bridged'
+  | 'dev_autopilot.execution.reaped'
   | 'dev_autopilot.execution.cancelled'
   | 'dev_autopilot.execution.running'
   | 'dev_autopilot.execution.pr_opened'

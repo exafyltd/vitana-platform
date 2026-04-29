@@ -244,8 +244,42 @@ export async function writeAutopilotSuccess(
  * generation: `failed to spawn ...claude... ENOENT`. When the worker can't
  * find the Claude Code binary, the gateway should fall back to direct
  * Messages API (when ANTHROPIC_API_KEY is set) instead of escalating.
+ *
+ * Patterns matched:
+ *  - "spawn ...claude... ENOENT" — Node's standard spawn ENOENT
+ *  - "Is Claude Code installed and on PATH" — autopilot-worker/src/claude.ts
+ *    appends this to every spawn error
+ *  - "failed to spawn ...antigravity-server" / ".../claude-code-2.x" —
+ *    when CLAUDE_CLI_PATH points at a stale Antigravity extension version
+ *    that no longer exists (the IDE updated to a newer minor version).
+ *    This was the 2026-04-28 outage: 2.1.114 → 2.1.121 left every dev_autopilot
+ *    execution failing in seconds and the reconciler created a SELF-HEAL retry
+ *    VTID per failure, looping forever.
  */
 export function isWorkerBinaryMissing(errorMessage: string | undefined | null): boolean {
   if (!errorMessage) return false;
-  return /spawn .*claude.*ENOENT|Is Claude Code installed and on PATH/i.test(errorMessage);
+  return /spawn .*claude.*ENOENT|Is Claude Code installed and on PATH|failed to spawn .*(?:antigravity-server|claude-code-\d|\.claude\/)/i.test(errorMessage);
+}
+
+/**
+ * Generic environmental-blocker detector. Anything that returns true here
+ * means the failure is NOT a code defect we can fix by re-running triage —
+ * it's the host environment (missing binary, OOM, disk full, network
+ * unreachable). The bridge + reconciler must short-circuit on these so we
+ * don't spawn SELF-HEAL retry VTIDs that the executor can't possibly run.
+ *
+ * Add new patterns here as new infrastructure failures show up. Anything
+ * that matches must NOT trigger triage agent calls — those cost money + tokens
+ * and produce useless reports ("the binary is missing, install it") which
+ * the system can't act on autonomously.
+ */
+export function isEnvironmentalBlocker(errorMessage: string | undefined | null): boolean {
+  if (!errorMessage) return false;
+  if (isWorkerBinaryMissing(errorMessage)) return true;
+  // 2026-04-29: also short-circuit on "worker-queue wait time" — the local
+  // autopilot-worker is single-threaded (max_concurrent=1), so if the queue
+  // backs up the gateway times out per-task at 720s before the worker even
+  // gets to run the LLM. That's a capacity problem, not a code defect; the
+  // triage agent can't fix it.
+  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout/i.test(errorMessage);
 }
