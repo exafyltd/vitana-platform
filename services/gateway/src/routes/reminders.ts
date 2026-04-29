@@ -155,6 +155,97 @@ router.get('/missed', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// GET /reminders/stream — Server-Sent Events for reminder fire delivery
+//
+// MUST be registered before GET /:id, otherwise Express matches /:id with
+// id='stream' and 500s on UUID parse. (VTID-02601 hot-fix.)
+//
+// Auth: EventSource cannot send custom headers, so we accept ?user_id=X as
+// query param (server-role check). For production we'd swap this for a
+// signed short-TTL session token, but the same vector exists for /events.
+//
+// Polling cadence: 3s. Heartbeat: 30s.
+// Payload on a fire: { type:'reminder.fire', reminder_id, action_text,
+//   spoken_message, chime_pcm_b64, voice_audio_b64, voice_lang, fired_at }
+// =============================================================================
+router.get('/stream', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'User ID required' });
+  }
+  const admin = getSupabase();
+  if (!admin) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  res.write(
+    `event: connected\ndata: ${JSON.stringify({
+      status: 'connected',
+      timestamp: new Date().toISOString(),
+    })}\n\n`,
+  );
+
+  const seen = new Set<string>();
+  const chimeB64 = getReminderChimePcmB64();
+
+  const pollFires = async () => {
+    try {
+      const { data, error } = await admin
+        .from('reminders')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'fired')
+        .is('acked_at', null)
+        .order('fired_at', { ascending: true })
+        .limit(20);
+      if (error) {
+        console.error('[Reminders SSE] poll error:', error.message);
+        return;
+      }
+      for (const row of data || []) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+
+        const payload = {
+          type: 'reminder.fire',
+          reminder_id: row.id,
+          action_text: row.action_text,
+          spoken_message: row.spoken_message,
+          description: row.description,
+          chime_pcm_b64: chimeB64,
+          chime_mime: 'audio/pcm;rate=24000',
+          voice_audio_b64: row.tts_audio_b64,
+          voice_mime: 'audio/mp3',
+          voice_lang: row.tts_lang,
+          fired_at: row.fired_at,
+          next_fire_at: row.next_fire_at,
+        };
+        res.write(`id: ${row.id}\nevent: reminder-fire\ndata: ${JSON.stringify(payload)}\n\n`);
+      }
+    } catch (err: any) {
+      console.error('[Reminders SSE] poll exception:', err?.message);
+    }
+  };
+
+  await pollFires();
+  const pollInterval = setInterval(pollFires, 3000);
+  const heartbeatInterval = setInterval(() => {
+    res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(pollInterval);
+    clearInterval(heartbeatInterval);
+    try {
+      res.end();
+    } catch {}
+  });
+});
+
+// =============================================================================
 // GET /reminders/:id
 // =============================================================================
 router.get('/:id', async (req: Request, res: Response) => {
@@ -371,95 +462,6 @@ router.delete('/', async (req: Request, res: Response) => {
     console.error(`${LOG_PREFIX} DELETE / error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
   }
-});
-
-// =============================================================================
-// GET /reminders/stream — Server-Sent Events for reminder fire delivery
-//
-// Auth: EventSource cannot send custom headers, so we accept ?user_id=X as
-// query param (server-role check). For production we'd swap this for a
-// signed short-TTL session token, but the same vector exists for /events.
-//
-// Polling cadence: 3s (matches /api/v1/events/stream pattern).
-// Heartbeat: 30s.
-// Payload on a fire: { type:'reminder.fire', reminder_id, action_text,
-//   spoken_message, chime_pcm_b64, voice_audio_b64, voice_lang, fired_at }
-// =============================================================================
-router.get('/stream', async (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    return res.status(401).json({ ok: false, error: 'User ID required' });
-  }
-  const admin = getSupabase();
-  if (!admin) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  res.write(
-    `event: connected\ndata: ${JSON.stringify({
-      status: 'connected',
-      timestamp: new Date().toISOString(),
-    })}\n\n`,
-  );
-
-  const seen = new Set<string>(); // dedup across reconnect-within-session
-  const chimeB64 = getReminderChimePcmB64();
-
-  const pollFires = async () => {
-    try {
-      const { data, error } = await admin
-        .from('reminders')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'fired')
-        .is('acked_at', null)
-        .order('fired_at', { ascending: true })
-        .limit(20);
-      if (error) {
-        console.error('[Reminders SSE] poll error:', error.message);
-        return;
-      }
-      for (const row of data || []) {
-        if (seen.has(row.id)) continue;
-        seen.add(row.id);
-
-        const payload = {
-          type: 'reminder.fire',
-          reminder_id: row.id,
-          action_text: row.action_text,
-          spoken_message: row.spoken_message,
-          description: row.description,
-          chime_pcm_b64: chimeB64,
-          chime_mime: 'audio/pcm;rate=24000',
-          voice_audio_b64: row.tts_audio_b64,
-          voice_mime: 'audio/mp3',
-          voice_lang: row.tts_lang,
-          fired_at: row.fired_at,
-          next_fire_at: row.next_fire_at,
-        };
-        res.write(`id: ${row.id}\nevent: reminder-fire\ndata: ${JSON.stringify(payload)}\n\n`);
-      }
-    } catch (err: any) {
-      console.error('[Reminders SSE] poll exception:', err?.message);
-    }
-  };
-
-  await pollFires();
-  const pollInterval = setInterval(pollFires, 3000);
-  const heartbeatInterval = setInterval(() => {
-    res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-  }, 30000);
-
-  req.on('close', () => {
-    clearInterval(pollInterval);
-    clearInterval(heartbeatInterval);
-    try {
-      res.end();
-    } catch {}
-  });
 });
 
 // =============================================================================
