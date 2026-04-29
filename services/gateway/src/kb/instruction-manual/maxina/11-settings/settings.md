@@ -7,40 +7,51 @@ module: Settings
 tab: Settings Overview
 url_path: /settings
 sidebar_path: Settings → Settings Overview
-keywords: [settings overview, settings, settings, settings]
-related_concepts: []
-related_screens: []
+keywords: [settings, settings overview, account, preferences, einstellungen, konto, profile, account settings, vitana settings]
+related_concepts: ["0.4", "0.10", "0.11"]
+related_screens: [COM-PREFERENCES, COM-PRIVACY, COM-NOTIFICATIONS, COM-CONNECTED_APPS, COM-BILLING, COM-SUPPORT, COM-TENANT_ROLE]
 ---
+
 ## What it is
 
-The **Settings Overview** screen is part of Settings — preferences, privacy, billing, integrations, and account-level controls. In the navigation it sits at Settings → Settings Overview, and Direct URL: `/settings`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Settings Overview is the account snapshot — the entry point to every preference, privacy control, integration, billing detail, and support resource for your Vitana account. The Overview itself is a hub: it shows your handle, your tenant (Maxina) and role (community), your current Compass, your active subscriptions at a glance, and tiles linking to each sub-screen for deeper configuration.
+
+It is the screen you visit when something is wrong, when you want to connect a tracker, when a renewal needs attention, or when you want to verify what permissions and consents are active.
 
 ## Why it matters
 
-Settings is the surface that lets you tune Vitana to your situation, revoke things you no longer want, and stay in control of the account. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the settings overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Most users open Settings rarely, but when they do they need to find the right control quickly. The Overview is designed for that: a clear category tile grid rather than an endless scrolling form. Each tile names what it controls in plain language ("What gets shared with my community", "How Vitana notifies me", "What apps are connected to my account").
+
+For the Maxina admin, this is also where the **Tenant & Role** sub-screen exposes the multi-tenant context — confirmation that you're in the right tenant and what your role grants.
 
 ## Where to find it
 
-Direct URL: `/settings`. It lives under the **Settings** module of the sidebar, on the tab labelled **Settings Overview**. If you ask ORB "open the settings overview" the Navigator will route you straight here.
+Direct URL: `/settings`. Sidebar: **Settings → Settings Overview**. The settings cog icon in the standard header is a one-tap shortcut.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Settings module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Settings Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Settings Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Header** "Settings" with your avatar, handle, and a sign-out shortcut
+- **Account snapshot card** — handle, name, email, current tenant (Maxina), role (community)
+- **Active Compass card** — your current Life Compass with a quick-edit button
+- **Subscriptions strip** — active recurring charges with renewal dates
+- **Tile grid** — Preferences, Privacy, Notifications, Connected Apps, Billing & Rewards, Limitations, Social Accounts, Support, Tenant & Role
+- **Recent activity ribbon** — last 3 setting changes audit trail
+- **Sub-navigation** for each sub-screen
 
 ## How to use it
 
-1. Open the screen via the sidebar (Settings → Settings Overview) or by asking ORB "open settings overview".
-2. Visit when something is wrong, when you want to connect a tracker, or when a renewal needs attention.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Settings module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open Settings when something needs to change. Read the snapshot card to confirm you're on the right account / tenant.
+2. To tune day-to-day behaviour (theme, language, voice, Did You Know): tap **Preferences** (11.2).
+3. To audit what's being remembered, exported, retained: tap **Privacy** (11.3).
+4. To control how Vitana reaches you (push, email, in-app): tap **Notifications** (11.4).
+5. To connect or revoke a tracker / OAuth app: tap **Connected Apps** (11.5).
+6. To view or update payment / subscription state: tap **Billing & Rewards** (11.6).
+7. To reach Maxina support or the help desk: tap **Support** (11.7).
+8. To verify or switch tenant context: tap **Tenant & Role** (11.8).
 
 ## Related
 
-- See module 11 for the other screens in **Settings**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.4 for your Vitana ID, edited here.
+- See concept 0.10 for permissions overall.
+- See concept 0.11 for the Maxina tenant context.
+- Sub-screens: COM-PREFERENCES (11.2), COM-PRIVACY (11.3), COM-NOTIFICATIONS (11.4), COM-CONNECTED_APPS (11.5), COM-BILLING (11.6), COM-SUPPORT (11.7), COM-TENANT_ROLE (11.8).

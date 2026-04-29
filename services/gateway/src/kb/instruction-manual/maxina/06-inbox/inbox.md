@@ -7,40 +7,51 @@ module: Inbox
 tab: Inbox Overview
 url_path: /inbox
 sidebar_path: Inbox → Inbox Overview
-keywords: [inbox overview, inbox, inbox, inbox]
-related_concepts: []
-related_screens: []
+keywords: [inbox, messages, conversations, posteingang, nachrichten, inbox overview, threads, dms, direct messages, contacts, group chat]
+related_concepts: ["0.4"]
+related_screens: [COM-INBOX_REMINDER, COM-INBOX_INSPIRATION, COM-INBOX_ARCHIVED]
 ---
+
 ## What it is
 
-The **Inbox Overview** screen is part of the Inbox — your messages, reminders, and inspiration in one place. In the navigation it sits at Inbox → Inbox Overview, and Direct URL: `/inbox`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Inbox is the consolidated thread for everything that needs your attention — direct messages from other Maxina members, group conversations, reminders Vitana set for you, inspirational notes from coaches, and archived threads. It is the single place for human and system communication, replacing what most apps split across email, push notifications, and an in-app feed.
+
+Inbox supports rich messaging — text, voice notes (recorded with the Diary Orb pattern), photos, and shared content (event cards, supplement recommendations, diary excerpts you choose to share).
 
 ## Why it matters
 
-Most apps split notifications across mail, push, and in-app; Inbox is the consolidated thread where everything that needs your attention surfaces. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the inbox overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+A wellness platform that splits "messages from people" and "reminders from the system" forces you to check two different surfaces. Inbox unifies them. When ORB schedules a reminder ("ask me about your sleep next Wednesday"), it lands here. When Anna sends you a voice note about Saturday's meetup, it lands here. When the Maxina coach posts an inspiration card, it lands here.
+
+The unified inbox also matters for ORB — when you ask "what's new?" the assistant reads from this surface and can summarise across all four threads at once.
 
 ## Where to find it
 
-Direct URL: `/inbox`. It lives under the **Inbox** module of the sidebar, on the tab labelled **Inbox Overview**. If you ask ORB "open the inbox overview" the Navigator will route you straight here.
+Direct URL: `/inbox`. Sidebar: **Inbox → Inbox Overview**. On mobile, the Inbox icon is one of the four bottom-nav shortcuts.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Inbox module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Inbox Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Inbox Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Header** "Inbox" with conversation filter chips (All, Groups, Direct, Contacts) and a density toggle (comfortable / compact)
+- **Conversation list** — each row shows the avatar, name or group title, last-message preview, timestamp, and an unread badge
+- **Pin threads** — favourite conversations stay at the top
+- **Create new conversation popup** (+) — start a 1:1 DM
+- **Create group popup** — start a group conversation
+- **Presence indicator** — green dot if the contact is online in any Vitana surface
+- **Call manager** entry points for voice / video calls
+- **Group avatar stack** for group threads (up to 4 avatars stacked)
+- **Sub-navigation** for Reminder, Inspiration, Archived
+- **Cross-device unread sync** — read state syncs across desktop and mobile
 
 ## How to use it
 
-1. Open the screen via the sidebar (Inbox → Inbox Overview) or by asking ORB "open inbox overview".
-2. Process top-down, archive what is done, snooze what can wait, and respond to direct conversations like you would in any messenger.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Inbox module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open Inbox to triage messages and reminders top-down.
+2. Tap any thread to open the conversation. Type or hold the mic icon to record a voice note.
+3. To send to another Maxina user, tap **+ New** and search by `@handle` or name.
+4. To start a group, tap **+ Group**, add members by `@handle`, name the group, send.
+5. To pin a thread for quick access, swipe (mobile) or right-click (desktop) → Pin.
+6. To filter (e.g. only group threads), tap the relevant filter chip.
+7. Reminders that ORB scheduled show up under the **Reminder** sub-tab; inspiration cards from coaches under **Inspiration**; everything you've finished with under **Archived**.
 
 ## Related
 
-- See module 6 for the other screens in **Inbox**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.4 for Vitana ID — the addressing format for messages.
+- COM-INBOX_REMINDER (6.2), COM-INBOX_INSPIRATION (6.3), COM-INBOX_ARCHIVED (6.4) — the sub-tabs.

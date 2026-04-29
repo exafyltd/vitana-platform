@@ -7,40 +7,50 @@ module: Sharing
 tab: Sharing Overview
 url_path: /sharing
 sidebar_path: Sharing → Sharing Overview
-keywords: [sharing overview, sharing, sharing, sharing]
-related_concepts: []
-related_screens: []
+keywords: [sharing, blast center, distribution, social autopilot, teilen, social share, campaigns, content distribution, sharing overview, social channels]
+related_concepts: ["0.6", "0.10"]
+related_screens: [COM-CAMPAIGNS, COM-DISTRIBUTION, COM-DATA_CONSENT]
 ---
+
 ## What it is
 
-The **Sharing Overview** screen is part of the Sharing module — the centre that broadcasts your milestones to channels you opt in to, and the consent layer for what gets shared. In the navigation it sits at Sharing → Sharing Overview, and Direct URL: `/sharing`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Sharing is the centre that broadcasts your milestones, posts, and curated content to channels you opt in to — your Maxina community feed, your social profiles (LinkedIn, X, etc.), specific groups you're part of. The Overview is the dashboard: the Blast Center for multi-channel posting, your Growth KPIs, your Autopilot-scheduled posts, and the consent layer that decides what gets shared and where.
+
+This is also where the **Social Share Autopilot** lives — a setting that lets Vitana auto-publish certain milestones (streak hits, tier-ups, finished waves) to channels you approved, on your behalf, with previewed copy you can edit beforehand.
 
 ## Why it matters
 
-Community accountability works when the right people see your wins; Sharing decides who sees what, and lets you publish to social channels when you choose to. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the sharing overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Community accountability works when the right people see your wins; broadcasting works when the timing and the medium fit. The Sharing module is built so you configure once (which channels, what types of content, how aggressive the cadence) and Vitana drives most of it. The Autopilot integration means a sleep streak can become a LinkedIn post or a Maxina feed update without you opening this screen each time.
+
+It is also the surface where the Data & Consent layer lives — making the privacy model visible alongside the publishing tools.
 
 ## Where to find it
 
-Direct URL: `/sharing`. It lives under the **Sharing** module of the sidebar, on the tab labelled **Sharing Overview**. If you ask ORB "open the sharing overview" the Navigator will route you straight here.
+Direct URL: `/sharing`. Sidebar: **Sharing → Sharing Overview**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Sharing module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Sharing Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Sharing Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Header** "Sharing" with a New Campaign button and a refresh icon
+- **Blast Center** — multi-channel posting interface; pick channels, draft once, schedule
+- **Growth KPIs card** — reach, engagement, follower count across connected channels (last 7 / 30 days)
+- **Autopilot Nudge** — a recommendation card if Vitana detected a milestone worth sharing
+- **Social Share Autopilot toggle** — enable / configure auto-publishing of milestones
+- **Next Scheduled Posts** — calendar view of pending posts
+- **Channel Connector** card — add or manage connected channels (LinkedIn, X, Instagram, Maxina feed)
+- **Analytics Dashboard** — performance metrics, click-through rates, reach across recent posts
+- **Sub-navigation** for Campaigns, Distribution, Data & Consent
 
 ## How to use it
 
-1. Open the screen via the sidebar (Sharing → Sharing Overview) or by asking ORB "open sharing overview".
-2. Configure once, then let Autopilot drive most of it; review Data & Consent if anything ever feels too public.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Sharing module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open Sharing → Sharing Overview to manage what Vitana shares on your behalf.
+2. To connect a new channel: tap Channel Connector → choose service → grant OAuth.
+3. To enable Social Share Autopilot: toggle on, then choose which milestone types qualify (streaks, tier-ups, completed waves, diary highlights).
+4. To draft a manual broadcast: tap Blast Center, write content, pick channels, schedule or post.
+5. To run a campaign (a multi-post series): jump to Campaigns sub-screen.
+6. To audit what's been shared and where: open Data & Consent — every category has its own consent toggle and a record of what's gone out.
 
 ## Related
 
-- See module 9 for the other screens in **Sharing**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.6 for Autopilot — the engine that drives auto-share.
+- See concept 0.10 for permissions — Data & Consent is the privacy gate.
+- Sub-screens: COM-CAMPAIGNS (9.2), COM-CAMPAIGN_DETAIL (9.3), COM-DISTRIBUTION (9.4), COM-DATA_CONSENT (9.5).

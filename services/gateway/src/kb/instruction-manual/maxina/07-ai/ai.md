@@ -7,40 +7,53 @@ module: AI
 tab: AI Overview
 url_path: /ai
 sidebar_path: AI → AI Overview
-keywords: [ai overview, ai, ai, ai]
-related_concepts: []
-related_screens: []
+keywords: [ai, ai overview, intelligence, insights, recommendations, daily summary, ki, künstliche intelligenz, ai dashboard, vitana ai, ai tab, ai companion]
+related_concepts: ["0.5", "0.6", "0.9"]
+related_screens: [COM-AI_INSIGHTS, COM-AI_RECOMMENDATIONS, COM-AI_DAILY_SUMMARY, COM-AI_COMPANION, COM-ASSISTANT_CHAT]
 ---
+
 ## What it is
 
-The **AI Overview** screen is part of the AI tab — the surfaces dedicated to insights, recommendations, and the personal AI companion. In the navigation it sits at AI → AI Overview, and Direct URL: `/ai`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+AI Overview is the dashboard for everything Vitana's AI does for you — the inferred insights, the ranked recommendations, the daily summary of yesterday, and the AI Companion (a relationship-aware conversational surface). The screen is intentionally a meta-view: it doesn't show news or memories, it shows what Vitana *thinks* about your news and memories.
+
+This is also the screen where Autopilot's reasoning becomes legible. Each card shows the inference chain — what data fed in, what conclusion Vitana drew, what action it would queue.
 
 ## Why it matters
 
-The AI tab is where Vitana shows its work — what it inferred about you, what it would do next, and why. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the ai overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Most AI products are black boxes — the assistant gives you an answer and you trust it. The AI Overview is the opposite: the surface where Vitana **shows its work**. Each insight has a "why", each recommendation has a pillar prediction, each summary has citations to the underlying data. If a recommendation feels off, this is where you investigate.
+
+For users who want to understand the system's behaviour rather than just consume its outputs, AI Overview is the most important tab.
 
 ## Where to find it
 
-Direct URL: `/ai`. It lives under the **AI** module of the sidebar, on the tab labelled **AI Overview**. If you ask ORB "open the ai overview" the Navigator will route you straight here.
+Direct URL: `/ai`. Sidebar: **AI → AI Overview**. The tab is sometimes labelled "AI Assistant" in older builds — both refer to the same module.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the AI module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **AI Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (AI Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Today's Priority Actions card** — the top three Autopilot actions for the day with checkmark commitment
+- **Autopilot status card** — active automations + recent actions executed
+- **Memory Highlights card** — the most relevant memories Vitana surfaced today
+- **Smart Calendar card** — schedule optimisation suggestions for the day ahead
+- **Progress Streaks card** — your active streaks (diary, hydration, exercise) with celebration badges
+- **Context Pulse chips** — time-of-day, location, energy estimate, weather; the data Vitana is currently grounded on
+- **Lifestyle Plan cards** — pillars (Mental, Physical, Social) with each pillar's active suggestions
+- **Motivation Card** — inspirational quote + linked video
+- **Confirm All button** — batch-execute every checked recommendation in one tap
+- **Sub-navigation** for Insights, Recommendations, Daily Summary, Companion
 
 ## How to use it
 
-1. Open the screen via the sidebar (AI → AI Overview) or by asking ORB "open ai overview".
-2. Open it weekly to read the Daily Summary trend; tap into Recommendations to see what the Autopilot would queue up.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the AI module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open AI tab when you want to see what Vitana inferred about you, not what content you consumed.
+2. Read Today's Priority Actions first — these are the highest-leverage actions ranked by predicted Vitana Index lift.
+3. Tick boxes on the actions you want to do; tap **Confirm All** to commit (Autopilot then executes).
+4. Tap any insight card to see the underlying data ("why does it think this?").
+5. Use the sub-tabs (Insights, Recommendations, Daily Summary, Companion) to drill into a specific surface.
+6. The Companion sub-tab is the most conversational — it knows your relationships, your active goals, your recent moments, and engages on those terms.
 
 ## Related
 
-- See module 7 for the other screens in **AI**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.5 for ORB — voice access to the same underlying intelligence.
+- See concept 0.6 for Autopilot — the executable layer this screen surfaces.
+- See concept 0.9 for Memory — the substrate AI insights are grounded in.
+- Sub-screens: COM-AI_INSIGHTS (7.2), COM-AI_RECOMMENDATIONS (7.3), COM-AI_DAILY_SUMMARY (7.4), COM-AI_COMPANION (7.5).
+- COM-ASSISTANT_CHAT (12.1) — the dedicated chat surface for typed conversation.

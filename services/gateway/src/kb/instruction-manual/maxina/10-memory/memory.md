@@ -7,40 +7,52 @@ module: Memory
 tab: Memory Overview
 url_path: /memory
 sidebar_path: Memory → Memory Overview
-keywords: [memory overview, memory, memory, memory]
-related_concepts: []
-related_screens: []
+keywords: [memory, memory overview, what vitana knows, gedächtnis, erinnerungen, memory hub, memory dashboard, memory garden, vitana memory, what vitana remembers]
+related_concepts: ["0.5", "0.9", "0.10"]
+related_screens: [COM-TIMELINE, COM-DIARY, COM-MEMORY_RECALL, COM-MEMORY_PERMISSIONS]
 ---
+
 ## What it is
 
-The **Memory Overview** screen is part of the Memory module — your timeline, your diary, your recall search, and the permissions that gate it all. In the navigation it sits at Memory → Memory Overview, and Direct URL: `/memory`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Memory Overview is the dashboard for everything Vitana has captured about you — the substrate that makes the assistant feel like it actually knows you. The screen organises memory into the 13 canonical categories (Personal Identity, Health, Relationships, Learning, Business, Finance, Location, Digital, Values, Autopilot, Future Plans, Lifestyle, Uncategorized) and surfaces the most recent additions across all of them.
+
+A "What Vitana Knows" widget at the top reads back the high-level facts on file (your name, your active goal, your sleep target, your important relationships) so you can audit instantly whether the assistant has the right baseline.
 
 ## Why it matters
 
-Memory is what makes Vitana feel like it actually knows you across months and devices; the Memory module is where you see, search, and curate what is stored. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the memory overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+The single biggest difference between Vitana and a generic assistant is durable memory. The Overview is the place where that promise is visible — you can see what's been remembered, in what category, and how recently. If something feels missing or inaccurate, this is the screen to fix it.
+
+It's also the privacy-first surface. Memory categories that you've toggled off in Permissions show up greyed out here as a constant reminder that you control the system, not the other way round.
 
 ## Where to find it
 
-Direct URL: `/memory`. It lives under the **Memory** module of the sidebar, on the tab labelled **Memory Overview**. If you ask ORB "open the memory overview" the Navigator will route you straight here.
+Direct URL: `/memory`. Sidebar: **Memory → Memory Overview**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Memory module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Memory Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Memory Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Header** "Memory" with a refresh icon and a search button
+- **What Vitana Knows widget** — the read-back of headline facts, prominently at the top
+- **Memory category grid** — the 13 categories as tiles, each showing a count and the most recent entry
+- **Recent memories carousel** — last 10 entries chronologically across all categories
+- **Add memory dialog** — quick-add entry by voice, photo, or text
+- **Health timeline events** — milestones surfaced from the Health module
+- **Diary entries view** — preview of recent diary entries (voice, photo, text)
+- **Life Compass popup** — your active life goal, editable here
+- **Memory education tab** — short explainers for what each category means
+- **Sub-navigation** for Timeline, Daily Diary, Recall, Permissions
 
 ## How to use it
 
-1. Open the screen via the sidebar (Memory → Memory Overview) or by asking ORB "open memory overview".
-2. Open Memory to recall something specific, to add a memory by hand, or to audit what Vitana has captured about you.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Memory module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open Memory Overview when you want to audit what Vitana remembers.
+2. Read the "What Vitana Knows" widget first — fix anything wrong at the top before drilling in.
+3. Tap any category tile to see the full list of memories in that domain.
+4. To add a new memory by hand, tap **+ Add memory** and choose voice / photo / text.
+5. To search across everything, tap the search button or open the Recall sub-tab.
+6. To control what's captured going forward, open the Permissions sub-tab.
 
 ## Related
 
-- See module 10 for the other screens in **Memory**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.5 for ORB — the most-used capture surface.
+- See concept 0.9 for the memory architecture itself.
+- See concept 0.10 for permissions and consent.
+- Sub-screens: COM-TIMELINE (10.2), COM-DIARY (10.3), COM-MEMORY_RECALL (10.4), COM-MEMORY_PERMISSIONS (10.5).

@@ -7,40 +7,49 @@ module: Community
 tab: Community Overview
 url_path: /community
 sidebar_path: Community → Community Overview
-keywords: [community overview, community, community, community]
-related_concepts: []
-related_screens: []
+keywords: [community, community overview, maxina community, community hub, gemeinschaft, community home, member rankings, group rankings, today highlights]
+related_concepts: ["0.11"]
+related_screens: [COM-EVENTS, COM-LIVE_ROOMS, COM-MEDIA_HUB, COM-FEED, COM-CHALLENGES, COM-GROUPS]
 ---
+
 ## What it is
 
-The **Community Overview** screen is part of the Community module — the social layer of Maxina where you meet, attend, and grow with other members. In the navigation it sits at Community → Community Overview, and Direct URL: `/community`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Community Overview is the hub of the Maxina social layer — the screen you land on when you tap **Community** in the sidebar. It is a curated dashboard of "what's happening in Maxina right now": today's highlights (events starting soon, active live rooms, trending posts), the four leaderboards (Member, Group, Event, Creator Rankings), and entry points to every other community sub-screen.
+
+The screen is intentionally a hub, not a feed. The endless scrolling lives one click deeper (Feed, Events, Groups). Overview is the "what should I do today in the community?" layer.
 
 ## Why it matters
 
-Longevity and wellness compound when they are shared; the community surface is where motivation and accountability come from. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the community overview". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Vitana's individual surfaces (Health, Wallet, Memory) are private to you. Community is the opposite — it's where Maxina becomes more than a wellness tool and starts becoming a place you belong to. The Overview is the most important community screen because it's the front door: if it surfaces something compelling, you go deeper; if it doesn't, you bounce back to your private tabs.
+
+It's also the screen the Maxina admin curates most actively. Pinned events, featured creators, and rotating challenges all surface here.
 
 ## Where to find it
 
-Direct URL: `/community`. It lives under the **Community** module of the sidebar, on the tab labelled **Community Overview**. If you ask ORB "open the community overview" the Navigator will route you straight here.
+Direct URL: `/community`. Sidebar: **Community → Community Overview**. On mobile, four bottom-nav shortcuts (Events, Inbox, Live, Media) bypass this hub and go straight to specific sub-screens.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Community module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Community Overview** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Community Overview) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- **Header** "Community" with a refresh icon and a search button
+- **Today's Highlights** carousel — featured events, active live rooms, top media for the day
+- **Member Rankings** card — top contributors by engagement / streak / Vitana Index gain
+- **Group Rankings** card — most active community groups
+- **Event Rankings** card — upcoming events with the most RSVPs
+- **Creator Rankings** card — top Maxina creators by follower / playback count
+- **Quick links** to sub-screens: Events & Meetups, Live Rooms, Media Hub, Feed, Challenges, Groups, My Business
+- **Pinned content area** (curated by Maxina admin) — featured posts, announcements, creator spotlights
 
 ## How to use it
 
-1. Open the screen via the sidebar (Community → Community Overview) or by asking ORB "open community overview".
-2. Browse, RSVP, or join — most actions reward credits and grow your community standing.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Community module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Open Community → Community Overview each time you want to engage with Maxina socially.
+2. Read Today's Highlights — these are the time-sensitive items that won't be available later.
+3. Scan the Rankings cards. Tap any card to drill into the full leaderboard.
+4. Tap a quick-link tile (Events, Live Rooms, etc.) to jump to a specific community surface.
+5. To search across community content (events, groups, posts, creators), tap the search button.
+6. To return to this hub from any sub-screen, tap **Community** in the sidebar again.
 
 ## Related
 
-- See module 3 for the other screens in **Community**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+- See concept 0.11 for the Maxina community context — what tenant you're in and your role.
+- COM-EVENTS (3.2), COM-LIVE_ROOMS (3.3), COM-MEDIA_HUB (3.4) — the major sub-screens.
+- COM-FEED (3.7), COM-GROUPS (3.9), COM-CHALLENGES (3.8) — async social surfaces.
