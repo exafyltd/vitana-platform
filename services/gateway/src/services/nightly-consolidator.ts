@@ -233,24 +233,33 @@ async function loop3DriftAdaptation(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_3_drift', processed: 0, errors: 1, notes: 'no supabase' };
 
-  // Trailing 14d window: if a single pillar has > 3 negative deltas summing to
-  // worse than -3 points, that's drift worth queueing a plan for.
+  // Trailing 14d window: if a single pillar has > 3 negative observed_delta
+  // entries summing to worse than -3 points, that's drift worth queueing a
+  // plan for. Schema source: 20260427180000_vtid_02003_phase_5a_tier2_schema
+  // (index_delta_observations: predicted_delta, observed_delta, observed_at,
+  //  created_at). We score on observed_delta, falling back to predicted_delta
+  //  when the observation hasn't been measured yet.
   const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
   let q = supabase
     .from('index_delta_observations')
-    .select('tenant_id, user_id, pillar, pillar_delta')
-    .lt('pillar_delta', 0)
-    .gte('observed_at', since);
+    .select('tenant_id, user_id, pillar, predicted_delta, observed_delta, created_at')
+    .gte('created_at', since);
   if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
   const { data: rows, error } = await q.limit(5000);
-  if (error) return { ok: false, loop: 'loop_3_drift', processed: 0, errors: 1, notes: error.message };
+  if (error) {
+    return { ok: true, loop: 'loop_3_drift', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
+  }
 
-  // Group: { user_id|pillar -> { tenant_id, sum, count } }
+  // Group: { user_id|pillar -> { tenant_id, sum, count } } using effective delta.
   const byKey = new Map<string, { tenant_id: string; user_id: string; pillar: string; sum: number; count: number }>();
   for (const r of (rows ?? []) as any[]) {
+    const eff = (r.observed_delta !== null && r.observed_delta !== undefined)
+      ? Number(r.observed_delta)
+      : Number(r.predicted_delta ?? 0);
+    if (!Number.isFinite(eff) || eff >= 0) continue;
     const k = `${r.user_id}|${r.pillar}`;
     const cur = byKey.get(k) ?? { tenant_id: r.tenant_id, user_id: r.user_id, pillar: r.pillar, sum: 0, count: 0 };
-    cur.sum += Number(r.pillar_delta) || 0;
+    cur.sum += eff;
     cur.count += 1;
     byKey.set(k, cur);
   }
@@ -298,41 +307,83 @@ async function loop4IndexDeltaSnapshot(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_4_index_delta', processed: 0, errors: 1, notes: 'no supabase' };
 
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  // Schema source: 20251231000000_vtid_01103_health_compute_engine.sql —
+  // vitana_index_scores has flat 5-pillar columns, not score_pillars jsonb.
+  // Use the latest 30 days to compute tier_at_start / tier_at_end.
+  const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   let q = supabase
     .from('vitana_index_scores')
-    .select('tenant_id, user_id, score_total, score_pillars, balance_factor, tier, computed_at')
-    .gte('computed_at', since);
+    .select('tenant_id, user_id, date, score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental, model_version')
+    .gte('date', since30);
   if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.order('computed_at', { ascending: false }).limit(10000);
-  if (error) return { ok: false, loop: 'loop_4_index_delta', processed: 0, errors: 1, notes: error.message };
+  const { data: rows, error } = await q.order('date', { ascending: true }).limit(10000);
+  if (error) {
+    return { ok: true, loop: 'loop_4_index_delta', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
+  }
 
-  // Pick the latest score per user for today
-  const latestPerUser = new Map<string, any>();
+  // Group rows per user; we need both endpoints of the 30d window.
+  type Row = {
+    tenant_id: string; user_id: string; date: string; score_total: number;
+    score_sleep: number; score_nutrition: number; score_exercise: number;
+    score_hydration: number; score_mental: number;
+  };
+  const byUser = new Map<string, Row[]>();
   for (const r of (rows ?? []) as any[]) {
     const k = r.user_id;
-    if (!latestPerUser.has(k)) latestPerUser.set(k, r);
+    if (!byUser.has(k)) byUser.set(k, []);
+    byUser.get(k)!.push(r as Row);
   }
 
   const today = new Date().toISOString().slice(0, 10);
   let processed = 0;
   let errors = 0;
-  for (const r of latestPerUser.values()) {
+  for (const series of byUser.values()) {
+    if (series.length === 0) continue;
+    const first = series[0];
+    const last = series[series.length - 1];
+    const tierAtStart = scoreTier(first.score_total);
+    const tierAtEnd = scoreTier(last.score_total);
+    const trajectoryClass: string = (() => {
+      const delta = (last.score_total ?? 0) - (first.score_total ?? 0);
+      if (Math.abs(delta) < 5) return 'stable';
+      return delta > 0 ? 'improving' : 'regressing';
+    })();
+    const balanceFactorAvg = balanceFactor([
+      last.score_sleep, last.score_nutrition, last.score_exercise,
+      last.score_hydration, last.score_mental,
+    ]);
+    const pillarsSnapshot = {
+      sleep: last.score_sleep,
+      nutrition: last.score_nutrition,
+      exercise: last.score_exercise,
+      hydration: last.score_hydration,
+      mental: last.score_mental,
+      total: last.score_total,
+      window_start: first.date,
+      window_end: last.date,
+      observations: series.length,
+    };
+    const narrative =
+      `30d: ${first.score_total ?? 'n/a'} → ${last.score_total ?? 'n/a'} ` +
+      `(${trajectoryClass}, balance ${(balanceFactorAvg ?? 0).toFixed(2)}, ` +
+      `tier ${tierAtStart} → ${tierAtEnd}, ${series.length} obs)`;
+
     const upsert = await supabase
       .from('vitana_index_trajectory_snapshots')
       .upsert(
         {
-          tenant_id: r.tenant_id,
-          user_id: r.user_id,
+          tenant_id: last.tenant_id,
+          user_id: last.user_id,
           snapshot_date: today,
-          score_total: r.score_total,
-          score_pillars: r.score_pillars ?? {},
-          balance_factor: r.balance_factor,
-          tier: r.tier,
-          source_engine: 'consolidator.loop_4',
-          computed_at: new Date().toISOString(),
+          time_window: '30d',
+          narrative,
+          pillars_snapshot: pillarsSnapshot,
+          balance_factor_avg: balanceFactorAvg,
+          tier_at_start: tierAtStart,
+          tier_at_end: tierAtEnd,
+          trajectory_class: trajectoryClass,
         },
-        { onConflict: 'tenant_id,user_id,snapshot_date' }
+        { onConflict: 'tenant_id,user_id,snapshot_date,time_window' }
       );
     if (upsert.error) errors += 1; else processed += 1;
   }
@@ -342,8 +393,29 @@ async function loop4IndexDeltaSnapshot(
     loop: 'loop_4_index_delta',
     processed,
     errors,
-    notes: `${latestPerUser.size} user(s) snapshotted for ${today}`,
+    notes: `${byUser.size} user(s) snapshotted (30d window) for ${today}`,
   };
+}
+
+// Vitana Index 5-pillar tier ladder. Five pillars × max 40 each = 200 total.
+function scoreTier(total: number | null | undefined): string {
+  const t = Number(total ?? 0);
+  if (t >= 175) return 'platinum';
+  if (t >= 140) return 'gold';
+  if (t >= 100) return 'silver';
+  if (t >= 60)  return 'bronze';
+  return 'foundation';
+}
+
+// Balance factor: 1.0 when all 5 pillars equal, 0.0 when fully imbalanced.
+function balanceFactor(scores: Array<number | null | undefined>): number {
+  const valid = scores.map(v => Number(v ?? 0));
+  if (valid.length === 0) return 0;
+  const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+  const variance = valid.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / valid.length;
+  const stddev = Math.sqrt(variance);
+  // Normalize: stddev of 20 (huge spread) → 0; stddev of 0 (perfect balance) → 1.
+  return Math.max(0, 1 - stddev / 20);
 }
 
 // ---------------------------------------------------------------------------
@@ -390,36 +462,42 @@ async function loop11BiometricTrends(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_11_biometric', processed: 0, errors: 1, notes: 'no supabase' };
 
-  // Defensive table existence — not every env has health_features_daily
-  // populated. We swallow the error and report 0 processed.
-  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  // Schema source: 20251231000000_vtid_01103 (health_features_daily) +
+  // 20260427180000_vtid_02003_phase_5a (biometric_trends).
+  // health_features_daily has: date, feature_key, feature_value (no pillar).
+  // biometric_trends has: feature_key, pillar, mean_7d/30d/90d, std_30d,
+  //   latest, latest_z_score, trend_class, anomaly_flag, last_anomaly_at.
+  const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   let q = supabase
     .from('health_features_daily')
-    .select('tenant_id, user_id, feature_key, pillar, observed_on, value_numeric')
-    .gte('observed_on', since);
+    .select('tenant_id, user_id, feature_key, date, feature_value')
+    .gte('date', since30);
   if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
   const { data: rows, error } = await q.limit(50000);
   if (error) {
     return { ok: true, loop: 'loop_11_biometric', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
 
-  // Aggregate per (user, feature_key)
+  // Aggregate per (user, feature_key) with rolling 7d/30d windows
   type FeatureStats = {
-    tenant_id: string; user_id: string; feature_key: string; pillar: string;
-    values: number[]; latest: number; latest_at: string;
+    tenant_id: string; user_id: string; feature_key: string;
+    all30: number[]; last7: number[]; latest: number; latest_at: string;
   };
   const stats = new Map<string, FeatureStats>();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   for (const r of (rows ?? []) as any[]) {
-    if (typeof r.value_numeric !== 'number') continue;
+    const v = Number(r.feature_value);
+    if (!Number.isFinite(v)) continue;
     const k = `${r.user_id}|${r.feature_key}`;
     const cur: FeatureStats = stats.get(k) ?? {
       tenant_id: r.tenant_id, user_id: r.user_id, feature_key: r.feature_key,
-      pillar: r.pillar, values: [], latest: r.value_numeric, latest_at: r.observed_on,
+      all30: [], last7: [], latest: v, latest_at: r.date,
     };
-    cur.values.push(r.value_numeric);
-    if (r.observed_on > cur.latest_at) {
-      cur.latest = r.value_numeric;
-      cur.latest_at = r.observed_on;
+    cur.all30.push(v);
+    if (r.date >= sevenDaysAgo) cur.last7.push(v);
+    if (r.date > cur.latest_at) {
+      cur.latest = v;
+      cur.latest_at = r.date;
     }
     stats.set(k, cur);
   }
@@ -427,15 +505,18 @@ async function loop11BiometricTrends(
   let processed = 0;
   let errors = 0;
   for (const s of stats.values()) {
-    if (s.values.length < 3) continue;
-    const sorted = [...s.values].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const mean = s.values.reduce((a, b) => a + b, 0) / s.values.length;
-    const drift = s.latest - median;
-    const trendClass = Math.abs(drift) < 0.1 * Math.abs(median || 1)
-      ? 'stable'
-      : (drift > 0 ? 'rising' : 'falling');
-    const anomaly = Math.abs(drift) > 0.4 * Math.abs(median || 1);
+    if (s.all30.length < 3) continue;
+    const mean30 = s.all30.reduce((a, b) => a + b, 0) / s.all30.length;
+    const mean7 = s.last7.length > 0 ? s.last7.reduce((a, b) => a + b, 0) / s.last7.length : null;
+    const variance30 = s.all30.reduce((a, b) => a + Math.pow(b - mean30, 2), 0) / s.all30.length;
+    const std30 = Math.sqrt(variance30);
+    const z = std30 > 0 ? (s.latest - mean30) / std30 : 0;
+    let trendClass: string;
+    if (s.all30.length < 7) trendClass = 'insufficient_data';
+    else if (Math.abs(z) < 0.5) trendClass = 'stable';
+    else if (Math.abs(z) > 2) trendClass = 'volatile';
+    else trendClass = z > 0 ? 'improving' : 'regressing';
+    const anomaly = Math.abs(z) >= 2;
 
     const upsert = await supabase
       .from('biometric_trends')
@@ -444,17 +525,18 @@ async function loop11BiometricTrends(
           tenant_id: s.tenant_id,
           user_id: s.user_id,
           feature_key: s.feature_key,
-          pillar: s.pillar,
-          window_days: 30,
+          pillar: featureKeyToPillar(s.feature_key),
+          mean_7d: mean7,
+          mean_30d: mean30,
+          std_30d: std30,
           latest: s.latest,
-          median,
-          mean,
+          latest_z_score: z,
           trend_class: trendClass,
           anomaly_flag: anomaly,
-          observation_count: s.values.length,
+          last_anomaly_at: anomaly ? new Date().toISOString() : null,
           computed_at: new Date().toISOString(),
         },
-        { onConflict: 'tenant_id,user_id,feature_key,window_days' }
+        { onConflict: 'tenant_id,user_id,feature_key' }
       );
     if (upsert.error) errors += 1; else processed += 1;
   }
@@ -466,6 +548,16 @@ async function loop11BiometricTrends(
     errors,
     notes: `${stats.size} (user,feature) pairs evaluated`,
   };
+}
+
+// Lightweight feature_key -> pillar map. Best-effort; unknown keys default to mental.
+function featureKeyToPillar(key: string): string {
+  const k = key.toLowerCase();
+  if (k.includes('sleep') || k.includes('hrv')) return 'sleep';
+  if (k.includes('hydra') || k.includes('water')) return 'hydration';
+  if (k.includes('step') || k.includes('exercise') || k.includes('workout') || k.includes('heart_rate')) return 'exercise';
+  if (k.includes('calor') || k.includes('protein') || k.includes('nutrient') || k.includes('meal')) return 'nutrition';
+  return 'mental';
 }
 
 // ---------------------------------------------------------------------------
@@ -481,54 +573,53 @@ async function loop12LocationPatterns(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_12_location', processed: 0, errors: 1, notes: 'no supabase' };
 
+  // Schema source: 20260427180000_vtid_02003_phase_5a — user_location_history
+  // has valid_from/valid_to (bi-temporal), and user_location_settings is one
+  // row per named place (NOT a jsonb list). Build a candidate row per locality
+  // that meets the visit-count threshold.
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   let q = supabase
     .from('user_location_history')
-    .select('tenant_id, user_id, locality, country, location_type, observed_at')
-    .gte('observed_at', since);
+    .select('tenant_id, user_id, locality, country, timezone, location_type, valid_from')
+    .gte('valid_from', since);
   if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
   const { data: rows, error } = await q.limit(50000);
   if (error) {
     return { ok: true, loop: 'loop_12_location', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
 
-  // Per-user, count visits per locality
-  const byUser = new Map<string, { tenant_id: string; user_id: string; counts: Map<string, number> }>();
+  // Per-user, group by locality
+  type LocalityStats = { tenant_id: string; user_id: string; locality: string; country: string | null; timezone: string | null; count: number };
+  const byKey = new Map<string, LocalityStats>();
   for (const r of (rows ?? []) as any[]) {
     if (!r.locality) continue;
-    const u = byUser.get(r.user_id) ?? { tenant_id: r.tenant_id, user_id: r.user_id, counts: new Map() };
-    u.counts.set(r.locality, (u.counts.get(r.locality) ?? 0) + 1);
-    byUser.set(r.user_id, u);
+    const k = `${r.user_id}|${r.locality}`;
+    const cur: LocalityStats = byKey.get(k) ?? {
+      tenant_id: r.tenant_id, user_id: r.user_id, locality: r.locality,
+      country: r.country ?? null, timezone: r.timezone ?? null, count: 0,
+    };
+    cur.count += 1;
+    byKey.set(k, cur);
   }
 
   let processed = 0;
   let errors = 0;
-  for (const u of byUser.values()) {
-    // Top 5 localities with >= 3 observations become candidate named places
-    const top = [...u.counts.entries()]
-      .filter(([_, c]) => c >= 3)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([locality, c]) => ({
-        name: locality,
-        locality,
-        visit_count_30d: c,
-        user_confirmed: false,
-        source: 'consolidator.loop_12',
-      }));
-
-    if (top.length === 0) continue;
-
+  for (const s of byKey.values()) {
+    if (s.count < 3) continue;
     const upsert = await supabase
       .from('user_location_settings')
       .upsert(
         {
-          tenant_id: u.tenant_id,
-          user_id: u.user_id,
-          named_places: top,
-          updated_at: new Date().toISOString(),
+          tenant_id: s.tenant_id,
+          user_id: s.user_id,
+          name: s.locality,
+          locality: s.locality,
+          country: s.country,
+          timezone: s.timezone,
+          is_primary_home: false,
+          user_confirmed: false,
         },
-        { onConflict: 'tenant_id,user_id' }
+        { onConflict: 'tenant_id,user_id,name' }
       );
     if (upsert.error) errors += 1; else processed += 1;
   }
@@ -538,7 +629,7 @@ async function loop12LocationPatterns(
     loop: 'loop_12_location',
     processed,
     errors,
-    notes: `${byUser.size} user(s) with location history`,
+    notes: `${byKey.size} (user,locality) candidates evaluated`,
   };
 }
 
@@ -554,14 +645,21 @@ async function loop13NetworkStats(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_13_network', processed: 0, errors: 1, notes: 'no supabase' };
 
-  // We only DECAY here — boosts happen on-write (in episodic / diary writers).
-  // The rule: edges untouched for > 30 days drift toward 0.5 by 5%.
+  // Schema source: 20251231000001_vtid_01087_relationship_graph_memory.sql.
+  // relationship_edges is polymorphic: source_id/target_id (with type tags),
+  // strength is integer-ish (1..10). Decay rule: edges with no interaction
+  // in 30 days drift toward 5 (mid) by 5% — bounded to [1,10].
+  // Tenant scoping is supported; per-user scoping uses source_id.
   const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   let q = supabase
     .from('relationship_edges')
-    .select('id, tenant_id, user_id, strength, updated_at')
-    .lte('updated_at', cutoff);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
+    .select('id, tenant_id, source_id, target_id, strength, last_interaction_at')
+    .lte('last_interaction_at', cutoff);
+  if (scope) {
+    q = q.eq('tenant_id', scope.tenant_id);
+    // Source-only filter — keeps the query simple and idempotent.
+    q = q.eq('source_id', scope.user_id);
+  }
   const { data: rows, error } = await q.limit(5000);
   if (error) {
     return { ok: true, loop: 'loop_13_network', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
@@ -570,8 +668,10 @@ async function loop13NetworkStats(
   let processed = 0;
   let errors = 0;
   for (const r of (rows ?? []) as any[]) {
-    const cur = Number(r.strength) || 0.5;
-    const decayed = cur + (0.5 - cur) * 0.05;
+    const cur = Number(r.strength) || 5;
+    const target = 5;
+    const decayed = Math.max(1, Math.min(10, cur + (target - cur) * 0.05));
+    if (Math.abs(decayed - cur) < 0.01) continue;
     const update = await supabase
       .from('relationship_edges')
       .update({ strength: decayed, updated_at: new Date().toISOString() })
@@ -584,7 +684,7 @@ async function loop13NetworkStats(
     loop: 'loop_13_network',
     processed,
     errors,
-    notes: `${(rows ?? []).length} stale edge(s) decayed`,
+    notes: `${(rows ?? []).length} stale edge(s) eligible for decay`,
   };
 }
 
