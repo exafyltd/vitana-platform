@@ -315,8 +315,19 @@ jobs:
             # instead of the direct Messages API, so they draw on the Claude
             # Pro/Max subscription via the worker's `claude -p` subprocess
             # rather than on the pay-per-token API credit balance.
-            # Flip to false (or delete this line) to fall back to direct API calls.
-            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
+            # 2026-04-29 (VTID-02500b): flipped to false. The active LLM
+            # routing policy v7 routes the `worker` stage to Vertex AI /
+            # gemini-3-pro-preview, so the local worker is no longer the
+            # cheaper path — and the worker queue's max_concurrent=1 was
+            # the bottleneck (every batch of N tasks queued for ~12 min
+            # apiece, hitting the 720s gateway timeout). Plus the worker
+            # process running on the developer's machine doesn't have
+            # GITHUB_SAFE_MERGE_TOKEN, so PR-publish failed there. With
+            # this flag off, the gateway's runExecutionSession runs in-
+            # process: LLM via Vertex direct, PR via the gateway's own
+            # GITHUB_SAFE_MERGE_TOKEN secret, concurrency limited only by
+            # dev_autopilot_config.concurrency_cap.
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=false)
             # Worker-owned PR creation: after the worker validates Claude's
             # output it ALSO creates the branch + writes files + opens the
             # PR itself, then writes pr_url back to the queue. This avoids
