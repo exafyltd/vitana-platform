@@ -246,6 +246,38 @@ export interface DiaryBlock {
   fetched_at: string;
 }
 
+// Phase 7a — GOVERNANCE block. Tells the brain what NOT to pitch.
+// Sources:
+//   - autopilot_recommendations rows the user already rejected, archived,
+//     or snoozed (don't re-pitch within the cooldown window).
+//   - user_proactive_pause rows (user said "stop suggesting X").
+
+export interface GovernanceDismissal {
+  recommendation_id: string;
+  title: string;
+  domain: string | null;
+  status: string;          // rejected | auto_archived | etc.
+  // Window in which the recommendation should NOT be re-pitched
+  cooldown_until: string | null;
+  reason: 'rejected' | 'auto_archived' | 'snoozed' | 'expired';
+  source_signal: string | null;
+}
+
+export interface GovernancePause {
+  scope: string;            // 'orb_proactive' | 'autopilot' | … (free-form)
+  reason: string | null;
+  pause_until: string | null;
+  created_at: string;
+}
+
+export interface GovernanceBlock {
+  kind: 'GOVERNANCE';
+  dismissals: GovernanceDismissal[];
+  pauses: GovernancePause[];
+  source: 'autopilot_recommendations+user_proactive_pause';
+  fetched_at: string;
+}
+
 export type MemoryBlock =
   | IdentityBlock
   | EpisodicBlock
@@ -254,7 +286,8 @@ export type MemoryBlock =
   | NetworkBlock
   | LocationBlock
   | BiometricsBlock
-  | DiaryBlock;
+  | DiaryBlock
+  | GovernanceBlock;
 
 export interface MemoryPack {
   ok: boolean;
@@ -275,20 +308,23 @@ export interface MemoryPack {
 // Default block selection per intent (Phase 6a covers a subset; rest in 6b)
 // =============================================================================
 
-// Phase 6b: full per-intent default block selection from the plan
+// Phase 6b + 7a: full per-intent default block selection from the plan
 // (Part 6, Layer 1 Semantic API). IDENTITY is implicitly added to every
 // intent except system_introspect — modeled here as an explicit entry.
+// GOVERNANCE is added to intents where the brain might pitch something
+// (open_session, plan_next_action, community_intent), so it has the
+// "don't re-pitch this" list inline.
 const DEFAULT_BLOCKS_BY_INTENT: Record<MemoryIntent, MemoryBlockKind[]> = {
-  recall_recent:     ['IDENTITY', 'EPISODIC', 'DIARY'],
-  recall_history:    ['IDENTITY', 'EPISODIC', 'DIARY', 'NETWORK', 'SEMANTIC', 'TRAJECTORY'],
+  recall_recent:     ['IDENTITY', 'EPISODIC', 'DIARY', 'GOVERNANCE'],
+  recall_history:    ['IDENTITY', 'EPISODIC', 'DIARY', 'NETWORK', 'SEMANTIC', 'TRAJECTORY', 'GOVERNANCE'],
   identity:          ['IDENTITY', 'SEMANTIC'],
-  plan_next_action:  ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'LOCATION', 'SEMANTIC', 'NETWORK'],
-  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK'],
+  plan_next_action:  ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'LOCATION', 'SEMANTIC', 'NETWORK', 'GOVERNANCE'],
+  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK', 'GOVERNANCE'],
   health_query:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'SEMANTIC'],
   index_status:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS'],
   goal_check:        ['IDENTITY', 'SEMANTIC', 'TRAJECTORY', 'DIARY'],
   social_query:      ['IDENTITY', 'NETWORK', 'EPISODIC', 'DIARY'],
-  community_intent:  ['IDENTITY', 'NETWORK', 'LOCATION'],
+  community_intent:  ['IDENTITY', 'NETWORK', 'LOCATION', 'GOVERNANCE'],
   system_introspect: ['IDENTITY', 'EPISODIC'],
 };
 
@@ -788,6 +824,72 @@ async function fetchDiaryBlock(
   return { block, latency_ms: Date.now() - t0 };
 }
 
+// -----------------------------------------------------------------------------
+// GOVERNANCE — autopilot dismissals + user_proactive_pause
+// -----------------------------------------------------------------------------
+
+async function fetchGovernanceBlock(
+  input: MemoryReadInput
+): Promise<{ block: GovernanceBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // Cooldown window: the brain should NOT re-pitch a recommendation that
+  // was rejected/archived/snoozed within the last 14 days.
+  const cooldownStart = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+
+  const [recsRes, pausesRes] = await Promise.all([
+    supabase
+      .from('autopilot_recommendations')
+      .select('id, title, domain, status, snoozed_until, expires_at, signal_fingerprint, updated_at')
+      .eq('user_id', input.user_id)
+      .in('status', ['rejected', 'auto_archived'])
+      .gte('updated_at', cooldownStart)
+      .order('updated_at', { ascending: false })
+      .limit(50),
+    supabase
+      .from('user_proactive_pause')
+      .select('*')
+      .eq('user_id', input.user_id)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
+
+  const dismissals: GovernanceDismissal[] = (recsRes.data ?? []).map(r => ({
+    recommendation_id: r.id,
+    title: r.title,
+    domain: r.domain,
+    status: r.status,
+    cooldown_until: r.snoozed_until ?? r.expires_at ?? null,
+    reason: (r.status === 'rejected'
+      ? 'rejected'
+      : r.status === 'auto_archived'
+        ? 'auto_archived'
+        : (r.snoozed_until ? 'snoozed' : 'expired')) as GovernanceDismissal['reason'],
+    source_signal: r.signal_fingerprint,
+  }));
+
+  // user_proactive_pause schema is unknown at compile time (the table is
+  // empty and the plan doesn't fully spec it). Read everything and pick
+  // out plausible field names.
+  const pauses: GovernancePause[] = (pausesRes.data ?? []).map((p: any) => ({
+    scope: p.scope ?? p.kind ?? p.area ?? 'unknown',
+    reason: p.reason ?? p.note ?? null,
+    pause_until: p.pause_until ?? p.until ?? p.expires_at ?? null,
+    created_at: p.created_at ?? new Date().toISOString(),
+  }));
+
+  const block: GovernanceBlock = {
+    kind: 'GOVERNANCE',
+    dismissals,
+    pauses,
+    source: 'autopilot_recommendations+user_proactive_pause',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -976,6 +1078,21 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
           blocks['DIARY'] = r.value.block;
           streamsHit.push('memory_diary_entries');
           latencyPerStream['memory_diary_entries'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('GOVERNANCE')) {
+    fetchers.push(
+      withBudget(fetchGovernanceBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['autopilot_recommendations'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['GOVERNANCE'] = r.value.block;
+          streamsHit.push('autopilot_recommendations');
+          latencyPerStream['autopilot_recommendations'] = r.value.latency_ms;
         }
       })
     );
