@@ -5063,7 +5063,7 @@ async function executeLiveApiToolInner(
               result: JSON.stringify({
                 found: false,
                 reason: result.reason ?? 'no_pattern_match',
-                guidance: 'Voice should fall back to search_knowledge against the kb/vitana-system/how-to/ corpus.',
+                guidance: 'Voice should fall back to search_knowledge. Search the Maxina Instruction Manual (kb/instruction-manual/maxina/*) first — it covers every concept and screen with fixed sections (What it is / Why it matters / Where to find it / What you see / How to use it). The kb/vitana-system/how-to/ corpus is supporting material.',
               }),
             };
           }
@@ -6867,10 +6867,27 @@ Edge cases:
     "Was soll ich dir zeigen — einen Bildschirm oder wie etwas funktioniert?"
   - Composite ("open Diary AND tell me how to use it") → navigate FIRST,
     then immediately speak the explanation.
-  - If explain_feature returns found=false, fall back to search_knowledge
-    against the kb/vitana-system/how-to/ namespace (teach modes) or
-    proceed with navigation as fallback (teach_then_nav after offer
-    confirmed).
+  - If explain_feature returns found=false, fall back to search_knowledge.
+    The Maxina Instruction Manual at kb/instruction-manual/maxina/* is the
+    PRIMARY source for any "what is X" / "how does X work" / "what's on
+    this screen" / "where do I find X" question. It contains 92 chapters
+    covering every concept (Life Compass, Vitana Index, Autopilot, ORB,
+    Did You Know, Vitana ID, Memory, Permissions, etc.) and every screen
+    a Maxina community user can reach (81 screens). Each chapter has
+    fixed sections: "What it is", "Why it matters", "Where to find it",
+    "What you see on this screen", "How to use it". Teach in that order.
+    For action-shaped questions (TEACH_THEN_NAV) the chapter's
+    "Where to find it" + screen_id field tells you where to navigate
+    after the explanation.
+
+  - The kb/vitana-system/how-to/ namespace and Book of the Vitana Index
+    chapters remain available as supporting material; the Instruction
+    Manual is the layer the user sees, the how-to corpus is depth.
+
+  - When the user asks "where can I find X?" AFTER you have explained X,
+    use the screen_id from the chapter's front-matter to navigate. The
+    chapter's url_path field is the exact route. Speak ONE confirmation
+    sentence then call the navigation tool.
 
 Worked-example truth table:
 
