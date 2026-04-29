@@ -169,13 +169,19 @@ COMMENT ON FUNCTION activate_autopilot_recommendation IS
 DO $$
 DECLARE
   v_max BIGINT;
+  v_seq_last BIGINT;
 BEGIN
   SELECT COALESCE(MAX((REGEXP_MATCH(vtid, '^VTID-(\d+)$'))[1]::BIGINT), 0)
     INTO v_max
     FROM vtid_ledger
    WHERE vtid ~ '^VTID-\d+$';
+  -- Read the sequence's current value from the sequence relation rather than
+  -- currval(), which throws "is not yet defined in this session" when no
+  -- nextval() has been called yet in the migration's psql session.
+  SELECT last_value INTO v_seq_last FROM global_vtid_seq;
   -- Add a 100-row buffer so any manual VTIDs minted between this migration
   -- running and the first nextval() don't immediately re-collide.
-  PERFORM setval('global_vtid_seq', GREATEST(v_max + 100, currval('global_vtid_seq')));
-  RAISE NOTICE 'global_vtid_seq advanced to %, max ledger VTID was %', currval('global_vtid_seq'), v_max;
+  PERFORM setval('global_vtid_seq', GREATEST(v_max + 100, v_seq_last));
+  RAISE NOTICE 'global_vtid_seq advanced to %, max ledger VTID was %, prior seq last_value was %',
+    GREATEST(v_max + 100, v_seq_last), v_max, v_seq_last;
 END $$;
