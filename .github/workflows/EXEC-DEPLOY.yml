@@ -315,19 +315,24 @@ jobs:
             # instead of the direct Messages API, so they draw on the Claude
             # Pro/Max subscription via the worker's `claude -p` subprocess
             # rather than on the pay-per-token API credit balance.
-            # 2026-04-29 (VTID-02500b): flipped to false. The active LLM
-            # routing policy v7 routes the `worker` stage to Vertex AI /
-            # gemini-3-pro-preview, so the local worker is no longer the
-            # cheaper path — and the worker queue's max_concurrent=1 was
-            # the bottleneck (every batch of N tasks queued for ~12 min
-            # apiece, hitting the 720s gateway timeout). Plus the worker
-            # process running on the developer's machine doesn't have
-            # GITHUB_SAFE_MERGE_TOKEN, so PR-publish failed there. With
-            # this flag off, the gateway's runExecutionSession runs in-
-            # process: LLM via Vertex direct, PR via the gateway's own
-            # GITHUB_SAFE_MERGE_TOKEN secret, concurrency limited only by
-            # dev_autopilot_config.concurrency_cap.
-            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=false)
+            #
+            # 2026-04-29 history:
+            #   - PR #1081 (VTID-02500b) flipped this to false during the
+            #     SELF-HEAL-loop incident response, after misdiagnosing the
+            #     local worker's max_concurrent=1 bottleneck as a fundamental
+            #     architectural problem. It wasn't — bumping MAX_CONCURRENT
+            #     env on the worker (or running multiple worker procs)
+            #     restores parallelism, and the binary-path bug that started
+            #     the whole incident is independently fixed. Operator's
+            #     Claude Pro/Max subscription is the cheaper, higher-quality
+            #     path for the worker stage, so this commit restores it.
+            #
+            #   - Concurrent: LLM routing policy is being moved back to
+            #     v9 with worker.primary = claude_subscription/claude-opus-4-7,
+            #     fallback = vertex/gemini-3-pro-preview (covers worker
+            #     downtime / subscription rate-limits without halting the
+            #     autopilot).
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
             # Worker-owned PR creation: after the worker validates Claude's
             # output it ALSO creates the branch + writes files + opens the
             # PR itself, then writes pr_url back to the queue. This avoids
