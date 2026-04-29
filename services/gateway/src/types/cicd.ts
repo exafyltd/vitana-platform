@@ -518,6 +518,8 @@ export type CicdEventType =
   | 'tenant.health.computed'
   | 'tenant.health.regression_detected'
   | 'tenant.weekly.review.ready'
+  // BOOTSTRAP-ADMIN-DD: admin voice tool side-effects
+  | 'admin.autopilot.pause_requested'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events

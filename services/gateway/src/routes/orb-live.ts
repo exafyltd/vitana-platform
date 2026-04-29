@@ -48,6 +48,7 @@ import { processWithGemini, setThreadIdentity } from '../services/gemini-operato
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
+import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -1391,7 +1392,11 @@ async function buildBootstrapContextPack(
  * guided to public destinations like the Maxina portal. Authenticated
  * sessions get the full set including memory/knowledge/event search.
  */
-function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated', currentRoute?: string): object[] {
+function buildLiveApiTools(
+  mode: 'anonymous' | 'authenticated' = 'authenticated',
+  currentRoute?: string,
+  activeRole?: string,
+): object[] {
   const navigatorTools: any[] = [
     {
       name: 'get_current_screen',
@@ -2731,6 +2736,12 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['intent_id'],
           },
         },
+        // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
+        // is admin / exafy_admin / developer. Community sessions never see them
+        // and the orb dispatcher rejects them server-side regardless.
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? ADMIN_TOOL_SCHEMAS
+          : []),
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -5875,12 +5886,27 @@ async function executeLiveApiToolInner(
         }
       }
 
-      default:
+      default: {
+        // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
+        // The handlers re-check role server-side, so a community session that
+        // somehow names an admin tool will be denied with admin_role_required.
+        if (ADMIN_TOOL_NAMES.includes(toolName)) {
+          const handler = ADMIN_TOOL_HANDLERS[toolName];
+          return await handler(
+            {
+              tenantId: session.identity!.tenant_id || '',
+              userId: session.identity!.user_id,
+              activeRole: session.active_role || session.identity?.role || 'community',
+            },
+            args,
+          );
+        }
         return {
           success: false,
           result: '',
           error: `Unknown tool: ${toolName}`,
         };
+      }
     }
   } catch (err: any) {
     console.error(`[VTID-01224] Tool execution error (${toolName}):`, err.message);
@@ -7566,7 +7592,8 @@ async function connectToLiveAPI(
           // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
           tools: buildLiveApiTools(
             session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
-            session.current_route
+            session.current_route,
+            session.active_role || session.identity?.role || undefined,
           )
         }
       };
