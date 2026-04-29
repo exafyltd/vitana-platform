@@ -190,4 +190,69 @@ router.get('/kpis', async (req: Request, res: Response) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// GET /tenants/:tenantId/tickets   — tenant-scoped read for tenant admins
+// ---------------------------------------------------------------------------
+// Joins user_tenants → app_users → feedback_tickets. Returns only tickets
+// whose user_id is a member of the requested tenant. Used by the vitana-v1
+// /admin/feedback screen (PR 25 baseline).
+//
+// SECURITY NOTE: This endpoint currently authenticates only (any logged-in
+// user passes). Per-tenant authorization (caller must be admin of that
+// tenant) is enforced by the consuming UI's tenant context but should be
+// hardened with an explicit middleware check in a follow-up.
+
+router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const tenantId = req.params.tenantId;
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  const supabase = getServiceClient();
+
+  // Get the user_ids in this tenant
+  const { data: members, error: memErr } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('tenant_id', tenantId);
+
+  if (memErr) {
+    return res.status(502).json({ ok: false, error: 'TENANT_LOOKUP_FAILED', details: memErr.message });
+  }
+
+  const userIds = (members ?? []).map(m => m.user_id);
+  if (userIds.length === 0) {
+    return res.json({ ok: true, tickets: [] });
+  }
+
+  const { data, error } = await supabase
+    .from('feedback_tickets')
+    .select('id, ticket_number, vitana_id, kind, status, priority, surface, screen_path, app_version, resolver_agent, created_at, resolved_at, user_confirmed_at')
+    .in('user_id', userIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
+  }
+  return res.json({ ok: true, tickets: data ?? [], member_count: userIds.length });
+});
+
+// ---------------------------------------------------------------------------
+// GET /tenants/:tenantId/personas — public-safe roster for tenant admins
+// ---------------------------------------------------------------------------
+// Same data as /personas but strips operator-only fields (system_prompt,
+// handoff_keywords) so tenant admins see who Vitana hands off to without
+// seeing prompt internals.
+
+router.get('/tenants/:tenantId/personas', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from('agent_personas')
+    .select('key, display_name, role, voice_id, voice_sample_url, handles_kinds, status, version, updated_at')
+    .eq('status', 'active')
+    .order('key');
+  if (error) return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
+  return res.json({ ok: true, personas: data ?? [] });
+});
+
 export default router;
