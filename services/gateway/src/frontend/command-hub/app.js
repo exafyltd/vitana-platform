@@ -2794,7 +2794,8 @@ const NAVIGATION_CONFIG = [
             { "key": "database-schemas", "path": "/command-hub/docs/database-schemas/" },
             { "key": "architecture", "path": "/command-hub/docs/architecture/" },
             { "key": "workforce", "path": "/command-hub/docs/workforce/" },
-            { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" }
+            { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" },
+            { "key": "manuals", "path": "/command-hub/docs/manuals/" }
         ]
     },
     {
@@ -6249,6 +6250,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDocsSystemKnowledgeView());
     } else if (moduleKey === 'docs' && tab === 'specialists') {
         container.appendChild(renderDocsSpecialistsView());
+    } else if (moduleKey === 'docs' && tab === 'manuals') {
+        container.appendChild(renderDocsManualsView());
 
     // ──── Feedback tabs (VTID-02605) ────
     } else if (moduleKey === 'feedback' && tab === 'inbox') {
@@ -35136,6 +35139,242 @@ function renderDocsSystemKnowledgeView() {
             ' words · updated ' +
             new Date(doc.updated_at).toLocaleString();
         viewerPane.appendChild(meta);
+    }
+    panes.appendChild(viewerPane);
+
+    container.appendChild(panes);
+    return container;
+}
+
+// ===========================================================================
+// Docs > Manuals: per-tenant Instruction Manual catalog
+// ===========================================================================
+// Renders the Maxina Instruction Manual (and other tenant manuals as they
+// are authored) as a 13-module tree on the left, chapter content on the
+// right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
+// Edits route to the System Knowledge tab where the existing editor lives.
+
+const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
+const MANUAL_MODULE_LABELS = {
+    '00-concepts': '0. Foundational Concepts',
+    '01-public': '1. Public & Onboarding',
+    '02-home': '2. Home',
+    '03-community': '3. Community',
+    '04-discover': '4. Discover',
+    '05-health': '5. Health',
+    '06-inbox': '6. Inbox',
+    '07-ai': '7. AI',
+    '08-wallet': '8. Wallet',
+    '09-sharing': '9. Sharing',
+    '10-memory': '10. Memory',
+    '11-settings': '11. Settings',
+    '12-utility': '12. Utility',
+    '13-overlays': '13. Overlays & Popups',
+};
+
+function initManualsState() {
+    if (!state.manuals) {
+        state.manuals = {
+            tenant: 'maxina',
+            docs: [],
+            loading: false,
+            selectedId: null,
+            selectedDoc: null,
+            error: null,
+        };
+    }
+}
+
+async function fetchManualsForTenant(tenant) {
+    state.manuals.loading = true;
+    state.manuals.error = null;
+    renderCurrentRoute();
+    try {
+        const prefix = 'kb/instruction-manual/' + tenant + '/';
+        const qs = new URLSearchParams({ path_prefix: prefix });
+        const response = await fetch('/api/v1/admin/system-kb/docs?' + qs.toString(), {
+            headers: { Authorization: 'Bearer ' + getAuthToken() },
+            credentials: 'include',
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        state.manuals.docs = data.docs || data || [];
+    } catch (err) {
+        state.manuals.error = err && err.message ? err.message : String(err);
+        state.manuals.docs = [];
+    } finally {
+        state.manuals.loading = false;
+        renderCurrentRoute();
+    }
+}
+
+async function fetchManualDoc(id) {
+    state.manuals.selectedId = id;
+    state.manuals.selectedDoc = null;
+    renderCurrentRoute();
+    try {
+        const response = await fetch('/api/v1/admin/system-kb/docs/' + encodeURIComponent(id), {
+            headers: { Authorization: 'Bearer ' + getAuthToken() },
+            credentials: 'include',
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        state.manuals.selectedDoc = await response.json();
+    } catch (err) {
+        state.manuals.error = err && err.message ? err.message : String(err);
+    } finally {
+        renderCurrentRoute();
+    }
+}
+
+function groupManualsByModule(docs) {
+    const groups = {};
+    Object.keys(MANUAL_MODULE_LABELS).forEach(function (k) { groups[k] = []; });
+    docs.forEach(function (doc) {
+        const path = doc.path || '';
+        const m = path.match(/kb\/instruction-manual\/[^/]+\/([0-9]{2}-[a-z]+)\//);
+        const moduleKey = m ? m[1] : '00-concepts';
+        if (!groups[moduleKey]) groups[moduleKey] = [];
+        groups[moduleKey].push(doc);
+    });
+    Object.keys(groups).forEach(function (k) {
+        groups[k].sort(function (a, b) { return (a.path || '').localeCompare(b.path || ''); });
+    });
+    return groups;
+}
+
+function renderDocsManualsView() {
+    initManualsState();
+    if (!state.manuals.docs.length && !state.manuals.loading && !state.manuals.error) {
+        fetchManualsForTenant(state.manuals.tenant);
+    }
+
+    const container = document.createElement('div');
+    container.className = 'docs-container';
+    container.style.padding = '1.5rem';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Tenant Instruction Manuals';
+    container.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent =
+        'Per-tenant chapters teaching every screen and concept the AI assistant explains to community users. Maxina ships first; other tenants populate as their manuals are authored. Edits route to the System Knowledge tab.';
+    container.appendChild(subtitle);
+
+    // Tenant selector
+    const tenantRow = document.createElement('div');
+    tenantRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin:0.5rem 0 1rem;';
+    const tenantLabel = document.createElement('span');
+    tenantLabel.textContent = 'Tenant:';
+    tenantLabel.style.cssText = 'opacity:0.7;font-size:0.85rem;';
+    tenantRow.appendChild(tenantLabel);
+    const tenantSelect = document.createElement('select');
+    tenantSelect.style.cssText = 'padding:0.4rem 0.6rem;background:var(--bg-secondary,#1a1a1a);color:inherit;border:1px solid var(--border,#333);border-radius:4px;';
+    TENANT_MANUAL_TENANTS.forEach(function (t) {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+        if (t === state.manuals.tenant) opt.selected = true;
+        tenantSelect.appendChild(opt);
+    });
+    tenantSelect.onchange = function () {
+        state.manuals.tenant = tenantSelect.value;
+        state.manuals.docs = [];
+        state.manuals.selectedId = null;
+        state.manuals.selectedDoc = null;
+        fetchManualsForTenant(state.manuals.tenant);
+    };
+    tenantRow.appendChild(tenantSelect);
+    container.appendChild(tenantRow);
+
+    if (state.manuals.loading) {
+        const loading = document.createElement('div');
+        loading.style.padding = '2rem';
+        loading.textContent = 'Loading manual…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.manuals.error) {
+        const errEl = document.createElement('div');
+        errEl.style.cssText = 'padding:1rem;color:#f88;background:rgba(255,100,100,0.1);border-radius:4px;';
+        errEl.textContent = 'Could not load manual: ' + state.manuals.error;
+        container.appendChild(errEl);
+        return container;
+    }
+
+    if (!state.manuals.docs.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:2rem;text-align:center;opacity:0.7;';
+        empty.innerHTML =
+            '<p><strong>The ' + state.manuals.tenant.charAt(0).toUpperCase() + state.manuals.tenant.slice(1) + ' manual has not been authored yet.</strong></p>' +
+            '<p style="font-size:0.9rem;margin-top:0.5rem;">See the Maxina manual as a reference template. New tenant manuals live under <code>kb/instruction-manual/&lt;tenant&gt;/</code> and are seeded by the <code>build-instruction-manual-seed.mjs</code> script.</p>';
+        container.appendChild(empty);
+        return container;
+    }
+
+    const groups = groupManualsByModule(state.manuals.docs);
+
+    const panes = document.createElement('div');
+    panes.style.cssText = 'display:flex;gap:1rem;align-items:stretch;min-height:60vh;';
+
+    const treePane = document.createElement('div');
+    treePane.style.cssText = 'flex:0 0 320px;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:0.75rem;overflow-y:auto;max-height:75vh;';
+    Object.keys(MANUAL_MODULE_LABELS).forEach(function (moduleKey) {
+        const docs = groups[moduleKey] || [];
+        if (!docs.length) return;
+        const group = document.createElement('details');
+        group.open = moduleKey === '00-concepts';
+        group.style.marginBottom = '0.5rem';
+        const summary = document.createElement('summary');
+        summary.style.cssText = 'cursor:pointer;font-weight:600;padding:0.3rem 0;';
+        summary.textContent = MANUAL_MODULE_LABELS[moduleKey] + ' (' + docs.length + ')';
+        group.appendChild(summary);
+        docs.forEach(function (doc) {
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = doc.title || doc.path;
+            link.style.cssText = 'display:block;padding:0.25rem 0.5rem;font-size:0.85rem;color:inherit;text-decoration:none;border-radius:3px;';
+            if (state.manuals.selectedId === doc.id) {
+                link.style.background = 'var(--accent,#4a90e2)';
+                link.style.color = '#fff';
+            }
+            link.onclick = function (ev) {
+                ev.preventDefault();
+                fetchManualDoc(doc.id);
+            };
+            group.appendChild(link);
+        });
+        treePane.appendChild(group);
+    });
+    panes.appendChild(treePane);
+
+    const viewerPane = document.createElement('div');
+    viewerPane.style.cssText = 'flex:1;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:1rem;overflow-y:auto;max-height:75vh;';
+    if (state.manuals.selectedDoc) {
+        const doc = state.manuals.selectedDoc;
+        const docTitle = document.createElement('h3');
+        docTitle.textContent = doc.title || doc.path;
+        viewerPane.appendChild(docTitle);
+        const docPath = document.createElement('div');
+        docPath.style.cssText = 'font-size:0.75rem;opacity:0.6;margin-bottom:0.75rem;font-family:monospace;';
+        docPath.textContent = doc.path || '';
+        viewerPane.appendChild(docPath);
+        const editLink = document.createElement('a');
+        editLink.href = '/command-hub/docs/system-knowledge/?doc=' + encodeURIComponent(doc.id);
+        editLink.textContent = 'Edit in System Knowledge →';
+        editLink.style.cssText = 'display:inline-block;margin-bottom:1rem;color:var(--accent,#4a90e2);font-size:0.85rem;';
+        viewerPane.appendChild(editLink);
+        const body = document.createElement('pre');
+        body.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.9rem;line-height:1.5;';
+        body.textContent = doc.content || '';
+        viewerPane.appendChild(body);
+    } else {
+        const placeholder = document.createElement('div');
+        placeholder.style.cssText = 'padding:2rem;opacity:0.6;text-align:center;';
+        placeholder.textContent = 'Select a chapter on the left to read it.';
+        viewerPane.appendChild(placeholder);
     }
     panes.appendChild(viewerPane);
 
