@@ -1081,6 +1081,44 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
       }
     }
 
+    // Bridge dev_autopilot* activations into the executor (cooldown skipped).
+    // Without this, "Activate" only writes the vtid_ledger row and the card
+    // sits in IN PROGRESS forever — there is no other code path that picks
+    // up vtid_ledger rows for these findings. The reaper tick in
+    // dev-autopilot-execute.ts catches any failures from this fire-and-forget
+    // call. Fire-and-forget on purpose so a slow LLM plan generation doesn't
+    // block the activate response.
+    if (!response.already_activated && response.vtid) {
+      try {
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+        if (supabaseUrl && svcKey) {
+          const srcResp = await fetch(
+            `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=source_type&limit=1`,
+            { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+          );
+          const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
+          const srcType = srcRows[0]?.source_type;
+          if (srcType === 'dev_autopilot' || srcType === 'dev_autopilot_impact') {
+            const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
+            bridgeActivationToExecution(id, userId || null)
+              .then((br) => {
+                if (br.ok) {
+                  console.log(`${LOG_PREFIX} Bridged ${id.slice(0, 8)} → execution ${br.execution_id?.slice(0, 8) || '?'} (${br.skipped || 'enqueued'})`);
+                } else {
+                  console.warn(`${LOG_PREFIX} Bridge failed for ${id.slice(0, 8)}: ${br.error}`);
+                }
+              })
+              .catch((bridgeErr: any) => {
+                console.error(`${LOG_PREFIX} Bridge error for ${id.slice(0, 8)}: ${bridgeErr.message}`);
+              });
+          }
+        }
+      } catch (bridgeErr: any) {
+        console.error(`${LOG_PREFIX} Bridge dispatch error (non-fatal):`, bridgeErr.message);
+      }
+    }
+
     return res.status(200).json({
       ...response,
       vtid_ref: 'VTID-01180',

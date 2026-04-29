@@ -31,6 +31,7 @@ import {
   TriageMode,
 } from './self-healing-triage-service';
 import { emitOasisEvent } from './oasis-event-service';
+import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -114,6 +115,7 @@ export type BridgeOutcome =
   | 'self_heal_injected'
   | 'escalated'
   | 'already_bridged'
+  | 'env_blocker'
   | 'revert_failed'
   | 'triage_failed'
   | 'no_execution'
@@ -346,6 +348,68 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       outcome: 'already_bridged',
       execution_id: exec.id,
       self_healing_vtid: exec.self_healing_vtid || undefined,
+    };
+  }
+
+  // ENV-ERROR SHORT-CIRCUIT (2026-04-28 incident): when the failure is
+  // environmental (binary missing, OOM, network, container recycle), running
+  // triage produces a useless report ("install the binary") and the
+  // reconciler then spawns a SELF-HEAL retry VTID per failure. The retry
+  // execution hits the same blocker → infinite loop of stuck in_progress
+  // rows on the operator's Tasks board.
+  //
+  // Skip triage entirely. Mark the execution failed_escalated, write a
+  // self_healing_log entry classified `environmental_blocker` so the
+  // reconciler also short-circuits (see self-healing-reconciler.ts), and
+  // emit an OASIS event so an operator sees the infrastructure problem
+  // instead of a wall of phantom retries.
+  if (isEnvironmentalBlocker(input.error)) {
+    console.warn(`${LOG_PREFIX} environmental blocker for ${exec.id.slice(0, 8)}: ${input.error?.slice(0, 120)} — skipping triage + retry`);
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'failed_escalated',
+        failure_stage: input.failure_stage,
+        failure_event_id: input.failure_event_id || null,
+        metadata: {
+          ...(exec.metadata || {}),
+          bridge_outcome: 'env_blocker_skip_triage',
+          bridge_stage: input.failure_stage,
+          env_error: input.error,
+        },
+        completed_at: new Date().toISOString(),
+      }),
+    });
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'environmental_blocker',
+      confidence: 1.0,
+      diagnosis: {
+        summary: `Environmental blocker — triage + retry skipped to prevent SELF-HEAL retry loop. Fix the host environment, not the code.`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        stage: input.failure_stage,
+        error: input.error,
+      },
+      outcome: 'escalated',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
+    });
+    await emitOasisEvent({
+      vtid: BRIDGE_VTID,
+      type: 'dev_autopilot.execution.escalated',
+      source: 'dev-autopilot-bridge',
+      status: 'error',
+      message: `Execution ${exec.id.slice(0, 8)} env blocker — operator action needed (no autonomous retry)`,
+      payload: { execution_id: exec.id, stage: input.failure_stage, error: input.error, env_blocker: true },
+    });
+    return {
+      ok: false,
+      outcome: 'env_blocker',
+      execution_id: exec.id,
+      error: input.error,
     };
   }
 
