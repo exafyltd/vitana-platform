@@ -30,6 +30,7 @@ import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleAuth } from 'google-auth-library';
 import { emitOasisEvent } from './oasis-event-service';
 import { getVoiceSpecHint } from './voice-spec-hints';
+import { notifyGChat } from './self-healing-snapshot-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -779,20 +780,28 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   // human" rather than "stay quiet" — fail-loud is the safer default.
   const STAY_AND_PATCH_TRACKS = new Set(['stay_and_patch']);
   if (!STAY_AND_PATCH_TRACKS.has(report.recommendation.track)) {
+    const summary = (report.recommendation.summary || '').slice(0, 280);
+    const message =
+      `🧠 *Voice — architectural action recommended*\n` +
+      `Class: \`${input.class}\`\n` +
+      `Track: *${report.recommendation.track}* ` +
+      `(confidence ${(report.recommendation.confidence * 100).toFixed(0)}%)\n` +
+      `Trigger: ${input.trigger_reason}\n` +
+      `${summary}\n` +
+      `Report ID: \`${reportId}\` — open Voice Lab → Healing tab to read & Accept & Execute`;
+    console.log(
+      `[voice-architecture-investigator] gchat-ping prep: track=${report.recommendation.track} ` +
+      `webhook_set=${Boolean(process.env.GCHAT_COMMANDHUB_WEBHOOK)}`,
+    );
     try {
-      const { notifyGChat } = await import('./self-healing-snapshot-service');
-      const summary = (report.recommendation.summary || '').slice(0, 280);
-      await notifyGChat(
-        `🧠 *Voice — architectural action recommended*\n` +
-        `Class: \`${input.class}\`\n` +
-        `Track: *${report.recommendation.track}* ` +
-        `(confidence ${(report.recommendation.confidence * 100).toFixed(0)}%)\n` +
-        `Trigger: ${input.trigger_reason}\n` +
-        `${summary}\n` +
-        `Report ID: \`${reportId}\` — open Voice Lab → Healing tab to read & Accept & Execute`,
+      await notifyGChat(message);
+      console.log(
+        `[voice-architecture-investigator] gchat-ping sent for class=${input.class} report=${reportId}`,
       );
-    } catch {
-      /* best-effort */
+    } catch (err: any) {
+      console.error(
+        `[voice-architecture-investigator] gchat-ping FAILED: ${err?.message ?? err}`,
+      );
     }
   }
 
