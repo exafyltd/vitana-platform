@@ -20,7 +20,8 @@
     "models-evaluations",
     "testing-qa",
     "intelligence-memory-dev",
-    "docs"
+    "docs",
+    "feedback"
   ],
   "module_catalog": {
     "overview": [
@@ -169,11 +170,17 @@
       "database-schemas",
       "architecture",
       "workforce",
-      "system-knowledge"
+      "system-knowledge",
+      "specialists"
+    ],
+    "feedback": [
+      "inbox",
+      "handoffs",
+      "kpis"
     ]
   },
   "screen_inventory": {
-    "total_screens": 110,
+    "total_screens": 114,
     "total_entries": 289,
     "last_synced": "2026-04-25",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
