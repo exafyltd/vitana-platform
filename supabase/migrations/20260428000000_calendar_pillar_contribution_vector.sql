@@ -33,20 +33,26 @@ ALTER TABLE public.calendar_events ADD CONSTRAINT valid_pillar
     'nutrition', 'hydration', 'exercise', 'sleep', 'mental'
   ));
 
--- contribution_vector must be a JSON object whose keys are pillar names and
--- values are non-negative numbers. We enforce shape softly via a CHECK that
--- only validates the top-level keys; deeper validation lives at the API layer.
+-- contribution_vector must be a JSON object whose keys are the 5 canonical
+-- pillars. We can't use a subquery in CHECK (Postgres rejects them), so we
+-- validate by key-stripping: removing every allowed pillar key and asserting
+-- the remainder is the empty object. Deeper value validation (non-negative
+-- numbers) lives at the API layer (Zod) since CHECK can't iterate values
+-- without a subquery either.
 ALTER TABLE public.calendar_events DROP CONSTRAINT IF EXISTS valid_contribution_vector;
 ALTER TABLE public.calendar_events ADD CONSTRAINT valid_contribution_vector
   CHECK (
     contribution_vector IS NULL
     OR (
       jsonb_typeof(contribution_vector) = 'object'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM jsonb_object_keys(contribution_vector) AS k
-        WHERE k NOT IN ('nutrition', 'hydration', 'exercise', 'sleep', 'mental')
-      )
+      AND (
+        contribution_vector
+          - 'nutrition'
+          - 'hydration'
+          - 'exercise'
+          - 'sleep'
+          - 'mental'
+      ) = '{}'::jsonb
     )
   );
 
@@ -54,22 +60,25 @@ ALTER TABLE public.calendar_events ADD CONSTRAINT valid_contribution_vector
 -- 3. Backfill from existing wellness_tags `pillar:*` entries (best-effort)
 --
 -- Existing producers may already write `pillar:nutrition` etc. into
--- wellness_tags. Extract the first such tag into the new column so frontend
--- consumers see a typed value immediately for already-tagged events.
+-- wellness_tags. We extract the FIRST such tag (lowest array ordinality) per
+-- row so the backfill is deterministic when an event has multiple pillar
+-- tags — re-running this migration on the same data picks the same winner
+-- every time. DISTINCT ON + ORDER BY enforces the choice.
 -- ---------------------------------------------------------------------------
 
 UPDATE public.calendar_events
 SET pillar = sub.pillar_value
 FROM (
-  SELECT
-    id,
-    LOWER(SUBSTRING(tag FROM 8)) AS pillar_value
-  FROM public.calendar_events,
-       UNNEST(wellness_tags) AS tag
-  WHERE tag ILIKE 'pillar:%'
-    AND LOWER(SUBSTRING(tag FROM 8)) IN (
+  SELECT DISTINCT ON (e.id)
+    e.id,
+    LOWER(SUBSTRING(t.tag FROM 8)) AS pillar_value
+  FROM public.calendar_events e,
+       UNNEST(e.wellness_tags) WITH ORDINALITY AS t(tag, ord)
+  WHERE t.tag ILIKE 'pillar:%'
+    AND LOWER(SUBSTRING(t.tag FROM 8)) IN (
       'nutrition', 'hydration', 'exercise', 'sleep', 'mental'
     )
+  ORDER BY e.id, t.ord ASC
 ) AS sub
 WHERE public.calendar_events.id = sub.id
   AND public.calendar_events.pillar IS NULL;
