@@ -8,6 +8,10 @@
  *   GET    /unread-count   — Unread badge count
  *   POST   /:id/read       — Mark notification as read
  *   POST   /mark-all-read  — Mark all notifications as read
+ *   DELETE /:id            — Delete a single notification
+ *   DELETE /               — Delete all notifications for the user
+ *                            (optional ?read_only=true to keep unread)
+ *                            (optional ?category=<slug> to scope by type list)
  */
 
 import { Router, Request, Response } from 'express';
@@ -160,6 +164,67 @@ router.post('/mark-all-read', requireAuth, requireTenant, async (req: Request, r
     .eq('user_id', identity.user_id)
     .eq('tenant_id', identity.tenant_id)
     .is('read_at', null);
+
+  if (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  res.json({ ok: true });
+});
+
+// ── DELETE /:id — Delete a single notification ─────────────
+
+router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from('user_notifications')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('user_id', identity.user_id);
+
+  if (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  res.json({ ok: true });
+});
+
+// ── DELETE / — Delete all (optionally scoped) ──────────────
+//   ?read_only=true        delete only already-read notifications
+//   ?types=a,b,c           delete only notifications whose `type` is in the list
+//
+// The two filters compose: pass both to delete read-only notifications
+// for a specific category's types.
+
+router.delete('/', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const readOnly = req.query.read_only === 'true' || req.query.read_only === '1';
+  const typesRaw = typeof req.query.types === 'string' ? req.query.types : '';
+  const types = typesRaw
+    .split(',')
+    .map((t: string) => t.trim())
+    .filter(Boolean);
+
+  const supabase = getSupabase();
+  let query = supabase
+    .from('user_notifications')
+    .delete()
+    .eq('user_id', identity.user_id)
+    .eq('tenant_id', identity.tenant_id);
+
+  if (readOnly) {
+    query = query.not('read_at', 'is', null);
+  }
+  if (types.length > 0) {
+    query = query.in('type', types);
+  }
+
+  const { error } = await query;
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
