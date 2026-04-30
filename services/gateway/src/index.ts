@@ -601,6 +601,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-0526-D: Telemetry routes with stage counters
   mountRouterSync(app, '/api/v1/telemetry', telemetryRouter, { owner: 'telemetry' });
 
+  // Vitana Index — celebrate() analytics ingestion (light-weight, fire-and-forget)
+  const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
+  mountRouterSync(app, '/api/v1/analytics', analyticsCelebrateRouter, { owner: 'analytics-celebrate' });
+
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
 

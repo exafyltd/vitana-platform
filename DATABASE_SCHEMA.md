@@ -402,6 +402,49 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
+| 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
+
+---
+
+### calendar_events (Vitana Index linkage columns)
+
+**Purpose:** Typed columns added to the existing `calendar_events` table so the frontend can render per-event pillar chips and the calendar "Today's Index pulse" strip without falling back to `pillar:*` entries inside `wellness_tags`. Both columns are nullable so legacy rows continue working.
+
+**Used by:** `services/gateway/src/types/calendar.ts`, `services/gateway/src/services/calendar-service.ts`. Frontend consumer: `src/components/calendar/EnhancedCalendarPopup.tsx` (vitana-v1).
+
+**Migration:** `supabase/migrations/20260428000000_calendar_pillar_contribution_vector.sql`
+
+**Columns added:**
+```sql
+ALTER TABLE calendar_events ADD COLUMN pillar TEXT;
+ALTER TABLE calendar_events ADD COLUMN contribution_vector JSONB;
+
+ALTER TABLE calendar_events ADD CONSTRAINT valid_pillar
+  CHECK (pillar IS NULL OR pillar IN
+    ('nutrition', 'hydration', 'exercise', 'sleep', 'mental'));
+
+-- contribution_vector: object whose keys are the 5 canonical pillars.
+-- Postgres rejects subqueries inside CHECK, so we validate by key-stripping:
+-- removing every allowed key with `-` and asserting the remainder is empty.
+-- Value-level validation (non-negative numbers) is enforced by the gateway
+-- Zod schema since CHECK can't iterate values without a subquery either.
+ALTER TABLE calendar_events ADD CONSTRAINT valid_contribution_vector
+  CHECK (
+    contribution_vector IS NULL
+    OR (jsonb_typeof(contribution_vector) = 'object'
+        AND (contribution_vector
+             - 'nutrition' - 'hydration' - 'exercise'
+             - 'sleep' - 'mental') = '{}'::jsonb)
+  );
+
+CREATE INDEX idx_calendar_events_pillar_upcoming
+  ON calendar_events (user_id, pillar, start_time)
+  WHERE pillar IS NOT NULL AND status != 'cancelled';
+```
+
+**Backfill:** the migration extracts the first `pillar:<key>` entry from `wellness_tags` into the new `pillar` column for legacy rows that already had the heuristic tag, using `UNNEST(...) WITH ORDINALITY` + `DISTINCT ON` so the choice is deterministic when an event has multiple pillar tags.
+
+**Notes:** the frontend's `derivePillar` helper now reads `event.pillar` first; falls back to the existing `wellness_tags` and `event_type` heuristic when both new columns are null.
 
 ---
 
