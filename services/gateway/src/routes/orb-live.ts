@@ -727,6 +727,12 @@ interface GeminiLiveSession {
   audioInChunks: number;
   videoInFrames: number;
   audioOutChunks: number;
+  // VTID-02637: Idempotency flag for connection_issue emission. The upstream
+  // WS error handler and close handler both fire on a real disconnect, and
+  // both used to emit connection_issue — producing the user-visible "internet
+  // problems message twice in a row" symptom on iOS. Set to true on the
+  // first emit; subsequent emit sites check and skip.
+  connectionIssueEmitted?: boolean;
   // VTID-01224: Identity for context retrieval (server-verified from JWT)
   identity?: SupabaseIdentity;
   // VTID-01225-ROLE: User's application-level active_role (community/admin/developer/etc.)
@@ -6324,11 +6330,17 @@ function buildTemporalJourneyContextSection(
   };
   switch (bucket) {
     case 'reconnect':
-      lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
-      lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name. Do NOT introduce yourself.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm but direct — no filler like "of course", "happy to", "sure".');
+      // VTID-02637: This is a transparent server-side reconnect (Vertex 5-min
+      // session limit, network blip, or stall recovery). The user did NOT
+      // perceive any pause — they may still be mid-thought or already speaking.
+      // Speaking ANY proactive phrase here ("Picking up where we left off?",
+      // "I'm listening", "Where were we?") creates the apology-loop bug: every
+      // reconnect prompts a new spoken interjection that the user reads as
+      // "Vitana keeps apologizing for connection issues". Stay silent. Wait.
+      lines.push('- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).');
+      lines.push('  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I\'m back", "I\'m listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.');
+      lines.push('  • Wait for the user to speak. Your next message must be a direct response to the user\'s next utterance — nothing else.');
+      lines.push('  • If the user says nothing, you say nothing. Silence is correct here.');
       break;
     case 'recent':
       lines.push('- BUCKET = recent (2–15 min since last session).');
@@ -6405,7 +6417,14 @@ function buildTemporalJourneyContextSection(
       break;
   }
 
-  if (temporal.wasFailure && (bucket === 'reconnect' || bucket === 'recent')) {
+  // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
+  // delivered (turn_count=0 or audio_out=0). For 'recent' bucket (true new
+  // user-initiated session 2-15min after a failed one), an apology is the
+  // right behavior. For 'reconnect' bucket (transparent server-side WS
+  // recycle that the user never perceived), an apology is the bug — the
+  // user is still in the same conversation. Restrict the override to
+  // 'recent' only.
+  if (temporal.wasFailure && bucket === 'recent') {
     lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
   }
 
@@ -6559,7 +6578,7 @@ ${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
 
 GREETING RULES (CRITICAL):
 ${isReconnect
-    ? '- This is a SESSION CONTINUATION after a brief connection interruption. Do NOT greet the user again. Do NOT say hello, welcome back, or any greeting. Simply continue the conversation naturally from where you left off. Wait for the user to speak.'
+    ? '- VTID-02637 RECONNECT SILENCE RULE: This is a transparent server-side resume. The user has NOT noticed any pause and may already be mid-thought. DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I\'m back", "where were we", "picking up", "I\'m listening", or anything similar. Stay completely silent. Your next utterance must be a direct response to whatever the user says next, with NO prefix acknowledgment. If the user says nothing, you say nothing — silence is correct.'
     : (voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting')}
 
 INTERRUPTION HANDLING (CRITICAL):
@@ -6609,7 +6628,7 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
       ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
       : conversationHistory;
     instruction += `\n\n<conversation_history>
-The following is the recent conversation from this session before a brief connection interruption. Continue naturally from where you left off. Remember everything the user told you:
+The following is the recent conversation from this session, earlier today. Remember everything the user told you. Do NOT acknowledge any pause, interruption, or reconnection — the user did not perceive one. Wait for the user to speak next:
 ${trimmedHistory}
 </conversation_history>`;
   }
@@ -7352,16 +7371,15 @@ FIRST-TIME VISITORS DON'T GIVE INSTRUCTIONS — they explore. Lead the conversat
 - You CANNOT search memory, events, or personal data
 ${contextHints}
 ${isReconnect && conversationHistory ? `
-=== SESSION RECONNECTION — DO NOT GREET AGAIN ===
-This is a RECONNECTION after a brief interruption. The visitor was already talking to you. Do NOT start over. Do NOT say "Hello" or introduce yourself again. Do NOT deliver the introductory speech.
+=== SESSION CONTINUATION — VTID-02637 RECONNECT SILENCE RULE ===
+This is a transparent server-side resume. The visitor did NOT perceive any pause and may already be mid-thought.
 
-CONVERSATION SO FAR (before the interruption):
+DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I'm back", "where were we", "picking up", "I'm listening", or anything similar. Do NOT deliver the introductory speech. Do NOT start over.
+
+CONVERSATION SO FAR (continue silently from this point):
 ${conversationHistory}
 
-Your FIRST message after reconnection must be something like:
-"I'm back! Sorry about that brief interruption. We were just talking about [topic from conversation above]. Where were we?"
-
-Then continue the conversation naturally from where it left off. NEVER repeat the introductory speech.
+Your next message must be a direct response to whatever the visitor says next, with NO prefix acknowledgment of any pause. If the visitor says nothing, you say nothing — silence is correct here.
 ` : `
 === FIRST MESSAGE (READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR SUMMARIZE) ===
 CRITICAL RULES:
@@ -8510,7 +8528,10 @@ async function connectToLiveAPI(
       // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
       // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
       // the watchdog will fire later as a backup.
-      if (session.active) {
+      // VTID-02637: dedupe — error and close handlers both fire on the same
+      // disconnect. Without the flag the user heard "internet problems" twice.
+      if (session.active && !session.connectionIssueEmitted) {
+        session.connectionIssueEmitted = true;
         const lang = session.lang || 'en';
         const issueEvent = {
           type: 'connection_issue',
@@ -8612,12 +8633,15 @@ async function connectToLiveAPI(
               message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
               should_close: true,
             };
+            // VTID-02637: dedupe — only emit if we haven't already.
+            const shouldEmitIssue = !session.connectionIssueEmitted;
+            if (shouldEmitIssue) session.connectionIssueEmitted = true;
             if (session.sseResponse) {
               try { session.sseResponse.write(`data: ${JSON.stringify(failMsg)}\n\n`); } catch (e) { /* ignore */ }
-              try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* ignore */ }
+              if (shouldEmitIssue) try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* ignore */ }
             } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
               try { sendWsMessage(session.clientWs, failMsg); } catch (e) { /* ignore */ }
-              try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
+              if (shouldEmitIssue) try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
             }
           } else if (isStallRecovery) {
             // VTID-STALL-FIX: Reconnect succeeded after stall.
@@ -8664,12 +8688,15 @@ async function connectToLiveAPI(
           message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
           should_close: true,
         };
+        // VTID-02637: dedupe — error handler may already have emitted.
+        const shouldEmitIssue = !session.connectionIssueEmitted;
+        if (shouldEmitIssue) session.connectionIssueEmitted = true;
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(disconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
-          try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* SSE may be closed */ }
+          if (shouldEmitIssue) try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
           try { sendWsMessage(session.clientWs, disconnectMsg); } catch (e) { /* WS may be closed */ }
-          try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
+          if (shouldEmitIssue) try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
         }
 
         // Fire final extraction on genuine disconnect
@@ -8749,6 +8776,10 @@ async function attemptTransparentReconnect(
     session.upstreamWs = newWs;
     // Reset loop counter — fresh upstream connection starts clean
     session.consecutiveModelTurns = 0;
+    // VTID-02637: clear the dedupe flag so a future genuine disconnect can
+    // surface a fresh connection_issue. Without this, the user would never
+    // see a disconnect message again after the first transparent reconnect.
+    session.connectionIssueEmitted = false;
     console.log(`[VTID-STREAM-RECONNECT] Reconnected successfully for session ${session.sessionId} (reconnect #${reconnectCount + 1})`);
 
     // Notify client that reconnection succeeded (both SSE and WS)
@@ -8864,8 +8895,11 @@ function startResponseWatchdog(
       (session as any)._stallRecoveryPending = true;
       session.isModelSpeaking = false; // Ungate mic audio for reconnected session
       try { session.upstreamWs.terminate(); } catch (_e) { /* WS already closing */ }
-    } else {
-      // No upstream WS — just send connection_issue to client
+    } else if (!session.connectionIssueEmitted) {
+      // No upstream WS — just send connection_issue to client (once).
+      // VTID-02637: dedupe so a watchdog firing after an already-emitted close
+      // event doesn't produce a second user-visible apology.
+      session.connectionIssueEmitted = true;
       const issueEvent = {
         type: 'connection_issue',
         reason,
