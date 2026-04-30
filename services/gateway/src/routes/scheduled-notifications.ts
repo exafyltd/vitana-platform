@@ -769,6 +769,254 @@ router.post('/recommendation-cleanup', async (_req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-02601 — POST /reminders-tick — every 30 seconds (Cloud Scheduler)
+//
+// Picks up reminders whose next_fire_at is within 15 seconds, atomically
+// claims them via FOR UPDATE SKIP LOCKED, marks them 'fired', and lets the
+// LISTEN/NOTIFY trigger fan out to SSE subscribers (PR-2 wires consumers).
+// FCM fallback (PR-4) is scheduled at fire+5s if the row stays unacked.
+// =============================================================================
+router.post('/reminders-tick', async (_req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    // Atomic claim + mark dispatching. Look-ahead window: 15s. Limit batch
+    // size to avoid runaway under load — operators should run this every
+    // 30s so the worst-case fire latency stays under ~30s late / ~15s early.
+    const { data: claimed, error: claimErr } = await supa.rpc('reminders_claim_due', {
+      p_lookahead_seconds: 15,
+      p_limit: 200,
+    });
+
+    // RPC may not exist on older DBs — fall back to a non-atomic UPDATE for
+    // dev. In production the migration creates the RPC. The fallback is best-
+    // effort and will deliver-at-most-once across pods due to status filter.
+    let rows: any[] = [];
+    if (claimErr) {
+      const lookahead = new Date(Date.now() + 15_000).toISOString();
+      const { data: fallback, error: fallbackErr } = await supa
+        .from('reminders')
+        .update({
+          status: 'dispatching',
+          dispatch_started_at: new Date().toISOString(),
+        })
+        .eq('status', 'pending')
+        .lte('next_fire_at', lookahead)
+        .select('*')
+        .limit(200);
+      if (fallbackErr) {
+        console.error('[reminders-tick] claim fallback failed:', fallbackErr.message);
+        return res.status(500).json({ ok: false, error: fallbackErr.message });
+      }
+      rows = fallback || [];
+    } else {
+      rows = claimed || [];
+    }
+
+    if (!rows.length) {
+      return res.status(200).json({ ok: true, fired: 0, message: 'no due reminders' });
+    }
+
+    let fired = 0;
+    let failed = 0;
+
+    for (const row of rows) {
+      try {
+        // Mark fired — this triggers pg_notify('reminder_fired', ...) for any
+        // SSE pod that is LISTENing. PR-2 wires the listener.
+        const { error: fireErr } = await supa
+          .from('reminders')
+          .update({
+            status: 'fired',
+            fired_at: new Date().toISOString(),
+          })
+          .eq('id', row.id);
+        if (fireErr) {
+          console.error(`[reminders-tick] mark fired failed for ${row.id}:`, fireErr.message);
+          failed++;
+          continue;
+        }
+
+        // Emit OASIS event for observability — one row per fire.
+        try {
+          const { emitOasisEvent } = await import('../services/oasis-event-service');
+          await emitOasisEvent({
+            type: 'reminder.fired' as any,
+            source: 'gateway',
+            vtid: 'VTID-REMINDER',
+            status: 'info',
+            message: `Reminder fired`,
+            payload: {
+              reminder_id: row.id,
+              user_id: row.user_id,
+              tenant_id: row.tenant_id,
+              scheduled_for: row.next_fire_at,
+              latency_ms: Date.now() - new Date(row.next_fire_at).getTime(),
+            },
+          });
+        } catch {}
+
+        // VTID-02601 FCM fallback: 5s after fire, if SSE didn't ack the row,
+        // send an OS-level push notification so the user gets the reminder
+        // even if the app is closed / phone locked / WebView suspended.
+        // SSE wins for active clients (it acks within ~3s); FCM catches the
+        // rest. Best-effort, fully detached — does not block the tick.
+        scheduleReminderFcmFallback(supa, row).catch((e) =>
+          console.warn(`[reminders-tick] FCM fallback schedule failed for ${row.id}:`, e?.message),
+        );
+
+        fired++;
+      } catch (err: any) {
+        console.error(`[reminders-tick] error firing ${row.id}:`, err?.message);
+        failed++;
+      }
+    }
+
+    console.log(`[reminders-tick] fired=${fired} failed=${failed} total=${rows.length}`);
+    return res.status(200).json({ ok: true, fired, failed, total: rows.length });
+  } catch (err: any) {
+    console.error('[reminders-tick] error:', err?.message);
+    return res.status(500).json({ ok: false, error: err?.message || 'internal' });
+  }
+});
+
+// =============================================================================
+// VTID-02601 — POST /reminders-sweeper — every 5 minutes (Cloud Scheduler)
+//
+// Recovers rows stuck in 'dispatching' for >2min (pod crash mid-fire).
+// Resets to 'pending' with attempts++. Circuit-break at attempts>=5 → 'failed'.
+// =============================================================================
+router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
+    // First find stuck rows so we can decide attempts++ vs 'failed' per row.
+    const { data: stuck, error: queryErr } = await supa
+      .from('reminders')
+      .select('id, dispatch_attempts')
+      .eq('status', 'dispatching')
+      .lt('dispatch_started_at', cutoff)
+      .limit(500);
+    if (queryErr) throw new Error(queryErr.message);
+    if (!stuck?.length) {
+      return res.status(200).json({ ok: true, recovered: 0, failed: 0 });
+    }
+
+    let recovered = 0;
+    let exhausted = 0;
+    for (const r of stuck) {
+      const attempts = (r.dispatch_attempts || 0) + 1;
+      const newStatus = attempts >= 5 ? 'failed' : 'pending';
+      const { error: updErr } = await supa
+        .from('reminders')
+        .update({
+          status: newStatus,
+          dispatch_attempts: attempts,
+          dispatch_started_at: null,
+        })
+        .eq('id', r.id);
+      if (updErr) {
+        console.error(`[reminders-sweeper] update ${r.id} failed:`, updErr.message);
+        continue;
+      }
+      if (newStatus === 'pending') recovered++;
+      else exhausted++;
+    }
+
+    console.log(`[reminders-sweeper] recovered=${recovered} exhausted=${exhausted} total=${stuck.length}`);
+    return res.status(200).json({ ok: true, recovered, exhausted, total: stuck.length });
+  } catch (err: any) {
+    console.error('[reminders-sweeper] error:', err?.message);
+    return res.status(500).json({ ok: false, error: err?.message || 'internal' });
+  }
+});
+
+// =============================================================================
+// VTID-02601 — scheduleReminderFcmFallback
+//
+// 5 seconds after a reminder is marked 'fired', re-check `acked_at`. If the
+// SSE listener already acked the row (because the app is open and the user
+// got the chime + voice + banner), skip — the user has been notified. If
+// not, send an FCM web push so the OS surfaces a notification. Also try
+// Appilix native push for the Maxina installed app (currently 522 per memory,
+// but worth retrying — fails silently if API is down).
+//
+// Detached from the request handler — Cloud Run keeps the function instance
+// alive long enough for the 5-second timer because the gateway has CPU
+// always-on (set in EXEC-DEPLOY). Worst case (instance scales to zero),
+// the FCM is dropped and the next tick poll picks it up via the existing
+// fired+unacked SSE flow.
+// =============================================================================
+async function scheduleReminderFcmFallback(
+  supa: any,
+  row: { id: string; user_id: string; tenant_id: string; action_text: string; spoken_message: string | null }
+): Promise<void> {
+  await new Promise((r) => setTimeout(r, 5000));
+
+  // Re-check acked_at — SSE may have already delivered + the user dismissed.
+  const { data: fresh } = await supa
+    .from('reminders')
+    .select('id, acked_at, delivery_via')
+    .eq('id', row.id)
+    .maybeSingle();
+  if (fresh?.acked_at) {
+    console.log(`[reminders-tick] FCM skip — already acked via ${fresh.delivery_via} (${row.id})`);
+    return;
+  }
+
+  const payload = {
+    title: '🔔 Reminder',
+    body: row.action_text,
+    data: {
+      type: 'reminder.fire',
+      reminder_id: row.id,
+      url: '/reminders',
+      spoken_message: row.spoken_message || '',
+    },
+  };
+
+  try {
+    const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
+    const appilixSent = await sendAppilixPush(row.user_id, payload);
+    console.log(`[reminders-tick] FCM fallback for ${row.id}: fcm=${fcmSent} appilix=${appilixSent}`);
+
+    // Mark delivery_via=fcm if we sent at least one push and the row is still
+    // unacked. The SSE flow may still race-deliver later — that's fine, the
+    // overlay's seen-set dedups so the user never sees the same fire twice.
+    if (fcmSent > 0 || appilixSent) {
+      await supa
+        .from('reminders')
+        .update({ delivery_via: 'fcm' })
+        .eq('id', row.id)
+        .is('acked_at', null);
+    }
+
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'reminder.fcm_fallback' as any,
+        source: 'gateway',
+        vtid: 'VTID-REMINDER',
+        status: 'info',
+        message: `Reminder FCM fallback sent`,
+        payload: {
+          reminder_id: row.id,
+          user_id: row.user_id,
+          fcm_devices: fcmSent,
+          appilix_sent: !!appilixSent,
+        },
+      });
+    } catch {}
+  } catch (err: any) {
+    console.error(`[reminders-tick] FCM fallback error for ${row.id}:`, err?.message);
+  }
+}
+
+// =============================================================================
 // Health check
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {

@@ -62,10 +62,10 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
 // VTID-01270A: Thread-to-identity map for community/events tools
 // Populated by ORB chat handlers before calling processWithGemini
-const threadIdentityMap = new Map<string, { tenant_id: string; user_id: string; role?: string }>();
+const threadIdentityMap = new Map<string, { tenant_id: string; user_id: string; role?: string; user_timezone?: string; vitana_id?: string | null }>();
 
 /** VTID-01270A: Set identity context for a thread (call before processWithGemini) */
-export function setThreadIdentity(threadId: string, identity: { tenant_id: string; user_id: string; role?: string }): void {
+export function setThreadIdentity(threadId: string, identity: { tenant_id: string; user_id: string; role?: string; user_timezone?: string; vitana_id?: string | null }): void {
   threadIdentityMap.set(threadId, identity);
   // Auto-cleanup after 30 minutes
   setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
@@ -2648,6 +2648,32 @@ export async function executeTool(
       case 'get_wearable_metrics':
         result = await executeGetWearableMetrics(args as { days?: number }, threadId);
         break;
+
+      // VTID-01990: Time-anchored conversation recall.
+      // Resolves a user's free-text time reference ("yesterday morning",
+      // "earlier today", "letzten Montag") to a window and returns matching
+      // session summaries + actual conversation_messages turns + facts.
+      case 'recall_conversation_at_time': {
+        const recallIdentity = threadIdentityMap.get(threadId);
+        if (!recallIdentity?.user_id) {
+          result = { ok: false, error: 'Tool requires authenticated user context' };
+          break;
+        }
+        const { executeRecallConversationAtTime } = await import('./tool-recall-conversation');
+        const recallResult = await executeRecallConversationAtTime(
+          args as { time_hint: string; topic_hint?: string },
+          {
+            user_id: recallIdentity.user_id,
+            user_timezone: recallIdentity.user_timezone,
+          },
+        );
+        result = {
+          ok: recallResult.ok,
+          error: recallResult.error,
+          data: recallResult as unknown as Record<string, unknown>,
+        };
+        break;
+      }
 
       default:
         result = {

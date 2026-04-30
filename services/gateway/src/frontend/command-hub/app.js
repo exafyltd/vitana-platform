@@ -20,6 +20,126 @@
 console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
 // ===========================================================================
+// BOOTSTRAP-DEV-6H-SESSION (v2): Global fetch interceptor
+//
+// Why this exists: the Command Hub fires a swarm of polling fetches (tasks /5s,
+// approvals /20s, OASIS /5s, executions /10s, etc.). When the Supabase JWT
+// expires (~1h), each of those returns 401 and the various 401 handlers in
+// app.js call doLogout(). My first attempt at this feature only ran a 30s
+// expiry-check loop that ALSO called doLogout when refresh failed, so the
+// developer kept getting kicked the moment a polling tick ran into the
+// expired token.
+//
+// This interceptor wraps window.fetch BEFORE any other code runs. For any
+// non-/auth/* request that comes back 401 in a developer session, it tries
+// /api/v1/auth/refresh once (concurrent calls share a single in-flight
+// promise so the single-use refresh token isn't burned twice), then replays
+// the original request with a fresh Authorization header. The caller never
+// sees the 401, so the existing "401 → doLogout()" handlers stay untouched
+// and only fire when refresh genuinely fails.
+//
+// Non-developer roles (community, admin, staff, professional, patient) still
+// get their original 401 → doLogout() flow because the interceptor short-
+// circuits when active_role !== 'developer'.
+// ===========================================================================
+(function installAuthFetchInterceptor() {
+    if (!window.fetch) return;
+    if (window.__vitanaFetchInterceptorInstalled) return;
+    window.__vitanaFetchInterceptorInstalled = true;
+
+    var origFetch = window.fetch.bind(window);
+    var refreshingPromise = null;
+
+    function getActiveRole() {
+        var s = window.__vitana_state;
+        return (s && s.meContext && s.meContext.active_role) || null;
+    }
+    function getRefreshToken() {
+        var s = window.__vitana_state;
+        if (s && s.refreshToken) return s.refreshToken;
+        try { return localStorage.getItem('vitana.refreshToken'); } catch (_) { return null; }
+    }
+
+    function performRefresh() {
+        if (refreshingPromise) return refreshingPromise;
+        refreshingPromise = (async function () {
+            var rt = getRefreshToken();
+            if (!rt) return null;
+            try {
+                var resp = await origFetch('/api/v1/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: rt })
+                });
+                if (!resp.ok) {
+                    console.warn('[DEV-6H-SESSION] refresh HTTP ' + resp.status);
+                    return null;
+                }
+                var data = await resp.json();
+                if (!data.ok || !data.access_token) {
+                    console.warn('[DEV-6H-SESSION] refresh body bad', data && data.error);
+                    return null;
+                }
+                try { localStorage.setItem('vitana.authToken', data.access_token); } catch (_) {}
+                if (data.refresh_token) {
+                    try { localStorage.setItem('vitana.refreshToken', data.refresh_token); } catch (_) {}
+                }
+                var s = window.__vitana_state;
+                if (s) {
+                    s.authToken = data.access_token;
+                    if (data.refresh_token) s.refreshToken = data.refresh_token;
+                }
+                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
+                    try { window.VitanaOrb.setAuth(data.access_token); } catch (_) {}
+                }
+                console.log('[DEV-6H-SESSION] silent refresh ok');
+                return data.access_token;
+            } catch (err) {
+                console.warn('[DEV-6H-SESSION] silent refresh threw', err && err.message);
+                return null;
+            } finally {
+                // Release the lock shortly after settle so concurrent callers
+                // that arrived during the in-flight refresh see the same result,
+                // but a fresh later call (e.g. after the next expiry) starts new.
+                setTimeout(function () { refreshingPromise = null; }, 100);
+            }
+        })();
+        return refreshingPromise;
+    }
+    window.__vitana_performRefresh = performRefresh;
+
+    function isAuthEndpoint(url) {
+        return url.indexOf('/api/v1/auth/refresh') !== -1 ||
+               url.indexOf('/api/v1/auth/login') !== -1 ||
+               url.indexOf('/api/v1/auth/config') !== -1;
+    }
+
+    window.fetch = async function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (isAuthEndpoint(url)) return origFetch(input, init);
+
+        var resp = await origFetch(input, init);
+        if (resp.status !== 401) return resp;
+        if (getActiveRole() !== 'developer') return resp;
+
+        var newToken = await performRefresh();
+        if (!newToken) return resp;
+
+        // Replay with the new token. Build a fresh init/headers so we don't
+        // mutate the caller's object.
+        var newInit = init ? Object.assign({}, init) : {};
+        var srcHeaders = newInit.headers || (typeof input !== 'string' && input && input.headers) || {};
+        var headers = new Headers(srcHeaders);
+        if (headers.has('Authorization') || headers.has('authorization')) {
+            headers.set('Authorization', 'Bearer ' + newToken);
+        }
+        newInit.headers = headers;
+        var url2 = typeof input === 'string' ? input : input.url;
+        return origFetch(url2, newInit);
+    };
+})();
+
+// ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
 // ===========================================================================
 const TARGET_ROLES = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'];
@@ -2794,7 +2914,16 @@ const NAVIGATION_CONFIG = [
             { "key": "database-schemas", "path": "/command-hub/docs/database-schemas/" },
             { "key": "architecture", "path": "/command-hub/docs/architecture/" },
             { "key": "workforce", "path": "/command-hub/docs/workforce/" },
-            { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" }
+            { "key": "system-knowledge", "path": "/command-hub/docs/system-knowledge/" },
+            { "key": "manuals", "path": "/command-hub/docs/manuals/" }
+        ]
+    },
+    {
+        "section": "routines",
+        "basePath": "/command-hub/routines/",
+        "tabs": [
+            { "key": "catalog", "path": "/command-hub/routines/catalog/" },
+            { "key": "history", "path": "/command-hub/routines/history/" }
         ]
     }
 ];
@@ -2818,7 +2947,8 @@ const SECTION_LABELS = {
     'models-evaluations': 'Models & Evaluations',
     'testing-qa': 'Testing & QA',
     'intelligence-memory-dev': 'Intelligence & Memory (Dev)',
-    'docs': 'Docs'
+    'docs': 'Docs',
+    'routines': 'Routines'
 };
 
 const splitScreenCombos = [
@@ -3480,6 +3610,20 @@ const state = {
         showRawRegistry: false
     },
 
+    // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
+    routines: {
+        catalog: null,           // GET /api/v1/routines response
+        catalogLoading: false,
+        catalogError: null,
+        catalogFetched: false,
+        selectedName: null,      // routine name selected in History tab
+        detail: null,            // GET /api/v1/routines/:name response
+        detailLoading: false,
+        detailError: null,
+        expandedRunId: null,     // which run row is expanded with full findings
+        runDetails: {}           // cache: runId -> full run JSON (with findings)
+    },
+
     // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
     agentsPipelines: {
         // Filter state
@@ -3592,6 +3736,17 @@ const state = {
         error: null
     },
 
+    // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
+    actionRequired: {
+        items: [],
+        countTotal: 0,
+        countCritical: 0,
+        lastRefreshed: null,
+        loading: false,
+        fetched: false,
+        error: null
+    },
+
     // Operator module — Supervision Dashboard
     operatorDashboard: { data: null, loading: false, error: null, fetched: false },
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
@@ -3626,7 +3781,7 @@ const state = {
     infraDeployments: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraLogs: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraConfig: { data: null, loading: false, error: null, fetched: false },
-    selfHealing: { config: null, active: [], history: [], pendingApproval: [], loading: false, error: null, fetched: false },
+    selfHealing: { config: null, active: [], history: [], historyTotal: 0, historyOffset: 0, historyFilterClass: '', historyClasses: [], historyLoadingMore: false, pendingApproval: [], loading: false, error: null, fetched: false },
 
     // Security module
     securityPolicies: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -3645,6 +3800,11 @@ const state = {
       pending: null,          // operator-edited copy (only persisted on Save)
       providers: [],          // from /api/v1/llm/routing-policy
       models: [],             // from /api/v1/llm/routing-policy (with tier field)
+      // BOOTSTRAP-LLM-ROUTER-CFG: provider availability from /api/v1/llm/providers/health.
+      // Map of provider_key -> { available: bool, reason?: string }. Drives the
+      // dropdown gray-out so the UI never lists a provider that has no
+      // credentials configured on the gateway.
+      health: {},
       saving: false,
       saveError: null,
       lastSavedAt: null,
@@ -3722,6 +3882,14 @@ const state = {
     // Docs missing
     docsApiInventory: { endpoints: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } }
 };
+
+// BOOTSTRAP-DEV-6H-SESSION (v2): expose live state to the fetch interceptor
+// installed at the top of this file. The interceptor reads
+// __vitana_state.meContext.active_role to gate the refresh-on-401 path to
+// developer sessions only, and writes back __vitana_state.authToken /
+// .refreshToken after a successful refresh so subsequent requests use the
+// rotated token without ever triggering doLogout().
+window.__vitana_state = state;
 
 // --- VTID-0527: Task Stage Timeline Model ---
 
@@ -6054,6 +6222,12 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'diagnostics' && tab === 'voice-lab') {
         // VTID-01218E: Voice LAB - ORB Live Observability
         container.appendChild(renderVoiceLabView());
+    } else if (moduleKey === 'routines' && tab === 'catalog') {
+        // VTID-01981: Routines Catalog — every daily Claude Code remote agent + last-run summary
+        container.appendChild(renderRoutinesCatalogView());
+    } else if (moduleKey === 'routines' && tab === 'history') {
+        // VTID-01981: Routines History — drill into a single routine's run history + findings
+        container.appendChild(renderRoutinesHistoryView());
 
     // ──── Overview Module ────
     } else if (moduleKey === 'overview' && tab === 'system-overview') {
@@ -6202,6 +6376,20 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDocsWorkforceView());
     } else if (moduleKey === 'docs' && tab === 'system-knowledge') {
         container.appendChild(renderDocsSystemKnowledgeView());
+    } else if (moduleKey === 'docs' && tab === 'specialists') {
+        container.appendChild(renderDocsSpecialistsView());
+    } else if (moduleKey === 'docs' && tab === 'manuals') {
+        container.appendChild(renderDocsManualsView());
+
+    // ──── Feedback tabs (VTID-02605) ────
+    } else if (moduleKey === 'feedback' && tab === 'inbox') {
+        container.appendChild(renderFeedbackInboxView());
+    } else if (moduleKey === 'feedback' && tab === 'handoffs') {
+        container.appendChild(renderFeedbackHandoffsView());
+    } else if (moduleKey === 'feedback' && tab === 'kpis') {
+        container.appendChild(renderFeedbackKpisView());
+    } else if (moduleKey === 'feedback' && tab === 'audit') {
+        container.appendChild(renderFeedbackAuditView());
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
@@ -27869,6 +28057,24 @@ function renderOverviewSystemView() {
     if (!state.serviceHealth.fetched && !state.serviceHealth.loading) {
         fetchServiceHealth();
     }
+    // VTID-02031: pull surface for human-in-the-loop items (mirrors Gchat pings)
+    if (!state.actionRequired.fetched && !state.actionRequired.loading) {
+        fetchActionRequired();
+    }
+    // Auto-refresh every 30s while the Overview is mounted. Use a single
+    // timer keyed on the state to avoid stacking duplicates across renders.
+    if (!state._actionRequiredTimer) {
+        state._actionRequiredTimer = setInterval(function () {
+            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+                state.actionRequired.fetched = false;
+                fetchActionRequired(true);
+            }
+        }, 30000);
+    }
+
+    // VTID-02031: Action Required panel — pinned at very top so the
+    // supervisor sees what needs human action before anything else.
+    container.appendChild(renderActionRequiredPanel());
 
     var db = state.overviewDashboard;
 
@@ -28776,6 +28982,194 @@ function renderOverviewSystemView() {
     }
 
     return container;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-02031: fetchActionRequired — GET /api/v1/ops/action-required
+// Pull surface mirroring the Gchat pings (VTID-02030). Polled every 30s
+// while the Overview view is mounted.
+// ---------------------------------------------------------------------------
+async function fetchActionRequired(silentRefresh) {
+    if (state.actionRequired.loading) return;
+    var isInitialLoad = !state.actionRequired.fetched;
+    state.actionRequired.loading = true;
+    state.actionRequired.error = null;
+    if (isInitialLoad && !silentRefresh) renderApp();
+
+    try {
+        var r = await fetchWT('/api/v1/ops/action-required', {
+            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
+        });
+        if (!r.ok) {
+            state.actionRequired.error = 'HTTP ' + r.status;
+        } else {
+            var body = await r.json();
+            state.actionRequired.items = Array.isArray(body.items) ? body.items : [];
+            state.actionRequired.countTotal = Number(body.count_total || 0);
+            state.actionRequired.countCritical = Number(body.count_critical || 0);
+            state.actionRequired.itemsReturned = Number(body.items_returned || state.actionRequired.items.length);
+        }
+    } catch (err) {
+        state.actionRequired.error = (err && err.message) ? err.message : String(err);
+    }
+    state.actionRequired.lastRefreshed = new Date().toISOString();
+    state.actionRequired.loading = false;
+    state.actionRequired.fetched = true;
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        renderApp();
+    }
+}
+
+// VTID-02031: Render "Action Required" panel — pinned at the top of the
+// Overview view, above the system status banner. Empty state is collapsed,
+// non-empty shows expanded card list ordered by severity then recency.
+function renderActionRequiredPanel() {
+    var ar = state.actionRequired;
+    var wrapper = document.createElement('div');
+    wrapper.className = 'action-required-panel';
+    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
+
+    var hasItems = (ar.items || []).length > 0;
+    var bgColor = hasItems
+        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)')
+        : 'rgba(34,197,94,0.08)';
+    var borderColor = hasItems
+        ? (ar.countCritical > 0 ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.45)')
+        : 'rgba(34,197,94,0.30)';
+    wrapper.style.background = bgColor;
+    wrapper.style.borderColor = borderColor;
+
+    // ── Header bar ──
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.7rem 0.95rem;font-size:0.9rem;';
+
+    var icon = document.createElement('span');
+    icon.style.cssText = 'font-size:1.05rem;';
+    icon.textContent = hasItems ? (ar.countCritical > 0 ? '🚨' : '⚠️') : '✅';
+    header.appendChild(icon);
+
+    var title = document.createElement('strong');
+    title.style.cssText = 'color:' + (hasItems ? (ar.countCritical > 0 ? '#fca5a5' : '#fcd34d') : '#86efac');
+    title.textContent = hasItems
+        ? ('Action Required — ' + ar.countTotal + ' open' + (ar.countCritical > 0 ? ' (' + ar.countCritical + ' critical)' : ''))
+        : 'All clear — 0 items needing attention';
+    header.appendChild(title);
+
+    var spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    header.appendChild(spacer);
+
+    if (ar.lastRefreshed) {
+        var refreshedAt = document.createElement('span');
+        refreshedAt.style.cssText = 'font-size:0.72rem;color:rgba(229,231,235,0.55);';
+        refreshedAt.textContent = 'updated ' + new Date(ar.lastRefreshed).toLocaleTimeString();
+        header.appendChild(refreshedAt);
+    }
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.style.cssText = 'padding:2px 8px;font-size:0.72rem;';
+    refreshBtn.textContent = ar.loading ? '…' : '↻';
+    refreshBtn.disabled = !!ar.loading;
+    refreshBtn.onclick = function () {
+        state.actionRequired.fetched = false;
+        fetchActionRequired();
+    };
+    header.appendChild(refreshBtn);
+    wrapper.appendChild(header);
+
+    if (ar.error) {
+        var errLine = document.createElement('div');
+        errLine.style.cssText = 'padding:0.5rem 0.95rem;font-size:0.78rem;color:#fca5a5;';
+        errLine.textContent = 'Error loading: ' + ar.error;
+        wrapper.appendChild(errLine);
+    }
+
+    if (hasItems) {
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
+        ar.items.forEach(function (item) {
+            list.appendChild(renderActionRequiredCard(item));
+        });
+        // VTID-02031b: when the backend capped the list, surface the residual
+        // count so the supervisor knows there's more if they want to drill in.
+        var returned = ar.itemsReturned || ar.items.length;
+        if (ar.countTotal > returned) {
+            var moreLine = document.createElement('div');
+            moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
+            moreLine.textContent = 'Showing top ' + returned + ' of ' + ar.countTotal +
+                ' open items — see Self-Healing screen for the full list';
+            list.appendChild(moreLine);
+        }
+        wrapper.appendChild(list);
+    }
+
+    return wrapper;
+}
+
+function renderActionRequiredCard(item) {
+    var card = document.createElement('a');
+    card.href = item.deeplink || '#';
+    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.65rem 0.85rem;' +
+        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
+        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
+    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
+    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
+
+    var sevBadge = document.createElement('span');
+    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;';
+    if (item.severity === 'critical') {
+        sevBadge.style.background = 'rgba(239,68,68,0.25)';
+        sevBadge.style.color = '#fca5a5';
+        sevBadge.textContent = 'critical';
+    } else {
+        sevBadge.style.background = 'rgba(245,158,11,0.22)';
+        sevBadge.style.color = '#fcd34d';
+        sevBadge.textContent = 'warning';
+    }
+    topRow.appendChild(sevBadge);
+
+    var catBadge = document.createElement('span');
+    catBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);';
+    catBadge.textContent = item.category;
+    topRow.appendChild(catBadge);
+
+    var titleEl = document.createElement('strong');
+    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;';
+    titleEl.textContent = item.title;
+    topRow.appendChild(titleEl);
+
+    // VTID-02031c: related_count surfaces collapsed siblings so the
+    // supervisor knows multiple linked rows feed this card.
+    if (item.related_count && item.related_count > 0) {
+        var relBadge = document.createElement('span');
+        relBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.66rem;font-weight:500;background:rgba(99,102,241,0.18);color:#a5b4fc;';
+        relBadge.textContent = '+' + item.related_count + ' related';
+        topRow.appendChild(relBadge);
+    }
+
+    if (item.detected_at) {
+        var time = document.createElement('span');
+        time.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);';
+        try {
+            time.textContent = new Date(item.detected_at).toLocaleString();
+        } catch (e) {
+            time.textContent = item.detected_at;
+        }
+        topRow.appendChild(time);
+    }
+    card.appendChild(topRow);
+
+    if (item.summary) {
+        var summary = document.createElement('div');
+        summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
+        summary.textContent = item.summary;
+        card.appendChild(summary);
+    }
+    return card;
 }
 
 // ---------------------------------------------------------------------------
@@ -31330,21 +31724,34 @@ function fetchLlmRoutingPolicy() {
   state.llmRouting.loading = true;
   state.llmRouting.error = null;
   renderApp();
-  fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' })
-    .then(function (r) { return r.json(); })
-    .then(function (resp) {
+  // Fetch policy + provider health in parallel — health drives dropdown gray-out.
+  Promise.all([
+    fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' }).then(function (r) { return r.json(); }),
+    fetch('/api/v1/llm/providers/health', { credentials: 'include' })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false }; }),
+  ])
+    .then(function (results) {
+      var resp = results[0];
+      var healthResp = results[1];
       if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'fetch failed');
       var data = resp.data || {};
       state.llmRouting.loading = false;
       state.llmRouting.fetched = true;
-      // Server may return policy nested in `data.policy.policy` (the row's `policy` JSONB field)
-      // or directly as `data.policy` (flat). Handle both.
       var policyRow = data.policy || null;
       var policyDoc = (policyRow && policyRow.policy) ? policyRow.policy : policyRow;
       state.llmRouting.policy = policyDoc;
       state.llmRouting.pending = JSON.parse(JSON.stringify(policyDoc || {}));
       state.llmRouting.providers = data.providers || [];
       state.llmRouting.models = data.models || [];
+      // Health: turn the array into a map keyed by provider key for O(1) lookup
+      var healthMap = {};
+      if (healthResp && healthResp.ok && Array.isArray(healthResp.data)) {
+        healthResp.data.forEach(function (h) {
+          healthMap[h.provider] = { available: !!h.available, reason: h.reason || null };
+        });
+      }
+      state.llmRouting.health = healthMap;
       renderApp();
     })
     .catch(function (err) {
@@ -31522,12 +31929,32 @@ function buildPickerCell(slotLabel, stageKey, slot, providers, stageCfg) {
   providers.forEach(function (p) {
     var opt = document.createElement('option');
     opt.value = p.provider_key;
-    opt.textContent = p.display_name || p.provider_key;
+    var label = p.display_name || p.provider_key;
+    // BOOTSTRAP-LLM-ROUTER-CFG: gray out + annotate providers without
+    // credentials configured on the gateway. Operator can still select them
+    // (in case they're about to set the secret), but the UI is honest about
+    // current availability.
+    var health = state.llmRouting.health[p.provider_key];
+    if (health && !health.available) {
+      opt.disabled = true;
+      label = label + ' (no API key)';
+      opt.title = health.reason || 'No credentials configured';
+    } else {
+      opt.title = '';
+    }
+    opt.textContent = label;
     providerSelect.appendChild(opt);
   });
 
   var currentProvider = stageCfg[slot + '_provider'];
   providerSelect.value = currentProvider || '';
+  // If the saved policy points at an unavailable provider, surface that on the
+  // select itself so the operator sees the warning even before opening the menu.
+  var currentHealth = currentProvider ? state.llmRouting.health[currentProvider] : null;
+  if (currentHealth && !currentHealth.available) {
+    providerSelect.style.cssText += 'border-color:#ff6b6b;color:#ff9f9f;';
+    providerSelect.title = currentHealth.reason || 'Provider has no credentials configured';
+  }
   col.appendChild(providerSelect);
 
   // Model <select>
@@ -34850,6 +35277,245 @@ function renderDocsSystemKnowledgeView() {
 }
 
 // ===========================================================================
+// Docs > Manuals: per-tenant Instruction Manual catalog
+// ===========================================================================
+// Renders the Maxina Instruction Manual (and other tenant manuals as they
+// are authored) as a 13-module tree on the left, chapter content on the
+// right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
+// Edits route to the System Knowledge tab where the existing editor lives.
+
+const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
+const MANUAL_MODULE_LABELS = {
+    '00-concepts': '0. Foundational Concepts',
+    '01-public': '1. Public & Onboarding',
+    '02-home': '2. Home',
+    '03-community': '3. Community',
+    '04-discover': '4. Discover',
+    '05-health': '5. Health',
+    '06-inbox': '6. Inbox',
+    '07-ai': '7. AI',
+    '08-wallet': '8. Wallet',
+    '09-sharing': '9. Sharing',
+    '10-memory': '10. Memory',
+    '11-settings': '11. Settings',
+    '12-utility': '12. Utility',
+    '13-overlays': '13. Overlays & Popups',
+};
+
+function initManualsState() {
+    if (!state.manuals) {
+        state.manuals = {
+            tenant: 'maxina',
+            docs: [],
+            loading: false,
+            selectedId: null,
+            selectedDoc: null,
+            error: null,
+        };
+    }
+}
+
+async function fetchManualsForTenant(tenant) {
+    state.manuals.loading = true;
+    state.manuals.error = null;
+    renderApp();
+    try {
+        const prefix = 'kb/instruction-manual/' + tenant + '/';
+        const qs = new URLSearchParams({ path_prefix: prefix });
+        const response = await fetch('/api/v1/admin/system-kb/docs?' + qs.toString(), {
+            headers: state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {},
+            credentials: 'include',
+        });
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.error || ('HTTP ' + response.status));
+        }
+        const json = await response.json();
+        state.manuals.docs = json.documents || json.docs || [];
+    } catch (err) {
+        state.manuals.error = err && err.message ? err.message : String(err);
+        state.manuals.docs = [];
+    } finally {
+        state.manuals.loading = false;
+        renderApp();
+    }
+}
+
+async function fetchManualDoc(id) {
+    state.manuals.selectedId = id;
+    state.manuals.selectedDoc = null;
+    renderApp();
+    try {
+        const response = await fetch('/api/v1/admin/system-kb/docs/' + encodeURIComponent(id), {
+            headers: state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {},
+            credentials: 'include',
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        state.manuals.selectedDoc = await response.json();
+    } catch (err) {
+        state.manuals.error = err && err.message ? err.message : String(err);
+    } finally {
+        renderApp();
+    }
+}
+
+function groupManualsByModule(docs) {
+    const groups = {};
+    Object.keys(MANUAL_MODULE_LABELS).forEach(function (k) { groups[k] = []; });
+    docs.forEach(function (doc) {
+        const path = doc.path || '';
+        const m = path.match(/kb\/instruction-manual\/[^/]+\/([0-9]{2}-[a-z]+)\//);
+        const moduleKey = m ? m[1] : '00-concepts';
+        if (!groups[moduleKey]) groups[moduleKey] = [];
+        groups[moduleKey].push(doc);
+    });
+    Object.keys(groups).forEach(function (k) {
+        groups[k].sort(function (a, b) { return (a.path || '').localeCompare(b.path || ''); });
+    });
+    return groups;
+}
+
+function renderDocsManualsView() {
+    initManualsState();
+    if (!state.manuals.docs.length && !state.manuals.loading && !state.manuals.error) {
+        fetchManualsForTenant(state.manuals.tenant);
+    }
+
+    const container = document.createElement('div');
+    container.className = 'docs-container';
+    container.style.padding = '1.5rem';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Tenant Instruction Manuals';
+    container.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent =
+        'Per-tenant chapters teaching every screen and concept the AI assistant explains to community users. Maxina ships first; other tenants populate as their manuals are authored. Edits route to the System Knowledge tab.';
+    container.appendChild(subtitle);
+
+    // Tenant selector
+    const tenantRow = document.createElement('div');
+    tenantRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin:0.5rem 0 1rem;';
+    const tenantLabel = document.createElement('span');
+    tenantLabel.textContent = 'Tenant:';
+    tenantLabel.style.cssText = 'opacity:0.7;font-size:0.85rem;';
+    tenantRow.appendChild(tenantLabel);
+    const tenantSelect = document.createElement('select');
+    tenantSelect.style.cssText = 'padding:0.4rem 0.6rem;background:var(--bg-secondary,#1a1a1a);color:inherit;border:1px solid var(--border,#333);border-radius:4px;';
+    TENANT_MANUAL_TENANTS.forEach(function (t) {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+        if (t === state.manuals.tenant) opt.selected = true;
+        tenantSelect.appendChild(opt);
+    });
+    tenantSelect.onchange = function () {
+        state.manuals.tenant = tenantSelect.value;
+        state.manuals.docs = [];
+        state.manuals.selectedId = null;
+        state.manuals.selectedDoc = null;
+        fetchManualsForTenant(state.manuals.tenant);
+    };
+    tenantRow.appendChild(tenantSelect);
+    container.appendChild(tenantRow);
+
+    if (state.manuals.loading) {
+        const loading = document.createElement('div');
+        loading.style.padding = '2rem';
+        loading.textContent = 'Loading manual…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.manuals.error) {
+        const errEl = document.createElement('div');
+        errEl.style.cssText = 'padding:1rem;color:#f88;background:rgba(255,100,100,0.1);border-radius:4px;';
+        errEl.textContent = 'Could not load manual: ' + state.manuals.error;
+        container.appendChild(errEl);
+        return container;
+    }
+
+    if (!state.manuals.docs.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:2rem;text-align:center;opacity:0.7;';
+        empty.innerHTML =
+            '<p><strong>The ' + state.manuals.tenant.charAt(0).toUpperCase() + state.manuals.tenant.slice(1) + ' manual has not been authored yet.</strong></p>' +
+            '<p style="font-size:0.9rem;margin-top:0.5rem;">See the Maxina manual as a reference template. New tenant manuals live under <code>kb/instruction-manual/&lt;tenant&gt;/</code> and are seeded by the <code>build-instruction-manual-seed.mjs</code> script.</p>';
+        container.appendChild(empty);
+        return container;
+    }
+
+    const groups = groupManualsByModule(state.manuals.docs);
+
+    const panes = document.createElement('div');
+    panes.style.cssText = 'display:flex;gap:1rem;align-items:stretch;min-height:60vh;';
+
+    const treePane = document.createElement('div');
+    treePane.style.cssText = 'flex:0 0 320px;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:0.75rem;overflow-y:auto;max-height:75vh;';
+    Object.keys(MANUAL_MODULE_LABELS).forEach(function (moduleKey) {
+        const docs = groups[moduleKey] || [];
+        if (!docs.length) return;
+        const group = document.createElement('details');
+        group.open = moduleKey === '00-concepts';
+        group.style.marginBottom = '0.5rem';
+        const summary = document.createElement('summary');
+        summary.style.cssText = 'cursor:pointer;font-weight:600;padding:0.3rem 0;';
+        summary.textContent = MANUAL_MODULE_LABELS[moduleKey] + ' (' + docs.length + ')';
+        group.appendChild(summary);
+        docs.forEach(function (doc) {
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = doc.title || doc.path;
+            link.style.cssText = 'display:block;padding:0.25rem 0.5rem;font-size:0.85rem;color:inherit;text-decoration:none;border-radius:3px;';
+            if (state.manuals.selectedId === doc.id) {
+                link.style.background = 'var(--accent,#4a90e2)';
+                link.style.color = '#fff';
+            }
+            link.onclick = function (ev) {
+                ev.preventDefault();
+                fetchManualDoc(doc.id);
+            };
+            group.appendChild(link);
+        });
+        treePane.appendChild(group);
+    });
+    panes.appendChild(treePane);
+
+    const viewerPane = document.createElement('div');
+    viewerPane.style.cssText = 'flex:1;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:1rem;overflow-y:auto;max-height:75vh;';
+    if (state.manuals.selectedDoc) {
+        const doc = state.manuals.selectedDoc;
+        const docTitle = document.createElement('h3');
+        docTitle.textContent = doc.title || doc.path;
+        viewerPane.appendChild(docTitle);
+        const docPath = document.createElement('div');
+        docPath.style.cssText = 'font-size:0.75rem;opacity:0.6;margin-bottom:0.75rem;font-family:monospace;';
+        docPath.textContent = doc.path || '';
+        viewerPane.appendChild(docPath);
+        const editLink = document.createElement('a');
+        editLink.href = '/command-hub/docs/system-knowledge/?doc=' + encodeURIComponent(doc.id);
+        editLink.textContent = 'Edit in System Knowledge →';
+        editLink.style.cssText = 'display:inline-block;margin-bottom:1rem;color:var(--accent,#4a90e2);font-size:0.85rem;';
+        viewerPane.appendChild(editLink);
+        const body = document.createElement('pre');
+        body.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.9rem;line-height:1.5;';
+        body.textContent = doc.content || '';
+        viewerPane.appendChild(body);
+    } else {
+        const placeholder = document.createElement('div');
+        placeholder.style.cssText = 'padding:2rem;opacity:0.6;text-align:center;';
+        placeholder.textContent = 'Select a chapter on the left to read it.';
+        viewerPane.appendChild(placeholder);
+    }
+    panes.appendChild(viewerPane);
+
+    container.appendChild(panes);
+    return container;
+}
+
+// ===========================================================================
 // Helper: Auto-add Load More to any container with tables/lists
 // ===========================================================================
 
@@ -35016,62 +35682,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION: Active session health monitor.
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2): session monitor.
         //
-        // Baseline (all roles): JWT expires (~1h for Supabase) → doLogout().
+        // The actual JWT refresh is now handled by the global fetch interceptor
+        // installed at the top of this file (it catches any 401 in a developer
+        // session, refreshes via /api/v1/auth/refresh, and replays the request
+        // transparently). This loop has two remaining jobs:
         //
-        // Developer override: if active_role === 'developer', silently refresh
-        // the access token via /api/v1/auth/refresh whenever it's within 5 min
-        // of expiry, so the developer stays signed in while working. Only log
-        // out after 6 hours of true user inactivity (no mousedown/keydown/
-        // scroll/touchstart) OR when refresh fails (e.g. refresh token revoked
-        // server-side). This is scoped to developer only — community, admin,
-        // staff, professional, patient keep the stricter 1h hard expiry.
-        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;  // 6 hours
-        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;     // refresh if <5m left
+        //   1. For developer sessions: enforce a 6-hour idle-logout — if the
+        //      user hasn't done anything (mousedown/keydown/scroll/touchstart)
+        //      in 6h, log them out. We also proactively top up the token a
+        //      few minutes before expiry so polling fetches don't have to eat
+        //      a 401 round-trip.
+        //   2. For non-developer roles: keep the previous "logout when JWT
+        //      exp passes" behavior so community/admin/staff sessions still
+        //      end at the 1h Supabase expiry as before.
+        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;   // 6 hours
+        var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;      // top up if <5m left
 
         function isDeveloperSession() {
             return (state.meContext && state.meContext.active_role === 'developer');
         }
-
         function markActivity() { state.lastActivityAt = Date.now(); }
         ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
             document.addEventListener(evt, markActivity, { passive: true, capture: true });
         });
-
-        async function refreshAccessToken() {
-            if (state.refreshingToken) return false;
-            if (!state.refreshToken) return false;
-            state.refreshingToken = true;
-            try {
-                var resp = await fetch('/api/v1/auth/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: state.refreshToken })
-                });
-                var data = await resp.json();
-                if (!resp.ok || !data.ok || !data.access_token) {
-                    console.warn('[DEV-6H-SESSION] refresh failed:', data && (data.message || data.error));
-                    return false;
-                }
-                state.authToken = data.access_token;
-                localStorage.setItem('vitana.authToken', data.access_token);
-                if (data.refresh_token) {
-                    state.refreshToken = data.refresh_token;
-                    localStorage.setItem('vitana.refreshToken', data.refresh_token);
-                }
-                if (window.VitanaOrb && typeof window.VitanaOrb.setAuth === 'function') {
-                    window.VitanaOrb.setAuth(data.access_token);
-                }
-                console.log('[DEV-6H-SESSION] access token refreshed silently');
-                return true;
-            } catch (err) {
-                console.warn('[DEV-6H-SESSION] refresh threw:', err && err.message);
-                return false;
-            } finally {
-                state.refreshingToken = false;
-            }
-        }
 
         async function checkTokenExpiry() {
             if (!state.authToken) return;
@@ -35090,21 +35725,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             var now = Date.now();
 
             if (isDeveloperSession()) {
-                // Developer: enforce 6h idle logout FIRST — if idle for 6h,
-                // don't bother refreshing, just sign out.
                 var idleMs = now - (state.lastActivityAt || now);
                 if (idleMs >= DEV_IDLE_LOGOUT_MS) {
                     console.warn('[DEV-6H-SESSION] idle ' + Math.round(idleMs / 60000) + 'm — logging out');
                     doLogout();
                     return;
                 }
-                // Token fresh enough — nothing to do.
-                if (expMs && expMs - now > TOKEN_REFRESH_LEAD_MS) return;
-                // Token expired or near expiry — try silent refresh.
-                var refreshed = await refreshAccessToken();
-                if (!refreshed) {
-                    console.warn('[DEV-6H-SESSION] cannot refresh — logging out');
-                    doLogout();
+                // Proactively refresh if we're inside the lead window; if it
+                // fails, the next polling 401 will give the interceptor a
+                // second chance, and only after THAT fails will the existing
+                // 401 → doLogout() handlers fire.
+                if (expMs && expMs - now <= TOKEN_REFRESH_LEAD_MS && typeof window.__vitana_performRefresh === 'function') {
+                    try { await window.__vitana_performRefresh(); } catch (_) {}
                 }
                 return;
             }
@@ -35119,7 +35751,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInterval(checkTokenExpiry, 30000);
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
-                // Returning to the tab counts as activity for developers.
                 if (isDeveloperSession()) markActivity();
                 checkTokenExpiry();
             }
@@ -36397,21 +37028,43 @@ function fetchSecurityPolicies() {
 // Self-Healing Dashboard
 // ═══════════════════════════════════════════════════════════════════
 
+var SH_HISTORY_PAGE_SIZE = 20;
+
+// Build the /history URL with the current pagination + filter state.
+function shHistoryUrl(offset) {
+    var params = 'limit=' + SH_HISTORY_PAGE_SIZE + '&offset=' + (offset || 0);
+    var fc = state.selfHealing.historyFilterClass;
+    if (fc) params += '&failure_class=' + encodeURIComponent(fc);
+    return '/api/v1/self-healing/history?' + params;
+}
+
 function fetchSelfHealingData() {
     state.selfHealing.loading = true;
     state.selfHealing.error = null;
+    state.selfHealing.historyOffset = 0;
     renderApp();
 
+    var shHeaders = buildContextHeaders();
+    function shFetchJson(url) {
+        return fetch(url, { headers: shHeaders }).then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+            return r.json();
+        });
+    }
     Promise.all([
-        fetch('/api/v1/self-healing/config').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/active').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/history?limit=20').then(function(r) { return r.json(); }),
-        fetch('/api/v1/self-healing/pending-approval').then(function(r) { return r.json(); })
+        shFetchJson('/api/v1/self-healing/config'),
+        shFetchJson('/api/v1/self-healing/active'),
+        shFetchJson(shHistoryUrl(0)),
+        shFetchJson('/api/v1/self-healing/pending-approval'),
+        shFetchJson('/api/v1/self-healing/history/classes')
     ]).then(function(results) {
         state.selfHealing.config = results[0];
         state.selfHealing.active = (results[1] && results[1].tasks) || [];
         state.selfHealing.history = (results[2] && results[2].items) || [];
+        state.selfHealing.historyTotal = (results[2] && results[2].total) || state.selfHealing.history.length;
+        state.selfHealing.historyOffset = state.selfHealing.history.length;
         state.selfHealing.pendingApproval = (results[3] && results[3].items) || [];
+        state.selfHealing.historyClasses = (results[4] && results[4].classes) || [];
         state.selfHealing.loading = false;
         state.selfHealing.fetched = true;
         renderApp();
@@ -36420,6 +37073,33 @@ function fetchSelfHealingData() {
         state.selfHealing.loading = false;
         renderApp();
     });
+}
+
+// Load the next page and append to state.selfHealing.history. Used by Load More.
+function loadMoreSelfHealingHistory() {
+    if (state.selfHealing.historyLoadingMore) return;
+    state.selfHealing.historyLoadingMore = true;
+    renderApp();
+
+    var headers = buildContextHeaders();
+    fetch(shHistoryUrl(state.selfHealing.historyOffset || 0), { headers: headers })
+        .then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(function(j) {
+            var more = (j && j.items) || [];
+            state.selfHealing.history = (state.selfHealing.history || []).concat(more);
+            state.selfHealing.historyTotal = (j && j.total) || state.selfHealing.historyTotal;
+            state.selfHealing.historyOffset = state.selfHealing.history.length;
+            state.selfHealing.historyLoadingMore = false;
+            renderApp();
+        })
+        .catch(function(err) {
+            state.selfHealing.historyLoadingMore = false;
+            showToast('Load More failed: ' + err.message, 'error');
+            renderApp();
+        });
 }
 
 // =============================================================================
@@ -38448,6 +39128,713 @@ function autonomyTraceFormatTs(iso) {
     } catch (_e) { return iso; }
 }
 
+// VTID-01991: Voice Self-Healing panel state. Polls live-monitor + summary
+// every 10s. State pinned to window so polling survives view re-renders.
+if (!state.voiceHealing) {
+    state.voiceHealing = {
+        mode: null,
+        modeLoading: false,
+        summary: null,
+        liveMonitor: null,
+        loading: true,
+        error: null,
+        pollingTimer: null,
+        lastFetchAt: 0,
+    };
+}
+
+async function fetchVoiceHealingPanel() {
+    var vh = state.voiceHealing;
+    vh.lastFetchAt = Date.now();
+    try {
+        var [modeRes, summaryRes, liveRes] = await Promise.all([
+            fetch('/api/v1/voice-lab/healing/mode').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+            fetch('/api/v1/voice-lab/healing/summary').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+            fetch('/api/v1/voice-lab/healing/live-monitor').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+        ]);
+        vh.mode = modeRes && modeRes.mode ? modeRes.mode : null;
+        vh.summary = summaryRes && summaryRes.ok ? summaryRes : null;
+        vh.liveMonitor = liveRes && liveRes.ok ? liveRes : null;
+        vh.loading = false;
+        vh.error = null;
+    } catch (err) {
+        vh.error = err && err.message ? err.message : String(err);
+        vh.loading = false;
+    }
+    // Re-render the panel in place (queryselector to find existing node).
+    var existing = document.querySelector('.vh-panel');
+    if (existing && existing.parentNode) {
+        var fresh = renderVoiceSelfHealingPanel();
+        existing.parentNode.replaceChild(fresh, existing);
+    }
+}
+
+function startVoiceHealingPolling() {
+    var vh = state.voiceHealing;
+    if (vh.pollingTimer) return;
+    vh.pollingTimer = setInterval(function() {
+        // Only poll if the panel is currently in the DOM
+        if (document.querySelector('.vh-panel')) {
+            fetchVoiceHealingPanel();
+        } else {
+            clearInterval(vh.pollingTimer);
+            vh.pollingTimer = null;
+        }
+    }, 10_000);
+}
+
+function flipVoiceHealingMode(nextMode, allocatedVtid) {
+    var vh = state.voiceHealing;
+    vh.modeLoading = true;
+    fetch('/api/v1/voice-lab/healing/mode', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ mode: nextMode, vtid: allocatedVtid || 'VTID-VOICE-HEALING' }),
+    }).then(function(r) { return r.json(); }).then(function(r) {
+        vh.modeLoading = false;
+        if (r && r.ok) {
+            showToast('Mode flipped: ' + (r.previous || '?') + ' → ' + r.new, 'success');
+            fetchVoiceHealingPanel();
+        } else {
+            showToast('Mode flip failed: ' + (r && r.error ? r.error : 'unknown'), 'error');
+        }
+    }).catch(function(err) {
+        vh.modeLoading = false;
+        showToast('Mode flip error: ' + err.message, 'error');
+    });
+}
+
+// =============================================================================
+// VTID-01999: Voice Healing Report Drawer
+// =============================================================================
+// Slide-in side drawer that renders an Architecture Investigator report
+// inline, with decision actions (Acknowledge / Accept / Reject + notes).
+// No navigation away from the Self-Healing screen.
+
+function _vhEsc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+}
+
+function closeVoiceHealingReportDrawer() {
+    var existing = document.getElementById('vh-report-drawer-root');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    if (typeof _vhStopExecPoll === 'function') _vhStopExecPoll();
+}
+
+// VTID-02021: Execution Progress polling state. Lives outside the drawer
+// render so it survives re-renders. Cleared when drawer closes.
+var _vhExecPollTimer = null;
+function _vhStopExecPoll() {
+    if (_vhExecPollTimer) { clearInterval(_vhExecPollTimer); _vhExecPollTimer = null; }
+}
+async function _vhFetchAndRenderExecution(reportId) {
+    var section = document.getElementById('vh-execution-progress');
+    if (!section) { _vhStopExecPoll(); return; }
+    var resp;
+    try {
+        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId) + '/execution');
+    } catch (err) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#f87171;font-size:0.82rem;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
+        return;
+    }
+    if (!resp.ok) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#f87171;font-size:0.82rem;">HTTP ' + resp.status + '</div>';
+        return;
+    }
+    var data = await resp.json();
+    var vtids = (data && data.vtids) || [];
+    var statusColor = function(s, t) {
+        if (t === true) return '#4ade80';
+        if (s === 'in_progress') return '#fbbf24';
+        if (s === 'failed' || s === 'blocked' || s === 'cancelled') return '#f87171';
+        if (s === 'completed') return '#4ade80';
+        return '#94a3b8';
+    };
+    if (vtids.length === 0) {
+        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.82rem;">No work items linked to this report yet.</div>';
+        return;
+    }
+    var done = vtids.filter(function(v) { return v.is_terminal; }).length;
+    var rowsHtml = vtids.map(function(v) {
+        var color = statusColor(v.status, v.is_terminal);
+        var stepIdx = v.metadata && v.metadata.step_index;
+        var stepLabel = (typeof stepIdx === 'number') ? ('#' + (stepIdx + 1) + ' ') : '';
+        var statusLabel = v.is_terminal ? (v.terminal_outcome || v.status) : v.status;
+        var titleClean = (v.title || '').replace(/^INVESTIGATOR:\s*/, '');
+        return '<a href="/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(v.vtid) + '" target="_blank" rel="noopener" style="display:block;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:4px;margin-bottom:6px;color:#e2e8f0;text-decoration:none;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.8rem;">' +
+                '<span style="color:#cbd5e1;">' + _vhEsc(stepLabel) + '<code style="color:#60a5fa;">' + _vhEsc(v.vtid) + '</code></span>' +
+                '<span style="color:' + color + ';font-weight:bold;font-size:0.7rem;letter-spacing:0.05em;text-transform:uppercase;">' + _vhEsc(statusLabel) + '</span>' +
+            '</div>' +
+            '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;">' + _vhEsc(titleClean.slice(0, 160)) + (titleClean.length > 160 ? '…' : '') + '</div>' +
+            (v.claimed_by ? '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">claimed by ' + _vhEsc(v.claimed_by) + '</div>' : '') +
+            '</a>';
+    }).join('');
+    section.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.74rem;">' + done + '/' + vtids.length + ' done · auto-refresh 10s · ' + new Date().toLocaleTimeString() + '</div>' +
+        '</div>' +
+        rowsHtml +
+        '<div style="margin-top:6px;color:#94a3b8;font-size:0.72rem;">Click a row to open the standard VTID Ledger detail view in a new tab.</div>';
+}
+function loadVoiceHealingExecution(reportId) {
+    _vhStopExecPoll();
+    _vhFetchAndRenderExecution(reportId);
+    _vhExecPollTimer = setInterval(function() {
+        if (!document.getElementById('vh-execution-progress')) {
+            _vhStopExecPoll();
+            return;
+        }
+        _vhFetchAndRenderExecution(reportId);
+    }, 10000);
+}
+
+async function openVoiceHealingReportDrawer(reportId) {
+    _vhStopExecPoll();
+    closeVoiceHealingReportDrawer();
+
+    var root = document.createElement('div');
+    root.id = 'vh-report-drawer-root';
+    root.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;justify-content:flex-end;';
+
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.55);';
+    backdrop.onclick = closeVoiceHealingReportDrawer;
+    root.appendChild(backdrop);
+
+    var drawer = document.createElement('div');
+    drawer.style.cssText = 'position:relative;width:min(720px,90vw);height:100%;background:#0f172a;border-left:1px solid #1e293b;color:#e2e8f0;overflow-y:auto;box-shadow:-8px 0 24px rgba(0,0,0,0.5);';
+    drawer.innerHTML = '<div style="padding:18px 22px;color:#94a3b8;">Loading report ' + _vhEsc(reportId) + '…</div>';
+    root.appendChild(drawer);
+    document.body.appendChild(root);
+
+    var resp;
+    try {
+        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId));
+    } catch (err) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
+        return;
+    }
+    if (!resp.ok) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">HTTP ' + resp.status + ' — ' + _vhEsc(await resp.text()) + '</div>';
+        return;
+    }
+    var body = await resp.json();
+    if (!body.ok || !body.report) {
+        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Report not available.</div>';
+        return;
+    }
+    drawer.innerHTML = '';
+    drawer.appendChild(_vhRenderReportContent(body.report));
+}
+
+function _vhRenderReportContent(row) {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:0;display:flex;flex-direction:column;height:100%;';
+
+    var report = row.report || {};
+    var isStub = row.schema_version === 'v1-stub' || report.investigator_status === 'failed';
+    var rec = report.recommendation || {};
+    var hyps = (report.internal_findings && report.internal_findings.hypotheses) || [];
+    var alts = report.alternatives || [];
+    var ev = report.evidence || {};
+
+    // ── Sticky header ──
+    var header = document.createElement('div');
+    header.style.cssText = 'position:sticky;top:0;background:#0f172a;border-bottom:1px solid #1e293b;padding:18px 22px 14px 22px;z-index:1;';
+    var statusColor = row.status === 'open' ? '#fbbf24' :
+                      row.status === 'accepted' ? '#4ade80' :
+                      row.status === 'rejected' ? '#f87171' :
+                      row.status === 'acknowledged' ? '#60a5fa' : '#94a3b8';
+    header.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+            '<div>' +
+                '<div style="font-size:0.7rem;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">Architecture Investigator Report' + (isStub ? ' — STUB (investigator failed)' : '') + '</div>' +
+                '<div style="font-size:1.05rem;font-weight:bold;color:#e2e8f0;">' + _vhEsc(row.class) + '</div>' +
+                '<div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">' +
+                    'signature: <code style="color:#cbd5e1;">' + _vhEsc(row.normalized_signature || '—') + '</code>' +
+                    ' · trigger: <code style="color:#cbd5e1;">' + _vhEsc(row.trigger_reason) + '</code>' +
+                    ' · ' + new Date(row.generated_at).toLocaleString() +
+                '</div>' +
+            '</div>' +
+            '<button id="vh-drawer-close" style="background:transparent;border:1px solid #334155;color:#94a3b8;padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.85rem;">✕ Close</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
+            '<span style="padding:3px 8px;border:1px solid ' + statusColor + ';color:' + statusColor + ';border-radius:3px;font-size:0.7rem;letter-spacing:0.05em;">STATUS: ' + (row.status || 'open').toUpperCase() + '</span>' +
+            (row.acknowledged_by ? '<span style="font-size:0.72rem;color:#94a3b8;">by ' + _vhEsc(row.acknowledged_by) + ' at ' + new Date(row.acknowledged_at).toLocaleString() + '</span>' : '') +
+        '</div>';
+    c.appendChild(header);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:18px 22px;flex:1;font-size:0.85rem;line-height:1.55;';
+
+    if (isStub) {
+        body.innerHTML =
+            '<div style="background:#7c2d12;border:1px solid #ea580c;color:#fed7aa;padding:12px 14px;border-radius:6px;margin-bottom:16px;">' +
+                '<strong>Investigator could not produce a structured report.</strong><br>' +
+                '<span style="font-size:0.8rem;">Reason: <code>' + _vhEsc(report.failure_reason) + '</code></span>' +
+            '</div>' +
+            '<div style="margin-bottom:14px;"><strong>Failure detail:</strong></div>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.78rem;color:#cbd5e1;overflow-x:auto;white-space:pre-wrap;">' + _vhEsc(report.failure_detail || '(none)') + '</pre>' +
+            '<div style="margin-top:18px;margin-bottom:8px;"><strong>Evidence at failure:</strong></div>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.74rem;color:#94a3b8;overflow-x:auto;">' + _vhEsc(JSON.stringify(report.evidence_at_failure || {}, null, 2)) + '</pre>';
+    } else {
+        // ── Recommendation (lead) ──
+        var trackColor = rec.track === 'replace_vendor' ? '#f87171' :
+                         rec.track === 'redesign_pipeline' ? '#fbbf24' :
+                         rec.track === 'patch_around' ? '#fbbf24' :
+                         rec.track === 'stay_and_patch' ? '#4ade80' :
+                         '#94a3b8';
+        var recHtml =
+            '<div style="background:#1e293b;border:1px solid ' + trackColor + ';border-radius:6px;padding:14px;margin-bottom:18px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                    '<strong style="color:' + trackColor + ';font-size:0.95rem;">RECOMMENDATION: ' + _vhEsc(rec.track || '?').toUpperCase().replace(/_/g, ' ') + '</strong>' +
+                    '<span style="color:#94a3b8;font-size:0.78rem;">confidence: <strong style="color:' + (rec.confidence >= 0.7 ? '#4ade80' : rec.confidence >= 0.5 ? '#fbbf24' : '#f87171') + ';">' + (typeof rec.confidence === 'number' ? rec.confidence.toFixed(2) : '?') + '</strong></span>' +
+                '</div>' +
+                '<div style="color:#e2e8f0;margin-bottom:8px;font-weight:500;">' + _vhEsc(rec.summary || '') + '</div>' +
+                '<div style="color:#cbd5e1;font-size:0.82rem;margin-bottom:8px;"><strong>Rationale:</strong> ' + _vhEsc(rec.rationale || '') + '</div>' +
+                (rec.contradiction_check ? '<div style="color:#94a3b8;font-size:0.78rem;font-style:italic;border-top:1px dashed #334155;padding-top:8px;margin-top:8px;"><strong>What would change my mind:</strong> ' + _vhEsc(rec.contradiction_check) + '</div>' : '') +
+            '</div>';
+
+        // ── Proposed next steps ──
+        if (rec.proposed_next_steps && rec.proposed_next_steps.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Proposed next steps</div>' +
+                '<ul style="margin:0;padding-left:20px;">' +
+                rec.proposed_next_steps.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
+                '</ul></div>';
+        }
+
+        // ── Required human decisions ──
+        if (rec.required_human_decisions && rec.required_human_decisions.length) {
+            recHtml += '<div style="margin-bottom:18px;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;">' +
+                '<div style="color:#fbbf24;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">⚠ Required human decisions</div>' +
+                '<ul style="margin:0;padding-left:20px;">' +
+                rec.required_human_decisions.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
+                '</ul></div>';
+        }
+
+        // ── Hypotheses ──
+        if (hyps.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Top hypotheses (' + hyps.length + ')</div>';
+            hyps.slice(0, 4).forEach(function(h) {
+                var hConf = typeof h.confidence === 'number' ? h.confidence : 0;
+                var hConfColor = hConf >= 0.7 ? '#4ade80' : hConf >= 0.5 ? '#fbbf24' : '#f87171';
+                recHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;margin-bottom:8px;">' +
+                    '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;"><strong style="color:#cbd5e1;font-size:0.85rem;">' + _vhEsc(h.hypothesis) + '</strong><span style="color:' + hConfColor + ';font-size:0.78rem;flex-shrink:0;">' + hConf.toFixed(2) + '</span></div>';
+                if (h.top_3_disconfirming_data_points && h.top_3_disconfirming_data_points.length) {
+                    recHtml += '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;"><strong>Disconfirming evidence:</strong></div>' +
+                        '<ul style="margin:2px 0 0 0;padding-left:18px;color:#94a3b8;font-size:0.74rem;">' +
+                        h.top_3_disconfirming_data_points.map(function(d) { return '<li>' + _vhEsc(d) + '</li>'; }).join('') +
+                        '</ul>';
+                }
+                recHtml += '</div>';
+            });
+            recHtml += '</div>';
+        }
+
+        // ── Alternatives ──
+        if (alts.length) {
+            recHtml += '<div style="margin-bottom:18px;">' +
+                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Alternative architectures (' + alts.length + ')</div>' +
+                '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">' +
+                '<thead><tr style="text-align:left;color:#94a3b8;border-bottom:1px solid #334155;"><th style="padding:4px 6px;">Name</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Latency</th><th style="padding:4px 6px;">Effort</th></tr></thead><tbody>';
+            alts.forEach(function(a) {
+                recHtml += '<tr style="border-bottom:1px solid #1e293b;"><td style="padding:5px 6px;">' + _vhEsc(a.name) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.vendor_or_oss) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.latency_profile) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.integration_effort) + '</td></tr>';
+                if (a.pros && a.pros.length) {
+                    recHtml += '<tr><td colspan="4" style="padding:0 6px 6px 12px;color:#cbd5e1;font-size:0.74rem;"><strong>Pros:</strong> ' + a.pros.map(_vhEsc).join('; ') + (a.cons && a.cons.length ? ' · <strong>Cons:</strong> ' + a.cons.map(_vhEsc).join('; ') : '') + (a.links && a.links.length ? ' · <strong>Links:</strong> ' + a.links.map(function(l) { return '<a href="' + _vhEsc(l) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + _vhEsc(l) + '</a>'; }).join(' ') : '') + '</td></tr>';
+                }
+            });
+            recHtml += '</tbody></table></div>';
+        }
+
+        // ── Raw evidence ──
+        recHtml += '<details style="margin-bottom:18px;">' +
+            '<summary style="cursor:pointer;color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Raw evidence</summary>' +
+            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.72rem;color:#94a3b8;margin-top:8px;overflow-x:auto;">' + _vhEsc(JSON.stringify(ev, null, 2)) + '</pre>' +
+            '</details>';
+
+        body.innerHTML = recHtml;
+    }
+    c.appendChild(body);
+
+    // ── VTID-02021: Execution Progress section (only for accepted reports) ──
+    // After Accept & Execute, this section appears showing the live status of
+    // every VTID created from the report's proposed_next_steps. Polls every
+    // 10s. Each row is a click-through to the standard VTID Ledger detail
+    // view.
+    if (row.status === 'accepted' || row.status === 'acknowledged') {
+        var execSection = document.createElement('div');
+        execSection.id = 'vh-execution-progress';
+        execSection.style.cssText = 'padding:14px 22px;border-top:1px solid #1e293b;background:#0b1220;';
+        execSection.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
+            '<div style="color:#94a3b8;font-size:0.82rem;">Loading…</div>';
+        c.appendChild(execSection);
+        // Kick off fetch + poll
+        loadVoiceHealingExecution(row.id);
+    }
+
+    // ── Decision footer (sticky) ──
+    var footer = document.createElement('div');
+    footer.style.cssText = 'position:sticky;bottom:0;background:#0f172a;border-top:1px solid #1e293b;padding:14px 22px;';
+    if (row.decision_notes) {
+        var prevNotes = document.createElement('div');
+        prevNotes.style.cssText = 'color:#94a3b8;font-size:0.78rem;margin-bottom:8px;';
+        prevNotes.innerHTML = '<strong>Prior notes:</strong> ' + _vhEsc(row.decision_notes);
+        footer.appendChild(prevNotes);
+    }
+    var notesArea = document.createElement('textarea');
+    notesArea.placeholder = 'Decision notes (optional) — will be saved with status change';
+    notesArea.style.cssText = 'width:100%;min-height:48px;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:0.82rem;box-sizing:border-box;resize:vertical;';
+    footer.appendChild(notesArea);
+
+    var actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap;';
+    // VTID-02021: three buttons with distinct semantics.
+    //   Acknowledge — "I read it" (no work created). PATCH only.
+    //   Accept & Execute — "I approve, schedule the work." POSTs /execute,
+    //     creates one VTID per proposed_next_step, opens the Execution
+    //     Progress section, polls live status. ONLY available for non-stub
+    //     reports with at least one proposed step.
+    //   Reject — "Don't act on this." PATCH only.
+    // VTID-02032: once a report has been decided (accepted/rejected/
+    // acknowledged) the action buttons must not reappear. Show a clear
+    // "already processed" notice instead of re-actionable buttons. The
+    // backend /execute endpoint also returns 409 to defend against races.
+    var alreadyDecided = row.status && row.status !== 'open';
+    if (alreadyDecided) {
+        var processedNotice = document.createElement('div');
+        processedNotice.style.cssText = 'padding:10px 14px;margin-top:8px;background:rgba(74,222,128,0.08);' +
+            'border:1px solid rgba(74,222,128,0.30);border-radius:6px;color:#86efac;font-size:0.85rem;line-height:1.5;';
+        var processedTitle = document.createElement('strong');
+        processedTitle.textContent = 'Report already ' + row.status;
+        if (row.acknowledged_by) {
+            processedTitle.textContent += ' by ' + row.acknowledged_by;
+        }
+        processedNotice.appendChild(processedTitle);
+        var processedHint = document.createElement('div');
+        processedHint.style.cssText = 'margin-top:4px;color:rgba(229,231,235,0.78);font-style:italic;';
+        processedHint.textContent = row.status === 'accepted'
+            ? 'The proposed steps were scheduled. See Execution Progress above for live status.'
+            : 'No action will be taken on this recommendation.';
+        processedNotice.appendChild(processedHint);
+        footer.appendChild(processedNotice);
+        c.appendChild(footer);
+        setTimeout(function() {
+            var closeBtn = document.getElementById('vh-drawer-close');
+            if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
+        }, 0);
+        return c;
+    }
+    var hasExecutableSteps =
+        !isStub &&
+        rec.proposed_next_steps &&
+        Array.isArray(rec.proposed_next_steps) &&
+        rec.proposed_next_steps.length > 0;
+    var actionDefs = [
+        { kind: 'patch', status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
+    ];
+    if (hasExecutableSteps) {
+        actionDefs.push({
+            kind: 'execute',
+            label: 'Accept & Execute (' + rec.proposed_next_steps.length + ' step' + (rec.proposed_next_steps.length === 1 ? '' : 's') + ')',
+            color: '#4ade80',
+        });
+    } else {
+        actionDefs.push({ kind: 'patch', status: 'accepted', label: 'Accept (no executable steps)', color: '#4ade80' });
+    }
+    actionDefs.push({ kind: 'patch', status: 'rejected', label: 'Reject', color: '#f87171' });
+    actionDefs.forEach(function(def) {
+        var btn = document.createElement('button');
+        btn.textContent = def.label;
+        btn.style.cssText = 'padding:8px 14px;background:' + def.color + '22;border:1px solid ' + def.color + ';color:' + def.color + ';cursor:pointer;border-radius:4px;font-size:0.82rem;';
+        btn.onclick = async function() {
+            btn.disabled = true;
+            btn.textContent = def.kind === 'execute' ? 'Scheduling…' : 'Saving…';
+            try {
+                var url, method, body;
+                if (def.kind === 'execute') {
+                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id) + '/execute';
+                    method = 'POST';
+                    body = JSON.stringify({ decision_notes: notesArea.value || null });
+                } else {
+                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id);
+                    method = 'PATCH';
+                    body = JSON.stringify({ status: def.status, decision_notes: notesArea.value || null });
+                }
+                var r = await fetch(url, {
+                    method: method,
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: body,
+                });
+                var data = await r.json();
+                if (data && data.ok) {
+                    if (def.kind === 'execute') {
+                        var n = data.executed_vtids ? data.executed_vtids.length : 0;
+                        showToast(
+                            'Scheduled ' + n + ' work item(s) — track them in Self-Healing History',
+                            'success',
+                        );
+                    } else {
+                        showToast('Report ' + (def.status || 'updated'), 'success');
+                    }
+                    // VTID-02032: regardless of action kind, close the drawer
+                    // and refresh the panel. The report row now has status
+                    // != 'open' so it drops out of the open-list naturally;
+                    // re-opening would just show the "already processed"
+                    // notice — closing is the cleaner outcome.
+                    closeVoiceHealingReportDrawer();
+                    fetchVoiceHealingPanel();
+                    if (typeof state !== 'undefined' && state.actionRequired) {
+                        // Bump the Action Required panel so the closed
+                        // report drops off promptly.
+                        state.actionRequired.fetched = false;
+                        if (typeof fetchActionRequired === 'function') fetchActionRequired(true);
+                    }
+                } else if (r.status === 409 && data && data.status) {
+                    // VTID-02032: backend reports the row was already decided
+                    // by someone else (or a duplicate click). Don't error —
+                    // close the drawer and treat as a no-op, since the
+                    // intended outcome (status != 'open') is already true.
+                    showToast(
+                        'Report was already ' + data.status +
+                        (data.acknowledged_by ? ' by ' + data.acknowledged_by : '') +
+                        ' — no duplicate action created',
+                        'info',
+                    );
+                    closeVoiceHealingReportDrawer();
+                    fetchVoiceHealingPanel();
+                } else {
+                    showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
+                    btn.disabled = false;
+                    btn.textContent = def.label;
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = def.label;
+            }
+        };
+        actions.appendChild(btn);
+    });
+    footer.appendChild(actions);
+    c.appendChild(footer);
+
+    // Close button binding (delegated within drawer DOM)
+    setTimeout(function() {
+        var closeBtn = document.getElementById('vh-drawer-close');
+        if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
+    }, 0);
+
+    return c;
+}
+
+function renderVoiceSelfHealingPanel() {
+    var panel = document.createElement('section');
+    panel.className = 'vh-panel';
+    panel.style.cssText = 'margin-bottom:24px;padding:16px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;';
+
+    var vh = state.voiceHealing;
+
+    // ── Header ──
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;';
+    var titleDiv = document.createElement('div');
+    titleDiv.innerHTML = '<h3 style="margin:0;color:#e2e8f0;">ORB Voice Self-Healing</h3>' +
+        '<p style="margin:4px 0 0 0;color:#94a3b8;font-size:0.85rem;">Live monitor + healing loop state. VTID-01984 watchdog fix verification + VTID-01956..01965 self-healing infrastructure.</p>';
+    header.appendChild(titleDiv);
+
+    // Mode badge + flip control
+    var modeWrap = document.createElement('div');
+    modeWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    var modeColor = vh.mode === 'live' ? '#4ade80' : (vh.mode === 'shadow' ? '#fbbf24' : '#94a3b8');
+    var modeBadge = document.createElement('span');
+    modeBadge.style.cssText = 'padding:4px 10px;background:' + modeColor + '22;color:' + modeColor + ';border:1px solid ' + modeColor + ';border-radius:4px;font-size:0.75rem;font-weight:bold;letter-spacing:0.05em;';
+    modeBadge.textContent = 'MODE: ' + (vh.mode || '...').toUpperCase();
+    modeWrap.appendChild(modeBadge);
+
+    if (vh.mode && !vh.modeLoading) {
+        var nextMap = { off: 'shadow', shadow: 'live', live: 'off' };
+        var nextMode = nextMap[vh.mode];
+        var flipBtn = document.createElement('button');
+        flipBtn.className = 'infra-btn infra-btn--small';
+        flipBtn.textContent = 'Flip → ' + nextMode;
+        flipBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
+        flipBtn.onclick = function() {
+            var promptVtid = window.prompt(
+                'Allocate a fresh VTID first (Vitana governance), then paste it here. ' +
+                'Format: VTID-NNNNN.\\n\\n' +
+                'Or click OK to use the placeholder VTID-VOICE-HEALING.',
+                'VTID-VOICE-HEALING'
+            );
+            if (promptVtid === null) return; // cancelled
+            if (!confirm('Flip voice self-healing mode: ' + vh.mode + ' → ' + nextMode + '?')) return;
+            flipVoiceHealingMode(nextMode, promptVtid.trim());
+        };
+        modeWrap.appendChild(flipBtn);
+    }
+    header.appendChild(modeWrap);
+    panel.appendChild(header);
+
+    if (vh.loading) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'color:#94a3b8;padding:8px 0;font-size:0.85rem;';
+        loading.textContent = 'Loading voice healing state...';
+        panel.appendChild(loading);
+        if (!vh.lastFetchAt) {
+            fetchVoiceHealingPanel();
+            startVoiceHealingPolling();
+        }
+        return panel;
+    }
+
+    // ── Watchdog Fix Verification (VTID-01984) ──
+    var lm = vh.liveMonitor;
+    if (lm) {
+        var watchdogBox = document.createElement('div');
+        watchdogBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
+        var fixWorking = lm.watchdog_skipped_24h > 0 && lm.rollup_24h.bad_pct < 50;
+        var verdictColor = fixWorking ? '#4ade80' : (lm.watchdog_skipped_24h > 0 ? '#fbbf24' : '#94a3b8');
+        watchdogBox.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<strong style="color:#e2e8f0;font-size:0.9rem;">Watchdog Fix Verification (VTID-01984)</strong>' +
+                '<span style="color:' + verdictColor + ';font-size:0.8rem;">' +
+                    (fixWorking ? '✓ Fix is working' : (lm.watchdog_skipped_24h > 0 ? '~ Partial — monitoring' : '⏳ No data yet')) +
+                '</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.8rem;color:#cbd5e1;">' +
+                '<span>Watchdog skipped (24h): <strong style="color:#4ade80;">' + lm.watchdog_skipped_24h + '</strong></span>' +
+                '<span>Watchdog fired forwarding (24h): <strong style="color:' + (lm.watchdog_fired_forwarding_24h > 5 ? '#f87171' : '#cbd5e1') + ';">' + lm.watchdog_fired_forwarding_24h + '</strong></span>' +
+                '<span>Watchdog fired any (24h): ' + lm.watchdog_fired_any_24h + '</span>' +
+                '<span>BAD-ratio sessions (24h): <strong style="color:' + (lm.rollup_24h.bad_pct > 30 ? '#f87171' : '#4ade80') + ';">' + lm.rollup_24h.bad_count + '/' + lm.rollup_24h.total_sessions + ' (' + lm.rollup_24h.bad_pct + '%)</strong></span>' +
+            '</div>';
+        panel.appendChild(watchdogBox);
+    }
+
+    // ── Per-class summary table ──
+    var summary = vh.summary;
+    if (summary && summary.per_class) {
+        var summaryBox = document.createElement('div');
+        summaryBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
+        var debt = summary.unknown_class_debt;
+        var debtColor = debt && debt.slo_band === 'over_slo' ? '#f87171' : (debt && debt.slo_band === 'week1' ? '#fbbf24' : '#4ade80');
+        summaryBox.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<strong style="color:#e2e8f0;font-size:0.9rem;">Per-Class Status</strong>' +
+                '<span style="color:#94a3b8;font-size:0.75rem;">' +
+                    'Unknown debt: <span style="color:' + debtColor + ';">' + (debt ? debt.unknown_pct_24h + '% (' + debt.slo_band + ')' : '-') +
+                    '</span></span>' +
+            '</div>';
+        var tbl = document.createElement('table');
+        tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;color:#cbd5e1;';
+        tbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
+            '<th style="padding:4px 6px;">Class</th>' +
+            '<th style="padding:4px 6px;text-align:right;">24h</th>' +
+            '<th style="padding:4px 6px;text-align:right;">7d</th>' +
+            '<th style="padding:4px 6px;text-align:right;">30d</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Success</th>' +
+            '<th style="padding:4px 6px;">Quarantine</th>' +
+            '<th style="padding:4px 6px;">Investigation</th>' +
+            '</tr></thead>';
+        var tbody = document.createElement('tbody');
+        summary.per_class.forEach(function(c) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var qColor = c.quarantine_status === 'quarantined' ? '#f87171' :
+                         c.quarantine_status === 'probation' ? '#fbbf24' :
+                         c.quarantine_status === 'released' ? '#94a3b8' : '#cbd5e1';
+            tr.innerHTML =
+                '<td style="padding:4px 6px;font-family:monospace;">' + escapeHtml(c.class) + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_24h + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_7d + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_30d + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + (c.fix_success_rate_7d !== null ? c.fix_success_rate_7d + '%' : '-') + '</td>' +
+                '<td style="padding:4px 6px;color:' + qColor + ';">' + c.quarantine_status + '</td>' +
+                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" data-vh-report="' + c.latest_investigation_report_id + '">view</a>' : '-') + '</td>';
+            tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+        summaryBox.appendChild(tbl);
+        panel.appendChild(summaryBox);
+    }
+
+    // ── Recent ORB sessions (live monitor) ──
+    if (lm && lm.recent_sessions && lm.recent_sessions.length > 0) {
+        var sessionsBox = document.createElement('div');
+        sessionsBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
+        var headLine = document.createElement('div');
+        headLine.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+        headLine.innerHTML =
+            '<strong style="color:#e2e8f0;font-size:0.9rem;">Recent ORB Sessions (last 20)</strong>' +
+            '<span style="color:#94a3b8;font-size:0.75rem;">Auto-refresh every 10s — last updated ' + new Date(lm.generated_at).toLocaleTimeString() + '</span>';
+        sessionsBox.appendChild(headLine);
+        var stbl = document.createElement('table');
+        stbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.78rem;color:#cbd5e1;';
+        stbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
+            '<th style="padding:4px 6px;">Ended</th>' +
+            '<th style="padding:4px 6px;">Session</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Audio in</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Audio out</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Ratio</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Turns</th>' +
+            '<th style="padding:4px 6px;text-align:right;">Dur</th>' +
+            '<th style="padding:4px 6px;">Health</th>' +
+            '</tr></thead>';
+        var stbody = document.createElement('tbody');
+        lm.recent_sessions.forEach(function(s) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var hColor = s.health === 'bad' ? '#f87171' : (s.health === 'warn' ? '#fbbf24' : '#4ade80');
+            var ended = new Date(s.ended_at).toLocaleTimeString();
+            var sid = s.session_id.length > 16 ? s.session_id.substring(0, 16) + '…' : s.session_id;
+            tr.innerHTML =
+                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;color:#94a3b8;">' + escapeHtml(ended) + '</td>' +
+                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;">' + escapeHtml(sid) + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.audio_in_chunks + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.audio_out_chunks + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;color:' + hColor + ';">' + s.ratio + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + s.turn_count + '</td>' +
+                '<td style="padding:4px 6px;text-align:right;">' + Math.round(s.duration_ms / 1000) + 's</td>' +
+                '<td style="padding:4px 6px;color:' + hColor + ';font-weight:bold;text-transform:uppercase;font-size:0.7rem;">' + s.health + '</td>';
+            stbody.appendChild(tr);
+        });
+        stbl.appendChild(stbody);
+        sessionsBox.appendChild(stbl);
+        panel.appendChild(sessionsBox);
+    } else if (lm) {
+        var emptyMsg = document.createElement('div');
+        emptyMsg.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.85rem;';
+        emptyMsg.textContent = 'No recent ORB sessions in the last 24h.';
+        panel.appendChild(emptyMsg);
+    }
+
+    // Start polling on first render
+    if (!vh.pollingTimer) {
+        startVoiceHealingPolling();
+    }
+
+    // VTID-01999: Delegated click handler so [data-vh-report="<id>"] links open
+    // the inline drawer instead of switching screens.
+    panel.addEventListener('click', function(e) {
+        var t = e.target;
+        if (t && t.getAttribute && t.getAttribute('data-vh-report')) {
+            e.preventDefault();
+            var rid = t.getAttribute('data-vh-report');
+            openVoiceHealingReportDrawer(rid);
+        }
+    });
+
+    return panel;
+}
+
 function renderSelfHealingView() {
     var container = document.createElement('div');
     container.className = 'self-healing-container';
@@ -38456,6 +39843,11 @@ function renderSelfHealingView() {
     if (!state.selfHealing.fetched && !state.selfHealing.loading) {
         fetchSelfHealingData();
     }
+
+    // VTID-01991: Voice Self-Healing panel pinned at top — gives ops live
+    // visibility into ORB voice health, the watchdog fix verification,
+    // per-class healing state, and the mode flip control.
+    container.appendChild(renderVoiceSelfHealingPanel());
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');
@@ -38485,7 +39877,7 @@ function renderSelfHealingView() {
         killBtn.textContent = 'Processing...';
         fetch('/api/v1/self-healing/kill-switch', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ action: action, operator: 'command-hub' })
         }).then(function(r) { return r.json(); }).then(function() {
             state.selfHealing.fetched = false;
@@ -38557,7 +39949,7 @@ function renderSelfHealingView() {
     levelSelect.onchange = function() {
         fetch('/api/v1/self-healing/config', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ autonomy_level: parseInt(levelSelect.value), operator: 'command-hub' })
         }).then(function() {
             state.selfHealing.fetched = false;
@@ -38618,7 +40010,7 @@ function renderSelfHealingView() {
                 approveBtn.textContent = 'DISPATCHING…';
                 fetch('/api/v1/self-healing/approve', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ id: row.id, operator: 'command-hub' })
                 }).then(function(r) { return r.json(); }).then(function(result) {
                     state.selfHealing.fetched = false;
@@ -38646,7 +40038,7 @@ function renderSelfHealingView() {
                 rejectBtn.textContent = 'REJECTING…';
                 fetch('/api/v1/self-healing/reject', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ id: row.id, operator: 'command-hub', reason: reason || '' })
                 }).then(function(r) { return r.json(); }).then(function(result) {
                     state.selfHealing.fetched = false;
@@ -38746,7 +40138,7 @@ function renderSelfHealingView() {
                 rejectBtn.className = 'infra-btn infra-btn--danger';
                 rejectBtn.textContent = 'REJECT';
                 rejectBtn.onclick = function() {
-                    fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                    fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST', headers: buildContextHeaders() }).then(function() {
                         state.selfHealing.fetched = false;
                         fetchSelfHealingData();
                         showToast('Rejected ' + task.vtid, 'info');
@@ -38760,7 +40152,7 @@ function renderSelfHealingView() {
             rollbackBtn.textContent = 'ROLLBACK';
             rollbackBtn.onclick = function() {
                 if (!confirm('Rollback ' + task.vtid + '?')) return;
-                fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST', headers: buildContextHeaders() }).then(function() {
                     state.selfHealing.fetched = false;
                     fetchSelfHealingData();
                     showToast('Rollback requested for ' + task.vtid, 'warning');
@@ -38780,6 +40172,53 @@ function renderSelfHealingView() {
     historyH3.className = 'infra-section-title';
     historyH3.textContent = 'Self-Healing History';
     container.appendChild(historyH3);
+
+    // Filter toolbar — class dropdown + page-size summary.
+    var historyToolbar = document.createElement('div');
+    historyToolbar.className = 'infra-toolbar';
+    historyToolbar.style.display = 'flex';
+    historyToolbar.style.alignItems = 'center';
+    historyToolbar.style.gap = '12px';
+    historyToolbar.style.marginBottom = '8px';
+
+    var classLabel = document.createElement('label');
+    classLabel.textContent = 'Failure class:';
+    classLabel.style.fontSize = '0.8rem';
+    classLabel.style.color = 'var(--color-text-secondary)';
+    historyToolbar.appendChild(classLabel);
+
+    var classSelect = document.createElement('select');
+    classSelect.className = 'infra-select';
+    classSelect.autocomplete = 'off';
+    var allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All (' + (state.selfHealing.historyTotal || 0) + ')';
+    classSelect.appendChild(allOpt);
+    (state.selfHealing.historyClasses || []).forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.class;
+        opt.textContent = c.class + ' (' + c.count + ')';
+        classSelect.appendChild(opt);
+    });
+    classSelect.value = state.selfHealing.historyFilterClass || '';
+    classSelect.onchange = function() {
+        state.selfHealing.historyFilterClass = classSelect.value;
+        // Re-fetch from offset 0 with the new filter; keep classes list stable.
+        state.selfHealing.fetched = false;
+        fetchSelfHealingData();
+    };
+    historyToolbar.appendChild(classSelect);
+
+    var summary = document.createElement('span');
+    summary.style.marginLeft = 'auto';
+    summary.style.fontSize = '0.8rem';
+    summary.style.color = 'var(--color-text-secondary)';
+    var shownCount = (state.selfHealing.history || []).length;
+    var totalCount = state.selfHealing.historyTotal || shownCount;
+    summary.textContent = 'Showing ' + shownCount + ' of ' + totalCount;
+    historyToolbar.appendChild(summary);
+
+    container.appendChild(historyToolbar);
 
     var historyItems = state.selfHealing.history || [];
     if (historyItems.length === 0) {
@@ -38896,8 +40335,23 @@ function renderSelfHealingView() {
                 ? 'Detected (failure first reported)\nISO: ' + item.created_at
                 : 'No detection timestamp';
 
+            // The Resolved column was rendering ANY non-pending row as
+            // "<timestamp> \u00b7 took N min", because the writer at
+            // dev-autopilot-self-heal-log.ts:127 sets resolved_at=now() for
+            // every non-pending outcome \u2014 including `escalated`. That made
+            // 288/288 escalated rows look like instant fixes. Truth-table:
+            //   - successful resolution (fixed / success / reconciled-recovered
+            //     / rolled_back) \u2192 show timestamp + duration ("Resolved at \u2026 \u00b7 took N min")
+            //   - escalated / failed / skipped / paused \u2192 show "\u2014" because the
+            //     row was NOT resolved; the Result column already carries the
+            //     red-flag outcome label
+            //   - pending (resolved_at null) \u2192 "still pending"
+            var SH_RESOLVED_OUTCOMES = ['fixed', 'success', 'rolled_back'];
+            var didResolve = isReconciledRecovered ||
+                (item.resolved_at && SH_RESOLVED_OUTCOMES.indexOf(item.outcome) !== -1);
+
             var resolvedCell, resolvedTitle;
-            if (item.resolved_at) {
+            if (didResolve) {
                 var durMs = new Date(item.resolved_at).getTime() - new Date(item.created_at).getTime();
                 var durMin = isFinite(durMs) ? Math.round(durMs / 60000) : null;
                 var durStr = durMin == null
@@ -38909,10 +40363,20 @@ function renderSelfHealingView() {
                     (durStr ? ' \u00b7 took ' + escapeHtml(durStr) : '') + '</div>';
                 resolvedTitle = 'Resolved (outcome committed)\nISO: ' + item.resolved_at +
                     (durStr ? '\nDuration pending\u2192resolved: ' + durStr : '');
-            } else {
+            } else if (!item.resolved_at) {
                 resolvedCell = '<span style="color:#facc15;">\u23f3 still pending</span>' +
                     '<div style="font-size:11px;color:#888;">created ' + escapeHtml(shFmtRel(item.created_at)) + '</div>';
                 resolvedTitle = 'Row is still in pending state.\nReconciler runs every 10 min on rows older than 1 h.';
+            } else {
+                // Terminal but NOT resolved (escalated / failed / skipped / paused).
+                // Don't pretend it was fixed \u2014 em-dash with explanatory tooltip.
+                resolvedCell =
+                    '<span style="color:#888;">\u2014</span>' +
+                    '<div style="font-size:11px;color:#888;">' +
+                        escapeHtml(item.outcome || 'closed') + ' \u00b7 not resolved</div>';
+                resolvedTitle = 'Row was committed to outcome `' + (item.outcome || 'unknown') +
+                    '` without being resolved.\nClosed at: ' + item.resolved_at +
+                    '\n\nResolved column only shows a timestamp for outcomes that actually fixed the failure (fixed, success, rolled_back, or reconciler-recovered).';
             }
 
             tr.innerHTML =
@@ -38932,16 +40396,36 @@ function renderSelfHealingView() {
         container.appendChild(tableWrapper);
     }
 
-    // Refresh button
+    // Action row: Load More (when more rows are available) + Refresh.
+    var actionRow = document.createElement('div');
+    actionRow.style.marginTop = '16px';
+    actionRow.style.display = 'flex';
+    actionRow.style.gap = '8px';
+    actionRow.style.alignItems = 'center';
+
+    var shHistoryShown = (state.selfHealing.history || []).length;
+    var shHistoryTotal = state.selfHealing.historyTotal || shHistoryShown;
+    if (shHistoryShown < shHistoryTotal) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'infra-btn';
+        loadMoreBtn.textContent = state.selfHealing.historyLoadingMore
+            ? 'Loading…'
+            : 'Load More (' + (shHistoryTotal - shHistoryShown) + ' remaining)';
+        loadMoreBtn.disabled = !!state.selfHealing.historyLoadingMore;
+        loadMoreBtn.onclick = function() { loadMoreSelfHealingHistory(); };
+        actionRow.appendChild(loadMoreBtn);
+    }
+
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'infra-btn infra-btn--ghost';
-    refreshBtn.style.marginTop = '16px';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function() {
         state.selfHealing.fetched = false;
         fetchSelfHealingData();
     };
-    container.appendChild(refreshBtn);
+    actionRow.appendChild(refreshBtn);
+
+    container.appendChild(actionRow);
 
     return container;
 }
@@ -42013,5 +43497,1250 @@ function renderAssistantOverviewView() {
     }
     container.appendChild(errCard);
 
+    return container;
+}
+
+// =============================================================================
+// VTID-01981: Routines — daily Claude Code remote agents
+// =============================================================================
+
+function routinesHumanCron(expr) {
+    if (!expr) return '';
+    var m = String(expr).trim().match(/^(\d+)\s+(\d+)\s+\*\s+\*\s+\*$/);
+    if (!m) return expr;
+    var hh = String(m[2]).padStart(2, '0');
+    var mm = String(m[1]).padStart(2, '0');
+    return 'daily at ' + hh + ':' + mm + ' UTC';
+}
+
+function routinesStatusPill(status) {
+    var pill = document.createElement('span');
+    pill.style.cssText = 'display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;';
+    var label = status || 'never run';
+    var bg, fg;
+    switch (status) {
+        case 'success': bg = 'rgba(34,197,94,.15)';  fg = '#16a34a'; break;
+        case 'failure': bg = 'rgba(239,68,68,.15)';  fg = '#dc2626'; break;
+        case 'partial': bg = 'rgba(234,179,8,.15)';  fg = '#ca8a04'; break;
+        case 'running': bg = 'rgba(59,130,246,.15)'; fg = '#2563eb'; break;
+        default:        bg = 'rgba(107,114,128,.15)'; fg = '#4b5563';
+    }
+    pill.style.background = bg;
+    pill.style.color = fg;
+    pill.textContent = label;
+    return pill;
+}
+
+async function fetchRoutinesCatalog() {
+    if (state.routines.catalogLoading) return;
+    state.routines.catalogLoading = true;
+    state.routines.catalogError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/routines', { headers: buildContextHeaders({}) });
+        if (!response.ok) {
+            var text = await response.text().catch(function () { return ''; });
+            state.routines.catalogError = response.status + ': ' + text.slice(0, 300);
+        } else {
+            state.routines.catalog = await response.json();
+        }
+    } catch (e) {
+        state.routines.catalogError = String(e && e.message ? e.message : e);
+    } finally {
+        state.routines.catalogLoading = false;
+        state.routines.catalogFetched = true;
+        renderApp();
+    }
+}
+
+async function fetchRoutineDetail(name) {
+    if (!name) return;
+    state.routines.detailLoading = true;
+    state.routines.detailError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/routines/' + encodeURIComponent(name), {
+            headers: buildContextHeaders({})
+        });
+        if (!response.ok) {
+            var text = await response.text().catch(function () { return ''; });
+            state.routines.detailError = response.status + ': ' + text.slice(0, 300);
+        } else {
+            state.routines.detail = await response.json();
+        }
+    } catch (e) {
+        state.routines.detailError = String(e && e.message ? e.message : e);
+    } finally {
+        state.routines.detailLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchRoutineRunDetail(name, runId) {
+    if (!name || !runId) return;
+    if (state.routines.runDetails[runId]) return;
+    try {
+        var response = await fetch(
+            '/api/v1/routines/' + encodeURIComponent(name) + '/runs/' + encodeURIComponent(runId),
+            { headers: buildContextHeaders({}) }
+        );
+        if (response.ok) {
+            var json = await response.json();
+            if (json && json.run) {
+                state.routines.runDetails[runId] = json.run;
+                renderApp();
+            }
+        }
+    } catch (e) {
+        // best-effort — surface absence as "no findings yet" in the UI
+    }
+}
+
+function renderRoutinesCountsStrip(counts) {
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0;padding:.75rem 1rem;background:var(--color-surface-secondary);border:1px solid var(--color-border);border-radius:8px;';
+    function chip(label, value) {
+        var c = document.createElement('div');
+        c.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;';
+        var v = document.createElement('div');
+        v.style.cssText = 'font-size:1.1rem;font-weight:700;color:var(--color-text-primary);';
+        v.textContent = String(value);
+        var l = document.createElement('div');
+        l.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;';
+        l.textContent = label;
+        c.appendChild(v);
+        c.appendChild(l);
+        return c;
+    }
+    strip.appendChild(chip('Total', counts.total || 0));
+    strip.appendChild(chip('Enabled', counts.enabled || 0));
+    var bs = counts.by_status || {};
+    strip.appendChild(chip('Success', bs.success || 0));
+    strip.appendChild(chip('Failure', bs.failure || 0));
+    strip.appendChild(chip('Partial', bs.partial || 0));
+    strip.appendChild(chip('Running', bs.running || 0));
+    strip.appendChild(chip('Never run', bs.never_run || 0));
+    return strip;
+}
+
+function renderRoutinesCatalogView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+
+    if (!state.routines.catalogFetched && !state.routines.catalogLoading) {
+        fetchRoutinesCatalog();
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.style.cssText = 'margin:0;';
+    title.textContent = 'Routines';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.style.cssText = 'margin:.25rem 0 0;color:var(--color-text-secondary);font-size:.85rem;max-width:60ch;';
+    subtitle.textContent = 'Daily Claude Code remote agents that triage, audit, and improve the platform without human intervention. Each routine runs in a sandbox, calls gateway APIs read-only, and posts findings here.';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.routines.catalogLoading ? 'Loading…' : 'Refresh';
+    refreshBtn.disabled = state.routines.catalogLoading;
+    refreshBtn.onclick = function () {
+        state.routines.catalogFetched = false;
+        fetchRoutinesCatalog();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    if (state.routines.catalogError) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:.75rem;margin:1rem 0;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#dc2626;font-family:monospace;font-size:.8rem;';
+        err.textContent = 'Failed to load routines: ' + state.routines.catalogError;
+        container.appendChild(err);
+        return container;
+    }
+
+    if (state.routines.catalogLoading && !state.routines.catalog) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading routines catalog…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    var data = state.routines.catalog;
+    if (!data || !data.ok) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        empty.innerHTML = '<p>No routines catalog response.</p>' +
+            '<p style="font-size:.8rem;">Confirm <code>GET /api/v1/routines</code> is reachable and the <code>routines</code> migration has been applied.</p>';
+        container.appendChild(empty);
+        return container;
+    }
+
+    container.appendChild(renderRoutinesCountsStrip(data.counts || {}));
+
+    var routines = (data.routines || []);
+    if (routines.length === 0) {
+        var emptyCatalog = document.createElement('div');
+        emptyCatalog.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        emptyCatalog.innerHTML = '<p>No routines registered yet.</p>' +
+            '<p style="font-size:.8rem;">Seed the <code>routines</code> table to register your first daily agent.</p>';
+        container.appendChild(emptyCatalog);
+        return container;
+    }
+
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:1rem;margin-top:.5rem;';
+
+    routines.forEach(function (r) {
+        var card = document.createElement('div');
+        card.style.cssText = 'padding:1rem;background:var(--color-surface-primary);border:1px solid var(--color-border);border-radius:8px;display:flex;flex-direction:column;gap:.5rem;';
+
+        var topRow = document.createElement('div');
+        topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;';
+        var nameWrap = document.createElement('div');
+        var name = document.createElement('div');
+        name.style.cssText = 'font-weight:700;font-size:1rem;color:var(--color-text-primary);';
+        name.textContent = r.display_name || r.name;
+        nameWrap.appendChild(name);
+        var schedLine = document.createElement('div');
+        schedLine.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);';
+        schedLine.textContent = routinesHumanCron(r.cron_schedule) +
+            (r.enabled ? '' : ' • DISABLED');
+        nameWrap.appendChild(schedLine);
+        topRow.appendChild(nameWrap);
+        topRow.appendChild(routinesStatusPill(r.last_run_status));
+        card.appendChild(topRow);
+
+        if (r.description) {
+            var desc = document.createElement('div');
+            desc.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);line-height:1.4;';
+            desc.textContent = r.description;
+            card.appendChild(desc);
+        }
+
+        var summary = document.createElement('div');
+        summary.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);padding:.5rem;background:var(--color-surface-secondary);border-radius:4px;min-height:2.4em;';
+        if (r.last_run_summary) {
+            summary.textContent = r.last_run_summary;
+        } else {
+            summary.style.color = 'var(--color-text-secondary)';
+            summary.style.fontStyle = 'italic';
+            summary.textContent = r.last_run_at ? 'No summary recorded for last run.' : 'Routine has not run yet.';
+        }
+        card.appendChild(summary);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.75rem;color:var(--color-text-secondary);';
+        var lastRunLine = document.createElement('div');
+        lastRunLine.textContent = r.last_run_at
+            ? 'Last run: ' + new Date(r.last_run_at).toLocaleString()
+            : 'Never run';
+        if (r.consecutive_failures > 0) {
+            lastRunLine.textContent += ' • ' + r.consecutive_failures + ' consecutive failures';
+            lastRunLine.style.color = '#dc2626';
+        }
+        footer.appendChild(lastRunLine);
+        var historyBtn = document.createElement('button');
+        historyBtn.className = 'btn btn-secondary';
+        historyBtn.style.cssText = 'padding:.25rem .6rem;font-size:.75rem;';
+        historyBtn.textContent = 'View history →';
+        historyBtn.onclick = function () {
+            state.routines.selectedName = r.name;
+            state.routines.detail = null;
+            state.routines.expandedRunId = null;
+            fetchRoutineDetail(r.name);
+            handleTabClick('history');
+        };
+        footer.appendChild(historyBtn);
+        card.appendChild(footer);
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+function renderRoutinesHistoryView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+
+    if (!state.routines.catalogFetched && !state.routines.catalogLoading) {
+        fetchRoutinesCatalog();
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('h2');
+    title.style.cssText = 'margin:0;';
+    title.textContent = 'Routine Run History';
+    titleWrap.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.style.cssText = 'margin:.25rem 0 0;color:var(--color-text-secondary);font-size:.85rem;';
+    subtitle.textContent = 'Pick a routine to see its last 30 runs and inspect each one’s findings.';
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+
+    var routinesList = (state.routines.catalog && state.routines.catalog.routines) || [];
+    var picker = document.createElement('select');
+    picker.style.cssText = 'padding:.4rem .6rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-surface-primary);color:var(--color-text-primary);font-size:.85rem;min-width:240px;';
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '— Select a routine —';
+    picker.appendChild(blank);
+    routinesList.forEach(function (r) {
+        var opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.display_name || r.name;
+        if (state.routines.selectedName === r.name) opt.selected = true;
+        picker.appendChild(opt);
+    });
+    picker.onchange = function () {
+        state.routines.selectedName = picker.value || null;
+        state.routines.detail = null;
+        state.routines.expandedRunId = null;
+        if (picker.value) fetchRoutineDetail(picker.value);
+        renderApp();
+    };
+    header.appendChild(picker);
+    container.appendChild(header);
+
+    if (!state.routines.selectedName) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);background:var(--color-surface-secondary);border-radius:8px;';
+        hint.textContent = 'Pick a routine from the dropdown above to load its run history.';
+        container.appendChild(hint);
+        return container;
+    }
+
+    if (state.routines.detailLoading && !state.routines.detail) {
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading run history…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.routines.detailError) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:.75rem;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#dc2626;font-family:monospace;font-size:.8rem;';
+        err.textContent = 'Failed to load detail: ' + state.routines.detailError;
+        container.appendChild(err);
+        return container;
+    }
+
+    var detail = state.routines.detail;
+    if (!detail || !detail.ok) return container;
+
+    var routineCard = document.createElement('div');
+    routineCard.style.cssText = 'padding:1rem;background:var(--color-surface-secondary);border:1px solid var(--color-border);border-radius:8px;margin-bottom:1rem;';
+    var rcTitle = document.createElement('div');
+    rcTitle.style.cssText = 'font-weight:700;font-size:1.05rem;';
+    rcTitle.textContent = detail.routine.display_name || detail.routine.name;
+    routineCard.appendChild(rcTitle);
+    var rcMeta = document.createElement('div');
+    rcMeta.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);margin-top:.25rem;';
+    rcMeta.textContent = routinesHumanCron(detail.routine.cron_schedule) +
+        ' • ' + (detail.routine.enabled ? 'enabled' : 'disabled');
+    routineCard.appendChild(rcMeta);
+    if (detail.routine.description) {
+        var rcDesc = document.createElement('div');
+        rcDesc.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);margin-top:.5rem;line-height:1.4;';
+        rcDesc.textContent = detail.routine.description;
+        routineCard.appendChild(rcDesc);
+    }
+    container.appendChild(routineCard);
+
+    var runs = detail.runs || [];
+    if (runs.length === 0) {
+        var emptyRuns = document.createElement('div');
+        emptyRuns.style.cssText = 'padding:1.5rem;text-align:center;color:var(--color-text-secondary);';
+        emptyRuns.textContent = 'No runs yet for this routine.';
+        container.appendChild(emptyRuns);
+        return container;
+    }
+
+    var runsHeader = document.createElement('h3');
+    runsHeader.style.cssText = 'margin:1rem 0 .5rem;font-size:1rem;';
+    runsHeader.textContent = 'Recent runs (' + runs.length + ')';
+    container.appendChild(runsHeader);
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+
+    runs.forEach(function (run) {
+        var row = document.createElement('div');
+        row.style.cssText = 'border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface-primary);overflow:hidden;';
+
+        var top = document.createElement('div');
+        top.style.cssText = 'padding:.6rem .8rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:.5rem;flex-wrap:wrap;';
+        top.onclick = function () {
+            if (state.routines.expandedRunId === run.id) {
+                state.routines.expandedRunId = null;
+            } else {
+                state.routines.expandedRunId = run.id;
+                fetchRoutineRunDetail(detail.routine.name, run.id);
+            }
+            renderApp();
+        };
+
+        var leftSide = document.createElement('div');
+        leftSide.style.cssText = 'display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;';
+        leftSide.appendChild(routinesStatusPill(run.status));
+        var when = document.createElement('span');
+        when.style.cssText = 'font-size:.8rem;color:var(--color-text-primary);';
+        when.textContent = new Date(run.started_at).toLocaleString();
+        leftSide.appendChild(when);
+        var trig = document.createElement('span');
+        trig.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;';
+        trig.textContent = run.trigger || 'cron';
+        leftSide.appendChild(trig);
+        if (run.duration_ms != null) {
+            var dur = document.createElement('span');
+            dur.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);';
+            dur.textContent = (run.duration_ms / 1000).toFixed(1) + 's';
+            leftSide.appendChild(dur);
+        }
+        top.appendChild(leftSide);
+
+        var summarySpan = document.createElement('span');
+        summarySpan.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);max-width:50%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        summarySpan.textContent = run.summary || '';
+        top.appendChild(summarySpan);
+
+        row.appendChild(top);
+
+        if (state.routines.expandedRunId === run.id) {
+            var body = document.createElement('div');
+            body.style.cssText = 'padding:.75rem 1rem;background:var(--color-surface-secondary);border-top:1px solid var(--color-border);';
+            var fullRun = state.routines.runDetails[run.id];
+            if (!fullRun) {
+                var loadingFindings = document.createElement('div');
+                loadingFindings.style.cssText = 'color:var(--color-text-secondary);font-size:.8rem;font-style:italic;';
+                loadingFindings.textContent = 'Loading findings…';
+                body.appendChild(loadingFindings);
+            } else {
+                if (fullRun.summary) {
+                    var sumHead = document.createElement('div');
+                    sumHead.style.cssText = 'font-size:.85rem;color:var(--color-text-primary);margin-bottom:.5rem;line-height:1.4;';
+                    sumHead.textContent = fullRun.summary;
+                    body.appendChild(sumHead);
+                }
+                if (fullRun.error) {
+                    var errBlock = document.createElement('pre');
+                    errBlock.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#dc2626;padding:.5rem;border-radius:4px;font-size:.75rem;white-space:pre-wrap;word-break:break-word;margin:.25rem 0;';
+                    errBlock.textContent = fullRun.error;
+                    body.appendChild(errBlock);
+                }
+                if (fullRun.findings) {
+                    var findHead = document.createElement('div');
+                    findHead.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;margin:.5rem 0 .25rem;';
+                    findHead.textContent = 'Findings';
+                    body.appendChild(findHead);
+                    var findPre = document.createElement('pre');
+                    findPre.style.cssText = 'background:var(--color-surface-primary);border:1px solid var(--color-border);padding:.5rem;border-radius:4px;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow:auto;margin:0;';
+                    findPre.textContent = JSON.stringify(fullRun.findings, null, 2);
+                    body.appendChild(findPre);
+                }
+                if (fullRun.artifacts && Object.keys(fullRun.artifacts).length > 0) {
+                    var artHead = document.createElement('div');
+                    artHead.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;margin:.5rem 0 .25rem;';
+                    artHead.textContent = 'Artifacts';
+                    body.appendChild(artHead);
+                    var artPre = document.createElement('pre');
+                    artPre.style.cssText = 'background:var(--color-surface-primary);border:1px solid var(--color-border);padding:.5rem;border-radius:4px;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;margin:0;';
+                    artPre.textContent = JSON.stringify(fullRun.artifacts, null, 2);
+                    body.appendChild(artPre);
+                }
+            }
+            row.appendChild(body);
+        }
+
+        list.appendChild(row);
+    });
+
+    container.appendChild(list);
+    return container;
+}
+
+// ===========================================================================
+// VTID-02605: Feedback Inbox + Live Handoffs + KPIs (parent plan PR 7)
+// VTID-02047: Specialists roster (Phase 5 PR 15 read-only baseline)
+// ===========================================================================
+
+async function fetchFeedbackJSON(path) {
+    var resp = await fetch(path, { headers: buildContextHeaders({}) });
+    if (!resp.ok) {
+        var errText = await resp.text().catch(function () { return ''; });
+        throw new Error('HTTP ' + resp.status + ' ' + errText);
+    }
+    return resp.json();
+}
+
+function feedbackStatusPill(status) {
+    var palette = {
+        'new': ['#94a3b8', 'New'],
+        'interviewing': ['#fbbf24', 'Interviewing'],
+        'triaged': ['#3b82f6', 'Triaged'],
+        'spec_pending': ['#a855f7', 'Spec pending'],
+        'spec_ready': ['#a855f7', 'Spec ready'],
+        'answer_pending': ['#06b6d4', 'Answer pending'],
+        'answer_ready': ['#06b6d4', 'Answer ready'],
+        'approved': ['#10b981', 'Approved'],
+        'in_progress': ['#10b981', 'In progress'],
+        'resolved': ['#22c55e', 'Resolved'],
+        'user_confirmed': ['#16a34a', 'Confirmed'],
+        'duplicate': ['#64748b', 'Duplicate'],
+        'rejected': ['#64748b', 'Rejected'],
+        'wont_fix': ['#64748b', "Won't fix"],
+        'needs_more_info': ['#f59e0b', 'Needs info'],
+        'reopened': ['#ef4444', 'Reopened']
+    };
+    var pair = palette[status] || ['#94a3b8', status];
+    var pill = document.createElement('span');
+    pill.style.cssText = 'background:' + pair[0] + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+    pill.textContent = pair[1];
+    return pill;
+}
+
+function renderFeedbackInboxView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Feedback Inbox';
+    header.appendChild(h);
+    var note = document.createElement('div');
+    note.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);';
+    note.textContent = 'User-originated tickets from /comm/talk-to-vitana — bugs, support, claims, account, feedback.';
+    header.appendChild(note);
+    container.appendChild(header);
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/tickets?limit=100').then(function (data) {
+        container.removeChild(loading);
+        var tickets = (data && data.tickets) || [];
+        if (tickets.length === 0) {
+            var empty = document.createElement('div');
+            empty.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+            empty.textContent = 'No tickets yet. The first user submission via /comm/talk-to-vitana will appear here.';
+            container.appendChild(empty);
+            return;
+        }
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr style="border-bottom:1px solid var(--color-border);text-align:left;font-size:.75rem;color:var(--color-text-secondary);text-transform:uppercase;">' +
+            '<th style="padding:.5rem .75rem;">Ticket</th>' +
+            '<th style="padding:.5rem .75rem;">Kind</th>' +
+            '<th style="padding:.5rem .75rem;">Priority</th>' +
+            '<th style="padding:.5rem .75rem;">Status</th>' +
+            '<th style="padding:.5rem .75rem;">Resolver</th>' +
+            '<th style="padding:.5rem .75rem;">Surface</th>' +
+            '<th style="padding:.5rem .75rem;">Excerpt</th>' +
+            '<th style="padding:.5rem .75rem;">Created</th></tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        tickets.forEach(function (t) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid var(--color-border-subtle);font-size:.85rem;cursor:pointer;';
+            tr.onmouseover = function () { tr.style.background = 'var(--color-surface-secondary)'; };
+            tr.onmouseout = function () { tr.style.background = ''; };
+            tr.onclick = function () { openFeedbackTicketDrawer(t.id); };
+            var num = document.createElement('td');
+            num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
+            num.textContent = t.ticket_number || '-';
+            tr.appendChild(num);
+            var kindCell = document.createElement('td'); kindCell.style.cssText = 'padding:.5rem .75rem;'; kindCell.textContent = t.kind; tr.appendChild(kindCell);
+            var priCell = document.createElement('td'); priCell.style.cssText = 'padding:.5rem .75rem;'; priCell.textContent = (t.priority || '').toUpperCase(); tr.appendChild(priCell);
+            var statusTd = document.createElement('td'); statusTd.style.cssText = 'padding:.5rem .75rem;'; statusTd.appendChild(feedbackStatusPill(t.status)); tr.appendChild(statusTd);
+            var resCell = document.createElement('td'); resCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);'; resCell.textContent = t.resolver_agent || '—'; tr.appendChild(resCell);
+            var surCell = document.createElement('td'); surCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);'; surCell.textContent = t.surface || '—'; tr.appendChild(surCell);
+            var excerpt = (t.raw_transcript || '').slice(0, 80); if ((t.raw_transcript || '').length > 80) excerpt += '…';
+            var excCell = document.createElement('td'); excCell.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; excCell.textContent = excerpt; tr.appendChild(excCell);
+            var created = document.createElement('td'); created.style.cssText = 'padding:.5rem .75rem;color:var(--color-text-secondary);font-size:.75rem;white-space:nowrap;'; created.textContent = new Date(t.created_at).toLocaleString(); tr.appendChild(created);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid #ef4444;border-radius:.25rem;';
+        error.textContent = 'Failed to load tickets: ' + err.message;
+        container.appendChild(error);
+    });
+    return container;
+}
+
+function openFeedbackTicketDrawer(ticketId) {
+    var existing = document.getElementById('feedback-ticket-drawer');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'feedback-ticket-drawer';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;justify-content:flex-end;';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+    var panel = document.createElement('div');
+    panel.style.cssText = 'width:min(720px,100%);height:100%;background:var(--color-surface-primary);overflow-y:auto;padding:1.5rem;box-shadow:-4px 0 20px rgba(0,0,0,.2);';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = 'float:right;background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--color-text-secondary);';
+    closeBtn.onclick = function () { overlay.remove(); };
+    panel.appendChild(closeBtn);
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    panel.appendChild(loading);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    fetchFeedbackJSON('/api/v1/admin/feedback/tickets/' + ticketId).then(function (data) {
+        panel.removeChild(loading);
+        var t = data.ticket;
+        var handoffs = data.handoffs || [];
+        var head = document.createElement('div');
+        head.style.cssText = 'margin-bottom:1rem;';
+        var title = document.createElement('h2');
+        title.style.cssText = 'margin:0 0 .25rem;font-family:monospace;font-size:1.25rem;';
+        title.textContent = t.ticket_number;
+        head.appendChild(title);
+        var meta = document.createElement('div');
+        meta.style.cssText = 'display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.85rem;color:var(--color-text-secondary);';
+        meta.appendChild(feedbackStatusPill(t.status));
+        var kindSpan = document.createElement('span'); kindSpan.textContent = t.kind; meta.appendChild(kindSpan);
+        var priSpan = document.createElement('span'); priSpan.textContent = '· ' + (t.priority || 'p2').toUpperCase(); meta.appendChild(priSpan);
+        if (t.resolver_agent) { var rs = document.createElement('span'); rs.textContent = '· handled by ' + t.resolver_agent; meta.appendChild(rs); }
+        if (t.vitana_id) { var vs = document.createElement('span'); vs.textContent = '· ' + t.vitana_id; meta.appendChild(vs); }
+        head.appendChild(meta);
+        panel.appendChild(head);
+
+        // ──── Action buttons (VTID-02047 supervisor actions) ────
+        var actionBar = document.createElement('div');
+        actionBar.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;padding:.75rem;background:var(--color-surface-secondary);border-radius:.25rem;';
+        function makeBtn(label, color, handler) {
+            var b = document.createElement('button');
+            b.textContent = label;
+            b.style.cssText = 'background:' + color + ';color:#fff;border:none;padding:.4rem .8rem;border-radius:.25rem;font-size:.8rem;font-weight:600;cursor:pointer;';
+            b.onclick = handler;
+            return b;
+        }
+        async function runAction(label, path, body) {
+            var ok = body && body.confirm ? confirm(label + '?') : true;
+            if (!ok) return;
+            try {
+                var resp = await fetch(path, {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body && body.payload ? body.payload : {})
+                });
+                var json = await resp.json().catch(function () { return {}; });
+                if (!resp.ok) throw new Error(json.details || json.error || ('HTTP ' + resp.status));
+                // Re-render drawer with fresh state
+                document.getElementById('feedback-ticket-drawer').remove();
+                openFeedbackTicketDrawer(ticketId);
+                showToast(label + ' ✓', 'success');
+            } catch (err) {
+                showToast(label + ' failed: ' + err.message, 'error');
+            }
+        }
+        // Button availability matrix by status + kind
+        if (t.status === 'triaged' || t.status === 'new') {
+            if (t.kind === 'bug' || t.kind === 'ux_issue') {
+                actionBar.appendChild(makeBtn('Write Spec (Devon)', '#3b82f6', function () { runAction('Write Spec', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-spec'); }));
+            } else if (t.kind === 'support_question') {
+                actionBar.appendChild(makeBtn('Draft Answer (Sage)', '#06b6d4', function () { runAction('Draft Answer', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-answer'); }));
+            } else if (t.kind === 'account_issue' || t.kind === 'marketplace_claim') {
+                actionBar.appendChild(makeBtn('Draft Resolution', '#a855f7', function () { runAction('Draft Resolution', '/api/v1/admin/feedback/tickets/' + ticketId + '/draft-resolution'); }));
+            }
+        }
+        if (t.status === 'spec_ready') {
+            actionBar.appendChild(makeBtn('Approve & Fix', '#10b981', function () { runAction('Approve', '/api/v1/admin/feedback/tickets/' + ticketId + '/approve', { confirm: true }); }));
+        }
+        if (t.status === 'answer_ready') {
+            actionBar.appendChild(makeBtn('Send Answer', '#10b981', function () { runAction('Send Answer', '/api/v1/admin/feedback/tickets/' + ticketId + '/send-answer', { confirm: true }); }));
+        }
+        if (t.status === 'in_progress') {
+            actionBar.appendChild(makeBtn('Mark Resolved', '#16a34a', function () { runAction('Resolve', '/api/v1/admin/feedback/tickets/' + ticketId + '/resolve', { confirm: true }); }));
+        }
+        if (!['rejected','duplicate','user_confirmed','wont_fix'].includes(t.status)) {
+            actionBar.appendChild(makeBtn('Reject', '#ef4444', function () {
+                var reason = prompt('Reason for rejection?');
+                if (reason !== null) runAction('Reject', '/api/v1/admin/feedback/tickets/' + ticketId + '/reject', { payload: { reason: reason } });
+            }));
+        }
+        if (actionBar.childNodes.length > 0) {
+            panel.appendChild(actionBar);
+        }
+
+        function section(label, body) {
+            var s = document.createElement('div');
+            s.style.cssText = 'margin:1rem 0;';
+            var l = document.createElement('div');
+            l.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.25rem;letter-spacing:.04em;';
+            l.textContent = label;
+            s.appendChild(l);
+            s.appendChild(body);
+            panel.appendChild(s);
+        }
+        if (t.raw_transcript) {
+            var rt = document.createElement('div');
+            rt.style.cssText = 'background:var(--color-surface-secondary);padding:.75rem;border-radius:.25rem;font-size:.85rem;white-space:pre-wrap;';
+            rt.textContent = t.raw_transcript;
+            section('Transcript', rt);
+        }
+        if (Array.isArray(t.intake_messages) && t.intake_messages.length > 0) {
+            var msgs = document.createElement('div');
+            msgs.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+            t.intake_messages.forEach(function (m) {
+                var bubble = document.createElement('div');
+                var isUser = m.role === 'user';
+                bubble.style.cssText = 'padding:.5rem .75rem;border-radius:.5rem;font-size:.85rem;max-width:85%;' +
+                    (isUser ? 'background:var(--color-surface-secondary);align-self:flex-end;' : 'background:#3b82f6;color:#fff;align-self:flex-start;');
+                var name = document.createElement('div');
+                name.style.cssText = 'font-size:.65rem;font-weight:600;opacity:.7;margin-bottom:.15rem;text-transform:uppercase;';
+                name.textContent = m.agent || (isUser ? 'user' : 'assistant');
+                bubble.appendChild(name);
+                var content = document.createElement('div'); content.textContent = m.content; bubble.appendChild(content);
+                msgs.appendChild(bubble);
+            });
+            section('Intake conversation (' + t.intake_messages.length + ' turns)', msgs);
+        }
+        if (handoffs.length > 0) {
+            var hList = document.createElement('div');
+            hList.style.cssText = 'font-size:.8rem;display:flex;flex-direction:column;gap:.25rem;';
+            handoffs.forEach(function (h) {
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:.5rem;align-items:center;';
+                row.innerHTML = '<span style="font-family:monospace;color:var(--color-text-secondary);">' +
+                    new Date(h.ts).toLocaleTimeString() + '</span>' +
+                    '<span><strong>' + h.from_agent + '</strong> → <strong>' + h.to_agent + '</strong></span>' +
+                    '<span style="color:var(--color-text-secondary);">(' + h.reason + (h.matched_keyword ? ' · "' + h.matched_keyword + '"' : '') + ')</span>';
+                hList.appendChild(row);
+            });
+            section('Handoff timeline', hList);
+        }
+        if (t.classifier_meta) {
+            var pre = document.createElement('pre');
+            pre.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;font-size:.75rem;overflow-x:auto;';
+            pre.textContent = JSON.stringify(t.classifier_meta, null, 2);
+            section('Classifier', pre);
+        }
+        if (t.structured_fields && Object.keys(t.structured_fields).length > 0) {
+            var pre2 = document.createElement('pre');
+            pre2.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;font-size:.75rem;overflow-x:auto;';
+            pre2.textContent = JSON.stringify(t.structured_fields, null, 2);
+            section('Structured fields', pre2);
+        }
+        var ctx = document.createElement('div');
+        ctx.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);display:flex;flex-direction:column;gap:.15rem;';
+        if (t.screen_path) { var d1 = document.createElement('div'); d1.textContent = 'Screen: ' + t.screen_path; ctx.appendChild(d1); }
+        if (t.app_version) { var d2 = document.createElement('div'); d2.textContent = 'App version: ' + t.app_version; ctx.appendChild(d2); }
+        var d3 = document.createElement('div'); d3.textContent = 'Created: ' + new Date(t.created_at).toLocaleString(); ctx.appendChild(d3);
+        if (t.triaged_at) { var d4 = document.createElement('div'); d4.textContent = 'Triaged: ' + new Date(t.triaged_at).toLocaleString(); ctx.appendChild(d4); }
+        section('Context', ctx);
+    }).catch(function (err) {
+        panel.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;';
+        error.textContent = 'Failed: ' + err.message;
+        panel.appendChild(error);
+    });
+}
+
+function renderFeedbackHandoffsView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Live Handoffs';
+    container.appendChild(h);
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'Most recent Vitana → specialist channel swaps. Real-time SSE stream lands in Phase 5 PR 20.';
+    container.appendChild(note);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/handoffs/recent?limit=100').then(function (data) {
+        container.removeChild(loading);
+        var rows = (data && data.handoffs) || [];
+        if (rows.length === 0) {
+            var empty = document.createElement('div'); empty.textContent = 'No handoffs yet.'; empty.style.cssText = 'color:var(--color-text-secondary);padding:1rem;'; container.appendChild(empty); return;
+        }
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+        rows.forEach(function (r) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;display:flex;gap:.75rem;align-items:center;font-size:.85rem;';
+            var ts = document.createElement('span'); ts.style.cssText = 'font-family:monospace;color:var(--color-text-secondary);'; ts.textContent = new Date(r.ts).toLocaleTimeString(); row.appendChild(ts);
+            var arrow = document.createElement('span'); arrow.innerHTML = '<strong>' + r.from_agent + '</strong> → <strong>' + r.to_agent + '</strong>'; row.appendChild(arrow);
+            var reason = document.createElement('span'); reason.textContent = r.reason; reason.style.cssText = 'color:var(--color-text-secondary);'; row.appendChild(reason);
+            if (r.matched_keyword) { var kw = document.createElement('span'); kw.textContent = '"' + r.matched_keyword + '"'; kw.style.cssText = 'font-style:italic;color:var(--color-text-secondary);'; row.appendChild(kw); }
+            if (r.confidence != null) { var cf = document.createElement('span'); cf.textContent = 'conf ' + Number(r.confidence).toFixed(2); cf.style.cssText = 'color:var(--color-text-secondary);font-family:monospace;'; row.appendChild(cf); }
+            list.appendChild(row);
+        });
+        container.appendChild(list);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;padding:1rem;'; container.appendChild(e);
+    });
+    return container;
+}
+
+function renderFeedbackKpisView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Feedback KPIs (30 days)';
+    container.appendChild(h);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/feedback/kpis').then(function (data) {
+        container.removeChild(loading);
+        function bucket(label, obj) {
+            var box = document.createElement('div');
+            box.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;flex:1 1 240px;';
+            var t = document.createElement('div');
+            t.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.5rem;letter-spacing:.04em;';
+            t.textContent = label;
+            box.appendChild(t);
+            var rows = Object.entries(obj || {});
+            if (rows.length === 0) {
+                var empty = document.createElement('div'); empty.textContent = '(empty)'; empty.style.cssText = 'color:var(--color-text-secondary);font-size:.85rem;'; box.appendChild(empty);
+            } else {
+                rows.sort(function (a, b) { return b[1] - a[1]; });
+                rows.forEach(function (kv) {
+                    var r = document.createElement('div');
+                    r.style.cssText = 'display:flex;justify-content:space-between;font-size:.85rem;padding:.15rem 0;';
+                    r.innerHTML = '<span>' + kv[0] + '</span><span style="font-family:monospace;font-weight:600;">' + kv[1] + '</span>';
+                    box.appendChild(r);
+                });
+            }
+            return box;
+        }
+        var grid = document.createElement('div');
+        grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:.75rem;';
+        grid.appendChild(bucket('By status', data.by_status));
+        grid.appendChild(bucket('By kind', data.by_kind));
+        grid.appendChild(bucket('By resolver', data.by_resolver));
+        grid.appendChild(bucket('Handoffs (7d)', data.handoffs_7d));
+        container.appendChild(grid);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
+    return container;
+}
+
+function renderDocsSpecialistsView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 .25rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Specialists';
+    container.appendChild(h);
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'The team Vitana hands off to. Click Edit on any card to open the Persona Editor (prompt, voice, tools, KB bindings, version history).';
+    container.appendChild(note);
+    var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+    fetchFeedbackJSON('/api/v1/admin/specialists/').then(function (data) {
+        container.removeChild(loading);
+        var personas = data.personas || [];
+        var grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.75rem;';
+        personas.forEach(function (p) {
+            var card = document.createElement('div');
+            card.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:1rem;cursor:pointer;';
+            card.onclick = function () { openSpecialistEditor(p.key); };
+            var head = document.createElement('div');
+            head.style.cssText = 'display:flex;justify-content:space-between;align-items:start;margin-bottom:.5rem;';
+            var nameBox = document.createElement('div');
+            var name = document.createElement('div'); name.style.cssText = 'font-size:1.1rem;font-weight:600;'; name.textContent = p.display_name; nameBox.appendChild(name);
+            var role = document.createElement('div'); role.style.cssText = 'font-size:.8rem;color:var(--color-text-secondary);'; role.textContent = p.role; nameBox.appendChild(role);
+            head.appendChild(nameBox);
+            var statusPill = document.createElement('span');
+            var statusColor = p.status === 'active' ? '#16a34a' : (p.status === 'draft' ? '#f59e0b' : '#64748b');
+            statusPill.style.cssText = 'background:' + statusColor + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+            statusPill.textContent = p.status;
+            head.appendChild(statusPill);
+            card.appendChild(head);
+            var kinds = document.createElement('div'); kinds.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);margin-top:.5rem;'; kinds.textContent = 'Handles: ' + ((p.handles_kinds || []).join(', ') || '—'); card.appendChild(kinds);
+            var voice = document.createElement('div'); voice.style.cssText = 'font-size:.75rem;color:var(--color-text-secondary);'; voice.textContent = 'Voice: ' + (p.voice_id || '(not set)'); card.appendChild(voice);
+            var ver = document.createElement('div'); ver.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.5rem;'; ver.textContent = 'v' + p.version + ' · last updated ' + (p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'); card.appendChild(ver);
+            var bindings = document.createElement('div');
+            bindings.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.25rem;';
+            var nTools = (p.tool_bindings || []).length;
+            var nKbs = (p.kb_bindings || []).length;
+            var nConns = (p.connections || []).length;
+            bindings.textContent = 'Bound: ' + nTools + ' tools · ' + nKbs + ' KB scopes · ' + nConns + ' connections';
+            card.appendChild(bindings);
+            var editBtn = document.createElement('button');
+            editBtn.textContent = 'Edit →';
+            editBtn.style.cssText = 'margin-top:.75rem;background:transparent;border:1px solid var(--color-border);color:var(--color-text-secondary);padding:.3rem .6rem;border-radius:.25rem;font-size:.75rem;cursor:pointer;';
+            editBtn.onclick = function (e) { e.stopPropagation(); openSpecialistEditor(p.key); };
+            card.appendChild(editBtn);
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
+    return container;
+}
+
+// ===========================================================================
+// VTID-02047 Phase 5: Persona Editor + Tool/KB Bindings + Audit Log
+// ===========================================================================
+
+function openSpecialistEditor(personaKey) {
+    var existing = document.getElementById('specialist-editor-drawer');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'specialist-editor-drawer';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;justify-content:flex-end;';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'width:min(820px,100%);height:100%;background:var(--color-surface-primary);overflow-y:auto;padding:1.5rem;box-shadow:-4px 0 20px rgba(0,0,0,.2);';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = 'float:right;background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--color-text-secondary);';
+    closeBtn.onclick = function () { overlay.remove(); };
+    panel.appendChild(closeBtn);
+
+    var loading = document.createElement('div');
+    loading.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+    loading.textContent = 'Loading…';
+    panel.appendChild(loading);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    Promise.all([
+        fetchFeedbackJSON('/api/v1/admin/specialists/' + personaKey),
+        fetchFeedbackJSON('/api/v1/admin/specialists/tools'),
+    ]).then(function (results) {
+        var detail = results[0];
+        var allTools = results[1].tools || [];
+        var p = detail.persona;
+        var boundToolKeys = (detail.tool_bindings || []).filter(function (b) { return b.enabled !== false; }).map(function (b) { return b.tool_key; });
+        var boundKbScopes = (detail.kb_bindings || []).filter(function (b) { return b.enabled !== false; }).map(function (b) { return b.kb_scope; });
+
+        panel.removeChild(loading);
+
+        // Header
+        var head = document.createElement('div');
+        head.style.cssText = 'margin-bottom:1.5rem;';
+        var title = document.createElement('h2');
+        title.style.cssText = 'margin:0 0 .25rem;font-size:1.5rem;';
+        title.textContent = p.display_name + ' (' + p.key + ')';
+        head.appendChild(title);
+        var statusRow = document.createElement('div');
+        statusRow.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;color:var(--color-text-secondary);';
+        var statusPill = document.createElement('span');
+        var sc = p.status === 'active' ? '#16a34a' : (p.status === 'draft' ? '#f59e0b' : '#64748b');
+        statusPill.style.cssText = 'background:' + sc + ';color:#fff;padding:.15rem .5rem;border-radius:.75rem;font-size:.7rem;font-weight:600;';
+        statusPill.textContent = p.status;
+        statusRow.appendChild(statusPill);
+        var ver = document.createElement('span');
+        ver.textContent = 'v' + p.version + ' · last updated ' + (p.updated_at ? new Date(p.updated_at).toLocaleString() : '—');
+        statusRow.appendChild(ver);
+        head.appendChild(statusRow);
+        panel.appendChild(head);
+
+        function fieldRow(label, controlEl) {
+            var row = document.createElement('div');
+            row.style.cssText = 'margin-bottom:1rem;';
+            var l = document.createElement('label');
+            l.style.cssText = 'display:block;font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.25rem;letter-spacing:.04em;';
+            l.textContent = label;
+            row.appendChild(l);
+            row.appendChild(controlEl);
+            return row;
+        }
+
+        // Display name + role
+        var nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = p.display_name || '';
+        nameInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Display name', nameInput));
+
+        var roleInput = document.createElement('input');
+        roleInput.type = 'text';
+        roleInput.value = p.role || '';
+        roleInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Role', roleInput));
+
+        // Voice id
+        var voiceInput = document.createElement('input');
+        voiceInput.type = 'text';
+        voiceInput.value = p.voice_id || '';
+        voiceInput.placeholder = 'Gemini Live voice id (leave empty to inherit)';
+        voiceInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;';
+        panel.appendChild(fieldRow('Voice id (Gemini Live)', voiceInput));
+
+        // System prompt
+        var promptInput = document.createElement('textarea');
+        promptInput.value = p.system_prompt || '';
+        promptInput.rows = 12;
+        promptInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;font-size:.85rem;resize:vertical;';
+        panel.appendChild(fieldRow('System prompt', promptInput));
+
+        // Status
+        var statusSelect = document.createElement('select');
+        ['draft','active','disabled'].forEach(function (s) {
+            var opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            if (s === p.status) opt.selected = true;
+            statusSelect.appendChild(opt);
+        });
+        statusSelect.style.cssText = 'padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Status', statusSelect));
+
+        // Handles kinds
+        var kindsInput = document.createElement('input');
+        kindsInput.type = 'text';
+        kindsInput.value = (p.handles_kinds || []).join(', ');
+        kindsInput.placeholder = 'bug, ux_issue';
+        kindsInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        panel.appendChild(fieldRow('Handles kinds (comma-separated)', kindsInput));
+
+        // Handoff keywords
+        var keywordsInput = document.createElement('textarea');
+        keywordsInput.value = (p.handoff_keywords || []).join(', ');
+        keywordsInput.rows = 3;
+        keywordsInput.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;font-size:.85rem;';
+        panel.appendChild(fieldRow('Handoff keywords (comma-separated)', keywordsInput));
+
+        // Tool bindings
+        var toolsBox = document.createElement('div');
+        toolsBox.style.cssText = 'border:1px solid var(--color-border);border-radius:.25rem;padding:.5rem;max-height:200px;overflow-y:auto;background:var(--color-surface-secondary);';
+        var toolCheckboxes = {};
+        allTools.forEach(function (t) {
+            var row = document.createElement('label');
+            row.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;padding:.15rem 0;cursor:pointer;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = boundToolKeys.indexOf(t.key) !== -1;
+            toolCheckboxes[t.key] = cb;
+            row.appendChild(cb);
+            var label = document.createElement('span');
+            var radColor = t.blast_radius === 'read' ? '#10b981' : (t.blast_radius === 'write-low' ? '#f59e0b' : '#ef4444');
+            label.innerHTML = '<strong>' + t.display_name + '</strong> <span style="color:' + radColor + ';font-size:.7rem;">[' + t.blast_radius + ']</span> <span style="color:var(--color-text-secondary);font-size:.75rem;">' + (t.description || '') + '</span>';
+            row.appendChild(label);
+            toolsBox.appendChild(row);
+        });
+        panel.appendChild(fieldRow('Tool bindings', toolsBox));
+
+        // KB bindings
+        var kbBox = document.createElement('div');
+        kbBox.style.cssText = 'border:1px solid var(--color-border);border-radius:.25rem;padding:.5rem;background:var(--color-surface-secondary);';
+        var kbCheckboxes = {};
+        ['system','baseline','tenant'].forEach(function (s) {
+            var row = document.createElement('label');
+            row.style.cssText = 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;padding:.15rem 0;cursor:pointer;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = boundKbScopes.indexOf(s) !== -1;
+            kbCheckboxes[s] = cb;
+            row.appendChild(cb);
+            row.appendChild(Object.assign(document.createElement('span'), { textContent: s }));
+            kbBox.appendChild(row);
+        });
+        panel.appendChild(fieldRow('KB scope bindings', kbBox));
+
+        // Save buttons
+        var btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.5rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--color-border);';
+
+        async function saveAll() {
+            try {
+                var newKinds = kindsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                var newKeywords = keywordsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                var personaPatch = {
+                    display_name: nameInput.value,
+                    role: roleInput.value,
+                    voice_id: voiceInput.value || null,
+                    system_prompt: promptInput.value,
+                    status: statusSelect.value,
+                    handles_kinds: newKinds,
+                    handoff_keywords: newKeywords,
+                    change_note: 'Edited via Persona Editor',
+                };
+                var personaResp = await fetch('/api/v1/admin/specialists/' + personaKey, {
+                    method: 'PUT',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(personaPatch),
+                });
+                if (!personaResp.ok) throw new Error('persona save: HTTP ' + personaResp.status);
+
+                var checkedTools = Object.keys(toolCheckboxes).filter(function (k) { return toolCheckboxes[k].checked; });
+                var checkedKbs = Object.keys(kbCheckboxes).filter(function (k) { return kbCheckboxes[k].checked; });
+                await Promise.all([
+                    fetch('/api/v1/admin/specialists/' + personaKey + '/tools', {
+                        method: 'PUT', headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ keys: checkedTools }),
+                    }),
+                    fetch('/api/v1/admin/specialists/' + personaKey + '/kb', {
+                        method: 'PUT', headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ keys: checkedKbs }),
+                    }),
+                ]);
+
+                overlay.remove();
+                showToast('Persona saved ✓', 'success');
+            } catch (err) {
+                showToast('Save failed: ' + err.message, 'error');
+            }
+        }
+
+        var saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save (creates v' + (p.version + 1) + ')';
+        saveBtn.style.cssText = 'background:#10b981;color:#fff;border:none;padding:.5rem 1rem;border-radius:.25rem;font-weight:600;cursor:pointer;';
+        saveBtn.onclick = saveAll;
+        btnRow.appendChild(saveBtn);
+
+        var cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border);padding:.5rem 1rem;border-radius:.25rem;cursor:pointer;';
+        cancelBtn.onclick = function () { overlay.remove(); };
+        btnRow.appendChild(cancelBtn);
+
+        var versionsBtn = document.createElement('button');
+        versionsBtn.textContent = 'Versions (' + (detail.versions || []).length + ')';
+        versionsBtn.style.cssText = 'background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border);padding:.5rem 1rem;border-radius:.25rem;cursor:pointer;margin-left:auto;';
+        versionsBtn.onclick = function () { openPersonaVersionsDrawer(personaKey); };
+        btnRow.appendChild(versionsBtn);
+
+        panel.appendChild(btnRow);
+    }).catch(function (err) {
+        panel.removeChild(loading);
+        var error = document.createElement('div');
+        error.style.cssText = 'padding:1rem;color:#ef4444;';
+        error.textContent = 'Failed: ' + err.message;
+        panel.appendChild(error);
+    });
+}
+
+function openPersonaVersionsDrawer(personaKey) {
+    var existing = document.getElementById('persona-versions-drawer');
+    if (existing) existing.remove();
+    var modal = document.createElement('div');
+    modal.id = 'persona-versions-drawer';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.onclick = function (e) { if (e.target === modal) modal.remove(); };
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--color-surface-primary);border-radius:.5rem;padding:1.5rem;width:min(720px,90%);max-height:80vh;overflow-y:auto;';
+    box.innerHTML = '<h3 style="margin:0 0 1rem;">Versions for ' + personaKey + '</h3>';
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    fetchFeedbackJSON('/api/v1/admin/specialists/' + personaKey + '/versions').then(function (data) {
+        var versions = data.versions || [];
+        if (versions.length === 0) {
+            box.appendChild(Object.assign(document.createElement('div'), { textContent: 'No prior versions yet.', style: { color: 'var(--color-text-secondary)' } }));
+            return;
+        }
+        versions.forEach(function (v) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;';
+            row.innerHTML = '<div style="flex:1;"><div style="font-family:monospace;font-weight:600;">v' + v.version + '</div>' +
+                '<div style="font-size:.75rem;color:var(--color-text-secondary);">' + new Date(v.created_at).toLocaleString() + '</div>' +
+                (v.change_note ? '<div style="font-size:.8rem;margin-top:.25rem;font-style:italic;">"' + v.change_note + '"</div>' : '') +
+                '</div>';
+            var rb = document.createElement('button');
+            rb.textContent = 'Rollback to v' + v.version;
+            rb.style.cssText = 'background:#ef4444;color:#fff;border:none;padding:.4rem .8rem;border-radius:.25rem;font-size:.75rem;font-weight:600;cursor:pointer;';
+            rb.onclick = async function () {
+                if (!confirm('Roll back to v' + v.version + '? This creates a new version with that snapshot.')) return;
+                try {
+                    var resp = await fetch('/api/v1/admin/specialists/' + personaKey + '/rollback/' + v.version, {
+                        method: 'POST',
+                        headers: buildContextHeaders({})
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    modal.remove();
+                    document.getElementById('specialist-editor-drawer')?.remove();
+                    showToast('Rolled back to v' + v.version, 'success');
+                } catch (err) { showToast('Rollback failed: ' + err.message, 'error'); }
+            };
+            row.appendChild(rb);
+            box.appendChild(row);
+        });
+    });
+}
+
+// ──── Audit Log view ────
+
+function renderFeedbackAuditView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1rem;';
+    var h = document.createElement('h2');
+    h.style.cssText = 'margin:0 0 1rem;font-size:1.25rem;font-weight:600;';
+    h.textContent = 'Specialists Audit Log';
+    container.appendChild(h);
+
+    var note = document.createElement('p');
+    note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
+    note.textContent = 'Every persona / voice / prompt / tool / KB / connection change. Filter by persona using the dropdown.';
+    container.appendChild(note);
+
+    var loading = document.createElement('div');
+    loading.textContent = 'Loading…';
+    loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
+    container.appendChild(loading);
+
+    fetchFeedbackJSON('/api/v1/admin/specialists/audit?limit=200').then(function (data) {
+        container.removeChild(loading);
+        var rows = data.audit || [];
+        if (rows.length === 0) {
+            container.appendChild(Object.assign(document.createElement('div'), { textContent: 'No audit entries yet.', style: { color: 'var(--color-text-secondary)' } }));
+            return;
+        }
+        var list = document.createElement('div');
+        list.style.cssText = 'display:flex;flex-direction:column;gap:.5rem;';
+        rows.forEach(function (r) {
+            var row = document.createElement('div');
+            row.style.cssText = 'border:1px solid var(--color-border-subtle);border-radius:.25rem;padding:.75rem;font-size:.85rem;';
+            var head = document.createElement('div');
+            head.style.cssText = 'display:flex;gap:.75rem;align-items:center;';
+            head.innerHTML = '<span style="font-family:monospace;color:var(--color-text-secondary);">' + new Date(r.ts).toLocaleString() + '</span>' +
+                '<strong>' + r.action + '</strong>' +
+                '<span style="color:var(--color-text-secondary);font-size:.75rem;font-family:monospace;">persona ' + (r.persona_id || '—').slice(0, 8) + '</span>' +
+                '<span style="color:var(--color-text-secondary);font-size:.75rem;font-family:monospace;">actor ' + (r.actor_user_id || '—').slice(0, 8) + '</span>';
+            row.appendChild(head);
+            if (r.before_state || r.after_state) {
+                var details = document.createElement('details');
+                details.style.cssText = 'margin-top:.5rem;font-size:.75rem;';
+                var sum = document.createElement('summary');
+                sum.style.cssText = 'cursor:pointer;color:var(--color-text-secondary);';
+                sum.textContent = 'before / after';
+                details.appendChild(sum);
+                var pre = document.createElement('pre');
+                pre.style.cssText = 'background:var(--color-surface-secondary);padding:.5rem;border-radius:.25rem;overflow-x:auto;margin:.25rem 0 0;';
+                pre.textContent = JSON.stringify({ before: r.before_state, after: r.after_state }, null, 2);
+                details.appendChild(pre);
+                row.appendChild(details);
+            }
+            list.appendChild(row);
+        });
+        container.appendChild(list);
+    }).catch(function (err) {
+        container.removeChild(loading);
+        var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
+    });
     return container;
 }

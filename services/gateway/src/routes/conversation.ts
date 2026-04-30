@@ -54,6 +54,8 @@ import {
   logToolExecution,
 } from '../services/tool-registry';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
+// VTID-01967: Resolve canonical Vitana ID handle for the prompt + tool-thread identity
+import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
 // VTID-DEV-ASSIST: Developer assistant personality
 import { getPersonalityConfigSync } from '../services/ai-personality-service';
 // Memory auto-write for conversation turns
@@ -316,8 +318,25 @@ router.post('/turn', async (req: Request, res: Response) => {
     const thread = getOrCreateThread(input.thread_id, tenant_id, user_id, channel);
     thread.turn_count++;
 
+    // VTID-01967: Resolve canonical Vitana ID handle (cached, ~free on hit).
+    // Used both for tool-thread identity and for the system prompt below so
+    // the assistant can answer "what is my user ID?" with the @handle.
+    const vitanaId = await resolveVitanaId(user_id);
+
     // VTID-DEV-ASSIST: Set thread identity with role for tool-level role enforcement
-    setThreadIdentity(thread.thread_id, { tenant_id, user_id, role });
+    // VTID-01967: include vitana_id so downstream tools see the canonical handle.
+    // VTID-02019: include user_timezone so recall_conversation_at_time resolves
+    // free-text time hints in the user's local time (falls back to Europe/Berlin
+    // when undefined).
+    const reqUserTz =
+      (req.body?.ui_context?.metadata?.timezone as string | undefined) || undefined;
+    setThreadIdentity(thread.thread_id, {
+      tenant_id,
+      user_id,
+      role,
+      vitana_id: vitanaId,
+      user_timezone: reqUserTz,
+    });
 
     // Create context lens for memory access
     const lens: ContextLens = createContextLens(tenant_id, user_id, {
@@ -402,7 +421,24 @@ ${devConfig.important_section || ''}`;
 - For Operator, you can be more detailed`;
       }
 
+      // VTID-01967: Authoritative Vitana ID block — pinned to the system
+      // prompt so the model answers identity questions with the @handle and
+      // never the internal UUID. Mirrors the orb-live header pattern.
+      const vitanaIdBlock = vitanaId
+        ? `\n=== AUTHORITATIVE USER VITANA ID ===
+The user's Vitana ID handle is: ${vitanaId}
+This is the ONLY identifier you may share when the user asks "what is my user ID",
+"what is my handle", "what is my Vitana ID", or "who am I". Do NOT speak the
+internal UUID under any circumstance — it is a private system identifier.
+=====================================\n`
+        : `\n=== AUTHORITATIVE USER VITANA ID ===
+No Vitana ID handle is provisioned for this session. If the user asks for their
+user ID, handle, or Vitana ID, tell them honestly that their handle hasn't been
+set up yet. Do NOT substitute an internal UUID.
+=====================================\n`;
+
       const systemInstruction = `${channel === 'developer_assistant' ? '' : 'You are Vitana, an intelligent assistant. Respond helpfully and accurately based on the context provided.\n'}${languageDirective}
+${vitanaIdBlock}
 ${contextForLLM}
 
 Current conversation channel: ${channel}

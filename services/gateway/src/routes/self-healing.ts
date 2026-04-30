@@ -76,7 +76,9 @@ async function isSelfHealingEnabled(): Promise<boolean> {
   }
 }
 
-async function getAutonomyLevel(): Promise<AutonomyLevel> {
+// VTID-02032: Exported alongside processFailingService so the routines
+// bridge runs at the same autonomy level as the canonical /report path.
+export async function getAutonomyLevel(): Promise<AutonomyLevel> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return AutonomyLevel.AUTO_FIX_SIMPLE;
   try {
     const resp = await fetch(
@@ -153,7 +155,12 @@ async function shouldBeginDiagnosis(endpoint: string): Promise<{ proceed: boolea
 // Process a single failing service through the pipeline
 // ═══════════════════════════════════════════════════════════════════
 
-async function processFailingService(
+// VTID-02032: Exported so the routines bridge can run a routine-detected
+// breach through the same LLM-diagnosis + auto-fix-or-escalate pipeline as
+// real health-probe failures. Without this, rows inserted directly into
+// self_healing_log have no spec and the reconciler escalates them after 1h
+// of no progress.
+export async function processFailingService(
   failure: ServiceStatus,
   autonomyLevel: AutonomyLevel,
 ): Promise<{ action: 'created' | 'skipped' | 'escalated' | 'disabled'; vtid?: string; reason?: string }> {
@@ -388,10 +395,15 @@ router.post('/report', async (req: Request, res: Response) => {
     // ORB voice failures through the same diagnose/inject/dispatch chain.
     // Subsequent PRs add the adapter, deterministic specs, and synthetic probe.
     const VOICE_SYNTHETIC_ENDPOINT = /^voice-error:\/\/[a-z._-]+$/;
+    // VTID-02032: Routine incidents — synthetic endpoint pattern for breaches detected
+    // by the daily routines, so the self-healing pipeline picks them up via the same
+    // diagnose/spec/dispatch chain that handles voice-synthetic errors.
+    const ROUTINE_SYNTHETIC_ENDPOINT = /^routine-incident:\/\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 
     for (const failure of downServices) {
       const isVoiceSynthetic = VOICE_SYNTHETIC_ENDPOINT.test(failure.endpoint);
-      if (!isVoiceSynthetic && !knownEndpoints.has(failure.endpoint)) {
+      const isRoutineSynthetic = ROUTINE_SYNTHETIC_ENDPOINT.test(failure.endpoint);
+      if (!isVoiceSynthetic && !isRoutineSynthetic && !knownEndpoints.has(failure.endpoint)) {
         console.log(`[self-healing] Rejecting unknown endpoint: ${failure.endpoint}`);
         details.push({
           service: failure.name,
@@ -593,9 +605,20 @@ router.get('/history', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const offset = parseInt(req.query.offset as string) || 0;
 
+    // Optional filters. PostgREST query syntax: `failure_class=eq.<value>`.
+    // Whitelist allowed columns to keep this an exact-match filter that
+    // can't smuggle other operators through the URL.
+    const filterParts: string[] = [];
+    const failureClass = (req.query.failure_class as string | undefined) || '';
+    if (failureClass) filterParts.push(`failure_class=eq.${encodeURIComponent(failureClass)}`);
+    const outcome = (req.query.outcome as string | undefined) || '';
+    if (outcome) filterParts.push(`outcome=eq.${encodeURIComponent(outcome)}`);
+    const filterQs = filterParts.length ? '&' + filterParts.join('&') : '';
+
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/self_healing_log?` +
-        `select=*&order=created_at.desc&limit=${limit}&offset=${offset}`,
+        `select=*&order=created_at.desc&limit=${limit}&offset=${offset}` +
+        filterQs,
       { headers: { ...supabaseHeaders(), Prefer: 'count=exact' } },
     );
 
@@ -603,25 +626,47 @@ router.get('/history', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'Failed to query history' });
     }
 
-    const raw = (await resp.json()) as any[];
-    // Filter out phantom/test endpoints that aren't in the gateway route map.
-    // Synthetic `autopilot.*` identifiers (from dev-autopilot self-heal-log writes)
-    // are NOT route URLs — they're stage tags ("autopilot.scan_ingest",
-    // "autopilot.worker_queue.plan", "autopilot.plan_gen"). Pass them through
-    // unconditionally so the Self-Healing screen surfaces autopilot failures
-    // alongside route-class failures.
-    const known = new Set(Object.keys(ENDPOINT_FILE_MAP));
-    known.add('/alive');
-    known.add('/api/v1/self-healing/health');
-    const items = raw.filter((r: any) =>
-      !r.endpoint
-      || known.has(r.endpoint)
-      || (typeof r.endpoint === 'string' && r.endpoint.startsWith('autopilot.'))
-    );
+    const items = (await resp.json()) as any[];
     const countHeader = resp.headers.get('content-range');
     const total = countHeader ? parseInt(countHeader.split('/')[1] || '0', 10) : items.length;
 
     return res.json({ ok: true, items, total, limit, offset });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /history/classes — Distinct (failure_class, count) pairs across the
+ * full self_healing_log. Used by the Command Hub Self-Healing screen to
+ * populate the failure-class filter dropdown without paginating client-side.
+ */
+router.get('/history/classes', async (_req: Request, res: Response) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+    // PostgREST aggregate trick: select=failure_class,count() with group is
+    // not exposed by default; we pull failure_class for all rows and tally
+    // here. The table is small enough (low thousands) that this is cheap;
+    // if it grows, swap for a SQL view + RPC.
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/self_healing_log?select=failure_class&limit=10000`,
+      { headers: supabaseHeaders() },
+    );
+    if (!resp.ok) {
+      return res.status(500).json({ ok: false, error: 'Failed to query classes' });
+    }
+    const rows = (await resp.json()) as Array<{ failure_class: string | null }>;
+    const counts: Record<string, number> = {};
+    for (const r of rows) {
+      const k = r.failure_class || '(none)';
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    const classes = Object.keys(counts)
+      .map((k) => ({ class: k, count: counts[k] }))
+      .sort((a, b) => b.count - a.count);
+    return res.json({ ok: true, classes });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }

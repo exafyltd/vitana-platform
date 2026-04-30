@@ -185,8 +185,15 @@
     _alertBuffers: {},               // clip id → AudioBuffer
     _alertBuffersLoaded: false,
     _isReconnecting: false,
-    _recoveryWatchdog: null,         // 60s self-test recovery timer handle
-    _disconnectStuck: false
+    _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
+    _disconnectStuck: false,
+    // VTID-02020: contextual recovery state. _preDisconnectStage captures what
+    // the user was doing when the network dropped (idle / listening_user_speaking
+    // / thinking / speaking) so the backend's recovery prompt can decide
+    // whether to answer / ask-to-repeat / resume. conversationId is pinned by
+    // the backend on first /live/session/start and reused across reconnects.
+    _preDisconnectStage: null,
+    conversationId: null
   };
 
   // VTID-OFFLINE: Instant offline/online detection via browser events
@@ -606,7 +613,27 @@
     _s._disconnectReason = reason;
     _s._preDisconnectVoiceState = _s.voiceState;
 
-    console.warn('[VTOrb] _announceDisconnect: reason=' + reason);
+    // VTID-02020: capture WHAT the user was doing when the connection dropped.
+    // Used by the backend's contextual recovery prompt to decide whether to
+    // (A) acknowledge the disconnect + answer the in-flight question,
+    // (B) ask the user to repeat (they were mid-utterance),
+    // (C) resume mid-answer (the assistant was the one talking when cut off).
+    var stage;
+    if (_s.voiceState === 'LISTENING' && !_s.audioPlaying) {
+      // user was actively talking — likely mid-question (case B)
+      stage = 'listening_user_speaking';
+    } else if (_s.voiceState === 'THINKING') {
+      // user just finished, model hadn't started speaking yet (case A)
+      stage = 'thinking';
+    } else if (_s.voiceState === 'SPEAKING' || _s.audioPlaying) {
+      // model was mid-answer (case C)
+      stage = 'speaking';
+    } else {
+      stage = 'idle';
+    }
+    _s._preDisconnectStage = stage;
+
+    console.warn('[VTOrb] _announceDisconnect: reason=' + reason + ', stage=' + stage);
 
     // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
     // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
@@ -628,18 +655,46 @@
 
     _playAlert('disconnect-' + reason + '-' + lang);
 
-    // BOOTSTRAP-ORB-MODERN-RECOVERY: belt-and-suspenders self-test. If we're
-    // still in the disconnect state 60 seconds from now AND the browser
-    // believes it's online, force a full reconnect cycle. This catches the
-    // pathological case where every other recovery path silently failed
-    // (online event missed, SSE never reopened, etc).
-    clearTimeout(_s._recoveryWatchdog);
-    _s._recoveryWatchdog = setTimeout(function () {
-      if (_s._disconnectActive && navigator.onLine) {
-        console.warn('[VTOrb] 60s recovery watchdog fired — forcing _resetAndReconnect');
-        _resetAndReconnect();
+    // VTID-01987: active 5-second health probe replaces the previous 60s
+    // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
+    // 'online'/'offline' events unreliably and EventSource.onerror often
+    // never reports CLOSED — so we cannot trust passive signals. Instead,
+    // every 5s while a disconnect alert is up, actively probe the gateway:
+    // as soon as it answers, declare the connection back and reconnect in
+    // place. setInterval is preferred over a single setTimeout because the
+    // probe fetch itself may need to be retried under flaky mobile radio.
+    clearInterval(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = setInterval(function () {
+      if (!_s._disconnectActive) {
+        clearInterval(_s._recoveryWatchdog);
+        _s._recoveryWatchdog = null;
+        return;
       }
-    }, 60000);
+      // If a reconnect is already in flight, let it finish — don't double up.
+      if (_s._isReconnecting) return;
+      // Probe the gateway with a short timeout. Any 2xx/3xx/4xx is a "we
+      // can reach the network" signal — only fetch rejection (network
+      // unreachable, abort) means we should keep waiting.
+      var ctrl;
+      try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+      var timer = setTimeout(function () { try { ctrl && ctrl.abort(); } catch (e) {} }, 3000);
+      fetch(_cfg.gw + '/api/v1/orb/health', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: ctrl ? ctrl.signal : undefined
+      }).then(function (resp) {
+        clearTimeout(timer);
+        if (!_s._disconnectActive) return; // raced with manual recovery
+        console.log('[VTOrb] health-probe OK (status=' + resp.status + ') — forcing _resetAndReconnect');
+        _resetAndReconnect();
+      }).catch(function (err) {
+        clearTimeout(timer);
+        // Stay quiet on the expected unreachable case; only log unexpected.
+        if (err && err.name !== 'AbortError') {
+          console.log('[VTOrb] health-probe still unreachable: ' + (err.message || err.name));
+        }
+      });
+    }, 5000);
   }
 
   function _clearDisconnect() {
@@ -651,7 +706,7 @@
     _s._audioSendFailCount = 0;
     _s._audioSendFailWindowStart = 0;
     _s._disconnectStuck = false;
-    clearTimeout(_s._recoveryWatchdog);
+    clearInterval(_s._recoveryWatchdog);
     _s._recoveryWatchdog = null;
 
     console.log('[VTOrb] _clearDisconnect: recovering from reason=' + reason);
@@ -671,21 +726,15 @@
     _setStatus(label);
     _updateUI();
 
-    var src = _playAlert('recovery-' + reason + '-' + lang);
-    var rangBeep = false;
-    function ringReady() {
-      if (rangBeep) return;
-      rangBeep = true;
-      _playReadyBeep();
-      _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
-    }
-    if (src) {
-      src.onended = ringReady;
-      // Safety: if onended never fires (clip corruption etc), ring the beep anyway
-      setTimeout(ringReady, 4000);
-    } else {
-      ringReady();
-    }
+    // VTID-02020: NO client-side recovery voice. The backend's contextual
+    // recovery prompt (sendReconnectRecoveryPromptToLiveAPI) is now the single
+    // voice that acknowledges the disconnect — in the user's actual Vertex
+    // Live voice, with knowledge of what they were saying when we got cut off.
+    // We just play a brief non-voice ready beep + flip the status to
+    // "Listening..." so the visual transition is unambiguous; the assistant
+    // voice will speak shortly after.
+    _playReadyBeep();
+    _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
   }
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
@@ -706,6 +755,10 @@
     _s.active = false;
     _s.liveError = null;
     _s.greetingAudioReceived = false;
+    // VTID-01988 (mic restart fix): reset greetingComplete so the new session's
+    // turn_complete handler will re-trigger _startAudioCapture(). Without this,
+    // recovery only updated the display — the mic stream stayed torn down.
+    _s.greetingComplete = false;
     _s._reconnectCount = 0;
     _s._isReconnecting = false;
     _s._disconnectStuck = false;
@@ -845,6 +898,13 @@
     console.log('[VTOrb] Starting Gemini Live session...');
 
     _s.greetingAudioReceived = false;
+    // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
+    // call. It used to only get reset in _sessionStop (full session teardown),
+    // so reconnects via _resetAndReconnect / _attemptReconnect kept it as true
+    // and the new session never re-acquired the mic. Reset it here so every
+    // fresh _sessionStart correctly arms the post-greeting mic-startup path,
+    // regardless of which caller invokes it.
+    _s.greetingComplete = false;
     _s._audioSendErrorLogged = false;
     _s._inputTranscriptBuffer = '';
     _s._outputTranscriptBuffer = '';
@@ -911,17 +971,65 @@
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
+      // VTID-02020: when this _sessionStart is happening as part of a reconnect
+      // (NOT a first-time session), send the conversation history + the
+      // pre-disconnect stage so the backend can route to the contextual
+      // recovery prompt instead of the generic greeting. Detected via the
+      // presence of accumulated transcript history OR an explicit pre-stage
+      // flag — both survive _resetAndReconnect (kept in module-scoped _s).
+      var hasHistory = _s._transcriptHistory && _s._transcriptHistory.length > 0;
+      var hasStage = !!_s._preDisconnectStage;
+      if (hasHistory || hasStage) {
+        if (hasHistory) {
+          startPayload.transcript_history = _s._transcriptHistory.slice(-20).map(function (t) {
+            return { role: t.role, text: t.text };
+          });
+        }
+        startPayload.reconnect_stage = _s._preDisconnectStage || 'idle';
+        if (_s.conversationId) startPayload.conversation_id = _s.conversationId;
+        console.log('[VTOrb] _sessionStart: reconnect context — stage=' + startPayload.reconnect_stage
+          + ', transcript=' + (startPayload.transcript_history ? startPayload.transcript_history.length : 0) + ' turns'
+          + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
+      }
+
+      // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
+      // dead TCP connection can hang indefinitely, which used to leave the
+      // reconnect promise pending forever and the orb stuck on the disconnect
+      // screen. AbortSignal.timeout is supported on all WebViews we target;
+      // if it's somehow missing, fall back to AbortController + setTimeout.
+      var startSignal;
+      var startTimer;
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        startSignal = AbortSignal.timeout(8000);
+      } else {
+        try {
+          var ctrl = new AbortController();
+          startTimer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 8000);
+          startSignal = ctrl.signal;
+        } catch (e) { startSignal = undefined; }
+      }
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify(startPayload)
+        body: JSON.stringify(startPayload),
+        signal: startSignal
       });
+      if (startTimer) clearTimeout(startTimer);
 
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Failed to start session');
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // VTID-02020: pin the conversation_id returned by the backend so future
+      // reconnects can re-thread the same conversation. The backend will
+      // either echo back the one we sent or mint a fresh UUID on first start.
+      if (data.conversation_id) _s.conversationId = data.conversation_id;
+      // VTID-02020: the pre-disconnect stage was now consumed by the new
+      // session; clear it so a non-reconnect _sessionStart later doesn't
+      // accidentally route to the recovery prompt. transcript_history and
+      // conversation_id ARE preserved across the rest of the session lifetime.
+      _s._preDisconnectStage = null;
       if (_cfg.onSessionStart) try { _cfg.onSessionStart(_s.sessionId); } catch (e) { /* ignore */ }
 
       // Connect SSE stream
@@ -983,7 +1091,7 @@
       _s._preDisconnectVoiceState = null;
       _s._disconnectStuck = false;
       _s._isReconnecting = false;
-      clearTimeout(_s._recoveryWatchdog);
+      clearInterval(_s._recoveryWatchdog);
       _s._recoveryWatchdog = null;
     }
 
@@ -1044,6 +1152,10 @@
     _s._outputTranscriptBuffer = '';
     _s._transcriptHistory = [];
     _s._reconnectCount = 0;
+    // VTID-02020: clear conversation pin + stage on full close so the next
+    // open is a true fresh start (greeting flow, not recovery flow).
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
 
     _updateUI();
   }
@@ -1720,11 +1832,14 @@
     var orb = document.createElement('div');
     orb.className = 'vtorb-large';
     orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;z-index:1;cursor:pointer;';
-    // BOOTSTRAP-ORB-MODERN-RECOVERY: tap-to-reconnect when stuck. The orb is
-    // a button when _disconnectStuck=true; otherwise the tap is a no-op so
-    // we don't accidentally interrupt active sessions.
+    // VTID-01987: always-on tap-to-reconnect during ANY disconnect state, not
+    // just budget-exhausted "stuck". On mobile, users tap the orb the moment
+    // they see the "internet issues" message — making them wait for the 5s
+    // health probe is bad UX. Any tap while _disconnectActive forces an
+    // immediate fresh-session restart in place. We still gate this so taps
+    // during a healthy session don't interrupt a live conversation.
     orb.addEventListener('click', function () {
-      if (_s._disconnectStuck) _resetAndReconnect();
+      if (_s._disconnectActive || _s._disconnectStuck) _resetAndReconnect();
     });
     shell.appendChild(orb);
     _root.appendChild(shell);
@@ -1992,8 +2107,12 @@
   // 13. AUTO-RECONNECT
   // ============================================================
 
-  var MAX_WIDGET_RECONNECTS = 3;
-  var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
+  // VTID-01987: bumped from 3 to 5 retries with shorter delays. Mobile WebViews
+  // routinely produce 2-3 spurious failures during a WiFi/cellular handoff
+  // before the new socket actually opens — 3 was too tight. The 5s health
+  // probe (above) is the primary recovery path; this is the fallback.
+  var MAX_WIDGET_RECONNECTS = 5;
+  var RECONNECT_DELAYS = [1500, 3000, 5000, 8000, 12000];
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: scheduled-loop reconnect.
   //
@@ -2060,6 +2179,8 @@
       _s.liveError = null;
       _s._audioSendErrorLogged = false;
       _s.greetingAudioReceived = false;
+      // VTID-01988 (mic restart fix): see _resetAndReconnect for context.
+      _s.greetingComplete = false;
 
       _sessionStart().then(function () {
         _s._isReconnecting = false;

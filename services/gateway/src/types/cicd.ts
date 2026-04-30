@@ -518,6 +518,8 @@ export type CicdEventType =
   | 'tenant.health.computed'
   | 'tenant.health.regression_detected'
   | 'tenant.weekly.review.ready'
+  // BOOTSTRAP-ADMIN-DD: admin voice tool side-effects
+  | 'admin.autopilot.pause_requested'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
@@ -596,6 +598,8 @@ export type CicdEventType =
   | 'dev_autopilot.finding.snoozed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
+  | 'dev_autopilot.execution.bridged'
+  | 'dev_autopilot.execution.reaped'
   | 'dev_autopilot.execution.cancelled'
   | 'dev_autopilot.execution.running'
   | 'dev_autopilot.execution.pr_opened'
@@ -646,6 +650,12 @@ export type CicdEventType =
   | 'guide.did_you_know.accepted'
   | 'guide.did_you_know.declined'
   | 'guide.did_you_know.flag_disabled'
+  // V2 — Proactive Initiative Engine
+  | 'guide.initiative.offered'
+  | 'guide.initiative.consented'
+  | 'guide.initiative.executed'
+  | 'guide.initiative.declined'
+  | 'guide.initiative.flag_disabled'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'
@@ -692,7 +702,19 @@ export type CicdEventType =
   | 'voice.message.rate_limited'
   | 'voice.message.misroute'
   | 'voice.message.share_link_sent'
-  | 'vitana_id.confirmed';
+  | 'vitana_id.confirmed'
+  // VTID-02047: Unified Feedback Pipeline events
+  | 'feedback.ticket.created'
+  | 'feedback.ticket.status_changed'
+  | 'feedback.ticket.triaged'
+  | 'feedback.ticket.resolved'
+  | 'feedback.ticket.user_confirmed'
+  | 'feedback.handoff.started'
+  | 'feedback.handoff.completed'
+  // VTID-02632: Phase 8 — Nightly consolidator events
+  | 'memory.consolidator.run.completed'
+  | 'memory.consolidator.loop.failed'
+  | 'memory.index_delta.observed';
 
 export interface CicdOasisEvent {
   vtid: string;

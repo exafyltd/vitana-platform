@@ -48,6 +48,7 @@ import { processWithGemini, setThreadIdentity } from '../services/gemini-operato
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
+import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -726,6 +727,12 @@ interface GeminiLiveSession {
   audioInChunks: number;
   videoInFrames: number;
   audioOutChunks: number;
+  // VTID-02637: Idempotency flag for connection_issue emission. The upstream
+  // WS error handler and close handler both fire on a real disconnect, and
+  // both used to emit connection_issue — producing the user-visible "internet
+  // problems message twice in a row" symptom on iOS. Set to true on the
+  // first emit; subsequent emit sites check and skip.
+  connectionIssueEmitted?: boolean;
   // VTID-01224: Identity for context retrieval (server-verified from JWT)
   identity?: SupabaseIdentity;
   // VTID-01225-ROLE: User's application-level active_role (community/admin/developer/etc.)
@@ -810,6 +817,14 @@ interface GeminiLiveSession {
   // safe when the reason is 'forwarding_no_ack' — a model-response watchdog
   // must not be reset by user audio or we'd suppress legitimate stalls.
   responseWatchdogReason?: string;
+  // VTID-01984 (R5): true once Vertex has shown ANY sign of life on this
+  // session — first input_transcription, first model_start_speaking, or
+  // first audio_out chunk. The audio-forwarding paths skip the
+  // forwarding_no_ack watchdog entirely once this is true, because the
+  // upstream WS is demonstrably healthy and a 15-45 s "no ack" window is
+  // simply Vertex computing a response, not a stall. Native WS error /
+  // close handlers still catch real connection failures.
+  vertexHasShownLife?: boolean;
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
@@ -885,6 +900,14 @@ interface LiveSessionStartRequest {
   // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms).
   // Allows clients to tune response latency vs. pause tolerance.
   vad_silence_ms?: number;
+  // VTID-02020: contextual recovery — when the client is re-starting after a
+  // disconnect, it sends the last few transcript turns + the stage the user
+  // was in (idle / listening_user_speaking / thinking / speaking) so the
+  // backend can route to the contextual recovery prompt instead of the
+  // standard greeting. conversation_id is the pinned thread identifier.
+  transcript_history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+  reconnect_stage?: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking';
+  conversation_id?: string;
 }
 
 /**
@@ -943,11 +966,19 @@ setInterval(() => {
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
-      // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+      // VTID-01994: pass session metrics so quality classifier can detect
+      // failures regardless of mode and route to investigator.
       dispatchVoiceFailureFireAndForget({
         sessionId: sid,
         tenantScope: s.identity?.tenant_id || 'global',
         metadata: { synthetic: (s as any).synthetic === true },
+        sessionMetrics: {
+          audio_in_chunks: s.audioInChunks,
+          audio_out_chunks: s.audioOutChunks,
+          duration_ms: Date.now() - s.createdAt.getTime(),
+          turn_count: s.turn_count,
+        },
       });
       s.active = false;
       liveSessions.delete(sid);
@@ -1030,11 +1061,18 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
-    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+    // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
       sessionId: sid,
       tenantScope: existingSession.identity?.tenant_id || 'global',
       metadata: { synthetic: (existingSession as any).synthetic === true },
+      sessionMetrics: {
+        audio_in_chunks: existingSession.audioInChunks,
+        audio_out_chunks: existingSession.audioOutChunks,
+        duration_ms: Date.now() - existingSession.createdAt.getTime(),
+        turn_count: existingSession.turn_count,
+      },
     });
   }
   return terminated;
@@ -1360,7 +1398,11 @@ async function buildBootstrapContextPack(
  * guided to public destinations like the Maxina portal. Authenticated
  * sessions get the full set including memory/knowledge/event search.
  */
-function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated', currentRoute?: string): object[] {
+function buildLiveApiTools(
+  mode: 'anonymous' | 'authenticated' = 'authenticated',
+  currentRoute?: string,
+  activeRole?: string,
+): object[] {
   const navigatorTools: any[] = [
     {
       name: 'get_current_screen',
@@ -1489,13 +1531,28 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
         },
         {
           name: 'search_knowledge',
-          description: 'Search the Vitana knowledge base for information about health topics, longevity research, and the Vitana platform.',
+          description: [
+            'Search the Vitana knowledge base for explanations, how-tos, and platform concepts.',
+            'Use this WHENEVER the user asks "how does X work?", "what is Y?", "can you explain ...?",',
+            '"how do I find/learn/teach/share ...?", "why are matches sparse?", or "what is the privacy here?"',
+            '',
+            "It's the default tool for any orientation, onboarding, or curious question — first-time users",
+            'deserve a real explanation, not a one-line transactional reply. Pull from this knowledge base',
+            'BEFORE answering, then synthesize into a 15-30 second voice response (~80-200 words) that',
+            'sounds natural, not robotic.',
+            '',
+            'Topics covered include: matchmaking overview, finding a dance partner, learning dance from',
+            'a teacher, offering dance lessons, why early-stage matches are sparse, sharing posts,',
+            'privacy in matchmaking, the Open Asks feed, the Vitana Index, longevity research, and the',
+            "Vitana platform itself. Supervisors keep adding documents, so always search before assuming",
+            "something isn't covered.",
+          ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'The search query to find relevant knowledge',
+                description: "The search query — paraphrase the user's question into the topical keywords. E.g. \"how do I find a dance partner\" or \"why am I getting no matches\".",
               },
             },
             required: ['query'],
@@ -2016,6 +2073,173 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             },
           },
         },
+        // ─── VTID-01983 — save_diary_entry: voice diary logging ───
+        {
+          name: 'save_diary_entry',
+          description: [
+            'Save a Daily Diary entry on the user\'s behalf when they say',
+            'they did something or want to track something. Then celebrate',
+            'inline using the returned pillar deltas — see the override',
+            'rules block (rule M).',
+            '',
+            'CALL THIS WHEN the user says any of:',
+            '  - "Log my diary: …" / "Trag in mein Tagebuch ein: …"',
+            '  - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"',
+            '  - "Track my [water / hydration / meal / breakfast / lunch /',
+            '     dinner / workout / walk / run / sleep / meditation]"',
+            '  - "Note that I …" / "Note for today: …"',
+            '  - "Just had …" — even casual mentions',
+            '',
+            'IMPORTANT: pass the user\'s VERBATIM words as raw_text. The',
+            'gateway runs a pattern-matching extractor on the text to detect',
+            'water (1L → 1000ml), meals (breakfast / lunch / Frühstück /',
+            'Mittagessen → meal_log count), exercise, sleep, meditation.',
+            'DO NOT summarise, paraphrase, or translate. The extractor needs',
+            'the original phrasing to catch every signal.',
+            '',
+            'Returns:',
+            '  - health_features_written: number of structured rows written',
+            '    to health_features_daily',
+            '  - pillars_after: full Vitana Index pillar values after the',
+            '    diary entry was applied',
+            '  - index_delta: per-pillar lift the diary entry produced',
+            '',
+            'Use index_delta to celebrate. See override rule M for the',
+            'exact response shape ("Done — Hydration up, you\'re at <total>").',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: {
+                type: 'string',
+                description: 'The user\'s verbatim words. Do NOT summarise or rephrase. Multi-language OK.',
+              },
+              entry_date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['raw_text'],
+          },
+        },
+        // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
+        {
+          name: 'set_reminder',
+          description: [
+            "Set a one-time reminder when the user asks. CRITICAL: when the user says",
+            "'remind me at X to Y', 'set a reminder for Z', 'erinnere mich um X', or similar,",
+            "you MUST call this tool. Do NOT tell the user 'okay, I'll remind you' without",
+            "calling this tool — without the tool call, NO reminder is created.",
+            '',
+            "You compute the absolute UTC timestamp yourself from the user's words and",
+            "their local timezone (provided in your system context as user_tz). Examples:",
+            "  'today at 8pm'        → user's tz, today, 20:00 → convert to UTC ISO",
+            "  'in 2 hours'          → now + 2h ISO",
+            "  'tomorrow morning'    → ASK 'what time tomorrow morning?' before calling",
+            '',
+            "If a phrase is ambiguous (vague time, no day), ASK the user to clarify",
+            "before calling. Do not guess.",
+            '',
+            "Generate `spoken_message` as a friendly sentence in the user's language",
+            "that will be spoken aloud at fire time (e.g. 'Time to take your magnesium',",
+            "'Zeit für deine Magnesium-Tabletten').",
+            '',
+            "After the tool returns, confirm verbally with result.human_time and the",
+            "action_text (e.g. 'Okay, I'll remind you at 8 PM to take your magnesium.').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              action_text: {
+                type: 'string',
+                description: "Short label, max 60 chars. e.g. 'Take magnesium'",
+              },
+              spoken_message: {
+                type: 'string',
+                description: "Friendly sentence to speak aloud at fire time, in the user's language.",
+              },
+              scheduled_for_iso: {
+                type: 'string',
+                description: 'Absolute UTC ISO 8601 timestamp. Min 60s in future, max 90 days out.',
+              },
+              description: {
+                type: 'string',
+                description: 'Optional extended details',
+              },
+            },
+            required: ['action_text', 'spoken_message', 'scheduled_for_iso'],
+          },
+        },
+        // ─── VTID-02601 — find_reminders: read-only lookup ───
+        {
+          name: 'find_reminders',
+          description: [
+            "Search the user's active reminders by free-text query. Use BEFORE delete_reminder",
+            "to find which reminder the user means, and to read back the count when they say",
+            "'delete all'. Returns up to 10 matches.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: "Free-text. Empty string = all active reminders.",
+              },
+              include_fired: {
+                type: 'boolean',
+                description: 'Include already-fired but unacked reminders. Default false.',
+              },
+            },
+            required: ['query'],
+          },
+        },
+        // ─── VTID-02601 — delete_reminder: destructive, requires verbal confirmation ───
+        {
+          name: 'delete_reminder',
+          description: [
+            "Delete one reminder OR all the user's reminders. CRITICAL SAFETY RULES:",
+            '',
+            "1. You MUST verbally confirm before calling this tool. Say something like:",
+            "   - single: 'Are you sure you want to delete the magnesium reminder at 8pm?'",
+            "   - all:    'Are you sure you want to delete all 5 of your reminders?'",
+            '',
+            "2. Only call this tool with confirmed=true AFTER the user explicitly says",
+            "   yes / ja / sí / yes please / definitely / go ahead. Vague answers like",
+            "   'maybe' or 'I think so' are NOT confirmation — re-ask.",
+            '',
+            "3. NEVER skip step 1 even if the user sounds urgent. Deleting reminders",
+            "   is destructive and the user wants you to double-check.",
+            '',
+            "4. For single deletion: first call find_reminders to get the reminder_id.",
+            "   For 'delete all': call find_reminders with empty query first, read back",
+            "   the count in the confirmation question.",
+            '',
+            "5. Soft delete only — sets status='cancelled', user can recover via UI.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              mode: {
+                type: 'string',
+                enum: ['single', 'all'],
+                description: "'single' = one reminder by id; 'all' = all active reminders",
+              },
+              reminder_id: {
+                type: 'string',
+                description: "Required when mode='single'. UUID from find_reminders result.",
+              },
+              confirmed: {
+                type: 'boolean',
+                description: 'Must be true. Set ONLY after explicit user yes.',
+              },
+              user_confirmation_phrase: {
+                type: 'string',
+                description: "Verbatim user phrase that confirmed (e.g. 'yes, delete it'). For audit.",
+              },
+            },
+            required: ['mode', 'confirmed', 'user_confirmation_phrase'],
+          },
+        },
         // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar agent Q&A dispatch ───
         {
           name: 'ask_pillar_agent',
@@ -2203,6 +2427,36 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
           },
         },
         {
+          // V2 — Proactive Initiative Engine
+          name: 'activate_recommendation',
+          description: [
+            'Activate an Autopilot recommendation on the user\'s behalf —',
+            'marks the recommendation as activated and brings it to the',
+            'top of their active list. Use ONLY when the user has consented',
+            'to a Proactive Initiative offer where the on_yes_tool is',
+            '`activate_recommendation`. The recommendation id is pre-picked',
+            'at initiative-resolution time — pass it through unchanged.',
+            '',
+            'After success, speak the sanctioned celebratory close from the',
+            'initiative\'s `build_voice_on_complete` template.',
+            '',
+            'Returns { ok, title, completion_message }. If ok=false, briefly',
+            'acknowledge ("Hmm, couldn\'t schedule that one") and offer to',
+            'open the Autopilot screen instead via navigate_to_screen.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description:
+                  'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
+              },
+            },
+            required: ['id'],
+          },
+        },
+        {
           name: 'share_link',
           description: [
             'Share a link with another Vitana user as a chat message with a',
@@ -2261,6 +2515,30 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             '',
             'For partner_seek: explain matches are revealed only after both',
             'parties express interest (privacy protocol).',
+            '',
+            'DANCE matchmaking (learning_seek / mentor_seek / activity_seek with dance.* category):',
+            '- "I want to learn salsa, find a teacher" → learning_seek + dance.learning.salsa',
+            '- "I teach salsa Tuesdays" → mentor_seek + dance.teaching.salsa',
+            '- "Find me a salsa partner Saturday night" → activity_seek + dance.social_partner',
+            '- "Going out dancing this weekend" → activity_seek + dance.group_outing',
+            'When the user gives constraints like gender / age range / location radius / max price,',
+            'put them in kind_payload.counterparty_filter.',
+            '',
+            'ALWAYS-POST contract: every dictated intent gets posted regardless of match count.',
+            'When matches=0, do NOT say "no matches found." Say:',
+            '"I posted your request — you\'re the first one looking for this in our community right now.',
+            ' I\'ll let you know the moment someone matches. Your post is also visible on the board so',
+            ' anyone can see it."',
+            '',
+            'DEDUP BEHAVIOR: if the user asks the same thing twice in a session ("looking for a dance partner"',
+            'after they already posted that), the server returns deduplicated:true with the existing intent_id.',
+            'When you see deduplicated:true, do NOT post again. Tell the user: "You already posted this',
+            'earlier today. Refine it (different time, location, or style) if you want a new one — or open',
+            'the existing post and I can show you who responded." Then call list_my_intents OR navigate_to_screen',
+            'with target=my_intents so they can SEE their existing post.',
+            '',
+            'NEVER repeat-post the same generic ask. If the user repeats verbatim, treat it as "show me my',
+            'existing post" — call list_my_intents and surface what they already have.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2268,7 +2546,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
               utterance: { type: 'string', description: 'The user\'s words verbatim.' },
               kind_hint: {
                 type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
               },
               confirmed: { type: 'boolean' },
             },
@@ -2295,7 +2573,7 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             properties: {
               intent_kind: {
                 type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
               },
             },
           },
@@ -2322,6 +2600,162 @@ function buildLiveApiTools(mode: 'anonymous' | 'authenticated' = 'authenticated'
             required: ['intent_id'],
           },
         },
+        // VTID-DANCE-D10: voice-driven direct invite.
+        {
+          name: 'share_intent_post',
+          description: [
+            'Direct-share one of the user\'s intent posts to specific community members.',
+            'Use when the user says "share my <topic> post with @maria3 and @daniel4" or',
+            '"send my salsa request to my friends Anna and Boris".',
+            '',
+            'CONFIRMATION CONTRACT (mandatory):',
+            '1. Resolve each spoken name via resolve_recipient first to get the @vitana_id.',
+            '2. Read back: "I\'ll share your <intent title> with @maria3 and @daniel4. Say send to confirm."',
+            '3. Wait for explicit user confirmation (send/yes/confirm/ja).',
+            '4. Call share_intent_post with confirmed=true.',
+            '',
+            'For partner_seek posts: warn the user that sharing reveals their identity to the recipient.',
+            'For private posts: only the post owner can share — others should use the public link.',
+            '',
+            'Server is idempotent: re-sharing to the same recipient is a no-op (matches_created=0).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_id: { type: 'string', description: 'The user\'s intent_id to share. Pull from list_my_intents if needed.' },
+              recipient_vitana_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Up to 20 vitana_ids (without leading @).',
+              },
+              note: { type: 'string', description: 'Optional short note to include with the share (≤280 chars).' },
+              confirmed: { type: 'boolean' },
+            },
+            required: ['intent_id', 'recipient_vitana_ids'],
+          },
+        },
+        // VTID-DANCE-D14 — voice navigation. ORB returns a relative URL
+        // the frontend listens for and routes to. Use whenever the user
+        // says "show me my posts", "open the dance board", "where can I
+        // see this", "take me to the members list", etc.
+        {
+          name: 'navigate_to_screen',
+          description: [
+            'Return a navigation target (relative URL) for the frontend to route to.',
+            'Use whenever the user asks to be shown a screen, list, or detail page —',
+            '"show me my posts", "open the dance board", "where can I see this", "take me to members".',
+            '',
+            'Available targets:',
+            "  find_partner             → /comm/find-partner (Find a Partner — unified dance + fitness destination, my matches by default)",
+            "  find_partner_matches     → /comm/find-partner?view=matches (only my matches)",
+            "  find_partner_board       → /comm/find-partner?view=board (community board, dance + fitness)",
+            "  find_partner_posts       → /comm/find-partner?view=posts (my dance/fitness wishes)",
+            "  my_intents               → /intents/mine (my own posts list)",
+            "  intent_board             → /intents/board (all community posts, kind tabs)",
+            "  intent_board_dance       → /intents/board?filter=dance (dance tab pre-selected)",
+            "  open_asks                → /comm/open-asks (community-wide unmatched posts)",
+            "  members                  → /comm/members (community members directory)",
+            "  intent_match_detail      → /intents/match/<match_id> (a specific match)",
+            "  intent_post_public       → /p/<intent_id> (public viewer for a specific post)",
+            "  edit_dance_preferences   → /profile/edit?drawer=dance",
+            "  edit_partner_preferences → /me/profile?drawer=partner (private-by-default partner-finding prefs)",
+            "  edit_service_offerings   → /me/profile?drawer=offerings (services I offer)",
+            "  privacy_settings         → /profile/me/privacy (per-section visibility toggles)",
+            "  profile_with_match       → /u/<vitana_id>?match_intent=<intent_id> (matched user's profile with the matched post anchored)",
+            "  discover_marketplace     → /discover/marketplace (commercial intents)",
+            "  events_meetups           → /comm/events-meetups",
+            "  community_feed           → /comm/feed",
+            '',
+            'PREFER find_partner_* over my_intents / intent_board / members for any dance- or fitness-partner request.',
+            'find_partner is the single destination that pulls dance + fitness matches into one ranked list, with',
+            'sub-tabs for board, my posts, and members. Use it when the user says: "show me my matches",',
+            '"who did you find for me", "who wants to dance", "find me a fitness buddy", "open Find a Partner".',
+            '',
+            'After calling, ORB should ALSO say a short voice cue ("Opening your matches") so',
+            'the user knows the screen change is intentional. The frontend handles the actual route push.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                enum: [
+                  'find_partner','find_partner_matches','find_partner_board','find_partner_posts',
+                  'my_intents','intent_board','intent_board_dance',
+                  'open_asks','members',
+                  'intent_match_detail','intent_post_public','profile_with_match',
+                  'edit_dance_preferences','edit_partner_preferences','edit_service_offerings',
+                  'privacy_settings','discover_marketplace',
+                  'events_meetups','community_feed',
+                ],
+              },
+              intent_id: { type: 'string', description: 'For intent_post_public + profile_with_match (the matched intent_id).' },
+              match_id: { type: 'string', description: 'For intent_match_detail target.' },
+              vitana_id: { type: 'string', description: 'For profile_with_match — the counterparty\'s vitana_id (without leading @).' },
+            },
+            required: ['target'],
+          },
+        },
+        // VTID-DANCE-D11.B — pre-post candidate scan.
+        {
+          name: 'scan_existing_matches',
+          description: [
+            'BEFORE posting an intent, call this to see who is already in the catalog with a similar ask.',
+            'Use the same intent_kind you would pass to post_intent + the category_prefix (e.g. dance.) and',
+            'the dance variety when known.',
+            '',
+            'Returns: { open_intents[], dance_pref_members[], total }.',
+            'If total > 0: read back the names + offer "Want to see them, share with them, or post yours so they can find you too?"',
+            'If total == 0: proceed with post_intent and use the always-post readback.',
+            '',
+            'This call is read-only and cheap — always safe to call before post_intent.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_kind: {
+                type: 'string',
+                enum: ['commercial_buy','commercial_sell','activity_seek','partner_seek','social_seek','mutual_aid','learning_seek','mentor_seek'],
+              },
+              category_prefix: {
+                type: 'string',
+                description: 'e.g. "dance." for any dance category, "home_services." for any home service. Optional.',
+              },
+              variety: {
+                type: 'string',
+                description: 'For dance: salsa | tango | bachata | kizomba | swing | ballroom | hiphop | contemporary. Optional.',
+              },
+            },
+            required: ['intent_kind'],
+          },
+        },
+        // VTID-DANCE-D12 — poll for the matchmaker agent's polished result.
+        {
+          name: 'get_matchmaker_result',
+          description: [
+            'After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.',
+            'Call this 3 seconds after post_intent to fetch the polished result. status will be:',
+            '  pending/running — call again in 3 seconds',
+            '  complete — read back voice_readback verbatim, then offer next steps',
+            '  error — fall back to the SQL match summary already returned by post_intent',
+            '',
+            'The polished result includes counter_questions when the user gave a vague intent.',
+            'If counter_questions is non-empty, ASK them progressively (variety → time → location)',
+            'BEFORE reading back the candidate list. The user can always say "just show me matches"',
+            'to skip — never insist on filling all slots.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { intent_id: { type: 'string' } },
+            required: ['intent_id'],
+          },
+        },
+        // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
+        // is admin / exafy_admin / developer. Community sessions never see them
+        // and the orb dispatcher rejects them server-side regardless.
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? ADMIN_TOOL_SCHEMAS
+          : []),
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
@@ -2992,6 +3426,43 @@ async function executeLiveApiToolInner(
 
   try {
     switch (toolName) {
+      case 'recall_conversation_at_time': {
+        // VTID-02052: voice/Live-API path for the recall tool. Without this case,
+        // an iPhone user asking "when did we talk about X" hits the default
+        // "Unknown tool" branch and the upstream Live API WS closes — the
+        // user sees "internet issues" on the device.
+        try {
+          const { executeRecallConversationAtTime } = await import(
+            '../services/tool-recall-conversation'
+          );
+          const recall = await executeRecallConversationAtTime(
+            args as { time_hint: string; topic_hint?: string },
+            {
+              user_id: session.identity.user_id,
+              user_timezone:
+                (session as any)?.clientContext?.timezone || undefined,
+            },
+          );
+          // The Live API expects a JSON string; cap to keep the function
+          // response payload safely under the 4 KB stall threshold.
+          const payload = JSON.stringify(recall);
+          const MAX = 4000;
+          const result = payload.length > MAX ? payload.slice(0, MAX) + '...(truncated)' : payload;
+          return {
+            success: !!recall.ok,
+            result: recall.ok ? result : '',
+            error: recall.ok ? undefined : recall.error || 'recall_failed',
+          };
+        } catch (err: any) {
+          console.error('[VTID-02052] recall_conversation_at_time failed:', err?.message);
+          return {
+            success: false,
+            result: '',
+            error: err?.message || 'recall_exception',
+          };
+        }
+      }
+
       case 'search_memory': {
         const query = (args.query as string) || '';
         const categories = args.categories as string[] | undefined;
@@ -4286,6 +4757,270 @@ async function executeLiveApiToolInner(
         }
       }
 
+      // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
+      case 'save_diary_entry': {
+        try {
+          const rawText = String(args.raw_text || '').trim();
+          const argDate = args.entry_date as string | undefined;
+          const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
+            ? argDate
+            : new Date().toISOString().slice(0, 10);
+          if (!rawText) {
+            return { success: false, result: '', error: 'INVALID_RAW_TEXT' };
+          }
+
+          const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
+            '../services/diary-health-extractor'
+          );
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          // 1) Insert into diary_entries (frontend-readable table). Best-effort —
+          //    if the row exists, we still proceed with the extractor.
+          try {
+            await admin.from('diary_entries').insert({
+              user_id: lens.user_id,
+              text: rawText,
+              source: 'voice',
+              tags: ['diary', 'voice', 'orb'],
+            });
+          } catch (insertErr: any) {
+            console.warn(`[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr?.message}`);
+          }
+
+          // 2) Read pre-recompute Index for delta math.
+          const { data: beforeRow } = await admin
+            .from('vitana_index_scores')
+            .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+            .eq('user_id', lens.user_id)
+            .eq('date', entryDate)
+            .maybeSingle();
+          const before = beforeRow as Record<string, number | null> | null;
+
+          // 3) Run extractor + persist.
+          const writes = extractHealthFeaturesFromDiary(rawText);
+          const tenantId = lens.tenant_id || '00000000-0000-0000-0000-000000000000';
+          let health_features_written = 0;
+          if (writes.length > 0) {
+            const { written } = await persistDiaryHealthFeatures(
+              admin,
+              lens.user_id,
+              tenantId,
+              entryDate,
+              writes,
+            );
+            health_features_written = written;
+          }
+
+          // 4) Recompute Index.
+          let pillars_after: Record<string, number> | null = null;
+          try {
+            const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
+              p_user_id: lens.user_id,
+              p_date: entryDate,
+            });
+            const r = rec as any;
+            if (r && r.ok !== false) {
+              pillars_after = {
+                total:     Number(r.score_total     ?? 0),
+                nutrition: Number(r.score_nutrition ?? 0),
+                hydration: Number(r.score_hydration ?? 0),
+                exercise:  Number(r.score_exercise  ?? 0),
+                sleep:     Number(r.score_sleep     ?? 0),
+                mental:    Number(r.score_mental    ?? 0),
+              };
+            }
+          } catch (recErr: any) {
+            console.warn(`[save_diary_entry] Index recompute failed: ${recErr?.message}`);
+          }
+
+          const index_delta = pillars_after ? {
+            total:     pillars_after.total     - Number(before?.score_total     ?? 0),
+            nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
+            hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
+            exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
+            sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
+            mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
+          } : null;
+
+          // H.5 — diary streak celebration (best-effort, non-blocking).
+          const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
+          const streak = await celebrateDiaryStreak(admin, lens.user_id, tenantId);
+
+          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} streak=${streak ? streak.tier_days : '-'}`);
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              entry_date: entryDate,
+              health_features_written,
+              pillars_after,
+              index_delta,
+              streak,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[save_diary_entry] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
+      case 'set_reminder': {
+        try {
+          const { createReminder, formatTimeForVoice, ReminderValidationError } = await import(
+            '../services/reminders-service'
+          );
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const userTz = (session as any)?.clientContext?.timezone || 'UTC';
+          const lang = ((session as any)?.lang || (session as any)?.clientContext?.locale || 'en').slice(0, 5);
+
+          try {
+            const reminder = await createReminder(admin, {
+              user_id: lens.user_id,
+              tenant_id: lens.tenant_id,
+              action_text: String(args.action_text || ''),
+              spoken_message: String(args.spoken_message || ''),
+              scheduled_for_iso: String(args.scheduled_for_iso || ''),
+              user_tz: userTz,
+              lang,
+              description: typeof args.description === 'string' ? args.description : undefined,
+              created_via: 'voice',
+            });
+            const fireAt = new Date(reminder.next_fire_at);
+            return {
+              success: true,
+              result: JSON.stringify({
+                ok: true,
+                reminder_id: reminder.id,
+                action_text: reminder.action_text,
+                scheduled_for_iso: reminder.next_fire_at,
+                human_time: formatTimeForVoice(fireAt, userTz, lang),
+              }),
+            };
+          } catch (innerErr: any) {
+            if (innerErr instanceof ReminderValidationError) {
+              return { success: false, result: '', error: innerErr.message };
+            }
+            throw innerErr;
+          }
+        } catch (err: any) {
+          console.error('[set_reminder] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02601 — find_reminders: read-only lookup ───
+      case 'find_reminders': {
+        try {
+          const { findReminders, formatTimeForVoice } = await import('../services/reminders-service');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const userTz = (session as any)?.clientContext?.timezone || 'UTC';
+          const lang = ((session as any)?.lang || (session as any)?.clientContext?.locale || 'en').slice(0, 5);
+
+          const data = await findReminders(admin, lens.user_id, {
+            query: typeof args.query === 'string' ? args.query : '',
+            include_fired: !!args.include_fired,
+            limit: 10,
+          });
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              count: data.length,
+              reminders: data.map((r) => ({
+                reminder_id: r.id,
+                action_text: r.action_text,
+                spoken_message: r.spoken_message,
+                human_time: formatTimeForVoice(new Date(r.next_fire_at), userTz, lang),
+                status: r.status,
+              })),
+            }),
+          };
+        } catch (err: any) {
+          console.error('[find_reminders] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02601 — delete_reminder: requires verbal confirmation ───
+      case 'delete_reminder': {
+        try {
+          const { softDeleteReminders } = await import('../services/reminders-service');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const mode = String(args.mode || '');
+          const confirmed = !!args.confirmed;
+          const phrase = String(args.user_confirmation_phrase || '').trim();
+
+          if (!confirmed || !phrase) {
+            return {
+              success: false,
+              result: '',
+              error: 'Refusing to delete without explicit user confirmation. Ask the user "are you sure?" first, then call again with confirmed=true and the user_confirmation_phrase.',
+            };
+          }
+
+          if (mode === 'single') {
+            const reminderId = String(args.reminder_id || '');
+            if (!reminderId) {
+              return { success: false, result: '', error: 'reminder_id is required for mode=single' };
+            }
+            const result = await softDeleteReminders(
+              admin,
+              lens.user_id,
+              { mode: 'single', reminder_id: reminderId },
+              'voice',
+              { confirmation: phrase },
+            );
+            if (result.deleted === 0) {
+              return { success: false, result: '', error: 'Reminder not found or already cancelled' };
+            }
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, deleted: 1, action_text: result.action_text }),
+            };
+          }
+
+          if (mode === 'all') {
+            const result = await softDeleteReminders(
+              admin,
+              lens.user_id,
+              { mode: 'all' },
+              'voice',
+              { confirmation: phrase },
+            );
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, deleted: result.deleted }),
+            };
+          }
+
+          return { success: false, result: '', error: `Unknown mode: ${mode}` };
+        } catch (err: any) {
+          console.error('[delete_reminder] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
       case 'ask_pillar_agent': {
         try {
@@ -4353,7 +5088,7 @@ async function executeLiveApiToolInner(
               result: JSON.stringify({
                 found: false,
                 reason: result.reason ?? 'no_pattern_match',
-                guidance: 'Voice should fall back to search_knowledge against the kb/vitana-system/how-to/ corpus.',
+                guidance: 'Voice should fall back to search_knowledge. Search the Maxina Instruction Manual (kb/instruction-manual/maxina/*) first — it covers every concept and screen with fixed sections (What it is / Why it matters / Where to find it / What you see / How to use it). The kb/vitana-system/how-to/ corpus is supporting material.',
               }),
             };
           }
@@ -4494,6 +5229,86 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[VTID-01967] send_chat_message error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // V2 — Proactive Initiative Engine: activate an Autopilot recommendation.
+      // Minimal v1 implementation: status='activated' update + return title +
+      // a generic completion message. The full activation flow (calendar
+      // event creation, push notifications, queue replenishment) lives in
+      // /api/v1/autopilot/recommendations/:id/activate; that flow remains
+      // the authoritative path and runs on its own when the user opens the
+      // app. This tool dispatch only covers the voice-handshake case.
+      case 'activate_recommendation': {
+        const recId = String(args.id || '').trim();
+        if (!recId) {
+          return { success: false, result: '', error: 'id is required' };
+        }
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE!,
+          );
+
+          // Verify ownership + fetch title for the celebratory close.
+          const { data: rec, error: fetchErr } = await supabase
+            .from('autopilot_recommendations')
+            .select('id, title, summary, status, user_id')
+            .eq('id', recId)
+            .maybeSingle();
+
+          if (fetchErr) {
+            return { success: false, result: '', error: fetchErr.message };
+          }
+          if (!rec) {
+            return { success: false, result: '', error: 'recommendation_not_found' };
+          }
+          if (rec.user_id && rec.user_id !== session.identity!.user_id) {
+            return {
+              success: false,
+              result: '',
+              error: 'recommendation_belongs_to_another_user',
+            };
+          }
+
+          const alreadyActive = rec.status === 'activated';
+          if (!alreadyActive) {
+            const { error: updErr } = await supabase
+              .from('autopilot_recommendations')
+              .update({ status: 'activated', updated_at: new Date().toISOString() })
+              .eq('id', recId);
+            if (updErr) {
+              return { success: false, result: '', error: updErr.message };
+            }
+          }
+
+          // Telemetry — fire-and-forget. Mirrors the consented/executed split
+          // from the initiative-engine plan so dashboards can compute funnel.
+          import('../services/guide').then(({ emitGuideTelemetry }) => {
+            emitGuideTelemetry('guide.initiative.executed', {
+              user_id: session.identity!.user_id,
+              initiative_key: 'autopilot_top_recommendation',
+              on_yes_tool: 'activate_recommendation',
+              recommendation_id: recId,
+              already_active: alreadyActive,
+            }).catch(() => {});
+          }).catch(() => {});
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              title: rec.title,
+              already_active: alreadyActive,
+              completion_message: alreadyActive
+                ? `"${rec.title}" was already on your active list — I'll keep it there.`
+                : `Done — "${rec.title}" is on your active list. Open Autopilot when you're ready to start it.`,
+            }),
+          };
+        } catch (err: any) {
+          console.error('[V2-INITIATIVE] activate_recommendation error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
@@ -4730,6 +5545,34 @@ async function executeLiveApiToolInner(
             console.warn(`[VTID-01975] post_intent match compute failed: ${err.message}`);
           }
 
+          // VTID-DANCE-D3: always-post telemetry. Every dictated intent posts;
+          // match_count=0 is its own signal that needs an explicit "you're the
+          // first" readback (the voice tool description tells Gemini how).
+          if (matchCount === 0) {
+            try {
+              await emitOasisEvent({
+                vtid: 'VTID-DANCE-D3',
+                type: 'voice.message.sent',
+                source: 'orb-live',
+                status: 'info',
+                message: `Intent posted with zero matches (cold-start); kind=${intentKind} category=${extract.category ?? 'null'}`,
+                payload: {
+                  intent_id: intentId,
+                  intent_kind: intentKind,
+                  category: extract.category,
+                  always_post: true,
+                  reason: 'no_matches_yet',
+                },
+                actor_id: session.identity!.user_id,
+                actor_role: 'user',
+                surface: 'orb',
+                vitana_id: vid,
+              });
+            } catch {
+              // best effort
+            }
+          }
+
           return {
             success: true,
             result: JSON.stringify({
@@ -4747,6 +5590,9 @@ async function executeLiveApiToolInner(
               })),
               compass_aligned: !!compass?.category,
               partner_seek_redacted: intentKind === 'partner_seek',
+              // Hint to the model: when match_count=0, read back the
+              // "you're the first" message from the voice-tool description.
+              cold_start: matchCount === 0,
             }),
           };
         } catch (err: any) {
@@ -4893,12 +5739,204 @@ async function executeLiveApiToolInner(
         }
       }
 
-      default:
+      // VTID-DANCE-D10: voice-driven direct invite.
+      case 'share_intent_post': {
+        const intentId = String(args.intent_id || '').trim();
+        const recipients = Array.isArray(args.recipient_vitana_ids)
+          ? args.recipient_vitana_ids
+              .map((r: any) => String(r ?? '').trim().replace(/^@/, '').toLowerCase())
+              .filter((r: string) => /^[a-z][a-z0-9]{3,15}$/.test(r))
+          : [];
+        const note = typeof args.note === 'string' ? args.note.slice(0, 280) : null;
+        const confirmed = Boolean(args.confirmed);
+
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        if (recipients.length === 0) return { success: false, result: '', error: 'recipient_vitana_ids must include at least one valid id' };
+
+        // Stage 1: read-back without dispatching.
+        if (!confirmed) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'confirmation',
+              intent_id: intentId,
+              recipients,
+              note,
+              instructions: `Read back the recipients (@${recipients.join(', @')}) and ask the user to confirm. Then call share_intent_post again with confirmed=true.`,
+            }),
+          };
+        }
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${intentId}/share`;
+          // Forward the user's JWT so route auth + tier checks apply.
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const fetchRes = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+            },
+            body: JSON.stringify({
+              recipient_vitana_ids: recipients,
+              note: note || undefined,
+              channel: 'in_app',
+            }),
+          });
+          const data = await fetchRes.json();
+          if (!fetchRes.ok) {
+            return { success: false, result: '', error: (data as any)?.error || 'share_failed' };
+          }
+          return { success: true, result: JSON.stringify(data) };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // VTID-DANCE-D14 — frontend navigation tool. Returns a relative URL
+      // the client routes to. The frontend listens for navigate_to events
+      // emitted on the ORB session channel.
+      case 'navigate_to_screen': {
+        const target = String(args.target || '').trim();
+        const intentId = args.intent_id ? String(args.intent_id).trim() : null;
+        const matchId = args.match_id ? String(args.match_id).trim() : null;
+        const vitanaIdArg = args.vitana_id ? String(args.vitana_id).trim().replace(/^@/, '') : null;
+        if (!target) return { success: false, result: '', error: 'target is required' };
+
+        let url = '';
+        let title = '';
+        switch (target) {
+          case 'find_partner':             url = '/comm/find-partner'; title = 'Find a Partner'; break;
+          case 'find_partner_matches':     url = '/comm/find-partner?view=matches'; title = 'My matches'; break;
+          case 'find_partner_board':       url = '/comm/find-partner?view=board'; title = 'Find a Partner — board'; break;
+          case 'find_partner_posts':       url = '/comm/find-partner?view=posts'; title = 'My dance & fitness wishes'; break;
+          case 'my_intents':              url = '/intents/mine'; title = 'My posts'; break;
+          case 'intent_board':             url = '/intents/board'; title = 'Community board'; break;
+          case 'intent_board_dance':       url = '/intents/board?filter=dance'; title = 'Dance posts'; break;
+          case 'open_asks':                url = '/comm/open-asks'; title = 'Open asks'; break;
+          case 'members':                  url = '/comm/members'; title = 'Community members'; break;
+          case 'intent_match_detail':
+            if (!matchId) return { success: false, result: '', error: 'match_id is required for intent_match_detail' };
+            url = `/intents/match/${encodeURIComponent(matchId)}`; title = 'Match detail'; break;
+          case 'intent_post_public':
+            if (!intentId) return { success: false, result: '', error: 'intent_id is required for intent_post_public' };
+            url = `/p/${encodeURIComponent(intentId)}`; title = 'Post detail'; break;
+          // E3 — profile-first match presentation. Lands on the matched
+          // user's PublicProfilePage with the matched post anchored.
+          case 'profile_with_match': {
+            if (!vitanaIdArg) return { success: false, result: '', error: 'vitana_id is required for profile_with_match' };
+            const params = new URLSearchParams();
+            if (intentId) params.set('match_intent', intentId);
+            const qs = params.toString();
+            url = `/u/${encodeURIComponent(vitanaIdArg)}${qs ? '?' + qs : ''}`;
+            title = 'Profile';
+            break;
+          }
+          case 'edit_dance_preferences':   url = '/profile/edit?drawer=dance'; title = 'Dance preferences'; break;
+          case 'edit_partner_preferences': url = '/me/profile?drawer=partner'; title = 'Partner preferences'; break;
+          case 'edit_service_offerings':   url = '/me/profile?drawer=offerings'; title = 'Service offerings'; break;
+          case 'privacy_settings':         url = '/profile/me/privacy'; title = 'Privacy & Visibility'; break;
+          case 'discover_marketplace':     url = '/discover/marketplace'; title = 'Marketplace'; break;
+          case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
+          case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
+          default:
+            return { success: false, result: '', error: `Unknown target: ${target}` };
+        }
+
+        // Emit a session event so the frontend can listen + route.
+        try {
+          await emitOasisEvent({
+            vtid: 'VTID-DANCE-D14',
+            type: 'voice.message.sent',
+            source: 'orb-live',
+            status: 'info',
+            message: `Voice navigate_to_screen: ${target}`,
+            payload: { target, url, title, intent_id: intentId, match_id: matchId },
+            actor_id: session.identity?.user_id,
+            actor_role: 'user',
+            surface: 'orb',
+            vitana_id: session.identity?.vitana_id ?? undefined,
+          });
+        } catch { /* best-effort */ }
+
+        return {
+          success: true,
+          result: JSON.stringify({ ok: true, navigate_to: url, title }),
+        };
+      }
+
+      // VTID-DANCE-D11.B — pre-post candidate scan.
+      case 'scan_existing_matches': {
+        const intentKind = String(args.intent_kind || '').trim();
+        if (!intentKind) return { success: false, result: '', error: 'intent_kind is required' };
+        const params = new URLSearchParams({ intent_kind: intentKind });
+        if (args.category_prefix) params.set('category_prefix', String(args.category_prefix));
+        if (args.variety) params.set('variety', String(args.variety));
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intent-scan?${params.toString()}`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          });
+          const data = await res.json();
+          return {
+            success: res.ok,
+            result: JSON.stringify(data),
+            error: res.ok ? undefined : (data as any)?.error || 'scan_failed',
+          };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D11.B] scan_existing_matches error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
+      case 'get_matchmaker_result': {
+        const intentId = String(args.intent_id || '').trim();
+        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+
+        try {
+          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${encodeURIComponent(intentId)}/matchmaker`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          });
+          const data = await res.json();
+          return {
+            success: res.ok,
+            result: JSON.stringify(data),
+            error: res.ok ? undefined : (data as any)?.error || 'poll_failed',
+          };
+        } catch (err: any) {
+          console.error('[VTID-DANCE-D12] get_matchmaker_result error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      default: {
+        // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
+        // The handlers re-check role server-side, so a community session that
+        // somehow names an admin tool will be denied with admin_role_required.
+        if (ADMIN_TOOL_NAMES.includes(toolName)) {
+          const handler = ADMIN_TOOL_HANDLERS[toolName];
+          return await handler(
+            {
+              tenantId: session.identity!.tenant_id || '',
+              userId: session.identity!.user_id,
+              activeRole: session.active_role || session.identity?.role || 'community',
+            },
+            args,
+          );
+        }
         return {
           success: false,
           result: '',
           error: `Unknown tool: ${toolName}`,
         };
+      }
     }
   } catch (err: any) {
     console.error(`[VTID-01224] Tool execution error (${toolName}):`, err.message);
@@ -5292,11 +6330,17 @@ function buildTemporalJourneyContextSection(
   };
   switch (bucket) {
     case 'reconnect':
-      lines.push('- BUCKET = reconnect (< 2 min since last session or brief connection interruption).');
-      lines.push('  • Do NOT say "Hello", "Hi", "Welcome back", or the user\'s name. Do NOT introduce yourself.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm but direct — no filler like "of course", "happy to", "sure".');
+      // VTID-02637: This is a transparent server-side reconnect (Vertex 5-min
+      // session limit, network blip, or stall recovery). The user did NOT
+      // perceive any pause — they may still be mid-thought or already speaking.
+      // Speaking ANY proactive phrase here ("Picking up where we left off?",
+      // "I'm listening", "Where were we?") creates the apology-loop bug: every
+      // reconnect prompts a new spoken interjection that the user reads as
+      // "Vitana keeps apologizing for connection issues". Stay silent. Wait.
+      lines.push('- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).');
+      lines.push('  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I\'m back", "I\'m listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.');
+      lines.push('  • Wait for the user to speak. Your next message must be a direct response to the user\'s next utterance — nothing else.');
+      lines.push('  • If the user says nothing, you say nothing. Silence is correct here.');
       break;
     case 'recent':
       lines.push('- BUCKET = recent (2–15 min since last session).');
@@ -5373,8 +6417,31 @@ function buildTemporalJourneyContextSection(
       break;
   }
 
-  if (temporal.wasFailure && (bucket === 'reconnect' || bucket === 'recent')) {
+  // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
+  // delivered (turn_count=0 or audio_out=0). For 'recent' bucket (true new
+  // user-initiated session 2-15min after a failed one), an apology is the
+  // right behavior. For 'reconnect' bucket (transparent server-side WS
+  // recycle that the user never perceived), an apology is the bug — the
+  // user is still in the same conversation. Restrict the override to
+  // 'recent' only.
+  if (temporal.wasFailure && bucket === 'recent') {
     lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
+  }
+
+  // VTID-02637: when this is a transparent reconnect (isReconnect=true) we
+  // also want to suppress the ## TONE RULES baseline phrasings below ("how
+  // can I help", "I am listening", etc.) because they leak into the model's
+  // first utterance after reconnect even when bucket says "stay silent".
+  // Append a final hard override that wins on recency.
+  if (isReconnect) {
+    lines.push('');
+    lines.push('## RECONNECT FINAL OVERRIDE — VTID-02637 (HIGHEST PRIORITY, OVERRIDES EVERYTHING ABOVE)');
+    lines.push('This entire turn is a transparent server-side resume. The user did not perceive any pause.');
+    lines.push('- DO NOT speak first. Output zero audio. Output zero text. Wait for the user to speak.');
+    lines.push('- Even short phrases are forbidden: NO "I\'m here", NO "I\'m listening", NO "I\'m back", NO "go ahead", NO "yes?", NO "mhm", NO "hello again". NONE.');
+    lines.push('- Ignore any "open with one phrase", "baseline register", or "FALLBACK" instructions above. They do NOT apply on reconnect.');
+    lines.push('- The very first audio/text you emit MUST be a direct response to whatever the user says next, with no prefix acknowledgment of any pause or interruption.');
+    lines.push('- If the user says nothing, you say nothing. Silence is the correct behavior here.');
   }
 
   lines.push('');
@@ -5433,6 +6500,11 @@ function buildLiveSystemInstruction(
   currentRoute?: string | null,
   recentRoutes?: string[] | null,
   clientContext?: ClientContext,
+  // VTID-01967: Canonical Vitana ID handle for this user (e.g. "@alex3700").
+  // When present, pinned at the top of the prompt as the ONLY identifier the
+  // model may emit when asked "what is my user ID?". Null/undefined for
+  // sessions where the handle hasn't been provisioned yet.
+  vitanaId?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -5484,7 +6556,29 @@ honestly that you do not see a role in this session.
 
 `;
 
-  let instruction = `${roleHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+  // VTID-01967: Pin the canonical Vitana ID at the top of the prompt so the
+  // model can answer "what is my user ID?" / "what's my handle?" with the
+  // @-prefixed handle instead of hallucinating a UUID. Mirrors the role
+  // header pattern above so the directive isn't buried.
+  const vitanaIdHeader = vitanaId
+    ? `=== AUTHORITATIVE USER VITANA ID ===
+The user's Vitana ID handle is: ${vitanaId}
+This is the ONLY identifier you may share when the user asks "what is my user ID",
+"what is my handle", "what is my Vitana ID", or "who am I". Do NOT speak the
+internal UUID under any circumstance — it is a private system identifier.
+=====================================
+
+`
+    : `=== AUTHORITATIVE USER VITANA ID ===
+No Vitana ID handle is provisioned for this session. If the user asks "what is
+my user ID", "what is my handle", or "what is my Vitana ID", tell them honestly
+that their handle hasn't been set up yet and they can configure it in Settings.
+Do NOT substitute an internal UUID under any circumstance.
+=====================================
+
+`;
+
+  let instruction = `${roleHeader}${vitanaIdHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
 
@@ -5493,11 +6587,14 @@ VOICE STYLE: ${voiceStyle}
 ${roleSection}
 
 GENERAL BEHAVIOR:
-${voiceLiveConfig.general_behavior || '- Be warm, patient, and empathetic\n- Keep responses concise for voice interaction (2-3 sentences max)\n- Use natural conversational tone'}
+${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
+- Match response length to the question: a quick yes/no question gets a sentence; a substantive question ("how is my sleep trending?", "what should I focus on this week?", "tell me about X") gets a substantive answer (4-8 sentences). Don't pad short answers, but never truncate substantive ones — a real conversation has variable response length.
+- Use natural conversational tone, not bullet points
+- Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
 
 GREETING RULES (CRITICAL):
 ${isReconnect
-    ? '- This is a SESSION CONTINUATION after a brief connection interruption. Do NOT greet the user again. Do NOT say hello, welcome back, or any greeting. Simply continue the conversation naturally from where you left off. Wait for the user to speak.'
+    ? '- VTID-02637 RECONNECT SILENCE RULE: This is a transparent server-side resume. The user has NOT noticed any pause and may already be mid-thought. DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I\'m back", "where were we", "picking up", "I\'m listening", or anything similar. Stay completely silent. Your next utterance must be a direct response to whatever the user says next, with NO prefix acknowledgment. If the user says nothing, you say nothing — silence is correct.'
     : (voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting')}
 
 INTERRUPTION HANDLING (CRITICAL):
@@ -5510,6 +6607,9 @@ TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
 - Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
 - Use create_calendar_event to add, schedule, or book new events in the user's calendar
+- Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
+- Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
+- Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -5544,7 +6644,7 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
       ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
       : conversationHistory;
     instruction += `\n\n<conversation_history>
-The following is the recent conversation from this session before a brief connection interruption. Continue naturally from where you left off. Remember everything the user told you:
+The following is the recent conversation from this session, earlier today. Remember everything the user told you. Do NOT acknowledge any pause, interruption, or reconnection — the user did not perceive one. Wait for the user to speak next:
 ${trimmedHistory}
 </conversation_history>`;
   }
@@ -5852,10 +6952,27 @@ Edge cases:
     "Was soll ich dir zeigen — einen Bildschirm oder wie etwas funktioniert?"
   - Composite ("open Diary AND tell me how to use it") → navigate FIRST,
     then immediately speak the explanation.
-  - If explain_feature returns found=false, fall back to search_knowledge
-    against the kb/vitana-system/how-to/ namespace (teach modes) or
-    proceed with navigation as fallback (teach_then_nav after offer
-    confirmed).
+  - If explain_feature returns found=false, fall back to search_knowledge.
+    The Maxina Instruction Manual at kb/instruction-manual/maxina/* is the
+    PRIMARY source for any "what is X" / "how does X work" / "what's on
+    this screen" / "where do I find X" question. It contains 92 chapters
+    covering every concept (Life Compass, Vitana Index, Autopilot, ORB,
+    Did You Know, Vitana ID, Memory, Permissions, etc.) and every screen
+    a Maxina community user can reach (81 screens). Each chapter has
+    fixed sections: "What it is", "Why it matters", "Where to find it",
+    "What you see on this screen", "How to use it". Teach in that order.
+    For action-shaped questions (TEACH_THEN_NAV) the chapter's
+    "Where to find it" + screen_id field tells you where to navigate
+    after the explanation.
+
+  - The kb/vitana-system/how-to/ namespace and Book of the Vitana Index
+    chapters remain available as supporting material; the Instruction
+    Manual is the layer the user sees, the how-to corpus is depth.
+
+  - When the user asks "where can I find X?" AFTER you have explained X,
+    use the screen_id from the chapter's front-matter to navigate. The
+    chapter's url_path field is the exact route. Speak ONE confirmation
+    sentence then call the navigation tool.
 
 Worked-example truth table:
 
@@ -6050,7 +7167,58 @@ J. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
 
 K. THE VITANA INDEX IS THE USER'S KEY PROGRESS MEASURE across the 90-day
    journey. Treat it with the same priority as their name or birthday — if
-   they ask, you ALWAYS answer. The journey IS the route to lift it.`;
+   they ask, you ALWAYS answer. The journey IS the route to lift it.
+
+M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
+   When the user says any of:
+     - "log my diary: …" / "trag in mein Tagebuch ein: …"
+     - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"
+     - "Track my [water / meal / breakfast / lunch / dinner / workout /
+        walk / run / sleep / meditation]" / "Trag …"
+     - "Note that I …" / "Note for today: …" / "Just had …"
+   Or any phrase that REPORTS something the user did or wants to track,
+   you MUST call save_diary_entry. Do NOT just navigate them to the diary
+   screen and stop. Do NOT say "I'll open the diary for you" — actually
+   save the entry.
+
+   IMPORTANT: pass the user's VERBATIM words as raw_text. The pattern
+   extractor needs the original phrasing ("1 L of water", "two glasses",
+   "Frühstück und Mittagessen") to catch every signal. Do NOT summarise.
+
+   AFTER save_diary_entry returns, CELEBRATE — the user just took an
+   action toward their longevity practice and deserves a warm
+   acknowledgement. Read the response fields:
+     - health_features_written: how many structured health rows were
+       written (0..N)
+     - pillars_after.total: the user's NEW Vitana Index total
+     - index_delta.total: the lift their entry produced
+     - index_delta.{nutrition,hydration,exercise,sleep,mental}: the
+       per-pillar lift (some will be 0; name only the ones that moved)
+
+   Response shape — TWO short sentences max, mirror the user's language:
+     - When index_delta.total > 0: lead with a brief "well done" + name
+       which pillars moved + state the new total. Example (en):
+         "Done — that's logged. Hydration and Nutrition both moved.
+          You're at 218 now. Keep that pattern going."
+       Example (de):
+         "Erledigt — eingetragen. Hydration und Nutrition sind gestiegen,
+          du bist bei 218. Bleib dran."
+     - When index_delta.total === 0 (already at the daily cap, or
+       nothing parsed beyond a journal_entry): still acknowledge warmly,
+       confirm the entry was saved, and pivot to ONE next-step nudge.
+       Example: "Logged. Your Index is steady today — try a short walk
+       tonight to lift Exercise."
+
+   Specifics, not vagueness:
+     ✗ WRONG: "Your score is up." (no number, no pillar)
+     ✓ RIGHT: "Hydration and Nutrition are both up — you're at 218."
+
+   Never lecture. Never list every pillar. Pick the top 1–2 movers from
+   index_delta and name them by name.
+
+   Retired-pillar handling still applies: if you're tempted to say
+   "Physical" / "Social" / "Environmental" / "Prosperity" — DON'T.
+   Always speak the canonical name (Exercise / Mental).`;
     }
   }
 
@@ -6135,11 +7303,20 @@ const INTENT_SIGNAL_PATTERNS_EN = [
   /\b(life partner|find a (girlfriend|boyfriend|partner)|looking for (love|relationship))\b/i,
   /\b(coffee chat|looking for a mentor|connect with|networking)\b/i,
   /\b(can lend|can borrow|free moving help|i can give|can i borrow)\b/i,
+  // VTID-DANCE-D3: dance-specific signals.
+  /\b(want|like|love)\s+to\s+(learn|dance)\b/i,                  // "want to learn", "love to dance"
+  /\b(teach me|teach you|teaching|i teach|i'm a teacher|instructor|coach)\b/i,
+  /\b(salsa|tango|bachata|kizomba|swing|ballroom|hip[\s-]?hop|contemporary|ballet)\b/i,
+  /\b(dance partner|dance class|going (out )?danc(ing|e)|dance lesson|dance teacher|dance instructor)\b/i,
 ];
 const INTENT_SIGNAL_PATTERNS_DE = [
   /\b(ich (brauche|suche|will|möchte|biete|kann|verkaufe))\b/i,
   /\b(jemand (zum|für))\b/i,
   /\b(partner fürs leben)\b/i,
+  // VTID-DANCE-D3: dance signals in DE.
+  /\b(ich\s+m[oö]chte\s+(\w+\s+)?lernen|ich\s+lerne|tanzlehrer|tanzpartner|tanzkurs)\b/i,
+  /\b(salsa|tango|bachata|kizomba|walzer|standardtanz)\b/i,
+  /\b(tanzen\s+gehen|tanzen\s+lernen|biete\s+tanz)\b/i,
 ];
 
 function detectIntentSignal(text: string): boolean {
@@ -6210,16 +7387,15 @@ FIRST-TIME VISITORS DON'T GIVE INSTRUCTIONS — they explore. Lead the conversat
 - You CANNOT search memory, events, or personal data
 ${contextHints}
 ${isReconnect && conversationHistory ? `
-=== SESSION RECONNECTION — DO NOT GREET AGAIN ===
-This is a RECONNECTION after a brief interruption. The visitor was already talking to you. Do NOT start over. Do NOT say "Hello" or introduce yourself again. Do NOT deliver the introductory speech.
+=== SESSION CONTINUATION — VTID-02637 RECONNECT SILENCE RULE ===
+This is a transparent server-side resume. The visitor did NOT perceive any pause and may already be mid-thought.
 
-CONVERSATION SO FAR (before the interruption):
+DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I'm back", "where were we", "picking up", "I'm listening", or anything similar. Do NOT deliver the introductory speech. Do NOT start over.
+
+CONVERSATION SO FAR (continue silently from this point):
 ${conversationHistory}
 
-Your FIRST message after reconnection must be something like:
-"I'm back! Sorry about that brief interruption. We were just talking about [topic from conversation above]. Where were we?"
-
-Then continue the conversation naturally from where it left off. NEVER repeat the introductory speech.
+Your next message must be a direct response to whatever the visitor says next, with NO prefix acknowledgment of any pause. If the visitor says nothing, you say nothing — silence is correct here.
 ` : `
 === FIRST MESSAGE (READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR SUMMARIZE) ===
 CRITICAL RULES:
@@ -6462,6 +7638,9 @@ async function connectToLiveAPI(
                     session.current_route || null,
                     session.recent_routes || null,
                     session.clientContext || undefined,
+                    // VTID-01967: Canonical Vitana ID handle (already resolved
+                    // by optionalAuth → resolveVitanaId on session start).
+                    session.identity?.vitana_id ?? null,
                   )
             }]
           },
@@ -6471,7 +7650,8 @@ async function connectToLiveAPI(
           // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
           tools: buildLiveApiTools(
             session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
-            session.current_route
+            session.current_route,
+            session.active_role || session.identity?.role || undefined,
           )
         }
       };
@@ -7046,6 +8226,11 @@ async function connectToLiveAPI(
                   session.isModelSpeaking = true;
                   // VTID-TOOLGUARD: Model produced audio — reset tool call counter
                   session.consecutiveToolCalls = 0;
+                  // VTID-01984 (R5): Vertex has spoken — upstream WS is healthy.
+                  // Once true, the audio-forwarding paths skip arming the
+                  // forwarding_no_ack watchdog so we never kill a healthy
+                  // session in the middle of Vertex computing a follow-up turn.
+                  session.vertexHasShownLife = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   emitDiag(session, 'model_start_speaking');
                   // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
@@ -7123,6 +8308,12 @@ async function connectToLiveAPI(
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
+              // VTID-01984 (R5): Vertex's VAD fired and produced a transcription —
+              // upstream WS is demonstrably healthy. Mark life signal so subsequent
+              // user-audio chunks don't arm the forwarding_no_ack watchdog (which
+              // was destroying healthy sessions when first-turn inference exceeded
+              // 15 s). Real WS failures are still caught by native handlers.
+              session.vertexHasShownLife = true;
               emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
                 session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
@@ -7353,7 +8544,10 @@ async function connectToLiveAPI(
       // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
       // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
       // the watchdog will fire later as a backup.
-      if (session.active) {
+      // VTID-02637: dedupe — error and close handlers both fire on the same
+      // disconnect. Without the flag the user heard "internet problems" twice.
+      if (session.active && !session.connectionIssueEmitted) {
+        session.connectionIssueEmitted = true;
         const lang = session.lang || 'en';
         const issueEvent = {
           type: 'connection_issue',
@@ -7455,12 +8649,15 @@ async function connectToLiveAPI(
               message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
               should_close: true,
             };
+            // VTID-02637: dedupe — only emit if we haven't already.
+            const shouldEmitIssue = !session.connectionIssueEmitted;
+            if (shouldEmitIssue) session.connectionIssueEmitted = true;
             if (session.sseResponse) {
               try { session.sseResponse.write(`data: ${JSON.stringify(failMsg)}\n\n`); } catch (e) { /* ignore */ }
-              try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* ignore */ }
+              if (shouldEmitIssue) try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* ignore */ }
             } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
               try { sendWsMessage(session.clientWs, failMsg); } catch (e) { /* ignore */ }
-              try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
+              if (shouldEmitIssue) try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
             }
           } else if (isStallRecovery) {
             // VTID-STALL-FIX: Reconnect succeeded after stall.
@@ -7507,12 +8704,15 @@ async function connectToLiveAPI(
           message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
           should_close: true,
         };
+        // VTID-02637: dedupe — error handler may already have emitted.
+        const shouldEmitIssue = !session.connectionIssueEmitted;
+        if (shouldEmitIssue) session.connectionIssueEmitted = true;
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(disconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
-          try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* SSE may be closed */ }
+          if (shouldEmitIssue) try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
           try { sendWsMessage(session.clientWs, disconnectMsg); } catch (e) { /* WS may be closed */ }
-          try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
+          if (shouldEmitIssue) try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
         }
 
         // Fire final extraction on genuine disconnect
@@ -7592,6 +8792,10 @@ async function attemptTransparentReconnect(
     session.upstreamWs = newWs;
     // Reset loop counter — fresh upstream connection starts clean
     session.consecutiveModelTurns = 0;
+    // VTID-02637: clear the dedupe flag so a future genuine disconnect can
+    // surface a fresh connection_issue. Without this, the user would never
+    // see a disconnect message again after the first transparent reconnect.
+    session.connectionIssueEmitted = false;
     console.log(`[VTID-STREAM-RECONNECT] Reconnected successfully for session ${session.sessionId} (reconnect #${reconnectCount + 1})`);
 
     // Notify client that reconnection succeeded (both SSE and WS)
@@ -7707,8 +8911,11 @@ function startResponseWatchdog(
       (session as any)._stallRecoveryPending = true;
       session.isModelSpeaking = false; // Ungate mic audio for reconnected session
       try { session.upstreamWs.terminate(); } catch (_e) { /* WS already closing */ }
-    } else {
-      // No upstream WS — just send connection_issue to client
+    } else if (!session.connectionIssueEmitted) {
+      // No upstream WS — just send connection_issue to client (once).
+      // VTID-02637: dedupe so a watchdog firing after an already-emitted close
+      // event doesn't produce a second user-visible apology.
+      session.connectionIssueEmitted = true;
       const issueEvent = {
         type: 'connection_issue',
         reason,
@@ -7885,6 +9092,133 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
   startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+
+  return true;
+}
+
+/**
+ * VTID-02020: Contextual recovery prompt for reconnects.
+ *
+ * After a network disconnect, the orb-widget client tears down the dead SSE
+ * and creates a fresh /live/session/start that includes the last 20 transcript
+ * turns + a "reconnect_stage" hint describing what the user was doing when
+ * the connection dropped (idle / listening_user_speaking / thinking / speaking).
+ *
+ * Instead of the standard greeting (which is jarring — sounds like a second
+ * voice introducing itself), this prompt asks Gemini to acknowledge the
+ * disconnect and take the appropriate action based on the stage:
+ *   - "thinking"                  → "Sorry, we got disconnected. You asked
+ *                                    about [topic]. Here's the answer: …"
+ *   - "listening_user_speaking"   → "Sorry, we got interrupted. Could you
+ *                                    please repeat what you were saying?"
+ *   - "speaking"                  → "Sorry, we got disconnected while I was
+ *                                    answering. Let me continue: …"
+ *   - "idle" (or unknown)         → "I'm back. What would you like to talk
+ *                                    about?"
+ *
+ * Gemini's response is the SINGLE voice the user hears post-reconnect —
+ * no client-side MP3 plays. The transcript history is already injected into
+ * the system instruction (see buildLiveSystemInstruction's transcriptTurns
+ * arg), so Gemini has full context.
+ */
+function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession): boolean {
+  if (ws.readyState !== WebSocket.OPEN) {
+    console.warn('[VTID-02020] Cannot send recovery prompt — WebSocket not open');
+    return false;
+  }
+  if (session.greetingSent) {
+    console.log('[VTID-02020] Recovery prompt already sent, skipping');
+    return false;
+  }
+
+  const lang = session.lang;
+  const stage = ((session as any).reconnectStage as string) || 'idle';
+  const reconnectCount = ((session as any)._reconnectCount || 0);
+
+  // Localized "Sorry, …" intros. Kept short on purpose — single sentence.
+  // Gemini will follow the structural instructions for the rest.
+  const intros: Record<string, Record<string, string>> = {
+    en: {
+      thinking: "Sorry, we got disconnected. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
+      listening_user_speaking: "Sorry, we got interrupted before I caught your full question. Could you please repeat what you were saying? I'm here and listening.",
+      speaking: "Sorry, we got disconnected while I was answering. Let me continue:",
+      idle: "I'm back. What would you like to talk about?"
+    },
+    de: {
+      thinking: "Entschuldige, die Verbindung war unterbrochen. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
+      listening_user_speaking: "Entschuldige, wir wurden unterbrochen, bevor ich deine ganze Frage gehört habe. Könntest du bitte wiederholen, was du gesagt hast? Ich höre zu.",
+      speaking: "Entschuldige, die Verbindung war unterbrochen, während ich geantwortet habe. Ich mache weiter:",
+      idle: "Ich bin wieder da. Worüber möchtest du sprechen?"
+    },
+    fr: {
+      thinking: "Désolé, nous avons été déconnectés. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
+      listening_user_speaking: "Désolé, nous avons été interrompus avant que je n'entende votre question complète. Pouvez-vous la répéter ? Je vous écoute.",
+      speaking: "Désolé, nous avons été déconnectés pendant que je répondais. Je continue :",
+      idle: "Je suis de retour. De quoi voulez-vous parler ?"
+    },
+    es: {
+      thinking: "Perdón, nos desconectamos. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
+      listening_user_speaking: "Perdón, nos interrumpimos antes de que oyera tu pregunta completa. ¿Podrías repetirla? Te escucho.",
+      speaking: "Perdón, nos desconectamos mientras yo respondía. Continúo:",
+      idle: "Estoy de vuelta. ¿De qué quieres hablar?"
+    }
+  };
+
+  const stageIntros = intros[lang] || intros['en'];
+  const introTemplate = stageIntros[stage] || stageIntros['idle'];
+
+  // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
+  // open AND what to do next (answer / wait / continue) based on the stage.
+  const prompt = [
+    'You are recovering from a brief network disconnect that interrupted a live voice conversation.',
+    '',
+    'Read the conversation history that has been injected into your system instruction.',
+    '',
+    `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
+    '',
+    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action:',
+    `- For stage "thinking": open with "${stageIntros.thinking}" and IMMEDIATELY answer the user's last question using the conversation history. Replace the placeholder with a brief 3-6 word paraphrase of the user's actual last turn topic. Do NOT repeat their words verbatim. Keep the answer focused and concise.`,
+    `- For stage "listening_user_speaking": say "${stageIntros.listening_user_speaking}" and then STOP and wait for the user. Do NOT guess what they were going to ask.`,
+    `- For stage "speaking": say "${stageIntros.speaking}" and then RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
+    `- For stage "idle" or unknown: say "${stageIntros.idle}" and wait.`,
+    '',
+    'CRITICAL RULES:',
+    '- Speak in the user\'s language (it is set in your system instruction).',
+    '- Do NOT introduce yourself.',
+    '- Do NOT say "Hello", "Hi", or the user\'s name.',
+    '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
+    '- Use the word "Sorry" / equivalent ONCE, not repeatedly.',
+    '- Speak immediately when this prompt arrives.',
+    '',
+    `Now produce the recovery line for stage "${stage}" and any follow-up action.`
+  ].join('\n');
+
+  const message = {
+    client_content: {
+      turns: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }],
+      turn_complete: true
+    }
+  };
+
+  ws.send(JSON.stringify(message));
+
+  // Reuse greetingSent so future stalls / accidental greeting calls don't double-fire.
+  session.greetingSent = true;
+  session.greetingTurnIndex = session.turn_count;
+  console.log(`[VTID-02020] Recovery prompt sent — lang=${lang}, stage=${stage}, reconnectCount=${reconnectCount}, transcriptTurns=${session.transcriptTurns?.length || 0}`);
+  emitDiag(session, 'recovery_prompt_sent', {
+    lang,
+    stage,
+    reconnect_count: reconnectCount,
+    transcript_turns: session.transcriptTurns?.length || 0
+  });
+
+  // Watchdog so a missing recovery response surfaces as a recoverable diag,
+  // matching the greeting path's behavior.
+  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'recovery_prompt_timeout');
 
   return true;
 }
@@ -9454,8 +10788,27 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
     const threadId = `orb-${orbSessionId}`;
 
     // VTID-01270A: Set thread identity for community/events tools in text chat path
+    // VTID-01967: include vitana_id (resolved by optionalAuth → resolveVitanaId)
+    // so downstream tools and any prompt that reads the thread identity can
+    // surface the @handle without re-querying.
     if (identity.tenant_id && identity.user_id) {
-      setThreadIdentity(threadId, { tenant_id: identity.tenant_id, user_id: identity.user_id, role: identity.active_role || undefined });
+      // VTID-02019: forward user_timezone so recall_conversation_at_time resolves
+      // time hints in the caller's local tz. Live ORB session has clientContext
+      // with tz from IP geolocation; this /chat route falls back to whatever the
+      // body supplies. Either way, undefined → Europe/Berlin downstream.
+      const liveSession = sessions.get(orbSessionId) as any;
+      const orbUserTz =
+        liveSession?.clientContext?.timezone ||
+        (body as any)?.timezone ||
+        (body as any)?.user_timezone ||
+        undefined;
+      setThreadIdentity(threadId, {
+        tenant_id: identity.tenant_id,
+        user_id: identity.user_id,
+        role: identity.active_role || undefined,
+        vitana_id: req.identity?.vitana_id ?? null,
+        user_timezone: orbUserTz,
+      });
     }
 
     // VTID-01118: Get state engine and increment turn count
@@ -11473,6 +12826,30 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;
+  // VTID-02020: contextual recovery hints sent by the orb-widget on reconnect.
+  // Empty / absent on first-time sessions, in which case the standard greeting
+  // path runs unchanged. When present, _resumedFromHistory is set on the session
+  // object so the /live/stream handler routes to sendReconnectRecoveryPromptToLiveAPI.
+  const reconnectTranscriptHistory: Array<{ role: 'user' | 'assistant'; text: string }> =
+    Array.isArray(body.transcript_history)
+      ? body.transcript_history
+          .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
+          .slice(-20)
+      : [];
+  const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
+    typeof body.reconnect_stage === 'string'
+    && (body.reconnect_stage === 'idle' || body.reconnect_stage === 'listening_user_speaking'
+        || body.reconnect_stage === 'thinking' || body.reconnect_stage === 'speaking')
+      ? body.reconnect_stage
+      : 'idle';
+  const incomingConversationId: string | null =
+    typeof body.conversation_id === 'string' && body.conversation_id.length > 0
+      ? body.conversation_id : null;
+  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
+  const resolvedConversationId = incomingConversationId || randomUUID();
+  if (isReconnectStart) {
+    console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
+  }
 
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
@@ -11705,8 +13082,13 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     contextBootstrapSkippedReason,
     contextBootstrapBuiltAt: Date.now(),
     contextReadyPromise,
-    // VTID-01225: Transcript accumulation for Cognee extraction
-    transcriptTurns: [],
+    // VTID-01225: Transcript accumulation for Cognee extraction.
+    // VTID-02020: seeded from request body when this is a reconnect, so the
+    // post-greeting recovery prompt + the system-instruction history block
+    // both have the previous turns immediately available.
+    transcriptTurns: reconnectTranscriptHistory.length > 0
+      ? reconnectTranscriptHistory.map(t => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
+      : [],
     outputTranscriptBuffer: '',
     pendingEventLinks: [],
     // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
@@ -11770,6 +13152,16 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     }
   }
 
+  // VTID-02020: pin the conversation_id (echoed back to the client) and
+  // mark this session as resumed-from-history when the client sent context.
+  // The /live/stream handler reads `resumedFromHistory` to route to the
+  // contextual recovery prompt instead of the standard greeting.
+  session.conversation_id = resolvedConversationId;
+  if (isReconnectStart) {
+    (session as any).resumedFromHistory = true;
+    (session as any).reconnectStage = reconnectStage;
+  }
+
   // Store session
   liveSessions.set(sessionId, session);
 
@@ -11793,6 +13185,9 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   return res.status(200).json({
     ok: true,
     session_id: sessionId,
+    // VTID-02020: echo the pinned conversation_id so the client can persist it
+    // and re-send on the next reconnect to keep the same conversation thread.
+    conversation_id: resolvedConversationId,
     meta: {
       lang,
       voice: getVoiceForLang(lang),
@@ -11897,11 +13292,20 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
   });
-  // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+  // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+  // VTID-01994: pass session metrics for mode-independent quality classifier.
   dispatchVoiceFailureFireAndForget({
     sessionId: session_id,
     tenantScope: session.identity?.tenant_id || 'global',
     metadata: { synthetic: (session as any).synthetic === true },
+    sessionMetrics: {
+      audio_in_chunks: session.audioInChunks,
+      audio_out_chunks: session.audioOutChunks,
+      duration_ms: Date.now() - session.createdAt.getTime(),
+      turn_count: session.turn_count,
+      user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
+      model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
+    },
   });
 
   // VTID-01225: Fire-and-forget entity extraction from live session
@@ -12220,8 +13624,20 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         }
       }
 
-      // Send greeting prompt — Gemini generates it with the real Live API voice
-      sendGreetingPromptToLiveAPI(ws, session);
+      // VTID-02020: route greeting vs. contextual recovery prompt.
+      // - First-time session (no resumedFromHistory, no _reconnectCount): standard greeting.
+      // - Reconnect from client-side session restart (_resumedFromHistory=true): contextual recovery.
+      // - Backend transparent reconnect (_reconnectCount>0): also contextual recovery.
+      // The recovery prompt is the SINGLE voice the user hears post-reconnect — no
+      // client MP3 plays, no generic greeting fires. Gemini speaks the acknowledgment
+      // + either answers the in-flight question, asks user to repeat, or resumes mid-answer.
+      const isReconnectGreetingSkip = ((session as any).resumedFromHistory === true)
+        || (((session as any)._reconnectCount || 0) > 0);
+      if (isReconnectGreetingSkip) {
+        sendReconnectRecoveryPromptToLiveAPI(ws, session);
+      } else {
+        sendGreetingPromptToLiveAPI(ws, session);
+      }
     }).catch((err: any) => {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
@@ -12440,10 +13856,22 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
           // model-response watchdog must NOT be reset by user audio or we'd
           // suppress legitimate mid-stream model stalls.
           if (!session.isModelSpeaking) {
-            const canSlide = !session.responseWatchdogTimer
-              || session.responseWatchdogReason === 'forwarding_no_ack';
-            if (canSlide) {
-              startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+            // VTID-01984 (R5): once Vertex has shown life this session, the
+            // upstream WS is healthy by definition. A "no ack" window is just
+            // Vertex computing — not a stall. Skip arming the watchdog here.
+            // Native ws.onclose / ws.onerror still catch real connection failures.
+            // Periodically emit a watchdog_skipped diag so we can confirm in
+            // production how many sessions this saves.
+            if (session.vertexHasShownLife) {
+              if (session.audioInChunks % 200 === 0) {
+                emitDiag(session, 'watchdog_skipped', { reason: 'vertex_alive' });
+              }
+            } else {
+              const canSlide = !session.responseWatchdogTimer
+                || session.responseWatchdogReason === 'forwarding_no_ack';
+              if (canSlide) {
+                startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+              }
             }
           }
           // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
@@ -13856,10 +15284,19 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       // WS and SSE transports stay in lockstep until Phase 3 collapses
       // them onto one adapter.
       if (!liveSession.isModelSpeaking) {
-        const canSlide = !liveSession.responseWatchdogTimer
-          || liveSession.responseWatchdogReason === 'forwarding_no_ack';
-        if (canSlide) {
-          startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+        // VTID-01984 (R5): mirror of SSE-path gate — once Vertex has shown
+        // life, skip arming the forwarding_no_ack watchdog. Healthy WS does
+        // not need a 15-45 s heuristic to detect Vertex's compute window.
+        if (liveSession.vertexHasShownLife) {
+          if (liveSession.audioInChunks % 200 === 0) {
+            emitDiag(liveSession, 'watchdog_skipped', { reason: 'vertex_alive' });
+          }
+        } else {
+          const canSlide = !liveSession.responseWatchdogTimer
+            || liveSession.responseWatchdogReason === 'forwarding_no_ack';
+          if (canSlide) {
+            startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+          }
         }
       }
     } else {
@@ -14051,11 +15488,20 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
-    // VTID-01959: voice self-healing dispatch (mode-gated; off by default)
+    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+    // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
       sessionId,
       tenantScope: liveSession.identity?.tenant_id || 'global',
       metadata: { synthetic: (liveSession as any).synthetic === true },
+      sessionMetrics: {
+        audio_in_chunks: liveSession.audioInChunks,
+        audio_out_chunks: liveSession.audioOutChunks,
+        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        turn_count: liveSession.turn_count,
+        user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
+        model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
+      },
     });
 
     liveSessions.delete(sessionId);

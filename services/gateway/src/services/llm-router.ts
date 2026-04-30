@@ -54,6 +54,27 @@ export interface LLMUsage {
   outputTokens: number;
 }
 
+/**
+ * Tool definition for function calling. Provider-neutral — the adapter
+ * translates to each provider's wire format (Anthropic `tools`, OpenAI
+ * `tools` + `tool_choice`, Vertex `function_declarations`, DeepSeek
+ * (OpenAI-compatible)). The router enforces tool_choice='required' on
+ * the named tool so the model emits the structured call instead of free
+ * text.
+ */
+export interface LLMRouterTool {
+  name: string;
+  description: string;
+  /** JSON Schema describing the tool's input. */
+  inputSchema: Record<string, unknown>;
+}
+
+/** Optional inputs for image / vision / multiple images per call. */
+export interface LLMRouterImage {
+  base64: string;
+  mimeType: string;
+}
+
 export interface LLMRouterOpts {
   /** VTID for telemetry correlation. Optional — falls back to VTID-LLM-ROUTER. */
   vtid?: string | null;
@@ -65,13 +86,37 @@ export interface LLMRouterOpts {
   maxTokens?: number;
   /** Optional system prompt prepended to the user prompt. */
   systemPrompt?: string;
-  /** Optional structured input for vision: base64 image + mime type. */
-  image?: { base64: string; mimeType: string };
+  /** Single image input (back-compat). Use `images` for multi-image. */
+  image?: LLMRouterImage;
+  /** Multi-image input — Vertex / Anthropic / OpenAI all accept ordered images
+   *  attached as parts on the user message. */
+  images?: LLMRouterImage[];
+  /**
+   * Tools the model may call. When set with `forceTool`, the router asks the
+   * provider to emit a tool call deterministically and returns it in
+   * `LLMRouterResult.toolCall`. Used by vision (structured metadata) and
+   * triage (multi-step investigation).
+   */
+  tools?: LLMRouterTool[];
+  /**
+   * Force the model to invoke `tools[forceTool].name` and return the parsed
+   * arguments instead of free text. Index into `tools` array.
+   */
+  forceTool?: number;
+}
+
+/** Returned when `forceTool` is set and the model emitted a tool call. */
+export interface LLMRouterToolCall {
+  name: string;
+  /** Already-parsed JSON arguments. Adapters parse the provider-specific shape. */
+  arguments: Record<string, unknown>;
 }
 
 export interface LLMRouterResult {
   ok: boolean;
   text?: string;
+  /** Populated when `forceTool` was set and the model emitted a structured call. */
+  toolCall?: LLMRouterToolCall;
   usage?: LLMUsage;
   provider?: LLMProvider;
   model?: string;
@@ -84,12 +129,16 @@ interface AdapterCallArgs {
   model: string;
   systemPrompt?: string;
   maxTokens?: number;
-  image?: { base64: string; mimeType: string };
+  image?: LLMRouterImage;
+  images?: LLMRouterImage[];
+  tools?: LLMRouterTool[];
+  forceTool?: number;
 }
 
 interface AdapterResult {
   ok: boolean;
   text?: string;
+  toolCall?: LLMRouterToolCall;
   usage?: LLMUsage;
   error?: string;
 }
@@ -134,18 +183,21 @@ export function _resetPolicyCacheForTests(): void {
 // Provider adapters
 // =============================================================================
 
-/** Anthropic Messages API */
+/** Anthropic Messages API — supports text, multi-image, and tool_use. */
 const anthropicAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.ANTHROPIC_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return { ok: false, error: 'ANTHROPIC_API_KEY not set' };
 
     const userContent: unknown[] = [];
-    if (image) {
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+    for (const img of allImages) {
       userContent.push({
         type: 'image',
-        source: { type: 'base64', media_type: image.mimeType, data: image.base64 },
+        source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
       });
     }
     userContent.push({ type: 'text', text: prompt });
@@ -156,6 +208,16 @@ const anthropicAdapter: ProviderAdapter = {
       messages: [{ role: 'user', content: userContent }],
     };
     if (systemPrompt) body.system = systemPrompt;
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'tool', name: tools[forceTool].name };
+      }
+    }
 
     try {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -172,13 +234,18 @@ const anthropicAdapter: ProviderAdapter = {
         return { ok: false, error: `Anthropic ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        content?: Array<{ type: string; text?: string }>;
+        content?: Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
         usage?: { input_tokens?: number; output_tokens?: number };
       };
       const text = (json.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('');
+      const toolBlock = (json.content || []).find(c => c.type === 'tool_use');
+      const toolCall = toolBlock && toolBlock.name && toolBlock.input
+        ? { name: toolBlock.name, arguments: toolBlock.input }
+        : undefined;
       return {
         ok: true,
         text,
+        toolCall,
         usage: {
           inputTokens: json.usage?.input_tokens ?? 0,
           outputTokens: json.usage?.output_tokens ?? 0,
@@ -190,25 +257,43 @@ const anthropicAdapter: ProviderAdapter = {
   },
 };
 
-/** OpenAI Chat Completions API */
+/** OpenAI Chat Completions API — supports text, multi-image, and function calling. */
 const openaiAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.OPENAI_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not set' };
 
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-    if (image) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
-          { type: 'text', text: prompt },
-        ],
-      });
+
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+    if (allImages.length > 0) {
+      const content: Array<Record<string, unknown>> = [];
+      for (const img of allImages) {
+        content.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+      }
+      content.push({ type: 'text', text: prompt });
+      messages.push({ role: 'user', content });
     } else {
       messages.push({ role: 'user', content: prompt });
+    }
+
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: maxTokens ?? 8000,
+    };
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'function', function: { name: tools[forceTool].name } };
+      }
     }
 
     try {
@@ -218,24 +303,36 @@ const openaiAdapter: ProviderAdapter = {
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          max_tokens: maxTokens ?? 8000,
-        }),
+        body: JSON.stringify(body),
       });
       if (!resp.ok) {
         const errText = await resp.text();
         return { ok: false, error: `OpenAI ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{
+          message?: {
+            content?: string;
+            tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+          };
+        }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      const text = json.choices?.[0]?.message?.content ?? '';
+      const msg = json.choices?.[0]?.message;
+      const text = msg?.content ?? '';
+      let toolCall: LLMRouterToolCall | undefined;
+      const tc = msg?.tool_calls?.[0];
+      if (tc?.function?.name && tc.function.arguments) {
+        try {
+          toolCall = { name: tc.function.name, arguments: JSON.parse(tc.function.arguments) };
+        } catch {
+          // Tool call not JSON-parseable — leave undefined; caller falls back to text.
+        }
+      }
       return {
         ok: true,
         text,
+        toolCall,
         usage: {
           inputTokens: json.usage?.prompt_tokens ?? 0,
           outputTokens: json.usage?.completion_tokens ?? 0,
@@ -250,32 +347,52 @@ const openaiAdapter: ProviderAdapter = {
 /**
  * Google Vertex AI — uses Application Default Credentials, no API key required
  * on Cloud Run (the gateway service account has Vertex AI User role). Falls
- * back to GOOGLE_GEMINI_API_KEY for local dev.
+ * back to GOOGLE_GEMINI_API_KEY for local dev. Supports text, multi-image,
+ * and function calling.
  */
 const vertexAdapter: ProviderAdapter = {
   isAvailable: () =>
     Boolean(process.env.GOOGLE_CLOUD_PROJECT) || Boolean(process.env.GOOGLE_GEMINI_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+
+    const fnDecls = tools && tools.length > 0
+      ? tools.map(t => ({ name: t.name, description: t.description, parameters: t.inputSchema }))
+      : undefined;
+
     // Prefer Vertex AI when GOOGLE_CLOUD_PROJECT is set (Cloud Run path).
     // Fall back to Google AI Studio when only GOOGLE_GEMINI_API_KEY is present.
     const projectId = process.env.GOOGLE_CLOUD_PROJECT;
     if (projectId) {
       try {
-        // Lazy import to avoid bundling cost when only Anthropic/DeepSeek are used.
         const { VertexAI } = await import('@google-cloud/vertexai');
         const location = process.env.VERTEX_LOCATION || 'us-central1';
         const vertex = new VertexAI({ project: projectId, location });
-        const generativeModel = vertex.getGenerativeModel({
+        const modelInit: Record<string, unknown> = {
           model,
           generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
-          ...(systemPrompt
-            ? { systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] } }
-            : {}),
-        });
+        };
+        if (systemPrompt) {
+          modelInit.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
+        }
+        if (fnDecls) {
+          modelInit.tools = [{ functionDeclarations: fnDecls }];
+          if (typeof forceTool === 'number' && tools && tools[forceTool]) {
+            modelInit.toolConfig = {
+              functionCallingConfig: {
+                mode: 'ANY',
+                allowedFunctionNames: [tools[forceTool].name],
+              },
+            };
+          }
+        }
+        const generativeModel = vertex.getGenerativeModel(modelInit as any);
 
         const parts: Array<Record<string, unknown>> = [];
-        if (image) {
-          parts.push({ inlineData: { data: image.base64, mimeType: image.mimeType } });
+        for (const img of allImages) {
+          parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } });
         }
         parts.push({ text: prompt });
 
@@ -283,13 +400,17 @@ const vertexAdapter: ProviderAdapter = {
           contents: [{ role: 'user', parts: parts as any }],
         });
         const candidate = result.response?.candidates?.[0];
-        const text = (candidate?.content?.parts || [])
-          .map((p: any) => p.text || '')
-          .join('');
+        const candidateParts = (candidate?.content?.parts || []) as Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }>;
+        const text = candidateParts.map(p => p.text || '').join('');
+        const fnPart = candidateParts.find(p => !!p.functionCall);
+        const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
+          ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
+          : undefined;
         const usageMeta = result.response?.usageMetadata;
         return {
           ok: true,
           text,
+          toolCall,
           usage: {
             inputTokens: usageMeta?.promptTokenCount ?? 0,
             outputTokens: usageMeta?.candidatesTokenCount ?? 0,
@@ -306,13 +427,26 @@ const vertexAdapter: ProviderAdapter = {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
       const parts: Array<Record<string, unknown>> = [];
-      if (image) parts.push({ inlineData: { data: image.base64, mimeType: image.mimeType } });
+      for (const img of allImages) {
+        parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } });
+      }
       parts.push({ text: prompt });
       const body: Record<string, unknown> = {
         contents: [{ role: 'user', parts }],
         generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
       };
       if (systemPrompt) body.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
+      if (fnDecls) {
+        body.tools = [{ functionDeclarations: fnDecls }];
+        if (typeof forceTool === 'number' && tools && tools[forceTool]) {
+          body.toolConfig = {
+            functionCallingConfig: {
+              mode: 'ANY',
+              allowedFunctionNames: [tools[forceTool].name],
+            },
+          };
+        }
+      }
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -323,15 +457,19 @@ const vertexAdapter: ProviderAdapter = {
         return { ok: false, error: `Google AI ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       };
-      const text = (json.candidates?.[0]?.content?.parts || [])
-        .map(p => p.text || '')
-        .join('');
+      const candidateParts = json.candidates?.[0]?.content?.parts || [];
+      const text = candidateParts.map(p => p.text || '').join('');
+      const fnPart = candidateParts.find(p => !!p.functionCall);
+      const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
+        ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
+        : undefined;
       return {
         ok: true,
         text,
+        toolCall,
         usage: {
           inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
           outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
@@ -343,16 +481,44 @@ const vertexAdapter: ProviderAdapter = {
   },
 };
 
-/** DeepSeek API — OpenAI-compatible, single env key */
+/**
+ * DeepSeek API — OpenAI-compatible. Supports text + function calling but
+ * NOT vision (DeepSeek hasn't shipped a multimodal model). When images are
+ * passed they're ignored and only the text prompt is sent; the router's
+ * fallback chain is responsible for routing vision calls to a different
+ * provider via the `vision` stage policy.
+ */
 const deepseekAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
+
+    if (image || (images && images.length > 0)) {
+      return {
+        ok: false,
+        error: 'DeepSeek does not support vision input — route vision calls to a different provider',
+      };
+    }
 
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
     messages.push({ role: 'user', content: prompt });
+
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: maxTokens ?? 8000,
+    };
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'function', function: { name: tools[forceTool].name } };
+      }
+    }
 
     try {
       const resp = await fetch('https://api.deepseek.com/chat/completions', {
@@ -361,24 +527,36 @@ const deepseekAdapter: ProviderAdapter = {
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          max_tokens: maxTokens ?? 8000,
-        }),
+        body: JSON.stringify(body),
       });
       if (!resp.ok) {
         const errText = await resp.text();
         return { ok: false, error: `DeepSeek ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{
+          message?: {
+            content?: string;
+            tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+          };
+        }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      const text = json.choices?.[0]?.message?.content ?? '';
+      const msg = json.choices?.[0]?.message;
+      const text = msg?.content ?? '';
+      let toolCall: LLMRouterToolCall | undefined;
+      const tc = msg?.tool_calls?.[0];
+      if (tc?.function?.name && tc.function.arguments) {
+        try {
+          toolCall = { name: tc.function.name, arguments: JSON.parse(tc.function.arguments) };
+        } catch {
+          // Tool call not JSON-parseable — leave undefined.
+        }
+      }
       return {
         ok: true,
         text,
+        toolCall,
         usage: {
           inputTokens: json.usage?.prompt_tokens ?? 0,
           outputTokens: json.usage?.completion_tokens ?? 0,
@@ -547,6 +725,9 @@ async function runProviderCall(
     systemPrompt: opts.systemPrompt,
     maxTokens: opts.maxTokens,
     image: opts.image,
+    images: opts.images,
+    tools: opts.tools,
+    forceTool: opts.forceTool,
   });
 
   if (result.ok) {
@@ -558,6 +739,7 @@ async function runProviderCall(
     return {
       ok: true,
       text: result.text,
+      toolCall: result.toolCall,
       usage: result.usage,
       provider,
       model,

@@ -83,16 +83,46 @@ const ROUTING_RULES: RoutingRule[] = [
       /explain (the )?(vitana|oasis|autopilot|command hub|gateway|governance)/i,
       /what are (the )?(tenants|maxina|alkalma|earthlings)/i,
       /vtid[\s-]?\d+/i,
+      // Multi-word feature questions covering the entire Maxina Instruction
+      // Manual surface (11 concepts + 81 screens). Drawn from
+      // services/gateway/src/kb/instruction-manual/maxina/.
+      /what (is|are) (the |a |an )?(life compass|vitana index|five pillars|autopilot|orb|did you know|vitana id|wallet|sharing|community|discover|business hub|inbox|my journey|live rooms|media hub|biomarkers|my biology|diary|timeline|calendar)/i,
+      /how (does|do) (the )?(life compass|vitana index|five pillars|autopilot|orb|wallet|sharing|memory|diary|live rooms|media hub|biomarkers|did you know|vitana id|business hub|community feed)/i,
+      /where (can i|do i) find (the |my )?(life compass|vitana index|autopilot|wallet|diary|biomarkers|live rooms|community|discover|sharing|memory|inbox|health|journey)/i,
+      /what'?s on (the |this )?(home|community|discover|health|inbox|ai|wallet|sharing|memory|settings|biomarkers|diary|live rooms|media hub|autopilot|journey|landing|profile) (screen|page|tab)/i,
     ],
     keywords: [
       'vitana', 'oasis', 'autopilot', 'command hub', 'commandhub',
       'vtid', 'governance', 'planner', 'worker', 'validator',
       'gateway', 'ledger', 'maxina', 'alkalma', 'earthlings',
-      'spec', 'specification', 'architecture', 'index'
+      'spec', 'specification', 'architecture', 'index',
+      // Maxina Instruction Manual concepts + screen names. Keep in sync with
+      // chapter front-matter under kb/instruction-manual/maxina/.
+      'life compass', 'vitana index', 'five pillars', 'pillar',
+      'orb', 'orb voice', 'did you know', 'vitana id', 'handle',
+      'wallet', 'credits', 'tokens', 'rewards', 'subscriptions',
+      'sharing', 'campaigns', 'distribution', 'data consent',
+      'memory', 'timeline', 'diary', 'recall', 'permissions',
+      'community', 'live rooms', 'media hub', 'events', 'meetups',
+      'feed', 'challenges', 'groups', 'my business',
+      'discover', 'marketplace', 'supplements', 'wellness services',
+      'doctors', 'coaches', 'deals', 'orders', 'cart',
+      'health', 'biomarkers', 'my biology', 'health plans',
+      'health pillars', 'conditions', 'risks', 'services hub',
+      'inbox', 'reminder', 'inspiration', 'archived',
+      'ai assistant', 'insights', 'recommendations', 'daily summary',
+      'companion', 'home', 'context', 'actions', 'matches', 'ai feed',
+      'my journey', 'autopilot dashboard', 'waves',
+      'settings', 'preferences', 'privacy', 'notifications',
+      'connected apps', 'billing', 'support', 'tenant role',
+      'calendar', 'search', 'profile edit', 'public profile',
+      'orb overlay', 'profile preview', 'meetup drawer',
+      'event drawer', 'master action', 'calendar popup',
+      'wallet popup', 'instruction manual',
     ],
     primary_source: 'knowledge_hub',
     secondary_sources: ['memory_garden'],
-    rationale: 'Vitana system questions prioritize Knowledge Hub for accurate documentation',
+    rationale: 'Vitana system + Instruction Manual questions prioritize Knowledge Hub for accurate documentation',
   },
 
   // ===== Intent Classifier — Navigation vs Teaching =====

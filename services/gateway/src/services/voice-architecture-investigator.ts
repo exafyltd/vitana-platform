@@ -30,6 +30,7 @@ import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleAuth } from 'google-auth-library';
 import { emitOasisEvent } from './oasis-event-service';
 import { getVoiceSpecHint } from './voice-spec-hints';
+import { notifyGChat } from './self-healing-snapshot-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -75,6 +76,7 @@ const ALTERNATIVE_ARCHITECTURES_REFERENCE = `
 export type InvestigatorTriggerReason =
   | 'sentinel_quarantine'
   | 'spec_memory_blocked'
+  | 'quality_failure'
   | 'manual';
 
 export interface InvestigatorInput {
@@ -331,11 +333,16 @@ Return JSON only.`;
 // Vertex call with structured output
 // =============================================================================
 
+// VTID-01996: Vertex Gemini structured-output mode rejects JSON-Schema union
+// types like `type: ['string', 'null']`. Use `nullable: true` instead, which
+// is the OpenAPI 3 / Vertex-supported way to allow null. (Encountered when
+// 5 quality-failure investigator spawns produced 0 persisted reports —
+// Vertex was silently rejecting the schema.)
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     class: { type: 'string' },
-    signature: { type: ['string', 'null'] },
+    signature: { type: 'string', nullable: true },
     evidence: {
       type: 'object',
       properties: {
@@ -492,28 +499,66 @@ const RESPONSE_SCHEMA = {
   ],
 };
 
-async function callVertexInvestigator(prompt: string): Promise<InvestigatorReport | null> {
-  if (!vertexAI) return null;
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase G): the investigator now routes through the
+ * provider router instead of calling Vertex directly. Operator picks the
+ * provider per `classifier` stage from the Command Hub dropdown. We use
+ * the router's tool-use mode (forceTool) to get structured output across
+ * any provider — Anthropic, OpenAI, Vertex/Gemini, DeepSeek all support
+ * function calling. The report shape is unchanged; we just parse from
+ * `toolCall.arguments` instead of from a JSON-mode text response.
+ */
+interface VertexInvestigatorResult {
+  report: InvestigatorReport | null;
+  error: string | null;
+  raw_text?: string;
+}
+
+async function callVertexInvestigator(prompt: string): Promise<VertexInvestigatorResult> {
+  // VTID-02002: was using callViaRouter('classifier', ...) — but that router's
+  // primary (deepseek-reasoner) doesn't support forced tool_choice and its
+  // fallback was pointing at a non-existent model name (gemini-3-pro-preview),
+  // so 100% of automatic investigator spawns failed silently into stub reports.
+  // Bypass the router and call Vertex directly with the same pattern
+  // self-healing-spec-service.ts uses successfully in production today
+  // (vertexAI.getGenerativeModel + gemini-2.5-pro + responseSchema).
+  if (!vertexAI) {
+    return { report: null, error: 'vertex_not_initialized' };
+  }
   try {
     const model = vertexAI.getGenerativeModel({
       model: INVESTIGATOR_MODEL,
       generationConfig: {
         temperature: 0.4,
-        topP: 0.95,
         maxOutputTokens: 8192,
+        topP: 0.9,
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA as any,
       },
     });
-    const r = await model.generateContent({
+    const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const text = r.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    return JSON.parse(text) as InvestigatorReport;
+    const text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      return {
+        report: null,
+        error: `vertex_no_text_in_response: candidates=${result.response?.candidates?.length ?? 0}`,
+      };
+    }
+    try {
+      return { report: JSON.parse(text) as InvestigatorReport, error: null, raw_text: text };
+    } catch (parseErr: any) {
+      return {
+        report: null,
+        error: `vertex_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
+        raw_text: text.slice(0, 4000),
+      };
+    }
   } catch (err: any) {
-    console.warn(`[voice-architecture-investigator] Vertex call failed: ${err.message}`);
-    return null;
+    const detail = `vertex_threw: ${err?.message ?? String(err)}`;
+    console.warn(`[voice-architecture-investigator] ${detail}`);
+    return { report: null, error: detail };
   }
 }
 
@@ -578,6 +623,55 @@ async function persistReport(input: InvestigatorInput, report: InvestigatorRepor
   }
 }
 
+/**
+ * VTID-01996: Persist a failure stub when the investigator can't produce a
+ * valid report. Without this, investigator failures were silent — 5 spawns
+ * resulted in 0 rows and ops had no signal of WHY. The stub stores the
+ * error string and the evidence we DID gather so ops can iterate the prompt
+ * or model config.
+ */
+async function persistFailureStub(
+  input: InvestigatorInput,
+  reason: string,
+  detail: string,
+  evidenceSummary: ReturnType<typeof summarizeEvidence>,
+): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return null;
+  const stubReport = {
+    investigator_status: 'failed',
+    failure_reason: reason,
+    failure_detail: detail.slice(0, 4000),
+    class: input.class,
+    signature: input.normalized_signature,
+    trigger_reason: input.trigger_reason,
+    notes: input.notes,
+    evidence_at_failure: evidenceSummary,
+    captured_at: new Date().toISOString(),
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/voice_architecture_reports`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(), Prefer: 'return=representation' },
+      body: JSON.stringify({
+        class: input.class,
+        normalized_signature: input.normalized_signature,
+        trigger_reason: input.trigger_reason,
+        schema_version: 'v1-stub',
+        report: stubReport,
+        related_quarantine_class: input.class,
+        related_quarantine_signature: input.normalized_signature,
+        related_spec_hash: input.related_spec_hash ?? null,
+        related_vtid: input.related_vtid ?? null,
+      }),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ id: string }>;
+    return rows[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // Public entry point
 // =============================================================================
@@ -599,9 +693,17 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   const summary = summarizeEvidence(input, ev);
 
   if (!vertexAI) {
+    // VTID-01996: persist stub even when client uninitialized so ops can see
+    // the failure pattern (currently only mode==test or env misconfig).
+    const stubId = await persistFailureStub(
+      input,
+      'vertex_unavailable',
+      'Vertex client not initialized at module load; investigator skipped.',
+      summary,
+    );
     return {
       ok: false,
-      report_id: null,
+      report_id: stubId,
       validation: { ok: false, reason: 'vertex_unavailable' },
       vertex_responded: false,
       detail: 'Vertex client not initialized; investigator skipped.',
@@ -609,26 +711,36 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   }
 
   const prompt = buildPrompt(input, ev, summary);
-  const report = await callVertexInvestigator(prompt);
+  const callResult = await callVertexInvestigator(prompt);
 
-  if (!report) {
+  if (!callResult.report) {
+    // VTID-01996: persist a failure stub so ops sees WHY the investigator
+    // didn't produce a report. Without this, 5 quality-failure spawns
+    // produced 0 visible rows and the gap was invisible.
+    const stubId = await persistFailureStub(
+      input,
+      'vertex_no_response',
+      callResult.error ?? 'Vertex returned no parseable JSON and no error captured.',
+      summary,
+    );
     return {
       ok: false,
-      report_id: null,
+      report_id: stubId,
       validation: { ok: false, reason: 'vertex_no_response' },
       vertex_responded: false,
-      detail: 'Vertex returned no parseable JSON.',
+      detail: `Vertex no usable response: ${callResult.error ?? 'unknown'}`,
     };
   }
 
+  const report = callResult.report;
   const validation = validateReport(report);
   if (!validation.ok) {
     // Persist anyway — schema-violating reports are still useful for ops to
     // see what the agent produced and iterate the prompt.
-    await persistReport(input, report);
+    const persistedId = await persistReport(input, report);
     return {
       ok: false,
-      report_id: null,
+      report_id: persistedId,
       validation,
       vertex_responded: true,
       detail: `Schema validation failed: ${validation.reason}`,
@@ -657,6 +769,40 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
     });
   } catch {
     /* best-effort emit */
+  }
+
+  // VTID-02030: ping ops via Gchat for any recommendation that ISN'T
+  // stay_and_patch. The auto-loop only handles stay_and_patch autonomously
+  // (it flows through Accept & Execute); anything else (patch_around,
+  // replace_vendor, redesign_pipeline, "Architectural", "Redesign & Replace",
+  // or any unexpected free-text track the LLM returns) needs a supervisor.
+  // Inverting the rule means a non-conforming track defaults to "page the
+  // human" rather than "stay quiet" — fail-loud is the safer default.
+  const STAY_AND_PATCH_TRACKS = new Set(['stay_and_patch']);
+  if (!STAY_AND_PATCH_TRACKS.has(report.recommendation.track)) {
+    const summary = (report.recommendation.summary || '').slice(0, 280);
+    const message =
+      `🧠 *Voice — architectural action recommended*\n` +
+      `Class: \`${input.class}\`\n` +
+      `Track: *${report.recommendation.track}* ` +
+      `(confidence ${(report.recommendation.confidence * 100).toFixed(0)}%)\n` +
+      `Trigger: ${input.trigger_reason}\n` +
+      `${summary}\n` +
+      `Report ID: \`${reportId}\` — open Voice Lab → Healing tab to read & Accept & Execute`;
+    console.log(
+      `[voice-architecture-investigator] gchat-ping prep: track=${report.recommendation.track} ` +
+      `webhook_set=${Boolean(process.env.GCHAT_COMMANDHUB_WEBHOOK)}`,
+    );
+    try {
+      await notifyGChat(message);
+      console.log(
+        `[voice-architecture-investigator] gchat-ping sent for class=${input.class} report=${reportId}`,
+      );
+    } catch (err: any) {
+      console.error(
+        `[voice-architecture-investigator] gchat-ping FAILED: ${err?.message ?? err}`,
+      );
+    }
   }
 
   return {

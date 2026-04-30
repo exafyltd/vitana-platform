@@ -401,6 +401,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added contextual_opportunities table for D48 opportunity surfacing | Claude | VTID-01142 |
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
+| 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 
 ---
@@ -422,15 +423,18 @@ ALTER TABLE calendar_events ADD CONSTRAINT valid_pillar
   CHECK (pillar IS NULL OR pillar IN
     ('nutrition', 'hydration', 'exercise', 'sleep', 'mental'));
 
--- contribution_vector: object whose keys are the 5 canonical pillars and
--- values are non-negative numbers (per-pillar Δ a completion adds to Index).
+-- contribution_vector: object whose keys are the 5 canonical pillars.
+-- Postgres rejects subqueries inside CHECK, so we validate by key-stripping:
+-- removing every allowed key with `-` and asserting the remainder is empty.
+-- Value-level validation (non-negative numbers) is enforced by the gateway
+-- Zod schema since CHECK can't iterate values without a subquery either.
 ALTER TABLE calendar_events ADD CONSTRAINT valid_contribution_vector
   CHECK (
     contribution_vector IS NULL
     OR (jsonb_typeof(contribution_vector) = 'object'
-        AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(contribution_vector) AS k
-                        WHERE k NOT IN
-                          ('nutrition','hydration','exercise','sleep','mental')))
+        AND (contribution_vector
+             - 'nutrition' - 'hydration' - 'exercise'
+             - 'sleep' - 'mental') = '{}'::jsonb)
   );
 
 CREATE INDEX idx_calendar_events_pillar_upcoming
@@ -438,7 +442,7 @@ CREATE INDEX idx_calendar_events_pillar_upcoming
   WHERE pillar IS NOT NULL AND status != 'cancelled';
 ```
 
-**Backfill:** the migration extracts the first `pillar:<key>` entry from `wellness_tags` into the new `pillar` column for legacy rows that already had the heuristic tag.
+**Backfill:** the migration extracts the first `pillar:<key>` entry from `wellness_tags` into the new `pillar` column for legacy rows that already had the heuristic tag, using `UNNEST(...) WITH ORDINALITY` + `DISTINCT ON` so the choice is deterministic when an event has multiple pillar tags.
 
 **Notes:** the frontend's `derivePillar` helper now reads `event.pillar` first; falls back to the existing `wellness_tags` and `event_type` heuristic when both new columns are null.
 
@@ -733,6 +737,60 @@ RLS: users see their own; service role full.
 **Default `account_visibility`:** sensitive fields (names, DOB, contact) default to `private`; `country`/`city` default to `connections`; `member_since` / `account_type` / `verification_status` default to `public`.
 
 **Design principle:** Each field has BOTH a value and a visibility rule. Non-owners only see fields flagged `public`.
+
+---
+
+## VTID-01981 — Routines (daily Claude Code remote-agent catalog)
+
+### routines
+**Purpose:** Catalog of every daily Claude Code remote agent ("routine") that runs on a cron schedule in an isolated sandbox. Surfaces in the Command Hub `Routines` section.
+**Used by:** `services/gateway/src/routes/routines.ts`, Command Hub `routines/catalog/` and `routines/history/` tabs.
+**Migration:** `supabase/migrations/20260427130000_vtid_01981_routines_catalog.sql`
+
+**Schema:**
+```sql
+CREATE TABLE routines (
+  name                  TEXT PRIMARY KEY,
+  display_name          TEXT NOT NULL,
+  description           TEXT,
+  cron_schedule         TEXT NOT NULL,
+  enabled               BOOLEAN NOT NULL DEFAULT TRUE,
+  last_run_id           UUID,
+  last_run_at           TIMESTAMPTZ,
+  last_run_status       TEXT CHECK (last_run_status IN ('running','success','failure','partial')),
+  last_run_summary      TEXT,
+  consecutive_failures  INTEGER NOT NULL DEFAULT 0,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### routine_runs
+**Purpose:** Per-execution record for a routine — start/finish timestamps, status, headline summary, structured findings JSON, and any artifacts (PR URLs, GitHub issue links).
+**Used by:** Same as `routines`. Routines POST a row at start (`status='running'`) and PATCH it at finish with the final status + findings.
+**Migration:** Same as `routines`.
+
+**Schema:**
+```sql
+CREATE TABLE routine_runs (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  routine_name  TEXT NOT NULL REFERENCES routines(name) ON DELETE CASCADE,
+  started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at   TIMESTAMPTZ,
+  status        TEXT NOT NULL CHECK (status IN ('running','success','failure','partial')),
+  trigger       TEXT NOT NULL DEFAULT 'cron' CHECK (trigger IN ('cron','manual')),
+  summary       TEXT,
+  findings      JSONB,
+  artifacts     JSONB,
+  error         TEXT,
+  duration_ms   INTEGER,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_routine_runs_routine_started ON routine_runs(routine_name, started_at DESC);
+CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
+```
+
+**Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
 
 ---
 

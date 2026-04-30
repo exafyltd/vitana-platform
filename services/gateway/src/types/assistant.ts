@@ -55,4 +55,11 @@ export interface AssistantContext {
   tenant: string;
   route: string;
   selectedId: string;
+  /**
+   * VTID-01967: Canonical Vitana ID handle (e.g. "@alex3700"). Optional —
+   * Dev ORB body does not currently carry one, but downstream prompts use
+   * this when present so the assistant can answer "what is my user ID?"
+   * with the handle instead of leaking the internal UUID.
+   */
+  vitanaId?: string | null;
 }

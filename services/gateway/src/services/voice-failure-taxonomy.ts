@@ -13,7 +13,10 @@
  * See plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
 
-export const SIGNATURE_VERSION = 'v1';
+// Bumped to v2 (VTID-01994) — added 3 quality classes derived from
+// session-stop metadata (no error events required). Bumping invalidates
+// prior spec_memory entries which is the safe transition.
+export const SIGNATURE_VERSION = 'v2';
 
 export const VOICE_FAILURE_CLASSES = [
   'voice.config_missing',
@@ -26,6 +29,13 @@ export const VOICE_FAILURE_CLASSES = [
   'voice.tool_loop',
   'voice.audio_one_way',
   'voice.permission_denied',
+  // VTID-01994: quality failures detectable from session-stop metadata
+  // alone, without any error event. Catches the dominant production
+  // failure mode (model under-responds, terse replies, no engagement)
+  // that the explicit-error-event classifier misses entirely.
+  'voice.model_under_responds',
+  'voice.no_engagement',
+  'voice.low_turn_progression',
   'voice.unknown',
 ] as const;
 
@@ -70,6 +80,13 @@ export const CLASS_SEVERITY: Record<VoiceFailureClass, number> = {
   'voice.session_leak': 40,
   'voice.tool_loop': 30,
   'voice.audio_one_way': 20,
+  // VTID-01994: quality classes — between unknown and tool_loop. They're
+  // dispatch-worthy but rank below explicit-error classes because explicit
+  // errors usually have a known fix; quality classes generally route to
+  // the Architecture Investigator for prompt/model-config-level analysis.
+  'voice.model_under_responds': 25,
+  'voice.no_engagement': 22,
+  'voice.low_turn_progression': 18,
   'voice.unknown': 0,
 };
 
@@ -195,5 +212,89 @@ export function detectAudioOneWay(input: {
   if (input.audio_in_chunks > 0 && input.audio_out_chunks === 0) {
     return { class: 'voice.audio_one_way', normalized_signature: 'audio_one_way_post_chime' };
   }
+  return null;
+}
+
+// =============================================================================
+// VTID-01994: Quality classifier — detects failures from session-stop metrics
+// alone, no error events required. Catches the dominant production failure
+// mode the explicit-error-event classifier misses: sessions that complete
+// "successfully" (reason=normal, ws closed cleanly) but the user clearly had
+// a broken experience (model under-responds, terse replies, never engaged).
+// =============================================================================
+
+export interface SessionStopMetrics {
+  audio_in_chunks: number;
+  audio_out_chunks: number;
+  duration_ms: number;
+  turn_count: number;
+  user_turns?: number;
+  model_turns?: number;
+}
+
+/** Bucket a numeric value to keep signatures stable across small variations. */
+function bucketRatio(ratio: number): string {
+  if (ratio >= 100) return 'r100plus';
+  if (ratio >= 20) return 'r20to100';
+  if (ratio >= 10) return 'r10to20';
+  if (ratio >= 5) return 'r5to10';
+  return 'rUnder5';
+}
+
+/**
+ * Classify a session as a quality failure based on session-stop metadata.
+ * Returns null when session looks healthy. Pure function — no I/O, no
+ * dependencies. Adapter passes the metrics straight from the
+ * vtid.live.session.stop emit payload.
+ *
+ * Thresholds:
+ *   voice.no_engagement         turn_count==0 AND duration_ms>30s AND audio_in>=20
+ *                               (user spoke but model never started speaking)
+ *   voice.model_under_responds  audio_in>=100 AND audio_out/audio_in<0.15 AND turn_count>=1
+ *                               (real conversation but model under-responded)
+ *   voice.low_turn_progression  duration_ms>60s AND turn_count<3 AND audio_in>=50
+ *                               (long session that never developed)
+ */
+export function classifyQualityFromSessionStop(
+  metrics: SessionStopMetrics,
+): ClassifierOutput | null {
+  const ai = metrics.audio_in_chunks || 0;
+  const ao = metrics.audio_out_chunks || 0;
+  const dur = metrics.duration_ms || 0;
+  const turns = metrics.turn_count || 0;
+
+  // Skip sessions that are too short or had no real input — they're not
+  // meaningfully broken, just not real conversations (mic permission test,
+  // page abandoned, etc.).
+  if (ai < 20 && turns < 1) return null;
+
+  // 1. No engagement: user spoke but model never started a turn.
+  if (turns === 0 && dur > 30_000 && ai >= 20) {
+    return {
+      class: 'voice.no_engagement',
+      normalized_signature: ai >= 100 ? 'no_engagement_user_active' : 'no_engagement_brief',
+    };
+  }
+
+  // 2. Model under-responds: real turn cycle but model produced very little.
+  if (turns >= 1 && ai >= 100) {
+    const ratio = ao > 0 ? ai / ao : ai;
+    if (ratio >= 5) {
+      return {
+        class: 'voice.model_under_responds',
+        normalized_signature: `model_under_responds_${bucketRatio(ratio)}`,
+      };
+    }
+  }
+
+  // 3. Low turn progression: long session, few turns. Conversation didn't
+  // develop. Catches "user struggling to engage" patterns the others miss.
+  if (dur > 60_000 && turns < 3 && ai >= 50) {
+    return {
+      class: 'voice.low_turn_progression',
+      normalized_signature: turns === 0 ? 'low_turn_zero' : 'low_turn_one_or_two',
+    };
+  }
+
   return null;
 }

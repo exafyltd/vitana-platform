@@ -57,6 +57,8 @@ import {
   canSurfaceProactively,
   recordTouch,
   resolveNextTip,
+  // V2 — Proactive Initiative Engine
+  pickProactiveInitiative,
   type OpenerCandidate,
   type UserAwareness,
 } from './guide';
@@ -359,6 +361,7 @@ export async function buildBrainSystemInstruction(input: {
       tenant_id: input.tenant_id,
       role: input.role,
       channel: input.channel,
+      user_timezone: input.user_timezone,
     }),
     buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
   ]);
@@ -491,6 +494,8 @@ export async function buildProactiveGuideBlock(input: {
   tenant_id: string;
   role: string;
   channel: ConversationChannel;
+  /** VTID-01990: optional IANA tz so awareness today/yesterday bucketing is local-day correct */
+  user_timezone?: string;
 }): Promise<string> {
   const flag = await getSystemControl('vitana_proactive_opener_enabled').catch(() => null);
   if (!flag || !flag.enabled) {
@@ -501,9 +506,12 @@ export async function buildProactiveGuideBlock(input: {
   const guideRole = mapRoleForGuide(input.role);
 
   // Compute the unified awareness picture ONCE — every downstream signal flows from it
+  // VTID-02019: pass the user's tz through so HH:MM in the awareness block
+  // renders local. If the surface didn't supply one, awareness resolves to
+  // Europe/Berlin (system default).
   let awareness: UserAwareness | null = null;
   try {
-    awareness = await getAwarenessContext(input.user_id, input.tenant_id);
+    awareness = await getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone);
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
   }
@@ -753,16 +761,27 @@ GOAL-GROUNDED RECOMMENDATIONS (NON-NEGOTIABLE):
 - Do NOT make generic off-topic suggestions. Every piece of advice should
   visibly connect to the goal ("because your focus is X, here's Y").`;
 
-  // BOOTSTRAP-DYK-TOUR Phase 1b — Did-You-Know voice opener
-  // Compute the tour-hint block alongside the candidate. If eligible, ORB
-  // gets ONE additional sanctioned proactive utterance: the day-N tip.
-  // It's appended AFTER the candidate so it has recency primacy in attention.
-  const tourHintBlock = await buildDidYouKnowVoiceHint(input.user_id, awareness, channel).catch(
-    () => '',
-  );
+  // V2 Proactive Initiative Engine — pairs the opener with executable
+  // actions. Computed FIRST. When it fires, the DYK tour-hint is
+  // suppressed for this session so Gemini gets exactly one sanctioned
+  // "ON YES call X" contract per prompt (two competing contracts in one
+  // prompt is non-deterministic — the LLM picks whichever is closer to
+  // the bottom). Per plan §V2 design decision 2.
+  const initiativeBlock = await buildProactiveInitiativeOffer(
+    input.user_id,
+    awareness,
+    channel,
+  ).catch(() => '');
+
+  // BOOTSTRAP-DYK-TOUR Phase 1b — Did-You-Know voice opener.
+  // Suppressed when an initiative fires (mutual exclusion). Initiative is
+  // the more valuable surface (executes vs. navigates) so it wins.
+  const tourHintBlock = initiativeBlock
+    ? ''
+    : await buildDidYouKnowVoiceHint(input.user_id, awareness, channel).catch(() => '');
 
   if (!candidate) {
-    return rulesBlock + tourHintBlock;
+    return rulesBlock + initiativeBlock + tourHintBlock;
   }
 
   const goalLine = candidate.goal_link
@@ -803,7 +822,7 @@ respect the OPENING SHAPE MATRIX (tenure × last_interaction).
 If the user declines (skip / not today / give me space / etc.) honor it
 silently via the dismissal tools — no apology, no big deal.`;
 
-  return rulesBlock + candidateBlock + tourHintBlock;
+  return rulesBlock + candidateBlock + initiativeBlock + tourHintBlock;
 }
 
 /**
@@ -900,6 +919,151 @@ ON HARDER REFUSAL ("not today", "quiet", "give me space"):
 Once you have offered this tip in this session, do NOT re-offer it. Treat
 it as already-introduced for the rest of the session.`;
 }
+
+/**
+ * V2 — Proactive Initiative voice block.
+ *
+ * Pairs the session-start opener with an EXECUTABLE action. On user
+ * consent, the LLM calls a real ORB tool (save_diary_entry,
+ * activate_recommendation, send_chat_message) and reads back the
+ * Vitana Index delta as payoff.
+ *
+ * Eligibility ladder:
+ *   1. Channel must be 'voice' (text channels handle proactivity differently).
+ *   2. `vitana_proactive_initiative_enabled` flag must be ON.
+ *   3. Pacer must permit a 'voice_opener_initiative' touch.
+ *   4. The registry resolver must return one eligible initiative + target.
+ *
+ * Fail-safe: any error returns empty string. Voice path must never
+ * break because of an initiative bug.
+ *
+ * Mutual exclusion: when this returns non-empty, the caller suppresses
+ * `buildDidYouKnowVoiceHint` so Gemini gets exactly one ON-YES contract
+ * per prompt (plan §V2 design decision 2).
+ */
+async function buildProactiveInitiativeOffer(
+  userId: string,
+  awareness: UserAwareness | null,
+  channel: 'voice' | 'text',
+): Promise<string> {
+  if (channel !== 'voice') return '';
+  if (!awareness) return '';
+
+  const flag = await getSystemControl('vitana_proactive_initiative_enabled').catch(() => null);
+  if (!flag || !flag.enabled) return '';
+
+  const decision = await canSurfaceProactively(userId, 'voice_opener_initiative').catch(() => null);
+  if (!decision || !decision.allow) return '';
+
+  const resolved = await pickProactiveInitiative(awareness, userId).catch(() => null);
+  if (!resolved) return '';
+
+  const { initiative, target, voice_opener } = resolved;
+
+  // Record touch fire-and-forget — counts against the daily cap.
+  recordTouch({
+    user_id: userId,
+    surface: 'voice_opener_initiative',
+    reason_tag: initiative.initiative_key,
+    metadata: {
+      pillar_link: initiative.pillar_link,
+      on_yes_tool: initiative.on_yes_tool,
+      requires_user_dictation: initiative.requires_user_dictation,
+      target_id: target?.id ?? null,
+      target_display_name: target?.display_name ?? null,
+    },
+  }).catch(() => {});
+
+  emitGuideTelemetry('guide.initiative.offered', {
+    user_id: userId,
+    initiative_key: initiative.initiative_key,
+    pillar_link: initiative.pillar_link,
+    on_yes_tool: initiative.on_yes_tool,
+    target_id: target?.id ?? null,
+    tenure_stage: awareness.tenure.stage,
+    channel: 'voice',
+  }).catch(() => {});
+
+  // After-consent guidance. Two-turn dictation flows need explicit "hold
+  // turn" wording because Gemini Live wants to close the turn after each
+  // tool result. CRITICAL: this section describes what to do AFTER the
+  // user has consented — never as the first utterance.
+  const afterConsentBlock = initiative.requires_user_dictation
+    ? `
+=== AFTER THE USER CONSENTS (only after they have said yes/ok/sure/ja to step 1) ===
+
+  Step 2. Now (and only now) speak this follow-up prompt VERBATIM:
+     "${initiative.voice_on_consent ?? 'Go ahead.'}"
+  Step 3. HOLD THE TURN. Do NOT call any tool yet. Wait for the user's
+     NEXT utterance, which carries the content / confirmation.
+  Step 4. On the user's next turn:
+     - If on_yes_tool is 'send_chat_message': the user is confirming
+       the proposed message body. Only call \`send_chat_message\` when
+       they say yes to your draft. If they want to revise, speak a
+       new draft and ask again.
+     - Otherwise (save_diary_entry): call the tool with their
+       captured content.
+     Tool: ${initiative.on_yes_tool}
+     Payload guidance: ${initiative.on_yes_payload_hint}
+  Step 5. After tool success, speak this celebratory close (sanctioned):
+     "${initiative.build_voice_on_complete(target)}"
+     If the tool returned an Index delta, splice it into {index_delta}
+     and {pillar_value} naturally.`
+    : `
+=== AFTER THE USER CONSENTS (only after they have said yes/ok/sure/ja to step 1) ===
+
+  Step 2. Call the tool: ${initiative.on_yes_tool}
+     Payload guidance: ${initiative.on_yes_payload_hint}
+  Step 3. After tool success, speak this celebratory close (sanctioned):
+     "${initiative.build_voice_on_complete(target)}"
+     Splice tool-result fields ({index_delta}, {pillar_value}, etc.)
+     naturally where the template uses them.`;
+
+  return `
+
+=== PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
+
+This block OVERRIDES the PROACTIVE OPENER CANDIDATE block above and
+REPLACES the Did-You-Know tour hint. Your FIRST utterance this session
+MUST be the offer below — not the candidate, not "How can I help",
+not "Go ahead", not anything else.
+
+Initiative key: ${initiative.initiative_key}
+Pillar link: ${initiative.pillar_link}
+On-yes tool: ${initiative.on_yes_tool}
+${target ? `Pre-picked target: ${target.display_name ?? target.id ?? '(unnamed)'}` : ''}
+
+=== STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase) ===
+
+Speak BOTH sentences below as a single turn — opener immediately followed
+by the confirm question. Use the user's language naturally (DE/EN/etc.)
+but keep the structure (proposal + yes/no question) intact. You may add
+a brief warm greeting like "Hi" or the user's first name before the
+opener if appropriate to the time of day, but do not skip or shorten the
+offer itself:
+
+  "${voice_opener} ${initiative.voice_confirm}"
+
+DO NOT speak the AFTER-CONSENT lines below until the user has actually
+said yes/ok/sure/ja/do-it. They are the SECOND turn, not the first.
+${afterConsentBlock}
+
+=== ON NO (any decline — "skip", "not now", "later", "nein", "no thanks") ===
+
+  Call pause_proactive_guidance with scope="nudge_key",
+  scope_value="${initiative.initiative_key}", duration_minutes=1440.
+  Then pivot naturally — no apology, no "I'll stop now" speech.
+
+=== ON HARDER REFUSAL ("not today", "quiet", "give me space") ===
+
+  Call pause_proactive_guidance with scope="all" and the appropriate
+  duration per the dismissal tool description. Pivot.
+
+Once you have offered this initiative in this session, do NOT re-offer
+it. If the user wants to talk about something else first, give them the
+floor — you can come back to the initiative naturally if it fits.`;
+}
+
 
 /**
  * Build the awareness summary block for the system prompt.
@@ -1018,6 +1182,63 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     }
     lines.push(
       'Weave one of these into the conversation when natural — never recite the summary verbatim. Examples: "last time we talked about your sleep — how did that wind-down ritual go?", "you mentioned the business hub yesterday — any progress?".',
+    );
+  }
+
+  // VTID-01990 — cross-surface conversation tracking. Surfaces "this is your
+  // Nth session today" + per-session timestamps + yesterday's last session
+  // so Vitana feels persistent across sessions.
+  // VTID-02019 — all timestamps rendered in awareness.user_timezone (default
+  // Europe/Berlin), never UTC. Anytime Vitana quotes a clock value to the
+  // user it must be in the user's local time.
+  const sessionsToday = awareness.sessions_today;
+  const yesterdayLast = awareness.last_session_yesterday;
+  if ((sessionsToday && sessionsToday.count > 0) || yesterdayLast) {
+    const tz = awareness.user_timezone;
+    const fmtHHMM = (iso: string): string => {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso.slice(11, 16);
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).format(d);
+      } catch {
+        return iso.slice(11, 16);
+      }
+    };
+
+    if (sessionsToday && sessionsToday.count > 0) {
+      const n = sessionsToday.count + 1;
+      const suffix = (() => {
+        const v = n % 100;
+        if (v >= 11 && v <= 13) return 'th';
+        const last = n % 10;
+        return last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th';
+      })();
+      lines.push(`Sessions today: ${sessionsToday.count} prior (this is the ${n}${suffix}).`);
+      const entries = sessionsToday.entries.slice(-4);
+      for (const e of entries) {
+        const hhmm = fmtHHMM(e.ended_at);
+        const themes = (e.themes || []).slice(0, 3).join(', ');
+        const summary = e.summary && e.summary.length > 240 ? e.summary.slice(0, 239) + '…' : e.summary || '';
+        lines.push(`  - ${hhmm} (${e.channel})${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+      }
+    }
+    if (yesterdayLast) {
+      const hhmm = fmtHHMM(yesterdayLast.ended_at);
+      const themes = (yesterdayLast.themes || []).slice(0, 3).join(', ');
+      const summary =
+        yesterdayLast.summary && yesterdayLast.summary.length > 240
+          ? yesterdayLast.summary.slice(0, 239) + '…'
+          : yesterdayLast.summary || '';
+      lines.push(`Yesterday's last session ${hhmm}${themes ? ` themes: ${themes}` : ''} — ${summary}`);
+    }
+    lines.push(
+      `(All session times are local to the user — ${tz}. Always quote times in this timezone, never UTC.)`,
+      'When the user references a past conversation by time ("we talked yesterday morning...", "earlier today we discussed..."), call recall_conversation_at_time to fetch the actual turns. Do not invent details from these summaries alone.',
     );
   }
 

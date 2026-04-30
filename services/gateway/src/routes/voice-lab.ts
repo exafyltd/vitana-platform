@@ -18,11 +18,13 @@ import {
   getQuarantineState,
 } from '../services/voice-recurrence-sentinel';
 import { spawnInvestigator } from '../services/voice-architecture-investigator';
+import { notifyGChat } from '../services/self-healing-snapshot-service';
 import { setMode } from '../services/voice-shadow-mode';
 import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
 import {
   buildHealingSummary,
   buildShadowComparison,
+  buildLiveMonitor,
 } from '../services/voice-healing-summary';
 
 const router = Router();
@@ -730,6 +732,378 @@ router.get('/healing/reports/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * PATCH /api/v1/voice-lab/healing/reports/:id (VTID-01999)
+ *
+ * Update a report's decision state. Used by the inline drawer in the
+ * Voice Self-Healing panel — operator reads the report, decides
+ * acknowledged / accepted / rejected, and submits decision_notes.
+ *
+ * Body: { status: 'acknowledged'|'accepted'|'rejected', decision_notes?: string, acknowledged_by?: string }
+ */
+router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const body = (req.body || {}) as Record<string, unknown>;
+  const status = body.status;
+  if (status !== 'acknowledged' && status !== 'accepted' && status !== 'rejected' && status !== 'open') {
+    return res.status(400).json({
+      ok: false,
+      error: 'status must be one of open|acknowledged|accepted|rejected',
+    });
+  }
+  const decision_notes = typeof body.decision_notes === 'string' ? body.decision_notes : null;
+  const acknowledged_by = typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
+
+  const id = req.params.id;
+  const patch: Record<string, unknown> = {
+    status,
+    decision_notes,
+  };
+  // Only stamp acknowledged_at/by when transitioning AWAY from 'open'.
+  if (status !== 'open') {
+    patch.acknowledged_by = acknowledged_by;
+    patch.acknowledged_at = new Date().toISOString();
+  } else {
+    patch.acknowledged_by = null;
+    patch.acknowledged_at = null;
+  }
+  try {
+    const resp = await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(patch),
+      },
+    );
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = (await resp.json()) as any[];
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'report not found' });
+    }
+    return res.json({ ok: true, report: rows[0] });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/reports/:id/execute (VTID-02021)
+ *
+ * Materialize the report's recommendation into actual work items. For each
+ * proposed_next_step, allocates a VTID via the canonical RPC, populates the
+ * vtid_ledger row (status=scheduled, spec_status=approved, layer=INFRA,
+ * module=GATEWAY) with the step text as title/summary, and stamps
+ * metadata.source_report_id so we can join back later.
+ *
+ * The caller's intent: "I read the plan, I approve it, execute it." Sets
+ * voice_architecture_reports.status = accepted and emits a
+ * voice.healing.report.executed OASIS event.
+ *
+ * Body: { acknowledged_by?: string, decision_notes?: string }
+ *
+ * Returns: { ok, executed_vtids, report_id, step_count }
+ */
+router.post('/healing/reports/:id/execute', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const reportId = req.params.id;
+  const body = (req.body || {}) as Record<string, unknown>;
+  const acknowledgedBy =
+    typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
+  const decisionNotes =
+    typeof body.decision_notes === 'string' ? body.decision_notes : null;
+
+  // 1. Fetch report
+  let report: any = null;
+  try {
+    const r = await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}&limit=1`,
+      { headers: { apikey: config.key, Authorization: `Bearer ${config.key}` } },
+    );
+    if (!r.ok) {
+      return res.status(r.status).json({ ok: false, error: await r.text() });
+    }
+    const rows = (await r.json()) as any[];
+    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'report not found' });
+    report = rows[0];
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+
+  // VTID-02032: idempotency. Once a report has been accepted (or rejected),
+  // a second click on Accept & Execute must NOT create a duplicate batch.
+  // Return 409 with a clear message + a hint to the /execution endpoint
+  // so the frontend can route the operator to the existing in-progress
+  // tasks instead.
+  if (report.status && report.status !== 'open') {
+    return res.status(409).json({
+      ok: false,
+      error: `report already ${report.status}`,
+      status: report.status,
+      acknowledged_by: report.acknowledged_by ?? null,
+      acknowledged_at: report.acknowledged_at ?? null,
+      execution_endpoint: `/api/v1/voice-lab/healing/reports/${reportId}/execution`,
+    });
+  }
+
+  // 2. Extract proposed steps
+  const steps = (report.report?.recommendation?.proposed_next_steps || []) as string[];
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'report has no recommendation.proposed_next_steps to execute',
+    });
+  }
+
+  const reportClass = String(report.class || 'voice.unknown');
+  const reportSig = report.normalized_signature ?? null;
+
+  // 3. For each step: allocate VTID + populate ledger row
+  const executedVtids: string[] = [];
+  const failures: Array<{ step: string; error: string }> = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = String(steps[i] || '').trim();
+    if (!step) continue;
+    try {
+      // 3a. Allocate VTID via RPC
+      const allocResp = await fetch(`${config.url}/rest/v1/rpc/allocate_global_vtid`, {
+        method: 'POST',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_source: 'voice-investigator-execute',
+          p_layer: 'INFRA',
+          p_module: 'GATEWAY',
+        }),
+      });
+      if (!allocResp.ok) {
+        failures.push({ step: step.slice(0, 80), error: `alloc_${allocResp.status}` });
+        continue;
+      }
+      const allocRows = (await allocResp.json()) as Array<{ vtid: string }>;
+      const newVtid = allocRows[0]?.vtid;
+      if (!newVtid) {
+        failures.push({ step: step.slice(0, 80), error: 'alloc_no_vtid_returned' });
+        continue;
+      }
+
+      // 3b. Populate the ledger row (the RPC creates an allocated stub)
+      const title = `INVESTIGATOR: ${step.slice(0, 180)}`;
+      const summary =
+        `${step}\n\n---\n` +
+        `Source: voice-architecture-investigator report ${reportId}\n` +
+        `Class: ${reportClass}\n` +
+        `Signature: ${reportSig ?? '(none)'}\n` +
+        `Step ${i + 1} of ${steps.length}`;
+      const patchResp = await fetch(
+        `${config.url}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(newVtid)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: config.key,
+            Authorization: `Bearer ${config.key}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            title,
+            summary,
+            layer: 'INFRA',
+            module: 'GATEWAY',
+            status: 'scheduled',
+            spec_status: 'approved',
+            assigned_to: 'autopilot',
+            metadata: {
+              source: 'voice-investigator-execute',
+              source_report_id: reportId,
+              source_report_class: reportClass,
+              source_report_signature: reportSig,
+              step_index: i,
+              step_total: steps.length,
+            },
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      if (!patchResp.ok) {
+        failures.push({ step: step.slice(0, 80), error: `patch_${patchResp.status}` });
+        continue;
+      }
+      executedVtids.push(newVtid);
+
+      // VTID-02029: cross-cutting visibility. Insert into self_healing_log
+      // and emit self-healing.task.injected so this VTID appears in the
+      // existing Self-Healing History list and Autonomy Trace timeline
+      // alongside dev-autopilot self-heals — operator doesn't have to
+      // know about a separate voice silo.
+      const recommendation = report.report?.recommendation || {};
+      const recConfidence =
+        typeof recommendation.confidence === 'number' ? recommendation.confidence : 0.5;
+      const shlogEndpoint = `voice-error://${reportClass}`;
+      fetch(`${config.url}/rest/v1/self_healing_log`, {
+        method: 'POST',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          vtid: newVtid,
+          endpoint: shlogEndpoint,
+          failure_class: reportClass,
+          confidence: recConfidence,
+          diagnosis: {
+            source: 'voice-investigator-execute',
+            source_report_id: reportId,
+            normalized_signature: reportSig,
+            recommendation_track: recommendation.track || null,
+            step_index: i,
+            step_total: steps.length,
+            step_text: step.slice(0, 500),
+          },
+          outcome: 'pending',
+          blast_radius: 'none',
+          attempt_number: 1,
+        }),
+      }).catch(() => { /* best-effort */ });
+
+      // Emit self-healing.task.injected so Autonomy Trace + downstream
+      // listeners see the same event the canonical injector emits.
+      try {
+        const { emitOasisEvent } = await import('../services/oasis-event-service');
+        await emitOasisEvent({
+          vtid: newVtid,
+          type: 'self-healing.task.injected',
+          source: 'voice-investigator-execute',
+          status: 'info',
+          message: `Voice investigator step ${i + 1}/${steps.length} injected: ${title.slice(0, 100)}`,
+          payload: {
+            service: 'orb-voice',
+            endpoint: shlogEndpoint,
+            failure_class: reportClass,
+            confidence: recConfidence,
+            source_report_id: reportId,
+            normalized_signature: reportSig,
+            step_index: i,
+            step_total: steps.length,
+            recommendation_track: recommendation.track || null,
+            auto_approved: true,
+          },
+        });
+      } catch { /* best-effort */ }
+    } catch (err: any) {
+      failures.push({ step: step.slice(0, 80), error: err?.message ?? 'unknown' });
+    }
+  }
+
+  // 4. Update the report row to accepted
+  try {
+    await fetch(
+      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'accepted',
+          acknowledged_by: acknowledgedBy,
+          acknowledged_at: new Date().toISOString(),
+          decision_notes: decisionNotes,
+        }),
+      },
+    );
+  } catch {
+    /* best-effort — VTIDs are already created so the user has visible work */
+  }
+
+  // 5. Emit OASIS event for audit
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-VOICE-HEALING',
+      type: 'voice.healing.investigation.completed',
+      source: 'voice-lab',
+      status: 'success',
+      message: `Investigator report accepted and executed (${executedVtids.length} VTIDs scheduled${failures.length ? `, ${failures.length} failed` : ''})`,
+      payload: {
+        report_id: reportId,
+        class: reportClass,
+        normalized_signature: reportSig,
+        executed_vtids: executedVtids,
+        failures,
+        acknowledged_by: acknowledgedBy,
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+
+  return res.json({
+    ok: true,
+    report_id: reportId,
+    step_count: steps.length,
+    executed_vtids: executedVtids,
+    failures: failures.length > 0 ? failures : undefined,
+  });
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/reports/:id/execution (VTID-02021)
+ *
+ * Returns the live status of every VTID created from this report's
+ * Accept-and-Execute action. Drives the drawer's "Execution Progress"
+ * polling — operator sees scheduled → in_progress → completed/failed
+ * without leaving the Self-Healing screen.
+ */
+router.get('/healing/reports/:id/execution', async (req: Request, res: Response) => {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  }
+  const reportId = req.params.id;
+  // PostgREST: filter on JSONB key value via metadata->>source_report_id=eq.<id>
+  const url =
+    `${config.url}/rest/v1/vtid_ledger?` +
+    `metadata->>source_report_id=eq.${encodeURIComponent(reportId)}&` +
+    `select=vtid,title,status,spec_status,is_terminal,terminal_outcome,claimed_by,updated_at,metadata&` +
+    `order=metadata->step_index.asc.nullslast,vtid.asc&limit=50`;
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const rows = (await resp.json()) as any[];
+    return res.json({ ok: true, report_id: reportId, vtids: rows });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/v1/voice-lab/healing/mode (VTID-01964, PR #7)
  *
  * Returns the current voice self-healing mode (off / shadow / live).
@@ -738,6 +1112,45 @@ router.get('/healing/reports/:id', async (req: Request, res: Response) => {
 router.get('/healing/mode', async (_req: Request, res: Response) => {
   const mode = await getVoiceSelfHealingMode(true);
   return res.json({ ok: true, mode });
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/gchat-ping-test (VTID-02030c)
+ *
+ * Diagnostic only. Sends a single test message via the same notifyGChat()
+ * helper used by quarantine + investigator pings. Reports whether the
+ * env var is set and whether the fetch actually fired. No side effects
+ * other than the message itself.
+ */
+router.post('/healing/gchat-ping-test', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const note = typeof body.note === 'string' ? body.note : 'manual diagnostic';
+  const webhook = process.env.GCHAT_COMMANDHUB_WEBHOOK || '';
+  const text =
+    `🔧 *Gchat ping diagnostic* (VTID-02030f)\n` +
+    `If you see this, the gateway → Gchat path works.\n` +
+    `Note: ${note}\n` +
+    `Time: ${new Date().toISOString()}`;
+  const result = await notifyGChat(text);
+  // Capture useful diagnostics about the webhook URL itself without leaking
+  // its full value: domain, path prefix, query-keys present.
+  let url_host: string | null = null;
+  let url_path_prefix: string | null = null;
+  let query_keys: string[] = [];
+  if (webhook) {
+    try {
+      const u = new URL(webhook);
+      url_host = u.host;
+      url_path_prefix = u.pathname.split('/').slice(0, 4).join('/');
+      query_keys = Array.from(u.searchParams.keys()).sort();
+    } catch { /* malformed url */ }
+  }
+  return res.json({
+    ...result,
+    webhook_url_host: url_host,
+    webhook_url_path_prefix: url_path_prefix,
+    webhook_query_keys: query_keys,
+  });
 });
 
 /**
@@ -797,6 +1210,24 @@ router.get('/healing/shadow-comparison', async (req: Request, res: Response) => 
     return res.json({ ok: true, ...c });
   } catch (err: any) {
     console.error('[VTID-01965] /healing/shadow-comparison error:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/live-monitor (VTID-01991)
+ *
+ * Real-time view for the Command Hub Voice tab. Recent voice session-stops
+ * with audio_in/audio_out ratios + 24h health rollup + watchdog telemetry
+ * (watchdog_skipped vs watchdog_fired) so ops can see the VTID-01984
+ * watchdog fix working.
+ */
+router.get('/healing/live-monitor', async (_req: Request, res: Response) => {
+  try {
+    const m = await buildLiveMonitor();
+    return res.json({ ok: true, ...m });
+  } catch (err: any) {
+    console.error('[VTID-01991] /healing/live-monitor error:', err.message);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });

@@ -26,11 +26,15 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { classifyIntentKind, type IntentKind } from '../services/intent-classifier';
 import { extractIntent } from '../services/intent-extractor';
+import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
 import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher';
+// VTID-DANCE-D12 — Layer 2 over the SQL matcher.
+import { runMatchmakerAsync } from '../services/matchmaker-agent';
 import { checkIntentContent } from '../services/intent-content-filter';
 import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
+import { gateIntentByTier } from '../services/intent-trust-gate';
 import { redactMatchForReader } from '../services/intent-mutual-reveal';
 import { notifyMatchSurfaced } from '../services/intent-notifier';
 import { writeIntentFacts } from '../services/intent-memory-hooks';
@@ -46,6 +50,8 @@ function getSupabase() {
 const VALID_KINDS: IntentKind[] = [
   'commercial_buy', 'commercial_sell', 'activity_seek',
   'partner_seek', 'social_seek', 'mutual_aid',
+  // VTID-DANCE-D2
+  'learning_seek', 'mentor_seek',
 ];
 
 // ── POST /intents ────────────────────────────────────────────
@@ -95,6 +101,15 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     }
   }
 
+  // VTID-DANCE-D2: dance facet enrichment (no-op for non-dance categories).
+  // Canonicalises any dance.* fields in kind_payload + back-fills from
+  // profile.dance_preferences when the user has set them.
+  kindPayload = await enrichDancePayload({
+    user_id: identity.user_id,
+    category,
+    kind_payload: kindPayload,
+  });
+
   // Validation.
   if (!intentKind || !VALID_KINDS.includes(intentKind)) {
     return res.status(400).json({ ok: false, error: 'invalid intent_kind' });
@@ -104,6 +119,87 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
   }
   if (!scope || scope.length < 20 || scope.length > 1500) {
     return res.status(400).json({ ok: false, error: 'scope must be 20-1500 chars' });
+  }
+
+  // VTID-DANCE-D14 — De-duplication (two-tier).
+  //
+  //   FAST RULE: same user + same intent_kind + same category + last 15
+  //   minutes → ALWAYS dedup. The user clearly meant the same thing they
+  //   just posted. No content matching needed.
+  //
+  //   WIDER RULE: last 24 hours, same kind, same category, status='open',
+  //   AND title-substring-match OR scope-substring-match (>=80%). Catches
+  //   cases where the user paraphrases ("looking for a dance partner"
+  //   then "want to dance with someone").
+  //
+  // Both rules return deduplicated:true with the existing intent_id. The
+  // voice tool description tells Gemini to surface the existing post via
+  // navigate_to_screen instead of trying to post again.
+  {
+    const supabase = getSupabase();
+    // Pull the requester's open intents from the same kind in the last 24h.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: existing } = await supabase
+      .from('user_intents')
+      .select('intent_id, requester_vitana_id, title, scope, category, kind_payload, created_at')
+      .eq('requester_user_id', identity.user_id)
+      .eq('intent_kind', intentKind)
+      .eq('status', 'open')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const newTitle = norm(title);
+    const newScope = norm(scope);
+    const FIFTEEN_MIN_AGO = Date.now() - 15 * 60 * 1000;
+
+    const dup = (existing as any[] ?? []).find((r) => {
+      // FAST RULE: same kind + same category + last 15 minutes → dedup unconditionally.
+      const rCreatedAt = r.created_at ? new Date(r.created_at).getTime() : 0;
+      if (rCreatedAt > FIFTEEN_MIN_AGO && r.category === category) {
+        return true;
+      }
+
+      // WIDER RULE: same kind + 24h + textual similarity.
+      const rTitle = norm(r.title);
+      const rScope = norm(r.scope);
+      // Title overlap.
+      if (rTitle && newTitle && (rTitle === newTitle || rTitle.includes(newTitle) || newTitle.includes(rTitle))) {
+        return true;
+      }
+      // Scope substring match (>=80% of either side).
+      if (rScope && newScope) {
+        const minLen = Math.min(rScope.length, newScope.length);
+        if (minLen > 30 && (rScope.includes(newScope.slice(0, Math.floor(newScope.length * 0.8))) ||
+                            newScope.includes(rScope.slice(0, Math.floor(rScope.length * 0.8))))) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (dup) {
+      await emitOasisEvent({
+        vtid: 'VTID-DANCE-D14',
+        type: 'voice.message.sent',
+        source: 'intents-route',
+        status: 'info',
+        message: `De-dup blocked duplicate intent post (kind=${intentKind})`,
+        payload: { intent_kind: intentKind, existing_intent_id: dup.intent_id, requester_vitana_id: identity.vitana_id },
+        actor_id: identity.user_id,
+        actor_role: 'user',
+        surface: 'api',
+        vitana_id: identity.vitana_id ?? undefined,
+      });
+      return res.status(200).json({
+        ok: true,
+        deduplicated: true,
+        intent_id: dup.intent_id,
+        requester_vitana_id: dup.requester_vitana_id,
+        message: 'You already posted a similar request in the last 24 hours. Returning the existing post — refine it (different time, location, or style) if you want a new one.',
+      });
+    }
   }
 
   // Content filter.
@@ -135,12 +231,32 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(429).json({ ok: false, error: throttle.reason, message: throttle.detail });
   }
 
-  // Tier gate (commercial only).
+  // Tier gate (commercial only — legacy budget-based check kept for backwards compat).
   if ((intentKind === 'commercial_buy' || intentKind === 'commercial_sell') && typeof budgetMax === 'number') {
     const gate = await gateCommercialBudget(identity.user_id, budgetMax);
     if (!gate.ok) {
       return res.status(403).json({ ok: false, error: 'TIER_REQUIRED', tier: gate.tier, required: gate.required, message: gate.reason });
     }
+  }
+
+  // VTID-DANCE-D6: per-kind/category trust-tier gate (data-driven via
+  // intent_tier_required). Operator role bypasses entirely.
+  const isOperator = Boolean((identity as any).exafy_admin) || (identity as any).role === 'service_role';
+  const trustGate = await gateIntentByTier({
+    user_id: identity.user_id,
+    intent_kind: intentKind,
+    category,
+    kind_payload: kindPayload,
+    is_operator: isOperator,
+  });
+  if (!trustGate.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: 'INSUFFICIENT_TRUST_TIER',
+      required: trustGate.required_tier,
+      current: trustGate.current_tier,
+      message: trustGate.reason,
+    });
   }
 
   // Snapshot the user's active compass at post time (for telemetry).
@@ -169,10 +285,18 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(500).json({ ok: false, error: insErr?.message ?? 'insert_failed' });
   }
 
-  // Embed (inline; P2-C moves to a worker).
-  const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
-  if (embedding) {
-    await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
+  // VTID-01992: Embedding path is now flag-controlled.
+  //   FEATURE_INTENT_EMBEDDING_ASYNC=true  → skip inline; the embedding
+  //                                         worker (intent-embedding-worker.ts)
+  //                                         will pick up the row within ~5s.
+  //   default (unset / false)              → keep inline behavior. Worker
+  //                                         still runs as a safety net for
+  //                                         rows that slip past inline.
+  if (process.env.FEATURE_INTENT_EMBEDDING_ASYNC !== 'true') {
+    const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
+    if (embedding) {
+      await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
+    }
   }
 
   // VTID-01975 (P2-B): kind-discriminated Memory Garden write hooks.
@@ -202,6 +326,17 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     console.warn(`[VTID-01973] post-insert match compute failed: ${err.message}`);
   }
 
+  // VTID-DANCE-D12 — Layer 2 matchmaker agent (Gemini 2.5 Pro), async.
+  // Kicks off a background re-rank. Clients poll
+  // GET /api/v1/intents/:id/matchmaker for the polished result (~20s).
+  // The SQL match_count + intent_id are returned NOW so voice flow
+  // doesn't block on Gemini latency.
+  try {
+    runMatchmakerAsync((inserted as any).intent_id);
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D12] matchmaker async kick failed (non-fatal): ${err?.message}`);
+  }
+
   await emitOasisEvent({
     vtid: 'VTID-01973',
     type: 'voice.message.sent',
@@ -226,6 +361,65 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     intent_id: (inserted as any).intent_id,
     requester_vitana_id: (inserted as any).requester_vitana_id,
     match_count: matchCount,
+    // D12 async: status is 'pending' immediately after post. Poll
+    // GET /api/v1/intents/:id/matchmaker for the polished re-rank.
+    matchmaker_status: 'pending',
+  });
+});
+
+// ── GET /intents/:id/matchmaker (D12 poll endpoint) ─────────
+
+router.get('/:id/matchmaker', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const intentId = String(req.params.id || '').trim();
+  if (!intentId) return res.status(400).json({ ok: false, error: 'INTENT_ID_REQUIRED' });
+
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+
+  // Visibility gate: requester must own the intent OR the intent is public.
+  const { data: src } = await supabase
+    .from('user_intents')
+    .select('intent_id, requester_user_id, visibility')
+    .eq('intent_id', intentId)
+    .maybeSingle();
+  if (!src) return res.status(404).json({ ok: false, error: 'INTENT_NOT_FOUND' });
+
+  const isOwner = (src as any).requester_user_id === identity.user_id;
+  const visibility = String((src as any).visibility || 'public');
+  if (!isOwner && visibility !== 'public') {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+
+  const { data: rec } = await supabase
+    .from('intent_match_recommendations')
+    .select('intent_id, status, mode, pool_size, candidates, counter_questions, voice_readback, reasoning_summary, used_fallback, model, latency_ms, error, computed_at, updated_at')
+    .eq('intent_id', intentId)
+    .maybeSingle();
+
+  if (!rec) {
+    return res.json({ ok: true, status: 'not_started', poll_again_ms: 2000 });
+  }
+
+  const status = String((rec as any).status);
+  return res.json({
+    ok: true,
+    status,
+    mode: (rec as any).mode,
+    pool_size: (rec as any).pool_size,
+    candidates: (rec as any).candidates ?? [],
+    counter_questions: (rec as any).counter_questions ?? [],
+    voice_readback: (rec as any).voice_readback,
+    reasoning_summary: (rec as any).reasoning_summary,
+    used_fallback: (rec as any).used_fallback,
+    model: (rec as any).model,
+    latency_ms: (rec as any).latency_ms,
+    error: (rec as any).error,
+    computed_at: (rec as any).computed_at,
+    // Tell the client when to poll again (only if still computing).
+    poll_again_ms: status === 'pending' || status === 'running' ? 3000 : null,
   });
 });
 

@@ -115,9 +115,73 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
 
     console.log(`✅ Event ingested: ${eventId} - ${body.vtid}/${body.type}`);
 
+    // VTID-02032: Auto-route routine-emitted breaches through the FULL
+    // self-healing pipeline (LLM diagnosis + auto-fix-or-escalate). When a
+    // daily routine ingests an event with source=routine.* AND
+    // status=warning|error, that's a detected breach. Calling
+    // processFailingService runs the same flow real health-probe failures
+    // take: dedup/circuit-breaker → beginDiagnosis (allocates VTID + LLM
+    // generates a fix spec) → auto-apply if confidence ≥ threshold OR deep
+    // triage → escalate. Without this, rows just sat in self_healing_log
+    // with no spec and the reconciler escalated them after 1h.
+    let selfHealingResult: {
+      action?: string;
+      vtid?: string;
+      reason?: string;
+    } = {};
+    const isRoutineBreach =
+      typeof body.source === 'string' &&
+      body.source.startsWith('routine.') &&
+      (body.status === 'warning' || body.status === 'error');
+    if (isRoutineBreach) {
+      try {
+        const safeTopic = (body.type || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeRoutine = body.source
+          .replace(/^routine\./, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+        const syntheticEndpoint = `routine-incident://${safeRoutine}/${safeTopic}`;
+
+        // Lazy-load processFailingService + getAutonomyLevel from
+        // self-healing.ts to avoid a module-load cycle (events.ts is loaded
+        // earlier than self-healing.ts in some boot paths).
+        const selfHealingMod = require('./self-healing');
+        const { processFailingService, getAutonomyLevel } = selfHealingMod;
+        const AutonomyLevels = require('../types/self-healing').AutonomyLevel;
+        if (typeof processFailingService === 'function' && typeof getAutonomyLevel === 'function') {
+          const autonomyLevel = await getAutonomyLevel();
+          const synthetic = {
+            name: body.source,
+            endpoint: syntheticEndpoint,
+            status: 'down' as const,
+            http_status: null,
+            response_body: '',
+            response_time_ms: 0,
+            error_message: `${body.message} | payload=${JSON.stringify(body.payload ?? {}).slice(0, 1500)}`,
+          };
+          const result = await processFailingService(synthetic, autonomyLevel);
+          selfHealingResult = result;
+          console.log(
+            `[events.ingest] Routine breach → processFailingService: action=${result.action} vtid=${result.vtid ?? 'none'}`
+          );
+        } else {
+          console.warn(
+            '[events.ingest] processFailingService not exported — falling back to OASIS-only ingest'
+          );
+        }
+      } catch (autoRouteErr: any) {
+        // Best-effort; don't fail the OASIS event ingest if self-healing routing fails.
+        console.warn(
+          `[events.ingest] Self-healing pipeline failed (non-fatal): ${autoRouteErr.message}`
+        );
+      }
+    }
+
     return res.status(200).json({
       ok: true,
-      event_id: insertedEvent.id
+      event_id: insertedEvent.id,
+      self_healing_action: selfHealingResult.action ?? null,
+      self_healing_vtid: selfHealingResult.vtid ?? null,
+      self_healing_reason: selfHealingResult.reason ?? null,
     });
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);

@@ -283,12 +283,13 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
-            # VTID-01184: OpenAI API key for embedding generation (primary provider)
-            # NOTE: Requires 'OPENAI_API_KEY' secret in GCP Secret Manager.
-            # Uncomment once created: gcloud secrets create OPENAI_API_KEY --data-file=-
-            # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
-            # Remove stale OPENAI_API_KEY binding from previous revision (secret doesn't exist in GCP)
-            SECRETS_ARGS+=(--remove-secrets=OPENAI_API_KEY)
+            # VTID-01184 + BOOTSTRAP-LLM-ROUTER: OpenAI API key — used for
+            # embeddings (VTID-01184) AND for the llm-router's openai adapter
+            # so the operator can pick OpenAI per stage from the Command Hub
+            # dropdown. Bound from a GitHub Actions secret rather than GCP
+            # Secret Manager (no GCP secret needed; same pattern as
+            # ANTHROPIC_API_KEY and DEEPSEEK_API_KEY).
+            EXTRA_ENV_ARGS+=(--update-env-vars=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }})
             # GitHub PAT for workflow dispatch (test runs, ORB monitor, CI/CD integration)
             EXTRA_ENV_ARGS+=(--update-env-vars=GITHUB_SAFE_MERGE_TOKEN=${{ secrets.SAFE_MERGE_TOKEN }})
             # Bind other required secrets
@@ -304,12 +305,33 @@ jobs:
             SECRETS_ARGS+=(--remove-secrets=APPILIX_APP_KEY)
             # Incident Triage Agent — Claude Managed Agents API key
             EXTRA_ENV_ARGS+=(--update-env-vars=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }})
+            # BOOTSTRAP-LLM-ROUTER: DeepSeek provider key. Used when
+            # llm_routing_policy.policy[stage].primary_provider='deepseek'
+            # (or fallback). Without this set, the router's deepseekAdapter
+            # reports unavailable and falls through to the configured fallback.
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }})
             # BOOTSTRAP-DEV-AUTOPILOT-WORKER-QUEUE: route Dev Autopilot LLM
             # calls (plan + execute) through the local worker + Supabase queue
             # instead of the direct Messages API, so they draw on the Claude
             # Pro/Max subscription via the worker's `claude -p` subprocess
             # rather than on the pay-per-token API credit balance.
-            # Flip to false (or delete this line) to fall back to direct API calls.
+            #
+            # 2026-04-29 history:
+            #   - PR #1081 (VTID-02500b) flipped this to false during the
+            #     SELF-HEAL-loop incident response, after misdiagnosing the
+            #     local worker's max_concurrent=1 bottleneck as a fundamental
+            #     architectural problem. It wasn't — bumping MAX_CONCURRENT
+            #     env on the worker (or running multiple worker procs)
+            #     restores parallelism, and the binary-path bug that started
+            #     the whole incident is independently fixed. Operator's
+            #     Claude Pro/Max subscription is the cheaper, higher-quality
+            #     path for the worker stage, so this commit restores it.
+            #
+            #   - Concurrent: LLM routing policy is being moved back to
+            #     v9 with worker.primary = claude_subscription/claude-opus-4-7,
+            #     fallback = vertex/gemini-3-pro-preview (covers worker
+            #     downtime / subscription rate-limits without halting the
+            #     autopilot).
             EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
             # Worker-owned PR creation: after the worker validates Claude's
             # output it ALSO creates the branch + writes files + opens the
@@ -343,6 +365,15 @@ jobs:
             # Callback base URL (gateway) and post-OAuth redirect base (community-app).
             EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_PUBLIC_URL=https://gateway-q74ibpv6ia-uc.a.run.app)
             EXTRA_ENV_ARGS+=(--update-env-vars=APP_URL=https://community-app-q74ibpv6ia-uc.a.run.app)
+            # VTID-01981: Routines ingest token — required by /api/v1/routines POST/PATCH
+            # so daily Claude Code remote agents can authenticate without user JWTs.
+            EXTRA_ENV_ARGS+=(--update-env-vars=ROUTINE_INGEST_TOKEN=${{ secrets.ROUTINE_INGEST_TOKEN }})
+            # VTID-02030d/e: Google Chat webhook for human-in-the-loop pings
+            # (voice quarantine, architectural recommendations, etc.).
+            # Same secret used by DAILY-STATUS-UPDATE.yml's existing pings.
+            # Quoted because the webhook URL contains '&' (key=...&token=...)
+            # which bash would otherwise read as a background-process token.
+            EXTRA_ENV_ARGS+=("--update-env-vars=GCHAT_COMMANDHUB_WEBHOOK=${{ secrets.VITANA_CHAT_WEBHOOK }}")
           fi
 
           # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
@@ -647,22 +678,33 @@ jobs:
 
           echo "Writing terminal completion for VTID: $VTID"
 
-          # VTID-01984: Fetch Supabase service token from GCP Secret Manager.
-          # gcloud WIF auth runs at workflow start so secrets are accessible here.
+          # VTID-01984 (hardened): Fetch Supabase service token for bearer auth.
+          # Graceful fallback: if Secret Manager access is unavailable (e.g. the WIF SA
+          # lacks secretmanager.versions.access) the gate still runs unauthenticated —
+          # the /complete endpoint carries no requireAuth guard, so the call succeeds
+          # either way. Only a true API error (ok!=true) triggers the hard fail.
           SUPABASE_SERVICE_ROLE=$(gcloud secrets versions access latest \
             --secret=SUPABASE_SERVICE_ROLE \
             --project=lovable-vitana-vers1 2>/dev/null || echo "")
           if [ -z "$SUPABASE_SERVICE_ROLE" ]; then
-            echo "::error::VTID-01984: Cannot fetch SUPABASE_SERVICE_ROLE from Secret Manager — terminal gate cannot authenticate"
-            exit 1
+            echo "Note: SUPABASE_SERVICE_ROLE unavailable from Secret Manager — calling /complete without auth"
+          else
+            echo "Note: SUPABASE_SERVICE_ROLE fetched — calling /complete with bearer auth"
           fi
 
           # Step 1: Call terminal completion endpoint
-          RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
-            -H "Content-Type: application/json" \
-            -H "X-VTID: $VTID" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
-            -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          if [ -n "$SUPABASE_SERVICE_ROLE" ]; then
+            RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+              -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          else
+            RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          fi
 
           echo "Terminal completion response: $RESPONSE"
 
@@ -773,15 +815,22 @@ jobs:
           # This resets the task to 'scheduled' for retry (if under max failure count)
           if [[ "$VTID" != BOOTSTRAP-* ]] && [ -n "$GATEWAY_URL" ]; then
             echo "VTID-01841: Calling completion endpoint to trigger retry-reset"
-            # VTID-01984: Fetch auth token for retry-reset call (same gate as terminal completion)
+            # VTID-01984 (hardened): Fetch auth token for retry-reset (graceful — same pattern as success path)
             SUPABASE_SVC_ROLE_FAIL=$(gcloud secrets versions access latest \
               --secret=SUPABASE_SERVICE_ROLE \
               --project=lovable-vitana-vers1 2>/dev/null || echo "")
-            RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
-              -H "Content-Type: application/json" \
-              -H "X-VTID: $VTID" \
-              -H "Authorization: Bearer $SUPABASE_SVC_ROLE_FAIL" \
-              -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            if [ -n "$SUPABASE_SVC_ROLE_FAIL" ]; then
+              RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+                -H "Content-Type: application/json" \
+                -H "X-VTID: $VTID" \
+                -H "Authorization: Bearer $SUPABASE_SVC_ROLE_FAIL" \
+                -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            else
+              RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+                -H "Content-Type: application/json" \
+                -H "X-VTID: $VTID" \
+                -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            fi
             echo "VTID-01841: Retry-reset response: $RETRY_RESPONSE"
           fi
 

@@ -202,6 +202,7 @@ type EscalateReason =
   | 'recovered_externally'
   | 'stale_no_progress'
   | 'stale_agent_exhausted'
+  | 'environmental_blocker'
   | 'probe_verified'
   | 'probe_failed';
 
@@ -496,6 +497,19 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
       // Before tombstoning, try a deep triage agent investigation — it may
       // produce a DIFFERENT approach that feeds a fresh self-healing cycle.
       const agentAttempts = Number((row.diagnosis || {} as any).triage_agent_attempts || 0);
+
+      // ENV-ERROR SHORT-CIRCUIT (2026-04-28 incident): when the failure class
+      // is `environmental_blocker` (binary missing, OOM, network, container
+      // recycle), the bridge already escalated and explicitly skipped triage
+      // because the agent can't fix infrastructure. Don't run another triage
+      // here — it would spawn a SELF-HEAL retry VTID via createFreshVtid…,
+      // and that VTID would just hit the same env blocker again on its next
+      // dispatch. Tombstone immediately instead.
+      if (row.failure_class === 'environmental_blocker') {
+        console.log(`${LOG_PREFIX} env-blocker for ${row.vtid}: skipping triage agent + spawn (operator must fix host)`);
+        await markEscalated(row, 'environmental_blocker', http_status);
+        continue;
+      }
 
       if (agentAttempts < MAX_TRIAGE_ATTEMPTS) {
         console.log(`${LOG_PREFIX} Spawning triage agent for ${row.vtid} (attempt ${agentAttempts + 1}/${MAX_TRIAGE_ATTEMPTS})`);

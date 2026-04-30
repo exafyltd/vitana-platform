@@ -117,6 +117,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const schedulerRouter = require('./routes/scheduler').default;
   // Scheduled notification webhook endpoints (Cloud Scheduler triggers)
   const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
+  // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
+  const remindersRouter = require('./routes/reminders').default;
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   const topicsRouter = require('./routes/topics').default;
   // VTID-01092: Services + Products as Relationship Memory
@@ -180,6 +182,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const feedbackCorrectionRouter = require('./routes/feedback-correction').default;
   // VTID-01097: Diary Templates Gateway - guided diary templates
   const diaryRouter = require('./routes/diary').default;
+  // VTID-02047: Unified Feedback Pipeline - bug reports, support, claims, account
+  const feedbackRouter = require('./routes/feedback').default;
+  // VTID-02603: Feedback intake & specialist handoff bridge
+  const feedbackIntakeRouter = require('./routes/feedback-intake').default;
+  // VTID-02605: Feedback admin (Command Hub supervisor surfaces)
+  const feedbackAdminRouter = require('./routes/feedback-admin').default;
+  // VTID-02047: Feedback actions (supervisor draft/approve/reject + user confirm/reopen)
+  const feedbackActionsAdmin = require('./routes/feedback-actions').adminRouter;
+  const feedbackActionsUser = require('./routes/feedback-actions').userRouter;
+  // VTID-02047 Phase 5: Specialists management (persona editor, tool/KB bindings, audit)
+  const specialistsAdminRouter = require('./routes/specialists-admin').default;
+  // VTID-02047 Phase 5: 3rd-party connection manager (Stripe/Auth0/Zendesk stubs)
+  const specialistsConnectionsRouter = require('./routes/specialists-connections').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
@@ -224,6 +239,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // Agents Registry — single source of truth for every LLM-powered workload
   const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
+  // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
+  const { routinesRouter } = require('./routes/routines');
+  // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B routines
+  const { routineAuditsRouter } = require('./routes/routine-audits');
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab investigations
   const { triageAgentRouter } = require('./routes/triage-agent');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
@@ -279,6 +298,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const intentBoardRouter = intentEngineEnabled ? require('./routes/intent-board').default : null;
   const intentCategoriesRouter = intentEngineEnabled ? require('./routes/intent-categories').default : null;
   const adminIntentEngineRouter = intentEngineEnabled ? require('./routes/admin-intent-engine').default : null;
+  // VTID-DANCE-D4: public community members directory (always on)
+  const communityMembersRouter = require('./routes/community-members').default;
+  // E2: profile partner_preferences + service_offerings PATCH endpoints
+  const profilePrefsRouter = require('./routes/profile-prefs').default;
+  // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
+  const intentOpenAsksRouter = intentEngineEnabled ? require('./routes/intent-open-asks').default : null;
+  // VTID-DANCE-D11.B: pre-post candidate scan
+  const intentScanRouter = intentEngineEnabled ? require('./routes/intent-scan').default : null;
+  // VTID-DANCE-D7: auto-templated demands (composer prefill source)
+  const intentTemplatesRouter = intentEngineEnabled ? require('./routes/intent-templates').default : null;
+  // VTID-DANCE-D6: admin trust-tier flip (operator only)
+  const adminTrustTierRouter = require('./routes/admin-trust-tier').default;
+  // VTID-DANCE-D6: Stripe Connect webhook scaffold
+  const paymentsStripeWebhookRouter = require('./routes/payments-stripe-webhook').default;
+  // VTID-DANCE-D10: shareable intent posts + public /p/:id viewer
+  const intentsShareRouter = intentEngineEnabled ? require('./routes/intents-share').default : null;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
@@ -307,6 +342,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminSystemKbRouter = require('./routes/admin-system-kb').default;
   // VTID-01972 Phase 4 — embedding backfill admin endpoint
   const adminEmbeddingsBackfillRouter = require('./routes/admin-embeddings-backfill').default;
+  // VTID-02026 Phase 6a — Memory Broker smoke endpoint (exafy_admin only)
+  const adminMemoryBrokerRouter = require('./routes/admin-memory-broker').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -339,6 +376,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
+  const opsActionRequiredRouter = require('./routes/ops-action-required').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -547,6 +586,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Agents Registry — replaces the hardcoded subagents array with a real, queryable registry
   mountRouterSync(app, '/', agentsRegistryRouter, { owner: 'agents-registry' });
 
+  // VTID-01981: Routines — catalog + run history for daily Claude Code remote agents
+  mountRouterSync(app, '/', routinesRouter, { owner: 'routines' });
+
+  // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B
+  mountRouterSync(app, '/', routineAuditsRouter, { owner: 'routine-audits' });
+
   // Incident Triage Agent — Claude Managed Agents proxy for Voice Lab
   mountRouterSync(app, '/api/v1/agents/triage', triageAgentRouter, { owner: 'triage-agent' });
 
@@ -666,6 +711,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
   // Scheduled notification webhooks (Cloud Scheduler triggers)
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
+  mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   mountRouterSync(app, '/api/v1/topics', topicsRouter, { owner: 'topics' });
@@ -771,6 +817,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   if (intentMatchesRouter) mountRouterSync(app, '/api/v1/intent-matches', intentMatchesRouter, { owner: 'intent-matches' });
   if (intentBoardRouter) mountRouterSync(app, '/api/v1/intent-board', intentBoardRouter, { owner: 'intent-board' });
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
+  // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
+  mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
+  mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
+  if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
+  if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
+  if (intentTemplatesRouter) mountRouterSync(app, '/api/v1', intentTemplatesRouter, { owner: 'intent-templates' });
+  mountRouterSync(app, '/api/v1', adminTrustTierRouter, { owner: 'admin-trust-tier' });
+  // Stripe webhook lives at root, no /api/v1 prefix.
+  mountRouterSync(app, '/', paymentsStripeWebhookRouter, { owner: 'payments-stripe-webhook' });
+  // VTID-DANCE-D10: mounted at root for both /api/v1/intents/:id/share AND /p/:id (the share router defines absolute paths)
+  if (intentsShareRouter) mountRouterSync(app, '/', intentsShareRouter, { owner: 'intents-share' });
   if (adminIntentEngineRouter) mountRouterSync(app, '/api/v1/admin/intent-engine', adminIntentEngineRouter, { owner: 'admin-intent-engine' });
 
   // Admin: Signup Funnel Tracking & Outreach
@@ -809,6 +866,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/system-kb', adminSystemKbRouter, { owner: 'admin-system-kb' });
   // VTID-01972 Phase 4 admin endpoint for backfilling NULL embeddings on memory_items
   mountRouterSync(app, '/api/v1', adminEmbeddingsBackfillRouter, { owner: 'admin-embeddings-backfill' });
+  // VTID-02026 Phase 6a Memory Broker smoke endpoint
+  mountRouterSync(app, '/api/v1', adminMemoryBrokerRouter, { owner: 'admin-memory-broker' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
@@ -842,8 +901,32 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification
   mountRouterSync(app, '/api/v1/self-healing', selfHealingRouter, { owner: 'self-healing' });
 
+  // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
+  mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
+
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
+
+  // VTID-02047: Unified Feedback Pipeline - single inbox for user-originated signals
+  // Mounted under /tickets because /api/v1/feedback is already the VTID-01121
+  // feedback-correction router (different concept, same word).
+  mountRouterSync(app, '/api/v1/feedback/tickets', feedbackRouter, { owner: 'feedback-tickets' });
+
+  // VTID-02603: Feedback intake & specialist handoff bridge
+  mountRouterSync(app, '/api/v1/feedback/intake', feedbackIntakeRouter, { owner: 'feedback-intake' });
+
+  // VTID-02605: Feedback admin (Command Hub supervisor)
+  mountRouterSync(app, '/api/v1/admin/feedback', feedbackAdminRouter, { owner: 'feedback-admin' });
+
+  // VTID-02047: Feedback actions — supervisor + user. Two separate routers
+  // mounted at distinct paths so each router's internal routes resolve.
+  mountRouterSync(app, '/api/v1/admin/feedback', feedbackActionsAdmin, { owner: 'feedback-actions-admin' });
+  mountRouterSync(app, '/api/v1/feedback/tickets', feedbackActionsUser, { owner: 'feedback-actions-user' });
+
+  // VTID-02047 Phase 5: Specialists management UI backend
+  mountRouterSync(app, '/api/v1/admin/specialists', specialistsAdminRouter, { owner: 'specialists-admin' });
+  // VTID-02047 Phase 5: 3rd-party connection manager (mounted on same prefix)
+  mountRouterSync(app, '/api/v1/admin/specialists', specialistsConnectionsRouter, { owner: 'specialists-connections' });
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
@@ -1102,6 +1185,31 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Self-healing reconciler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-01990: Idle session closer — writes user_session_summaries rows
+      // for text-channel threads idle >= 4h. Voice already writes its own
+      // summaries on disconnect. Gated by IDLE_SESSION_CLOSER_ENABLED.
+      try {
+        const { startIdleSessionCloser } = require('./services/idle-session-closer');
+        startIdleSessionCloser();
+      } catch (error) {
+        console.warn('⚠️ Idle session closer initialization failed (non-fatal):', error);
+      }
+
+      // VTID-01992: Async intent embedding worker. Polls for un-embedded
+      // user_intents rows and backfills via Gemini. Acts as insurance
+      // when inline is on; primary embedder when FEATURE_INTENT_EMBEDDING_ASYNC=true.
+      try {
+        const embedWorkerEnabled = process.env.INTENT_EMBEDDING_WORKER_ENABLED !== 'false';
+        if (embedWorkerEnabled) {
+          const { startIntentEmbeddingWorker } = require('./services/intent-embedding-worker');
+          startIntentEmbeddingWorker();
+        } else {
+          console.log('⏸️ Intent embedding worker disabled (INTENT_EMBEDDING_WORKER_ENABLED=false)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Intent embedding worker initialization failed (non-fatal):', error);
       }
 
       // OAuth WebView fix Phase 5: refresh expiring social_connections

@@ -136,13 +136,150 @@ export async function writeAutopilotFailure(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Success / rolled-back writer (VTID-02001)
+//
+//  self_healing_log used to be a failure-only log: writeAutopilotFailure
+//  was the only writer, so the Self-Healing screen showed escalations
+//  forever and never showed a single fix landing — even though
+//  dev_autopilot_executions had `completed` and `reverted` rows. This
+//  writer surfaces the success side of the pipeline.
+//
+//  Conventions:
+//    - vtid       = `VTID-DA-<exec-short>` (matches failure VTID format)
+//    - endpoint   = the finding's file_path (matches failure rows for that
+//                   finding so they sit together in the table)
+//    - failure_class = `auto_fix_applied` | `auto_fix_reverted` (kept in
+//                      the failure_class column because the schema reuses
+//                      it; the outcome column is the source of truth)
+//    - confidence = 1.0 for completed (the executor + verifier both
+//                   passed), 0.5 for reverted (the executor passed but
+//                   the verifier rolled it back)
+//    - outcome    = `fixed` | `rolled_back`
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AutopilotSuccessArgs {
+  /** `VTID-DA-<exec-short>` */
+  vtid: string;
+  /** Finding's file_path; falls back to `autopilot.execute` if unknown. */
+  endpoint: string;
+  /** 'fixed' for completed, 'rolled_back' for reverted. */
+  outcome: 'fixed' | 'rolled_back';
+  /** Structured diagnosis: include pr_url, plan_version, completed_at, etc. */
+  diagnosis: Record<string, unknown>;
+  /** Override the default confidence if needed. */
+  confidence?: number;
+  /** Override resolved_at (for backfill). Defaults to now(). */
+  resolvedAtIso?: string;
+  /** Override created_at (for backfill so timeline reflects when the fix
+   *  actually happened, not when we backfilled). */
+  createdAtIso?: string;
+}
+
+export async function writeAutopilotSuccess(
+  s: SupaConfig,
+  args: AutopilotSuccessArgs,
+): Promise<void> {
+  const failure_class =
+    args.outcome === 'fixed' ? 'auto_fix_applied' : 'auto_fix_reverted';
+  const confidence =
+    args.confidence ?? (args.outcome === 'fixed' ? 1.0 : 0.5);
+  try {
+    // Dedup: same vtid + endpoint + failure_class within DEDUP_WINDOW_MS.
+    // Success rows shouldn't repeat for the same execution — patchExecution
+    // can fire twice if a transient PostgREST retry happens — so the dedup
+    // saves us from double-counting.
+    const sinceIso = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+    const dedupQuery =
+      `?vtid=eq.${encodeURIComponent(args.vtid)}` +
+      `&endpoint=eq.${encodeURIComponent(args.endpoint)}` +
+      `&failure_class=eq.${encodeURIComponent(failure_class)}` +
+      `&created_at=gte.${encodeURIComponent(sinceIso)}` +
+      `&select=id&limit=1`;
+    const dedupRes = await fetch(`${s.url}/rest/v1/self_healing_log${dedupQuery}`, {
+      headers: { apikey: s.key, Authorization: `Bearer ${s.key}` },
+    });
+    if (dedupRes.ok) {
+      const existing = (await dedupRes.json()) as Array<{ id: string }>;
+      if (Array.isArray(existing) && existing.length > 0) {
+        return;
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      vtid: args.vtid,
+      endpoint: args.endpoint,
+      failure_class,
+      confidence,
+      diagnosis: { stage: 'execute_run', ...args.diagnosis },
+      outcome: args.outcome,
+      attempt_number: 1,
+      resolved_at: args.resolvedAtIso || new Date().toISOString(),
+    };
+    if (args.createdAtIso) body.created_at = args.createdAtIso;
+
+    const res = await fetch(`${s.url}/rest/v1/self_healing_log`, {
+      method: 'POST',
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn(
+        `${LOG_PREFIX} self_healing_log success POST failed (${res.status}): ${text.slice(0, 200)}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} self_healing_log success POST threw:`, err);
+  }
+}
+
 /**
  * Detect the worker spawn error pattern that's been silently failing plan
  * generation: `failed to spawn ...claude... ENOENT`. When the worker can't
  * find the Claude Code binary, the gateway should fall back to direct
  * Messages API (when ANTHROPIC_API_KEY is set) instead of escalating.
+ *
+ * Patterns matched:
+ *  - "spawn ...claude... ENOENT" — Node's standard spawn ENOENT
+ *  - "Is Claude Code installed and on PATH" — autopilot-worker/src/claude.ts
+ *    appends this to every spawn error
+ *  - "failed to spawn ...antigravity-server" / ".../claude-code-2.x" —
+ *    when CLAUDE_CLI_PATH points at a stale Antigravity extension version
+ *    that no longer exists (the IDE updated to a newer minor version).
+ *    This was the 2026-04-28 outage: 2.1.114 → 2.1.121 left every dev_autopilot
+ *    execution failing in seconds and the reconciler created a SELF-HEAL retry
+ *    VTID per failure, looping forever.
  */
 export function isWorkerBinaryMissing(errorMessage: string | undefined | null): boolean {
   if (!errorMessage) return false;
-  return /spawn .*claude.*ENOENT|Is Claude Code installed and on PATH/i.test(errorMessage);
+  return /spawn .*claude.*ENOENT|Is Claude Code installed and on PATH|failed to spawn .*(?:antigravity-server|claude-code-\d|\.claude\/)/i.test(errorMessage);
+}
+
+/**
+ * Generic environmental-blocker detector. Anything that returns true here
+ * means the failure is NOT a code defect we can fix by re-running triage —
+ * it's the host environment (missing binary, OOM, disk full, network
+ * unreachable). The bridge + reconciler must short-circuit on these so we
+ * don't spawn SELF-HEAL retry VTIDs that the executor can't possibly run.
+ *
+ * Add new patterns here as new infrastructure failures show up. Anything
+ * that matches must NOT trigger triage agent calls — those cost money + tokens
+ * and produce useless reports ("the binary is missing, install it") which
+ * the system can't act on autonomously.
+ */
+export function isEnvironmentalBlocker(errorMessage: string | undefined | null): boolean {
+  if (!errorMessage) return false;
+  if (isWorkerBinaryMissing(errorMessage)) return true;
+  // 2026-04-29: also short-circuit on "worker-queue wait time" — the local
+  // autopilot-worker is single-threaded (max_concurrent=1), so if the queue
+  // backs up the gateway times out per-task at 720s before the worker even
+  // gets to run the LLM. That's a capacity problem, not a code defect; the
+  // triage agent can't fix it.
+  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout/i.test(errorMessage);
 }

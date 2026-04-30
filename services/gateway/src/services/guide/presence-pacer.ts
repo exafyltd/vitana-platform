@@ -34,7 +34,12 @@ export type ProactiveSurface =
   | 'voice_opener'
   // BOOTSTRAP-DYK-TOUR: Did-You-Know tour surfaces
   | 'did_you_know_card'
-  | 'voice_opener_tour';
+  | 'voice_opener_tour'
+  // V2 Proactive Initiative Engine — voice surface that pairs the opener
+  // with executable actions (diary, autopilot activate, network message).
+  // Independent daily-cap slot; mutual exclusion vs voice_opener_tour is
+  // enforced inside the brain composer, not the pacer.
+  | 'voice_opener_initiative';
 
 export type PresenceLevel = 'quiet' | 'balanced' | 'engaged';
 

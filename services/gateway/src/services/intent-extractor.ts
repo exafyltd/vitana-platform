@@ -46,6 +46,9 @@ const CRITICAL_FIELDS_BY_KIND: Record<IntentKind, string[]> = {
   partner_seek: ['title', 'scope'],
   social_seek: ['title', 'scope', 'kind_payload.topic'],
   mutual_aid: ['title', 'scope', 'kind_payload.direction', 'kind_payload.object_or_skill'],
+  // VTID-DANCE-D2
+  learning_seek: ['title', 'scope', 'kind_payload.learning'],
+  mentor_seek:   ['title', 'scope', 'kind_payload.teaching'],
 };
 
 const SYSTEM_PROMPT_BY_KIND: Record<IntentKind, string> = {
@@ -65,12 +68,22 @@ Leave fields null when unclear. Confidence reflects extraction certainty, not sl
   "confidence": <0-1>
 }`,
   activity_seek: `Extract an activity_seek intent. Return JSON only:
-{ "category": "<one of: sport.tennis, sport.running, sport.hiking, sport.cycling, sport.yoga, sport.gym, creative.music, creative.painting, learning.language, learning.book_club, OR null>",
+{ "category": "<one of: sport.tennis, sport.running, sport.hiking, sport.cycling, sport.yoga, sport.gym, creative.music, creative.painting, learning.language, learning.book_club, dance.social_partner, dance.group_outing, dance.practice, dance.flash_mob, OR null>",
   "title": "<headline ≤140>",
   "scope": "<description 20-1500>",
   "kind_payload": { "activity": "<canonical activity name>", "time_windows": [<array of strings like 'tue 18:00-20:00'>], "location_label": "<city/area or null>", "group_size_pref": "<1on1|small_group|large_group|null>", "skill_level": "<beginner|intermediate|advanced|null>" },
   "confidence": <0-1>
-}`,
+}
+
+DANCE category routing for activity_seek:
+- "dance partner / someone to dance with" → dance.social_partner
+- "going out dancing / Saturday night / nightclub" → dance.group_outing
+- "practice / training / weekly sessions" → dance.practice
+- "flash mob / crew / group performance" → dance.flash_mob
+
+When category starts with dance.*, ALSO include a top-level "dance" object in kind_payload:
+  "dance": { "variety": "<salsa|tango|bachata|kizomba|swing|ballroom|hiphop|contemporary|other|null>", "level_target": "<beginner|social|intermediate|advanced|professional|null>", "role_pref": "<lead|follow|either|null>", "formality": "<casual|social|professional|null>" }
+Leave fields null when not stated. The matcher reads dance.variety + dance.level_target + dance.role_pref for fine-grained scoring.`,
   partner_seek: `Extract a partner_seek intent. Return JSON only — be PII-light and respect privacy:
 { "category": "<life_partner|dating|companionship|null>",
   "title": "<short tasteful headline ≤140>",
@@ -92,6 +105,32 @@ Leave fields null when unclear. Confidence reflects extraction certainty, not sl
   "kind_payload": { "direction": "<lend|borrow|give|receive|help_me>", "object_or_skill": "<short noun phrase>", "duration_estimate": "<short string or null>", "location_label": "<city/area>" },
   "confidence": <0-1>
 }`,
+  // VTID-DANCE-D2: learning_seek + mentor_seek wired with optional dance facet.
+  // The dance enrichment helper adds a kind_payload.dance block post-extract
+  // when category starts with 'dance.'.
+  learning_seek: `Extract a learning_seek intent (user wants to LEARN a skill from a teacher). Return JSON only:
+{ "category": "<one of: dance.learning.salsa, dance.learning.tango, dance.learning.bachata, dance.learning.kizomba, dance.learning.swing, dance.learning.ballroom, dance.learning.hiphop, dance.learning.contemporary, dance.learning.other, OR null when topic is non-dance>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": {
+    "learning": { "topic": "<canonical skill noun e.g. 'salsa'>", "mode_pref": "<in_person|online|either|null>", "secondary_modes": [<strings>], "duration_pref": "<short string or null>", "urgency": "<asap|this_month|flexible|null>" },
+    "dance": { "variety": "<salsa|tango|bachata|kizomba|swing|ballroom|hiphop|contemporary|other|null>", "level_target": "<beginner|social|intermediate|advanced|professional|null>", "role_pref": "<lead|follow|either|null>", "formality": "<casual|social|professional|null>" },
+    "counterparty_filter": { "gender": "<string or null>", "age_min": <number or null>, "age_max": <number or null>, "max_radius_km": <number or null>, "location_label": "<city or null>", "max_price_cents": <number or null> }
+  },
+  "confidence": <0-1>
+}
+Set "dance" only if the topic is a dance variety; leave the whole "dance" object out otherwise. Set "counterparty_filter" only when the user explicitly states preferences (gender/age/radius/price); omit otherwise.`,
+  mentor_seek: `Extract a mentor_seek intent (user is OFFERING to teach a skill). Return JSON only:
+{ "category": "<one of: dance.teaching.salsa, dance.teaching.tango, dance.teaching.bachata, dance.teaching.kizomba, dance.teaching.swing, dance.teaching.ballroom, dance.teaching.hiphop, dance.teaching.contemporary, dance.teaching.other, OR null when topic is non-dance>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": {
+    "teaching": { "topic": "<canonical skill noun>", "modes_offered": [<'in_person','online','hybrid'>], "price_cents": <number or null — leave null if free or not stated>, "currency": "<ISO 4217, default EUR>", "slot_windows": [<strings like 'tue 19:00-20:30'>], "level_targets": [<'beginner','intermediate','advanced'>] },
+    "dance": { "variety": "<same enum as learning_seek or null>", "role_taught": "<lead|follow|both|null>", "formality": "<casual|social|professional|null>" }
+  },
+  "confidence": <0-1>
+}
+"dance" only when teaching a dance variety. price_cents=null means "free" or "not stated"; the dispatcher confirms free-vs-paid with the user.`,
 };
 
 function parseExtractorResponse(raw: string, kind: IntentKind): ExtractedIntent {

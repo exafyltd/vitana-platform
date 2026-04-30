@@ -100,6 +100,69 @@ export async function computeForIntent(intentId: string): Promise<number> {
     console.warn(`[VTID-01973] product federation failed: ${err.message}`);
   }
 
+  // 3. VTID-DANCE-D2: federate dance-category intents over live_rooms +
+  // meetups so a student looking for salsa instantly sees both peer teachers
+  // AND open paid classes. Best-effort.
+  try {
+    const { data: src } = await supabase
+      .from('user_intents')
+      .select('intent_kind, category, requester_vitana_id, kind_payload')
+      .eq('intent_id', intentId)
+      .maybeSingle();
+
+    if (src && typeof (src as any).category === 'string' && ((src as any).category as string).startsWith('dance.')) {
+      const danceVariety = ((src as any).kind_payload?.dance?.variety) as string | undefined;
+      const now = new Date();
+      const horizon = new Date(now.getTime() + 30 * 86_400_000); // next 30 days
+
+      // live_rooms federation. Match on category prefix or variety presence.
+      const { data: rooms } = await supabase
+        .from('live_rooms')
+        .select('id, title, category, starts_at, location_label, price_cents, dance_payload')
+        .ilike('category', 'dance.%')
+        .gte('starts_at', now.toISOString())
+        .lte('starts_at', horizon.toISOString())
+        .limit(5);
+
+      if (Array.isArray(rooms) && rooms.length > 0) {
+        const candidateRows = rooms
+          .map((r: any) => {
+            // Score: 0.50 base + 0.20 if variety matches.
+            let score = 0.5;
+            const roomVariety = (r.dance_payload?.variety as string | undefined)
+              || (r.category && typeof r.category === 'string' ? r.category.split('.').pop() : undefined);
+            if (danceVariety && roomVariety && danceVariety === roomVariety) score += 0.2;
+            return {
+              intent_a_id: intentId,
+              intent_b_id: null,
+              vitana_id_a: (src as any).requester_vitana_id,
+              vitana_id_b: null,
+              external_target_kind: 'live_room',
+              external_target_id: r.id,
+              kind_pairing: `${(src as any).intent_kind}::live_room`,
+              score,
+              match_reasons: {
+                source: 'live_rooms_federation',
+                room_category: r.category,
+                room_starts_at: r.starts_at,
+                price_cents: r.price_cents,
+                variety_match: Boolean(danceVariety && roomVariety && danceVariety === roomVariety),
+              },
+              compass_aligned: false,
+              state: 'new',
+            };
+          })
+          .sort((a: any, b: any) => b.score - a.score);
+
+        if (candidateRows.length > 0) {
+          await supabase.from('intent_matches').insert(candidateRows as any);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D2] dance federation failed: ${err.message}`);
+  }
+
   return userMatchesCount || 0;
 }
 

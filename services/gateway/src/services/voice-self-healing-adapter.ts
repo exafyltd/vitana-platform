@@ -28,10 +28,11 @@ import {
 } from './voice-session-classifier';
 import { getVoiceSpecHint } from './voice-spec-hints';
 import { lookupSpecMemory } from './voice-spec-memory';
-import { isDispatchAllowed } from './voice-recurrence-sentinel';
+import { isDispatchAllowed, appendVerdict, evaluateAndQuarantine } from './voice-recurrence-sentinel';
 import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
 import { appendShadowLog } from './voice-shadow-mode';
+import { classifyQualityFromSessionStop } from './voice-failure-taxonomy';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -103,6 +104,20 @@ export interface DispatchOptions {
    * (used by future Synthetic Voice Probe — PR #4).
    */
   metadata?: Record<string, unknown>;
+  /**
+   * VTID-01994: session-end metrics for quality classification. Supplied
+   * by the orb-live.ts session-stop hooks. When present, the adapter runs
+   * the quality classifier (no error events required) and routes detected
+   * quality failures to the Architecture Investigator regardless of mode.
+   */
+  sessionMetrics?: {
+    audio_in_chunks?: number;
+    audio_out_chunks?: number;
+    duration_ms?: number;
+    turn_count?: number;
+    user_turns?: number;
+    model_turns?: number;
+  };
 }
 
 export type DispatchAction =
@@ -115,6 +130,7 @@ export type DispatchAction =
   | 'spec_memory_blocked'
   | 'sentinel_quarantined'
   | 'sentinel_probation_capped'
+  | 'quality_failure_classified'
   | 'error';
 
 export interface DispatchResult {
@@ -237,6 +253,110 @@ async function postSelfHealingReport(
  * result describing what happened. Does not throw — all internal errors
  * are surfaced as `action: 'error'`.
  */
+/**
+ * VTID-01994: Handle a quality failure detected from session-stop metrics.
+ *
+ * Quality failures don't have explicit error events — they're patterns
+ * inferred from audio_in:audio_out ratios, turn counts, durations. The
+ * fix is usually at the prompt or model-config layer, not the pipeline
+ * layer, so we route directly to the Architecture Investigator instead
+ * of the deterministic-spec path.
+ *
+ * Rate limiting:
+ *   - Sentinel quarantine check: if (class, signature) is quarantined,
+ *     skip investigator (record suppressed verdict only).
+ *   - Sentinel auto-quarantines after 5 dispatches/24h via the burst
+ *     threshold, so worst-case investigator spawns are bounded.
+ *
+ * Independent of the mode flag — quality failures always investigate.
+ */
+async function handleQualityFailure(
+  qc: { class: string; normalized_signature: string },
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
+  // Always append a verdict to the history table — Sentinel reads this
+  // for threshold evaluation. Treat quality failures as 'rollback' verdicts
+  // (the model didn't deliver a usable response, equivalent to a fix
+  // that didn't hold).
+  await appendVerdict({
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    verdict: 'rollback',
+    vtid: null,
+  }).catch(() => { /* best-effort */ });
+
+  // Sentinel gate: if already quarantined, don't spawn another investigator.
+  const decision = await isDispatchAllowed(qc.class, qc.normalized_signature);
+  if (!decision.allowed) {
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-VOICE-HEALING',
+        type: 'voice.healing.dispatch.suppressed',
+        source: 'voice-self-healing-adapter',
+        status: 'warning',
+        message: `Quality failure suppressed by Sentinel: ${qc.class} (${decision.reason})`,
+        payload: {
+          class: qc.class,
+          normalized_signature: qc.normalized_signature,
+          reason: decision.reason,
+          session_id: opts.sessionId,
+          trigger: 'quality_failure',
+        },
+      });
+    } catch { /* best-effort */ }
+    return {
+      action: 'sentinel_quarantined',
+      class: qc.class,
+      normalized_signature: qc.normalized_signature,
+      detail: `quality:${decision.reason}`,
+    };
+  }
+
+  // Evaluate thresholds — may quarantine if rate is too high.
+  const quarantineReason = await evaluateAndQuarantine(qc.class, qc.normalized_signature);
+
+  // Spawn the Architecture Investigator (fire-and-forget so we don't block
+  // the orb-live.ts session-stop hook). Investigator output is a report
+  // only; never auto-executes.
+  spawnInvestigator({
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    trigger_reason: 'quality_failure',
+    notes: `Quality failure detected from session metrics: audio_in=${opts.sessionMetrics?.audio_in_chunks ?? '?'}, audio_out=${opts.sessionMetrics?.audio_out_chunks ?? '?'}, turns=${opts.sessionMetrics?.turn_count ?? '?'}, duration_ms=${opts.sessionMetrics?.duration_ms ?? '?'}.${quarantineReason ? ' (Sentinel just quarantined this signature.)' : ''}`,
+  }).catch((err) => {
+    console.warn('[voice-self-healing-adapter] quality investigator spawn failed:', err?.message ?? err);
+  });
+
+  // Emit a clear telemetry event so it's visible in the panel.
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-VOICE-HEALING',
+      type: 'voice.healing.dispatched',
+      source: 'voice-self-healing-adapter',
+      status: 'warning',
+      message: `Quality failure detected: ${qc.class}. Investigator spawned (mode-independent).`,
+      payload: {
+        class: qc.class,
+        normalized_signature: qc.normalized_signature,
+        trigger: 'quality_failure',
+        session_id: opts.sessionId,
+        audio_in_chunks: opts.sessionMetrics?.audio_in_chunks,
+        audio_out_chunks: opts.sessionMetrics?.audio_out_chunks,
+        turn_count: opts.sessionMetrics?.turn_count,
+        duration_ms: opts.sessionMetrics?.duration_ms,
+        sentinel_quarantined_now: !!quarantineReason,
+      },
+    });
+  } catch { /* best-effort */ }
+
+  return {
+    action: 'quality_failure_classified',
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    detail: quarantineReason ? `quarantined:${quarantineReason}` : 'investigator_spawned',
+  };
+}
+
 async function _dispatchVoiceFailureCore(
   opts: DispatchOptions,
 ): Promise<DispatchResult> {
@@ -244,9 +364,30 @@ async function _dispatchVoiceFailureCore(
     return { action: 'synthetic_skipped' };
   }
 
+  // VTID-01994: Quality classifier — runs BEFORE the mode check so quality
+  // failures (model under-responds, no engagement, low turn progression)
+  // always trigger the Architecture Investigator regardless of mode. Mode
+  // continues to gate the actual /report dispatch path that can change code;
+  // investigator output is read-only and always allowed because the user
+  // explicitly asked for visibility on every broken session.
+  let qualityResult: DispatchResult | null = null;
+  if (opts.sessionMetrics) {
+    const qc = classifyQualityFromSessionStop({
+      audio_in_chunks: opts.sessionMetrics.audio_in_chunks ?? 0,
+      audio_out_chunks: opts.sessionMetrics.audio_out_chunks ?? 0,
+      duration_ms: opts.sessionMetrics.duration_ms ?? 0,
+      turn_count: opts.sessionMetrics.turn_count ?? 0,
+      user_turns: opts.sessionMetrics.user_turns,
+      model_turns: opts.sessionMetrics.model_turns,
+    });
+    if (qc) {
+      qualityResult = await handleQualityFailure(qc, opts);
+    }
+  }
+
   const mode = await getVoiceSelfHealingMode();
   if (mode === 'off') {
-    return { action: 'mode_off' };
+    return qualityResult ?? { action: 'mode_off' };
   }
 
   let classification: VoiceClassification;
