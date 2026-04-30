@@ -35318,33 +35318,36 @@ function initManualsState() {
 async function fetchManualsForTenant(tenant) {
     state.manuals.loading = true;
     state.manuals.error = null;
-    renderCurrentRoute();
+    renderApp();
     try {
         const prefix = 'kb/instruction-manual/' + tenant + '/';
         const qs = new URLSearchParams({ path_prefix: prefix });
         const response = await fetch('/api/v1/admin/system-kb/docs?' + qs.toString(), {
-            headers: { Authorization: 'Bearer ' + getAuthToken() },
+            headers: state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {},
             credentials: 'include',
         });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const data = await response.json();
-        state.manuals.docs = data.docs || data || [];
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.error || ('HTTP ' + response.status));
+        }
+        const json = await response.json();
+        state.manuals.docs = json.documents || json.docs || [];
     } catch (err) {
         state.manuals.error = err && err.message ? err.message : String(err);
         state.manuals.docs = [];
     } finally {
         state.manuals.loading = false;
-        renderCurrentRoute();
+        renderApp();
     }
 }
 
 async function fetchManualDoc(id) {
     state.manuals.selectedId = id;
     state.manuals.selectedDoc = null;
-    renderCurrentRoute();
+    renderApp();
     try {
         const response = await fetch('/api/v1/admin/system-kb/docs/' + encodeURIComponent(id), {
-            headers: { Authorization: 'Bearer ' + getAuthToken() },
+            headers: state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {},
             credentials: 'include',
         });
         if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -35352,7 +35355,7 @@ async function fetchManualDoc(id) {
     } catch (err) {
         state.manuals.error = err && err.message ? err.message : String(err);
     } finally {
-        renderCurrentRoute();
+        renderApp();
     }
 }
 
