@@ -6428,6 +6428,22 @@ function buildTemporalJourneyContextSection(
     lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
   }
 
+  // VTID-02637: when this is a transparent reconnect (isReconnect=true) we
+  // also want to suppress the ## TONE RULES baseline phrasings below ("how
+  // can I help", "I am listening", etc.) because they leak into the model's
+  // first utterance after reconnect even when bucket says "stay silent".
+  // Append a final hard override that wins on recency.
+  if (isReconnect) {
+    lines.push('');
+    lines.push('## RECONNECT FINAL OVERRIDE — VTID-02637 (HIGHEST PRIORITY, OVERRIDES EVERYTHING ABOVE)');
+    lines.push('This entire turn is a transparent server-side resume. The user did not perceive any pause.');
+    lines.push('- DO NOT speak first. Output zero audio. Output zero text. Wait for the user to speak.');
+    lines.push('- Even short phrases are forbidden: NO "I\'m here", NO "I\'m listening", NO "I\'m back", NO "go ahead", NO "yes?", NO "mhm", NO "hello again". NONE.');
+    lines.push('- Ignore any "open with one phrase", "baseline register", or "FALLBACK" instructions above. They do NOT apply on reconnect.');
+    lines.push('- The very first audio/text you emit MUST be a direct response to whatever the user says next, with no prefix acknowledgment of any pause or interruption.');
+    lines.push('- If the user says nothing, you say nothing. Silence is the correct behavior here.');
+  }
+
   lines.push('');
   lines.push('## TONE RULES (CRITICAL)');
   lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
