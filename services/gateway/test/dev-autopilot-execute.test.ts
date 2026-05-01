@@ -145,6 +145,95 @@ describe('parseExecutionJson (delimiter format)', () => {
     const out = parseExecutionJson('no delimiters here at all');
     expect('error' in out).toBe(true);
   });
+
+  // VTID-02652: truncation + body-consistency guards
+  describe('VTID-02652 hallucination guards', () => {
+    it('rejects truncated output where a second FILE block has no closing END', () => {
+      // Mirrors PR #1102: model emits PR_BODY claiming work on multiple files,
+      // emits one complete FILE block, starts a second FILE block, then runs
+      // out of token budget — no closing <<<END>>>. Old parser silently
+      // returned 1 file. New parser must reject.
+      const raw = [
+        '<<<PR_TITLE>>>t<<<END>>>',
+        '<<<PR_BODY>>>',
+        'Adds the placeholder and wires it into approvals.ts and autopilot.ts.',
+        '<<<END>>>',
+        '',
+        '<<<FILE create services/gateway/src/services/safety-gap.ts>>>',
+        'export function checkSafetyGap() {}',
+        '<<<END>>>',
+        '',
+        // Second header opens but the model's response was cut off here —
+        // no <<<END>>> closes it.
+        '<<<FILE modify services/gateway/src/routes/approvals.ts>>>',
+        'import { checkSafetyGap } from "../services/safety-gap";',
+        '// ... output truncated here, no closing marker ever emitted',
+      ].join('\n');
+      const out = parseExecutionJson(raw);
+      expect('error' in out).toBe(true);
+      if ('error' in out) {
+        expect(out.error).toMatch(/Truncated output/);
+        expect(out.error).toMatch(/2 .*headers .*1 closed/);
+      }
+    });
+
+    it('rejects when PR_BODY claims work on >=2 files no FILE block touches', () => {
+      // Body promises five paths; only one is in the FILE blocks.
+      const raw = [
+        '<<<PR_TITLE>>>t<<<END>>>',
+        '<<<PR_BODY>>>',
+        'Wires checkSafetyGap into:',
+        '- `services/gateway/src/routes/approvals.ts`',
+        '- `services/gateway/src/routes/autopilot.ts`',
+        '- `services/gateway/src/routes/admin/index.ts`',
+        '- `services/gateway/src/routes/index.ts`',
+        '<<<END>>>',
+        '',
+        '<<<FILE create services/gateway/src/services/safety-gap.ts>>>',
+        'export function checkSafetyGap() {}',
+        '<<<END>>>',
+      ].join('\n');
+      const out = parseExecutionJson(raw);
+      expect('error' in out).toBe(true);
+      if ('error' in out) {
+        expect(out.error).toMatch(/PR_BODY claims work on/);
+      }
+    });
+
+    it('tolerates one orphan path mention in PR_BODY (prose / context references)', () => {
+      // Body references a related file by way of explanation — should NOT
+      // trip the consistency check at <2 orphans.
+      const raw = [
+        '<<<PR_TITLE>>>t<<<END>>>',
+        '<<<PR_BODY>>>',
+        'Mirrors the pattern already used in `services/gateway/src/routes/foo.ts`.',
+        '<<<END>>>',
+        '',
+        '<<<FILE create services/gateway/src/routes/bar.test.ts>>>',
+        'export const x = 1;',
+        '<<<END>>>',
+      ].join('\n');
+      const out = parseExecutionJson(raw);
+      expect('error' in out).toBe(false);
+    });
+
+    it('matches body-shorthand path against fully-qualified emitted path', () => {
+      // Body uses a multi-segment relative path, FILE block uses the full
+      // services/... path. The endsWith match should accept this.
+      const raw = [
+        '<<<PR_TITLE>>>t<<<END>>>',
+        '<<<PR_BODY>>>',
+        'Adds tests in `gateway/src/routes/foo.test.ts`.',
+        '<<<END>>>',
+        '',
+        '<<<FILE create services/gateway/src/routes/foo.test.ts>>>',
+        'describe("foo", () => {});',
+        '<<<END>>>',
+      ].join('\n');
+      const out = parseExecutionJson(raw);
+      expect('error' in out).toBe(false);
+    });
+  });
 });
 
 describe('buildExecutionPrompt', () => {

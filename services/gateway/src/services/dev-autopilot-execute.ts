@@ -840,6 +840,68 @@ function parseExecutionOutput(raw: string): ExecutionLlmOutput | { error: string
     return { error: 'No <<<FILE …>>>…<<<END>>> blocks found' };
   }
 
+  // VTID-02652 — Check 1: detect truncated output. Count every FILE header
+  // (regardless of whether it has a closing <<<END>>>) and compare to the
+  // count of complete blocks we consumed above. If the model started a
+  // FILE block and then ran out of MESSAGES_MAX_TOKENS before emitting
+  // <<<END>>>, the regex above silently skipped it and the worker would
+  // open a PR claiming changes that aren't in the diff. PR #1102 was the
+  // first observed example: PR_BODY listed 5 files, output truncated
+  // mid-second-file, parser returned 1 block, PR opened with placeholder
+  // code + a body that lied about wiring it up everywhere.
+  const headerRe = /<<<FILE\s+(?:create|modify|delete)\s+\S+\s*>>>/g;
+  const headerCount = (text.match(headerRe) || []).length;
+  if (headerCount !== files.length) {
+    return {
+      error:
+        `Truncated output: ${headerCount} <<<FILE …>>> headers found but only ${files.length} ` +
+        `closed blocks. The model likely hit its token budget mid-file. Reject this attempt — ` +
+        `the worker's PR-opener would otherwise file a PR whose body promises work the diff doesn't deliver.`,
+    };
+  }
+
+  // VTID-02652 — Check 2: PR_BODY-vs-FILE-blocks consistency. The body
+  // sometimes lists files in a bullet structure; if the model truncated
+  // FILE-block emission OR hallucinated wire-ups, the body promises more
+  // than was emitted. Heuristic: extract path-like tokens (containing '/'
+  // and ending in a known code/data extension) from the body, compare
+  // against the set of paths emitted in FILE blocks. If the body claims
+  // a path that no FILE block touches and we have at least 2 such orphan
+  // claims, reject — the autopilot has lied. We allow up to 1 orphan to
+  // tolerate prose like "similar to the pattern in services/foo.ts".
+  const bodyPathRe = /\b([\w./-]+\.(?:ts|tsx|js|jsx|sql|md|json|yml|yaml))\b/g;
+  const claimedPaths = new Set<string>();
+  let pm: RegExpExecArray | null;
+  while ((pm = bodyPathRe.exec(pr_body)) !== null) {
+    const candidate = pm[1];
+    // Skip pure filenames without a directory — too generic to attribute.
+    if (!candidate.includes('/')) continue;
+    claimedPaths.add(candidate);
+  }
+  const emittedPaths = new Set(files.map((f) => f.path));
+  const orphanClaims: string[] = [];
+  for (const claim of claimedPaths) {
+    // Match if any emitted path equals the claim OR ends with it (lets
+    // body shorthand like "approvals.ts" match "src/routes/approvals.ts"
+    // — except we filtered shorthand above by requiring '/').
+    let matched = false;
+    for (const emitted of emittedPaths) {
+      if (emitted === claim || emitted.endsWith(`/${claim}`) || claim.endsWith(`/${emitted}`)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) orphanClaims.push(claim);
+  }
+  if (orphanClaims.length >= 2) {
+    return {
+      error:
+        `PR_BODY claims work on ${orphanClaims.length} files that no FILE block emits: ` +
+        `${orphanClaims.slice(0, 5).join(', ')}. Either the model truncated mid-emission or ` +
+        `hallucinated the wire-up. Reject this attempt rather than opening a PR with a lying body.`,
+    };
+  }
+
   return { files, pr_title, pr_body };
 }
 
