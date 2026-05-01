@@ -732,7 +732,7 @@ interface GeminiLiveSession {
   // Pending swap target — set by the tool, consumed by post-tool-response
   // logic that schedules the actual WS reconnect after Vitana's bridge
   // sentence has finished speaking.
-  pendingPersonaSwap?: 'devon' | 'sage' | 'atlas' | 'mira' | null;
+  pendingPersonaSwap?: 'vitana' | 'devon' | 'sage' | 'atlas' | 'mira' | null;
   // Specialist's system prompt + voice override for the next reconnect.
   personaSystemOverride?: string;
   personaVoiceOverride?: string;
@@ -1946,6 +1946,56 @@ function buildLiveApiTools(
           },
         },
         // VTID-02047: Unified Feedback Pipeline — voice claim/bug/support intake.
+        // VTID-02047 voice channel-swap (bidirectional): every persona has
+        // this tool so the user can navigate between Vitana and her
+        // colleagues by voice. Use cases:
+        //   - User to Vitana:    "switch me to Devon" / "ich möchte mit Devon
+        //                        sprechen" → switch_persona({to:'devon'})
+        //   - User to Devon:     "connect me back to Vitana" / "zurück zu
+        //                        Vitana" → switch_persona({to:'vitana'})
+        //   - User to Sage:      "actually I have a billing question" →
+        //                        switch_persona({to:'atlas'})
+        // This tool DOES NOT create a ticket. report_to_specialist creates a
+        // ticket AND swaps. switch_persona is just navigation.
+        {
+          name: 'switch_persona',
+          description: [
+            'Switch the active persona on this voice call to another colleague',
+            '(or back to Vitana). Call this when the user explicitly asks to',
+            'talk to a different person on the team — e.g. "switch me to',
+            'Devon", "back to Vitana please", "I want to talk to Atlas about',
+            'my refund instead", in any language. The voice and persona will',
+            'change in this same call without any ticket being filed.',
+            '',
+            'Personas: vitana (longevity coach + receptionist), devon (tech',
+            'support / bugs), sage (customer support / how-to), atlas',
+            '(finance / marketplace claims), mira (account / login / profile).',
+            '',
+            'After calling, speak a brief bridge sentence in the user\'s',
+            'language ("One moment, switching to Vitana." / "Einen Moment,',
+            'ich übergebe an Devon.") and STOP — the new persona will pick',
+            'up the call.',
+            '',
+            'Do NOT call switch_persona to capture a NEW bug/claim/support',
+            'request — for that use report_to_specialist which also files a',
+            'ticket. switch_persona is navigation only.'
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              to: {
+                type: 'string',
+                enum: ['vitana', 'devon', 'sage', 'atlas', 'mira'],
+                description: 'Target persona key. Use vitana to hand the user back to her.',
+              },
+              reason: {
+                type: 'string',
+                description: 'One short sentence on why the swap (e.g. "user wants to ask about longevity again", "this is a finance question, not tech").',
+              },
+            },
+            required: ['to'],
+          },
+        },
         // Vitana calls this when the user wants to report something outside her
         // domain (bugs, support questions, refunds, account issues). The tool
         // creates a feedback_tickets row routed to the matching specialist
@@ -3761,6 +3811,87 @@ async function executeLiveApiToolInner(
       // VTID-02047: Unified Feedback Pipeline — voice claim/bug/support intake
       // =====================================================================
 
+      case 'switch_persona': {
+        const target = String(args.to || '').toLowerCase();
+        if (!['vitana', 'devon', 'sage', 'atlas', 'mira'].includes(target)) {
+          return { success: false, result: '', error: `Invalid persona: ${target}` };
+        }
+        const currentPersona = ((session as any).activePersona as string) || 'vitana';
+        if (target === currentPersona) {
+          return { success: true, result: `Already talking to ${target} — no swap needed.` };
+        }
+
+        try {
+          if (target === 'vitana') {
+            // Hand back to Vitana — clear all persona overrides so the
+            // setup-message builder falls back to Vitana's default voice
+            // (per language) and the standard buildLiveSystemInstruction
+            // path. Forced first message in the user's language so Vitana
+            // greets after the reconnect instead of waiting silently.
+            (session as any).pendingPersonaSwap = 'vitana';
+            (session as any).activePersonaTarget = 'vitana';
+            (session as any).personaSystemOverride = null;
+            (session as any).personaVoiceOverride = null;
+            const lang = session.lang || 'en';
+            const vitanaGreetings: Record<string, string> = {
+              en: "Welcome back. What's on your mind?",
+              de: "Willkommen zurück. Was beschäftigt dich gerade?",
+              fr: "Te revoilà. Qu'est-ce qui te préoccupe ?",
+              es: "Bienvenido de vuelta. ¿En qué piensas?",
+            };
+            (session as any).personaForcedFirstMessage = vitanaGreetings[lang] ?? vitanaGreetings['en'];
+            console.log(`[VTID-02047] switch_persona: ${currentPersona} → vitana queued`);
+          } else {
+            // Swap to a specialist — load their prompt + voice from
+            // agent_personas. No ticket created; just navigation.
+            const url2 = process.env.SUPABASE_URL!;
+            const key2 = process.env.SUPABASE_SERVICE_ROLE!;
+            const personaResp = await fetch(
+              `${url2}/rest/v1/agent_personas?key=eq.${target}&select=system_prompt,display_name`,
+              { headers: { apikey: key2, Authorization: `Bearer ${key2}` } }
+            );
+            const personaJson = await personaResp.json().catch(() => null);
+            const personaRow = Array.isArray(personaJson) ? personaJson[0] : null;
+            const personaPrompt = (personaRow?.system_prompt as string | undefined) ?? '';
+            if (!personaPrompt) {
+              return { success: false, result: '', error: `No system_prompt found for ${target}` };
+            }
+            (session as any).pendingPersonaSwap = target;
+            (session as any).personaSystemOverride = personaPrompt +
+              `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. The user explicitly asked to switch to you (no new ticket — they're navigating between colleagues). Greet briefly and ask how you can help.` +
+              `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "switch me back to Vitana", "back to Vitana please", "zurück zu Vitana", "talk to Atlas about my refund instead", etc. Pass to='vitana' to hand back to Vitana, or to='devon'/'sage'/'atlas'/'mira' to swap to another colleague. After calling, speak a one-line bridge ("One moment, switching to Vitana." / "Einen Moment, ich übergebe an Vitana.") then STOP.`;
+            (session as any).personaVoiceOverride = SPECIALIST_VOICES[target] || '';
+            (session as any).personaForcedFirstMessage = getSpecialistGreeting(target, session.lang || 'en');
+            console.log(`[VTID-02047] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}`);
+          }
+
+          // Notify the client UI
+          const swapMsg = {
+            type: 'persona_swap',
+            from: currentPersona,
+            to: target,
+            voice_id: (session as any).personaVoiceOverride || (LIVE_API_VOICES[session.lang || 'en'] || 'Aoede'),
+            display_name: target.charAt(0).toUpperCase() + target.slice(1),
+            navigation_only: true,
+          };
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${JSON.stringify(swapMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            try { sendWsMessage(session.clientWs, swapMsg); } catch (_e) { /* WS closed */ }
+          }
+
+          const targetLabel = target === 'vitana' ? 'Vitana' : (target.charAt(0).toUpperCase() + target.slice(1));
+          return {
+            success: true,
+            result: `Persona swap queued: ${currentPersona} → ${target}. Speak ONLY this short bridge sentence in the user's language and then STOP — do not continue: "One moment, ${targetLabel} will pick up." A different colleague will take over the call.`,
+          };
+        } catch (err) {
+          console.error('[VTID-02047] switch_persona failed:', err);
+          return { success: false, result: '', error: err instanceof Error ? err.message : 'unknown error' };
+        }
+      }
+
       case 'report_to_specialist': {
         const kind = String(args.kind || 'feedback');
         const summary = String(args.summary || '').trim();
@@ -3908,7 +4039,8 @@ async function executeLiveApiToolInner(
               if (personaPrompt) {
                 (session as any).pendingPersonaSwap = swapTo;
                 (session as any).personaSystemOverride = personaPrompt +
-                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.`;
+                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.` +
+                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "switch me back to Vitana", "zurück zu Vitana", "talk to Atlas instead", etc. Pass to='vitana' to hand back, or to='devon'/'sage'/'atlas'/'mira' to swap to another colleague. After calling, speak a one-line bridge then STOP.`;
                 (session as any).personaVoiceOverride = SPECIALIST_VOICES[swapTo] || '';
                 (session as any).personaForcedFirstMessage = getSpecialistGreeting(swapTo, session.lang || 'en');
                 console.log(`[VTID-02047] Persona swap queued: vitana → ${swapTo}, voice=${(session as any).personaVoiceOverride}`);
@@ -6942,6 +7074,7 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
 - Use report_to_specialist when the user wants to REPORT, file a CLAIM, ask a SUPPORT question, describe a BUG / login issue / refund / order problem — anything outside your longevity/community domain. Pick kind=bug for crashes/UX, support_question for "how do I" questions, marketplace_claim for orders/refunds, account_issue for login/profile problems. Pass a clear summary in the user's own words. Then speak a brief bridge: "I've passed that to Devon" (or Sage/Atlas/Mira) — keep it natural in their language. Don't try to debug, refund, or reset accounts yourself; your colleagues handle that.
+- Use switch_persona for NAVIGATION between team members WITHOUT filing a ticket. Examples: user says "switch me to Devon", "back to Vitana please", "ich möchte mit Mira sprechen", "verbinde mich mit Atlas", "actually I want to talk to Sage". Pass to=<persona> with the target. Speak a brief bridge ("Einen Moment, ich übergebe an Devon" / "One moment, switching to Vitana") and STOP — the new persona greets next. Use this when the user is just navigating; use report_to_specialist when they're filing a NEW claim/bug/support request.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -8139,6 +8272,12 @@ async function connectToLiveAPI(
             if (pendingSwap && session.upstreamWs && session.active) {
               (session as any).activePersona = pendingSwap;
               (session as any).pendingPersonaSwap = null;
+              // Set unambiguous flag so close + reconnect handlers know this
+              // is a persona swap (vs Vertex 5-min limit, network blip, etc).
+              // The flag covers both directions — Vitana → specialist AND
+              // specialist → Vitana — without relying on the presence of
+              // personaSystemOverride (which is null for back-to-Vitana).
+              (session as any)._personaSwapInFlight = true;
               console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
               try {
                 session.upstreamWs.close(1000, 'persona_swap');
@@ -8148,7 +8287,9 @@ async function connectToLiveAPI(
               // The close handler at line ~8933 sees code=1000 + session.active
               // and triggers attemptTransparentReconnect → connectToLiveAPI
               // which rebuilds the setup message using personaSystemOverride
-              // + personaVoiceOverride + personaForcedFirstMessage.
+              // + personaVoiceOverride + personaForcedFirstMessage (or, for
+              // back-to-Vitana, falls through to the default builder since
+              // those overrides were cleared by switch_persona).
             }
 
             session.turn_count++;
@@ -8947,6 +9088,17 @@ async function connectToLiveAPI(
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
       emitDiag(session, 'upstream_ws_close', { code, reason: reason?.toString() || '' });
 
+      // VTID-02047 voice channel-swap: when this close was triggered by a
+      // persona swap (turn_complete handler closes upstream after Vitana's
+      // bridge), suppress the noisy "connection_alert" that makes the widget
+      // speak "Einen Moment, ich verbinde mich neu" on top of the bridge
+      // sentence. Send a silent persona_swap_reconnecting cue instead so the
+      // widget can pause mic without TTS overlap. Both close-reason match AND
+      // the in-flight flag are used so back-to-Vitana works (where the swap
+      // also clears personaSystemOverride).
+      const reasonStr = reason?.toString() || '';
+      const isPersonaSwap = reasonStr === 'persona_swap' || !!(session as any)._personaSwapInFlight;
+
       // BOOTSTRAP-ORB-DISCONNECT-ALERT: Tell the client *immediately* that the
       // upstream went away. The existing `reconnecting` message is only sent
       // once attemptTransparentReconnect runs (after deduplicated extraction
@@ -8954,7 +9106,9 @@ async function connectToLiveAPI(
       // lets the widget stop the user mid-sentence with a spoken cue instead
       // of letting them talk into a dead socket.
       if (session.active && setupComplete) {
-        const alertMsg = { type: 'connection_alert', reason: 'upstream_ws_close' };
+        const alertMsg = isPersonaSwap
+          ? { type: 'persona_swap_reconnecting', reason: 'persona_swap' }
+          : { type: 'connection_alert', reason: 'upstream_ws_close' };
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
@@ -9143,13 +9297,27 @@ async function attemptTransparentReconnect(
 
   console.log(`[VTID-STREAM-RECONNECT] Attempting transparent reconnect #${reconnectCount + 1} for session ${session.sessionId} (${session.transcriptTurns.length} turns accumulated)`);
 
-  // Notify client that we're reconnecting (informational, not an error)
-  // Works for both SSE and WS transports
-  const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
-  if (session.sseResponse) {
-    try { session.sseResponse.write(`data: ${JSON.stringify(reconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
-  } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-    try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
+  // VTID-02047 voice channel-swap: skip the "reconnecting…" client message
+  // entirely when the close was triggered by a persona swap. Vitana already
+  // spoke the bridge sentence; sending another "reconnecting" cue just makes
+  // the widget speak "Einen Moment, ich verbinde mich neu" on top of her.
+  // The persona_swap_reconnecting event already went out from the close
+  // handler with type="persona_swap_reconnecting" which the widget treats
+  // as a silent UI cue. Uses the _personaSwapInFlight flag so both swap
+  // directions (Vitana ↔ specialist) are covered.
+  const isPersonaSwap = !!(session as any)._personaSwapInFlight;
+
+  if (!isPersonaSwap) {
+    // Notify client that we're reconnecting (informational, not an error)
+    // Works for both SSE and WS transports
+    const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${JSON.stringify(reconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
+    }
+  } else {
+    console.log(`[VTID-02047] Persona swap reconnect — suppressing reconnect TTS announcement`);
   }
 
   try {
@@ -9171,12 +9339,26 @@ async function attemptTransparentReconnect(
     session.connectionIssueEmitted = false;
     console.log(`[VTID-STREAM-RECONNECT] Reconnected successfully for session ${session.sessionId} (reconnect #${reconnectCount + 1})`);
 
-    // Notify client that reconnection succeeded (both SSE and WS)
-    const reconnectedMsg = { type: 'reconnected', reconnect_count: reconnectCount + 1 };
+    // Notify client that reconnection succeeded (both SSE and WS).
+    // Persona-swap path uses a different type so the widget doesn't speak
+    // the "Okay, das Netz ist wieder da" recovery line — the new persona
+    // greets in their own voice, which is the correct cue.
+    const reconnectedMsg = isPersonaSwap
+      ? { type: 'persona_swap_reconnected', persona: (session as any).activePersona }
+      : { type: 'reconnected', reconnect_count: reconnectCount + 1 };
     if (session.sseResponse) {
       try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
     } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
       try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+    }
+
+    // After a successful persona swap, clear the swap-in-flight flag so
+    // subsequent automatic reconnects (e.g. Vertex 5-min limit while
+    // specialist is still active) keep the persona's voice and prompt
+    // without re-treating them as a fresh swap.
+    if (isPersonaSwap) {
+      (session as any)._personaSwapInFlight = false;
+      console.log(`[VTID-02047] Persona swap to ${(session as any).activePersona} complete`);
     }
 
     return true;

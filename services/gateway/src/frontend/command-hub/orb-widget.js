@@ -1365,6 +1365,35 @@
         _announceDisconnect('connection');
         break;
 
+      case 'persona_swap_reconnecting':
+        // VTID-02047 voice channel-swap: the server is closing+reopening the
+        // upstream WS to hand off from Vitana to a specialist (or back).
+        // Vitana's bridge sentence has just played; the new persona is about
+        // to greet in their distinct voice. We must NOT speak "Einen Moment,
+        // ich verbinde mich neu" — that overlaps with the bridge and breaks
+        // the illusion that a different colleague is picking up. Silently
+        // pause mic + flip UI; the new voice is the cue.
+        console.log('[VTOrb] Persona swap reconnecting — silent UI gate');
+        clearTimeout(_s._listeningIdleTimer);
+        _s._preReconnectVoiceState = _s.voiceState;
+        _setOrbState('thinking');
+        // Pause mic without TTS announcement
+        if (_s.recorder && typeof _s.recorder.mute === 'function') {
+          try { _s.recorder.mute(); } catch (_e) { /* ignore */ }
+        }
+        break;
+
+      case 'persona_swap_reconnected':
+        // Specialist (or returning Vitana) is now active. The model itself
+        // will speak the greeting; we just resume the listening state.
+        console.log('[VTOrb] Persona swap reconnected — resuming, persona=' + (msg.persona || 'unknown'));
+        if (_s._preReconnectVoiceState === 'LISTENING') {
+          _setOrbState('listening');
+          _s.voiceState = 'LISTENING';
+        }
+        _s._preReconnectVoiceState = null;
+        break;
+
       case 'reconnected':
         // Reconnect succeeded. _clearDisconnect handles the "we're back" TTS +
         // ready beep. If no disconnect was active (rare), fall through to the
