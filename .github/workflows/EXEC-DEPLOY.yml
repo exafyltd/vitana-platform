@@ -456,15 +456,17 @@ jobs:
             DEPLOY_ARGS+=(--service-account=86804897789-compute@developer.gserviceaccount.com)
           fi
 
-          # VTID-02034: gateway holds ORB voice session state in an in-memory
-          # Map. Without session affinity, audio POSTs round-robin across
-          # instances and hit instances that don't have the session → 404 →
-          # widget fires "internet issues" TTS (the user's symptom). Pin
-          # each client to a single instance via cookie-based affinity.
-          # Pairs with widget change to set credentials:'include' on fetch.
-          if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
-            DEPLOY_ARGS+=(--session-affinity)
-          fi
+          # VTID-02036: REVERTED VTID-02034 --session-affinity. Cloud Run's
+          # session-affinity cookie (GAESA) is set with SameSite=Lax by
+          # default, which browsers refuse to send on cross-origin
+          # requests (vitanaland.com → gateway). The flag created the
+          # cookie but no browser ever forwarded it, so no actual
+          # affinity was achieved. Worse, pairing this with
+          # withCredentials:true on the SSE EventSource appeared to
+          # break SSE entirely on iOS Safari / Appilix WebView. Reverting
+          # to restore working SSE; cross-instance 404s on /stream/send
+          # come back but at least the orb works.
+
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             "${DEPLOY_ARGS[@]}" \
