@@ -607,7 +607,36 @@ router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
   if (!(await ensureTenantAdmin(req, res, tenantId))) return;
   const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
   if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
-  return res.json({ ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs });
+
+  // VTID-02666: when this ticket has been dispatched to dev autopilot,
+  // surface the latest execution so the supervisor can see how far through
+  // the pipeline we are (cooling → running → ci → merging → deploying →
+  // verifying → completed). Drives the in-drawer progress bar.
+  let execution: {
+    id: string;
+    status: string;
+    pr_url: string | null;
+    pr_number: number | null;
+    branch: string | null;
+    failure_stage: string | null;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+  } | null = null;
+  const findingId = (loaded.ticket as { linked_finding_id?: string | null }).linked_finding_id ?? null;
+  if (findingId) {
+    const supabase = getServiceClient();
+    const { data } = await supabase
+      .from('dev_autopilot_executions')
+      .select('id, status, pr_url, pr_number, branch, failure_stage, created_at, updated_at, completed_at')
+      .eq('finding_id', findingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) execution = data as unknown as typeof execution;
+  }
+
+  return res.json({ ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs, execution });
 });
 
 const RejectSchema = z.object({ reason: z.string().max(500).optional() });
