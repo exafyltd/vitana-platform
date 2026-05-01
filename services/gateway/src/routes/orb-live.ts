@@ -722,6 +722,24 @@ interface GeminiLiveSession {
   upstreamWs: any | null;  // WebSocket to Vertex Live API
   sseResponse: Response | null;
   active: boolean;
+  // VTID-02047 voice channel-swap: persona currently driving the voice channel.
+  // 'vitana' is the default; report_to_specialist tool flips this to a
+  // specialist key, then triggers a transparent reconnect of the upstream
+  // Gemini WebSocket so the new voice + system prompt take effect mid-call.
+  // The user-facing WS/SSE stays open the whole time — only the gateway's
+  // upstream connection resets.
+  activePersona?: 'vitana' | 'devon' | 'sage' | 'atlas' | 'mira';
+  // Pending swap target — set by the tool, consumed by post-tool-response
+  // logic that schedules the actual WS reconnect after Vitana's bridge
+  // sentence has finished speaking.
+  pendingPersonaSwap?: 'devon' | 'sage' | 'atlas' | 'mira' | null;
+  // Specialist's system prompt + voice override for the next reconnect.
+  personaSystemOverride?: string;
+  personaVoiceOverride?: string;
+  // First-message directive injected into the system prompt of the new
+  // upstream session so the specialist greets the user immediately
+  // ("Hi, Devon here — …") without waiting for input.
+  personaForcedFirstMessage?: string;
   createdAt: Date;
   lastActivity: Date;
   audioInChunks: number;
@@ -1202,6 +1220,58 @@ const LIVE_API_VOICES: Record<string, string> = {
   'ru': 'Aoede',    // Russian - fallback
   'sr': 'Aoede'     // Serbian - fallback
 };
+
+// VTID-02047 voice channel-swap: per-specialist Live API voice IDs.
+// Vitana keeps her per-language voice from LIVE_API_VOICES above. When the
+// user reports a claim/bug/support question, report_to_specialist swaps the
+// upstream session voice to the matching specialist so the user literally
+// hears a different person picking up the call. Voices chosen so each
+// specialist is distinct from Vitana AND from each other across genders:
+//   Devon  = Charon  (male, technical-calm)
+//   Sage   = Leda    (female, patient — different from Vitana's Aoede/Kore)
+//   Atlas  = Orus    (male, professional)
+//   Mira   = Zephyr  (female, calm-authoritative)
+// All eight Gemini Live prebuilt voices: Aoede, Charon, Fenrir, Kore, Leda,
+// Orus, Puck, Zephyr.
+const SPECIALIST_VOICES: Record<string, string> = {
+  vitana: '',        // Sentinel — empty means "use language default"
+  devon: 'Charon',
+  sage: 'Leda',
+  atlas: 'Orus',
+  mira: 'Zephyr',
+};
+
+function getSpecialistGreeting(persona: string, lang: string): string {
+  const greetings: Record<string, Record<string, string>> = {
+    devon: {
+      en: "Hi, Devon here — Vitana said you ran into an issue. Walk me through what happened.",
+      de: "Hallo, Devon hier — Vitana hat mir gesagt, dass du ein Problem hast. Erzähl mir, was passiert ist.",
+      fr: "Salut, Devon à l'appareil — Vitana m'a dit que tu as rencontré un souci. Raconte-moi ce qui s'est passé.",
+      es: "Hola, soy Devon — Vitana me ha dicho que tienes un problema. Cuéntame qué ha pasado.",
+    },
+    sage: {
+      en: "Hi, Sage here. What can I help you find?",
+      de: "Hallo, Sage hier. Wobei kann ich dir helfen?",
+      fr: "Bonjour, Sage à l'appareil. Comment puis-je t'aider ?",
+      es: "Hola, soy Sage. ¿En qué puedo ayudarte?",
+    },
+    atlas: {
+      en: "Hi, Atlas here. Let's sort this out — what's going on with your order or payment?",
+      de: "Hallo, Atlas hier. Klären wir das — was ist mit deiner Bestellung oder Zahlung los?",
+      fr: "Bonjour, Atlas à l'appareil. Réglons ça — qu'est-ce qui se passe avec ta commande ou ton paiement ?",
+      es: "Hola, soy Atlas. Vamos a resolverlo — ¿qué pasa con tu pedido o pago?",
+    },
+    mira: {
+      en: "Hi, Mira here. Let's get your account sorted — what's not working?",
+      de: "Hallo, Mira hier. Bringen wir deinen Account in Ordnung — was funktioniert nicht?",
+      fr: "Bonjour, Mira à l'appareil. Réglons ton compte — qu'est-ce qui ne marche pas ?",
+      es: "Hola, soy Mira. Pongamos tu cuenta en orden — ¿qué no funciona?",
+    },
+  };
+  const tpl = greetings[persona];
+  if (!tpl) return "Hi, how can I help?";
+  return tpl[lang] ?? tpl['en'];
+}
 
 // =============================================================================
 // VTID-INSTANT-FEEDBACK: Server-side activation chime for mobile (WebSocket path)
@@ -3815,9 +3885,60 @@ async function executeLiveApiToolInner(
           };
           const personaName = personaLabel[pickedPersona] || 'a specialist colleague';
 
+          // VTID-02047 voice channel-swap: queue a swap to the specialist's
+          // voice + system prompt. The actual reconnect fires AFTER the
+          // current Vitana turn completes (so the user hears Vitana's bridge
+          // sentence in HER voice first, then the channel swaps and the
+          // specialist greets in THEIR voice). Done by setting
+          // session.pendingPersonaSwap; the turn_complete handler picks this
+          // up and triggers attemptTransparentReconnect with overrides.
+          if (pickedPersona === 'devon' || pickedPersona === 'sage' ||
+              pickedPersona === 'atlas' || pickedPersona === 'mira') {
+            const swapTo = pickedPersona;
+            try {
+              const url2 = process.env.SUPABASE_URL!;
+              const key2 = process.env.SUPABASE_SERVICE_ROLE!;
+              const personaResp = await fetch(
+                `${url2}/rest/v1/agent_personas?key=eq.${swapTo}&select=system_prompt,display_name`,
+                { headers: { apikey: key2, Authorization: `Bearer ${key2}` } }
+              );
+              const personaJson = await personaResp.json().catch(() => null);
+              const personaRow = Array.isArray(personaJson) ? personaJson[0] : null;
+              const personaPrompt = (personaRow?.system_prompt as string | undefined) ?? '';
+              if (personaPrompt) {
+                (session as any).pendingPersonaSwap = swapTo;
+                (session as any).personaSystemOverride = personaPrompt +
+                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.`;
+                (session as any).personaVoiceOverride = SPECIALIST_VOICES[swapTo] || '';
+                (session as any).personaForcedFirstMessage = getSpecialistGreeting(swapTo, session.lang || 'en');
+                console.log(`[VTID-02047] Persona swap queued: vitana → ${swapTo}, voice=${(session as any).personaVoiceOverride}`);
+
+                // Notify the client UI so it can show "Talking to <Persona>"
+                const swapMsg = {
+                  type: 'persona_swap',
+                  from: 'vitana',
+                  to: swapTo,
+                  voice_id: (session as any).personaVoiceOverride,
+                  display_name: personaRow?.display_name ?? swapTo,
+                  ticket_number: ticket?.ticket_number ?? null,
+                };
+                if (session.sseResponse) {
+                  try { session.sseResponse.write(`data: ${JSON.stringify(swapMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+                }
+                if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                  try { sendWsMessage(session.clientWs, swapMsg); } catch (_e) { /* WS closed */ }
+                }
+              } else {
+                console.warn(`[VTID-02047] No system_prompt found for persona ${swapTo} — skipping voice swap`);
+              }
+            } catch (e) {
+              console.warn(`[VTID-02047] Failed to load persona for swap:`, e);
+            }
+          }
+
           return {
             success: true,
-            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Tell the user: "I've passed that to ${personaName.split(' ')[0]} — they'll follow up in the Talk to Vitana section."`,
+            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Speak ONLY this short bridge sentence to the user (in their language) and then STOP — do not continue the conversation: "Let me bring in ${personaName.split(' ')[0]} — one moment." A different colleague will pick up the call right after you.`,
           };
         } catch (err) {
           console.error('[VTID-02047] report_to_specialist failed:', err);
@@ -7787,6 +7908,16 @@ async function connectToLiveAPI(
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
       // VTID-01224: Include tools and bootstrap context
       // VTID-01225: Enable input/output transcription for Cognee extraction
+      // VTID-02047 voice channel-swap: when activePersona is a specialist
+      // (set by report_to_specialist tool + a transparent reconnect), use
+      // SPECIALIST_VOICES; otherwise fall back to language default for Vitana.
+      const _persona = (session as any).activePersona || 'vitana';
+      const _personaVoice = (session as any).personaVoiceOverride
+        || (SPECIALIST_VOICES[_persona] || '')
+        || LIVE_API_VOICES[session.lang]
+        || LIVE_API_VOICES['en'];
+      console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
+
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -7795,7 +7926,7 @@ async function connectToLiveAPI(
             speech_config: {
               voice_config: {
                 prebuilt_voice_config: {
-                  voice_name: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
+                  voice_name: _personaVoice
                 }
               }
             }
@@ -7816,43 +7947,51 @@ async function connectToLiveAPI(
           input_audio_transcription: {},
           system_instruction: {
             parts: [{
-              // VTID-ANON: Use anonymous instruction for unauthenticated sessions.
-              // VTID-CONTEXT: Include client context (location, time, device) for all sessions.
-              text: session.isAnonymous
-                ? buildAnonymousSystemInstruction(
-                    session.lang,
-                    session.voiceStyle || 'friendly, calm, empathetic',
-                    session.clientContext,
-                    // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity
-                    session.transcriptTurns.length > 0
-                      ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Vitana'}: ${t.text}`).join('\n')
-                      : undefined,
-                    ((session as any)._reconnectCount || 0) > 0
-                  )
-                : buildLiveSystemInstruction(
-                    session.lang,
-                    session.voiceStyle || 'friendly, calm, empathetic',
-                    (session.contextInstruction || '') + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : ''),
-                    session.active_role,
-                    session.conversationSummary,
-                    // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
-                    session.transcriptTurns.length > 0
-                      ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                      : undefined,
-                    // Pass reconnect flag so greeting rules are suppressed on reconnect
-                    ((session as any)._reconnectCount || 0) > 0,
-                    // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
-                    // model uses this to pick a time-appropriate greeting and
-                    // acknowledge the screen the user is on instead of
-                    // restarting with "Hello <name>!" every session.
-                    session.lastSessionInfo || null,
-                    session.current_route || null,
-                    session.recent_routes || null,
-                    session.clientContext || undefined,
-                    // VTID-01967: Canonical Vitana ID handle (already resolved
-                    // by optionalAuth → resolveVitanaId on session start).
-                    session.identity?.vitana_id ?? null,
-                  )
+              // VTID-02047 voice channel-swap: when activePersona is a specialist
+              // and the session has a persona prompt override (set during the
+              // post-tool-call swap), use the specialist's prompt wholesale +
+              // append a forced first-message directive so the new voice greets
+              // the user immediately instead of waiting for input.
+              text: ((session as any).personaSystemOverride
+                ? ((session as any).personaSystemOverride as string) +
+                  (((session as any).personaForcedFirstMessage)
+                    ? `\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\n"${(session as any).personaForcedFirstMessage}"\nDo not greet with anything else first. Then continue the intake naturally.`
+                    : '')
+                : (session.isAnonymous
+                    ? buildAnonymousSystemInstruction(
+                        session.lang,
+                        session.voiceStyle || 'friendly, calm, empathetic',
+                        session.clientContext,
+                        // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity
+                        session.transcriptTurns.length > 0
+                          ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Vitana'}: ${t.text}`).join('\n')
+                          : undefined,
+                        ((session as any)._reconnectCount || 0) > 0
+                      )
+                    : buildLiveSystemInstruction(
+                        session.lang,
+                        session.voiceStyle || 'friendly, calm, empathetic',
+                        (session.contextInstruction || '') + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : ''),
+                        session.active_role,
+                        session.conversationSummary,
+                        // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
+                        session.transcriptTurns.length > 0
+                          ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
+                          : undefined,
+                        // Pass reconnect flag so greeting rules are suppressed on reconnect
+                        ((session as any)._reconnectCount || 0) > 0,
+                        // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
+                        // model uses this to pick a time-appropriate greeting and
+                        // acknowledge the screen the user is on instead of
+                        // restarting with "Hello <name>!" every session.
+                        session.lastSessionInfo || null,
+                        session.current_route || null,
+                        session.recent_routes || null,
+                        session.clientContext || undefined,
+                        // VTID-01967: Canonical Vitana ID handle (already resolved
+                        // by optionalAuth → resolveVitanaId on session start).
+                        session.identity?.vitana_id ?? null,
+                      ))) as string
             }]
           },
           // VTID-NAV: Anonymous sessions get a narrow Navigator-only tool allowlist
@@ -7988,6 +8127,29 @@ async function connectToLiveAPI(
             session.turnCompleteAt = Date.now();
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
             emitDiag(session, 'turn_complete');
+
+            // VTID-02047 voice channel-swap: if a persona swap was queued by
+            // the report_to_specialist tool, Vitana has just finished speaking
+            // her bridge sentence. Close the upstream WS now (code 1000) — the
+            // existing reconnect path will pick up the persona overrides we
+            // already set on the session and Devon/Sage/Atlas/Mira will greet
+            // in their distinct voice on the new upstream session. The
+            // user-facing WS/SSE stays connected through the swap.
+            const pendingSwap = (session as any).pendingPersonaSwap;
+            if (pendingSwap && session.upstreamWs && session.active) {
+              (session as any).activePersona = pendingSwap;
+              (session as any).pendingPersonaSwap = null;
+              console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
+              try {
+                session.upstreamWs.close(1000, 'persona_swap');
+              } catch (_e) {
+                console.warn('[VTID-02047] persona swap close failed:', _e);
+              }
+              // The close handler at line ~8933 sees code=1000 + session.active
+              // and triggers attemptTransparentReconnect → connectToLiveAPI
+              // which rebuilds the setup message using personaSystemOverride
+              // + personaVoiceOverride + personaForcedFirstMessage.
+            }
 
             session.turn_count++;
             // VTID-LOOPGUARD: Track consecutive model turns without user speech
