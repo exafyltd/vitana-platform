@@ -1,0 +1,67 @@
+[project]
+name = "orb-agent"
+version = "0.1.0"
+description = "LiveKit-based ORB voice agent worker. Standby alternative to the Vertex Live pipeline."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "livekit-agents>=0.12.0",
+    "livekit-plugins-deepgram>=0.6.0",
+    "livekit-plugins-anthropic>=0.2.0",
+    "livekit-plugins-cartesia>=0.4.0",
+    "livekit-plugins-silero>=0.7.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+    "structlog>=24.1.0",
+    "PyJWT>=2.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "libcst>=1.4.0",
+]
+extra-providers = [
+    "livekit-plugins-assemblyai>=0.2.0",
+    "livekit-plugins-elevenlabs>=0.7.0",
+    "livekit-plugins-rime>=0.4.0",
+    "livekit-plugins-inworld>=0.1.0",
+    "livekit-plugins-openai>=0.10.0",
+    "livekit-plugins-google>=0.8.0",
+    "livekit-plugins-groq>=0.1.0",
+    "livekit-plugins-azure>=0.5.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,92 @@
+# VTID-LIVEKIT-FOUNDATION: ORB LiveKit Voice Agent
+# Cloud Run Service Configuration
+#
+# Deploy with:
+#   gcloud run services replace service.yaml --region=us-central1
+#
+# Or via the EXEC-DEPLOY GitHub Actions workflow once it's extended in PR #8.
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: vitana-orb-agent
+  labels:
+    vtid: vtid-livekit-foundation
+    vt_layer: aicor
+    vt_module: voice
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/description: "LiveKit-based ORB voice agent worker (standby alternative to Vertex Live)"
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scale-to-zero is critical: when LiveKit is the standby provider,
+        # zero instances run, costing zero compute. Cold-start on flip is
+        # ~1-2s on first room join.
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+
+        # CPU is not throttled when processing voice (latency-sensitive).
+        run.googleapis.com/cpu-throttling: "false"
+
+        # Startup CPU boost for faster cold starts.
+        run.googleapis.com/startup-cpu-boost: "true"
+
+        # Long-lived voice sessions; allow up to 1 hour per request.
+        run.googleapis.com/timeout-seconds: "3600"
+
+      labels:
+        vtid: vtid-livekit-foundation
+
+    spec:
+      containerConcurrency: 25
+      timeoutSeconds: 3600
+
+      containers:
+        - name: orb-agent
+          image: REPLACE_AT_DEPLOY_TIME
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          env:
+            # Required env (sourced from Secret Manager at deploy time).
+            - name: LIVEKIT_URL
+              valueFrom:
+                secretKeyRef: { name: LIVEKIT_URL, key: latest }
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef: { name: LIVEKIT_API_KEY, key: latest }
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef: { name: LIVEKIT_API_SECRET, key: latest }
+            - name: GATEWAY_URL
+              value: "https://gateway-q74ibpv6ia-uc.a.run.app"
+            - name: GATEWAY_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef: { name: GATEWAY_SERVICE_TOKEN, key: latest }
+            # Optional provider keys — only needed for the providers that
+            # are actually configured in agent_voice_configs. Missing keys
+            # surface in /health.providers.* as false.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef: { name: ANTHROPIC_API_KEY, key: latest, optional: true }
+            - name: DEEPGRAM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: DEEPGRAM_API_KEY, key: latest, optional: true }
+            - name: CARTESIA_API_KEY
+              valueFrom:
+                secretKeyRef: { name: CARTESIA_API_KEY, key: latest, optional: true }
+            - name: ELEVENLABS_API_KEY
+              valueFrom:
+                secretKeyRef: { name: ELEVENLABS_API_KEY, key: latest, optional: true }
+            - name: ASSEMBLYAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: ASSEMBLYAI_API_KEY, key: latest, optional: true }
+            - name: AGENT_LOG_LEVEL
+              value: "INFO"

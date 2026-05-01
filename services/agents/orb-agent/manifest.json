@@ -1,0 +1,115 @@
+{
+  "name": "AGENT-ORB-AGENT",
+  "vt_layer": "AICOR",
+  "vt_module": "VOICE",
+  "vtid": "VTID-LIVEKIT-FOUNDATION",
+  "version": "0.1.0",
+  "description": "LiveKit-based ORB voice agent worker. Joins LiveKit rooms as a participant, runs a configurable STT/LLM/TTS cascade, dispatches gateway tools, emits OASIS events. Standby alternative to the Vertex Live pipeline at services/gateway/src/routes/orb-live.ts. Mutually exclusive with Vertex — only one is active at a time per system_config.voice.active_provider.",
+  "provider_policy": {
+    "transport": {
+      "provider": "livekit-self-hosted",
+      "note": "Self-hosted LiveKit OSS on GCP Compute Engine (NOT LiveKit Cloud). 2x c2-standard-4 SFU pair + Memorystore Redis."
+    },
+    "stt": {
+      "provider": "configurable",
+      "default": "deepgram/nova-3",
+      "note": "Resolved per-agent at session start from voice_providers + agent_voice_configs tables. See migration vtid_livekit_foundation_voice_tables.sql."
+    },
+    "llm": {
+      "provider": "configurable",
+      "default": "anthropic/claude-sonnet-4-6",
+      "note": "Resolved per-agent. Tool catalogue is model-agnostic via livekit-agents @function_tool. tool_choice / parallel-call / strict-schema details are normalized inside each plugin."
+    },
+    "tts": {
+      "provider": "configurable",
+      "default": "cartesia/sonic-3",
+      "note": "Per-agent voice picked from voice_providers.models[].voices_per_lang. Each specialist (Vitana / Sage / Devon / Atlas / Mira) gets a distinct voice."
+    }
+  },
+  "required_env": [
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "GATEWAY_URL",
+    "GATEWAY_SERVICE_TOKEN"
+  ],
+  "optional_env": [
+    "DEEPGRAM_API_KEY",
+    "ASSEMBLYAI_API_KEY",
+    "CARTESIA_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "RIME_API_KEY",
+    "INWORLD_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GROQ_API_KEY",
+    "GOOGLE_GEMINI_API_KEY",
+    "AGENT_LOG_LEVEL",
+    "AGENT_MAX_TOOL_STEPS",
+    "AGENT_MAX_RECONNECTS"
+  ],
+  "features": [
+    "livekit_agents_worker",
+    "configurable_cascade",
+    "function_tool_dispatch",
+    "context_bootstrap_via_gateway",
+    "agents_registry_self_register",
+    "oasis_event_emit",
+    "multi_specialist_handoff",
+    "vertex_pipeline_parity"
+  ],
+  "constraints": {
+    "scale_to_zero_when_standby": true,
+    "single_voice_provider_active": true,
+    "no_business_logic_in_agent": true,
+    "every_tool_calls_gateway_endpoint": true
+  },
+  "telemetry": {
+    "oasis_events": [
+      "livekit.session.start",
+      "livekit.session.stop",
+      "livekit.tool.executed",
+      "livekit.tool_loop_guard_activated",
+      "livekit.stall_detected",
+      "livekit.connection_failed",
+      "livekit.config_missing",
+      "livekit.fallback_used",
+      "livekit.provider_quota_exceeded",
+      "livekit.provider_failover",
+      "livekit.context.bootstrap",
+      "livekit.context.bootstrap.skipped",
+      "voice.handoff.start",
+      "voice.handoff.complete",
+      "voice.handoff.failed",
+      "agent.voice.persona_swap"
+    ]
+  },
+  "runtime": {
+    "type": "cloud-run",
+    "min_instances": 0,
+    "max_instances": 10,
+    "cpu": "2",
+    "memory": "4Gi",
+    "timeout_seconds": 3600,
+    "note": "min=0 enforces scale-to-zero standby semantics. When LiveKit is the standby provider, no agent processes spawn. Cold-start cost ~1-2s on first room join after flip."
+  },
+  "registry": {
+    "agent_id": "orb-agent",
+    "tier": "service",
+    "role": "voice",
+    "emit_heartbeat": true,
+    "heartbeat_interval_seconds": 60
+  },
+  "dependencies": {
+    "vtid_01155": "orb_live_vertex_pipeline (sibling)",
+    "vtid_01225": "cognee_extractor (transcript ingest)",
+    "voice_pipeline_spec": "voice-pipeline-spec/spec.json (parity contract)",
+    "gateway_endpoints": [
+      "GET /api/v1/orb/context-bootstrap",
+      "POST /api/v1/orb/livekit/token",
+      "POST /api/v1/oasis/emit",
+      "POST /api/v1/agents/registry/heartbeat"
+    ]
+  },
+  "design_doc": ".claude/plans/here-is-what-our-valiant-stearns.md"
+}
