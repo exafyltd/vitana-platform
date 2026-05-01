@@ -176,11 +176,12 @@
     "feedback": [
       "inbox",
       "handoffs",
-      "kpis"
+      "kpis",
+      "audit"
     ]
   },
   "screen_inventory": {
-    "total_screens": 114,
+    "total_screens": 115,
     "total_entries": 289,
     "last_synced": "2026-04-27",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
