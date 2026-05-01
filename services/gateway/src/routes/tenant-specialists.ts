@@ -556,5 +556,241 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
   });
 });
 
+// ---------------------------------------------------------------------------
+// VTID-02660: Tenant-scoped ticket detail + Activate/Reject actions.
+// ---------------------------------------------------------------------------
+// The tenant admin Feedback drawer needs:
+//   1. Full transcript + intake messages so the supervisor knows what the
+//      customer actually said.
+//   2. Activate button — smart action that drafts a spec/answer/resolution
+//      first if none exists, otherwise advances the existing draft.
+//   3. Reject button.
+// All scoped to tenant: caller must be tenant admin AND the ticket's owner
+// must be a member of the tenant. This is the security gate that keeps
+// tenant admins from acting on tickets in another tenant.
+
+async function loadTicketIfTenantOwned(
+  ticketId: string,
+  tenantId: string,
+): Promise<null | { ticket: Record<string, any>; handoffs: Array<Record<string, any>> }> {
+  const supabase = getServiceClient();
+  const { data: ticket } = await supabase
+    .from('feedback_tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .maybeSingle();
+  if (!ticket) return null;
+  if (!ticket.user_id) return null;
+  const { data: membership } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('user_id', ticket.user_id)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!membership) return null;
+  const { data: handoffs } = await supabase
+    .from('feedback_handoff_events')
+    .select('id, from_agent, to_agent, reason, detected_intent, matched_keyword, confidence, ts')
+    .eq('ticket_id', ticketId)
+    .order('ts', { ascending: true });
+  return { ticket, handoffs: handoffs ?? [] };
+}
+
+router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  if (!(await ensureTenantAdmin(req, res, tenantId))) return;
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+  return res.json({ ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs });
+});
+
+const RejectSchema = z.object({ reason: z.string().max(500).optional() });
+
+router.post('/:tenantId/tickets/:id/reject', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const v = RejectSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+
+  const supabase = getServiceClient();
+  const { data: updated, error } = await supabase
+    .from('feedback_tickets')
+    .update({ status: 'rejected', supervisor_notes: v.data.reason ?? null })
+    .eq('id', req.params.id)
+    .select('id, ticket_number, kind, status, vitana_id')
+    .single();
+  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_disable',  // closest existing slot until 'tenant_ticket_reject' added
+    after_state: { ticket_id: updated.id, ticket_number: updated.ticket_number, reason: v.data.reason ?? null },
+  });
+
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-02660',
+      type: 'feedback.ticket.status_changed' as any,
+      source: 'tenant-admin-reject',
+      status: 'info',
+      message: `Tenant ${tenantId} rejected ticket ${updated.ticket_number}`,
+      payload: { ticket_id: updated.id, ticket_number: updated.ticket_number, new_status: 'rejected', reason: v.data.reason ?? null },
+      actor_id: userId,
+      actor_role: 'operator',
+      surface: 'operator',
+      vitana_id: (updated.vitana_id as string) ?? undefined,
+    });
+  } catch { /* non-blocking */ }
+
+  return res.json({ ok: true, ticket: updated });
+});
+
+// ---------------------------------------------------------------------------
+// POST /:tenantId/tickets/:id/activate — smart action.
+// ---------------------------------------------------------------------------
+// One button, status-aware: drafts the appropriate resolution if none yet,
+// otherwise advances the existing one toward terminal. The supervisor never
+// has to think about which sub-action to call — the system picks.
+//
+//   new | triaged | spec_pending | answer_pending  →  draft + advance to
+//                                                     in_progress (bug/ux)
+//                                                     or resolved (support)
+//                                                     so a single click
+//                                                     takes the ticket all
+//                                                     the way to "actively
+//                                                     being worked on" or
+//                                                     "answered + closed".
+//   spec_ready                                      →  in_progress
+//   answer_ready                                    →  resolved (sends Sage)
+//   in_progress                                     →  resolved (manual close)
+//   <terminal>                                      →  409 idempotent
+router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+  const t = loaded.ticket as { id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null };
+
+  const supabase = getServiceClient();
+  const TERMINAL = new Set(['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate']);
+  if (TERMINAL.has(t.status)) {
+    return res.status(409).json({ ok: false, error: 'ALREADY_TERMINAL', status: t.status });
+  }
+
+  let newStatus = t.status;
+  let action = '';
+
+  // Step 1: if not yet drafted, draft via the appropriate resolver. We call
+  // the same LLM-backed services the per-ticket flow uses (PR #1135).
+  const NEEDS_DRAFT = new Set(['new', 'triaged', 'spec_pending', 'answer_pending', 'needs_more_info', 'reopened']);
+  if (NEEDS_DRAFT.has(t.status)) {
+    const snap = loaded.ticket as any;
+    let resolverAgent = '';
+    let draftField: 'spec_md' | 'draft_answer_md' | 'resolution_md' = 'spec_md';
+    let nextStatus: string = 'spec_ready';
+    let markdown = '';
+    try {
+      const { llmDraftSageAnswer, llmDraftDevonSpec, llmDraftMiraResolution, llmDraftAtlasResolution } =
+        await import('../services/feedback-llm-resolvers');
+      if (t.kind === 'support_question') {
+        const r = await llmDraftSageAnswer(snap);
+        markdown = r.markdown;
+        resolverAgent = 'sage';
+        draftField = 'draft_answer_md';
+        nextStatus = 'answer_ready';
+      } else if (t.kind === 'bug' || t.kind === 'ux_issue') {
+        const r = await llmDraftDevonSpec(snap);
+        markdown = r.markdown;
+        resolverAgent = 'devon';
+        draftField = 'spec_md';
+        nextStatus = 'spec_ready';
+      } else if (t.kind === 'marketplace_claim') {
+        const r = await llmDraftAtlasResolution(snap);
+        markdown = r.markdown;
+        resolverAgent = 'atlas';
+        draftField = 'resolution_md';
+        nextStatus = 'spec_ready';
+      } else if (t.kind === 'account_issue') {
+        const r = await llmDraftMiraResolution(snap);
+        markdown = r.markdown;
+        resolverAgent = 'mira';
+        draftField = 'resolution_md';
+        nextStatus = 'spec_ready';
+      } else {
+        // feedback / feature_request — no draft layer; jump straight to in_progress
+        // so the supervisor's "Activate" still does something meaningful.
+        nextStatus = 'in_progress';
+      }
+    } catch (err) {
+      console.warn('[VTID-02660] activate draft failed, falling back to direct status flip:', err);
+      nextStatus = 'in_progress';
+    }
+    const patch: Record<string, unknown> = { status: nextStatus };
+    if (resolverAgent) patch.resolver_agent = resolverAgent;
+    if (markdown) patch[draftField] = markdown;
+    const { error: upErr } = await supabase
+      .from('feedback_tickets').update(patch).eq('id', t.id);
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    newStatus = nextStatus;
+    action = 'drafted';
+  }
+
+  // Step 2: advance the now-drafted ticket toward terminal. spec_ready and
+  // answer_ready are advanced automatically. If the supervisor wants the
+  // intermediate review, they click Activate twice; otherwise one click
+  // takes it all the way. Set ?stop_at_draft=1 to keep the intermediate.
+  const stopAtDraft = String(req.query.stop_at_draft || '') === '1';
+  if (!stopAtDraft) {
+    if (newStatus === 'spec_ready') {
+      const { data: u } = await supabase.from('feedback_tickets')
+        .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+      if (u) { newStatus = 'in_progress'; action = action ? `${action}+approved` : 'approved'; }
+    } else if (newStatus === 'answer_ready') {
+      const { data: u } = await supabase.from('feedback_tickets')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
+        .eq('id', t.id).select('status').single();
+      if (u) { newStatus = 'resolved'; action = action ? `${action}+sent` : 'sent_answer'; }
+    } else if (newStatus === 'in_progress') {
+      // already in progress and supervisor hits Activate again → resolve manually
+      const { data: u } = await supabase.from('feedback_tickets')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('id', t.id).select('status').single();
+      if (u) { newStatus = 'resolved'; action = action ? `${action}+resolved` : 'resolved'; }
+    }
+  }
+
+  // Audit + OASIS
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot until 'tenant_ticket_activate' added
+    after_state: { ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action },
+  });
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-02660',
+      type: (newStatus === 'resolved' ? 'feedback.ticket.resolved' : 'feedback.ticket.status_changed') as any,
+      source: 'tenant-admin-activate',
+      status: 'info',
+      message: `Tenant ${tenantId} activate ${t.ticket_number}: ${t.status} → ${newStatus}`,
+      payload: { ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action },
+      actor_id: userId,
+      actor_role: 'operator',
+      surface: 'operator',
+      vitana_id: (t.vitana_id as string) ?? undefined,
+    });
+  } catch { /* non-blocking */ }
+
+  return res.json({ ok: true, ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action });
+});
+
 void VTID;
 export default router;
