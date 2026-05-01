@@ -33,6 +33,11 @@ import { emitOasisEvent } from './oasis-event-service';
 import { renderPlanHtml } from './dev-autopilot-html';
 import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure, isWorkerBinaryMissing } from './dev-autopilot-self-heal-log';
+import {
+  extractTableNames,
+  loadSchemaSnippets,
+  formatSchemaBlock,
+} from './dev-autopilot-schema-context';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -346,6 +351,7 @@ export function buildPlanningPrompt(
   feedbackNote?: string,
   scope?: { allow?: string[]; deny?: string[] },
   lessons?: PromptLesson[],
+  schemaBlock?: string,
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -366,6 +372,41 @@ export function buildPlanningPrompt(
     `- **File:** ${snap.file_path || '(unspecified)'}${snap.line_number ? `:${snap.line_number}` : ''}`,
     `- **Scanner:** ${snap.scanner || '(unknown)'}`,
     `- **Suggested action:** ${snap.suggested_action || '(none)'}`,
+    ``,
+  );
+
+  // VTID-02640: live DB schema for any tables referenced in the flagged
+  // file. Inserted EARLY in the prompt so column-name hallucinations
+  // (e.g. PR #1091's wrong vitana_id -> vuid rename) are short-circuited
+  // before the LLM starts thinking about edits. Empty string is a no-op.
+  if (schemaBlock) lines.push(schemaBlock);
+
+  // VTID-02640: hard rules to suppress the most damaging classes of
+  // hallucination we've seen ship in PRs: migration modifications and
+  // unverified column renames. These rules supplement (not replace) the
+  // safety gate's allow/deny scope check + the deny_scope on migrations.
+  lines.push(
+    `## Critical anti-hallucination rules (read before producing the plan)`,
+    ``,
+    `1. **Never modify any file under \`supabase/migrations/\`.** Migrations`,
+    `   are append-only after they are applied. If schema needs to change,`,
+    `   add a NEW dated migration file (\`supabase/migrations/YYYYMMDDHHMMSS_<purpose>.sql\`)`,
+    `   and put the new file in Files-to-modify. Modifying an applied`,
+    `   migration is the failure mode behind closed PR #1086.`,
+    ``,
+    `2. **Never propose a column rename, table rename, or schema-drift fix`,
+    `   without verifying the columns in the Live DB schema section above`,
+    `   (or in an attached migration file).** If a column you want to`,
+    `   reference does not appear in the schema section, treat it as`,
+    `   "may not exist" and write the plan to investigate, not to rename.`,
+    `   Closed PR #1091 proposed renaming \`vitana_id\` -> \`vuid\` because`,
+    `   the planner inferred from filename patterns alone — \`vuid\` does`,
+    `   not exist; the canonical column is \`vitana_id\`.`,
+    ``,
+    `3. **Files-to-modify must match the diff your executor will produce.**`,
+    `   Do not list files for "the developer to verify" — those go in`,
+    `   Out-of-scope. The executor writes exactly the listed files; if a`,
+    `   file is not listed, no edits are made to it.`,
     ``,
   );
 
@@ -601,10 +642,12 @@ async function runPlanningSession(
   const startedAt = Date.now();
   const filePath = finding.spec_snapshot?.file_path;
   let fileSection = '';
+  let fileContent: string | null = null;
 
   if (filePath) {
     const fileR = await fetchFileFromGitHub(filePath);
     if (fileR.ok && typeof fileR.content === 'string') {
+      fileContent = fileR.content;
       fileSection =
         `\n\n## Referenced file\n\n` +
         buildFileContext(fileR.content, finding.spec_snapshot?.line_number, filePath) +
@@ -625,7 +668,28 @@ async function runPlanningSession(
     fileSection = `\n\n## Referenced file\n\n> No file_path recorded on this finding. Produce the plan from the finding metadata alone.\n`;
   }
 
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons) + fileSection;
+  // VTID-02640: pre-fetch live schema for tables referenced in the file.
+  // Best-effort — fetch failure or missing supa just means the planner runs
+  // without schema context, same as before.
+  let schemaBlock = '';
+  if (supa && fileContent) {
+    try {
+      const tables = extractTableNames(fileContent);
+      if (tables.length > 0) {
+        const rows = await loadSchemaSnippets(supa, tables);
+        schemaBlock = formatSchemaBlock(rows);
+        if (rows.length > 0) {
+          console.log(
+            `${LOG_PREFIX} schema context: ${rows.length} cols across ${tables.length} tables for ${finding.id}`,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} schema-context fetch threw for ${finding.id}:`, err);
+    }
+  }
+
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock) + fileSection;
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls
