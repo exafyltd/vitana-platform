@@ -871,6 +871,37 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     if (u) { newStatus = 'resolved'; action = 'resolved'; }
   }
 
+  // VTID-02665: dispatch bug / ux_issue tickets through the dev autopilot
+  // pipeline once they enter in_progress. The bridge inserts an
+  // autopilot_recommendations row and creates a dev_autopilot_executions
+  // row that backgroundExecutorTick will claim on its next pass (~30s).
+  // The ticket's spec_md becomes the executor's spec; supervisor_notes is
+  // packed into spec_snapshot.feedback for the planner to see.
+  let dispatchInfo: { recommendation_id?: string; execution_id?: string; skipped?: string; error?: string } | null = null;
+  if (newStatus === 'in_progress' && (t.kind === 'bug' || t.kind === 'ux_issue')) {
+    try {
+      // Re-fetch the ticket so we have the latest spec_md / supervisor_notes
+      // (an earlier /draft-spec call in the same supervisor session sets
+      // both — but loaded.ticket above was fetched before any patches).
+      const { data: fresh } = await supabase.from('feedback_tickets')
+        .select('id, ticket_number, kind, status, spec_md, supervisor_notes, raw_transcript, vitana_id, screen_path, app_version, linked_finding_id')
+        .eq('id', t.id).maybeSingle();
+      if (fresh) {
+        const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
+        const r = await dispatchFeedbackTicket(fresh as any, userId);
+        dispatchInfo = {
+          recommendation_id: r.recommendation_id,
+          execution_id: r.execution_id,
+          skipped: r.skipped,
+          error: r.ok ? undefined : r.error,
+        };
+      }
+    } catch (err) {
+      console.warn(`[VTID-02665] dispatchFeedbackTicket failed for ${t.ticket_number}:`, err);
+      dispatchInfo = { error: err instanceof Error ? err.message : 'unknown' };
+    }
+  }
+
   // Audit + OASIS
   await supabase.from('agent_audit_log').insert({
     actor_user_id: userId,
@@ -895,7 +926,99 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     });
   } catch { /* non-blocking */ }
 
-  return res.json({ ok: true, ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action });
+  return res.json({
+    ok: true,
+    ticket_id: t.id,
+    ticket_number: t.ticket_number,
+    from: t.status,
+    to: newStatus,
+    action,
+    dispatch: dispatchInfo,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PUT /:tenantId/tickets/:id/reclassify — VTID-02665
+// ---------------------------------------------------------------------------
+// Lets the supervisor fix a misclassified ticket (e.g. classifier picked
+// support_question but it's really a bug). Resets the ticket to a
+// pre-draft state so the new resolver can be picked up by /draft-spec.
+//
+// Body: { kind: 'bug'|'ux_issue'|'support_question'|'marketplace_claim'|
+//                'account_issue'|'feedback'|'feature_request' }
+// Effect:
+//   - Updates kind
+//   - Clears spec_md / draft_answer_md / resolution_md (the previous
+//     resolver's draft is no longer relevant)
+//   - Resets resolver_agent
+//   - Status → 'triaged' (so the drawer shows the Generate step again)
+//   - Refuses if the ticket is already linked to a dev autopilot finding
+//     (you can't reclassify an in-flight execution).
+const KIND_VALUES = ['bug','ux_issue','support_question','marketplace_claim','account_issue','feedback','feature_request'] as const;
+const ReclassifyBody = z.object({ kind: z.enum(KIND_VALUES) });
+
+router.put('/:tenantId/tickets/:id/reclassify', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const v = ReclassifyBody.safeParse(req.body);
+  if (!v.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+  const t = loaded.ticket as { id: string; ticket_number: string; kind: string; status: string; linked_finding_id: string | null; vitana_id: string | null };
+
+  if (t.linked_finding_id) {
+    return res.status(409).json({
+      ok: false,
+      error: 'ALREADY_DISPATCHED',
+      message: 'This ticket is already running through the dev autopilot. Reclassify is blocked once dispatched.',
+      finding_id: t.linked_finding_id,
+    });
+  }
+  if (t.kind === v.data.kind) {
+    return res.json({ ok: true, ticket_id: t.id, kind: t.kind, no_change: true });
+  }
+
+  const supabase = getServiceClient();
+  const { error: upErr } = await supabase
+    .from('feedback_tickets')
+    .update({
+      kind: v.data.kind,
+      status: 'triaged',
+      spec_md: null,
+      draft_answer_md: null,
+      resolution_md: null,
+      resolver_agent: null,
+    })
+    .eq('id', t.id);
+  if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot
+    after_state: { ticket_id: t.id, ticket_number: t.ticket_number, action: 'reclassify', from_kind: t.kind, to_kind: v.data.kind },
+  });
+
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-02665',
+      type: 'feedback.ticket.status_changed' as any,
+      source: 'tenant-admin-reclassify',
+      status: 'info',
+      message: `Tenant ${tenantId} reclassified ${t.ticket_number}: ${t.kind} → ${v.data.kind}`,
+      payload: { ticket_id: t.id, ticket_number: t.ticket_number, from_kind: t.kind, to_kind: v.data.kind },
+      actor_id: userId,
+      actor_role: 'operator',
+      surface: 'operator',
+      vitana_id: (t.vitana_id as string) ?? undefined,
+    });
+  } catch { /* non-blocking */ }
+
+  return res.json({ ok: true, ticket_id: t.id, kind: v.data.kind, status: 'triaged' });
 });
 
 void VTID;
