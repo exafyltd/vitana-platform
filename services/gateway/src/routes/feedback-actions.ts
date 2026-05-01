@@ -67,64 +67,97 @@ const DraftSchema = z.object({ notes: z.string().max(2000).optional() });
 const ReasonSchema = z.object({ reason: z.string().max(500).optional() });
 const DuplicateSchema = z.object({ duplicate_of: z.string().uuid() });
 
+// VTID-02047: real LLM drafts via callViaRouter (Sage / Devon / Mira / Atlas).
+// On router failure each helper falls back to a clearly-labelled placeholder
+// so the supervisor can still move the ticket forward.
+async function loadTicketSnapshot(id: string) {
+  const { data } = await getServiceClient()
+    .from('feedback_tickets')
+    .select('id, ticket_number, kind, raw_transcript, intake_messages, structured_fields, classifier_meta, screen_path, app_version, vitana_id, priority')
+    .eq('id', id)
+    .maybeSingle();
+  return data;
+}
+
 adminRouter.post('/tickets/:id/draft-answer', async (req: Request, res: Response) => {
   const token = getBearerToken(req); if (!token) return res.status(401).json({ ok: false });
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
+
+  const snap = await loadTicketSnapshot(req.params.id);
+  if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+
+  const { llmDraftSageAnswer } = await import('../services/feedback-llm-resolvers');
+  const draft = await llmDraftSageAnswer(snap as any);
+
   const { data, error } = await getServiceClient()
     .from('feedback_tickets')
     .update({
       status: 'answer_ready',
       resolver_agent: 'sage',
-      draft_answer_md: `**Sage draft (placeholder)**\n\n_v1 supervisor-authored draft. LLM-backed answer drafting lands in the resolver-agents follow-up._\n\n${v.data.notes ?? ''}`,
+      draft_answer_md: draft.markdown + (v.data.notes ? `\n\n---\n_Supervisor notes:_ ${v.data.notes}` : ''),
     })
     .eq('id', req.params.id)
     .select('id, ticket_number, kind, status, vitana_id')
     .single();
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
-  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'answer_ready', resolver_agent: 'sage' }, actor ?? undefined);
-  return res.json({ ok: true, ticket: data });
+  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'answer_ready', resolver_agent: 'sage', draft_provider: draft.provider }, actor ?? undefined);
+  return res.json({ ok: true, ticket: data, draft_provider: draft.provider });
 });
 
 adminRouter.post('/tickets/:id/draft-spec', async (req: Request, res: Response) => {
   const token = getBearerToken(req); if (!token) return res.status(401).json({ ok: false });
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
+
+  const snap = await loadTicketSnapshot(req.params.id);
+  if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+
+  const { llmDraftDevonSpec } = await import('../services/feedback-llm-resolvers');
+  const draft = await llmDraftDevonSpec(snap as any);
+
   const { data, error } = await getServiceClient()
     .from('feedback_tickets')
     .update({
       status: 'spec_ready',
       resolver_agent: 'devon',
-      spec_md: `# Devon spec (placeholder)\n\n## Root cause hypothesis\nTBD\n\n## Repro\nTBD\n\n## Files to touch\nTBD\n\n## Risk + rollback\nTBD\n\n## Notes\n${v.data.notes ?? ''}`,
+      spec_md: draft.markdown + (v.data.notes ? `\n\n---\n_Supervisor notes:_ ${v.data.notes}` : ''),
     })
     .eq('id', req.params.id)
     .select('id, ticket_number, kind, status, vitana_id')
     .single();
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
-  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'spec_ready', resolver_agent: 'devon' }, actor ?? undefined);
-  return res.json({ ok: true, ticket: data });
+  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'spec_ready', resolver_agent: 'devon', draft_provider: draft.provider }, actor ?? undefined);
+  return res.json({ ok: true, ticket: data, draft_provider: draft.provider });
 });
 
 adminRouter.post('/tickets/:id/draft-resolution', async (req: Request, res: Response) => {
   const token = getBearerToken(req); if (!token) return res.status(401).json({ ok: false });
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase.from('feedback_tickets').select('kind').eq('id', req.params.id).maybeSingle();
-  const resolver = existing?.kind === 'marketplace_claim' ? 'atlas' : 'mira';
-  const { data, error } = await supabase
+
+  const snap = await loadTicketSnapshot(req.params.id);
+  if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+
+  const resolver = snap.kind === 'marketplace_claim' ? 'atlas' : 'mira';
+  const { llmDraftAtlasResolution, llmDraftMiraResolution } = await import('../services/feedback-llm-resolvers');
+  const draft = resolver === 'atlas'
+    ? await llmDraftAtlasResolution(snap as any)
+    : await llmDraftMiraResolution(snap as any);
+
+  const { data, error } = await getServiceClient()
     .from('feedback_tickets')
     .update({
       status: 'spec_ready',
       resolver_agent: resolver,
-      resolution_md: `# ${resolver === 'atlas' ? 'Atlas' : 'Mira'} resolution (placeholder)\n\n## Proposed action\nTBD\n\n## Justification\nTBD\n\n## Risk\nTBD\n\n## Notes\n${v.data.notes ?? ''}`,
+      resolution_md: draft.markdown + (v.data.notes ? `\n\n---\n_Supervisor notes:_ ${v.data.notes}` : ''),
     })
     .eq('id', req.params.id)
     .select('id, ticket_number, kind, status, vitana_id')
     .single();
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
-  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'spec_ready', resolver_agent: resolver }, actor ?? undefined);
-  return res.json({ ok: true, ticket: data });
+  emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'spec_ready', resolver_agent: resolver, draft_provider: draft.provider }, actor ?? undefined);
+  return res.json({ ok: true, ticket: data, draft_provider: draft.provider });
 });
 
 adminRouter.post('/tickets/:id/approve', async (req: Request, res: Response) => {
