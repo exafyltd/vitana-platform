@@ -48,12 +48,21 @@ import { processWithGemini, setThreadIdentity } from '../services/gemini-operato
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-02651: persona registry — voice/greeting/handles_kinds all loaded
 // from agent_personas at runtime so any new specialist is a config insert.
+// VTID-02653 Phase 6: tenant-aware overlay variants. The runtime uses
+// these whenever session.identity.tenant_id is available so each tenant
+// gets their customised view of the team. Falls back to the platform
+// variants for sessions without tenant context (anonymous, ops surfaces).
 import {
   getPersonaVoice as registryGetPersonaVoice,
   getPersonaGreeting as registryGetPersonaGreeting,
   pickPersonaForKind as registryPickPersonaForKind,
   isValidPersona as registryIsValidPersona,
   listAllPersonaKeys as registryListAllPersonaKeys,
+  getPersonaVoiceForTenant as registryGetPersonaVoiceForTenant,
+  getPersonaGreetingForTenant as registryGetPersonaGreetingForTenant,
+  pickPersonaForKindForTenant as registryPickPersonaForKindForTenant,
+  isValidPersonaForTenant as registryIsValidPersonaForTenant,
+  listAllPersonaKeysForTenant as registryListAllPersonaKeysForTenant,
   RECEPTIONIST_KEY as RECEPTIONIST_PERSONA_KEY,
 } from '../services/persona-registry';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
@@ -3789,12 +3798,19 @@ async function executeLiveApiToolInner(
 
       case 'switch_persona': {
         const target = String(args.to || '').toLowerCase();
-        // VTID-02651: validate against the live persona registry rather than
-        // a hardcoded list. Adding a new specialist via INSERT into
-        // agent_personas makes them an immediate valid swap target.
-        const targetIsValid = await registryIsValidPersona(target);
+        // VTID-02651 + VTID-02653: validate against the persona registry.
+        // When the session has a tenant context, use the tenant-aware
+        // variant — that excludes personas the tenant has disabled, so
+        // the LLM cannot accidentally swap the user to a colleague who's
+        // turned off for their tenant.
+        const _swapTenantId = session.identity?.tenant_id;
+        const targetIsValid = _swapTenantId
+          ? await registryIsValidPersonaForTenant(target, _swapTenantId)
+          : await registryIsValidPersona(target);
         if (!targetIsValid) {
-          const valid = await registryListAllPersonaKeys();
+          const valid = _swapTenantId
+            ? await registryListAllPersonaKeysForTenant(_swapTenantId)
+            : await registryListAllPersonaKeys();
           return { success: false, result: '', error: `Invalid persona: ${target} (active personas: ${valid.join(', ')})` };
         }
         const currentPersona = ((session as any).activePersona as string) || 'vitana';
@@ -3841,8 +3857,15 @@ async function executeLiveApiToolInner(
             (session as any).personaSystemOverride = personaPrompt +
               `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. The user explicitly asked to switch to you (no new ticket — they're navigating between colleagues). Greet briefly and ask how you can help.` +
               `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY} please", "zurück zur Rezeption", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (the available keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
-            (session as any).personaVoiceOverride = await registryGetPersonaVoice(target);
-            (session as any).personaForcedFirstMessage = await registryGetPersonaGreeting(target, session.lang || 'en');
+            // VTID-02653 Phase 6: tenant-aware voice + greeting lookup.
+            // Tenant custom_greeting_templates win over platform per-language
+            // greetings; tenant disable was already filtered above.
+            (session as any).personaVoiceOverride = _swapTenantId
+              ? await registryGetPersonaVoiceForTenant(target, _swapTenantId)
+              : await registryGetPersonaVoice(target);
+            (session as any).personaForcedFirstMessage = _swapTenantId
+              ? await registryGetPersonaGreetingForTenant(target, session.lang || 'en', _swapTenantId)
+              : await registryGetPersonaGreeting(target, session.lang || 'en');
             console.log(`[VTID-02047] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}`);
           }
 
@@ -3884,16 +3907,28 @@ async function executeLiveApiToolInner(
           const url = process.env.SUPABASE_URL!;
           const key = process.env.SUPABASE_SERVICE_ROLE!;
 
-          // Resolve specialist via keyword router unless hinted explicitly
+          // Resolve specialist via keyword router unless hinted explicitly.
+          // VTID-02653 Phase 6: when the session has a tenant context, use
+          // the tenant-aware RPC pick_specialist_for_text_tenant which
+          // UNIONs platform handoff_keywords with the tenant's own routing
+          // keywords (and respects tenant disable). Falls back to the
+          // platform-only RPC when no tenant context (anonymous sessions).
           let pickedPersona = specialistHint;
           let matchedKeyword: string | null = null;
           let confidence: number | null = null;
+          const _reportTenantId = session.identity?.tenant_id;
           if (!pickedPersona) {
             try {
-              const rpcResp = await fetch(`${url}/rest/v1/rpc/pick_specialist_for_text`, {
+              const rpcName = _reportTenantId
+                ? 'pick_specialist_for_text_tenant'
+                : 'pick_specialist_for_text';
+              const rpcBody = _reportTenantId
+                ? { p_text: summary, p_tenant_id: _reportTenantId }
+                : { p_text: summary };
+              const rpcResp = await fetch(`${url}/rest/v1/rpc/${rpcName}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
-                body: JSON.stringify({ p_text: summary }),
+                body: JSON.stringify(rpcBody),
               });
               const rpcJson = await rpcResp.json().catch(() => null);
               const row = Array.isArray(rpcJson) ? rpcJson[0] : rpcJson;
@@ -3905,12 +3940,13 @@ async function executeLiveApiToolInner(
             } catch { /* keep empty hint, fall through */ }
           }
           // VTID-02651: kind→persona mapping is data-driven from
-          // agent_personas.handles_kinds. Adding a new persona that handles
-          // a kind = updating that row's handles_kinds array; no code
-          // change needed. Falls back to '' (caller skips swap) if no
-          // active persona claims the kind.
+          // agent_personas.handles_kinds. VTID-02653: tenant variant skips
+          // personas the tenant has disabled. Falls back to '' (caller
+          // skips swap) if no active persona claims the kind.
           if (!pickedPersona) {
-            pickedPersona = (await registryPickPersonaForKind(kind)) ?? '';
+            pickedPersona = _reportTenantId
+              ? ((await registryPickPersonaForKindForTenant(kind, _reportTenantId)) ?? '')
+              : ((await registryPickPersonaForKind(kind)) ?? '');
           }
 
           const insertResp = await fetch(`${url}/rest/v1/feedback_tickets`, {
@@ -4025,9 +4061,14 @@ async function executeLiveApiToolInner(
                 (session as any).personaSystemOverride = personaPrompt +
                   `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.` +
                   `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY}", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (active keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
-                (session as any).personaVoiceOverride = await registryGetPersonaVoice(swapTo);
-                (session as any).personaForcedFirstMessage = await registryGetPersonaGreeting(swapTo, session.lang || 'en');
-                console.log(`[VTID-02047] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}`);
+                // VTID-02653 Phase 6: tenant-aware voice + greeting.
+                (session as any).personaVoiceOverride = _reportTenantId
+                  ? await registryGetPersonaVoiceForTenant(swapTo, _reportTenantId)
+                  : await registryGetPersonaVoice(swapTo);
+                (session as any).personaForcedFirstMessage = _reportTenantId
+                  ? await registryGetPersonaGreetingForTenant(swapTo, session.lang || 'en', _reportTenantId)
+                  : await registryGetPersonaGreeting(swapTo, session.lang || 'en');
+                console.log(`[VTID-02047] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}, tenant=${_reportTenantId ?? 'none'}`);
 
                 // Notify the client UI so it can show "Talking to <Persona>"
                 const swapMsg = {
@@ -8035,7 +8076,11 @@ async function connectToLiveAPI(
       let _personaVoice = (session as any).personaVoiceOverride;
       if (!_personaVoice) {
         try {
-          const fromRegistry = await registryGetPersonaVoice(_persona);
+          // VTID-02653: tenant-aware lookup when session has tenant context.
+          const _setupTenantId = session.identity?.tenant_id;
+          const fromRegistry = _setupTenantId
+            ? await registryGetPersonaVoiceForTenant(_persona, _setupTenantId)
+            : await registryGetPersonaVoice(_persona);
           if (fromRegistry) _personaVoice = fromRegistry;
         } catch (e) {
           console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
