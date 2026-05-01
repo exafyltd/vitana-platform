@@ -1,0 +1,9 @@
+project_id           = "lovable-vitana-vers1"
+region               = "us-central1"
+zone                 = "us-central1-a"
+zone_b               = "us-central1-b"
+ha_enabled           = true            # full HA pair ~$449/mo
+instance_size        = "c2-standard-4"
+redis_memory_size_gb = 1
+redis_tier           = "STANDARD_HA"   # +$36/mo for HA replica — required once voice uptime is contractual
+domain_name          = "livekit.vitana.dev"
