@@ -1012,11 +1012,7 @@
         method: 'POST',
         headers: headers,
         body: JSON.stringify(startPayload),
-        signal: startSignal,
-        // VTID-02034: forward GCLB-COOKIE so Cloud Run session affinity
-        // pins all subsequent /stream/send calls to the same instance
-        // that holds the in-memory session state.
-        credentials: 'include'
+        signal: startSignal
       });
       if (startTimer) clearTimeout(startTimer);
 
@@ -1040,11 +1036,7 @@
       var sseUrl = _cfg.gw + '/api/v1/orb/live/stream?session_id=' + data.session_id;
       if (_cfg.token) sseUrl += '&token=' + encodeURIComponent(_cfg.token);
 
-      // VTID-02034: pass credentials so the GCLB-COOKIE pinning the session
-      // to this instance is forwarded with the SSE long-poll too. Without
-      // this the SSE connection can land on a different instance than the
-      // /stream/send POSTs, breaking the pipeline silently.
-      var es = new EventSource(sseUrl, { withCredentials: true });
+      var es = new EventSource(sseUrl);
       es.onopen = function () {
         console.log('[VTOrb] SSE connected');
         _startWatchdog();
@@ -1130,8 +1122,7 @@
         if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
         await fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
           method: 'POST', headers: headers,
-          body: JSON.stringify({ session_id: _s.sessionId }),
-          credentials: 'include' // VTID-02034: maintain instance affinity
+          body: JSON.stringify({ session_id: _s.sessionId })
         });
       } catch (e) { /* ignore */ }
     }
@@ -1715,8 +1706,7 @@
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
-      body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' }),
-      credentials: 'include' // VTID-02034: pin to the instance that owns the session
+      body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' })
     }).then(function (r) {
       if (r.ok) {
         _s._audioSendFailCount = 0;
@@ -1758,8 +1748,7 @@
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
-      body: JSON.stringify({ type: 'interrupt' }),
-      credentials: 'include' // VTID-02034: maintain instance affinity
+      body: JSON.stringify({ type: 'interrupt' })
     }).catch(function () {});
   }
 
@@ -2305,8 +2294,7 @@
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/chat-tts', {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ text: text.trim(), lang: _cfg.lang, context_turns: contextTurns }),
-        credentials: 'include' // VTID-02034: maintain instance affinity
+        body: JSON.stringify({ text: text.trim(), lang: _cfg.lang, context_turns: contextTurns })
       });
 
       var data = await resp.json();
