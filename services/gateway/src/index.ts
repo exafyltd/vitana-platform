@@ -195,6 +195,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const specialistsAdminRouter = require('./routes/specialists-admin').default;
   // VTID-02047 Phase 5: 3rd-party connection manager (Stripe/Auth0/Zendesk stubs)
   const specialistsConnectionsRouter = require('./routes/specialists-connections').default;
+  // VTID-02655 Phase 6: tenant overlay endpoints — tenant admins customize
+  // platform-built specialists (enable/disable, KB bindings, keywords, conn).
+  const tenantSpecialistsRouter = require('./routes/tenant-specialists').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
@@ -927,6 +930,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/specialists', specialistsAdminRouter, { owner: 'specialists-admin' });
   // VTID-02047 Phase 5: 3rd-party connection manager (mounted on same prefix)
   mountRouterSync(app, '/api/v1/admin/specialists', specialistsConnectionsRouter, { owner: 'specialists-connections' });
+  // VTID-02655 Phase 6: tenant overlay endpoints (tenant admin customizes
+  // platform-built specialists). Public URLs:
+  //   /api/v1/admin/tenants/:tenantId/specialists/:key/overrides
+  //   /api/v1/admin/tenants/:tenantId/specialists/:key/kb-bindings
+  //   /api/v1/admin/tenants/:tenantId/specialists/:key/keywords
+  //   /api/v1/admin/tenants/:tenantId/specialists/:key/connections
+  //   /api/v1/admin/tenants/:tenantId/audit
+  mountRouterSync(app, '/api/v1/admin/tenants', tenantSpecialistsRouter, { owner: 'tenant-specialists' });
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
