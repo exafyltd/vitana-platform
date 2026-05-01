@@ -1243,9 +1243,10 @@ async function patchExecution(
           s,
           `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id,pr_url,pr_number&limit=1`,
         );
-        const exec = lookupR.ok && lookupR.data?.[0];
-        const finding_id = exec?.finding_id;
-        if (!finding_id) return;
+        if (!lookupR.ok) return;
+        const exec = lookupR.data?.[0];
+        if (!exec || !exec.finding_id) return;
+        const finding_id = exec.finding_id;
 
         await recordExecOutcome(
           finding_id,
@@ -1264,8 +1265,8 @@ async function patchExecution(
             headers: { Prefer: 'return=minimal' },
             body: JSON.stringify({
               status: 'completed',
-              merged_pr_url: exec?.pr_url ?? null,
-              merged_pr_number: exec?.pr_number ?? null,
+              merged_pr_url: exec.pr_url ?? null,
+              merged_pr_number: exec.pr_number ?? null,
               completed_at: new Date().toISOString(),
             }),
           },
@@ -1277,12 +1278,12 @@ async function patchExecution(
             source: 'dev-autopilot',
             status: 'success',
             message: `Finding ${finding_id.slice(0, 8)} completed via execution ${id.slice(0, 8)}`
-              + (exec?.pr_number ? ` (PR #${exec.pr_number})` : ''),
+              + (exec.pr_number ? ` (PR #${exec.pr_number})` : ''),
             payload: {
               finding_id,
               execution_id: id,
-              pr_url: exec?.pr_url ?? null,
-              pr_number: exec?.pr_number ?? null,
+              pr_url: exec.pr_url ?? null,
+              pr_number: exec.pr_number ?? null,
             },
           });
         } else {

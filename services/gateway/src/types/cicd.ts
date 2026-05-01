@@ -596,6 +596,7 @@ export type CicdEventType =
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'
+  | 'dev_autopilot.finding.completed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
   | 'dev_autopilot.execution.bridged'
