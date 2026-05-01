@@ -1875,6 +1875,61 @@ function buildLiveApiTools(
             required: ['title', 'start'],
           },
         },
+        // VTID-02047: Unified Feedback Pipeline — voice claim/bug/support intake.
+        // Vitana calls this when the user wants to report something outside her
+        // domain (bugs, support questions, refunds, account issues). The tool
+        // creates a feedback_tickets row routed to the matching specialist
+        // (Devon/Sage/Atlas/Mira). Vitana then speaks a short bridge sentence
+        // confirming the handoff.
+        {
+          name: 'report_to_specialist',
+          description: [
+            'Capture a user-originated claim, bug report, support question, or',
+            'account/marketplace issue. Vitana CALLS THIS when the user wants',
+            'to report something outside her longevity/community domain — e.g.',
+            'a bug, a question about how to use Vitana, an order/refund issue,',
+            'a login/account problem, or any complaint or claim against the',
+            'product or marketplace.',
+            '',
+            'TRIGGER PHRASES (any language):',
+            '  - "I want to report ..."',
+            '  - "I have a claim ..." / "I want to make a claim"',
+            '  - "Something is broken / not working / crashed / freezing"',
+            '  - "How do I ..." / "Where is ..." (knowledge / support)',
+            '  - "My order didn\'t arrive" / "I want a refund"',
+            '  - "I can\'t log in" / "My account is locked"',
+            '  - User explicitly asks to talk to support / tech / finance',
+            '',
+            'DO NOT CALL for: longevity advice, diary entries, matchmaking,',
+            'community questions, calendar planning, health questions — those',
+            'stay with Vitana.',
+            '',
+            'After calling, speak a brief bridge sentence in the user\'s',
+            'language acknowledging the handoff (e.g. "I\'ve passed that to',
+            'Devon, our tech colleague — he\'ll follow up via the Talk to',
+            'Vitana section."). Then return to the conversation.'
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['bug', 'ux_issue', 'support_question', 'account_issue', 'marketplace_claim', 'feature_request', 'feedback'],
+                description: 'Best classification of what the user is reporting. Pick the closest match.',
+              },
+              specialist_hint: {
+                type: 'string',
+                enum: ['devon', 'sage', 'atlas', 'mira'],
+                description: 'Optional: which specialist should own this. Devon=bugs/UX, Sage=support questions, Atlas=marketplace/finance, Mira=account/login. The backend re-checks via keyword router.',
+              },
+              summary: {
+                type: 'string',
+                description: 'Concise one-paragraph summary of the user\'s report in their own words. Include any specifics they mentioned (screen, error, order id, account email, etc.).',
+              },
+            },
+            required: ['kind', 'summary'],
+          },
+        },
         // VTID-01943: Contacts search. Routes to contacts.read capability.
         {
           name: 'find_contact',
@@ -3613,6 +3668,144 @@ async function executeLiveApiToolInner(
           success: true,
           result: `Found ${webHits.length} relevant web results:\n${formatted}`,
         };
+      }
+
+      // =====================================================================
+      // VTID-02047: Unified Feedback Pipeline — voice claim/bug/support intake
+      // =====================================================================
+
+      case 'report_to_specialist': {
+        const kind = String(args.kind || 'feedback');
+        const summary = String(args.summary || '').trim();
+        const specialistHint = String(args.specialist_hint || '').trim();
+        if (!summary) {
+          return { success: false, result: '', error: 'summary is required' };
+        }
+        try {
+          const url = process.env.SUPABASE_URL!;
+          const key = process.env.SUPABASE_SERVICE_ROLE!;
+
+          // Resolve specialist via keyword router unless hinted explicitly
+          let pickedPersona = specialistHint;
+          let matchedKeyword: string | null = null;
+          let confidence: number | null = null;
+          if (!pickedPersona) {
+            try {
+              const rpcResp = await fetch(`${url}/rest/v1/rpc/pick_specialist_for_text`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+                body: JSON.stringify({ p_text: summary }),
+              });
+              const rpcJson = await rpcResp.json().catch(() => null);
+              const row = Array.isArray(rpcJson) ? rpcJson[0] : rpcJson;
+              if (row?.persona_key) {
+                pickedPersona = row.persona_key;
+                matchedKeyword = row.matched_keyword ?? null;
+                confidence = row.confidence ?? null;
+              }
+            } catch { /* keep empty hint, fall through */ }
+          }
+          const KIND_TO_PERSONA: Record<string, string> = {
+            bug: 'devon', ux_issue: 'devon',
+            support_question: 'sage',
+            marketplace_claim: 'atlas',
+            account_issue: 'mira',
+          };
+          if (!pickedPersona) pickedPersona = KIND_TO_PERSONA[kind] ?? '';
+
+          const insertResp = await fetch(`${url}/rest/v1/feedback_tickets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: key,
+              Authorization: `Bearer ${key}`,
+              Prefer: 'return=representation',
+            },
+            body: JSON.stringify({
+              user_id: session.identity.user_id,
+              vitana_id: session.identity.vitana_id ?? null,
+              kind,
+              status: pickedPersona ? 'triaged' : 'new',
+              raw_transcript: summary,
+              intake_messages: [
+                { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
+              ],
+              structured_fields: {
+                specialist_hint: specialistHint || null,
+                voice_origin: true,
+              },
+              screen_path: '/orb/voice',
+              resolver_agent: pickedPersona || null,
+              triaged_at: pickedPersona ? new Date().toISOString() : null,
+            }),
+          });
+          if (!insertResp.ok) {
+            const errText = await insertResp.text().catch(() => '');
+            console.error(`[VTID-02047] feedback_tickets insert failed:`, insertResp.status, errText);
+            return { success: false, result: '', error: `insert failed: ${insertResp.status}` };
+          }
+          const created = await insertResp.json().catch(() => null);
+          const ticket = Array.isArray(created) ? created[0] : created;
+
+          // Log handoff event for Live Handoffs panel
+          if (pickedPersona) {
+            await fetch(`${url}/rest/v1/feedback_handoff_events`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+              body: JSON.stringify({
+                conversation_id: session.sessionId,
+                ticket_id: ticket?.id,
+                user_id: session.identity.user_id,
+                vitana_id: session.identity.vitana_id ?? null,
+                from_agent: 'vitana',
+                to_agent: pickedPersona,
+                reason: 'off_domain_intent',
+                detected_intent: kind,
+                matched_keyword: matchedKeyword,
+                confidence: confidence,
+              }),
+            }).catch(() => undefined);
+          }
+
+          // Emit OASIS event so it shows in the inbox + KPIs
+          try {
+            const { emitOasisEvent } = await import('../services/oasis-event-service');
+            await emitOasisEvent({
+              vtid: 'VTID-02047',
+              type: 'feedback.ticket.created' as any,
+              source: 'orb-voice-tool',
+              status: 'info',
+              message: `Voice tool report_to_specialist created ticket ${ticket?.ticket_number} (${kind}) → ${pickedPersona || 'unrouted'}`,
+              payload: {
+                ticket_id: ticket?.id,
+                ticket_number: ticket?.ticket_number,
+                kind,
+                specialist: pickedPersona,
+                voice_origin: true,
+              },
+              actor_id: session.identity.user_id,
+              actor_role: 'user',
+              surface: 'orb',
+              vitana_id: session.identity.vitana_id ?? undefined,
+            });
+          } catch { /* non-blocking */ }
+
+          const personaLabel: Record<string, string> = {
+            devon: 'Devon (tech support)',
+            sage: 'Sage (customer support)',
+            atlas: 'Atlas (finance / marketplace)',
+            mira: 'Mira (account)',
+          };
+          const personaName = personaLabel[pickedPersona] || 'a specialist colleague';
+
+          return {
+            success: true,
+            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Tell the user: "I've passed that to ${personaName.split(' ')[0]} — they'll follow up in the Talk to Vitana section."`,
+          };
+        } catch (err) {
+          console.error('[VTID-02047] report_to_specialist failed:', err);
+          return { success: false, result: '', error: err instanceof Error ? err.message : 'unknown error' };
+        }
       }
 
       // =====================================================================
@@ -6610,6 +6803,7 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
+- Use report_to_specialist when the user wants to REPORT, file a CLAIM, ask a SUPPORT question, describe a BUG / login issue / refund / order problem — anything outside your longevity/community domain. Pick kind=bug for crashes/UX, support_question for "how do I" questions, marketplace_claim for orders/refunds, account_issue for login/profile problems. Pass a clear summary in the user's own words. Then speak a brief bridge: "I've passed that to Devon" (or Sage/Atlas/Mira) — keep it natural in their language. Don't try to debug, refund, or reset accounts yourself; your colleagues handle that.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
