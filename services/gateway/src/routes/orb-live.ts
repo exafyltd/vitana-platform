@@ -8099,7 +8099,15 @@ async function connectToLiveAPI(
                         session.transcriptTurns.length > 0
                           ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Vitana'}: ${t.text}`).join('\n')
                           : undefined,
-                        ((session as any)._reconnectCount || 0) > 0
+                        // VTID-02047: persona swap to Vitana is NOT a generic
+                        // reconnect — Vitana should greet ("Welcome back…") not
+                        // stay silent per the reconnect-bucket "DO NOT speak"
+                        // rule. Force isReconnect=false when the swap-in-flight
+                        // flag is set so the bucket logic picks "first" / a
+                        // greeting instead.
+                        ((session as any)._personaSwapInFlight
+                          ? false
+                          : ((session as any)._reconnectCount || 0) > 0)
                       )
                     : buildLiveSystemInstruction(
                         session.lang,
@@ -8111,8 +8119,12 @@ async function connectToLiveAPI(
                         session.transcriptTurns.length > 0
                           ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
                           : undefined,
-                        // Pass reconnect flag so greeting rules are suppressed on reconnect
-                        ((session as any)._reconnectCount || 0) > 0,
+                        // VTID-02047: persona swap to Vitana — see comment above.
+                        // Suppress the reconnect-bucket "DO NOT speak" rule so
+                        // Vitana actually greets the user back into the call.
+                        ((session as any)._personaSwapInFlight
+                          ? false
+                          : ((session as any)._reconnectCount || 0) > 0),
                         // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
                         // model uses this to pick a time-appropriate greeting and
                         // acknowledge the screen the user is on instead of
@@ -9352,13 +9364,55 @@ async function attemptTransparentReconnect(
       try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
     }
 
-    // After a successful persona swap, clear the swap-in-flight flag so
-    // subsequent automatic reconnects (e.g. Vertex 5-min limit while
-    // specialist is still active) keep the persona's voice and prompt
-    // without re-treating them as a fresh swap.
+    // After a successful persona swap, send a one-shot client_content nudge
+    // that triggers the new persona to speak their greeting NOW. Without
+    // this, Gemini Live waits silently for user audio after a reconnect —
+    // even with a FORCED FIRST UTTERANCE in the system prompt — because
+    // it doesn't treat reconnected sessions as "session start". The nudge
+    // is the same pattern sendGreetingPromptToLiveAPI uses for normal
+    // session starts. We send a stage-direction in the user's language
+    // telling the model to deliver the forced greeting.
     if (isPersonaSwap) {
+      const lang = session.lang || 'en';
+      const personaTo = (session as any).activePersona || 'vitana';
+      const forced = (session as any).personaForcedFirstMessage as string | undefined;
+
+      // Stage-direction prompts in each language — the model reads these
+      // as a "the session just started, speak now" cue. The text after
+      // the colon is the literal greeting we want spoken; if a forced
+      // first message is set we quote it directly so there's no
+      // translation drift.
+      const stagePrompts: Record<string, string> = {
+        en: forced
+          ? `(System: the call has just connected. Speak this opening line verbatim, in a warm voice, then stop and wait for the user.)\n\n"${forced}"`
+          : `(System: the call has just connected. Open with a brief warm greeting, then wait for the user.)`,
+        de: forced
+          ? `(System: das Gespräch wurde gerade verbunden. Sprich diesen Eröffnungssatz wortwörtlich in einer warmen Stimme, dann stoppe und warte auf den Nutzer.)\n\n"${forced}"`
+          : `(System: das Gespräch wurde gerade verbunden. Beginne mit einer kurzen, warmen Begrüßung und warte auf den Nutzer.)`,
+        fr: forced
+          ? `(Système : l'appel vient de se connecter. Prononce cette phrase d'ouverture mot pour mot, d'une voix chaleureuse, puis arrête-toi et attends l'utilisateur.)\n\n"${forced}"`
+          : `(Système : l'appel vient de se connecter. Ouvre par une brève salutation chaleureuse et attends l'utilisateur.)`,
+        es: forced
+          ? `(Sistema: la llamada acaba de conectarse. Pronuncia esta frase de apertura textualmente, con voz cálida, luego detente y espera al usuario.)\n\n"${forced}"`
+          : `(Sistema: la llamada acaba de conectarse. Abre con un breve saludo cálido y espera al usuario.)`,
+      };
+      const greetingNudge = stagePrompts[lang] ?? stagePrompts['en'];
+
+      const greetingMsg = {
+        client_content: {
+          turns: [{ role: 'user', parts: [{ text: greetingNudge }] }],
+          turn_complete: true,
+        },
+      };
+      try {
+        newWs.send(JSON.stringify(greetingMsg));
+        console.log(`[VTID-02047] Persona-swap greeting nudge sent for ${personaTo} (lang=${lang}, forced=${!!forced})`);
+      } catch (sendErr) {
+        console.warn(`[VTID-02047] Failed to send persona-swap greeting nudge:`, sendErr);
+      }
+
       (session as any)._personaSwapInFlight = false;
-      console.log(`[VTID-02047] Persona swap to ${(session as any).activePersona} complete`);
+      console.log(`[VTID-02047] Persona swap to ${personaTo} complete`);
     }
 
     return true;
