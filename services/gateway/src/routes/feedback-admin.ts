@@ -304,10 +304,15 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
 router.get('/tenants/:tenantId/personas', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
+  // Return ALL non-archived personas including 'disabled' so the admin UI's
+  // per-card on/off toggle reflects the real state (a disabled persona must
+  // still appear in the list, just dimmed). Filtering to status='active' here
+  // made disabled cards vanish from the UI, which made the toggle look broken
+  // because the user flipped it once and the card disappeared.
   const { data, error } = await supabase
     .from('agent_personas')
     .select('key, display_name, role, voice_id, voice_sample_url, handles_kinds, status, version, updated_at')
-    .eq('status', 'active')
+    .neq('status', 'archived')
     .order('key');
   if (error) return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
   return res.json({ ok: true, personas: data ?? [] });
