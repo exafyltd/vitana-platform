@@ -71,16 +71,33 @@ router.post('/handoff-detect', async (req: Request, res: Response) => {
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row || !row.persona_key) {
-    return res.json({ ok: true, handoff: false, persona_key: 'vitana' });
+  // Two-gate RPC returns: decision, persona_key, matched_phrase, gate, confidence.
+  // decision='answer_inline' (any gate) → stay with Vitana.
+  // decision='forward' / gate='topic'   → swap to row.persona_key.
+  const decision: string = row?.decision ?? (row?.persona_key ? 'forward' : 'answer_inline');
+  const gate: string = row?.gate ?? (row?.persona_key ? 'topic' : 'forward_request');
+  const matchedPhrase: string | null = row?.matched_phrase ?? row?.matched_keyword ?? null;
+
+  if (decision !== 'forward' || !row?.persona_key) {
+    return res.json({
+      ok: true,
+      handoff: false,
+      persona_key: 'vitana',
+      decision,
+      gate,
+      matched_phrase: matchedPhrase,
+    });
   }
   return res.json({
     ok: true,
     handoff: true,
     persona_key: row.persona_key,
-    matched_keyword: row.matched_keyword,
-    score: row.score,
+    matched_keyword: matchedPhrase,
+    matched_phrase: matchedPhrase,
+    score: row.score ?? null,
     confidence: row.confidence,
+    decision,
+    gate,
     suggested_kind: KIND_BY_AGENT[row.persona_key] ?? null,
   });
 });

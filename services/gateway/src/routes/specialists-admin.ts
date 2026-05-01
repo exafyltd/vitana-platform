@@ -433,6 +433,139 @@ router.put('/:key/keywords', async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// Forwarding-rules feature: Vitana-only Gate A phrase lists + per-specialist
+// enable/disable toggle + shared user-context preview for the admin sandbox.
+// ---------------------------------------------------------------------------
+
+const PhrasesSchema = z.object({ phrases: z.array(z.string().min(1).max(200)).max(500) });
+
+async function updateVitanaPhrases(
+  req: Request,
+  res: Response,
+  column: 'forward_request_phrases' | 'stay_inline_phrases',
+  action: string,
+) {
+  const userId = ensureAuth(req, res); if (!userId) return;
+  const v = PhrasesSchema.safeParse(req.body);
+  if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
+
+  const supabase = getServiceClient();
+  const { data: existing } = await supabase
+    .from('agent_personas')
+    .select('*')
+    .eq('key', 'vitana')
+    .maybeSingle();
+  if (!existing) return res.status(404).json({ ok: false, error: 'VITANA_NOT_FOUND' });
+
+  // Snapshot current version before mutating.
+  await supabase.from('agent_persona_versions').insert({
+    persona_id: existing.id,
+    version: existing.version,
+    snapshot: existing,
+    change_note: `Edit ${column} via admin endpoint`,
+    created_by: userId,
+  });
+
+  const normalized = v.data.phrases.map(p => p.trim().toLowerCase()).filter(Boolean);
+  const { data: updated, error } = await supabase
+    .from('agent_personas')
+    .update({
+      [column]: normalized,
+      version: existing.version + 1,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id)
+    .select('*')
+    .single();
+  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+
+  await writeAudit(userId, existing.id, action, { [column]: (existing as Record<string, unknown>)[column] }, { [column]: normalized });
+  return res.json({ ok: true, phrases: normalized, version: updated.version });
+}
+
+router.put('/vitana/forward-phrases', (req, res) =>
+  updateVitanaPhrases(req, res, 'forward_request_phrases', 'forward_phrases_change')
+);
+
+router.put('/vitana/stay-inline-phrases', (req, res) =>
+  updateVitanaPhrases(req, res, 'stay_inline_phrases', 'stay_inline_phrases_change')
+);
+
+// PATCH /:key/status — lightweight enable/disable toggle for the card-level
+// switch on the Specialists tab. Vitana cannot be disabled — she's the
+// always-on life companion.
+
+const StatusSchema = z.object({ enabled: z.boolean() });
+
+router.patch('/:key/status', async (req: Request, res: Response) => {
+  const userId = ensureAuth(req, res); if (!userId) return;
+  const key = req.params.key;
+  if (key === 'vitana') {
+    return res.status(400).json({ ok: false, error: 'VITANA_ALWAYS_ON',
+      message: 'Vitana is the always-on life companion and cannot be disabled.' });
+  }
+  const v = StatusSchema.safeParse(req.body);
+  if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
+
+  const supabase = getServiceClient();
+  const { data: existing } = await supabase
+    .from('agent_personas')
+    .select('id, key, status, version')
+    .eq('key', key)
+    .maybeSingle();
+  if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+
+  const newStatus = v.data.enabled ? 'active' : 'disabled';
+  if (existing.status === newStatus) {
+    return res.json({ ok: true, key, status: newStatus, unchanged: true });
+  }
+
+  const { data: full } = await supabase.from('agent_personas').select('*').eq('id', existing.id).maybeSingle();
+  await supabase.from('agent_persona_versions').insert({
+    persona_id: existing.id,
+    version: existing.version,
+    snapshot: full,
+    change_note: `Status toggle → ${newStatus}`,
+    created_by: userId,
+  });
+
+  const { data: updated, error } = await supabase
+    .from('agent_personas')
+    .update({
+      status: newStatus,
+      version: existing.version + 1,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id)
+    .select('id, key, status, version')
+    .single();
+  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+
+  await writeAudit(userId, existing.id, 'status_toggle',
+    { status: existing.status }, { status: newStatus });
+  return res.json({ ok: true, key, status: updated.status, version: updated.version });
+});
+
+// GET /context-preview?user_id=… — admin sandbox view of the shared
+// specialist-context payload that every persona gets at swap time.
+// Same payload regardless of which persona would receive it.
+
+router.get('/context-preview', async (req: Request, res: Response) => {
+  if (!ensureAuth(req, res)) return;
+  const userId = String(req.query.user_id || '').trim();
+  if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) {
+    return res.status(400).json({ ok: false, error: 'BAD_USER_ID',
+      message: 'user_id must be a UUID. Resolve from vitana_id via app_users if needed.' });
+  }
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.rpc('build_specialist_context', { p_user_id: userId });
+  if (error) return res.status(502).json({ ok: false, error: error.message });
+  return res.json({ ok: true, context: data ?? null });
+});
+
+// ---------------------------------------------------------------------------
 // Audit log
 // ---------------------------------------------------------------------------
 
