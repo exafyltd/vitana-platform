@@ -14063,6 +14063,8 @@ var VOICE_LAB_TABS = [
     { key: 'experiments', label: 'Experiments', path: '/command-hub/diagnostics/voice-lab/experiments/' },
     { key: 'personality', label: 'AI Personality', path: '/command-hub/diagnostics/voice-lab/personality/' },
     { key: 'providers', label: 'Providers', path: '/command-hub/diagnostics/voice-lab/providers/' },
+    // VTID-LIVEKIT-FOUNDATION: per-agent STT/LLM/TTS dropdowns (companion to PR #1156 + #1157).
+    { key: 'agent-config', label: 'Agent Config', path: '/command-hub/diagnostics/voice-lab/agent-config/' },
     { key: 'sessions', label: 'Sessions', path: '/command-hub/diagnostics/voice-lab/sessions/' },
     { key: 'metrics', label: 'Metrics', path: '/command-hub/diagnostics/voice-lab/metrics/' },
     { key: 'governance', label: 'Governance', path: '/command-hub/diagnostics/voice-lab/governance/' }
@@ -14090,6 +14092,10 @@ function renderVoiceLabView() {
     header.appendChild(subtitle);
 
     container.appendChild(header);
+
+    // VTID-LIVEKIT-FOUNDATION: Active Provider banner — shows which voice
+    // pipeline is currently serving traffic + a flip button. Always visible.
+    container.appendChild(renderActiveProviderBanner());
 
     // Sub-tab navigation
     var tabBar = document.createElement('div');
@@ -14130,7 +14136,10 @@ function renderVoiceLabView() {
             content.appendChild(renderVoiceLabExperimentsPanel());
             break;
         case 'providers':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Providers', 'VTID-01218D'));
+            content.appendChild(renderVoiceLabProvidersPanel());
+            break;
+        case 'agent-config':
+            content.appendChild(renderVoiceLabAgentConfigPanel());
             break;
         case 'sessions':
             content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
@@ -14153,6 +14162,213 @@ function renderVoiceLabView() {
     return container;
 }
 
+/**
+ * VTID-LIVEKIT-FOUNDATION: Active Provider banner.
+ *
+ * Shows which voice pipeline is currently serving traffic (vertex|livekit)
+ * with a flip button. The flip itself is a 501 stub today (gateway PR #1157)
+ * — UI is wired so the operator surface lands first.
+ */
+function renderActiveProviderBanner() {
+    var banner = document.createElement('div');
+    banner.className = 'voice-lab-active-provider-banner';
+    banner.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin:8px 0;background:#1a2332;border:1px solid #2d3748;border-radius:8px;font-family:monospace;';
+
+    var label = document.createElement('div');
+    label.style.cssText = 'flex:1;';
+    label.innerHTML = '<span style="color:#94a3b8;font-size:12px;">ACTIVE VOICE PROVIDER</span><br>'
+        + '<span class="active-provider-value" style="color:#facc15;font-size:18px;font-weight:bold;">loading…</span>';
+
+    var btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.textContent = 'Flip';
+    btn.disabled = true;
+    btn.style.cssText = 'padding:8px 16px;';
+    btn.addEventListener('click', function () {
+        if (!confirm('Flip the active voice provider? In-flight sessions on the current pipeline will drain naturally.')) {
+            return;
+        }
+        var current = banner.querySelector('.active-provider-value');
+        var next = (current && current.textContent === 'livekit') ? 'vertex' : 'livekit';
+        fetchActivePost(next);
+    });
+
+    banner.appendChild(label);
+    banner.appendChild(btn);
+
+    // Async load.
+    fetchActiveProvider().then(function (info) {
+        var span = banner.querySelector('.active-provider-value');
+        if (span) {
+            span.textContent = info.active_provider || 'vertex';
+            span.style.color = info.active_provider === 'livekit' ? '#22c55e' : '#facc15';
+        }
+        btn.disabled = false;
+        btn.textContent = info.active_provider === 'livekit' ? 'Flip to Vertex' : 'Flip to LiveKit';
+    }).catch(function () {
+        var span = banner.querySelector('.active-provider-value');
+        if (span) span.textContent = '(unreachable)';
+    });
+
+    return banner;
+}
+
+function fetchActiveProvider() {
+    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
+    return fetch(url).then(function (r) { return r.json(); });
+}
+
+function fetchActivePost(provider) {
+    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, reason: 'voice-lab manual flip' })
+    }).then(function (r) {
+        if (r.status === 501) {
+            showToast('Flip endpoint stubbed pending follow-up PR (gateway #1157).', 'warning');
+        } else if (!r.ok) {
+            showToast('Flip failed: HTTP ' + r.status, 'error');
+        } else {
+            showToast('Active provider flipped.', 'success');
+        }
+    }).catch(function (e) {
+        showToast('Flip network error: ' + e.message, 'error');
+    });
+}
+
+/**
+ * VTID-LIVEKIT-FOUNDATION: Voice Lab Providers panel.
+ *
+ * Lists every provider in `voice_providers` (STT/LLM/TTS/transport) with
+ * model count, fallback chain, and an enabled/disabled indicator.
+ * Source: GET /api/v1/voice-providers (returns [] if migration #1156
+ * hasn't been applied yet).
+ */
+function renderVoiceLabProvidersPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-providers-panel';
+    panel.style.cssText = 'padding:16px;';
+
+    var title = document.createElement('h3');
+    title.textContent = 'Voice Provider Registry';
+    title.style.cssText = 'margin:0 0 8px 0;color:#e5e7eb;';
+    panel.appendChild(title);
+
+    var sub = document.createElement('div');
+    sub.style.cssText = 'color:#94a3b8;font-size:13px;margin-bottom:16px;';
+    sub.textContent = 'Catalogue of every supported STT/LLM/TTS/transport provider. Drives the Agent Config dropdowns.';
+    panel.appendChild(sub);
+
+    var loading = document.createElement('div');
+    loading.style.cssText = 'color:#94a3b8;font-style:italic;';
+    loading.textContent = 'Loading…';
+    panel.appendChild(loading);
+
+    var url = (window.GATEWAY_URL || '') + '/api/v1/voice-providers';
+    fetch(url).then(function (r) { return r.json(); }).then(function (body) {
+        loading.remove();
+        var providers = (body && body.providers) || [];
+        if (providers.length === 0) {
+            var empty = document.createElement('div');
+            empty.style.cssText = 'padding:24px;background:#1a2332;border:1px dashed #475569;border-radius:6px;color:#94a3b8;';
+            empty.textContent = body && body.note
+                ? 'Empty registry — ' + body.note
+                : 'No providers registered. Apply migration vtid_livekit_foundation_voice_tables.sql (#1156).';
+            panel.appendChild(empty);
+            return;
+        }
+
+        // Group by kind.
+        var groups = {};
+        providers.forEach(function (p) {
+            (groups[p.kind] = groups[p.kind] || []).push(p);
+        });
+        ['transport', 'stt', 'llm', 'tts'].forEach(function (kind) {
+            if (!groups[kind]) return;
+            var section = document.createElement('div');
+            section.style.cssText = 'margin-top:16px;';
+            var h = document.createElement('h4');
+            h.textContent = kind.toUpperCase() + ' (' + groups[kind].length + ')';
+            h.style.cssText = 'color:#facc15;margin:0 0 8px 0;font-size:13px;letter-spacing:0.05em;';
+            section.appendChild(h);
+
+            var table = document.createElement('table');
+            table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;';
+            table.innerHTML = '<thead><tr style="background:#0f172a;color:#94a3b8;text-align:left;">'
+                + '<th style="padding:6px 8px;">id</th>'
+                + '<th style="padding:6px 8px;">name</th>'
+                + '<th style="padding:6px 8px;">models</th>'
+                + '<th style="padding:6px 8px;">fallback</th>'
+                + '<th style="padding:6px 8px;">notes</th>'
+                + '</tr></thead>';
+            var tbody = document.createElement('tbody');
+            groups[kind].forEach(function (p) {
+                var tr = document.createElement('tr');
+                tr.style.cssText = 'border-top:1px solid #1f2937;';
+                var modelCount = Array.isArray(p.models) ? p.models.length : 0;
+                var fc = (p.fallback_chain || []).join(' → ') || '—';
+                tr.innerHTML = '<td style="padding:6px 8px;color:#22c55e;font-family:monospace;">' + escapeHtml(p.id) + '</td>'
+                    + '<td style="padding:6px 8px;color:#e5e7eb;">' + escapeHtml(p.display_name) + '</td>'
+                    + '<td style="padding:6px 8px;color:#94a3b8;">' + modelCount + '</td>'
+                    + '<td style="padding:6px 8px;color:#94a3b8;">' + escapeHtml(fc) + '</td>'
+                    + '<td style="padding:6px 8px;color:#64748b;font-size:11px;max-width:300px;">' + escapeHtml(p.notes || '') + '</td>';
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            section.appendChild(table);
+            panel.appendChild(section);
+        });
+    }).catch(function (e) {
+        loading.textContent = 'Error: ' + e.message;
+        loading.style.color = '#ef4444';
+    });
+
+    return panel;
+}
+
+/**
+ * VTID-LIVEKIT-FOUNDATION: Voice Lab Agent Configuration panel.
+ *
+ * Per-agent dropdowns for STT / LLM / TTS — the operator surface for
+ * picking the cascade lineup per agents_registry entry. Save lands in a
+ * follow-up PR (gateway PR #1157 currently returns 501 on PUT).
+ *
+ * Today: read-only listing of agents that have a row in agent_voice_configs,
+ * plus a roster view of all agents in agents_registry.
+ */
+function renderVoiceLabAgentConfigPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-agent-config-panel';
+    panel.style.cssText = 'padding:16px;';
+
+    var title = document.createElement('h3');
+    title.textContent = 'Agent Voice Configuration';
+    title.style.cssText = 'margin:0 0 8px 0;color:#e5e7eb;';
+    panel.appendChild(title);
+
+    var sub = document.createElement('div');
+    sub.style.cssText = 'color:#94a3b8;font-size:13px;margin-bottom:16px;';
+    sub.innerHTML = 'Pick the STT / LLM / TTS lineup for each agent. Saved configs are read at the next session start.<br>'
+        + '<span style="color:#facc15;">Today this panel is READ-ONLY — save UI lands in follow-up PR.</span>';
+    panel.appendChild(sub);
+
+    var note = document.createElement('div');
+    note.style.cssText = 'margin-top:24px;padding:16px;background:#1a2332;border-left:3px solid #facc15;color:#cbd5e1;font-size:13px;line-height:1.6;';
+    note.innerHTML = '<strong>What this surface will become</strong> (per the approved plan):'
+        + '<ul style="margin:8px 0 0 16px;padding:0;">'
+        + '<li>Per-agent panel listing every entry in <code>agents_registry</code></li>'
+        + '<li>Three dropdowns side-by-side: STT (provider + model + tunables), LLM (provider + model + temperature + max_tokens), TTS (provider + voice_id + stability)</li>'
+        + '<li>Auto-rendered options form per provider via <code>voice_providers.options_schema</code></li>'
+        + '<li>Green/red health dot per option from <code>POST /voice-providers/:id/test</code></li>'
+        + '<li>Cost-per-minute estimate next to each model</li>'
+        + '<li>"Test conversation" button — ephemeral session bound to unsaved config</li>'
+        + '<li>Audit timeline: every change with timestamp, operator, before/after diff</li>'
+        + '</ul>';
+    panel.appendChild(note);
+
+    return panel;
+}
 /**
  * VTID-01218E: Render placeholder panel for upcoming features
  */
