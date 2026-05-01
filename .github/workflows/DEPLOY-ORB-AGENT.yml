@@ -1,0 +1,125 @@
+name: DEPLOY-ORB-AGENT
+
+# VTID-LIVEKIT-FOUNDATION: deploy services/agents/orb-agent/ to Cloud Run.
+#
+# Triggered by:
+#   - manual dispatch (operator-driven during ramp)
+#   - main pushes that touch services/agents/orb-agent/** (auto-deploy once stable)
+#
+# Cloud Run config: min-instances=0 (scale-to-zero standby), max=10, 2 vCPU/4 GiB.
+# When LiveKit is the standby provider, no instances run, ~zero compute cost.
+#
+# This workflow does NOT replace EXEC-DEPLOY for the gateway — the gateway and
+# the orb-agent deploy independently. Smoke test 5/5 in EXEC-DEPLOY verifies
+# the gateway can reach this service (when LiveKit is the active provider).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev-sandbox"
+        type: choice
+        options:
+          - dev-sandbox
+          - prod
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/agents/orb-agent/**'
+      - '.github/workflows/DEPLOY-ORB-AGENT.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: lovable-vitana-vers1
+  GCP_REGION: us-central1
+  SERVICE_NAME: vitana-orb-agent
+  IMAGE_REPO: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana/orb-agent
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build image
+        working-directory: services/agents/orb-agent
+        run: |
+          set -euxo pipefail
+          IMAGE="${IMAGE_REPO}:${{ github.sha }}"
+          docker build -t "$IMAGE" -t "${IMAGE_REPO}:latest" .
+          docker push "$IMAGE"
+          docker push "${IMAGE_REPO}:latest"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          set -euxo pipefail
+          gcloud run deploy "$SERVICE_NAME" \
+            --image="$IMAGE" \
+            --region="$GCP_REGION" \
+            --project="$GCP_PROJECT_ID" \
+            --min-instances=0 \
+            --max-instances=10 \
+            --cpu=2 \
+            --memory=4Gi \
+            --timeout=3600 \
+            --concurrency=25 \
+            --no-cpu-throttling \
+            --port=8080 \
+            --ingress=internal-and-cloud-load-balancing \
+            --labels=vtid=vtid-livekit-foundation,vt_layer=aicor,vt_module=voice \
+            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,GATEWAY_SERVICE_TOKEN=GATEWAY_SERVICE_TOKEN:latest \
+            --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO
+
+      - name: Smoke test — health endpoint
+        run: |
+          set -euxo pipefail
+          SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --format='value(status.url)')
+          echo "service URL: $SERVICE_URL"
+          # Cold start: scale-to-zero means first hit may take a few seconds.
+          for i in 1 2 3 4 5; do
+            if curl -fsS "$SERVICE_URL/health" | jq -e '.ok == true' >/dev/null; then
+              echo "✓ orb-agent /health returned ok=true on attempt $i"
+              curl -fsS "$SERVICE_URL/health" | jq '.'
+              exit 0
+            fi
+            echo "attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "::error::orb-agent /health did not return ok=true after 5 attempts"
+          exit 1
+
+      - name: Verify agents_registry heartbeat
+        run: |
+          set -euxo pipefail
+          # The agent's registry heartbeat fires every 60s. Allow up to 90s for
+          # the first heartbeat to land.
+          echo "Waiting up to 90s for first heartbeat to populate agents_registry.last_heartbeat_at..."
+          # Real implementation: query Supabase via service-role token.
+          # For the skeleton workflow this is just a 'sleep + reminder' — a
+          # follow-up PR adds the explicit query.
+          sleep 90
+          echo "✓ skeleton check (real query lands when GATEWAY_SERVICE_TOKEN is wired)"

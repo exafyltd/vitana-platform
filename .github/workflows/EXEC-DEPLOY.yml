@@ -535,7 +535,7 @@ jobs:
           echo "✓ Governance history check passed"
 
           # 4) ORB Live API Readiness - verify Vertex AI config is present
-          echo "Smoke Test 4/4: ORB Live API Readiness"
+          echo "Smoke Test 4/5: ORB Live API Readiness (Vertex pipeline)"
           ORB_HEALTH=$(curl -fsS "$GATEWAY_URL/api/v1/orb/health" 2>&1 || echo '{"error":"failed"}')
           echo "$ORB_HEALTH" | jq '.gemini_live' || echo "$ORB_HEALTH"
 
@@ -549,9 +549,39 @@ jobs:
           fi
           echo "✓ ORB Live API check passed (project=$LIVE_PROJECT, auth=$LIVE_AUTH)"
 
+          # 5) VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline readiness — verifies the
+          # standby pipeline's gateway routes are mounted. Per the parallel-architecture
+          # plan, BOTH pipelines must be deploy-healthy on every release; we never want
+          # to discover the standby is broken at flip time.
+          echo "Smoke Test 5/5: ORB LiveKit pipeline readiness (standby)"
+          LIVEKIT_HEALTH=$(curl -fsS "$GATEWAY_URL/api/v1/orb/livekit/health" 2>&1 || echo '{"error":"failed"}')
+          echo "$LIVEKIT_HEALTH" | jq '.' || echo "$LIVEKIT_HEALTH"
+
+          LK_OK=$(echo "$LIVEKIT_HEALTH" | jq -r '.ok // false')
+          LK_ACTIVE=$(echo "$LIVEKIT_HEALTH" | jq -r '.active_provider // "vertex"')
+
+          if [ "$LK_OK" != "true" ]; then
+            echo "::error::VTID-LIVEKIT-FOUNDATION: ORB LiveKit standby route unhealthy (ok=$LK_OK)"
+            exit 1
+          fi
+          echo "✓ ORB LiveKit standby route healthy (active_provider=$LK_ACTIVE)"
+
+          # When LiveKit is the *active* provider (post-flip), additionally verify the
+          # agent worker is reachable. Until the operator flips, this section is a
+          # no-op pass.
+          if [ "$LK_ACTIVE" = "livekit" ]; then
+            echo "Active provider is livekit — probing orb-agent worker..."
+            AGENT_REACHABLE=$(echo "$LIVEKIT_HEALTH" | jq -r '.agent_worker_reachable // false')
+            if [ "$AGENT_REACHABLE" != "true" ]; then
+              echo "::error::VTID-LIVEKIT-FOUNDATION: LiveKit is ACTIVE but orb-agent worker is unreachable"
+              exit 1
+            fi
+            echo "✓ orb-agent worker reachable"
+          fi
+
           echo ""
           echo "==========================================="
-          echo "VTID-0416: All smoke tests PASSED"
+          echo "VTID-0416: All smoke tests PASSED (5/5)"
           echo "==========================================="
 
       # =========================================================================
