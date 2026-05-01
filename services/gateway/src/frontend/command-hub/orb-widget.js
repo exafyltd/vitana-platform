@@ -418,20 +418,27 @@
   function _playChime(ctx) {
     if (!ctx || ctx.state === 'closed') return;
     try {
-      var now = ctx.currentTime;
+      // VTID-02035: same mobile-clipping issue as _playReadyBeep — original
+      // chime had two 150-200ms segments back-to-back with steep ramps that
+      // mobile speakers truncated. Stretched to ~700ms total with longer
+      // sustain on each note and a small lead-in delay so the audio
+      // pipeline is warm before envelope start.
+      var now = ctx.currentTime + 0.02;
       var g = ctx.createGain();
       g.connect(ctx.destination);
+      // Note 1 envelope (C5)
       g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.15, now + 0.02);
-      g.gain.setValueAtTime(0.15, now + 0.08);
-      g.gain.linearRampToValueAtTime(0.0, now + 0.15);
-      g.gain.linearRampToValueAtTime(0.15, now + 0.15);
+      g.gain.linearRampToValueAtTime(0.15, now + 0.05);
       g.gain.setValueAtTime(0.15, now + 0.25);
-      g.gain.linearRampToValueAtTime(0.0, now + 0.40);
+      g.gain.linearRampToValueAtTime(0.0, now + 0.30);
+      // Note 2 envelope (E5)
+      g.gain.linearRampToValueAtTime(0.15, now + 0.35);
+      g.gain.setValueAtTime(0.15, now + 0.60);
+      g.gain.linearRampToValueAtTime(0.0, now + 0.68);
       var o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.setValueAtTime(523.25, now);
-      o1.connect(g); o1.start(now); o1.stop(now + 0.15);
-      var o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.setValueAtTime(659.25, now + 0.15);
-      o2.connect(g); o2.start(now + 0.15); o2.stop(now + 0.40);
+      o1.connect(g); o1.start(now); o1.stop(now + 0.30);
+      var o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.setValueAtTime(659.25, now + 0.30);
+      o2.connect(g); o2.start(now + 0.30); o2.stop(now + 0.70);
     } catch (e) { /* ignore */ }
   }
 
@@ -439,14 +446,26 @@
     try {
       var ctx = _s.playbackCtx;
       if (!ctx || ctx.state === 'closed') return;
+      // VTID-02035: lengthen + add sustain so mobile speakers don't clip
+      // the beep. Original 0.2s total (audible ~130ms) was clipped on
+      // iOS / Appilix WebView — speaker buffer hadn't filled before the
+      // gain envelope already collapsed back to zero.
+      // New shape: 60ms ramp-in → 380ms sustain at 0.12 → 60ms ramp-out
+      // = 500ms total, ~440ms audible. Gives mobile audio pipeline time
+      // to fully render. Slightly higher peak gain (0.12 vs 0.1) so the
+      // envelope reaches audibility before the speaker stabilises.
+      // Schedule the start at ctx.currentTime + 0.02 to defer past any
+      // sub-frame hiccup at envelope start.
       var o = ctx.createOscillator();
       var g = ctx.createGain();
       o.connect(g); g.connect(ctx.destination);
       o.frequency.value = 800;
-      g.gain.setValueAtTime(0, ctx.currentTime);
-      g.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.05);
-      g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
-      o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.2);
+      var t0 = ctx.currentTime + 0.02;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.12, t0 + 0.06);
+      g.gain.setValueAtTime(0.12, t0 + 0.44);
+      g.gain.linearRampToValueAtTime(0, t0 + 0.50);
+      o.start(t0); o.stop(t0 + 0.52);
     } catch (e) { /* ignore */ }
   }
 
