@@ -1,38 +1,40 @@
-"""Tool catalogue.
+"""Tool catalogue — real bodies.
 
 Every tool in voice-pipeline-spec/spec.json.tools is exposed here as a
-`@function_tool`-decorated async Python function — all 40 of them. Each is
-a thin wrapper that calls the equivalent gateway HTTP endpoint and
-serializes the result to a string for the LLM.
+`@function_tool`-decorated async Python function. Each body is **a single
+async call** to the corresponding gateway endpoint via the per-session
+`GatewayClient` carried on `RunContext.userdata`.
 
-NOTHING in this file re-implements business logic. Every function is a
-single httpx.post / httpx.get call against the gateway, plus arg validation
-via Pydantic where appropriate. The gateway is the source of truth for tool
-behaviour; the agent only marshals the call.
+NOTHING in this file re-implements business logic. The gateway is the
+source of truth for tool behaviour; the agent only marshals the call and
+serializes the JSON response to a string for the LLM.
+
+Tool-loop guard: livekit-agents' built-in `AgentSession(max_tool_steps=N)`
+forces tool_choice='none' at the threshold. We do not custom-code the
+guard (see services/agents/orb-agent/src/orb_agent/watchdogs.py docstring).
 
 The libcst extractor in voice-pipeline-spec/tools/extract-py.py walks every
-@function_tool decorator here and feeds the names into the parity scanner.
-Tool names MUST match voice-pipeline-spec/spec.json.tools[].name exactly,
-or the parity scanner CI flags drift.
-
-Skeleton today: all 40 tool stubs raise NotImplementedError("VTID-LIVEKIT-FOUNDATION").
-A follow-up PR fills each in by calling the listed gateway endpoint.
+@function_tool decorator here. Tool names MUST match
+voice-pipeline-spec/spec.json.tools[].name exactly.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-# livekit-agents plumbing — the runtime decorator is `@function_tool` from
-# `livekit.agents.llm.tool_context`. We import it lazily so unit tests on
-# this module don't need the full livekit stack.
+from .gateway_client import GatewayClient, summarize
+
+# livekit-agents plumbing — `@function_tool` decorator + RunContext.
 try:
-    from livekit.agents.llm import function_tool  # type: ignore[import-not-found]
+    from livekit.agents.llm import RunContext, function_tool  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover
 
-    def function_tool(*args: Any, **kwargs: Any):  # type: ignore[no-redef]
-        """Fallback decorator when livekit-agents isn't installed (e.g. in unit tests)."""
+    class RunContext:  # type: ignore[no-redef]
+        """Stub RunContext for unit tests when livekit-agents isn't installed."""
 
+        userdata: Any = None
+
+    def function_tool(*args: Any, **kwargs: Any):  # type: ignore[no-redef]
         def _wrap(fn: Any) -> Any:
             return fn
 
@@ -43,7 +45,19 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-NOT_IMPL = "NotImplementedError(VTID-LIVEKIT-FOUNDATION): tool stub — see services/agents/orb-agent/src/orb_agent/tools.py"
+
+def _gw(ctx: RunContext) -> GatewayClient:
+    """Pulls the per-session GatewayClient off the agent's userdata.
+
+    `userdata` is set by session.py at session start (Agent(userdata=...)).
+    Returning it as a typed accessor here keeps each tool body to a one-liner.
+    """
+    gw = getattr(ctx, "userdata", None)
+    if not isinstance(gw, GatewayClient):
+        # Defensive — should never happen in production. Returning a no-op
+        # error string is safer than raising into the agent loop.
+        raise RuntimeError("RunContext.userdata is not a GatewayClient")
+    return gw
 
 
 # ---------------------------------------------------------------------------
@@ -52,44 +66,40 @@ NOT_IMPL = "NotImplementedError(VTID-LIVEKIT-FOUNDATION): tool stub — see serv
 
 
 @function_tool
-async def search_memory(query: str, limit: int = 5) -> str:
+async def search_memory(context: RunContext, query: str, limit: int = 5) -> str:
     """Search the user's personal memory garden for entries matching `query`.
 
     Args:
         query: Free-text search phrase.
         limit: Max number of entries to return (1..20).
     """
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/memory/search", {"query": query, "limit": min(20, max(1, limit))})
+    return summarize(body)
 
 
 @function_tool
-async def search_knowledge(query: str) -> str:
-    """Search the Vitana Knowledge Hub (longevity, platform docs).
-
-    Args:
-        query: Free-text search phrase.
-    """
-    raise NotImplementedError(NOT_IMPL)
+async def search_knowledge(context: RunContext, query: str) -> str:
+    """Search the Vitana Knowledge Hub (longevity, platform docs)."""
+    body = await _gw(context).post("/api/v1/knowledge/search", {"query": query})
+    return summarize(body)
 
 
 @function_tool
-async def search_web(query: str) -> str:
-    """Web search via the configured external-search provider.
-
-    Args:
-        query: Free-text web search phrase.
-    """
-    raise NotImplementedError(NOT_IMPL)
+async def search_web(context: RunContext, query: str) -> str:
+    """Web search via the configured external-search provider."""
+    body = await _gw(context).post("/api/v1/web/search", {"query": query})
+    return summarize(body)
 
 
 @function_tool
-async def recall_conversation_at_time(when: str) -> str:
+async def recall_conversation_at_time(context: RunContext, when: str) -> str:
     """Recall what the user discussed at a given time (VTID-02052).
 
     Args:
         when: Natural-language time anchor, e.g. "yesterday morning", "two days ago".
     """
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/memory/recall-at-time", {"when": when})
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -98,17 +108,20 @@ async def recall_conversation_at_time(when: str) -> str:
 
 
 @function_tool
-async def switch_persona(persona: str) -> str:
+async def switch_persona(context: RunContext, persona: str) -> str:
     """Switch within-Vitana voice/style persona (NOT specialist handoff).
 
     Args:
         persona: Target persona name (e.g. "warm", "concise", "playful").
     """
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/orb/persona/switch", {"persona": persona})
+    return summarize(body)
 
 
 @function_tool
-async def report_to_specialist(specialist: str, reason: str, context_summary: str) -> str:
+async def report_to_specialist(
+    context: RunContext, specialist: str, reason: str, context_summary: str
+) -> str:
     """Hand off to a specialist (Sage / Devon / Atlas / Mira / Vitana).
 
     Triggers the persona-swap flow in session.py. Each specialist has its own
@@ -119,7 +132,11 @@ async def report_to_specialist(specialist: str, reason: str, context_summary: st
         reason: Why the user is being handed off.
         context_summary: Short summary the specialist needs to pick up the conversation.
     """
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/orb/handoff",
+        {"specialist": specialist, "reason": reason, "context_summary": context_summary},
+    )
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -128,27 +145,45 @@ async def report_to_specialist(specialist: str, reason: str, context_summary: st
 
 
 @function_tool
-async def search_calendar(query: str, days_ahead: int = 14) -> str:
+async def search_calendar(context: RunContext, query: str, days_ahead: int = 14) -> str:
     """Search the user's calendar for upcoming events matching `query`."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get(
+        "/api/v1/integrations/calendar/events",
+        {"query": query, "days_ahead": days_ahead},
+    )
+    return summarize(body)
 
 
 @function_tool
-async def create_calendar_event(title: str, when_iso: str, duration_min: int = 60) -> str:
+async def create_calendar_event(
+    context: RunContext, title: str, when_iso: str, duration_min: int = 60
+) -> str:
     """Create a calendar event."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/integrations/calendar/events",
+        {"title": title, "when_iso": when_iso, "duration_min": duration_min},
+    )
+    return summarize(body)
 
 
 @function_tool
-async def add_to_calendar(title: str, when_iso: str) -> str:
+async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str:
     """Add an event to the user's calendar (VTID-01943)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/integrations/calendar/events",
+        {"title": title, "when_iso": when_iso},
+    )
+    return summarize(body)
 
 
 @function_tool
-async def get_schedule(date_iso: str | None = None) -> str:
+async def get_schedule(context: RunContext, date_iso: str | None = None) -> str:
     """Return the user's schedule for a given date (defaults to today)."""
-    raise NotImplementedError(NOT_IMPL)
+    params: dict[str, Any] = {}
+    if date_iso:
+        params["date_iso"] = date_iso
+    body = await _gw(context).get("/api/v1/integrations/calendar/schedule", params)
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -157,21 +192,24 @@ async def get_schedule(date_iso: str | None = None) -> str:
 
 
 @function_tool
-async def search_events(query: str) -> str:
+async def search_events(context: RunContext, query: str) -> str:
     """Search community events / meetups (VTID-01270A)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/community/events/search", {"query": query})
+    return summarize(body)
 
 
 @function_tool
-async def search_community(query: str) -> str:
+async def search_community(context: RunContext, query: str) -> str:
     """Search community groups / channels (VTID-01270A)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/community/groups/search", {"query": query})
+    return summarize(body)
 
 
 @function_tool
-async def get_recommendations() -> str:
+async def get_recommendations(context: RunContext) -> str:
     """Return current Autopilot recommendations for the user (VTID-01180)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/autopilot/recommendations")
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -180,15 +218,23 @@ async def get_recommendations() -> str:
 
 
 @function_tool
-async def play_music(query: str, provider: str | None = None) -> str:
+async def play_music(context: RunContext, query: str, provider: str | None = None) -> str:
     """Play music via Spotify / Apple Music / Google / Vitana Hub (VTID-01941)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/integrations/music/play",
+        {"query": query, "provider": provider} if provider else {"query": query},
+    )
+    return summarize(body)
 
 
 @function_tool
-async def set_capability_preference(capability: str, provider: str) -> str:
+async def set_capability_preference(context: RunContext, capability: str, provider: str) -> str:
     """Set the default provider for a capability (VTID-01942)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).put(
+        "/api/v1/integrations/preferences",
+        {"capability": capability, "provider": provider},
+    )
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -197,15 +243,17 @@ async def set_capability_preference(capability: str, provider: str) -> str:
 
 
 @function_tool
-async def read_email() -> str:
+async def read_email(context: RunContext) -> str:
     """Read the user's recent unread emails (VTID-01943)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/integrations/email/recent")
+    return summarize(body)
 
 
 @function_tool
-async def find_contact(query: str) -> str:
+async def find_contact(context: RunContext, query: str) -> str:
     """Find a contact in the user's contact book (VTID-01943)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/contacts/search", {"query": query})
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +262,15 @@ async def find_contact(query: str) -> str:
 
 
 @function_tool
-async def consult_external_ai(prompt: str, provider: str | None = None) -> str:
+async def consult_external_ai(
+    context: RunContext, prompt: str, provider: str | None = None
+) -> str:
     """Forward a prompt to the user's connected external AI account (ChatGPT / Claude / Gemini)."""
-    raise NotImplementedError(NOT_IMPL)
+    payload: dict[str, Any] = {"prompt": prompt}
+    if provider:
+        payload["provider"] = provider
+    body = await _gw(context).post("/api/v1/integrations/ai-assistants/forward", payload)
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -225,21 +279,26 @@ async def consult_external_ai(prompt: str, provider: str | None = None) -> str:
 
 
 @function_tool
-async def get_vitana_index() -> str:
+async def get_vitana_index(context: RunContext) -> str:
     """Return the user's current Vitana Index score + per-pillar breakdown (VTID-01983)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/vitana-index")
+    return summarize(body)
 
 
 @function_tool
-async def get_index_improvement_suggestions() -> str:
+async def get_index_improvement_suggestions(context: RunContext) -> str:
     """Return suggested actions that would lift the user's Vitana Index (VTID-01983)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/vitana-index/suggestions")
+    return summarize(body)
 
 
 @function_tool
-async def create_index_improvement_plan(target_pillar: str) -> str:
+async def create_index_improvement_plan(context: RunContext, target_pillar: str) -> str:
     """Create a multi-step plan to improve a specific pillar (VTID-01983)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/vitana-index/plan", {"target_pillar": target_pillar}
+    )
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -248,9 +307,10 @@ async def create_index_improvement_plan(target_pillar: str) -> str:
 
 
 @function_tool
-async def save_diary_entry(text: str) -> str:
+async def save_diary_entry(context: RunContext, text: str) -> str:
     """Save a diary entry. Triggers Vitana Index recompute via /memory/diary/sync-index (VTID-01983)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/memory/diary/sync-index", {"text": text})
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -259,21 +319,26 @@ async def save_diary_entry(text: str) -> str:
 
 
 @function_tool
-async def set_reminder(text: str, when_iso: str) -> str:
+async def set_reminder(context: RunContext, text: str, when_iso: str) -> str:
     """Set a reminder (VTID-02601)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/reminders", {"text": text, "when_iso": when_iso}
+    )
+    return summarize(body)
 
 
 @function_tool
-async def find_reminders(query: str | None = None) -> str:
+async def find_reminders(context: RunContext, query: str | None = None) -> str:
     """List the user's active reminders (VTID-02601)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/reminders", {"query": query} if query else None)
+    return summarize(body)
 
 
 @function_tool
-async def delete_reminder(reminder_id: str) -> str:
+async def delete_reminder(context: RunContext, reminder_id: str) -> str:
     """Delete a reminder (VTID-02601)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).delete(f"/api/v1/reminders/{reminder_id}")
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -282,15 +347,19 @@ async def delete_reminder(reminder_id: str) -> str:
 
 
 @function_tool
-async def ask_pillar_agent(pillar: str, question: str) -> str:
+async def ask_pillar_agent(context: RunContext, pillar: str, question: str) -> str:
     """Ask a specific pillar agent (Nutrition / Hydration / Exercise / Sleep / Mental)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/pillar-agents/ask", {"pillar": pillar, "question": question}
+    )
+    return summarize(body)
 
 
 @function_tool
-async def explain_feature(feature: str) -> str:
+async def explain_feature(context: RunContext, feature: str) -> str:
     """Explain a Vitana feature in plain language."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/features/explain", {"feature": feature})
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +368,19 @@ async def explain_feature(feature: str) -> str:
 
 
 @function_tool
-async def resolve_recipient(name: str) -> str:
+async def resolve_recipient(context: RunContext, name: str) -> str:
     """Step 1 of 3-step send-message flow: resolve a name to candidates."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/messaging/candidate", {"name": name})
+    return summarize(body)
 
 
 @function_tool
-async def send_chat_message(recipient_id: str, body: str) -> str:
+async def send_chat_message(context: RunContext, recipient_id: str, body_text: str) -> str:
     """Step 3: send the message after the user confirms the recipient."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        "/api/v1/messaging/send", {"recipient_id": recipient_id, "body": body_text}
+    )
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -316,9 +389,12 @@ async def send_chat_message(recipient_id: str, body: str) -> str:
 
 
 @function_tool
-async def activate_recommendation(recommendation_id: str) -> str:
+async def activate_recommendation(context: RunContext, recommendation_id: str) -> str:
     """Activate an Autopilot recommendation (VTID-01180)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        f"/api/v1/autopilot/recommendations/{recommendation_id}/activate"
+    )
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -327,9 +403,13 @@ async def activate_recommendation(recommendation_id: str) -> str:
 
 
 @function_tool
-async def share_link(url: str, with_recipient: str | None = None) -> str:
+async def share_link(context: RunContext, url: str, with_recipient: str | None = None) -> str:
     """Share a link, optionally with a contact."""
-    raise NotImplementedError(NOT_IMPL)
+    payload: dict[str, Any] = {"url": url}
+    if with_recipient:
+        payload["with_recipient"] = with_recipient
+    body = await _gw(context).post("/api/v1/sharing/link", payload)
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -338,51 +418,63 @@ async def share_link(url: str, with_recipient: str | None = None) -> str:
 
 
 @function_tool
-async def post_intent(kind: str, body: str) -> str:
-    """Post an intent (commercial_buy / sell, activity_seek, partner_seek, social_seek, mutual_aid) (VTID-01975)."""
-    raise NotImplementedError(NOT_IMPL)
+async def post_intent(context: RunContext, kind: str, body_text: str) -> str:
+    """Post an intent (commercial_buy/sell, activity_seek, partner_seek, social_seek, mutual_aid) (VTID-01975)."""
+    body = await _gw(context).post("/api/v1/intents", {"kind": kind, "body": body_text})
+    return summarize(body)
 
 
 @function_tool
-async def view_intent_matches() -> str:
+async def view_intent_matches(context: RunContext) -> str:
     """View match candidates for the user's open intents (VTID-01976)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/intents/matches")
+    return summarize(body)
 
 
 @function_tool
-async def list_my_intents() -> str:
+async def list_my_intents(context: RunContext) -> str:
     """List the user's open and historical intents."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get("/api/v1/intents/mine")
+    return summarize(body)
 
 
 @function_tool
-async def respond_to_match(match_id: str, response: str) -> str:
+async def respond_to_match(context: RunContext, match_id: str, response: str) -> str:
     """Respond to a match candidate (VTID-01976)."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        f"/api/v1/intents/matches/{match_id}/respond", {"response": response}
+    )
+    return summarize(body)
 
 
 @function_tool
-async def mark_intent_fulfilled(intent_id: str) -> str:
+async def mark_intent_fulfilled(context: RunContext, intent_id: str) -> str:
     """Mark an intent as fulfilled."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(f"/api/v1/intents/{intent_id}/fulfill")
+    return summarize(body)
 
 
 @function_tool
-async def share_intent_post(intent_id: str, with_recipient: str) -> str:
+async def share_intent_post(context: RunContext, intent_id: str, with_recipient: str) -> str:
     """Share an intent post with a contact."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post(
+        f"/api/v1/intents/{intent_id}/share", {"with_recipient": with_recipient}
+    )
+    return summarize(body)
 
 
 @function_tool
-async def scan_existing_matches() -> str:
+async def scan_existing_matches(context: RunContext) -> str:
     """Scan for matches across all open intents."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/intents/scan-matches")
+    return summarize(body)
 
 
 @function_tool
-async def get_matchmaker_result(intent_id: str) -> str:
+async def get_matchmaker_result(context: RunContext, intent_id: str) -> str:
     """Get the matchmaker's current result for a specific intent."""
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).get(f"/api/v1/intents/{intent_id}/matchmaker-result")
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -391,17 +483,18 @@ async def get_matchmaker_result(intent_id: str) -> str:
 
 
 @function_tool
-async def navigate_to_screen(target: str) -> str:
+async def navigate_to_screen(context: RunContext, target: str) -> str:
     """Navigate the user to a named screen.
 
-    Cross-surface navigation (e.g. community user trying to go to /admin)
-    is rejected with an LLM-visible error per
+    Cross-surface navigation (e.g. community user trying to go to /admin) is
+    rejected with an LLM-visible error per
     memory/feedback_navigator_surface_scoping.md.
 
     Args:
         target: Named screen identifier from the spec's navigation registry.
     """
-    raise NotImplementedError(NOT_IMPL)
+    body = await _gw(context).post("/api/v1/navigator/dispatch", {"target": target})
+    return summarize(body)
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +505,7 @@ async def navigate_to_screen(target: str) -> str:
 def all_tool_names() -> list[str]:
     """Returns the names of every @function_tool in this module.
 
-    Used by tests/test_tools.py to assert the tool list matches
+    Used by tests/test_tools_catalogue.py to assert the tool list matches
     voice-pipeline-spec/spec.json. Update when adding/removing a tool.
     """
     return [
@@ -434,3 +527,11 @@ def all_tool_names() -> list[str]:
         "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches", "get_matchmaker_result",
         "navigate_to_screen",
     ]
+
+
+def all_tools() -> list[Any]:
+    """Returns the live @function_tool callables — the list passed to Agent(tools=...)."""
+    import sys
+
+    mod = sys.modules[__name__]
+    return [getattr(mod, name) for name in all_tool_names()]
