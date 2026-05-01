@@ -29,15 +29,18 @@
 BEGIN;
 
 -- 1. Extend the status enum.
--- The existing constraint is:
---   CHECK (status IN ('new', 'activated', 'rejected', 'snoozed'))
--- Drop and re-create with 'completed' added.
+-- The CURRENT constraint (after 20260416100000_dev_autopilot.sql) is:
+--   CHECK (status IN ('new', 'activated', 'rejected', 'snoozed', 'auto_archived'))
+-- Drop and re-create with 'completed' added — keeping 'auto_archived' so we
+-- don't violate any existing rows. (First attempt of this migration dropped
+-- 'auto_archived' and failed with "check constraint violated by some row"
+-- against rows the autopilot's auto-archive sweep had already produced.)
 ALTER TABLE public.autopilot_recommendations
   DROP CONSTRAINT IF EXISTS autopilot_recommendations_status_check;
 
 ALTER TABLE public.autopilot_recommendations
   ADD CONSTRAINT autopilot_recommendations_status_check
-    CHECK (status IN ('new', 'activated', 'rejected', 'snoozed', 'completed'));
+    CHECK (status IN ('new', 'activated', 'rejected', 'snoozed', 'auto_archived', 'completed'));
 
 -- 2. Backref columns. NULLable — populated only when the autopilot's
 --    execution loop successfully merges a PR for this finding.
