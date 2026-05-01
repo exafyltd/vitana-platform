@@ -43,7 +43,14 @@ export const corsOptions = {
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Authorization", "Content-Type", "apikey", "X-Vitana-Active-Role", "X-Vitana-Tenant", "X-Vitana-User", "X-User-ID"],
-  credentials: false,
+  // VTID-02034: Cloud Run session affinity is cookie-based (GCLB-COOKIE).
+  // The ORB widget's audio POSTs need to forward that cookie so every
+  // /stream/send call lands on the same instance that owns the session
+  // map entry. Browsers only send cookies cross-origin when the response
+  // includes Access-Control-Allow-Credentials: true AND the request opts
+  // in with credentials:'include'. Origin is already explicit (not '*'),
+  // which is the other prerequisite for credentialed cross-origin.
+  credentials: true,
   maxAge: 86400,
 };
 
