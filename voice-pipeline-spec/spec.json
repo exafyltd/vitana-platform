@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitana.dev/voice-pipeline-spec/spec.json",
+  "title": "Vitana Voice Pipeline Canonical Spec",
+  "description": "Single source of truth for the surface that BOTH the Vertex (TypeScript, services/gateway/src/routes/orb-live.ts) and LiveKit (Python, services/agents/orb-agent/) implementations must expose. The voice-pipeline-parity-scanner CI job runs ts-morph and libcst extractors on each side and three-way diffs against this file. Drift here is the merge gate, not vibes.",
+  "version": "0.1.0",
+  "extracted_from": {
+    "vertex_source": "services/gateway/src/routes/orb-live.ts",
+    "vertex_extracted_at": "2026-05-01",
+    "vertex_lines": 14475,
+    "livekit_source": "services/agents/orb-agent/",
+    "livekit_status": "not_yet_implemented"
+  },
+
+  "tools": [
+    { "name": "recall_conversation_at_time", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02052", "notes": "Time-anchored conversation recall." },
+    { "name": "search_memory",                "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01152", "notes": "Mem0/Qdrant semantic memory search via memory-indexer service." },
+    { "name": "search_knowledge",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-0135",  "notes": "Knowledge Hub retrieval via gateway retrieval-router." },
+    { "name": "search_web",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "switch_persona",               "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Within-Vitana style/persona switch (NOT specialist handoff). Specialist handoff is `report_to_specialist`." },
+    { "name": "report_to_specialist",         "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Unified Feedback Pipeline persona handoff (Sage / Devon / Atlas / Mira / Vitana)." },
+
+    { "name": "search_calendar",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "create_calendar_event",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "add_to_calendar",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
+    { "name": "get_schedule",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
+
+    { "name": "search_events",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01270A" },
+    { "name": "search_community",             "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01270A" },
+    { "name": "get_recommendations",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01180" },
+
+    { "name": "play_music",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01941" },
+    { "name": "set_capability_preference",    "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01942" },
+
+    { "name": "read_email",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
+    { "name": "find_contact",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
+
+    { "name": "consult_external_ai",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null,         "notes": "Forward to user's connected ChatGPT/Claude/Gemini account." },
+
+    { "name": "get_vitana_index",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
+    { "name": "get_index_improvement_suggestions","implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
+    { "name": "create_index_improvement_plan",    "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
+
+    { "name": "save_diary_entry",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01983", "notes": "Persists diary entry AND triggers Vitana Index recompute via /memory/diary/sync-index." },
+
+    { "name": "set_reminder",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
+    { "name": "find_reminders",               "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
+    { "name": "delete_reminder",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
+
+    { "name": "ask_pillar_agent",             "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "explain_feature",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+
+    { "name": "resolve_recipient",            "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Step 1 of 3-step send_message flow." },
+    { "name": "send_chat_message",            "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Step 3 of send_message flow." },
+
+    { "name": "activate_recommendation",      "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01180" },
+    { "name": "share_link",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+
+    { "name": "post_intent",                  "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01975" },
+    { "name": "view_intent_matches",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01976" },
+    { "name": "list_my_intents",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "respond_to_match",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01976" },
+    { "name": "mark_intent_fulfilled",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "share_intent_post",            "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+
+    { "name": "scan_existing_matches",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+    { "name": "get_matchmaker_result",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
+
+    { "name": "navigate_to_screen",           "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Surface-aware navigation. Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule." }
+  ],
+
+  "oasis_topics": [
+    { "topic": "orb.session.started",                "implementations": ["vertex"] },
+    { "topic": "orb.session.ended",                  "implementations": ["vertex"] },
+    { "topic": "orb.session.summary",                "implementations": ["vertex"] },
+    { "topic": "orb.turn.received",                  "implementations": ["vertex"] },
+    { "topic": "orb.turn.responded",                 "implementations": ["vertex"] },
+
+    { "topic": "orb.live.context.bootstrap",         "implementations": ["vertex"] },
+    { "topic": "orb.live.context.bootstrap.skipped", "implementations": ["vertex"] },
+    { "topic": "orb.live.startup.config_missing",    "implementations": ["vertex"] },
+    { "topic": "orb.live.tool.executed",             "implementations": ["vertex"] },
+
+    { "topic": "orb.memory.context_injected",        "implementations": ["vertex"] },
+    { "topic": "orb.memory.debug_requested",         "implementations": ["vertex"] },
+    { "topic": "orb.memory.debug_snapshot",          "implementations": ["vertex"] },
+
+    { "topic": "orb.navigator.consulted",            "implementations": ["vertex"] },
+    { "topic": "orb.navigator.requested",            "implementations": ["vertex"] },
+    { "topic": "orb.navigator.dispatched",           "implementations": ["vertex"] },
+    { "topic": "orb.navigator.blocked",              "implementations": ["vertex"] },
+
+    { "topic": "orb.intent.debug_requested",         "implementations": ["vertex"] },
+    { "topic": "orb.intent.debug_result",            "implementations": ["vertex"] },
+    { "topic": "orb.task_state_query.completed",     "implementations": ["vertex"] },
+
+    { "topic": "admin.briefing.injected",            "implementations": ["vertex"] },
+    { "topic": "calendar.event.created",             "implementations": ["vertex"] },
+    { "topic": "feedback.ticket.created",            "implementations": ["vertex"] },
+    { "topic": "voice.message.sent",                 "implementations": ["vertex"] }
+  ],
+
+  "watchdogs": [
+    { "name": "session_timeout_ms",         "value": 1800000,  "description": "30 min", "implementations": ["vertex"] },
+    { "name": "max_session_age_ms",         "value": 1800000,  "description": "30 min, equal to session_timeout_ms", "implementations": ["vertex"] },
+    { "name": "conversation_timeout_ms",    "value": 86400000, "description": "24 h",   "implementations": ["vertex"] },
+    { "name": "transcript_retention_ms",    "value": 3600000,  "description": "1 h",    "implementations": ["vertex"] },
+    { "name": "ip_geo_cache_ttl_ms",        "value": 3600000,  "description": "1 h",    "implementations": ["vertex"] },
+    { "name": "max_connections_per_ip",     "value": 5,        "description": "DoS guard", "implementations": ["vertex"] },
+    { "name": "max_reconnects",             "value": 10,       "description": "Max reconnects per session (~50 min total). VTID-STREAM-RECONNECT.", "implementations": ["vertex"] },
+    { "name": "max_tool_response_chars",    "value": 4000,     "description": "Default cap; some sites use 2000/3000", "implementations": ["vertex"] },
+    { "name": "max_history_chars",          "value": 4000,     "description": "System-instruction last-turns budget", "implementations": ["vertex"] },
+    { "name": "extraction_throttle_ms",     "value": 60000,    "description": "Cognee fact-extraction debounce", "implementations": ["vertex"] },
+    { "name": "bootstrap_rebuild_min_age_ms","value": 60000,   "description": "Re-bootstrap floor on reconnect", "implementations": ["vertex"] }
+  ],
+
+  "documented_invariants": {
+    "description": "Behaviours required by both implementations but enforced by inline checks rather than named constants. The parity scanner does not statically verify these (yet) — they live in spec.json so reviewers know the invariant exists, and to anchor future PRs that promote them to named constants.",
+    "items": [
+      { "name": "vad_silence_ms_range",            "value": "500..3000", "description": "VAD silence-duration tunable bounds (VTID-RESPONSE-DELAY). Inline range check in /live/session/start payload validation.", "implementations": ["vertex"] },
+      { "name": "tool_loop_guard_max_consecutive", "value": 5, "description": "Force-flush after 5 consecutive tool calls without user-visible audio output (VTID-TOOLGUARD). On LiveKit, equivalent is AgentSession(max_tool_steps=5)." }
+    ]
+  },
+
+  "system_instruction_params": {
+    "authenticated_signature": [
+      "lang",
+      "voiceStyle",
+      "bootstrapContext",
+      "activeRole",
+      "conversationSummary",
+      "conversationHistory",
+      "isReconnect",
+      "lastSessionInfo",
+      "currentRoute",
+      "recentRoutes",
+      "clientContext",
+      "vitanaId"
+    ],
+    "anonymous_signature": [
+      "lang",
+      "voiceStyle",
+      "ctx",
+      "conversationHistory",
+      "isReconnect"
+    ],
+    "notes": "These are the parameter NAMES, not the prompt template. Each implementation owns its own template; only the parameter list must match across implementations. Drift in either signature is a parity violation; drift in the template is not (the system_instruction golden-file test catches template drift separately, on the same fixed input)."
+  },
+
+  "supported_languages": ["en", "de", "fr", "es", "ar", "zh", "ru", "sr"],
+
+  "audio": {
+    "input_sample_rate_hz": 16000,
+    "input_format": "PCM",
+    "output_sample_rate_hz": 24000,
+    "output_format": "PCM",
+    "video_input_format": "JPEG 768x768 @ 1 FPS",
+    "implementations": ["vertex"]
+  },
+
+  "active_provider_switch": {
+    "global_flag_key": "voice.active_provider",
+    "values": ["vertex", "livekit"],
+    "anti_flap_cooldown_seconds": 3600,
+    "implementations": ["vertex"]
+  },
+
+  "_meta": {
+    "spec_status": "draft",
+    "next_steps": [
+      "ship voice-pipeline-spec/ folder + extractor + CI in this PR",
+      "extract real arg JSON Schemas for each tool from orb-live.ts (this v0.1 has names + flags but not arg schemas)",
+      "wire the LiveKit-side codegen target once services/agents/orb-agent/ ships",
+      "promote the CI from report-only to merge gate once 30 days of green runs are recorded"
+    ],
+    "owners": "ORB Voice team",
+    "related_memory": [
+      "memory/feedback_mobile_community_only.md",
+      "memory/feedback_navigator_surface_scoping.md",
+      "memory/orb_apology_loop_fix_VTID_02637.md",
+      "memory/agents_registry_shipped.md",
+      "memory/project_voice_self_healing_loop.md"
+    ]
+  }
+}
