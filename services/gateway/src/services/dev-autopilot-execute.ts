@@ -296,9 +296,10 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     risk_class: 'low' | 'medium' | 'high' | null;
     source_type: string;
     spec_snapshot: Record<string, unknown>;
+    status: string;
   }>>(
     s,
-    `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&select=id,risk_class,source_type,spec_snapshot&limit=1`,
+    `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&select=id,risk_class,source_type,spec_snapshot,status&limit=1`,
   );
   if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
   const rec = recR.data[0];
@@ -307,6 +308,20 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // same plan→approve→execute path. Reject anything else (community, system).
   if (rec.source_type !== 'dev_autopilot' && rec.source_type !== 'dev_autopilot_impact') {
     return { ok: false, error: `not a dev_autopilot finding (source_type=${rec.source_type})` };
+  }
+  // VTID-02639 defense-in-depth: refuse to re-approve a finding that has
+  // already shipped (status='completed') or been manually closed
+  // (status='rejected'/'snoozed'/'activated'). autoApproveTick() now filters
+  // by status='new' upstream, but a manual call here could still hit a
+  // stale finding_id. Without this guard, the same finding can produce N
+  // duplicate PRs — exactly the failure mode that forced the 2026-04-30
+  // sweep (6 identical admin-notification-categories middleware refactors
+  // closed in one batch).
+  if (rec.status !== 'new') {
+    return {
+      ok: false,
+      error: `finding status is '${rec.status}' — only 'new' findings can be approved`,
+    };
   }
 
   // 2. Load latest plan version
@@ -1215,22 +1230,70 @@ async function patchExecution(
   // Outcomes substrate: when an execution reaches a terminal state, look up
   // its finding_id and backfill the open outcome row. Centralizing here
   // covers all 9+ patch-to-terminal call sites without per-site changes.
+  // VTID-02639: also flip the finding to status='completed' on a SUCCESSFUL
+  // terminal transition + write the merged-PR backref. Without this, the
+  // finding stays status='new' forever, autoApproveTick() re-approves it on
+  // the next pass, and a fresh duplicate PR opens against the same source
+  // signal. (Failure backfills outcomes only — the finding stays 'new' so
+  // the operator/self-healer can decide what's next.)
   if (r.ok && (fields.status === 'completed' || fields.status === 'failed')) {
     void (async () => {
       try {
-        const lookupR = await supa<Array<{ finding_id: string }>>(
+        const lookupR = await supa<Array<{ finding_id: string; pr_url: string | null; pr_number: number | null }>>(
           s,
-          `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id&limit=1`,
+          `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id,pr_url,pr_number&limit=1`,
         );
-        const finding_id = lookupR.ok && lookupR.data?.[0]?.finding_id;
-        if (finding_id) {
-          await recordExecOutcome(
-            finding_id,
-            fields.status === 'completed' ? 'success' : 'failure',
+        const exec = lookupR.ok && lookupR.data?.[0];
+        const finding_id = exec?.finding_id;
+        if (!finding_id) return;
+
+        await recordExecOutcome(
+          finding_id,
+          fields.status === 'completed' ? 'success' : 'failure',
+        );
+
+        if (fields.status !== 'completed') return;
+
+        // Only flip findings that are still 'new' — preserves any human
+        // override (rejected/snoozed/activated) the operator may have set.
+        const findingPatchR = await supa(
+          s,
+          `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&status=eq.new`,
+          {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              status: 'completed',
+              merged_pr_url: exec?.pr_url ?? null,
+              merged_pr_number: exec?.pr_number ?? null,
+              completed_at: new Date().toISOString(),
+            }),
+          },
+        );
+        if (findingPatchR.ok) {
+          await emitOasisEvent({
+            vtid: EXEC_VTID,
+            type: 'dev_autopilot.finding.completed',
+            source: 'dev-autopilot',
+            status: 'success',
+            message: `Finding ${finding_id.slice(0, 8)} completed via execution ${id.slice(0, 8)}`
+              + (exec?.pr_number ? ` (PR #${exec.pr_number})` : ''),
+            payload: {
+              finding_id,
+              execution_id: id,
+              pr_url: exec?.pr_url ?? null,
+              pr_number: exec?.pr_number ?? null,
+            },
+          });
+        } else {
+          // Don't fail the patchExecution call — outcome bookkeeping is
+          // best-effort. Just log so the dashboards/SRE see the gap.
+          console.warn(
+            `${LOG_PREFIX} finding completion patch failed for ${finding_id.slice(0, 8)}: ${findingPatchR.error}`,
           );
         }
       } catch (err) {
-        console.warn(`${LOG_PREFIX} outcome backfill error for ${id.slice(0, 8)}:`, err);
+        console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${id.slice(0, 8)}:`, err);
       }
     })();
   }
