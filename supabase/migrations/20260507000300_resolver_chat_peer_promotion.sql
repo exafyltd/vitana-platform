@@ -83,15 +83,19 @@ BEGIN
   -- Pre-compute the actor's recent chat-peer set ONCE, used both for
   -- the relaxed-threshold inclusion AND for the +0.15 score boost.
   WITH chat_peers AS (
+    -- UNION ALL legs MUST be parenthesised when each leg has its own
+    -- ORDER BY + LIMIT — Postgres otherwise tries to apply ORDER BY at
+    -- the union level and fails parsing. (Hit this on the Release A
+    -- hotfix and on the first attempt of this migration.)
     SELECT DISTINCT peer
       FROM (
-        SELECT cm.sender_id   AS peer FROM public.chat_messages cm
-         WHERE cm.receiver_id = p_actor
-         ORDER BY cm.created_at DESC LIMIT 200
+        (SELECT cm.sender_id   AS peer FROM public.chat_messages cm
+          WHERE cm.receiver_id = p_actor
+          ORDER BY cm.created_at DESC LIMIT 200)
         UNION ALL
-        SELECT cm.receiver_id AS peer FROM public.chat_messages cm
-         WHERE cm.sender_id   = p_actor
-         ORDER BY cm.created_at DESC LIMIT 200
+        (SELECT cm.receiver_id AS peer FROM public.chat_messages cm
+          WHERE cm.sender_id   = p_actor
+          ORDER BY cm.created_at DESC LIMIT 200)
       ) recent
      WHERE peer IS NOT NULL
   ),
