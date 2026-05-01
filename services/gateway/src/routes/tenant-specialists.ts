@@ -657,31 +657,170 @@ router.post('/:tenantId/tickets/:id/reject', async (req: Request, res: Response)
 });
 
 // ---------------------------------------------------------------------------
-// POST /:tenantId/tickets/:id/activate — smart action.
+// POST /:tenantId/tickets/:id/draft-spec — VTID-02664
 // ---------------------------------------------------------------------------
-// One button, status-aware: drafts the appropriate resolution if none yet,
-// otherwise advances the existing one toward terminal. The supervisor never
-// has to think about which sub-action to call — the system picks.
+// Generates the resolver draft (Devon spec / Sage answer / Atlas or Mira
+// resolution) using the appropriate LLM persona, with optional supervisor
+// instructions baked into the prompt as a higher-priority directive.
+// The supervisor is the domain expert; the user often gives a hint that's
+// directionally right but not authoritative. This endpoint lets the
+// supervisor steer the draft before it's locked in.
 //
-//   new | triaged | spec_pending | answer_pending  →  draft + advance to
-//                                                     in_progress (bug/ux)
-//                                                     or resolved (support)
-//                                                     so a single click
-//                                                     takes the ticket all
-//                                                     the way to "actively
-//                                                     being worked on" or
-//                                                     "answered + closed".
-//   spec_ready                                      →  in_progress
-//   answer_ready                                    →  resolved (sends Sage)
-//   in_progress                                     →  resolved (manual close)
-//   <terminal>                                      →  409 idempotent
+// Body: { supervisor_instructions?: string }
+// Response: { ok, markdown, draft_field, resolver_agent, status }
+//
+// Status transitions:
+//   new | triaged | spec_pending | answer_pending | needs_more_info | reopened
+//     → spec_ready  (bug, ux_issue, marketplace_claim, account_issue)
+//     → answer_ready (support_question)
+//   spec_ready / answer_ready → same status (re-draft overwrites markdown)
+//   <terminal> / in_progress  → 409 (use Activate to advance)
+const DraftSpecBody = z.object({
+  supervisor_instructions: z.string().max(4000).optional().nullable(),
+});
+
+router.post('/:tenantId/tickets/:id/draft-spec', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const v = DraftSpecBody.safeParse(req.body ?? {});
+  if (!v.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  const supervisorInstructions = (v.data.supervisor_instructions ?? '').trim() || null;
+
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+  const t = loaded.ticket as {
+    id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null;
+  };
+
+  const supabase = getServiceClient();
+  const TERMINAL = new Set(['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate']);
+  if (TERMINAL.has(t.status) || t.status === 'in_progress') {
+    return res.status(409).json({ ok: false, error: 'CANNOT_DRAFT_AT_THIS_STATUS', status: t.status });
+  }
+
+  // Pick resolver by kind. Kinds without a draft layer (feedback /
+  // feature_request) are not draftable — the supervisor's instructions
+  // directly become the work item, no LLM rendering needed.
+  let resolverAgent: 'sage' | 'devon' | 'atlas' | 'mira' | null = null;
+  let draftField: 'spec_md' | 'draft_answer_md' | 'resolution_md' = 'spec_md';
+  let nextStatus: 'spec_ready' | 'answer_ready' = 'spec_ready';
+  if (t.kind === 'support_question') {
+    resolverAgent = 'sage';
+    draftField = 'draft_answer_md';
+    nextStatus = 'answer_ready';
+  } else if (t.kind === 'bug' || t.kind === 'ux_issue') {
+    resolverAgent = 'devon';
+    draftField = 'spec_md';
+    nextStatus = 'spec_ready';
+  } else if (t.kind === 'marketplace_claim') {
+    resolverAgent = 'atlas';
+    draftField = 'resolution_md';
+    nextStatus = 'spec_ready';
+  } else if (t.kind === 'account_issue') {
+    resolverAgent = 'mira';
+    draftField = 'resolution_md';
+    nextStatus = 'spec_ready';
+  } else {
+    return res.status(409).json({ ok: false, error: 'KIND_HAS_NO_DRAFT_LAYER', kind: t.kind });
+  }
+
+  const snap = loaded.ticket as any;
+  let markdown = '';
+  let provider: 'llm' | 'fallback' = 'fallback';
+  try {
+    const {
+      llmDraftSageAnswer, llmDraftDevonSpec, llmDraftMiraResolution, llmDraftAtlasResolution,
+    } = await import('../services/feedback-llm-resolvers');
+    const opts = { supervisorInstructions };
+    let r: { markdown: string; provider: 'llm' | 'fallback' };
+    if (resolverAgent === 'sage') r = await llmDraftSageAnswer(snap, opts);
+    else if (resolverAgent === 'devon') r = await llmDraftDevonSpec(snap, opts);
+    else if (resolverAgent === 'atlas') r = await llmDraftAtlasResolution(snap, opts);
+    else r = await llmDraftMiraResolution(snap, opts);
+    markdown = r.markdown;
+    provider = r.provider;
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: 'DRAFT_FAILED', message: err instanceof Error ? err.message : String(err) });
+  }
+
+  const patch: Record<string, unknown> = {
+    status: nextStatus,
+    resolver_agent: resolverAgent,
+    [draftField]: markdown,
+  };
+  if (supervisorInstructions) patch.supervisor_notes = supervisorInstructions;
+  const { error: upErr } = await supabase
+    .from('feedback_tickets').update(patch).eq('id', t.id);
+  if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+
+  // Audit + OASIS
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot
+    after_state: {
+      ticket_id: t.id, ticket_number: t.ticket_number,
+      from: t.status, to: nextStatus, action: 'draft_spec',
+      resolver_agent: resolverAgent, provider,
+      had_supervisor_instructions: !!supervisorInstructions,
+    },
+  });
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-02664',
+      type: 'feedback.ticket.status_changed' as any,
+      source: 'tenant-admin-draft-spec',
+      status: 'info',
+      message: `Tenant ${tenantId} drafted ${t.ticket_number} via ${resolverAgent}: ${t.status} → ${nextStatus}`,
+      payload: {
+        ticket_id: t.id, ticket_number: t.ticket_number,
+        resolver_agent: resolverAgent, from: t.status, to: nextStatus, provider,
+      },
+      actor_id: userId,
+      actor_role: 'operator',
+      surface: 'operator',
+      vitana_id: (t.vitana_id as string) ?? undefined,
+    });
+  } catch { /* non-blocking */ }
+
+  return res.json({
+    ok: true,
+    ticket_id: t.id,
+    ticket_number: t.ticket_number,
+    resolver_agent: resolverAgent,
+    draft_field: draftField,
+    markdown,
+    status: nextStatus,
+    provider,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /:tenantId/tickets/:id/activate — VTID-02664 (refactored)
+// ---------------------------------------------------------------------------
+// Activate is now pure status advancement. It NO LONGER drafts. The
+// supervisor must call /draft-spec first when a draft is required;
+// otherwise this endpoint returns DRAFT_REQUIRED so the UI can guide
+// them to write instructions and generate the spec first.
+//
+//   spec_ready    →  in_progress
+//   answer_ready  →  resolved (sends Sage's drafted answer)
+//   in_progress   →  resolved (manual close)
+//   <needs_draft> →  409 DRAFT_REQUIRED (call /draft-spec first)
+//   <terminal>    →  409 ALREADY_TERMINAL
 router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Response) => {
   const tenantId = req.params.tenantId;
   const userId = await ensureTenantAdmin(req, res, tenantId);
   if (!userId) return;
   const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
   if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
-  const t = loaded.ticket as { id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null };
+  const t = loaded.ticket as {
+    id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null;
+    spec_md: string | null; draft_answer_md: string | null; resolution_md: string | null;
+  };
 
   const supabase = getServiceClient();
   const TERMINAL = new Set(['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate']);
@@ -689,86 +828,47 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     return res.status(409).json({ ok: false, error: 'ALREADY_TERMINAL', status: t.status });
   }
 
+  // Kinds with a draft layer require the draft to exist before Activate.
+  const KINDS_WITH_DRAFT = new Set(['support_question', 'bug', 'ux_issue', 'marketplace_claim', 'account_issue']);
+  const NEEDS_DRAFT = new Set(['new', 'triaged', 'spec_pending', 'answer_pending', 'needs_more_info', 'reopened']);
+  if (KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
+    return res.status(409).json({
+      ok: false,
+      error: 'DRAFT_REQUIRED',
+      message: 'Generate a spec / answer / resolution first via /draft-spec.',
+      status: t.status,
+      kind: t.kind,
+    });
+  }
+
   let newStatus = t.status;
   let action = '';
 
-  // Step 1: if not yet drafted, draft via the appropriate resolver. We call
-  // the same LLM-backed services the per-ticket flow uses (PR #1135).
-  const NEEDS_DRAFT = new Set(['new', 'triaged', 'spec_pending', 'answer_pending', 'needs_more_info', 'reopened']);
-  if (NEEDS_DRAFT.has(t.status)) {
-    const snap = loaded.ticket as any;
-    let resolverAgent = '';
-    let draftField: 'spec_md' | 'draft_answer_md' | 'resolution_md' = 'spec_md';
-    let nextStatus: string = 'spec_ready';
-    let markdown = '';
-    try {
-      const { llmDraftSageAnswer, llmDraftDevonSpec, llmDraftMiraResolution, llmDraftAtlasResolution } =
-        await import('../services/feedback-llm-resolvers');
-      if (t.kind === 'support_question') {
-        const r = await llmDraftSageAnswer(snap);
-        markdown = r.markdown;
-        resolverAgent = 'sage';
-        draftField = 'draft_answer_md';
-        nextStatus = 'answer_ready';
-      } else if (t.kind === 'bug' || t.kind === 'ux_issue') {
-        const r = await llmDraftDevonSpec(snap);
-        markdown = r.markdown;
-        resolverAgent = 'devon';
-        draftField = 'spec_md';
-        nextStatus = 'spec_ready';
-      } else if (t.kind === 'marketplace_claim') {
-        const r = await llmDraftAtlasResolution(snap);
-        markdown = r.markdown;
-        resolverAgent = 'atlas';
-        draftField = 'resolution_md';
-        nextStatus = 'spec_ready';
-      } else if (t.kind === 'account_issue') {
-        const r = await llmDraftMiraResolution(snap);
-        markdown = r.markdown;
-        resolverAgent = 'mira';
-        draftField = 'resolution_md';
-        nextStatus = 'spec_ready';
-      } else {
-        // feedback / feature_request — no draft layer; jump straight to in_progress
-        // so the supervisor's "Activate" still does something meaningful.
-        nextStatus = 'in_progress';
-      }
-    } catch (err) {
-      console.warn('[VTID-02660] activate draft failed, falling back to direct status flip:', err);
-      nextStatus = 'in_progress';
-    }
-    const patch: Record<string, unknown> = { status: nextStatus };
-    if (resolverAgent) patch.resolver_agent = resolverAgent;
-    if (markdown) patch[draftField] = markdown;
-    const { error: upErr } = await supabase
-      .from('feedback_tickets').update(patch).eq('id', t.id);
+  // For kinds without a draft layer (feedback / feature_request), advance
+  // straight from new/triaged → in_progress (the supervisor's instructions
+  // go to supervisor_notes via the draft-spec UI even though no LLM ran).
+  if (!KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
-    newStatus = nextStatus;
-    action = 'drafted';
+    if (u) { newStatus = 'in_progress'; action = 'activated'; }
   }
 
-  // Step 2: advance the now-drafted ticket toward terminal. spec_ready and
-  // answer_ready are advanced automatically. If the supervisor wants the
-  // intermediate review, they click Activate twice; otherwise one click
-  // takes it all the way. Set ?stop_at_draft=1 to keep the intermediate.
-  const stopAtDraft = String(req.query.stop_at_draft || '') === '1';
-  if (!stopAtDraft) {
-    if (newStatus === 'spec_ready') {
-      const { data: u } = await supabase.from('feedback_tickets')
-        .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
-      if (u) { newStatus = 'in_progress'; action = action ? `${action}+approved` : 'approved'; }
-    } else if (newStatus === 'answer_ready') {
-      const { data: u } = await supabase.from('feedback_tickets')
-        .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
-        .eq('id', t.id).select('status').single();
-      if (u) { newStatus = 'resolved'; action = action ? `${action}+sent` : 'sent_answer'; }
-    } else if (newStatus === 'in_progress') {
-      // already in progress and supervisor hits Activate again → resolve manually
-      const { data: u } = await supabase.from('feedback_tickets')
-        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
-        .eq('id', t.id).select('status').single();
-      if (u) { newStatus = 'resolved'; action = action ? `${action}+resolved` : 'resolved'; }
-    }
+  if (newStatus === 'spec_ready') {
+    const { data: u } = await supabase.from('feedback_tickets')
+      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    if (u) { newStatus = 'in_progress'; action = 'approved'; }
+  } else if (newStatus === 'answer_ready') {
+    const { data: u } = await supabase.from('feedback_tickets')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
+      .eq('id', t.id).select('status').single();
+    if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
+  } else if (newStatus === 'in_progress' && action !== 'activated') {
+    // already in progress and supervisor hits Activate again → resolve manually
+    const { data: u } = await supabase.from('feedback_tickets')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+      .eq('id', t.id).select('status').single();
+    if (u) { newStatus = 'resolved'; action = 'resolved'; }
   }
 
   // Audit + OASIS

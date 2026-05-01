@@ -42,6 +42,31 @@ interface FeedbackTicketSnapshot {
   priority: string | null;
 }
 
+// VTID-02664: supervisor instructions take priority over the user's report
+// when generating a draft. The supervisor is the domain expert; the user
+// often gives a hint that's directionally right but not authoritative.
+// We prepend a clearly-marked block so the LLM can't miss it.
+function withSupervisorDirective(userPrompt: string, supervisorInstructions: string | null | undefined): string {
+  const trimmed = (supervisorInstructions ?? '').trim();
+  if (!trimmed) return userPrompt;
+  return [
+    'SUPERVISOR DIRECTIVE — TAKES PRIORITY OVER USER REPORT',
+    '====================================================',
+    'The supervisor below is the domain expert. Their instructions OVERRIDE',
+    'the user-reported description wherever they conflict. Use the user',
+    'report as supporting context only.',
+    '',
+    trimmed,
+    '====================================================',
+    '',
+    userPrompt,
+  ].join('\n');
+}
+
+export interface DraftOptions {
+  supervisorInstructions?: string | null;
+}
+
 function summarizeIntake(t: FeedbackTicketSnapshot): string {
   const lines: string[] = [];
   if (t.raw_transcript) lines.push(`Raw transcript:\n${t.raw_transcript}`);
@@ -115,8 +140,9 @@ Guidelines:
 
 Output: just the answer markdown. No preamble, no JSON wrappers, no system commentary.`;
 
-export async function llmDraftSageAnswer(t: FeedbackTicketSnapshot): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
-  const userPrompt = `User support ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nDraft your answer now.`;
+export async function llmDraftSageAnswer(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
+  const base = `User support ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nDraft your answer now.`;
+  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
   const r = await callRouter(SAGE_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('sage', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
@@ -152,8 +178,9 @@ Bulleted checklist for verification.
 
 Style: terse, factual, engineering English. No marketing copy. No reassurance to the user. Sign off with "— Devon".`;
 
-export async function llmDraftDevonSpec(t: FeedbackTicketSnapshot): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
-  const userPrompt = `Ticket ${t.ticket_number ?? '(pending)'} (kind=${t.kind}):\n\n${summarizeIntake(t)}\n\nWrite the spec now.`;
+export async function llmDraftDevonSpec(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
+  const base = `Ticket ${t.ticket_number ?? '(pending)'} (kind=${t.kind}):\n\n${summarizeIntake(t)}\n\nWrite the spec now.`;
+  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
   const r = await callRouter(DEVON_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('devon', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
@@ -186,8 +213,9 @@ A short paragraph (≤80 words) Mira will speak when the fix is confirmed. Calm 
 
 Sign off with "— Mira".`;
 
-export async function llmDraftMiraResolution(t: FeedbackTicketSnapshot): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
-  const userPrompt = `Ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nWrite the resolution plan now.`;
+export async function llmDraftMiraResolution(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
+  const base = `Ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nWrite the resolution plan now.`;
+  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
   const r = await callRouter(MIRA_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('mira', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
@@ -220,8 +248,9 @@ One short paragraph. Note any red flags (high-value claim, repeated reports from
 
 Sign off with "— Atlas".`;
 
-export async function llmDraftAtlasResolution(t: FeedbackTicketSnapshot): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
-  const userPrompt = `Ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nWrite the resolution now.`;
+export async function llmDraftAtlasResolution(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
+  const base = `Ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nWrite the resolution now.`;
+  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
   const r = await callRouter(ATLAS_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('atlas', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
