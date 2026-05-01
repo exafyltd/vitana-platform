@@ -1,38 +1,40 @@
 /**
- * VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel to Vertex orb-live.ts).
+ * VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline routes (real implementation).
  *
- * Stub endpoints for the standby LiveKit voice pipeline. They live alongside
- * the existing /api/v1/orb/* routes (orb-live.ts) but are mutually exclusive
- * at runtime — a global flag (system_config.voice.active_provider) decides
- * which pipeline serves real traffic. The standby pipeline's session-mint
- * endpoints return 503 { error: 'provider_standby', active_provider: 'vertex' }.
+ * Replaces the 501/503 stubs from PR #1157 with working endpoints. The
+ * pipeline is still mutually exclusive with Vertex — the active provider
+ * flag in `system_config['voice.active_provider']` decides which one
+ * serves real traffic, and the standby's session-mint endpoint refuses
+ * with 503.
  *
- * Endpoints (all stubs in this PR — return 501 Not Implemented or 503 Standby):
+ * Endpoints (now implemented):
  *
- *   GET  /api/v1/orb/active-provider           current active provider + flip metadata
- *   POST /api/v1/orb/active-provider           admin-only flip (60-min anti-flap)
- *   POST /api/v1/orb/livekit/token             mint LiveKit room JWT (refuses when standby)
- *   GET  /api/v1/orb/livekit/health            health check (LiveKit-side providers)
- *   GET  /api/v1/orb/context-bootstrap         shared context fetcher (consumed by both
- *                                              pipelines once wired)
- *   GET  /api/v1/voice-providers               provider registry (drives Voice Lab dropdowns)
- *   POST /api/v1/voice-providers/:id/test      lightweight provider reachability probe
+ *   GET  /api/v1/orb/active-provider           current flag + last flip metadata
+ *   POST /api/v1/orb/active-provider           admin flip with 60-min cooldown + audit
+ *   POST /api/v1/orb/livekit/token             mint LiveKit room JWT + embed metadata
+ *   GET  /api/v1/orb/livekit/health            LiveKit-side health probe
+ *   GET  /api/v1/orb/context-bootstrap         minimal-viable shared context fetcher
+ *   GET  /api/v1/voice-providers               provider registry
+ *   POST /api/v1/voice-providers/:id/test      per-provider reachability ping
  *   GET  /api/v1/agents/:id/voice-config       per-agent provider trio
- *   PUT  /api/v1/agents/:id/voice-config       update per-agent provider trio
+ *   PUT  /api/v1/agents/:id/voice-config       update provider trio (validated + audited)
  *   POST /api/v1/agents/:id/voice-config/test-session
- *                                              ephemeral one-shot session token bound
- *                                              to a proposed (unsaved) config
+ *                                              ephemeral one-shot token bound to
+ *                                              an UNSAVED proposed config
  *
- * Implementation lands in follow-up PRs:
- *   - LiveKit JWT mint via livekit-server-sdk
- *   - Self-hosted LiveKit URL/key/secret resolution (env vars from secrets manager)
- *   - voice_providers / agent_voice_configs queries (migration in PR #1156)
- *   - active-provider read/write via system_config (flag) + voice_active_provider_changes (audit)
+ * Depends on PR #1156 (voice tables migration) being applied. Endpoints
+ * that read voice_providers / agent_voice_configs degrade gracefully
+ * when the migration hasn't landed (return empty result, not 500).
  *
- * See .claude/plans/here-is-what-our-valiant-stearns.md for the full design.
+ * Flag storage: `system_config[key='voice.active_provider'].value` is a
+ * JSON string ("vertex" | "livekit"). Falls back to env var
+ * VOICE_ACTIVE_PROVIDER when the row doesn't exist yet (so the dev
+ * sandbox flows even before the operator writes the row).
  */
 
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
+import { AccessToken } from 'livekit-server-sdk';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
 import {
@@ -43,103 +45,305 @@ import {
 
 const router = Router();
 
-const STUB_VTID = 'VTID-LIVEKIT-FOUNDATION';
+const VTID = 'VTID-LIVEKIT-FOUNDATION';
+const ACTIVE_PROVIDER_KEY = 'voice.active_provider';
+const FLIP_COOLDOWN_SECONDS = 60 * 60; // 1 hour anti-flap
+const TEST_SESSION_TOKEN_TTL_SECONDS = 5 * 60;
+
+type ProviderName = 'vertex' | 'livekit';
 
 // ---------------------------------------------------------------------------
-// Active provider switch
+// Active-provider flag — read/write helpers
 // ---------------------------------------------------------------------------
 
-/**
- * GET /api/v1/orb/active-provider
- * Returns the current active provider. Read by the frontend at app boot and
- * on iOS visibility resume to know which pipeline to connect to.
- */
-router.get('/orb/active-provider', async (_req: Request, res: Response) => {
-  // Default: 'vertex' until the flag exists. Once system_config is wired in
-  // a follow-up PR, this reads from there. ENV fallback in the meantime.
-  const active = process.env.VOICE_ACTIVE_PROVIDER === 'livekit' ? 'livekit' : 'vertex';
-  res.json({
-    ok: true,
-    active_provider: active,
-    last_flipped_at: null,
-    flipped_by: null,
-    cooldown_remaining_s: 0,
-    vtid: STUB_VTID,
-    note: 'STUB — wire to system_config in follow-up PR.',
-  });
-});
+interface ActiveProviderState {
+  active_provider: ProviderName;
+  last_flipped_at: string | null;
+  flipped_by: string | null;
+  cooldown_remaining_s: number;
+}
 
-/**
- * POST /api/v1/orb/active-provider
- * Admin-only flip. Body: { provider: 'vertex'|'livekit', reason: string }.
- * Enforces 60-minute anti-flap cooldown. Writes voice_active_provider_changes.
- */
-router.post('/orb/active-provider', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
-  const { provider, reason } = req.body ?? {};
-  if (provider !== 'vertex' && provider !== 'livekit') {
-    return res.status(400).json({ ok: false, error: 'provider must be vertex or livekit' });
+async function readActiveProvider(): Promise<ActiveProviderState> {
+  const fallback: ProviderName =
+    process.env.VOICE_ACTIVE_PROVIDER === 'livekit' ? 'livekit' : 'vertex';
+
+  const sb = getSupabase();
+  if (!sb) {
+    return {
+      active_provider: fallback,
+      last_flipped_at: null,
+      flipped_by: null,
+      cooldown_remaining_s: 0,
+    };
   }
-  // TODO(VTID-LIVEKIT-FOUNDATION): enforce admin role, 60-min cooldown,
-  // write system_config + voice_active_provider_changes, emit
-  // voice.active_provider.flipped OASIS event.
-  return res.status(501).json({
-    ok: false,
-    error: 'not_implemented',
-    vtid: STUB_VTID,
-    detail: 'Active-provider flip is stubbed pending the follow-up PR. Use VOICE_ACTIVE_PROVIDER env var meanwhile.',
-    requested: { provider, reason: reason ?? null, requested_by: req.identity?.user_id ?? null },
-  });
-});
 
-// ---------------------------------------------------------------------------
-// LiveKit token mint + health
-// ---------------------------------------------------------------------------
+  // system_config table shape: { key TEXT PK, value JSONB, updated_by TEXT, updated_at TIMESTAMPTZ }
+  // (see supabase/migrations/20260402000000_self_healing_tables.sql)
+  const { data: cfgRow } = await sb
+    .from('system_config')
+    .select('value, updated_by, updated_at')
+    .eq('key', ACTIVE_PROVIDER_KEY)
+    .maybeSingle();
 
-/**
- * POST /api/v1/orb/livekit/token
- * Mints a LiveKit room JWT bound to one user. Embeds resolved identity
- * (vitana_id, tenant_id, role with mobile-community coercion, lang) into
- * the room metadata so the agent worker reads it without a round-trip.
- *
- * Refuses with 503 when LiveKit is the standby provider.
- */
-router.post('/orb/livekit/token', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const active = process.env.VOICE_ACTIVE_PROVIDER === 'livekit' ? 'livekit' : 'vertex';
-  if (active !== 'livekit') {
-    return res.status(503).json({
+  let provider: ProviderName = fallback;
+  let lastFlippedAt: string | null = null;
+  let flippedBy: string | null = null;
+
+  if (cfgRow) {
+    const raw = (cfgRow as { value: unknown }).value;
+    if (typeof raw === 'string' && (raw === 'vertex' || raw === 'livekit')) {
+      provider = raw;
+    } else if (raw && typeof raw === 'object' && 'provider' in (raw as Record<string, unknown>)) {
+      const p = (raw as Record<string, unknown>).provider;
+      if (p === 'vertex' || p === 'livekit') provider = p;
+    }
+    lastFlippedAt = (cfgRow as { updated_at: string | null }).updated_at ?? null;
+    flippedBy = (cfgRow as { updated_by: string | null }).updated_by ?? null;
+  }
+
+  let cooldownRemaining = 0;
+  if (lastFlippedAt) {
+    const lastMs = new Date(lastFlippedAt).getTime();
+    const elapsedS = (Date.now() - lastMs) / 1000;
+    cooldownRemaining = Math.max(0, Math.floor(FLIP_COOLDOWN_SECONDS - elapsedS));
+  }
+
+  return {
+    active_provider: provider,
+    last_flipped_at: lastFlippedAt,
+    flipped_by: flippedBy,
+    cooldown_remaining_s: cooldownRemaining,
+  };
+}
+
+async function writeActiveProvider(
+  next: ProviderName,
+  reason: string | null,
+  changedBy: string | null,
+): Promise<{ ok: boolean; error?: string; previous?: ProviderName }> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, error: 'supabase client unavailable' };
+
+  const current = await readActiveProvider();
+  if (current.active_provider === next) {
+    return { ok: true, previous: current.active_provider };
+  }
+  if (current.cooldown_remaining_s > 0) {
+    return {
       ok: false,
-      error: 'provider_standby',
-      active_provider: active,
-      vtid: STUB_VTID,
-      detail: 'LiveKit is currently the standby provider. Connect to the Vertex pipeline instead.',
-    });
+      error: `cooldown active: ${current.cooldown_remaining_s}s remaining`,
+    };
   }
 
-  // TODO(VTID-LIVEKIT-FOUNDATION): mint LiveKit JWT via livekit-server-sdk,
-  // embed room metadata { user_id, tenant_id, role, lang, vitana_id,
-  // is_mobile, is_anonymous, agent_id }, allocate orb_session_id.
-  return res.status(501).json({
-    ok: false,
-    error: 'not_implemented',
-    vtid: STUB_VTID,
-    detail: 'LiveKit token mint stubbed pending self-hosted infra (PR #7) + livekit-server-sdk wiring.',
-  });
+  const { error: upErr } = await sb.from('system_config').upsert(
+    {
+      key: ACTIVE_PROVIDER_KEY,
+      value: next as unknown as object,
+      updated_by: changedBy ?? 'system',
+    },
+    { onConflict: 'key' },
+  );
+  if (upErr) return { ok: false, error: upErr.message };
+
+  // Audit (best-effort — table from PR #1156 may not exist yet).
+  await sb
+    .from('voice_active_provider_changes')
+    .insert({
+      from_provider: current.active_provider,
+      to_provider: next,
+      reason: reason ?? 'manual',
+      changed_by: changedBy,
+    })
+    .then(
+      () => undefined,
+      () => undefined,
+    );
+
+  return { ok: true, previous: current.active_provider };
+}
+
+router.get('/orb/active-provider', async (_req: Request, res: Response) => {
+  try {
+    const state = await readActiveProvider();
+    res.json({ ok: true, ...state, vtid: VTID });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message, vtid: VTID });
+  }
 });
 
-/**
- * GET /api/v1/orb/livekit/health
- * Sibling of /orb/health. Reports LiveKit-side reachability.
- */
+router.post(
+  '/orb/active-provider',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { provider, reason } = (req.body ?? {}) as {
+      provider?: string;
+      reason?: string;
+    };
+    if (provider !== 'vertex' && provider !== 'livekit') {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'provider must be vertex or livekit', vtid: VTID });
+    }
+    if (!req.identity?.exafy_admin) {
+      return res.status(403).json({
+        ok: false,
+        error: 'exafy_admin role required for active-provider flip',
+        vtid: VTID,
+      });
+    }
+    const result = await writeActiveProvider(
+      provider,
+      reason ?? null,
+      req.identity?.user_id ?? null,
+    );
+    if (!result.ok) {
+      const status = result.error?.startsWith('cooldown') ? 429 : 500;
+      return res.status(status).json({ ok: false, error: result.error, vtid: VTID });
+    }
+    try {
+      await emitOasisEvent({
+        type: 'voice.active_provider.flipped' as never,
+        actor: req.identity?.user_id ?? 'system',
+        payload: {
+          from: result.previous,
+          to: provider,
+          reason: reason ?? null,
+          vtid: VTID,
+        },
+      } as never);
+    } catch {
+      // never block flip on telemetry
+    }
+    return res.json({
+      ok: true,
+      from: result.previous,
+      to: provider,
+      vtid: VTID,
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// LiveKit token mint
+// ---------------------------------------------------------------------------
+
+interface MintTokenBody {
+  lang?: string;
+  agent_id?: string;
+  voice_style?: string;
+}
+
+router.post(
+  '/orb/livekit/token',
+  optionalAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const state = await readActiveProvider();
+    if (state.active_provider !== 'livekit') {
+      return res.status(503).json({
+        ok: false,
+        error: 'provider_standby',
+        active_provider: state.active_provider,
+        vtid: VTID,
+      });
+    }
+
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    if (!livekitUrl || !apiKey || !apiSecret) {
+      return res.status(500).json({
+        ok: false,
+        error: 'livekit_misconfigured',
+        detail: 'LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET not set',
+        vtid: VTID,
+      });
+    }
+
+    const body = (req.body ?? {}) as MintTokenBody;
+    const lang = body.lang || 'en';
+    const agentId = body.agent_id || 'vitana';
+    const isAnonymous = !req.identity;
+    const userId = req.identity?.user_id ?? `anon-${randomUUID()}`;
+    const tenantId = req.identity?.tenant_id ?? '';
+
+    // Mobile-community coercion (defense-in-depth, mirrors
+    // memory/feedback_mobile_community_only.md).
+    const ua = String(req.headers['user-agent'] || '').toLowerCase();
+    const isMobile = /iphone|android|appilix|webview|mobile/.test(ua);
+    const dbRole = req.identity?.role ?? 'community';
+    const role = isMobile ? 'community' : dbRole;
+
+    const orbSessionId = `orb-${randomUUID()}`;
+    const roomName = `orb-${userId}-${Date.now()}`;
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: userId,
+      ttl: 60 * 60, // 1 hour session
+      metadata: JSON.stringify({
+        user_id: userId,
+        tenant_id: tenantId,
+        role,
+        lang,
+        is_mobile: isMobile,
+        is_anonymous: isAnonymous,
+        agent_id: agentId,
+        orb_session_id: orbSessionId,
+        vitana_id: req.identity?.vitana_id ?? null,
+      }),
+    });
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    const token = await at.toJwt();
+
+    return res.json({
+      ok: true,
+      url: livekitUrl,
+      token,
+      room: roomName,
+      orb_session_id: orbSessionId,
+      lang,
+      vtid: VTID,
+    });
+  },
+);
+
 router.get('/orb/livekit/health', async (_req: Request, res: Response) => {
+  const state = await readActiveProvider();
+  // Probe the orb-agent /health endpoint (configured via ORB_AGENT_URL secret).
+  let agentReachable = false;
+  let agentBody: unknown = null;
+  const agentUrl = process.env.ORB_AGENT_URL;
+  if (agentUrl) {
+    try {
+      const r = await fetch(agentUrl.replace(/\/+$/, '') + '/health', {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (r.ok) {
+        agentReachable = true;
+        agentBody = await r.json();
+      }
+    } catch {
+      agentReachable = false;
+    }
+  }
+
   res.json({
     ok: true,
     service: 'orb-livekit-routes',
-    vtid: STUB_VTID,
+    vtid: VTID,
+    active_provider: state.active_provider,
     livekit: {
       url_configured: !!process.env.LIVEKIT_URL,
       api_key_configured: !!process.env.LIVEKIT_API_KEY,
     },
-    agent_worker_reachable: false, // TODO: actual probe via agent worker /health
+    agent_worker_reachable: agentReachable,
+    agent_health: agentBody,
     providers: {
       anthropic_configured: !!process.env.ANTHROPIC_API_KEY,
       openai_configured: !!process.env.OPENAI_API_KEY,
@@ -148,186 +352,349 @@ router.get('/orb/livekit/health', async (_req: Request, res: Response) => {
       elevenlabs_configured: !!process.env.ELEVENLABS_API_KEY,
       assemblyai_configured: !!process.env.ASSEMBLYAI_API_KEY,
     },
-    active_provider: process.env.VOICE_ACTIVE_PROVIDER === 'livekit' ? 'livekit' : 'vertex',
-    note: 'STUB — wire real reachability checks in follow-up PR.',
   });
 });
 
 // ---------------------------------------------------------------------------
-// Shared context bootstrap (consumed by BOTH pipelines once orb-live ports to it)
+// Shared context bootstrap
 // ---------------------------------------------------------------------------
 
-/**
- * GET /api/v1/orb/context-bootstrap
- * Returns the same payload structure that orb-live.ts currently builds inline.
- * Used by the LiveKit agent worker (services/agents/orb-agent/) and eventually
- * by orb-live.ts itself (refactor target so both pipelines share one builder).
- *
- * Query params: agent_id, is_reconnect, last_n_turns
- */
-router.get('/orb/context-bootstrap', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const agentId = String(req.query.agent_id ?? 'vitana');
-  const isReconnect = String(req.query.is_reconnect ?? 'false') === 'true';
-  const lastN = Math.min(50, Math.max(0, Number(req.query.last_n_turns ?? 0) || 0));
-
-  // TODO(VTID-LIVEKIT-FOUNDATION): port the inline builder from orb-live.ts.
-  // For now return an empty-but-shaped payload so the agent's BootstrapResult
-  // dataclass doesn't crash on .get() calls.
-  res.json({
-    ok: true,
-    vtid: STUB_VTID,
-    agent_id: agentId,
-    is_reconnect: isReconnect,
-    bootstrap_context: '',
-    active_role: req.identity?.role ?? null,
-    conversation_summary: null,
-    last_turns: null,
-    last_session_info: null,
-    current_route: null,
-    recent_routes: [],
-    client_context: {},
-    vitana_id: null,
-    voice_config: null,
-    last_n_requested: lastN,
-    note: 'STUB — full context-bootstrap port lands in follow-up PR.',
-  });
-});
-
-// ---------------------------------------------------------------------------
-// voice_providers registry
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/v1/voice-providers
- * Full registry — drives Command Hub Voice Lab dropdowns.
- */
-router.get('/voice-providers', async (_req: Request, res: Response) => {
-  try {
-    const supabase = getSupabase();
-    if (!supabase) {
-      res.json({ ok: true, providers: [], vtid: STUB_VTID, note: 'supabase client unavailable' });
-      return;
-    }
-    const { data, error } = await supabase
-      .from('voice_providers')
-      .select('id, kind, display_name, models, options_schema, plugin_module, fallback_chain, enabled, notes')
-      .eq('enabled', true)
-      .order('kind', { ascending: true })
-      .order('id', { ascending: true });
-
-    if (error) {
-      // Migration not applied yet → graceful empty response.
-      res.json({ ok: true, providers: [], vtid: STUB_VTID, note: `Migration not applied: ${error.message}` });
-      return;
-    }
-    res.json({ ok: true, providers: data ?? [], vtid: STUB_VTID });
-  } catch (e) {
-    res.json({ ok: true, providers: [], vtid: STUB_VTID, note: 'getSupabase unavailable in this env' });
-  }
-});
-
-/**
- * POST /api/v1/voice-providers/:id/test
- * Lightweight reachability probe — STT/TTS round-trip or LLM ping. Powers
- * the green/red dot per dropdown option in the Voice Lab UI.
- */
-router.post('/voice-providers/:id/test', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  return res.status(501).json({
-    ok: false,
-    error: 'not_implemented',
-    vtid: STUB_VTID,
-    detail: `Provider reachability test stubbed for '${id}'. Real implementation lands in PR that adds the per-provider probe library.`,
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Per-agent voice config (Voice Lab Agent Configuration sub-tab)
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/v1/agents/:id/voice-config
- * Read the per-agent provider trio + matching providers list for dropdowns.
- */
-router.get('/agents/:id/voice-config', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params;
-  try {
-    const supabase = getSupabase();
-    if (!supabase) {
-      res.json({ ok: true, agent_id: id, config: null, vtid: STUB_VTID, note: 'supabase client unavailable' });
-      return;
-    }
-    const { data, error } = await supabase
-      .from('agent_voice_configs')
-      .select('*')
-      .eq('agent_id', id)
-      .single();
-    if (error) {
-      res.json({ ok: true, agent_id: id, config: null, vtid: STUB_VTID, note: error.message });
-      return;
-    }
-    res.json({ ok: true, agent_id: id, config: data, vtid: STUB_VTID });
-  } catch {
-    res.json({ ok: true, agent_id: id, config: null, vtid: STUB_VTID });
-  }
-});
-
-/**
- * PUT /api/v1/agents/:id/voice-config
- * Update the per-agent provider trio. Validates the chosen models exist in
- * voice_providers and that mandatory options are present (e.g. ElevenLabs
- * voice_id). Audit row is auto-written by the migration's UPDATE trigger.
- */
-router.put('/agents/:id/voice-config', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
-  return res.status(501).json({
-    ok: false,
-    error: 'not_implemented',
-    vtid: STUB_VTID,
-    detail: 'Per-agent voice config write is stubbed pending Voice Lab UI (PR #6).',
-    requested: { agent_id: req.params.id, body: req.body, by: req.identity?.user_id ?? null },
-  });
-});
-
-/**
- * POST /api/v1/agents/:id/voice-config/test-session
- * Mints a one-shot ephemeral session token bound to a *proposed* (unsaved)
- * provider trio. Used by the Voice Lab "Test conversation" button to
- * audition a configuration before saving it.
- */
-router.post(
-  '/agents/:id/voice-config/test-session',
-  requireAuthWithTenant,
+router.get(
+  '/orb/context-bootstrap',
+  optionalAuth,
   async (req: AuthenticatedRequest, res: Response) => {
-    return res.status(501).json({
-      ok: false,
-      error: 'not_implemented',
-      vtid: STUB_VTID,
-      detail: 'Test-session token mint stubbed; lands with the Voice Lab UI (PR #6).',
-      requested: { agent_id: req.params.id, proposed_config: req.body },
+    const agentId = String(req.query.agent_id ?? 'vitana');
+    const isReconnect = String(req.query.is_reconnect ?? 'false') === 'true';
+    const lastN = Math.min(50, Math.max(0, Number(req.query.last_n_turns ?? 0) || 0));
+
+    const sb = getSupabase();
+    const userId = req.identity?.user_id ?? null;
+    const tenantId = req.identity?.tenant_id ?? null;
+    const role = req.identity?.role ?? 'community';
+    const lang = String(req.headers['accept-language'] || 'en')
+      .split(',')[0]
+      .split('-')[0];
+
+    let voiceConfig: Record<string, unknown> | null = null;
+    if (sb) {
+      const { data } = await sb
+        .from('agent_voice_configs')
+        .select('*')
+        .eq('agent_id', agentId)
+        .maybeSingle();
+      voiceConfig = (data as Record<string, unknown> | null) ?? null;
+    }
+
+    // Memory garden: best-effort top-N. Full retrieval-router context port
+    // (memory + last session + admin briefing + profiler) lands in a
+    // follow-up PR.
+    const memoryItems: Array<{ id: string; text: string }> = [];
+    if (sb && userId) {
+      const { data: items } = await sb
+        .from('memory_garden')
+        .select('id, content')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(5);
+      if (items) {
+        for (const it of items as Array<Record<string, unknown>>) {
+          memoryItems.push({
+            id: String(it.id ?? ''),
+            text: String(it.content ?? ''),
+          });
+        }
+      }
+    }
+
+    const ctxParts: string[] = [];
+    if (userId) ctxParts.push(`User ID: ${userId}.`);
+    if (tenantId) ctxParts.push(`Tenant: ${tenantId}.`);
+    ctxParts.push(`Role: ${role}.`);
+    ctxParts.push(`Language: ${lang}.`);
+    if (memoryItems.length) {
+      ctxParts.push(
+        `Recent memory:\n${memoryItems.map((m) => `- ${m.text.slice(0, 200)}`).join('\n')}`,
+      );
+    }
+
+    res.json({
+      ok: true,
+      vtid: VTID,
+      agent_id: agentId,
+      is_reconnect: isReconnect,
+      last_n_requested: lastN,
+      bootstrap_context: ctxParts.join('\n'),
+      active_role: role,
+      conversation_summary: null,
+      last_turns: null,
+      last_session_info: null,
+      current_route: null,
+      recent_routes: [],
+      client_context: { user_agent: req.headers['user-agent'] ?? null },
+      vitana_id: req.identity?.vitana_id ?? null,
+      voice_config: voiceConfig,
+      memory_items: memoryItems,
     });
   },
 );
 
 // ---------------------------------------------------------------------------
-// Self-test on first request (one-shot OASIS event so we can confirm the
-// router is mounted in production)
+// voice_providers registry + per-provider /test
 // ---------------------------------------------------------------------------
 
-let _bootEmitted = false;
-router.use(async (_req, _res, next) => {
-  if (!_bootEmitted) {
-    _bootEmitted = true;
+router.get('/voice-providers', async (_req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.json({ ok: true, providers: [], vtid: VTID });
+  const { data, error } = await sb
+    .from('voice_providers')
+    .select(
+      'id, kind, display_name, models, options_schema, plugin_module, fallback_chain, enabled, notes',
+    )
+    .eq('enabled', true)
+    .order('kind', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) {
+    return res.json({
+      ok: true,
+      providers: [],
+      vtid: VTID,
+      note: `Migration not applied: ${error.message}`,
+    });
+  }
+  res.json({ ok: true, providers: data ?? [], vtid: VTID });
+});
+
+async function probeUrl(
+  url: string,
+  envKey: string | null,
+): Promise<{ ok: boolean; detail?: string }> {
+  if (envKey && !process.env[envKey]) {
+    return { ok: false, detail: `${envKey} not configured` };
+  }
+  try {
+    const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
+    return { ok: true, detail: `HEAD ${r.status}` };
+  } catch (e) {
+    return { ok: false, detail: `network: ${(e as Error).message}` };
+  }
+}
+
+router.post('/voice-providers/:id/test', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const probes: Record<string, () => Promise<{ ok: boolean; detail?: string }>> = {
+    deepgram: () => probeUrl('https://api.deepgram.com', 'DEEPGRAM_API_KEY'),
+    assemblyai: () => probeUrl('https://api.assemblyai.com', 'ASSEMBLYAI_API_KEY'),
+    cartesia: () => probeUrl('https://api.cartesia.ai', 'CARTESIA_API_KEY'),
+    elevenlabs: () => probeUrl('https://api.elevenlabs.io', 'ELEVENLABS_API_KEY'),
+    rime: () => probeUrl('https://users.rime.ai', 'RIME_API_KEY'),
+    inworld: () => probeUrl('https://api.inworld.ai', 'INWORLD_API_KEY'),
+    deepgram_tts: () => probeUrl('https://api.deepgram.com', 'DEEPGRAM_API_KEY'),
+    google_stt: () => probeUrl('https://speech.googleapis.com', null),
+    google_tts: () => probeUrl('https://texttospeech.googleapis.com', null),
+    openai_stt: () => probeUrl('https://api.openai.com', 'OPENAI_API_KEY'),
+    openai_tts: () => probeUrl('https://api.openai.com', 'OPENAI_API_KEY'),
+    openai: () => probeUrl('https://api.openai.com', 'OPENAI_API_KEY'),
+    anthropic: () => probeUrl('https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
+    google_llm: () =>
+      probeUrl('https://generativelanguage.googleapis.com', 'GOOGLE_GEMINI_API_KEY'),
+    xai: () => probeUrl('https://api.x.ai', 'XAI_API_KEY'),
+    mistral: () => probeUrl('https://api.mistral.ai', 'MISTRAL_API_KEY'),
+    groq: () => probeUrl('https://api.groq.com', 'GROQ_API_KEY'),
+    cerebras: () => probeUrl('https://api.cerebras.ai', 'CEREBRAS_API_KEY'),
+    soniox: () => probeUrl('https://api.soniox.com', 'SONIOX_API_KEY'),
+    speechmatics: () => probeUrl('https://asr.api.speechmatics.com', 'SPEECHMATICS_API_KEY'),
+    azure_stt: async () => ({
+      ok: !!process.env.AZURE_SPEECH_KEY,
+      detail: 'env-only check',
+    }),
+    azure_tts: async () => ({
+      ok: !!process.env.AZURE_SPEECH_KEY,
+      detail: 'env-only check',
+    }),
+    groq_stt: () => probeUrl('https://api.groq.com', 'GROQ_API_KEY'),
+    cartesia_stt: () => probeUrl('https://api.cartesia.ai', 'CARTESIA_API_KEY'),
+  };
+
+  const probe = probes[id];
+  if (!probe) {
+    return res.status(404).json({ ok: false, error: 'unknown_provider', id, vtid: VTID });
+  }
+  const result = await probe();
+  res.json({ ok: result.ok, provider_id: id, detail: result.detail ?? null, vtid: VTID });
+});
+
+// ---------------------------------------------------------------------------
+// Per-agent voice config CRUD
+// ---------------------------------------------------------------------------
+
+interface VoiceConfigBody {
+  transport?: string;
+  stt_provider?: string;
+  stt_model?: string;
+  stt_options?: Record<string, unknown>;
+  llm_provider?: string;
+  llm_model?: string;
+  llm_options?: Record<string, unknown>;
+  tts_provider?: string;
+  tts_model?: string;
+  tts_options?: Record<string, unknown>;
+}
+
+const VALID_TRANSPORTS = new Set([
+  'vertex',
+  'livekit_cascade',
+  'livekit_half_cascade',
+  'livekit_realtime',
+]);
+
+router.get(
+  '/agents/:id/voice-config',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const sb = getSupabase();
+    if (!sb) return res.json({ ok: true, agent_id: id, config: null, vtid: VTID });
+    const { data, error } = await sb
+      .from('agent_voice_configs')
+      .select('*')
+      .eq('agent_id', id)
+      .maybeSingle();
+    if (error) {
+      return res.json({
+        ok: true,
+        agent_id: id,
+        config: null,
+        vtid: VTID,
+        note: error.message,
+      });
+    }
+    res.json({ ok: true, agent_id: id, config: data ?? null, vtid: VTID });
+  },
+);
+
+router.put(
+  '/agents/:id/voice-config',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const body = (req.body ?? {}) as VoiceConfigBody;
+    if (body.transport && !VALID_TRANSPORTS.has(body.transport)) {
+      return res.status(400).json({ ok: false, error: 'invalid transport', vtid: VTID });
+    }
+    const sb = getSupabase();
+    if (!sb)
+      return res.status(500).json({ ok: false, error: 'supabase unavailable', vtid: VTID });
+
+    const referenced = [body.stt_provider, body.llm_provider, body.tts_provider].filter(
+      (x): x is string => Boolean(x),
+    );
+    if (referenced.length) {
+      const { data: providers } = await sb
+        .from('voice_providers')
+        .select('id, enabled')
+        .in('id', referenced);
+      const known = new Map(
+        (providers ?? []).map((p: Record<string, unknown>) => [
+          String(p.id),
+          Boolean(p.enabled),
+        ]),
+      );
+      for (const p of referenced) {
+        if (!known.has(p) || !known.get(p)) {
+          return res.status(400).json({
+            ok: false,
+            error: `unknown or disabled provider: ${p}`,
+            vtid: VTID,
+          });
+        }
+      }
+    }
+
+    const update: Record<string, unknown> = {
+      agent_id: id,
+      updated_by: req.identity?.user_id ?? null,
+    };
+    for (const key of [
+      'transport',
+      'stt_provider',
+      'stt_model',
+      'stt_options',
+      'llm_provider',
+      'llm_model',
+      'llm_options',
+      'tts_provider',
+      'tts_model',
+      'tts_options',
+    ] as const) {
+      if (body[key] !== undefined) update[key] = body[key] as unknown;
+    }
+
+    const { data, error } = await sb
+      .from('agent_voice_configs')
+      .upsert(update, { onConflict: 'agent_id' })
+      .select('*')
+      .single();
+    if (error) {
+      return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
+    }
     try {
       await emitOasisEvent({
-        type: 'orb.livekit.routes_mounted' as any,
-        actor: 'system',
-        payload: { vtid: STUB_VTID, version: '0.1.0' },
-      } as any);
-    } catch {
-      // never block requests on telemetry
+        type: 'agent.voice_config.changed' as never,
+        actor: req.identity?.user_id ?? 'system',
+        payload: { agent_id: id, config: data, vtid: VTID },
+      } as never);
+    } catch {}
+    res.json({ ok: true, agent_id: id, config: data, vtid: VTID });
+  },
+);
+
+router.post(
+  '/agents/:id/voice-config/test-session',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    if (!livekitUrl || !apiKey || !apiSecret) {
+      return res.status(500).json({
+        ok: false,
+        error: 'livekit_misconfigured',
+        vtid: VTID,
+      });
     }
-  }
-  next();
-});
+    const userId = req.identity?.user_id ?? `tester-${randomUUID()}`;
+    const proposed = req.body ?? {};
+    const roomName = `orb-test-${id}-${Date.now()}`;
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: userId,
+      ttl: TEST_SESSION_TOKEN_TTL_SECONDS,
+      metadata: JSON.stringify({
+        user_id: userId,
+        agent_id: id,
+        is_test_session: true,
+        proposed_voice_config: proposed,
+      }),
+    });
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+    const token = await at.toJwt();
+
+    res.json({
+      ok: true,
+      url: livekitUrl,
+      token,
+      room: roomName,
+      ttl_s: TEST_SESSION_TOKEN_TTL_SECONDS,
+      vtid: VTID,
+    });
+  },
+);
 
 export default router;
