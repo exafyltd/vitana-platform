@@ -46,6 +46,16 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-02651: persona registry — voice/greeting/handles_kinds all loaded
+// from agent_personas at runtime so any new specialist is a config insert.
+import {
+  getPersonaVoice as registryGetPersonaVoice,
+  getPersonaGreeting as registryGetPersonaGreeting,
+  pickPersonaForKind as registryPickPersonaForKind,
+  isValidPersona as registryIsValidPersona,
+  listAllPersonaKeys as registryListAllPersonaKeys,
+  RECEPTIONIST_KEY as RECEPTIONIST_PERSONA_KEY,
+} from '../services/persona-registry';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
@@ -728,11 +738,14 @@ interface GeminiLiveSession {
   // Gemini WebSocket so the new voice + system prompt take effect mid-call.
   // The user-facing WS/SSE stays open the whole time — only the gateway's
   // upstream connection resets.
-  activePersona?: 'vitana' | 'devon' | 'sage' | 'atlas' | 'mira';
+  // VTID-02651: persona keys are now data-driven from agent_personas, so
+  // the types are generic strings. Adding a new specialist = one INSERT
+  // into agent_personas + zero code change.
+  activePersona?: string;
   // Pending swap target — set by the tool, consumed by post-tool-response
-  // logic that schedules the actual WS reconnect after Vitana's bridge
+  // logic that schedules the actual WS reconnect after the bridge
   // sentence has finished speaking.
-  pendingPersonaSwap?: 'vitana' | 'devon' | 'sage' | 'atlas' | 'mira' | null;
+  pendingPersonaSwap?: string | null;
   // Specialist's system prompt + voice override for the next reconnect.
   personaSystemOverride?: string;
   personaVoiceOverride?: string;
@@ -1221,57 +1234,12 @@ const LIVE_API_VOICES: Record<string, string> = {
   'sr': 'Aoede'     // Serbian - fallback
 };
 
-// VTID-02047 voice channel-swap: per-specialist Live API voice IDs.
-// Vitana keeps her per-language voice from LIVE_API_VOICES above. When the
-// user reports a claim/bug/support question, report_to_specialist swaps the
-// upstream session voice to the matching specialist so the user literally
-// hears a different person picking up the call. Voices chosen so each
-// specialist is distinct from Vitana AND from each other across genders:
-//   Devon  = Charon  (male, technical-calm)
-//   Sage   = Leda    (female, patient — different from Vitana's Aoede/Kore)
-//   Atlas  = Orus    (male, professional)
-//   Mira   = Zephyr  (female, calm-authoritative)
-// All eight Gemini Live prebuilt voices: Aoede, Charon, Fenrir, Kore, Leda,
-// Orus, Puck, Zephyr.
-const SPECIALIST_VOICES: Record<string, string> = {
-  vitana: '',        // Sentinel — empty means "use language default"
-  devon: 'Charon',
-  sage: 'Leda',
-  atlas: 'Orus',
-  mira: 'Zephyr',
-};
-
-function getSpecialistGreeting(persona: string, lang: string): string {
-  const greetings: Record<string, Record<string, string>> = {
-    devon: {
-      en: "Hi, Devon here — Vitana said you ran into an issue. Walk me through what happened.",
-      de: "Hallo, Devon hier — Vitana hat mir gesagt, dass du ein Problem hast. Erzähl mir, was passiert ist.",
-      fr: "Salut, Devon à l'appareil — Vitana m'a dit que tu as rencontré un souci. Raconte-moi ce qui s'est passé.",
-      es: "Hola, soy Devon — Vitana me ha dicho que tienes un problema. Cuéntame qué ha pasado.",
-    },
-    sage: {
-      en: "Hi, Sage here. What can I help you find?",
-      de: "Hallo, Sage hier. Wobei kann ich dir helfen?",
-      fr: "Bonjour, Sage à l'appareil. Comment puis-je t'aider ?",
-      es: "Hola, soy Sage. ¿En qué puedo ayudarte?",
-    },
-    atlas: {
-      en: "Hi, Atlas here. Let's sort this out — what's going on with your order or payment?",
-      de: "Hallo, Atlas hier. Klären wir das — was ist mit deiner Bestellung oder Zahlung los?",
-      fr: "Bonjour, Atlas à l'appareil. Réglons ça — qu'est-ce qui se passe avec ta commande ou ton paiement ?",
-      es: "Hola, soy Atlas. Vamos a resolverlo — ¿qué pasa con tu pedido o pago?",
-    },
-    mira: {
-      en: "Hi, Mira here. Let's get your account sorted — what's not working?",
-      de: "Hallo, Mira hier. Bringen wir deinen Account in Ordnung — was funktioniert nicht?",
-      fr: "Bonjour, Mira à l'appareil. Réglons ton compte — qu'est-ce qui ne marche pas ?",
-      es: "Hola, soy Mira. Pongamos tu cuenta en orden — ¿qué no funciona?",
-    },
-  };
-  const tpl = greetings[persona];
-  if (!tpl) return "Hi, how can I help?";
-  return tpl[lang] ?? tpl['en'];
-}
+// VTID-02651: persona voice IDs and greetings are now data-driven from
+// agent_personas (loaded by services/persona-registry.ts). Adding a new
+// specialist is a single INSERT — no code change. The hardcoded maps that
+// used to live here (SPECIALIST_VOICES + getSpecialistGreeting per-persona
+// templates) are gone; callers use getPersonaVoice() and getPersonaGreeting()
+// which read from the registry view agent_personas_registry.
 
 // =============================================================================
 // VTID-INSTANT-FEEDBACK: Server-side activation chime for mobile (WebSocket path)
@@ -1985,8 +1953,13 @@ function buildLiveApiTools(
             properties: {
               to: {
                 type: 'string',
-                enum: ['vitana', 'devon', 'sage', 'atlas', 'mira'],
-                description: 'Target persona key. Use vitana to hand the user back to her.',
+                // VTID-02651: enum is intentionally NOT hardcoded. Persona
+                // keys are data-driven from agent_personas. The handler
+                // validates against the live registry at exec time so any
+                // newly-added specialist becomes a valid switch target with
+                // zero code change. Default keys: vitana (receptionist),
+                // devon, sage, atlas, mira. New specialists added by INSERT.
+                description: 'Target persona key (e.g. vitana, devon, sage, atlas, mira, or any other active key from agent_personas). Use vitana to hand the user back to the receptionist.',
               },
               reason: {
                 type: 'string',
@@ -2039,8 +2012,11 @@ function buildLiveApiTools(
               },
               specialist_hint: {
                 type: 'string',
-                enum: ['devon', 'sage', 'atlas', 'mira'],
-                description: 'Optional: which specialist should own this. Devon=bugs/UX, Sage=support questions, Atlas=marketplace/finance, Mira=account/login. The backend re-checks via keyword router.',
+                // VTID-02651: NOT hardcoded — backend validates against the
+                // agent_personas registry. Default specialists: devon (bugs/
+                // UX), sage (support), atlas (marketplace/finance), mira
+                // (account). New specialists added by INSERT.
+                description: 'Optional: which specialist should own this (e.g. devon, sage, atlas, mira, or any other active key from agent_personas.handles_kinds). The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
               },
               summary: {
                 type: 'string',
@@ -3813,8 +3789,13 @@ async function executeLiveApiToolInner(
 
       case 'switch_persona': {
         const target = String(args.to || '').toLowerCase();
-        if (!['vitana', 'devon', 'sage', 'atlas', 'mira'].includes(target)) {
-          return { success: false, result: '', error: `Invalid persona: ${target}` };
+        // VTID-02651: validate against the live persona registry rather than
+        // a hardcoded list. Adding a new specialist via INSERT into
+        // agent_personas makes them an immediate valid swap target.
+        const targetIsValid = await registryIsValidPersona(target);
+        if (!targetIsValid) {
+          const valid = await registryListAllPersonaKeys();
+          return { success: false, result: '', error: `Invalid persona: ${target} (active personas: ${valid.join(', ')})` };
         }
         const currentPersona = ((session as any).activePersona as string) || 'vitana';
         if (target === currentPersona) {
@@ -3859,9 +3840,9 @@ async function executeLiveApiToolInner(
             (session as any).pendingPersonaSwap = target;
             (session as any).personaSystemOverride = personaPrompt +
               `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. The user explicitly asked to switch to you (no new ticket — they're navigating between colleagues). Greet briefly and ask how you can help.` +
-              `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "switch me back to Vitana", "back to Vitana please", "zurück zu Vitana", "talk to Atlas about my refund instead", etc. Pass to='vitana' to hand back to Vitana, or to='devon'/'sage'/'atlas'/'mira' to swap to another colleague. After calling, speak a one-line bridge ("One moment, switching to Vitana." / "Einen Moment, ich übergebe an Vitana.") then STOP.`;
-            (session as any).personaVoiceOverride = SPECIALIST_VOICES[target] || '';
-            (session as any).personaForcedFirstMessage = getSpecialistGreeting(target, session.lang || 'en');
+              `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY} please", "zurück zur Rezeption", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (the available keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
+            (session as any).personaVoiceOverride = await registryGetPersonaVoice(target);
+            (session as any).personaForcedFirstMessage = await registryGetPersonaGreeting(target, session.lang || 'en');
             console.log(`[VTID-02047] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}`);
           }
 
@@ -3923,13 +3904,14 @@ async function executeLiveApiToolInner(
               }
             } catch { /* keep empty hint, fall through */ }
           }
-          const KIND_TO_PERSONA: Record<string, string> = {
-            bug: 'devon', ux_issue: 'devon',
-            support_question: 'sage',
-            marketplace_claim: 'atlas',
-            account_issue: 'mira',
-          };
-          if (!pickedPersona) pickedPersona = KIND_TO_PERSONA[kind] ?? '';
+          // VTID-02651: kind→persona mapping is data-driven from
+          // agent_personas.handles_kinds. Adding a new persona that handles
+          // a kind = updating that row's handles_kinds array; no code
+          // change needed. Falls back to '' (caller skips swap) if no
+          // active persona claims the kind.
+          if (!pickedPersona) {
+            pickedPersona = (await registryPickPersonaForKind(kind)) ?? '';
+          }
 
           const insertResp = await fetch(`${url}/rest/v1/feedback_tickets`, {
             method: 'POST',
@@ -4023,8 +4005,10 @@ async function executeLiveApiToolInner(
           // specialist greets in THEIR voice). Done by setting
           // session.pendingPersonaSwap; the turn_complete handler picks this
           // up and triggers attemptTransparentReconnect with overrides.
-          if (pickedPersona === 'devon' || pickedPersona === 'sage' ||
-              pickedPersona === 'atlas' || pickedPersona === 'mira') {
+          // VTID-02651: any active non-receptionist persona is a valid
+          // swap target. Validates against the registry so newly-added
+          // specialists work immediately.
+          if (pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY && (await registryIsValidPersona(pickedPersona))) {
             const swapTo = pickedPersona;
             try {
               const url2 = process.env.SUPABASE_URL!;
@@ -4040,10 +4024,10 @@ async function executeLiveApiToolInner(
                 (session as any).pendingPersonaSwap = swapTo;
                 (session as any).personaSystemOverride = personaPrompt +
                   `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.` +
-                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "switch me back to Vitana", "zurück zu Vitana", "talk to Atlas instead", etc. Pass to='vitana' to hand back, or to='devon'/'sage'/'atlas'/'mira' to swap to another colleague. After calling, speak a one-line bridge then STOP.`;
-                (session as any).personaVoiceOverride = SPECIALIST_VOICES[swapTo] || '';
-                (session as any).personaForcedFirstMessage = getSpecialistGreeting(swapTo, session.lang || 'en');
-                console.log(`[VTID-02047] Persona swap queued: vitana → ${swapTo}, voice=${(session as any).personaVoiceOverride}`);
+                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY}", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (active keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
+                (session as any).personaVoiceOverride = await registryGetPersonaVoice(swapTo);
+                (session as any).personaForcedFirstMessage = await registryGetPersonaGreeting(swapTo, session.lang || 'en');
+                console.log(`[VTID-02047] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}`);
 
                 // Notify the client UI so it can show "Talking to <Persona>"
                 const swapMsg = {
@@ -8042,13 +8026,22 @@ async function connectToLiveAPI(
       // VTID-01224: Include tools and bootstrap context
       // VTID-01225: Enable input/output transcription for Cognee extraction
       // VTID-02047 voice channel-swap: when activePersona is a specialist
-      // (set by report_to_specialist tool + a transparent reconnect), use
-      // SPECIALIST_VOICES; otherwise fall back to language default for Vitana.
-      const _persona = (session as any).activePersona || 'vitana';
-      const _personaVoice = (session as any).personaVoiceOverride
-        || (SPECIALIST_VOICES[_persona] || '')
-        || LIVE_API_VOICES[session.lang]
-        || LIVE_API_VOICES['en'];
+      // (set by report_to_specialist tool + a transparent reconnect), look
+      // up the voice from the persona registry (agent_personas.voice_id).
+      // VTID-02651: registry is data-driven so any new specialist works
+      // without code change. Falls back to LIVE_API_VOICES per language for
+      // the receptionist (whose voice_id is empty by convention).
+      const _persona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
+      let _personaVoice = (session as any).personaVoiceOverride;
+      if (!_personaVoice) {
+        try {
+          const fromRegistry = await registryGetPersonaVoice(_persona);
+          if (fromRegistry) _personaVoice = fromRegistry;
+        } catch (e) {
+          console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
+        }
+      }
+      _personaVoice = _personaVoice || LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'];
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       const setupMessage = {
