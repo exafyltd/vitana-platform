@@ -571,6 +571,65 @@ export function extractDeletions(markdown: string): string[] {
 }
 
 // =============================================================================
+// VTID-02641: plan-vs-diff coverage validator
+// =============================================================================
+
+/**
+ * Minimum fraction of the plan's files the executor diff must touch before
+ * we consider the diff "honest." Below this, the executor wandered off the
+ * plan and we'd rather fail loudly than ship dead code.
+ *
+ * 0.6 picked deliberately:
+ *   - 5/5  -> 1.00  pass
+ *   - 4/5  -> 0.80  pass
+ *   - 3/5  -> 0.60  pass (skip-test-file class)
+ *   - 2/5  -> 0.40  fail
+ *   - 1/4  -> 0.25  fail (PR #1102: 4-file plan, 1-file diff)
+ */
+const PLAN_DIFF_COVERAGE_THRESHOLD = 0.6;
+
+export interface PlanDiffCoverage {
+  ok: boolean;
+  coverage: number;
+  planCount: number;
+  coveredCount: number;
+  missing: string[];
+}
+
+/**
+ * Pure function: given the plan's files_referenced and the executor diff's
+ * file paths, decide whether enough of the plan was actually written.
+ *
+ * Returns ok=true when:
+ *   - the plan listed 0 files (nothing to validate; defer to the existing
+ *     "executor emitted zero files" check upstream); or
+ *   - covered/plan >= threshold.
+ *
+ * Otherwise returns ok=false with the missing-file list so the caller can
+ * surface a useful error to self-healing.
+ */
+export function validatePlanDiffCoverage(
+  planFiles: string[],
+  diffFiles: string[],
+  threshold: number = PLAN_DIFF_COVERAGE_THRESHOLD,
+): PlanDiffCoverage {
+  if (!planFiles || planFiles.length === 0) {
+    return { ok: true, coverage: 1, planCount: 0, coveredCount: 0, missing: [] };
+  }
+  const diffSet = new Set(diffFiles);
+  const covered = planFiles.filter(p => diffSet.has(p));
+  const missing = planFiles.filter(p => !diffSet.has(p));
+  const coverage = covered.length / planFiles.length;
+  return {
+    ok: coverage >= threshold,
+    coverage,
+    planCount: planFiles.length,
+    coveredCount: covered.length,
+    missing,
+  };
+}
+
+// =============================================================================
 // Cancel (during cooldown only)
 // =============================================================================
 
@@ -1093,7 +1152,7 @@ async function runExecutionSession(
     return { ok: false, error: `LLM output parse: ${parsed.error}`, session_id: sessionId, branch };
   }
 
-  // 3. Validate: every emitted file path was in the plan's files_referenced
+  // 3a. Validate: every emitted file path was in the plan's files_referenced
   const allowedSet = new Set(planFiles);
   const outOfScope: string[] = [];
   for (const f of parsed.files) {
@@ -1109,6 +1168,29 @@ async function runExecutionSession(
   }
   if (parsed.files.length === 0) {
     return { ok: false, error: 'LLM emitted zero files', session_id: sessionId, branch };
+  }
+
+  // 3b. VTID-02641: validate the executor's diff covers ENOUGH of the plan.
+  // The existing 3a check only catches files in the diff that are NOT in
+  // the plan. It's silent when the diff covers a SUBSET of the plan — e.g.
+  // closed PR #1102 had a 4-file plan (approvals.ts, autopilot.ts,
+  // admin/index.ts, safety-gap.ts) but the diff only created the empty
+  // safety-gap.ts placeholder. The PR opened anyway as dead code.
+  // This check fails the execution when coverage falls below
+  // PLAN_DIFF_COVERAGE_THRESHOLD so the LLM-shipped-half-the-plan failure
+  // mode surfaces to self-healing instead of becoming a noisy PR.
+  const coverage = validatePlanDiffCoverage(planFiles, parsed.files.map(f => f.path));
+  if (!coverage.ok) {
+    return {
+      ok: false,
+      error:
+        `executor diff covers only ${Math.round(coverage.coverage * 100)}% of the plan's files `
+        + `(${coverage.coveredCount}/${coverage.planCount}). `
+        + `Missing: ${coverage.missing.slice(0, 5).join(', ')}`
+        + (coverage.missing.length > 5 ? `, +${coverage.missing.length - 5} more` : ''),
+      session_id: sessionId,
+      branch,
+    };
   }
   for (const f of parsed.files) {
     if (f.action !== 'delete' && (!f.content || f.content.length === 0)) {
