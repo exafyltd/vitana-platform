@@ -17,7 +17,7 @@ This folder is the structural answer:
 2. **`tools/extract-ts.ts`** statically extracts the actual surface of `orb-live.ts` (via `ts-morph`).
 3. **`tools/extract-py.py`** statically extracts the actual surface of `services/agents/orb-agent/` (via `libcst`). Stub today; activates when the Python service ships.
 4. **`tools/diff.ts`** does a three-way diff: spec ↔ vertex-extract ↔ livekit-extract. Drift is categorised (`missing_in_*`, `arg_schema_mismatch`, `value_mismatch`, `undeclared`, `static_runtime_drift`) and reported.
-5. **`.github/workflows/voice-pipeline-parity-scanner.yml`** runs the scan on every PR that touches the voice surface and posts a comment with the diff. **It does not block merges yet** — first we need 30 days of green runs to confirm the extractor is accurate. Then we promote it to a hard gate.
+5. **`.github/workflows/VOICE-PIPELINE-PARITY-SCANNER.yml`** runs the scan on every PR that touches the voice surface and posts a comment with the diff. **It does not block merges yet** — first we need 30 days of green runs to confirm the extractor is accurate. Then we promote it to a hard gate.
 
 ## Drift severity (planned promotion path)
 
