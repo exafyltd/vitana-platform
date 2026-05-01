@@ -41,6 +41,32 @@ function ensureAuth(req: Request, res: Response): boolean {
   return true;
 }
 
+// VTID-02659: produce a short, readable excerpt for the tenant ticket list.
+// raw_transcript may be a structured JSON-string of message turns or plain
+// text. Pull the first user-spoken sentence (or the leading text) and clamp
+// to ~200 chars so the supervisor can prioritise without opening the drawer.
+function excerptFromTranscript(raw: string | null): string | null {
+  if (!raw) return null;
+  let text = raw.trim();
+  if (!text) return null;
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text);
+      const turns = Array.isArray(parsed) ? parsed : [parsed];
+      const first = turns.find(
+        (t: any) => t && (t.role === 'user' || t.speaker === 'user' || t.from === 'user'),
+      ) ?? turns[0];
+      const candidate = first?.text ?? first?.content ?? first?.message ?? null;
+      if (typeof candidate === 'string' && candidate.trim()) text = candidate.trim();
+    } catch {
+      // fall through with raw text
+    }
+  }
+  text = text.replace(/\s+/g, ' ');
+  if (text.length <= 200) return text;
+  return text.slice(0, 197) + '…';
+}
+
 // ---------------------------------------------------------------------------
 // GET /tickets
 // ---------------------------------------------------------------------------
@@ -225,7 +251,7 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
 
   const { data, error } = await supabase
     .from('feedback_tickets')
-    .select('id, ticket_number, vitana_id, kind, status, priority, surface, screen_path, app_version, resolver_agent, created_at, resolved_at, user_confirmed_at')
+    .select('id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, resolver_agent, created_at, resolved_at, user_confirmed_at')
     .in('user_id', userIds)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -257,10 +283,12 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
   }
   const enriched = tickets.map(t => {
     const prof = t.vitana_id ? profilesByVitanaId[t.vitana_id] : null;
+    const { raw_transcript, ...rest } = t as typeof t & { raw_transcript?: string | null };
     return {
-      ...t,
+      ...rest,
       avatar_url: prof?.avatar_url ?? null,
       display_name: prof?.display_name ?? null,
+      raw_transcript_excerpt: excerptFromTranscript(raw_transcript ?? null),
     };
   });
   return res.json({ ok: true, tickets: enriched, member_count: userIds.length });
