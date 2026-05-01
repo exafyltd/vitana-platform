@@ -2398,16 +2398,33 @@ function buildLiveApiTools(
           name: 'resolve_recipient',
           description: [
             'Resolve a spoken recipient name or Vitana ID to a real user.',
-            'Call this FIRST any time the user says "send a message to X",',
-            '"text X", "share this with X", "tell X that ...", "invite X",',
-            'or any other phrase where X is meant to be another Vitana user.',
+            '',
+            'YOU MUST CALL THIS before any reply about whether a person',
+            'exists — including saying you can\'t find them. The ONLY way',
+            'to honestly tell the user "I can\'t find that person" is to',
+            'receive an empty candidates array from this tool. Without',
+            'calling, you have no contact list to consult and you will',
+            'hallucinate. Do not infer absence from your own knowledge.',
+            '',
+            'Trigger phrases (call this on ALL of them):',
+            '  - "send a message to X" / "text X" / "tell X that ..."',
+            '  - "share this with X" / "invite X" / "introduce me to X"',
+            '  - "is X here?" / "do we have someone called X?"',
+            '',
+            'Spoken_name handling for hint phrases:',
+            '  - User says "Maria, I think it\'s maria6": pass spoken_name="maria6"',
+            '    first (the Vitana ID is the strongest signal). If empty,',
+            '    retry with spoken_name="maria".',
+            '  - User says "@alex3700": pass spoken_name="alex3700" (the',
+            '    resolver strips leading @).',
+            '  - User says "Daniela": pass spoken_name="Daniela".',
             '',
             'Returns ranked candidates. Each has:',
             '  - user_id (opaque UUID — pass to send_chat_message / share_link)',
             '  - vitana_id (speakable, e.g. "alex3700" — read this to the user)',
             '  - display_name (their full name)',
-            '  - score (0.00-1.10; 1.0 = exact vitana_id match)',
-            '  - reason ("vitana_id_exact" | "legacy_handle" | "fuzzy_name")',
+            '  - score (0.00-1.25; 1.0 = exact vitana_id match)',
+            '  - reason ("vitana_id_exact" | "legacy_handle" | "fuzzy_name" | "fuzzy_chat_peer")',
             '',
             'Also returns top_confidence and ambiguous (boolean).',
             '',
@@ -10103,6 +10120,23 @@ async function generateMemoryEnhancedSystemInstruction(
   // Load text_chat personality config
   const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
 
+  // Hard contract for tool-bound flows the LLM keeps skipping. Empirically
+  // Gemini Live sometimes answers "I can't find that user" without ever
+  // calling resolve_recipient — especially when the spoken phrase contains
+  // a hint like "I think it's maria6". This block makes the binding
+  // explicit at the system-instruction level (tool description alone wasn't
+  // enough). Same pattern for navigation.
+  const MESSAGING_CONTRACT = `
+
+## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
+
+If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
+1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
+2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
+3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+
+If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
+
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `${textChatConfig.base_identity_no_memory || 'You are VITANA ORB, a voice-first multimodal assistant.'}
@@ -10114,7 +10148,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}${MESSAGING_CONTRACT}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
@@ -10128,7 +10162,7 @@ Context:
 Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}${MESSAGING_CONTRACT}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
