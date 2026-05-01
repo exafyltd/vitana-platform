@@ -199,16 +199,29 @@ function generateMigration(chapters) {
     ``,
     `BEGIN;`,
     ``,
+    `-- The previous version of this script passed positional args to`,
+    `-- upsert_knowledge_doc in (path, title, content, …) order. The actual`,
+    `-- function signature is (p_title, p_path, p_content, …), so every row`,
+    `-- inserted by the prior seed has its title and path swapped. Delete those`,
+    `-- corrupted rows by their tag before the corrected upserts run.`,
+    `DELETE FROM public.knowledge_docs`,
+    `WHERE 'instruction_manual' = ANY(tags)`,
+    `   OR path LIKE 'kb/instruction-manual/%';  -- catches both the corrupted (title-as-path) and any clean rows`,
+    ``,
   ];
   for (const ch of chapters) {
     const tags = JSON.stringify(['vitana_system', 'instruction_manual', 'maxina', ch.module || 'concept']);
+    // Function signature is (p_title, p_path, p_content, p_source_type, p_tags).
+    // The previous version of this script passed positional args as
+    // (path, title, …) which corrupted every row. Stay with named args so
+    // the order is unambiguous and survives any future signature change.
     lines.push(`-- ${ch.chapter} ${ch.title}`);
     lines.push(`SELECT upsert_knowledge_doc(`);
-    lines.push(`  '${sqlEscape(ch.dbPath)}',`);
-    lines.push(`  '${sqlEscape(ch.title)}',`);
-    lines.push(`  $CONTENT$${ch.fullText}$CONTENT$,`);
-    lines.push(`  'markdown',`);
-    lines.push(`  ARRAY[${(JSON.parse(tags)).map((t) => `'${sqlEscape(t)}'`).join(', ')}]::text[]`);
+    lines.push(`  p_title       := '${sqlEscape(ch.title)}',`);
+    lines.push(`  p_path        := '${sqlEscape(ch.dbPath)}',`);
+    lines.push(`  p_content     := $CONTENT$${ch.fullText}$CONTENT$,`);
+    lines.push(`  p_source_type := 'markdown',`);
+    lines.push(`  p_tags        := ARRAY[${(JSON.parse(tags)).map((t) => `'${sqlEscape(t)}'`).join(', ')}]::text[]`);
     lines.push(`);`);
     lines.push(``);
   }

@@ -35311,11 +35311,21 @@ function initManualsState() {
             selectedId: null,
             selectedDoc: null,
             error: null,
+            // Tracks which tenants have been fetched in this session.
+            // Used by renderDocsManualsView's "fetch on first render" guard
+            // so we never auto-refetch — even when the result was empty or
+            // errored — which would otherwise infinite-loop the renderer.
+            fetchedFor: {},
         };
+    } else if (!state.manuals.fetchedFor) {
+        state.manuals.fetchedFor = {};
     }
 }
 
 async function fetchManualsForTenant(tenant) {
+    // Mark this tenant as attempted BEFORE any await so a re-render during
+    // the fetch never re-enters this function.
+    state.manuals.fetchedFor[tenant] = true;
     state.manuals.loading = true;
     state.manuals.error = null;
     renderApp();
@@ -35333,6 +35343,7 @@ async function fetchManualsForTenant(tenant) {
         const json = await response.json();
         state.manuals.docs = json.documents || json.docs || [];
     } catch (err) {
+        console.error('[manuals] fetch error:', err);
         state.manuals.error = err && err.message ? err.message : String(err);
         state.manuals.docs = [];
     } finally {
@@ -35377,7 +35388,11 @@ function groupManualsByModule(docs) {
 
 function renderDocsManualsView() {
     initManualsState();
-    if (!state.manuals.docs.length && !state.manuals.loading && !state.manuals.error) {
+    // Fire the fetch only once per tenant per session. The previous condition
+    // (!docs.length && !loading && !error) re-fired every render after an
+    // empty/errored response, which infinite-looped the renderer and froze
+    // the entire Command Hub.
+    if (!state.manuals.fetchedFor[state.manuals.tenant] && !state.manuals.loading) {
         fetchManualsForTenant(state.manuals.tenant);
     }
 
