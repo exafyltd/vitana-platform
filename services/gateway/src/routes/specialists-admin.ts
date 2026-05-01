@@ -108,6 +108,129 @@ router.get('/:key', async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST / — create a new persona from scratch (Command Hub +New specialist wizard)
+// ---------------------------------------------------------------------------
+// Phase 6 PR 29: Exafy operators build new specialists in Command Hub.
+// Inserts into agent_personas + writes initial agent_persona_versions row +
+// audits as 'persona_create'. After this completes, the new persona is a
+// valid switch_persona target for all tenants by default (each tenant can
+// then disable via the tenant overlay).
+
+const PersonaCreateSchema = z.object({
+  key: z.string().min(2).max(32).regex(/^[a-z][a-z0-9_]{1,31}$/, 'key must be lowercase, start with a letter, only [a-z0-9_]'),
+  display_name: z.string().min(1).max(120),
+  role: z.string().min(1).max(500),
+  voice_id: z.string().max(200).nullable().optional(),
+  voice_sample_url: z.string().url().max(2000).nullable().optional(),
+  system_prompt: z.string().min(1).max(20_000),
+  intake_schema_ref: z.string().max(120).nullable().optional(),
+  handles_kinds: z.array(z.string().max(64)).max(20).optional(),
+  handoff_keywords: z.array(z.string().max(200)).max(200).optional(),
+  greeting_templates: z.record(z.string()).optional(),
+  max_questions: z.number().int().min(1).max(20).optional(),
+  max_duration_seconds: z.number().int().min(30).max(1800).optional(),
+  status: z.enum(['active','draft','disabled']).optional(),
+  change_note: z.string().max(500).optional(),
+});
+
+router.post('/', async (req: Request, res: Response) => {
+  const userId = ensureAuth(req, res); if (!userId) return;
+  const v = PersonaCreateSchema.safeParse(req.body);
+  if (!v.success) {
+    return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
+  }
+  const supabase = getServiceClient();
+
+  // Reject if key already taken (clearer than letting the unique constraint fail).
+  const { data: existing } = await supabase.from('agent_personas').select('id').eq('key', v.data.key).maybeSingle();
+  if (existing) {
+    return res.status(409).json({ ok: false, error: 'KEY_TAKEN', details: `Persona key '${v.data.key}' already exists.` });
+  }
+
+  const { change_note, ...personaFields } = v.data;
+  const { data: created, error } = await supabase
+    .from('agent_personas')
+    .insert({
+      ...personaFields,
+      handles_kinds: personaFields.handles_kinds ?? [],
+      handoff_keywords: personaFields.handoff_keywords ?? [],
+      greeting_templates: personaFields.greeting_templates ?? {},
+      max_questions: personaFields.max_questions ?? 6,
+      max_duration_seconds: personaFields.max_duration_seconds ?? 240,
+      status: personaFields.status ?? 'draft',
+      version: 1,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    })
+    .select('*')
+    .single();
+  if (error || !created) return res.status(502).json({ ok: false, error: error?.message });
+
+  // Initial version snapshot so versions list isn't empty.
+  await supabase.from('agent_persona_versions').insert({
+    persona_id: created.id,
+    version: 1,
+    snapshot: created,
+    change_note: change_note ?? 'Initial creation',
+    created_by: userId,
+  });
+
+  // Audit
+  await writeAudit(userId, created.id, 'persona_create', null, created);
+
+  return res.status(201).json({ ok: true, persona: created });
+});
+
+// ---------------------------------------------------------------------------
+// POST /tools — register a new tool in the agent_tools registry
+// ---------------------------------------------------------------------------
+// Phase 6 PR 30 (compact): operators register a new tool here so any persona
+// can be bound to it. Note: this only registers the tool DEFINITION; the
+// EXECUTOR (the case in orb-live.ts's executeLiveApiToolInner) still has to
+// be shipped in code. Until then, the tool is bindable but no-op when
+// invoked. UI banner explains this caveat.
+
+const ToolRegisterSchema = z.object({
+  key: z.string().min(2).max(64).regex(/^[a-z][a-z0-9-]{1,63}$/, 'key must be lowercase kebab-case'),
+  display_name: z.string().min(1).max(200),
+  description: z.string().max(2000).nullable().optional(),
+  input_schema: z.record(z.unknown()).optional(),
+  blast_radius: z.enum(['read', 'write-low', 'write-high']),
+  enabled: z.boolean().optional(),
+});
+
+router.post('/tools', async (req: Request, res: Response) => {
+  const userId = ensureAuth(req, res); if (!userId) return;
+  const v = ToolRegisterSchema.safeParse(req.body);
+  if (!v.success) {
+    return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
+  }
+  const supabase = getServiceClient();
+
+  const { data: existing } = await supabase.from('agent_tools').select('key').eq('key', v.data.key).maybeSingle();
+  if (existing) {
+    return res.status(409).json({ ok: false, error: 'KEY_TAKEN' });
+  }
+
+  const { data: created, error } = await supabase
+    .from('agent_tools')
+    .insert({
+      key: v.data.key,
+      display_name: v.data.display_name,
+      description: v.data.description ?? null,
+      input_schema: v.data.input_schema ?? {},
+      blast_radius: v.data.blast_radius,
+      enabled: v.data.enabled ?? true,
+    })
+    .select('*')
+    .single();
+  if (error || !created) return res.status(502).json({ ok: false, error: error?.message });
+
+  await writeAudit(userId, null, 'tool_register', null, created);
+  return res.status(201).json({ ok: true, tool: created });
+});
+
+// ---------------------------------------------------------------------------
 // PUT /:key — update persona (with version snapshot)
 // ---------------------------------------------------------------------------
 

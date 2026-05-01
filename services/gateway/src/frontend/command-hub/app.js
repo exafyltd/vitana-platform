@@ -44472,13 +44472,29 @@ function renderFeedbackKpisView() {
 function renderDocsSpecialistsView() {
     var container = document.createElement('div');
     container.style.cssText = 'padding:1rem;';
+
+    // Header row with title + + New specialist button
+    var headerRow = document.createElement('div');
+    headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;';
     var h = document.createElement('h2');
-    h.style.cssText = 'margin:0 0 .25rem;font-size:1.25rem;font-weight:600;';
+    h.style.cssText = 'margin:0;font-size:1.25rem;font-weight:600;';
     h.textContent = 'Specialists';
-    container.appendChild(h);
+    headerRow.appendChild(h);
+
+    // VTID-02657 Phase 6 PR 29: + New specialist button. Builds a brand-new
+    // persona via POST /api/v1/admin/specialists. After creation it's
+    // available to all tenants by default; each tenant overlay decides
+    // whether to enable for their members.
+    var newBtn = document.createElement('button');
+    newBtn.textContent = '+ New specialist';
+    newBtn.style.cssText = 'background:#10b981;color:#fff;border:none;padding:.5rem 1rem;border-radius:.25rem;font-weight:600;cursor:pointer;font-size:.85rem;';
+    newBtn.onclick = openNewSpecialistWizard;
+    headerRow.appendChild(newBtn);
+    container.appendChild(headerRow);
+
     var note = document.createElement('p');
     note.style.cssText = 'font-size:.85rem;color:var(--color-text-secondary);margin:0 0 1rem;';
-    note.textContent = 'The team Vitana hands off to. Click Edit on any card to open the Persona Editor (prompt, voice, tools, KB bindings, version history).';
+    note.textContent = 'The team Vitana hands off to. Click Edit on any card to open the Persona Editor (prompt, voice, tools, KB bindings, version history). + New specialist creates a platform-wide persona that every tenant gets by default.';
     container.appendChild(note);
     var loading = document.createElement('div'); loading.textContent = 'Loading…'; loading.style.cssText = 'padding:1rem;color:var(--color-text-secondary);';
     container.appendChild(loading);
@@ -44872,4 +44888,161 @@ function renderFeedbackAuditView() {
         var e = document.createElement('div'); e.textContent = 'Failed: ' + err.message; e.style.cssText = 'color:#ef4444;'; container.appendChild(e);
     });
     return container;
+}
+
+// ===========================================================================
+// VTID-02657 Phase 6 PR 29: + New specialist wizard
+// ===========================================================================
+// Modal that lets Exafy operators build a new persona from scratch and INSERT
+// into agent_personas via POST /api/v1/admin/specialists. After save the new
+// persona is a valid switch_persona target for all tenants by default.
+
+function openNewSpecialistWizard() {
+    var existing = document.getElementById('new-specialist-wizard');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'new-specialist-wizard';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9100;display:flex;align-items:center;justify-content:center;';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:var(--color-surface-primary);width:min(720px,95%);max-height:90vh;overflow-y:auto;border-radius:.5rem;padding:1.5rem;box-shadow:0 10px 40px rgba(0,0,0,.3);';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Build a new specialist';
+    title.style.cssText = 'margin:0 0 .25rem;font-size:1.25rem;font-weight:600;';
+    panel.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.textContent = 'Creates a platform-wide persona. After save, all tenants see the new specialist by default; each tenant admin can disable for their tenant via /admin/feedback/specialists.';
+    subtitle.style.cssText = 'margin:0 0 1rem;font-size:.85rem;color:var(--color-text-secondary);';
+    panel.appendChild(subtitle);
+
+    function field(label, control, hint) {
+        var row = document.createElement('div');
+        row.style.cssText = 'margin-bottom:1rem;';
+        var l = document.createElement('label');
+        l.style.cssText = 'display:block;font-size:.7rem;color:var(--color-text-secondary);text-transform:uppercase;font-weight:600;margin-bottom:.25rem;letter-spacing:.04em;';
+        l.textContent = label;
+        row.appendChild(l);
+        row.appendChild(control);
+        if (hint) {
+            var h = document.createElement('div');
+            h.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);margin-top:.15rem;';
+            h.textContent = hint;
+            row.appendChild(h);
+        }
+        return row;
+    }
+
+    function txt(placeholder) {
+        var el = document.createElement('input');
+        el.type = 'text';
+        el.placeholder = placeholder || '';
+        el.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+        return el;
+    }
+
+    function area(rows, ph) {
+        var el = document.createElement('textarea');
+        el.placeholder = ph || '';
+        el.rows = rows || 4;
+        el.style.cssText = 'width:100%;padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);font-family:monospace;font-size:.85rem;resize:vertical;';
+        return el;
+    }
+
+    var keyInput = txt('hugo');
+    var nameInput = txt('Hugo');
+    var roleInput = txt('Coaching concierge — accountability + habits');
+    var voiceInput = txt('Puck (any Gemini Live voice not already in use)');
+    var promptInput = area(10, 'You are Hugo, the coaching concierge…');
+    var kindsInput = txt('coaching_request');
+    var keywordsInput = txt('coach, coaching, accountability, habits');
+    var greetingInput = area(6, '{"en": "Hi, Hugo here. What are we working on today?", "de": "Hallo, Hugo hier. Woran arbeiten wir heute?"}');
+    var statusSelect = document.createElement('select');
+    statusSelect.style.cssText = 'padding:.5rem;border:1px solid var(--color-border);border-radius:.25rem;background:var(--color-surface-secondary);';
+    ['draft', 'active', 'disabled'].forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s; o.textContent = s;
+        if (s === 'draft') o.selected = true;
+        statusSelect.appendChild(o);
+    });
+
+    panel.appendChild(field('Key (slug)', keyInput, 'Lowercase, [a-z0-9_], must start with a letter. Used in switch_persona({to:"…"}).'));
+    panel.appendChild(field('Display name', nameInput));
+    panel.appendChild(field('Role', roleInput));
+    panel.appendChild(field('Voice id (Gemini Live)', voiceInput, 'Aoede, Charon, Fenrir, Kore, Leda, Orus, Puck, Zephyr.'));
+    panel.appendChild(field('System prompt', promptInput));
+    panel.appendChild(field('Handles kinds (comma-separated)', kindsInput, 'Feedback ticket kinds this persona resolves. New kind names are accepted.'));
+    panel.appendChild(field('Handoff keywords (comma-separated)', keywordsInput));
+    panel.appendChild(field('Greeting templates (JSON: lang→text)', greetingInput));
+    panel.appendChild(field('Initial status', statusSelect, 'Start as draft to build out tool/KB bindings before going live.'));
+
+    // Action row
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--color-border);';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'background:transparent;color:var(--color-text-secondary);border:1px solid var(--color-border);padding:.5rem 1rem;border-radius:.25rem;cursor:pointer;';
+    cancelBtn.onclick = function () { overlay.remove(); };
+    btnRow.appendChild(cancelBtn);
+
+    var saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Create specialist';
+    saveBtn.style.cssText = 'background:#10b981;color:#fff;border:none;padding:.5rem 1rem;border-radius:.25rem;font-weight:600;cursor:pointer;';
+    saveBtn.onclick = async function () {
+        try {
+            var greetingTemplates = {};
+            var rawGreet = greetingInput.value.trim();
+            if (rawGreet) {
+                try { greetingTemplates = JSON.parse(rawGreet); }
+                catch (e) {
+                    showToast('Greeting templates must be valid JSON', 'error');
+                    return;
+                }
+            }
+            var body = {
+                key: keyInput.value.trim().toLowerCase(),
+                display_name: nameInput.value.trim(),
+                role: roleInput.value.trim(),
+                voice_id: voiceInput.value.trim() || null,
+                system_prompt: promptInput.value,
+                handles_kinds: kindsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+                handoff_keywords: keywordsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+                greeting_templates: greetingTemplates,
+                status: statusSelect.value,
+                change_note: 'Created via Command Hub +New wizard',
+            };
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Creating…';
+            var resp = await fetch('/api/v1/admin/specialists', {
+                method: 'POST',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(body),
+            });
+            var json = await resp.json().catch(function () { return {}; });
+            if (!resp.ok) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Create specialist';
+                showToast('Create failed: ' + (json.error || ('HTTP ' + resp.status)), 'error');
+                return;
+            }
+            overlay.remove();
+            // Re-render the Specialists view with the new persona present.
+            renderApp();
+            showToast('Specialist "' + body.key + '" created', 'success');
+        } catch (err) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Create specialist';
+            showToast('Create failed: ' + err.message, 'error');
+        }
+    };
+    btnRow.appendChild(saveBtn);
+
+    panel.appendChild(btnRow);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
 }
