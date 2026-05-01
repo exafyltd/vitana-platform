@@ -1050,5 +1050,69 @@ router.put('/:tenantId/tickets/:id/reclassify', async (req: Request, res: Respon
   return res.json({ ok: true, ticket_id: t.id, kind: v.data.kind, status: 'triaged' });
 });
 
+// ---------------------------------------------------------------------------
+// POST /:tenantId/tickets/:id/dispatch — VTID-02667
+// ---------------------------------------------------------------------------
+// Manual dispatch trigger for tickets that landed in_progress without
+// linked_finding_id being set (e.g. activated before VTID-02665 deployed,
+// or where the bridge errored silently). Idempotent — if linked_finding_id
+// is already set, returns the existing recommendation/execution.
+//
+// Requirements:
+//   - kind ∈ {bug, ux_issue}
+//   - status = 'in_progress' OR 'spec_ready'
+//   - spec_md is non-empty
+router.post('/:tenantId/tickets/:id/dispatch', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+  const t = loaded.ticket as {
+    id: string; ticket_number: string; kind: string; status: string;
+    spec_md: string | null; supervisor_notes: string | null;
+    raw_transcript: string | null; vitana_id: string | null;
+    screen_path: string | null; app_version: string | null;
+    linked_finding_id: string | null;
+  };
+
+  if (t.kind !== 'bug' && t.kind !== 'ux_issue') {
+    return res.status(409).json({ ok: false, error: 'KIND_NOT_DISPATCHABLE', kind: t.kind });
+  }
+  const VALID = new Set(['in_progress', 'spec_ready']);
+  if (!VALID.has(t.status)) {
+    return res.status(409).json({ ok: false, error: 'STATUS_NOT_DISPATCHABLE', status: t.status });
+  }
+  if (!t.spec_md || !t.spec_md.trim()) {
+    return res.status(409).json({ ok: false, error: 'NO_SPEC' });
+  }
+
+  // If status is spec_ready, advance to in_progress first so the activation
+  // semantics match the normal flow.
+  if (t.status === 'spec_ready') {
+    const supabase = getServiceClient();
+    await supabase.from('feedback_tickets').update({ status: 'in_progress' }).eq('id', t.id);
+    t.status = 'in_progress';
+  }
+
+  try {
+    const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
+    const r = await dispatchFeedbackTicket(t as any, userId);
+    if (!r.ok) {
+      return res.status(502).json({ ok: false, error: r.error ?? 'DISPATCH_FAILED' });
+    }
+    return res.json({
+      ok: true,
+      ticket_id: t.id,
+      ticket_number: t.ticket_number,
+      recommendation_id: r.recommendation_id,
+      execution_id: r.execution_id,
+      skipped: r.skipped,
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'unknown' });
+  }
+});
+
 void VTID;
 export default router;
