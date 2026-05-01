@@ -220,7 +220,7 @@ router.get('/mine', async (req: Request, res: Response) => {
 
   let query = supabase
     .from('feedback_tickets')
-    .select('id, ticket_number, kind, status, priority, surface, created_at, resolver_agent, resolved_at, user_confirmed_at')
+    .select('id, ticket_number, kind, status, priority, surface, created_at, resolver_agent, resolved_at, user_confirmed_at, structured_fields')
     .order('created_at', { ascending: false })
     .limit(limit);
 
