@@ -86,6 +86,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
+  // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
+  const orbLivekitRouter = require('./routes/orb-livekit').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
   // VTID-01222: WebSocket server initialization for ORB Live API
   const { initializeOrbWebSocket } = require('./routes/orb-live');
@@ -651,6 +653,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
   mountRouterSync(app, '/api/v1/orb', orbLiveRouter, { owner: 'orb-live' });
+
+  // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex).
+  // Mounted at /api/v1 because its routes span /orb/*, /voice-providers/*,
+  // /agents/*/voice-config — the leaf paths inside the router carry the prefix.
+  mountRouterSync(app, '/api/v1', orbLivekitRouter, { owner: 'orb-livekit' });
 
   // BOOTSTRAP-AWARENESS-REGISTRY: admin API for the Awareness Registry
   mountRouterSync(app, '/api/v1/awareness', awarenessConfigRouter, { owner: 'awareness-registry' });
