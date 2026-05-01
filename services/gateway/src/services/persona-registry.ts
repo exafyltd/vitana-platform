@@ -159,3 +159,181 @@ export async function isValidPersona(key: string): Promise<boolean> {
   const reg = await loadPersonaRegistry();
   return reg.has(key);
 }
+
+// ===========================================================================
+// VTID-02653: Phase 6 — tenant overlay support.
+// ===========================================================================
+// Three-layer separation:
+//   Command Hub (BUILD)    → agent_personas + agent_tools + audit_log
+//   Tenant Admin (CUSTOMIZE) → agent_personas_tenant_overrides +
+//                              agent_kb_bindings_tenant +
+//                              agent_routing_keywords_tenant +
+//                              agent_third_party_connections (tenant_id=X)
+//   Community User (USE)   → loadPersonaRegistryForTenant() at runtime
+//
+// The tenant-aware loader merges platform defaults with the tenant's
+// overrides:
+//   - filter out personas where the tenant has set enabled=false
+//   - merge intake_schema_extras into a shadow field on the record
+//   - prefer custom_greeting_templates over platform greetings when present
+
+export interface TenantOverridesRecord {
+  tenant_id: string;
+  persona_id: string;
+  enabled: boolean;
+  intake_schema_extras: Record<string, unknown>;
+  custom_greeting_templates: Record<string, string>;
+}
+
+export interface TenantPersonaRecord extends PersonaRecord {
+  // Effective record after applying tenant overlay. Always has
+  // tenant_enabled (defaults to true if no override row exists).
+  tenant_enabled: boolean;
+  intake_schema_extras: Record<string, unknown>;
+}
+
+const tenantCache = new Map<string, { at: number; map: Map<string, TenantPersonaRecord> }>();
+
+async function loadTenantOverrides(tenantId: string): Promise<Map<string, TenantOverridesRecord>> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from('agent_personas_tenant_overrides')
+    .select('tenant_id, persona_id, enabled, intake_schema_extras, custom_greeting_templates')
+    .eq('tenant_id', tenantId);
+  if (error) {
+    console.warn(`[persona-registry] tenant overrides load failed for ${tenantId}:`, error.message);
+    return new Map();
+  }
+  const map = new Map<string, TenantOverridesRecord>();
+  for (const row of data ?? []) {
+    const r = row as TenantOverridesRecord;
+    map.set(r.persona_id, r);
+  }
+  return map;
+}
+
+/**
+ * Tenant-aware variant of loadPersonaRegistry. Merges platform defaults
+ * with the tenant's overlay rows. Cached for 60s per tenant.
+ */
+export async function loadPersonaRegistryForTenant(
+  tenantId: string,
+  forceRefresh = false,
+): Promise<Map<string, TenantPersonaRecord>> {
+  if (!tenantId) {
+    // No tenant → return platform-only view, with tenant_enabled=true on all.
+    const platform = await loadPersonaRegistry(forceRefresh);
+    const merged = new Map<string, TenantPersonaRecord>();
+    for (const [k, p] of platform) {
+      merged.set(k, { ...p, tenant_enabled: true, intake_schema_extras: {} });
+    }
+    return merged;
+  }
+  const cached = tenantCache.get(tenantId);
+  if (!forceRefresh && cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.map;
+  }
+  const [platform, overrides] = await Promise.all([
+    loadPersonaRegistry(forceRefresh),
+    loadTenantOverrides(tenantId),
+  ]);
+  const merged = new Map<string, TenantPersonaRecord>();
+  for (const [k, p] of platform) {
+    const ov = overrides.get(p.id);
+    const tenant_enabled = ov ? ov.enabled : true;
+    // Merge greeting templates: tenant custom wins over platform per-language
+    const greeting_templates =
+      ov?.custom_greeting_templates && Object.keys(ov.custom_greeting_templates).length > 0
+        ? { ...p.greeting_templates, ...ov.custom_greeting_templates }
+        : p.greeting_templates;
+    merged.set(k, {
+      ...p,
+      greeting_templates,
+      tenant_enabled,
+      intake_schema_extras: ov?.intake_schema_extras ?? {},
+    });
+  }
+  tenantCache.set(tenantId, { at: Date.now(), map: merged });
+  return merged;
+}
+
+export function clearTenantPersonaCache(tenantId?: string): void {
+  if (tenantId) tenantCache.delete(tenantId);
+  else tenantCache.clear();
+}
+
+/**
+ * Tenant-aware voice lookup. If the tenant disabled this persona (or the
+ * persona doesn't exist), returns ''. Custom voice overrides are NOT yet
+ * supported on the tenant overlay (deferred per Phase 6 plan); this just
+ * gates by tenant_enabled.
+ */
+export async function getPersonaVoiceForTenant(key: string, tenantId: string): Promise<string> {
+  const reg = await loadPersonaRegistryForTenant(tenantId);
+  const p = reg.get(key);
+  if (!p || !p.tenant_enabled) return '';
+  return p.voice_id ?? '';
+}
+
+/**
+ * Tenant-aware greeting lookup. Honors tenant custom_greeting_templates
+ * if set, otherwise falls back to platform greeting → English → generic.
+ */
+export async function getPersonaGreetingForTenant(
+  key: string,
+  lang: string,
+  tenantId: string,
+): Promise<string> {
+  const reg = await loadPersonaRegistryForTenant(tenantId);
+  const p = reg.get(key);
+  if (!p) return `Hi, ${key} here. How can I help?`;
+  const tpls = p.greeting_templates ?? {};
+  if (tpls[lang]) return tpls[lang];
+  if (tpls['en']) return tpls['en'];
+  return `Hi, ${p.display_name} here. How can I help?`;
+}
+
+/**
+ * Tenant-aware kind→persona resolver. Same shape as pickPersonaForKind
+ * but skips personas the tenant has disabled.
+ */
+export async function pickPersonaForKindForTenant(
+  kind: string,
+  tenantId: string,
+): Promise<string | null> {
+  if (!kind) return null;
+  const reg = await loadPersonaRegistryForTenant(tenantId);
+  for (const p of reg.values()) {
+    if (p.key === RECEPTIONIST_KEY) continue;
+    if (!p.tenant_enabled) continue;
+    if (Array.isArray(p.handles_kinds) && p.handles_kinds.includes(kind)) {
+      return p.key;
+    }
+  }
+  return null;
+}
+
+/**
+ * Tenant-aware persona validity. Returns false if the persona doesn't
+ * exist or is disabled for this tenant. Used by switch_persona to prevent
+ * the LLM from switching the user to a colleague their tenant disabled.
+ */
+export async function isValidPersonaForTenant(key: string, tenantId: string): Promise<boolean> {
+  const reg = await loadPersonaRegistryForTenant(tenantId);
+  const p = reg.get(key);
+  return !!p && p.tenant_enabled;
+}
+
+/**
+ * Tenant-aware persona keys list. Returns only personas enabled for the
+ * tenant. Used by switch_persona error messages and the runtime tool
+ * description hints.
+ */
+export async function listAllPersonaKeysForTenant(tenantId: string): Promise<string[]> {
+  const reg = await loadPersonaRegistryForTenant(tenantId);
+  const out: string[] = [];
+  for (const [k, p] of reg) {
+    if (p.tenant_enabled) out.push(k);
+  }
+  return out;
+}
