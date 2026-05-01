@@ -422,5 +422,139 @@ router.get('/:tenantId/audit', async (req: Request, res: Response) => {
   return res.json({ ok: true, audit: data ?? [] });
 });
 
+// ---------------------------------------------------------------------------
+// VTID-02659: per-customer Approve-All
+// ---------------------------------------------------------------------------
+// Supervisor batch action triggered from the customer-grouped tickets view
+// (PR vitana-v1#325). For ALL of this customer's tickets in this tenant
+// that are sitting in 'spec_ready' or 'answer_ready':
+//   - 'spec_ready'   → 'in_progress' (kicks the autopilot fix pipeline,
+//                                      same as /feedback/tickets/:id/approve)
+//   - 'answer_ready' → 'resolved'    (sends Sage's drafted answer, same as
+//                                      /feedback/tickets/:id/send-answer)
+// Each transition emits the same OASIS events the per-ticket flow does.
+//
+// Authorization: tenant admin only (ensureTenantAdmin). The customer must
+// be a member of this tenant.
+//
+// Response: counts of {approved, sent, skipped, total} so the UI can show
+// a toast like "3 approved, 2 answers sent".
+
+router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const vitanaId = req.params.vitanaId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+
+  const supabase = getServiceClient();
+
+  // Resolve vitana_id → user_id via the canonical app_users mirror, then
+  // confirm the customer is a member of this tenant. Refusing to act on
+  // tickets owned by users outside the tenant is the security guarantee.
+  const { data: appUser } = await supabase
+    .from('app_users')
+    .select('user_id')
+    .eq('vitana_id', vitanaId)
+    .maybeSingle();
+  if (!appUser) {
+    return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
+  }
+  const customerUserId = appUser.user_id;
+
+  const { data: membership } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('user_id', customerUserId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!membership) {
+    return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_IN_TENANT' });
+  }
+
+  // Find this customer's actionable tickets.
+  const { data: tickets, error: qErr } = await supabase
+    .from('feedback_tickets')
+    .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
+    .eq('user_id', customerUserId)
+    .in('status', ['spec_ready', 'answer_ready']);
+  if (qErr) {
+    return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: qErr.message });
+  }
+
+  let approved = 0;
+  let sent = 0;
+  let skipped = 0;
+  const results: Array<{ ticket_number: string; from: string; to: string }> = [];
+  const now = new Date().toISOString();
+
+  async function emit(type: string, ticket: Record<string, unknown>, payload: Record<string, unknown>) {
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        vtid: 'VTID-02659',
+        type: type as any,
+        source: 'feedback-admin-bulk',
+        status: 'info',
+        message: `bulk: ${type} for ${ticket.ticket_number}`,
+        payload: { ticket_id: ticket.id, ticket_number: ticket.ticket_number, ...payload },
+        actor_id: userId!,
+        actor_role: 'operator',
+        surface: 'operator',
+        vitana_id: (ticket.vitana_id as string) ?? undefined,
+      });
+    } catch { /* non-blocking */ }
+  }
+
+  for (const t of tickets ?? []) {
+    if (t.status === 'spec_ready') {
+      const { data: updated, error: upErr } = await supabase
+        .from('feedback_tickets')
+        .update({ status: 'in_progress' })
+        .eq('id', t.id)
+        .eq('status', 'spec_ready')          // optimistic lock against concurrent edits
+        .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
+        .single();
+      if (upErr || !updated) { skipped++; continue; }
+      approved++;
+      results.push({ ticket_number: updated.ticket_number, from: 'spec_ready', to: 'in_progress' });
+      await emit('feedback.ticket.status_changed', updated, { new_status: 'in_progress', from: 'bulk-approve' });
+    } else if (t.status === 'answer_ready') {
+      const { data: updated, error: upErr } = await supabase
+        .from('feedback_tickets')
+        .update({ status: 'resolved', resolved_at: now, auto_resolved: false })
+        .eq('id', t.id)
+        .eq('status', 'answer_ready')
+        .select('id, ticket_number, kind, status, vitana_id, resolver_agent, draft_answer_md')
+        .single();
+      if (upErr || !updated) { skipped++; continue; }
+      sent++;
+      results.push({ ticket_number: updated.ticket_number, from: 'answer_ready', to: 'resolved' });
+      await emit('feedback.ticket.resolved', updated, { from: 'bulk-send-answer', resolver_agent: updated.resolver_agent });
+    }
+  }
+
+  // Tenant audit row covering the whole batch — easier to scan than N
+  // individual rows when reading the tenant audit log.
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    // Closest existing enum slot. Future cleanup: extend the action enum
+    // with 'tenant_bulk_approve' for clearer audit reads.
+    action: 'tenant_persona_enable',
+    after_state: { vitana_id: vitanaId, approved, sent, skipped, results, ts: now },
+  });
+
+  return res.json({
+    ok: true,
+    customer_vitana_id: vitanaId,
+    approved,
+    sent,
+    skipped,
+    total: (tickets ?? []).length,
+    results,
+  });
+});
+
 void VTID;
 export default router;

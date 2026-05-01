@@ -233,7 +233,37 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
   if (error) {
     return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
   }
-  return res.json({ ok: true, tickets: data ?? [], member_count: userIds.length });
+
+  // VTID-02659: enrich with avatar_url + display_name from profiles so the
+  // tenant admin Feedback page can render real customer photos on the
+  // grouped-by-customer view (PR vitana-v1#325) instead of just initials.
+  // Single batch query keyed by unique vitana_ids (~1 req regardless of
+  // ticket count).
+  const tickets = data ?? [];
+  const uniqueVitanaIds = [...new Set(tickets.map(t => t.vitana_id).filter((v): v is string => !!v))];
+  let profilesByVitanaId: Record<string, { avatar_url: string | null; display_name: string | null }> = {};
+  if (uniqueVitanaIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('vitana_id, avatar_url, display_name')
+      .in('vitana_id', uniqueVitanaIds);
+    for (const p of profiles ?? []) {
+      const r = p as { vitana_id: string; avatar_url: string | null; display_name: string | null };
+      profilesByVitanaId[r.vitana_id] = {
+        avatar_url: r.avatar_url ?? null,
+        display_name: r.display_name ?? null,
+      };
+    }
+  }
+  const enriched = tickets.map(t => {
+    const prof = t.vitana_id ? profilesByVitanaId[t.vitana_id] : null;
+    return {
+      ...t,
+      avatar_url: prof?.avatar_url ?? null,
+      display_name: prof?.display_name ?? null,
+    };
+  });
+  return res.json({ ok: true, tickets: enriched, member_count: userIds.length });
 });
 
 // ---------------------------------------------------------------------------
