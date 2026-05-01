@@ -1408,6 +1408,31 @@ function formatSpecialistContextSection(ctx: any): string {
   return lines.join('\n');
 }
 
+// Conversation transcript section — injected at every persona swap so the
+// receiving persona sees what the user actually said in the call so far.
+// Without this, every new agent restarts cold with "what can I do for you?"
+// and the user has to repeat themselves — the exact failure the user just
+// reported. Cap at last 12 turns so the prompt doesn't bloat.
+function buildTranscriptSection(
+  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }> | undefined,
+  fromPersona: string,
+): string {
+  const turns = (transcriptTurns ?? []).slice(-12);
+  if (turns.length === 0) return '';
+  const fromLabel = fromPersona === 'vitana' ? 'Vitana' : (fromPersona.charAt(0).toUpperCase() + fromPersona.slice(1));
+  const lines: string[] = [];
+  lines.push(`=== CONVERSATION SO FAR (handed off from ${fromLabel}) ===`);
+  for (const t of turns) {
+    const speaker = t.role === 'user' ? 'User' : fromLabel;
+    const text = String(t.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    lines.push(`${speaker}: ${text.slice(0, 400)}`);
+  }
+  lines.push(`=== END TRANSCRIPT ===`);
+  lines.push(`The user has ALREADY explained what they want. Do NOT ask "what can I do for you?" — read the transcript above and respond to the user's actual question. If the question is in your domain, answer it. If it isn't, hand back to Vitana via switch_persona(to:'vitana') with a one-line bridge — never forward to another specialist.`);
+  return lines.join('\n');
+}
+
 function buildPersonaBehavioralRule(personaKey: string): string {
   const isSpecialist = personaKey !== '' && personaKey !== 'vitana';
   const lines: string[] = [];
@@ -3918,6 +3943,20 @@ async function executeLiveApiToolInner(
           return { success: true, result: `Already talking to ${target} — no swap needed.` };
         }
 
+        // Hot-potato guard: only Vitana decides routing. A specialist (Devon/
+        // Sage/Atlas/Mira) can ONLY hand back to Vitana — never sideways to
+        // a peer. If the user wants a different specialist, Vitana will
+        // route them. This prevents the forward-to-Devon-then-Atlas-then-
+        // Devon-again loop where each specialist passes the buck without
+        // anyone actually answering the user's question.
+        if (currentPersona !== 'vitana' && target !== 'vitana') {
+          return {
+            success: false,
+            result: '',
+            error: `Specialists cannot forward to other specialists. Only Vitana decides routing. If this is outside your domain, call switch_persona(to:'vitana') and let her route the user. The user will not be passed around — answer if you can, or hand back to Vitana.`,
+          };
+        }
+
         try {
           if (target === 'vitana') {
             // Hand back to Vitana — clear all persona overrides so the
@@ -3935,6 +3974,7 @@ async function executeLiveApiToolInner(
             (session as any).personaSystemOverride = null;
             (session as any).personaVoiceOverride = null;
             (session as any).specialistContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
+            (session as any).lastTranscriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona);
             const lang = session.lang || 'en';
             const vitanaGreetings: Record<string, string> = {
               en: "Welcome back. What's on your mind?",
@@ -3962,12 +4002,15 @@ async function executeLiveApiToolInner(
             (session as any).pendingPersonaSwap = target;
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
             const behavioralRule = buildPersonaBehavioralRule(target);
+            const transcriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona);
             (session as any).specialistContextSection = userContextSection;
+            (session as any).lastTranscriptSection = transcriptSection;
             (session as any).personaSystemOverride = personaPrompt +
               (userContextSection ? `\n\n${userContextSection}` : '') +
+              (transcriptSection ? `\n\n${transcriptSection}` : '') +
               `\n\n${behavioralRule}` +
-              `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. The user explicitly asked to switch to you (no new ticket — they're navigating between colleagues). Greet briefly and ask how you can help.` +
-              `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY} please", "zurück zur Rezeption", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (the available keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
+              `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. Read the transcript above — the user has already been talking. Do NOT ask "what can I do for you?" Respond directly to what they said.` +
+              `\n\n[NAVIGATION TOOL] You have a switch_persona tool but you can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}'. You CANNOT forward to another specialist — Vitana decides routing. If the question isn't in your authority or you don't know, call switch_persona(to:'${RECEPTIONIST_PERSONA_KEY}'). Speak a one-line bridge then STOP.`;
             // VTID-02653 Phase 6: tenant-aware voice + greeting lookup.
             // Tenant custom_greeting_templates win over platform per-language
             // greetings; tenant disable was already filtered above.
@@ -4191,13 +4234,16 @@ async function executeLiveApiToolInner(
                 (session as any).pendingPersonaSwap = swapTo;
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
                 const behavioralRule = buildPersonaBehavioralRule(swapTo);
+                const transcriptSection = buildTranscriptSection(session.transcriptTurns, 'vitana');
                 // Cache for Vitana's prompt builder on the eventual swap-back.
                 (session as any).specialistContextSection = userContextSection;
+                (session as any).lastTranscriptSection = transcriptSection;
                 (session as any).personaSystemOverride = personaPrompt +
                   (userContextSection ? `\n\n${userContextSection}` : '') +
+                  (transcriptSection ? `\n\n${transcriptSection}` : '') +
                   `\n\n${behavioralRule}` +
-                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call between the user and Vitana. The user already explained: "${summary}". Acknowledge this in your greeting — you do NOT need them to repeat themselves.` +
-                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool. Call it when the user wants to talk to someone else: "back to ${RECEPTIONIST_PERSONA_KEY}", "talk to a different colleague instead", etc. Pass to='${RECEPTIONIST_PERSONA_KEY}' to hand back, or to=<persona_key> to swap to another active colleague (active keys live in agent_personas). After calling, speak a one-line bridge then STOP.`;
+                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. Vitana captured this summary at handoff: "${summary}". The transcript above is what the user ACTUALLY said. Use it. Do NOT ask "what can I do for you?" — answer the user's real question.` +
+                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool but you can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}'. You CANNOT forward to another specialist — that's Vitana's job. If the question isn't in your authority or you don't know, call switch_persona(to:'${RECEPTIONIST_PERSONA_KEY}') and let her decide. Speak a one-line bridge ("Let me bring you back to Vitana — one moment") then STOP.`;
                 // VTID-02653 Phase 6: tenant-aware voice + greeting.
                 (session as any).personaVoiceOverride = _reportTenantId
                   ? await registryGetPersonaVoiceForTenant(swapTo, _reportTenantId)
@@ -8291,6 +8337,9 @@ async function connectToLiveAPI(
                           + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : '')
                           + (((session as any).specialistContextSection as string | undefined)
                               ? `\n\n${(session as any).specialistContextSection}\n\n${buildPersonaBehavioralRule('vitana')}`
+                              : '')
+                          + (((session as any).lastTranscriptSection as string | undefined)
+                              ? `\n\n${(session as any).lastTranscriptSection}`
                               : ''),
                         session.active_role,
                         session.conversationSummary,
