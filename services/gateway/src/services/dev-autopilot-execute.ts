@@ -1243,7 +1243,13 @@ async function patchExecution(
           s,
           `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id,pr_url,pr_number&limit=1`,
         );
-        const exec = lookupR.ok && lookupR.data?.[0];
+        // VTID-02639 fix: TS narrows `lookupR.ok && lookupR.data?.[0]` to
+        // `false | { finding_id, pr_url, pr_number }`. Optional chaining
+        // (`?.`) does NOT short-circuit on `false`, only on null/undefined,
+        // so accessing `.finding_id` on a false value is a compile error.
+        // Coerce the boolean branch to undefined explicitly so TS sees
+        // `undefined | { … }` and the optional chain narrows correctly.
+        const exec = (lookupR.ok && lookupR.data?.[0]) || undefined;
         const finding_id = exec?.finding_id;
         if (!finding_id) return;
 
