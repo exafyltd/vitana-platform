@@ -35355,19 +35355,118 @@ async function fetchManualsForTenant(tenant) {
 async function fetchManualDoc(id) {
     state.manuals.selectedId = id;
     state.manuals.selectedDoc = null;
+    state.manuals.selectedDocError = null;
     renderApp();
     try {
         const response = await fetch('/api/v1/admin/system-kb/docs/' + encodeURIComponent(id), {
             headers: state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {},
             credentials: 'include',
         });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        state.manuals.selectedDoc = await response.json();
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(body.error || ('HTTP ' + response.status));
+        }
+        // The endpoint returns { ok: true, document: {...} } — unwrap.
+        state.manuals.selectedDoc = body.document || body.doc || body;
     } catch (err) {
-        state.manuals.error = err && err.message ? err.message : String(err);
+        console.error('[manuals] fetch doc error:', err);
+        state.manuals.selectedDocError = err && err.message ? err.message : String(err);
     } finally {
         renderApp();
     }
+}
+
+// Tiny markdown renderer — handles front-matter strip, headings, bold,
+// italics, inline code, links, ordered + unordered lists, and paragraphs.
+// Builds DOM nodes (escaping text first) so we can render chapter content
+// safely inline without pulling in a markdown library.
+function renderManualMarkdown(md) {
+    const frag = document.createDocumentFragment();
+    if (typeof md !== 'string' || !md) return frag;
+
+    // Strip front-matter between leading '---' lines.
+    let body = md;
+    if (body.startsWith('---\n')) {
+        const end = body.indexOf('\n---\n', 4);
+        if (end !== -1) body = body.slice(end + 5);
+    }
+
+    const escapeHtml = function (s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    };
+
+    const inline = function (text) {
+        var s = escapeHtml(text);
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
+            return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + t + '</a>';
+        });
+        return s;
+    };
+    const setHtml = function (tag, html) {
+        const el = document.createElement(tag);
+        el.innerHTML = html;
+        return el;
+    };
+
+    const lines = body.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
+        if (!line.trim()) { i++; continue; }
+
+        const h = line.match(/^(#{1,6})\s+(.*)$/);
+        if (h) {
+            const tag = 'h' + Math.min(h[1].length, 6);
+            const el = setHtml(tag, inline(h[2]));
+            el.style.marginTop = '1.25rem';
+            el.style.marginBottom = '0.5rem';
+            frag.appendChild(el);
+            i++; continue;
+        }
+
+        if (/^\s*[-*]\s/.test(line)) {
+            const ul = document.createElement('ul');
+            ul.style.marginLeft = '1.25rem';
+            while (i < lines.length && /^\s*[-*]\s/.test(lines[i])) {
+                ul.appendChild(setHtml('li', inline(lines[i].replace(/^\s*[-*]\s+/, ''))));
+                i++;
+            }
+            frag.appendChild(ul); continue;
+        }
+
+        if (/^\s*\d+\.\s/.test(line)) {
+            const ol = document.createElement('ol');
+            ol.style.marginLeft = '1.25rem';
+            while (i < lines.length && /^\s*\d+\.\s/.test(lines[i])) {
+                ol.appendChild(setHtml('li', inline(lines[i].replace(/^\s*\d+\.\s+/, ''))));
+                i++;
+            }
+            frag.appendChild(ol); continue;
+        }
+
+        // Paragraph: collect consecutive non-blank, non-block lines
+        const para = [];
+        while (
+            i < lines.length && lines[i].trim() &&
+            !/^(#{1,6})\s/.test(lines[i]) &&
+            !/^\s*[-*]\s/.test(lines[i]) &&
+            !/^\s*\d+\.\s/.test(lines[i])
+        ) {
+            para.push(lines[i]); i++;
+        }
+        if (para.length) {
+            const p = setHtml('p', inline(para.join(' ')));
+            p.style.lineHeight = '1.55';
+            p.style.marginBottom = '0.75rem';
+            frag.appendChild(p);
+        }
+    }
+    return frag;
 }
 
 function groupManualsByModule(docs) {
@@ -35499,25 +35598,40 @@ function renderDocsManualsView() {
     panes.appendChild(treePane);
 
     const viewerPane = document.createElement('div');
-    viewerPane.style.cssText = 'flex:1;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:1rem;overflow-y:auto;max-height:75vh;';
-    if (state.manuals.selectedDoc) {
+    viewerPane.style.cssText = 'flex:1;background:var(--bg-secondary,#1a1a1a);border-radius:6px;padding:1.25rem 1.5rem;overflow-y:auto;max-height:75vh;';
+
+    if (state.manuals.selectedDocError) {
+        const errEl = document.createElement('div');
+        errEl.style.cssText = 'padding:1rem;color:#f88;background:rgba(255,100,100,0.1);border-radius:4px;';
+        errEl.textContent = 'Could not load chapter: ' + state.manuals.selectedDocError;
+        viewerPane.appendChild(errEl);
+    } else if (state.manuals.selectedId && !state.manuals.selectedDoc) {
+        const loadingEl = document.createElement('div');
+        loadingEl.style.cssText = 'padding:2rem;opacity:0.6;text-align:center;';
+        loadingEl.textContent = 'Loading chapter…';
+        viewerPane.appendChild(loadingEl);
+    } else if (state.manuals.selectedDoc) {
         const doc = state.manuals.selectedDoc;
-        const docTitle = document.createElement('h3');
-        docTitle.textContent = doc.title || doc.path;
+
+        // Title + small path/meta line at the top
+        const docTitle = document.createElement('h2');
+        docTitle.style.cssText = 'margin:0 0 0.25rem 0;font-size:1.4rem;';
+        docTitle.textContent = doc.title || '(untitled)';
         viewerPane.appendChild(docTitle);
-        const docPath = document.createElement('div');
-        docPath.style.cssText = 'font-size:0.75rem;opacity:0.6;margin-bottom:0.75rem;font-family:monospace;';
-        docPath.textContent = doc.path || '';
-        viewerPane.appendChild(docPath);
-        const editLink = document.createElement('a');
-        editLink.href = '/command-hub/docs/system-knowledge/?doc=' + encodeURIComponent(doc.id);
-        editLink.textContent = 'Edit in System Knowledge →';
-        editLink.style.cssText = 'display:inline-block;margin-bottom:1rem;color:var(--accent,#4a90e2);font-size:0.85rem;';
-        viewerPane.appendChild(editLink);
-        const body = document.createElement('pre');
-        body.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.9rem;line-height:1.5;';
-        body.textContent = doc.content || '';
-        viewerPane.appendChild(body);
+
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:0.75rem;opacity:0.55;margin-bottom:1.25rem;font-family:monospace;';
+        meta.textContent = doc.path || '';
+        viewerPane.appendChild(meta);
+
+        // Render markdown inline. Read-only by design — this surface lives next
+        // to System Knowledge which owns editing; bouncing between tabs was the
+        // wrong UX and the prior 'Edit in System Knowledge' link is removed.
+        const article = document.createElement('div');
+        article.className = 'manual-article';
+        article.style.cssText = 'font-size:0.95rem;color:var(--text,#eaeaea);';
+        article.appendChild(renderManualMarkdown(doc.content || ''));
+        viewerPane.appendChild(article);
     } else {
         const placeholder = document.createElement('div');
         placeholder.style.cssText = 'padding:2rem;opacity:0.6;text-align:center;';
