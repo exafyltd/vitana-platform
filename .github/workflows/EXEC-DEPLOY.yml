@@ -332,15 +332,18 @@ jobs:
             #     fallback = vertex/gemini-3-pro-preview (covers worker
             #     downtime / subscription rate-limits without halting the
             #     autopilot).
-            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=true)
-            # Worker-owned PR creation: after the worker validates Claude's
-            # output it ALSO creates the branch + writes files + opens the
-            # PR itself, then writes pr_url back to the queue. This avoids
-            # the Cloud Run recycle-mid-flight failure that kept stranding
-            # executions in 'running' (gateway-side runExecutionSession was
-            # a fire-and-forget promise that died when the container scaled
-            # down between worker-finishes and gateway-writes-PR).
-            EXTRA_ENV_ARGS+=(--update-env-vars=AUTOPILOT_WORKER_OWNS_PR=true)
+            # VTID-02686: flipped to false — autopilot-worker daemon was never
+            # deployed on Cloud Run, so worker-mode tasks sat in pending
+            # forever. Direct-mode runs the LLM call in the gateway via
+            # callViaRouter('worker', ...) and creates the PR locally.
+            # Provider is now Vertex / gemini-3.1-pro-preview per the new
+            # active llm_routing_policy. Re-flip to true if/when the worker
+            # daemon ships as a Cloud Run service.
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEV_AUTOPILOT_USE_WORKER=false)
+            # VTID-02686: worker_owns_pr requires the worker daemon (above);
+            # gateway-side PR creation runs as part of runExecutionSession
+            # when worker mode is off.
+            EXTRA_ENV_ARGS+=(--update-env-vars=AUTOPILOT_WORKER_OWNS_PR=false)
             # BOOTSTRAP-DEV-AUTOPILOT-WATCHER-LIVE: flip the CI / merge /
             # deploy watchers out of DRY_RUN mode. Queries GitHub for real
             # check runs, auto-merges (squash) when all checks pass and
