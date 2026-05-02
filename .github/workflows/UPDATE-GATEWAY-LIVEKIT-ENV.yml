@@ -1,17 +1,27 @@
 name: UPDATE-GATEWAY-LIVEKIT-ENV
 
 # VTID-LIVEKIT-FOUNDATION: mounts LIVEKIT_URL/KEY/SECRET (and optionally
-# ORB_AGENT_URL) from GCP Secret Manager + plain env onto the existing
-# gateway Cloud Run service. Runs `gcloud run services update` — does NOT
-# redeploy a new image.
+# ORB_AGENT_URL + VOICE_ACTIVE_PROVIDER) onto the existing gateway Cloud
+# Run service. Runs `gcloud run services update` — does NOT redeploy a
+# new image. Also tails the orb-agent log so we can verify the worker
+# subprocess started.
 
 on:
   workflow_dispatch:
     inputs:
       orb_agent_url:
-        description: 'ORB_AGENT_URL — URL of the deployed orb-agent Cloud Run service. Leave empty to skip wiring.'
+        description: 'ORB_AGENT_URL — URL of the deployed orb-agent Cloud Run service. Empty = skip.'
         required: false
         default: ''
+      voice_active_provider:
+        description: 'VOICE_ACTIVE_PROVIDER (vertex|livekit) — sets the env-fallback flag. Empty = skip.'
+        required: false
+        default: ''
+      tail_orb_agent_logs:
+        description: 'Tail orb-agent logs (last 5min) at the end of the run.'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -50,7 +60,15 @@ jobs:
             --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
             --update-env-vars=ORB_AGENT_URL=${{ inputs.orb_agent_url }}
 
-      - name: Verify
+      - name: Set VOICE_ACTIVE_PROVIDER (if provided)
+        if: ${{ inputs.voice_active_provider != '' }}
+        run: |
+          set -euxo pipefail
+          gcloud run services update "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --update-env-vars=VOICE_ACTIVE_PROVIDER=${{ inputs.voice_active_provider }}
+
+      - name: Verify gateway state
         run: |
           set -euxo pipefail
           GATEWAY_URL=$(gcloud run services describe "$SERVICE_NAME" \
@@ -58,5 +76,20 @@ jobs:
             --format='value(status.url)')
           echo "Gateway URL: $GATEWAY_URL"
           echo "---"
-          echo "Mounted LIVEKIT_* secrets + ORB_AGENT_URL (if provided)."
-          echo "Hit $GATEWAY_URL/api/v1/orb/livekit/health after the new revision rolls out (~30s)."
+          echo "Hitting /api/v1/orb/active-provider..."
+          curl -fsS "$GATEWAY_URL/api/v1/orb/active-provider" | jq '.'
+          echo "---"
+          echo "Hitting /api/v1/orb/livekit/health..."
+          curl -fsS "$GATEWAY_URL/api/v1/orb/livekit/health" | jq '.'
+
+      - name: Tail orb-agent logs (last 5 min)
+        if: ${{ inputs.tail_orb_agent_logs }}
+        run: |
+          set -euxo pipefail
+          echo "Last 100 log entries from vitana-orb-agent:"
+          gcloud logging read \
+            'resource.type="cloud_run_revision" AND resource.labels.service_name="vitana-orb-agent" AND timestamp>="'$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)'"' \
+            --project="$GCP_PROJECT_ID" \
+            --limit=100 \
+            --order=asc \
+            --format='value(timestamp,severity,textPayload,jsonPayload.message,jsonPayload.event)' || true
