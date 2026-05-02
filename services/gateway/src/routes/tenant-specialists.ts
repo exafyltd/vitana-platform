@@ -884,7 +884,15 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
 
   const KINDS_WITH_DRAFT = new Set(['support_question', 'bug', 'ux_issue', 'marketplace_claim', 'account_issue']);
   const NEEDS_DRAFT = new Set(['new', 'triaged', 'spec_pending', 'answer_pending', 'needs_more_info', 'reopened']);
-  if (KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
+  // VTID-02678: needs_more_info / reopened are RETRY states — the spec
+  // already exists from a prior failed run. Allow Activate to dispatch
+  // directly without forcing a regen. Other NEEDS_DRAFT states still
+  // require a draft first.
+  const RETRY_FROM = new Set(['needs_more_info', 'reopened']);
+  const isRetryWithExistingSpec = RETRY_FROM.has(t.status)
+    && (t.kind === 'bug' || t.kind === 'ux_issue')
+    && !!t.spec_md;
+  if (KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status) && !isRetryWithExistingSpec) {
     return res.status(409).json({
       ok: false,
       error: 'DRAFT_REQUIRED',
@@ -900,10 +908,12 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     | { recommendation_id?: string; execution_id?: string; skipped?: string }
     | null = null;
 
-  // ATOMIC PATH for bug / ux_issue from spec_ready:
-  // dispatch → on success, flip status; on failure, stay at spec_ready
-  // and return 409 with violations.
-  if ((t.kind === 'bug' || t.kind === 'ux_issue') && t.status === 'spec_ready') {
+  // ATOMIC PATH for bug / ux_issue from spec_ready (first try) OR from
+  // needs_more_info / reopened with existing spec (retry).
+  // dispatch → on success, flip status; on failure, stay at current
+  // status and return 409 with violations.
+  if ((t.kind === 'bug' || t.kind === 'ux_issue')
+      && (t.status === 'spec_ready' || isRetryWithExistingSpec)) {
     const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
     const dispatch = await dispatchFeedbackTicket(t as any, userId);
     if (!dispatch.ok) {
