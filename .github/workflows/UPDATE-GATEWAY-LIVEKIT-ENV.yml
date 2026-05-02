@@ -1,0 +1,62 @@
+name: UPDATE-GATEWAY-LIVEKIT-ENV
+
+# VTID-LIVEKIT-FOUNDATION: mounts LIVEKIT_URL/KEY/SECRET (and optionally
+# ORB_AGENT_URL) from GCP Secret Manager + plain env onto the existing
+# gateway Cloud Run service. Runs `gcloud run services update` — does NOT
+# redeploy a new image.
+
+on:
+  workflow_dispatch:
+    inputs:
+      orb_agent_url:
+        description: 'ORB_AGENT_URL — URL of the deployed orb-agent Cloud Run service. Leave empty to skip wiring.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: lovable-vitana-vers1
+  GCP_REGION: us-central1
+  SERVICE_NAME: gateway
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Mount LIVEKIT_* secrets onto gateway
+        run: |
+          set -euxo pipefail
+          gcloud run services update "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest
+
+      - name: Set ORB_AGENT_URL (if provided)
+        if: ${{ inputs.orb_agent_url != '' }}
+        run: |
+          set -euxo pipefail
+          gcloud run services update "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --update-env-vars=ORB_AGENT_URL=${{ inputs.orb_agent_url }}
+
+      - name: Verify
+        run: |
+          set -euxo pipefail
+          GATEWAY_URL=$(gcloud run services describe "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --format='value(status.url)')
+          echo "Gateway URL: $GATEWAY_URL"
+          echo "---"
+          echo "Mounted LIVEKIT_* secrets + ORB_AGENT_URL (if provided)."
+          echo "Hit $GATEWAY_URL/api/v1/orb/livekit/health after the new revision rolls out (~30s)."

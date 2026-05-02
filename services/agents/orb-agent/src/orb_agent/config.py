@@ -13,7 +13,7 @@ class AgentConfig:
     livekit_api_key: str
     livekit_api_secret: str
     gateway_url: str
-    gateway_service_token: str
+    gateway_service_token: str  # may be empty during initial deploy; tool calls will 401
     log_level: str = "INFO"
     max_tool_steps: int = 5
     max_reconnects: int = 10
@@ -22,12 +22,15 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
+        # GATEWAY_URL has a sensible default (production gateway URL) so the
+        # agent can boot in HEALTH-ONLY mode for smoke-testing the deploy
+        # pipeline before the operator wires the full secret set.
         return cls(
             livekit_url=_required("LIVEKIT_URL"),
             livekit_api_key=_required("LIVEKIT_API_KEY"),
             livekit_api_secret=_required("LIVEKIT_API_SECRET"),
-            gateway_url=_required("GATEWAY_URL"),
-            gateway_service_token=_required("GATEWAY_SERVICE_TOKEN"),
+            gateway_url=os.getenv("GATEWAY_URL", "https://gateway-q74ibpv6ia-uc.a.run.app"),
+            gateway_service_token=os.getenv("GATEWAY_SERVICE_TOKEN", ""),
             log_level=os.getenv("AGENT_LOG_LEVEL", "INFO"),
             max_tool_steps=int(os.getenv("AGENT_MAX_TOOL_STEPS", "5")),
             max_reconnects=int(os.getenv("AGENT_MAX_RECONNECTS", "10")),
