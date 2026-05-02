@@ -12,6 +12,7 @@ fallback so the agent boots even if optional plugins aren't installed.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -87,9 +88,19 @@ def _build_stt(provider: str | None, model: str | None, options: dict[str, Any],
     if provider == "google_stt":
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
-            return google.STT(model=model or "latest_long", **options)
+            # Google Cloud Speech-to-Text via ADC. Passing project explicitly
+            # so the plugin doesn't fall back to the consumer Speech endpoint
+            # that requires GOOGLE_API_KEY.
+            return google.STT(
+                model=model or "latest_long",
+                languages=options.pop("languages", ["en-US"]),
+                **options,
+            )
         except ImportError:
             notes.append("STT provider 'google_stt' requested but livekit-plugins-google not installed")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"STT provider 'google_stt' init failed: {exc}")
             return None
     notes.append(f"unknown or unsupported STT provider: {provider}")
     return None
@@ -113,9 +124,24 @@ def _build_llm(provider: str | None, model: str | None, options: dict[str, Any],
     if provider == "google_llm":
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
-            return google.LLM(model=model or "gemini-2.0-flash-exp", **options)
+            # vertexai=True switches the plugin from the consumer Gemini API
+            # (which requires GOOGLE_API_KEY) to Vertex AI which uses ADC.
+            # The Cloud Run service account inherits the project's Vertex AI
+            # access, so no extra secret needed.
+            project = os.environ.get("GOOGLE_CLOUD_PROJECT", "lovable-vitana-vers1")
+            location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+            return google.LLM(
+                model=model or "gemini-2.0-flash-exp",
+                vertexai=True,
+                project=project,
+                location=location,
+                **options,
+            )
         except ImportError:
             notes.append("LLM provider 'google_llm' requested but livekit-plugins-google not installed")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"LLM provider 'google_llm' init failed: {exc}")
             return None
     notes.append(f"unknown or unsupported LLM provider: {provider}")
     return None
@@ -140,9 +166,13 @@ def _build_tts(provider: str | None, model: str | None, options: dict[str, Any],
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
             voice = model or "en-US-Chirp3-HD-Aoede"
+            # Google Cloud Text-to-Speech via ADC (no API key needed).
             return google.TTS(voice_name=voice, language="en-US", **options)
         except ImportError:
             notes.append("TTS provider 'google_tts' requested but livekit-plugins-google not installed")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"TTS provider 'google_tts' init failed: {exc}")
             return None
     notes.append(f"unknown or unsupported TTS provider: {provider}")
     return None
