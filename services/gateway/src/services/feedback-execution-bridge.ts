@@ -250,22 +250,80 @@ export async function dispatchFeedbackTicket(
     // fall through and create a new one. Don't block the dispatch.
   }
 
-  // 2. Pre-flight scope check (VTID-02669). Pull "Files to touch" from
-  //    Devon's spec, validate against allow_scope / deny_scope. If every
-  //    proposed file is denied or out-of-scope, refuse with a structured
-  //    violation BEFORE inserting the recommendation — saves a planner
-  //    round trip the safety gate would refuse anyway and gives the
-  //    supervisor a clear, actionable error.
-  const proposedFiles = parseFilesToTouchFromSpec(ticket.spec_md);
+  // 2. Pre-flight scope check + auto-retry (VTID-02671). Parse Devon's
+  //    "Files to touch" section and validate against allow_scope/deny_scope.
+  //    If the draft is bad, we silently re-call Devon with the violations
+  //    as feedback up to 2 times. The supervisor only sees a violation if
+  //    Devon still can't produce a valid spec after retries — at that
+  //    point a human edit is genuinely needed.
   const cfg = await loadSafetyConfig(s);
-  const flight = preflightFiles(proposedFiles, cfg);
+  const MAX_DRAFT_RETRIES = 2;
+  let proposedFiles = parseFilesToTouchFromSpec(ticket.spec_md);
+  let flight = preflightFiles(proposedFiles, cfg);
+
+  for (let attempt = 0; attempt < MAX_DRAFT_RETRIES; attempt++) {
+    const isBad = proposedFiles.length === 0 || flight.allowed.length === 0;
+    if (!isBad) break;
+
+    // Build feedback for Devon explaining what was wrong.
+    const reasons: string[] = [];
+    if (proposedFiles.length === 0) {
+      reasons.push('Your previous draft did not list any files in the "Files to touch" section. EVERY draft must include concrete file paths.');
+    }
+    if (flight.denied.length > 0) {
+      reasons.push(`These files are FORBIDDEN (deny-scope): ${flight.denied.join(', ')}. Pick allow-scoped equivalents instead.`);
+    }
+    if (flight.outside.length > 0) {
+      reasons.push(`These files are OUTSIDE the allow-scope (likely don't exist in this codebase): ${flight.outside.join(', ')}. Use ONLY paths starting with services/gateway/src/{routes,services,frontend/command-hub}/** or services/agents/**.`);
+    }
+    const retryFeedback = [
+      'AUTO-RETRY (your previous draft was rejected by the safety pre-flight)',
+      '====================================================================',
+      ...reasons,
+      '',
+      `Allow-scope: ${cfg.allow_scope.join(', ')}`,
+      `Deny-scope:  ${cfg.deny_scope.join(', ')}`,
+      '',
+      'Re-write the spec with VALID allow-scoped paths. Include at least one .test.ts file.',
+      '====================================================================',
+    ].join('\n');
+
+    console.log(`[${VTID}] auto-retry Devon (attempt ${attempt + 1}/${MAX_DRAFT_RETRIES}) for ${ticket.ticket_number}`);
+
+    try {
+      const { llmDraftDevonSpec } = await import('./feedback-llm-resolvers');
+      const r = await llmDraftDevonSpec(ticket as any, {
+        supervisorInstructions: ticket.supervisor_notes,
+        retryFeedback,
+      });
+      if (r.markdown && r.markdown.trim()) {
+        // Persist the new draft so the supervisor sees the corrected
+        // version when they reopen the drawer (and so subsequent runs
+        // start from the good draft).
+        await fetch(`${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}`, {
+          method: 'PATCH',
+          headers: { ...s.headers, Prefer: 'return=minimal' },
+          body: JSON.stringify({ spec_md: r.markdown }),
+        }).catch(() => { /* non-blocking */ });
+        ticket.spec_md = r.markdown;
+        proposedFiles = parseFilesToTouchFromSpec(r.markdown);
+        flight = preflightFiles(proposedFiles, cfg);
+      }
+    } catch (err) {
+      console.warn(`[${VTID}] auto-retry failed:`, err);
+      break;
+    }
+  }
+
+  // After retries — if STILL bad, surface violations for the supervisor
+  // to take over manually.
   if (proposedFiles.length === 0) {
     return {
       ok: false,
       error: 'NO_FILES_IN_SPEC',
       violations: [{
         code: 'no_files_in_spec',
-        message: "Devon's spec didn't list any files to touch. Add a `## Files to touch` section with concrete paths, then Re-generate.",
+        message: "Devon couldn't propose concrete files even after auto-retry. Tighten Step 1 instructions with specific module names (e.g. services/gateway/src/services/persona-registry.ts).",
       }],
     };
   }
@@ -274,14 +332,14 @@ export async function dispatchFeedbackTicket(
     if (flight.denied.length > 0) {
       violations.push({
         code: 'file_in_deny_scope',
-        message: `Every proposed file is in the dev autopilot deny-scope: ${flight.denied.join(', ')}. Revise your instructions to scope the fix to allowed paths (gateway routes/services/frontend, agents). Files like orb-live.ts, supabase/migrations/**, and .github/workflows/** are intentionally excluded.`,
+        message: `Devon kept proposing forbidden files even after auto-retry: ${flight.denied.join(', ')}. The fix likely requires touching deny-scoped code (e.g. orb-live.ts) — that's intentionally human-only. Edit Step 1 to point Devon at an allow-scoped wrapper instead.`,
         detail: { denied: flight.denied, deny_scope: cfg.deny_scope },
       });
     }
     if (flight.outside.length > 0) {
       violations.push({
         code: 'file_outside_allow_scope',
-        message: `Files outside the allow-scope: ${flight.outside.join(', ')}. Allow scope: ${cfg.allow_scope.join(', ')}.`,
+        message: `Devon kept hallucinating non-existent paths after auto-retry: ${flight.outside.join(', ')}. Edit Step 1 with explicit module names.`,
         detail: { outside: flight.outside, allow_scope: cfg.allow_scope },
       });
     }
