@@ -375,6 +375,33 @@ export function buildPlanningPrompt(
     ``,
   );
 
+  // VTID-02672: when the finding came from a feedback ticket (Devon's
+  // spec workflow), the bridge already pre-validated `proposed_files`
+  // against allow/deny scope. The planner MUST use only those paths so
+  // the safety gate doesn't reject the plan after Devon wrote a clean
+  // spec. Co-located test files (`.test.ts` next to the source) are
+  // allowed automatically since they're in the same allow-scope.
+  const proposedFiles = (snap as { proposed_files?: string[] }).proposed_files;
+  if (snap.signal_type === 'feedback_ticket' && Array.isArray(proposedFiles) && proposedFiles.length > 0) {
+    lines.push(
+      `## LOCKED file list (feedback ticket — DO NOT DEVIATE)`,
+      ``,
+      `This finding came from a feedback ticket. The pre-flight already`,
+      `validated these file paths against the allow-scope and deny-scope.`,
+      `Your Files-to-modify section MUST contain ONLY these paths (plus`,
+      `co-located \`.test.ts\` files if you need new tests):`,
+      ``,
+      ...proposedFiles.map(f => `- \`${f}\``),
+      ``,
+      `Do NOT add additional source files. Do NOT swap a path for a`,
+      `different one. If a path here doesn't actually exist in the repo`,
+      `(GitHub fetch returned 404 in the Referenced file section), state`,
+      `that explicitly in the Out-of-scope section and propose to CREATE`,
+      `the file at that path. Do not silently use a different path.`,
+      ``,
+    );
+  }
+
   // VTID-02640: live DB schema for any tables referenced in the flagged
   // file. Inserted EARLY in the prompt so column-name hallucinations
   // (e.g. PR #1091's wrong vitana_id -> vuid rename) are short-circuited
