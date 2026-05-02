@@ -16,6 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ActionRequest, ActionResult, Connector, TokenPair } from '../types';
 import { getConnector } from '../index';
+import { storageProvidersFor } from '../../capabilities';
 
 export interface DispatchContext {
   supabase: SupabaseClient;
@@ -43,11 +44,18 @@ const REFRESH_BUFFER_MS = 30_000;
  * Load the user's token row. Uses social_connections for now — every new
  * provider registered via the framework also writes here, so storage is
  * consistent across provider types until we migrate to user_connections.
+ *
+ * BOOTSTRAP-YT-MUSIC-ALIAS: `providers` is an ordered list of
+ * `social_connections.provider` values that satisfy the connector for
+ * the capability in flight. Supplied by `storageProvidersFor` in the
+ * capability layer — today it lets a YouTube-scoped token (provider='youtube')
+ * serve the `google` connector's `music.play` capability, without
+ * requiring the user to also grant the broader Gmail + Calendar scopes.
  */
 async function loadConnection(
   supabase: SupabaseClient,
   userId: string,
-  connectorId: string,
+  providers: string[],
 ): Promise<{
   id: string;
   access_token: string;
@@ -56,22 +64,26 @@ async function loadConnection(
   provider_user_id: string | null;
   provider_username: string | null;
 } | null> {
-  const { data } = await supabase
-    .from('social_connections')
-    .select('id, access_token, refresh_token, token_expires_at, provider_user_id, provider_username')
-    .eq('user_id', userId)
-    .eq('provider', connectorId)
-    .eq('is_active', true)
-    .maybeSingle();
-  if (!data || !data.access_token) return null;
-  return {
-    id: data.id,
-    access_token: data.access_token,
-    refresh_token: data.refresh_token ?? null,
-    token_expires_at: data.token_expires_at ?? null,
-    provider_user_id: data.provider_user_id ?? null,
-    provider_username: data.provider_username ?? null,
-  };
+  for (const provider of providers) {
+    const { data } = await supabase
+      .from('social_connections')
+      .select('id, access_token, refresh_token, token_expires_at, provider_user_id, provider_username')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (data?.access_token) {
+      return {
+        id: data.id,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token ?? null,
+        token_expires_at: data.token_expires_at ?? null,
+        provider_user_id: data.provider_user_id ?? null,
+        provider_username: data.provider_username ?? null,
+      };
+    }
+  }
+  return null;
 }
 
 async function refreshIfExpired(
@@ -168,7 +180,8 @@ export async function dispatchAction(
   if (connector.auth_type === 'none') {
     tokens = { access_token: '' };
   } else {
-    const stored = await loadConnection(ctx.supabase, ctx.userId, opts.connectorId);
+    const providers = storageProvidersFor(opts.connectorId, opts.capability);
+    const stored = await loadConnection(ctx.supabase, ctx.userId, providers);
     if (!stored) {
       return {
         ok: false,
