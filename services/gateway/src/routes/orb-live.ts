@@ -1515,6 +1515,57 @@ function renderConversationHistoryWithPersonas(
 // system_prompt is written in (English) regardless of session.lang.
 // Symptom: German user is talking to Vitana in German, swaps to Devon, and
 // Devon greets in English. Fixed by appending this directive at every swap.
+// v3: ROLE LABEL — Vitana NEVER speaks specialist names ("Devon", "Atlas",
+// "Mira", "Sage") to the user. The user has no idea who those are.
+// She refers to colleagues by ROLE only ("our tech support", "our billing
+// team", etc). This helper returns the role label for a persona key in the
+// user's language. Used in the bridge / proposal tool-result strings so the
+// instruction Vitana reads tells her exactly which words to use.
+const PERSONA_ROLE_LABEL: Record<string, Record<string, string>> = {
+  vitana: { en: 'Vitana',                 de: 'Vitana' },
+  devon:  { en: 'tech support',           de: 'unseren technischen Support' },
+  sage:   { en: 'customer support',       de: 'unseren Kundensupport' },
+  atlas:  { en: 'our billing team',       de: 'unser Finanzteam' },
+  mira:   { en: 'our account team',       de: 'unser Konto-Team' },
+};
+function roleLabel(personaKey: string, lang: string | undefined): string {
+  const m = PERSONA_ROLE_LABEL[personaKey] || {};
+  const langCode = (lang || 'en').slice(0, 2);
+  return m[langCode] || m.en || personaKey;
+}
+
+// v3: SWAP-BACK WELCOME — when a specialist hands the user back to Vitana,
+// inject this block into Vitana's contextInstruction so her first turn is a
+// structured proactive welcome (welcome with display_name + acknowledge the
+// specialist by ROLE LABEL + open question OR proactive suggestion). The
+// model generates the actual phrasing — never recite a template.
+function buildSwapBackWelcomeBlock(fromPersonaKey: string, lang: string | undefined): string {
+  if (!fromPersonaKey || fromPersonaKey === 'vitana') return '';
+  const role = roleLabel(fromPersonaKey, lang);
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('[SWAP-BACK WELCOME — first turn after returning from a specialist]');
+  lines.push(`The user just came back from ${role}. Speak ONE welcome turn in the user's language. Components in spirit (the model generates the actual wording — NEVER recite a template, NEVER repeat a welcome phrase you used earlier this session):`);
+  lines.push(`  (1) WELCOME them back. Use their display_name from the USER CONTEXT block when known; omit it when not.`);
+  lines.push(`  (2) ACKNOWLEDGE the specialist's help using the ROLE LABEL — say "${role}", NEVER speak the colleague's internal name (Devon, Sage, Atlas, Mira).`);
+  lines.push(`  (3) THEN one of (pick whichever is most natural for this user right now):`);
+  lines.push(`      (a) an OPEN question: "what else can I do for you?" / "Womit kann ich noch helfen?" / "what else would you like to continue with?" — varied wording every call.`);
+  lines.push(`      (b) a PROACTIVE suggestion drawn from your bootstrap context (Proactive Initiative Engine / Did You Know Tour / current goal). Pick something the user was working on or about to be guided toward — NOT a fresh non-sequitur.`);
+  lines.push(`Examples (NEVER recite verbatim):`);
+  lines.push(`  - "Welcome back, Dragan. I hope ${role} could help — what else can I do for you?"`);
+  lines.push(`  - "Schön, dass du wieder da bist, Dragan. Hat dir ${role} weiterhelfen können? Womit machen wir weiter?"`);
+  lines.push(`  - "Welcome back. I hope our team helped. Earlier you wanted to [proactive context]; want to continue with that?"`);
+  lines.push(`FORBIDDEN on this turn (all v1-era loop triggers):`);
+  lines.push(`  - "What's on your mind?"`);
+  lines.push(`  - "How can I help?" (generic restart)`);
+  lines.push(`  - "Hi, this is Vitana" (you are already Vitana)`);
+  lines.push(`  - The colleague's name (always use the role label "${role}")`);
+  lines.push(`  - The specialist's exact closing words (no echo)`);
+  lines.push(`  - The same wording you used on a previous swap-back this session`);
+  lines.push(`One turn only. Then wait for the user.`);
+  return lines.join('\n');
+}
+
 function buildSpecialistLanguageDirective(lang: string | undefined): string {
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
@@ -1574,55 +1625,86 @@ function buildPersonaBehavioralRule(personaKey: string): string {
 
   if (isSpecialist) {
     lines.push('');
-    lines.push('[SYNTHESIZE ON FIRST CONTACT — specialist only]');
-    lines.push('On the very first turn after you receive a swap, read the transcript carefully.');
+    lines.push('[FIRST TURN — SPECIALIST]');
+    lines.push('Your first utterance after this swap is ONE turn with TWO parts:');
+    lines.push('  (1) IDENTIFY YOURSELF in ONE short clause — your name and what you handle.');
+    lines.push('      Examples (vary every call, never recite verbatim):');
+    lines.push('        "Hi, this is Devon, I cover technical issues."');
+    lines.push('        "Hey, Devon here — I handle bugs."');
+    lines.push('        "Hi, I\'m Devon, the tech colleague."');
+    lines.push('  (2) ASK FOR DETAILS — invite the user to elaborate so you understand');
+    lines.push('      what to fix. Examples (vary, never recite):');
+    lines.push('        "Can you explain a bit more about what\'s happening?"');
+    lines.push('        "Tell me what specifically broke — which screen, what action?"');
+    lines.push('        "Walk me through what you\'re seeing."');
     lines.push('');
-    lines.push('  CASE A — the transcript + handoff brief contain SPECIFICS (which screen,');
-    lines.push('  which feature, what broke, error text, etc):');
-    lines.push('  → state what you understood in ONE sentence in your own words.');
-    lines.push('    Do not echo the user verbatim, do not summarize the whole transcript.');
-    lines.push('    Examples (vary every time, never reuse exactly):');
-    lines.push('      "So you\'re seeing a crash on the diary screen — is that right?"');
-    lines.push('      "Bug on diary save, got it. Confirming before I file: ..."');
-    lines.push('      "Sounds like the diary save is breaking. Let me confirm..."');
+    lines.push('  EDGE CASE — if Vitana\'s handoff brief AND the transcript already contain');
+    lines.push('  specifics (which screen, what error, what action), you may collapse the ASK');
+    lines.push('  into a confirmation: "Hi, Devon here — so you\'re seeing X on screen Y, is');
+    lines.push('  that right?" In doubt, default to asking for more.');
     lines.push('');
-    lines.push('  CASE B — the brief is GENERIC (e.g. "user wants to report a bug") and the');
-    lines.push('  transcript has no concrete description of what broke:');
-    lines.push('  → ABSOLUTELY DO NOT INVENT THE ISSUE. Hallucinating a specific complaint');
-    lines.push('    that the user did not actually make is the worst possible failure mode —');
-    lines.push('    the user has to correct your fiction and the conversation falls apart.');
-    lines.push('  → Ask exactly ONE concrete diagnostic question to get specifics from the');
-    lines.push('    user IN THEIR LANGUAGE. Examples (vary, never reuse exactly):');
-    lines.push('      "Got it — what specifically is breaking? Which screen, which step?"');
-    lines.push('      "OK, I\'m here to help. What did you see go wrong?"');
-    lines.push('      "Tell me what happened — which feature, what error?"');
-    lines.push('  → Do NOT ask "what can I do for you?" — that\'s a cold restart and breaks');
-    lines.push('    the handoff continuity. Be specific to the bug-report context.');
-    lines.push('');
-    lines.push('  In CASE B, your goal on the first turn is INFORMATION GATHERING, not');
-    lines.push('  confirmation. Wait for the user\'s answer before claiming you understand');
-    lines.push('  anything. NEVER pretend you know what the issue is.');
+    lines.push('  RULES on every first turn:');
+    lines.push('  — Vary your wording every single call. NEVER recite a template.');
+    lines.push('  — Match the user\'s language exactly (per LANGUAGE LOCK above).');
+    lines.push('  — Cap at ~2 short sentences. Brevity matters.');
+    lines.push('  — DO NOT fire the auto-return ("anything else, or back to Vitana?") on the');
+    lines.push('    first turn. That belongs at the END of intake, not the beginning.');
+    lines.push('  — DO NOT ask "what can I do for you?" — Vitana already explained context.');
+    lines.push('  — DO NOT echo the user\'s words verbatim.');
+    lines.push('  — DO NOT invent a specific issue if you don\'t have one (no hallucinations).');
+    lines.push('    If specifics are missing, ASK ONE question instead of inventing.');
 
     lines.push('');
-    lines.push('[ACTION COMPLETE — specialist only]');
-    lines.push('When your task is done (ticket filed, claim drafted, account action queued,');
-    lines.push('support answer given), in ONE sentence convey two things naturally:');
-    lines.push('  (1) the task is complete (mention ticket number if you have one), and');
-    lines.push('  (2) ask if they need anything else, OR offer to bring them back to Vitana.');
-    lines.push('Vary your wording every single call. Examples (NEVER reuse verbatim):');
-    lines.push('  "All set. Anything else, or shall we hand you back to Vitana?"');
-    lines.push('  "Done — ticket FB-XYZ. Want me to look at anything else first?"');
-    lines.push('  "Filed. I\'ll pass you back unless there\'s something else."');
-    lines.push('  "Sorted. Anything else from your side, or back to Vitana?"');
-    lines.push('  "That\'s in. Anything else for me, or shall I bring Vitana back in?"');
-
+    lines.push('[CLOSE QUESTION + GOODBYE — specialist only]');
+    lines.push('Once the user has given you the details and you have written intake into the');
+    lines.push('ticket, your closing follows TWO steps in order:');
     lines.push('');
-    lines.push('[SILENT CLOSE — specialist only]');
-    lines.push('When the user says "no" / "back to Vitana" / "that\'s all" / equivalent in any');
-    lines.push('language, call switch_persona(to: \'vitana\') immediately AND DO NOT speak after.');
-    lines.push('No goodbye, no "have a great day", no closing summary. The next thing the user');
-    lines.push('hears is silence — Vitana will not greet either. The user speaks first if they');
-    lines.push('have more to say.');
+    lines.push('  STEP 1 — CLOSE-QUESTION TURN (always, never skipped). ONE turn in the');
+    lines.push('  user\'s language with FOUR components in order:');
+    lines.push('    (i) Acknowledge that a TICKET HAS BEEN CREATED. NEVER say "done" / "fixed"');
+    lines.push('        / "resolved" / "erledigt im Sinne von gelöst" — a ticket is the START');
+    lines.push('        of the work, not the end. Use phrasing like "I\'ve created a ticket"');
+    lines.push('        / "Ticket is filed" / "Ich habe ein Ticket angelegt".');
+    lines.push('    (ii) Commit to action: convey that the team will work on it RIGHT AWAY.');
+    lines.push('         Examples: "our team will work on it immediately" / "we\'ll take care');
+    lines.push('         of this right away" / "unser Team kümmert sich sofort darum".');
+    lines.push('    (iii) Promise the follow-up: tell the user that VITANA will inform them');
+    lines.push('          when the fix is in. Examples: "as soon as it\'s fixed Vitana will');
+    lines.push('          let you know" / "Vitana wird dir Bescheid geben, sobald es behoben');
+    lines.push('          ist".');
+    lines.push('    (iv) THEN ask the close question: "anything else I can help with, or');
+    lines.push('         shall I hand you back to Vitana?" — varied wording every call.');
+    lines.push('  Vary every component every call. NEVER recite a template. Examples:');
+    lines.push('    "I\'ve created a ticket and our team will work on it right away. As soon');
+    lines.push('     as it\'s fixed, Vitana will let you know. Anything else, or shall I hand');
+    lines.push('     you back to Vitana?"');
+    lines.push('    "Ticket\'s filed — we\'ll take care of this immediately. You\'ll hear from');
+    lines.push('     Vitana the moment the fix lands. Want me to look at anything else first,');
+    lines.push('     or back to Vitana?"');
+    lines.push('    "Ich habe ein Ticket dafür angelegt, und unser Team kümmert sich sofort');
+    lines.push('     darum. Sobald es behoben ist, gibt dir Vitana Bescheid. Möchtest du sonst');
+    lines.push('     noch etwas besprechen, oder zurück zu Vitana?"');
+    lines.push('  Then WAIT for the user\'s reply.');
+    lines.push('');
+    lines.push('  STEP 2 — branch on the user\'s reply:');
+    lines.push('    (a) "yes, [new issue]" — handle it. Loop back to your normal intake.');
+    lines.push('    (b) "no" / "that\'s all" / "Nein, das ist alles" / equivalent — speak ONE');
+    lines.push('        short polite GOODBYE turn in the user\'s language, THEN call');
+    lines.push('        switch_persona(to:\'vitana\'). Goodbye structure:');
+    lines.push('         - Thank the user for their time. Use display_name from USER CONTEXT');
+    lines.push('           when known ("Thank you for your time, Dragan, …"). When NOT known,');
+    lines.push('           omit the name. NEVER say "user" or any robotic placeholder.');
+    lines.push('         - Wish them well ("have a great day" / "schönen Tag noch" / "take');
+    lines.push('           care").');
+    lines.push('         - The follow-up promise was given in STEP 1, so the goodbye is');
+    lines.push('           light — don\'t repeat the full "we\'ll let you know" speech here.');
+    lines.push('         - Vary wording every call. NEVER recite the same goodbye twice in');
+    lines.push('           a session. Examples:');
+    lines.push('             "Thank you for your time, Dragan. Have a great day."');
+    lines.push('             "Thanks, Dragan — take care."');
+    lines.push('             "Danke für deine Zeit, Dragan. Schönen Tag noch."');
+    lines.push('  STEP 2 (b) ORDERING is non-negotiable: SPEAK the goodbye FIRST, THEN call');
+    lines.push('  switch_persona. Do NOT speak after the tool call.');
 
     lines.push('');
     lines.push('[INSTRUCTION-MANUAL PROTECTION — specialist only]');
@@ -4261,12 +4343,17 @@ async function executeLiveApiToolInner(
             (session as any).personaVoiceOverride = _swapTenantId
               ? await registryGetPersonaVoiceForTenant(target, _swapTenantId)
               : await registryGetPersonaVoice(target);
-            (session as any).personaForcedFirstMessage = _swapTenantId
-              ? await registryGetPersonaGreetingForTenant(target, session.lang || 'en', _swapTenantId)
-              : await registryGetPersonaGreeting(target, session.lang || 'en');
+            // v3: NO forced greeting on specialist swap. Devon's first turn
+            // is generated by the model from the GREET + ASK FOR DETAILS rule
+            // in buildPersonaBehavioralRule. The previous stored greeting
+            // collided with the synthesize directive and produced double-speech.
+            (session as any).personaForcedFirstMessage = '';
+            // Track which specialist is now active so the eventual swap-back
+            // can render the correct ROLE label in Vitana's welcome block.
+            (session as any)._lastSpecialistPersona = target;
             // Loop guard counter
             (session as any).swapCount = (((session as any).swapCount as number | undefined) ?? 0) + 1;
-            console.log(`[VTID-02670] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}, swapCount=${(session as any).swapCount}`);
+            console.log(`[VTID-02684] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}, swapCount=${(session as any).swapCount}`);
           }
 
           // Notify the client UI
@@ -4285,11 +4372,30 @@ async function executeLiveApiToolInner(
             try { sendWsMessage(session.clientWs, swapMsg); } catch (_e) { /* WS closed */ }
           }
 
-          const targetLabel = target === 'vitana' ? 'Vitana' : (target.charAt(0).toUpperCase() + target.slice(1));
-          return {
-            success: true,
-            result: `Persona swap queued: ${currentPersona} → ${target}. Speak ONE short bridge sentence in your own natural words — ANNOUNCE the handoff (e.g. "I'll bring ${targetLabel} in", "letting ${targetLabel} take this", "${targetLabel} can help with that"). Vary your phrasing every time — never recite a template. Do NOT introduce ${targetLabel} ("Hi, here is X" — that's THEIR job in their own voice). Do NOT speak after the bridge. Then STOP.`,
-          };
+          // v3: bridge instruction depends on direction.
+          // - Vitana → specialist: announce the ROLE only (never the name).
+          // - Specialist → Vitana: speak a polite goodbye (with display_name
+          //   when known) BEFORE the swap fires. Then the swap takes over.
+          const isFromVitana = currentPersona === 'vitana' || currentPersona === RECEPTIONIST_PERSONA_KEY;
+          const isToVitana = target === 'vitana' || target === RECEPTIONIST_PERSONA_KEY;
+          let result: string;
+          if (isFromVitana && !isToVitana) {
+            // Vitana announcing handoff to a specialist via switch_persona.
+            // She must use the ROLE label, not the name.
+            const role = roleLabel(target, session.lang);
+            result = `Persona swap queued: ${currentPersona} → ${target}. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${role}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) — the user has no context for those names. Examples (vary every call, never recite verbatim): "I'll connect you with ${role}." / "Let me bring ${role} in." / "Einen Moment, ${role} übernimmt." Vary phrasing every call. Do NOT introduce the colleague ("Hi, here is X" — that is THEIR job in their own voice). Do NOT speak after the bridge. Then STOP.`;
+          } else if (!isFromVitana && isToVitana) {
+            // Specialist closing out — speak the polite goodbye, THEN the
+            // swap fires. The goodbye comes from the [CLOSE QUESTION + GOODBYE]
+            // rule in your prompt: thank user (use display_name from USER
+            // CONTEXT when known), wish them well, vary phrasing every call.
+            result = `Persona swap queued: ${currentPersona} → ${target}. Speak ONE short polite GOODBYE turn in the user's language BEFORE the swap takes effect — thank the user for their time (use their display_name from USER CONTEXT if known; omit if not), wish them well ("have a great day" / "schönen Tag noch" / "take care"). Vary your wording every call — NEVER recite a template, NEVER repeat a goodbye you used earlier this session. The follow-up promise was already given in your close-question turn so don't repeat it here. After speaking the goodbye, the swap fires automatically. Do NOT speak after the goodbye.`;
+          } else {
+            // Edge: specialist-to-specialist (server-blocked elsewhere) or
+            // vitana-to-vitana (already-talking guard above). Fallback: minimal.
+            result = `Persona swap queued: ${currentPersona} → ${target}. Speak ONE short bridge sentence in the user's language. Vary phrasing every call. Then STOP.`;
+          }
+          return { success: true, result };
         } catch (err) {
           console.error('[VTID-02047] switch_persona failed:', err);
           return { success: false, result: '', error: err instanceof Error ? err.message : 'unknown error' };
@@ -4554,10 +4660,11 @@ async function executeLiveApiToolInner(
                 (session as any).personaVoiceOverride = _reportTenantId
                   ? await registryGetPersonaVoiceForTenant(swapTo, _reportTenantId)
                   : await registryGetPersonaVoice(swapTo);
-                (session as any).personaForcedFirstMessage = _reportTenantId
-                  ? await registryGetPersonaGreetingForTenant(swapTo, session.lang || 'en', _reportTenantId)
-                  : await registryGetPersonaGreeting(swapTo, session.lang || 'en');
-                console.log(`[VTID-02047] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}, tenant=${_reportTenantId ?? 'none'}`);
+                // v3: NO forced greeting. Devon's first turn is generated by
+                // the model from the GREET + ASK FOR DETAILS rule.
+                (session as any).personaForcedFirstMessage = '';
+                (session as any)._lastSpecialistPersona = swapTo;
+                console.log(`[VTID-02684] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}, tenant=${_reportTenantId ?? 'none'}`);
 
                 // Notify the client UI so it can show "Talking to <Persona>"
                 const swapMsg = {
@@ -4584,7 +4691,7 @@ async function executeLiveApiToolInner(
 
           return {
             success: true,
-            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Speak ONE short bridge sentence in your own natural words — announce the handoff (vary phrasing every time, never recite a template). Do NOT introduce ${personaName.split(' ')[0]} ("Hi, here is X" — that is THEIR job to say in their own voice). Do NOT speak after the bridge. Then STOP.`,
+            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel(pickedPersona, session.lang)}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call, never recite verbatim): "I'll connect you with ${roleLabel(pickedPersona, session.lang)}." / "Let me bring ${roleLabel(pickedPersona, session.lang)} in." / "Einen Moment, ${roleLabel(pickedPersona, session.lang)} übernimmt." Vary your phrasing every call. Do NOT introduce the colleague ("Hi, here is X" — that is THEIR job to say in their own voice). Do NOT speak after the bridge. Then STOP.`,
           };
         } catch (err) {
           console.error('[VTID-02047] report_to_specialist failed:', err);
@@ -8671,14 +8778,17 @@ async function connectToLiveAPI(
                         // on swap-back so Vitana would greet. That caused two
                         // failures the user reported: (1) "Welcome back. What's
                         // on your mind?" loop trigger; (2) Vitana echoing the
-                        // specialist's most-recent (sometimes hallucinated)
-                        // utterance as her own. Now: on swap-back to Vitana,
-                        // force isReconnect=TRUE so the "DO NOT speak first"
-                        // rule applies. Vitana stays SILENT and waits for the
-                        // user to speak. The user will speak with their actual
-                        // intent — Vitana doesn't need to invent a topic.
+                        // v3: REVERSED v2e. The user clarified they DO want
+                        // Vitana to welcome back proactively (welcome with
+                        // display_name, acknowledge specialist via role label,
+                        // ask "what else" or pick a proactive suggestion).
+                        // So on swap-back-to-Vitana, isReconnect=FALSE — the
+                        // "DO NOT speak first" rule is suppressed and she
+                        // greets. The structured welcome content comes from
+                        // the SWAP-BACK WELCOME prompt block injected via
+                        // contextInstruction (see buildSwapBackWelcomeBlock).
                         ((session as any)._personaSwapInFlight
-                          ? true
+                          ? false
                           : ((session as any)._reconnectCount || 0) > 0)
                       )
                     : buildLiveSystemInstruction(
@@ -8692,7 +8802,20 @@ async function connectToLiveAPI(
                           + (((session as any).lastTranscriptSection as string | undefined)
                               ? `\n\n${(session as any).lastTranscriptSection}`
                               : '')
-                          + (((session as any).onboardingCohortBlock as string | undefined) ?? ''),
+                          + (((session as any).onboardingCohortBlock as string | undefined) ?? '')
+                          // v3: SWAP-BACK WELCOME block — fires only when a
+                          // specialist just returned the user. Drives Vitana's
+                          // first turn (welcome + role-acknowledge + open or
+                          // proactive). Cleared on user's next utterance via
+                          // the same _personaSwapInFlight reset that fires
+                          // after the welcome turn.
+                          + (((session as any)._personaSwapInFlight
+                                && ((session as any)._lastSpecialistPersona as string | undefined))
+                              ? '\n\n' + buildSwapBackWelcomeBlock(
+                                  ((session as any)._lastSpecialistPersona as string),
+                                  session.lang,
+                                )
+                              : ''),
                         session.active_role,
                         session.conversationSummary,
                         // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
@@ -8700,12 +8823,11 @@ async function connectToLiveAPI(
                         // absorb Devon/Sage/Atlas/Mira lines as her own past
                         // speech ("Hi I'm Devon" with Vitana's voice).
                         renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
-                        // v2e: REVERSED. See companion edit above for rationale.
-                        // On swap-back to Vitana, isReconnect=TRUE so the
-                        // "DO NOT speak first" rule fires. Vitana waits for
-                        // the user to speak — does NOT echo the specialist.
+                        // v3: REVERSED v2e. On swap-back to Vitana,
+                        // isReconnect=FALSE so she greets with the structured
+                        // welcome (see buildSwapBackWelcomeBlock).
                         ((session as any)._personaSwapInFlight
-                          ? true
+                          ? false
                           : ((session as any)._reconnectCount || 0) > 0),
                         // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
                         // model uses this to pick a time-appropriate greeting and
