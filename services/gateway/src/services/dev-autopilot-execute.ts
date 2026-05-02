@@ -1108,7 +1108,12 @@ async function runExecutionSession(
   const branch = `dev-autopilot/${executionId.slice(0, 8)}`;
   const sessionId = `msg_${randomUUID().slice(0, 12)}`;
 
-  if (DRY_RUN || !ANTHROPIC_API_KEY) {
+  // VTID-02686: only DRY_RUN should short-circuit. The executor now routes
+  // through callViaRouter('worker', ...) which can use any provider in the
+  // active llm_routing_policy (Vertex/Gemini, DeepSeek, Anthropic). The
+  // previous `!ANTHROPIC_API_KEY` short-circuit forced DRY_RUN even when
+  // Vertex was the configured provider — silently producing stub PRs.
+  if (DRY_RUN) {
     console.log(`${LOG_PREFIX} DRY RUN — skipping real session for ${executionId} (files: ${plan.files_referenced.length})`);
     const stubPr = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/pull/DRY-RUN-${executionId.slice(0, 8)}`;
     return {
