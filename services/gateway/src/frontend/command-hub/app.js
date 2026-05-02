@@ -35027,8 +35027,19 @@ function renderLivekitTestView() {
     container.className = 'livekit-test-view';
     container.style.cssText = 'padding:24px;max-width:1100px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#e5e7eb;';
 
+    // VTID-LIVEKIT-FOUNDATION: suppress the production ORB widget while this
+    // test page is mounted so the two voice clients don't fight over the
+    // microphone / AudioContext. Restored when the user navigates away.
+    try {
+        if (window.VitanaOrb && typeof window.VitanaOrb.disable === 'function') {
+            window.VitanaOrb.disable();
+        }
+        var orbFab = document.querySelector('.vtorb-fab, [class^="vtorb-fab"], #vitana-orb-fab');
+        if (orbFab) orbFab.style.display = 'none';
+    } catch (e) {}
+
     container.innerHTML = '<h2 style="margin:0 0 4px;color:#facc15;">LiveKit Pipeline Test</h2>'
-        + '<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Standalone test page for the LiveKit voice pipeline. Bypasses the production ORB widget. Use this to verify the cascade (STT/LLM/TTS) end-to-end before flipping the active provider for real users.</p>';
+        + '<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Standalone test page for the LiveKit voice pipeline. Bypasses the production ORB widget. The Vertex/SSE ORB is hidden while this page is open so the two pipelines don\'t collide on the mic. Use this to verify the cascade (STT/LLM/TTS) end-to-end before flipping the active provider for real users.</p>';
 
     var statusPanel = document.createElement('div');
     statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
@@ -35124,19 +35135,20 @@ function renderLivekitTestView() {
         .catch(function () { activeEl.textContent = '(unreachable)'; activeEl.style.color = '#ef4444'; });
 
     function loadLivekitClient() {
-        // Lazy-load the UMD build from jsDelivr. No npm install needed in
-        // the gateway because this is a vanilla JS surface.
+        // Load the UMD build from same-origin static assets (CSP-friendly).
+        // File is committed at services/gateway/src/frontend/command-hub/vendor/
+        // and served by the gateway's static file middleware.
         if (window.LivekitClient || window.LiveKit || window.LK) {
             return Promise.resolve(window.LivekitClient || window.LiveKit || window.LK);
         }
         return new Promise(function (resolve, reject) {
             var script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/livekit-client@2.5.0/dist/livekit-client.umd.min.js';
+            script.src = '/command-hub/vendor/livekit-client.umd.min.js';
             script.onload = function () {
                 resolve(window.LivekitClient || window.LiveKit || window.LK);
             };
             script.onerror = function () {
-                reject(new Error('failed to load livekit-client UMD bundle from CDN'));
+                reject(new Error('failed to load livekit-client UMD bundle from /command-hub/vendor/livekit-client.umd.min.js (gateway static file)'));
             };
             document.head.appendChild(script);
         });
