@@ -4124,6 +4124,11 @@ async function executeLiveApiToolInner(
             (session as any).activePersonaTarget = 'vitana';
             (session as any).personaSystemOverride = null;
             (session as any).personaVoiceOverride = null;
+            // Reset the FORCED FIRST UTTERANCE flag so the next persona's
+            // greeting (if any) fires once on the actual first turn after
+            // this swap. Vitana's swap-back uses an empty greeting so this
+            // flag is effectively dormant for swap-back.
+            (session as any).personaFirstUtteranceDelivered = false;
             (session as any).specialistContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
             (session as any).lastTranscriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona, 'vitana');
             // Loop fix: NO greeting on swap-back. The hardcoded "Welcome back.
@@ -4152,6 +4157,8 @@ async function executeLiveApiToolInner(
               return { success: false, result: '', error: `No system_prompt found for ${target}` };
             }
             (session as any).pendingPersonaSwap = target;
+            // Reset FORCED FIRST UTTERANCE consumption flag for the new persona
+            (session as any).personaFirstUtteranceDelivered = false;
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
             const behavioralRule = buildPersonaBehavioralRule(target);
             const transcriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona, target);
@@ -4411,6 +4418,8 @@ async function executeLiveApiToolInner(
               const personaPrompt = (personaRow?.system_prompt as string | undefined) ?? '';
               if (personaPrompt) {
                 (session as any).pendingPersonaSwap = swapTo;
+                // Reset FORCED FIRST UTTERANCE consumption flag for new persona
+                (session as any).personaFirstUtteranceDelivered = false;
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
                 const behavioralRule = buildPersonaBehavioralRule(swapTo);
                 const transcriptSection = buildTranscriptSection(session.transcriptTurns, 'vitana', swapTo);
@@ -8490,7 +8499,14 @@ async function connectToLiveAPI(
               // the user immediately instead of waiting for input.
               text: ((session as any).personaSystemOverride
                 ? ((session as any).personaSystemOverride as string) +
-                  (((session as any).personaForcedFirstMessage)
+                  // FORCED FIRST UTTERANCE only fires on the actual first
+                  // connect after a swap. Once Devon has spoken (flag set on
+                  // the assistant transcript-push hook), we do NOT re-inject
+                  // the greeting on transparent reconnects — otherwise Gemini
+                  // Live's automatic ~9-min reconnect causes Devon to greet
+                  // again every time and the conversation never closes.
+                  (((session as any).personaForcedFirstMessage
+                      && !((session as any).personaFirstUtteranceDelivered as boolean | undefined))
                     ? `\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\n"${(session as any).personaForcedFirstMessage}"\nDo not greet with anything else first. Then continue the intake naturally.`
                     : '')
                 : (session.isAnonymous
@@ -8956,6 +8972,15 @@ async function connectToLiveAPI(
                   text: fullTranscript,
                   timestamp: new Date().toISOString()
                 });
+
+                // Forwarding v2: mark the FORCED FIRST UTTERANCE block as
+                // consumed so subsequent transparent reconnects don't make
+                // the persona re-greet. The flag is reset whenever a fresh
+                // persona swap fires (see report_to_specialist + switch_persona).
+                if ((session as any).personaForcedFirstMessage
+                    && !((session as any).personaFirstUtteranceDelivered as boolean | undefined)) {
+                  (session as any).personaFirstUtteranceDelivered = true;
+                }
 
                 // Forwarding v2 anti-impersonation guard: detect if this
                 // utterance impersonates a different persona ("I am Devon"
