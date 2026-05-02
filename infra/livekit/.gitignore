@@ -1,0 +1,10 @@
+# Terraform state — kept in GCS backend, never local.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+
+# Sensitive var files — only the example/*.tfvars are checked in.
+*.local.tfvars
+secrets.tfvars
