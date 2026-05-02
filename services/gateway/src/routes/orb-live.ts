@@ -1476,6 +1476,27 @@ function buildTranscriptSection(
   return lines.join('\n');
 }
 
+// Build the explicit language directive for specialist personaSystemOverride.
+// Without this, Devon/Sage/Atlas/Mira default to whatever language their DB
+// system_prompt is written in (English) regardless of session.lang.
+// Symptom: German user is talking to Vitana in German, swaps to Devon, and
+// Devon greets in English. Fixed by appending this directive at every swap.
+function buildSpecialistLanguageDirective(lang: string | undefined): string {
+  const languageNames: Record<string, string> = {
+    en: 'English', de: 'German', fr: 'French', es: 'Spanish',
+    ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
+  };
+  const name = languageNames[lang || 'en'] || 'English';
+  return [
+    '[LANGUAGE LOCK]',
+    `Respond ONLY in ${name}. Match the user's language exactly.`,
+    'Do NOT switch to English. Do NOT mix languages.',
+    'Your greeting, your synthesis, your auto-return question — all in',
+    `${name}. The user has been speaking ${name} with Vitana already;`,
+    'continue in the same language without acknowledging the switch.',
+  ].join('\n');
+}
+
 // Build the input for Gate A by concatenating the user's last 3 raw utterances.
 // The LLM-curated `summary` argument to report_to_specialist is lossy — it can
 // rephrase "how does X work?" into "user is asking about X feature", which
@@ -4162,9 +4183,11 @@ async function executeLiveApiToolInner(
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
             const behavioralRule = buildPersonaBehavioralRule(target);
             const transcriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona, target);
+            const languageDirective = buildSpecialistLanguageDirective(session.lang);
             (session as any).specialistContextSection = userContextSection;
             (session as any).lastTranscriptSection = transcriptSection;
             (session as any).personaSystemOverride = personaPrompt +
+              `\n\n${languageDirective}` +
               (userContextSection ? `\n\n${userContextSection}` : '') +
               (transcriptSection ? `\n\n${transcriptSection}` : '') +
               `\n\n${behavioralRule}` +
@@ -4423,12 +4446,14 @@ async function executeLiveApiToolInner(
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
                 const behavioralRule = buildPersonaBehavioralRule(swapTo);
                 const transcriptSection = buildTranscriptSection(session.transcriptTurns, 'vitana', swapTo);
+                const languageDirective = buildSpecialistLanguageDirective(session.lang);
                 // Cache for Vitana's prompt builder on the eventual swap-back.
                 (session as any).specialistContextSection = userContextSection;
                 (session as any).lastTranscriptSection = transcriptSection;
                 // Loop guard counter
                 (session as any).swapCount = (((session as any).swapCount as number | undefined) ?? 0) + 1;
                 (session as any).personaSystemOverride = personaPrompt +
+                  `\n\n${languageDirective}` +
                   (userContextSection ? `\n\n${userContextSection}` : '') +
                   (transcriptSection ? `\n\n${transcriptSection}` : '') +
                   `\n\n${behavioralRule}` +
@@ -7439,9 +7464,37 @@ Do NOT substitute an internal UUID under any circumstance.
 
 `;
 
-  let instruction = `${roleHeader}${vitanaIdHeader}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+  // Forwarding v2c: prepend IDENTITY LOCK to Vitana's prompt. The lock
+  // exists in the DB (agent_personas.system_prompt) but Vitana's prompt is
+  // built fresh in this function and never reads that DB row, so without
+  // this block she has no identity protection. Symptom: after swap-back
+  // from a specialist, the model would absorb the specialist's recent
+  // utterances ("Hi I'm Devon") and continue speaking as them in her voice.
+  const VITANA_IDENTITY_LOCK = `=== IDENTITY LOCK ===
+YOU ARE Vitana.
+Your role is the user's life companion and instruction manual.
 
-LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
+You speak EXCLUSIVELY as Vitana. You NEVER:
+  - introduce yourself as another persona ("Hi, this is Devon" — only Devon ever says that)
+  - continue another persona's sentence as if it were your own
+  - mimic another persona's tone, signature phrases, or voice
+  - acknowledge another persona's words as if YOU said them
+  - name yourself as anyone other than Vitana
+
+The conversation transcript may show OTHER personas (Devon, Sage, Atlas, Mira)
+speaking earlier. Those were them, not you. Read those lines as third-party
+context only. Your next utterance is exclusively as Vitana, in your voice,
+with your identity.
+
+If you ever notice yourself drifting toward another persona's identity,
+stop and re-anchor: "I'm Vitana." Then continue.
+=== END IDENTITY LOCK ===
+
+`;
+
+  let instruction = `${roleHeader}${vitanaIdHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
 
 VOICE STYLE: ${voiceStyle}
 
