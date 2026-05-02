@@ -867,7 +867,21 @@ export async function generatePlanVersion(
     return { ok: false, error: session.error || 'planning failed' };
   }
 
-  const files_referenced = extractFilePaths(session.plan_markdown);
+  // VTID-02680: for feedback-bridged findings, the bridge has already
+  // pre-validated `proposed_files` against allow_scope/deny_scope. Trust
+  // that list directly instead of round-tripping through the planner's
+  // free-form markdown output. Eliminates dependency on the planner LLM
+  // producing a recognisable "Files to ..." section heading — which it
+  // doesn't reliably do, leading to "plan has no files_referenced" loops.
+  // For non-feedback findings, fall back to the markdown extractor.
+  const proposedFiles = (finding.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
+  const isFeedbackLane = (finding.spec_snapshot as { signal_type?: string })?.signal_type === 'feedback_ticket';
+  const files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
+    ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
+    : extractFilePaths(session.plan_markdown);
+  if (isFeedbackLane && Array.isArray(proposedFiles)) {
+    console.log(`${LOG_PREFIX} feedback finding ${findingId}: using bridge-validated files (${files_referenced.length}) instead of planner extraction`);
+  }
   const plan_html = renderPlanHtml(session.plan_markdown);
 
   // 4. Persist plan version
