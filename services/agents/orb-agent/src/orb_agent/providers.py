@@ -51,8 +51,16 @@ def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
       }
     """
     if voice_config is None:
-        logger.warning("build_cascade: no voice_config provided, returning empty cascade")
-        return ResolvedCascade(stt=None, llm=None, tts=None, notes=["no voice_config"])
+        # VTID-02696: hardcoded Google fallback so the agent works even when
+        # context-bootstrap fails (e.g. empty GATEWAY_SERVICE_TOKEN). Once the
+        # service token is set this branch is rarely hit; the row from
+        # agent_voice_configs takes over.
+        logger.warning("build_cascade: no voice_config — falling back to hardcoded Google cascade")
+        voice_config = {
+            "stt_provider": "google_stt",  "stt_model": "latest_long", "stt_options": {},
+            "llm_provider": "google_llm",  "llm_model": "gemini-2.0-flash-exp", "llm_options": {},
+            "tts_provider": "google_tts",  "tts_model": "en-US-Chirp3-HD-Aoede", "tts_options": {},
+        }
 
     notes: list[str] = []
     stt = _build_stt(voice_config.get("stt_provider"), voice_config.get("stt_model"), voice_config.get("stt_options", {}), notes)
@@ -76,6 +84,13 @@ def _build_stt(provider: str | None, model: str | None, options: dict[str, Any],
         except ImportError:
             notes.append(f"STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
             return None
+    if provider == "google_stt":
+        try:
+            from livekit.plugins import google  # type: ignore[import-not-found]
+            return google.STT(model=model or "latest_long", **options)
+        except ImportError:
+            notes.append("STT provider 'google_stt' requested but livekit-plugins-google not installed")
+            return None
     notes.append(f"unknown or unsupported STT provider: {provider}")
     return None
 
@@ -95,6 +110,13 @@ def _build_llm(provider: str | None, model: str | None, options: dict[str, Any],
         except ImportError:
             notes.append("LLM provider 'openai' requested but livekit-plugins-openai not installed")
             return None
+    if provider == "google_llm":
+        try:
+            from livekit.plugins import google  # type: ignore[import-not-found]
+            return google.LLM(model=model or "gemini-2.0-flash-exp", **options)
+        except ImportError:
+            notes.append("LLM provider 'google_llm' requested but livekit-plugins-google not installed")
+            return None
     notes.append(f"unknown or unsupported LLM provider: {provider}")
     return None
 
@@ -113,6 +135,14 @@ def _build_tts(provider: str | None, model: str | None, options: dict[str, Any],
             return elevenlabs.TTS(model=model or "eleven_turbo_v2_5", **options)
         except ImportError:
             notes.append("TTS provider 'elevenlabs' requested but livekit-plugins-elevenlabs not installed")
+            return None
+    if provider == "google_tts":
+        try:
+            from livekit.plugins import google  # type: ignore[import-not-found]
+            voice = model or "en-US-Chirp3-HD-Aoede"
+            return google.TTS(voice_name=voice, language="en-US", **options)
+        except ImportError:
+            notes.append("TTS provider 'google_tts' requested but livekit-plugins-google not installed")
             return None
     notes.append(f"unknown or unsupported TTS provider: {provider}")
     return None

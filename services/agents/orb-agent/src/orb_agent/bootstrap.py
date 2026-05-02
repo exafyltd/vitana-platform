@@ -41,7 +41,13 @@ class BootstrapResult:
 class ContextBootstrap:
     def __init__(self, gateway_url: str, service_token: str) -> None:
         self._endpoint = gateway_url.rstrip("/") + "/api/v1/orb/context-bootstrap"
-        self._headers = {"Authorization": f"Bearer {service_token}"}
+        # VTID-02696: when service_token is empty (smoke deploy without
+        # GATEWAY_SERVICE_TOKEN secret) skip the Authorization header
+        # entirely instead of sending the malformed 'Bearer ' which httpx
+        # rejects with 'Illegal header value'.
+        self._headers: dict[str, str] = {}
+        if service_token:
+            self._headers["Authorization"] = f"Bearer {service_token}"
         self._client = httpx.AsyncClient(timeout=CONTEXT_BOOTSTRAP_TIMEOUT_S)
 
     async def fetch(
