@@ -578,7 +578,12 @@ export function extractFilePaths(markdown: string): string[] {
   // tsconfig.js, etc.) and flags them as files to modify, which then fails
   // the safety gate's allow_scope check even though the plan never intended
   // to touch them.
-  const filesSection = markdown.match(/##\s*Files to modify[\s\S]+?(?=\n##\s|$)/i);
+  // VTID-02679: tolerate "Files to touch" / "Files to change" / "Files to edit"
+  // and the hyphenated "Files-to-modify". Devon's spec uses "Files to touch"
+  // so the planner often inherits that phrasing when echoing the LOCKED file
+  // list — without this, plans look empty and dispatch fails with
+  // "plan has no files_referenced".
+  const filesSection = markdown.match(/##\s*Files\s*[- ]\s*to\s*[- ]\s*(?:modify|touch|change|edit)[\s\S]+?(?=\n##\s|$)/i);
   if (filesSection) {
     for (const line of filesSection[0].split('\n').slice(1)) {
       const match = line.match(FILES_SECTION_LINE_RE);
