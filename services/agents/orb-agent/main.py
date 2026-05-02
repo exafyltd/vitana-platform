@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 
 import structlog
@@ -53,10 +54,20 @@ async def _start_health_server(cfg: AgentConfig) -> tuple[uvicorn.Server, asynci
 def _start_livekit_worker(cfg: AgentConfig, log) -> asyncio.Task[None] | None:
     """Boot the livekit-agents worker in a background task.
 
-    Returns None if the SDK isn't installed (HEALTH-ONLY mode). The agent
-    process stays alive serving health checks; LiveKit room dispatch will
-    obviously not work, but the gateway probes remain green.
+    Returns None when the worker is intentionally skipped (env-flag opt-out
+    or the SDK isn't installed). The agent process stays alive serving
+    health checks; LiveKit room dispatch obviously won't work but the
+    gateway probes remain green — fine for smoke-testing the deploy
+    pipeline + the test-page room-join path.
+
+    Set AGENT_ENABLE_WORKER=1 once we've validated the right embedding
+    pattern for livekit-agents.cli.run_app (current concern: it parses
+    sys.argv and may sys.exit, killing the health server with it).
     """
+    if os.getenv("AGENT_ENABLE_WORKER", "0") != "1":
+        log.info("livekit_worker.disabled", reason="AGENT_ENABLE_WORKER!=1; HEALTH-ONLY mode")
+        return None
+
     try:
         from livekit.agents import WorkerOptions, cli  # type: ignore[import-not-found]
     except ImportError:
