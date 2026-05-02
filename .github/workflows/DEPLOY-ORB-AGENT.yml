@@ -88,6 +88,7 @@ jobs:
             --no-cpu-throttling \
             --port=8080 \
             --ingress=all \
+            --allow-unauthenticated \
             --labels=vtid=vtid-livekit-foundation,vt_layer=aicor,vt_module=voice \
             --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest \
             --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO
