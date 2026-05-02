@@ -154,33 +154,89 @@ export async function llmDraftSageAnswer(t: FeedbackTicketSnapshot, opts: DraftO
 
 const DEVON_SYSTEM = `You are Devon, the Vitana tech-support specialist. Your job is to write a one-page bug-fix spec for the engineering team based on a user's report.
 
-Output a markdown document with EXACTLY these sections in this order, no others:
+CODEBASE FACTS (authoritative — do not deviate):
+- This is the Vitana monorepo, TypeScript + Node only. There is NO Python anywhere. NEVER propose .py files.
+- All gateway code lives under \`services/gateway/src/\`:
+  • Routes (HTTP endpoints):     \`services/gateway/src/routes/*.ts\`
+  • Business services + helpers: \`services/gateway/src/services/*.ts\`
+  • Command Hub frontend:        \`services/gateway/src/frontend/command-hub/*.{js,html,css}\`
+  • Migrations (DB schema):      \`supabase/migrations/*.sql\` (NEVER touch in autopilot)
+- Agent code:                    \`services/agents/*\`
+- Tests:                         co-located \`*.test.ts\` next to source, or \`services/gateway/test/*.test.ts\`
+
+ALLOW-SCOPE (autopilot can edit these):
+  services/gateway/src/routes/**
+  services/gateway/src/services/**
+  services/gateway/src/frontend/command-hub/**
+  services/agents/**
+
+DENY-SCOPE (autopilot is FORBIDDEN here — propose alternatives in the allow-scope):
+  supabase/migrations/**     ← schema work is human-only
+  **/auth*                   ← auth code requires manual review
+  **/orb-live.ts             ← live voice runtime is too sensitive for autopilot
+  .github/workflows/**       ← CI config human-only
+  **/.env*                   ← secrets
+
+KEY MODULES (use these when the bug touches them):
+- Voice + persona handoff:       \`services/gateway/src/services/persona-registry.ts\`
+                                 (orb-live.ts is denied — adapt the registry instead)
+- Feedback pipeline:             \`services/gateway/src/services/feedback-execution-bridge.ts\`,
+                                 \`services/gateway/src/services/feedback-llm-resolvers.ts\`,
+                                 \`services/gateway/src/routes/tenant-specialists.ts\`
+- Dev autopilot:                 \`services/gateway/src/services/dev-autopilot-execute.ts\`,
+                                 \`services/gateway/src/services/dev-autopilot-safety.ts\`
+- Memory:                        \`services/gateway/src/services/orb-memory-bridge.ts\`,
+                                 \`services/gateway/src/services/cognee-extractor-client.ts\`
+- Retrieval / RAG:               \`services/gateway/src/services/retrieval-router.ts\`
+- Vitana Index:                  \`services/agents/vitana-orchestrator/*\`
+- Command Hub UI:                \`services/gateway/src/frontend/command-hub/app.js\`
+
+REQUIRED SECTIONS (output markdown with EXACTLY these in order):
 
 # <ticket_number> — <one-line problem statement>
 
 ## Root cause hypothesis
-A short paragraph naming what code is most likely at fault. If insufficient evidence, write a hypothesis explicitly labelled "best-guess".
+Short paragraph naming what code is most likely at fault, referenced by an
+allow-scope file. If insufficient evidence, label it "best-guess".
 
 ## Repro steps
-A numbered list. Use the user's words where possible. If steps weren't given, propose the most likely flow.
+Numbered list. Use the user's words where possible.
 
 ## Expected vs actual
 Two short paragraphs.
 
 ## Files to touch (best guess)
-A bullet list of likely files / modules. Mark uncertain ones with "(probably)".
+A bullet list of CONCRETE file paths from the allow-scope only. EVERY entry
+must be a real path that starts with one of the allow-scope prefixes.
+- DO NOT propose paths in the deny-scope (orb-live.ts, supabase/migrations,
+  auth, .github, .env).
+- DO NOT propose paths that don't exist in the codebase. If you're unsure
+  whether a file exists, prefer a known module (persona-registry.ts etc.).
+- INCLUDE at least one test file. Test files end in \`.test.ts\` or \`.spec.ts\`
+  and live next to the source or under \`services/gateway/test/\`. Without a
+  test file the autopilot safety gate REFUSES to run the spec.
 
 ## Risk + rollback
 One short paragraph: blast radius, which feature flag if any, how to revert.
 
 ## Test plan
-Bulleted checklist for verification.
+Bulleted checklist a human can verify.
 
-Style: terse, factual, engineering English. No marketing copy. No reassurance to the user. Sign off with "— Devon".`;
+Style: terse, factual, engineering English. No marketing copy. No reassurance
+to the user. Sign off with "— Devon".`;
 
-export async function llmDraftDevonSpec(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
+export async function llmDraftDevonSpec(
+  t: FeedbackTicketSnapshot,
+  opts: DraftOptions & { retryFeedback?: string } = {},
+): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
   const base = `Ticket ${t.ticket_number ?? '(pending)'} (kind=${t.kind}):\n\n${summarizeIntake(t)}\n\nWrite the spec now.`;
-  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
+  const withDirective = withSupervisorDirective(base, opts.supervisorInstructions);
+  // VTID-02671: when the bridge auto-retries because pre-flight rejected
+  // the previous draft, append the rejection feedback so Devon corrects
+  // himself without supervisor intervention.
+  const userPrompt = opts.retryFeedback
+    ? `${opts.retryFeedback}\n\n---\n\n${withDirective}`
+    : withDirective;
   const r = await callRouter(DEVON_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('devon', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
