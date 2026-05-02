@@ -1368,6 +1368,38 @@ async function fetchSpecialistContextSection(userId: string | null | undefined):
   }
 }
 
+// Onboarding-cohort hint: when the user is in their first 30 days of tenure,
+// inject a prompt block that tells Vitana to default to TEACHING when the
+// phrasing is ambiguous between instruction-manual and support-request.
+// Returns '' (no-op) for users past 30 days or when context fetch fails.
+async function fetchOnboardingCohortBlock(userId: string | null | undefined): Promise<string> {
+  if (!userId) return '';
+  try {
+    const url = process.env.SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE!;
+    const resp = await fetch(`${url}/rest/v1/rpc/build_specialist_context`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ p_user_id: userId }),
+    });
+    if (!resp.ok) return '';
+    const data = (await resp.json().catch(() => null)) as { user?: { tenure_days?: number } } | null;
+    const tenure = data?.user?.tenure_days ?? 0;
+    if (tenure >= 30) return '';
+    return [
+      '',
+      '[ONBOARDING-COHORT RULE]',
+      `This user is in their first 30 days (tenure: ${tenure} day${tenure === 1 ? '' : 's'}). They are still learning the platform.`,
+      'Default behavior: TEACH, do NOT ROUTE.',
+      'When in doubt about whether something is an instruction-manual question or a support request,',
+      'answer inline yourself — even if the wording is slightly ambiguous. Use search_knowledge first.',
+      'Almost every onboarding-cohort question is "how does this thing work?". Answer it.',
+    ].join('\n');
+  } catch {
+    return '';
+  }
+}
+
 function formatSpecialistContextSection(ctx: any): string {
   if (!ctx) return '';
   const u = ctx.user || {};
@@ -1416,12 +1448,21 @@ function formatSpecialistContextSection(ctx: any): string {
 function buildTranscriptSection(
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }> | undefined,
   fromPersona: string,
+  targetPersona?: string,
 ): string {
   const turns = (transcriptTurns ?? []).slice(-12);
   if (turns.length === 0) return '';
   const fromLabel = fromPersona === 'vitana' ? 'Vitana' : (fromPersona.charAt(0).toUpperCase() + fromPersona.slice(1));
+  const targetKey = targetPersona && targetPersona !== '' ? targetPersona : 'this persona';
+  const targetLabel = targetKey === 'this persona'
+    ? targetKey
+    : (targetKey === 'vitana' ? 'Vitana' : (targetKey.charAt(0).toUpperCase() + targetKey.slice(1)));
   const lines: string[] = [];
   lines.push(`=== CONVERSATION SO FAR (handed off from ${fromLabel}) ===`);
+  lines.push(`THIS IS HISTORY. The lines below show what OTHER speakers said earlier.`);
+  lines.push(`You are ${targetLabel}. Do NOT continue ${fromLabel}'s speech as if it were yours.`);
+  lines.push(`Read this as background and respond as ${targetLabel}, in your own voice and identity.`);
+  lines.push('');
   for (const t of turns) {
     const speaker = t.role === 'user' ? 'User' : fromLabel;
     const text = String(t.text || '').replace(/\s+/g, ' ').trim();
@@ -1429,14 +1470,34 @@ function buildTranscriptSection(
     lines.push(`${speaker}: ${text.slice(0, 400)}`);
   }
   lines.push(`=== END TRANSCRIPT ===`);
-  lines.push(`The user has ALREADY explained what they want. Do NOT ask "what can I do for you?" — read the transcript above and respond to the user's actual question. If the question is in your domain, answer it. If it isn't, hand back to Vitana via switch_persona(to:'vitana') with a one-line bridge — never forward to another specialist.`);
+  lines.push(`You are ${targetLabel}. Your next utterance is in your voice, your style, your identity.`);
+  lines.push(`The user has ALREADY explained what they want above. Do NOT ask "what can I do for you?".`);
+  lines.push(`Synthesize their report into ONE sentence and confirm: "So you're seeing X — is that right?". Do not echo their exact words. Do not summarize the whole transcript. If the question is outside your authority or is an instruction-manual question, hand back to Vitana via switch_persona(to:'vitana') with a brief bridge — NEVER forward to another specialist.`);
   return lines.join('\n');
+}
+
+// Build the input for Gate A by concatenating the user's last 3 raw utterances.
+// The LLM-curated `summary` argument to report_to_specialist is lossy — it can
+// rephrase "how does X work?" into "user is asking about X feature", which
+// bypasses the stay-inline phrase match. Using raw transcript closes that hole.
+function buildGateInputFromTranscript(
+  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }> | undefined,
+  fallback: string,
+): string {
+  const userTurns = (transcriptTurns ?? [])
+    .filter(t => t.role === 'user')
+    .slice(-3)
+    .map(t => String(t.text || '').trim())
+    .filter(Boolean);
+  if (userTurns.length === 0) return fallback;
+  return userTurns.join(' \n ');
 }
 
 function buildPersonaBehavioralRule(personaKey: string): string {
   const isSpecialist = personaKey !== '' && personaKey !== 'vitana';
   const lines: string[] = [];
-  lines.push('[BEHAVIORAL RULES]');
+
+  lines.push('[BEHAVIORAL RULES — universal]');
   lines.push('You already know this user — full ticket history, all teammates\' tickets included.');
   lines.push('NEVER ask "who are you" or "have we spoken before".');
   lines.push('If the user asks "do you know who I am?", confirm warmly with name + a short summary of their ticket history.');
@@ -1446,16 +1507,75 @@ function buildPersonaBehavioralRule(personaKey: string): string {
   lines.push('"I can\'t help" or "you need to talk to someone else".');
   lines.push('Time-to-resolution is the goal: never make the user repeat themselves,');
   lines.push('never bounce them blindly, propose the shortest path.');
+  lines.push('');
+
+  // Universal anti-repetition rule. THIS IS WHY YOU MUST NOT HARD-CODE PHRASES.
+  lines.push('[VARY YOUR PHRASING — universal]');
+  lines.push('You are not a robot reciting a script — you are a human conversation partner.');
+  lines.push('NEVER use the exact same wording twice in a conversation. Every greeting,');
+  lines.push('every confirmation, every transition is in your own natural language.');
+  lines.push('If you find yourself about to repeat a phrase you already used, rephrase it.');
+  lines.push('Examples below are GUIDANCE, not scripts — never recite them verbatim.');
+
   if (isSpecialist) {
     lines.push('');
-    lines.push('[AUTO-RETURN — SPECIALIST ONLY]');
-    lines.push('The moment your task is done — ticket filed, claim drafted, account action queued,');
-    lines.push('support answer given — confirm in ONE sentence and immediately ask:');
-    lines.push('"Is there anything else I can help you with, or shall I bring you back to Vitana?"');
-    lines.push('Do not chat. Do not fill silence. Customer-support sessions should be SHORT.');
-    lines.push('If the user says "yes, another issue", handle it (or hand to the right teammate by name).');
-    lines.push('If the user says "no" / "back to Vitana" / "that\'s all" / equivalent in any language,');
-    lines.push('call switch_persona(to: \'vitana\') immediately and let Vitana resume.');
+    lines.push('[SYNTHESIZE ON FIRST CONTACT — specialist only]');
+    lines.push('On the very first turn after you receive a swap, read the transcript and');
+    lines.push('state what you understood in ONE sentence — do not echo the user verbatim,');
+    lines.push('do not summarize the whole transcript, do not ask "what can I do for you?".');
+    lines.push('Confirm intent in your own words. Examples (vary every time, never reuse exactly):');
+    lines.push('  "So you\'re seeing a crash on the diary screen — is that right?"');
+    lines.push('  "Bug on diary save, got it. Confirming before I file: ..."');
+    lines.push('  "Sounds like the diary save is breaking. Let me confirm..."');
+
+    lines.push('');
+    lines.push('[ACTION COMPLETE — specialist only]');
+    lines.push('When your task is done (ticket filed, claim drafted, account action queued,');
+    lines.push('support answer given), in ONE sentence convey two things naturally:');
+    lines.push('  (1) the task is complete (mention ticket number if you have one), and');
+    lines.push('  (2) ask if they need anything else, OR offer to bring them back to Vitana.');
+    lines.push('Vary your wording every single call. Examples (NEVER reuse verbatim):');
+    lines.push('  "All set. Anything else, or shall we hand you back to Vitana?"');
+    lines.push('  "Done — ticket FB-XYZ. Want me to look at anything else first?"');
+    lines.push('  "Filed. I\'ll pass you back unless there\'s something else."');
+    lines.push('  "Sorted. Anything else from your side, or back to Vitana?"');
+    lines.push('  "That\'s in. Anything else for me, or shall I bring Vitana back in?"');
+
+    lines.push('');
+    lines.push('[SILENT CLOSE — specialist only]');
+    lines.push('When the user says "no" / "back to Vitana" / "that\'s all" / equivalent in any');
+    lines.push('language, call switch_persona(to: \'vitana\') immediately AND DO NOT speak after.');
+    lines.push('No goodbye, no "have a great day", no closing summary. The next thing the user');
+    lines.push('hears is silence — Vitana will not greet either. The user speaks first if they');
+    lines.push('have more to say.');
+
+    lines.push('');
+    lines.push('[INSTRUCTION-MANUAL PROTECTION — specialist only]');
+    lines.push('If the user asks how something works, what something is, or how to use a feature,');
+    lines.push('that is Vitana\'s job — she is the instruction manual. Hand back to Vitana via');
+    lines.push('switch_persona(to:\'vitana\'). Do not try to answer instruction-manual questions.');
+    lines.push('You handle BROKEN STATE (bugs, claims, account issues), not LEARNING.');
+  } else {
+    lines.push('');
+    lines.push('[VITANA — INSTRUCTION-MANUAL ROLE]');
+    lines.push('You ARE the instruction manual. Anything that is "how does X work", "what is X",');
+    lines.push('"tell me about X", "explain X", "show me how X", "I\'d like to learn X", "I\'m new"');
+    lines.push('— answer it inline using search_knowledge first, then your own knowledge. The');
+    lines.push('Knowledge Hub has 92 chapters of platform docs. NEVER call report_to_specialist');
+    lines.push('for instruction-manual questions, even if the user uses words that sound like');
+    lines.push('"support". A first-time user asking "how do I use the diary?" is a teaching');
+    lines.push('moment, not a customer-support ticket. Specialists handle BROKEN STATE only.');
+    lines.push('');
+    lines.push('[VITANA ON SWAP-BACK — silent pickup]');
+    lines.push('When you receive the user back from a specialist, DO NOT GREET. Do not say');
+    lines.push('"Welcome back" or "What\'s on your mind?" — those are the loop trigger that');
+    lines.push('makes the user re-state their question. Stay silent. The user speaks when ready.');
+    lines.push('When they do, pick up naturally — never restart the conversation.');
+    lines.push('');
+    lines.push('[VITANA — explicit consent before transfer]');
+    lines.push('Even when forwarding is warranted (rare — bug report, claim, account locked),');
+    lines.push('PROPOSE before transferring: "Shall I bring in Devon for the bug?" Wait for an');
+    lines.push('affirmative reply. Implicit consent does NOT count. Vary your proposal phrasing.');
   }
   return lines.join('\n');
 }
@@ -2055,24 +2175,32 @@ function buildLiveApiTools(
           name: 'switch_persona',
           description: [
             'Switch the active persona on this voice call to another colleague',
-            '(or back to Vitana). Call this when the user explicitly asks to',
-            'talk to a different person on the team — e.g. "switch me to',
-            'Devon", "back to Vitana please", "I want to talk to Atlas about',
-            'my refund instead", in any language. The voice and persona will',
-            'change in this same call without any ticket being filed.',
+            '(or back to Vitana). Call ONLY when the user EXPLICITLY asks to',
+            'talk to a different person by name — "switch me to Devon", "back',
+            'to Vitana please", "I want to talk to Atlas about my refund',
+            'instead". Voice + persona swap in the same call, no ticket filed.',
             '',
-            'Personas: vitana (longevity coach + receptionist), devon (tech',
-            'support / bugs), sage (customer support / how-to), atlas',
-            '(finance / marketplace claims), mira (account / login / profile).',
+            'Personas: vitana (life companion + instruction manual), devon',
+            '(bugs), sage (general support), atlas (marketplace claims), mira',
+            '(account issues).',
             '',
-            'After calling, speak a brief bridge sentence in the user\'s',
-            'language ("One moment, switching to Vitana." / "Einen Moment,',
-            'ich übergebe an Devon.") and STOP — the new persona will pick',
-            'up the call.',
+            'AFTER calling: speak ONE short bridge sentence in your own',
+            'natural words. ANNOUNCE the handoff — never INTRODUCE the new',
+            'persona. ("I will bring Devon in" — yes. "Hi, here is Devon"',
+            '— NO, that is Devon\'s job to say in his own voice.) Vary your',
+            'phrasing every time, never recite a template. Then STOP.',
             '',
-            'Do NOT call switch_persona to capture a NEW bug/claim/support',
-            'request — for that use report_to_specialist which also files a',
-            'ticket. switch_persona is navigation only.'
+            'CRITICAL — never call this for instruction-manual questions',
+            '("how does X work", "what is X", "explain X", "show me", "I am',
+            'new"). Those are answered by Vitana inline. Specialists handle',
+            'BROKEN STATE (bugs, claims, account issues) only.',
+            '',
+            'Specialists CAN ONLY pass to=\'vitana\' — sideways forwards to',
+            'a peer specialist are server-blocked. Once a conversation has',
+            'used 1 forward + 1 return, further forwards are also blocked.',
+            '',
+            'Do NOT use this to file a NEW bug/claim/support ticket — for',
+            'that use report_to_specialist (creates ticket AND swaps).'
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2103,38 +2231,46 @@ function buildLiveApiTools(
         {
           name: 'report_to_specialist',
           description: [
-            'Capture a user-originated claim, bug report, account issue, or',
-            'marketplace claim and hand the call off to a customer-support',
-            'colleague (Devon/Sage/Atlas/Mira). This is a RARE event — the',
-            'user must EXPLICITLY ask to be connected. You are the life',
-            'companion; almost everything stays with you.',
+            'File a customer-support ticket and hand the call to a specialist',
+            '(Devon/Sage/Atlas/Mira). This is RARE — typically less than 5%',
+            'of conversations. You ARE the instruction manual; almost every',
+            'question is yours to answer.',
             '',
-            'TRIGGER PHRASES — only call when one of these (or its equivalent',
-            'in any language) is present:',
-            '  - "I want to report ..." / "I have a bug report"',
-            '  - "I have a claim ..." / "I want to make a claim"',
-            '  - "I would like to talk to customer support / a specialist"',
-            '  - "Connect me to support / to Devon / to Atlas / to Mira"',
-            '  - "Something is broken / crashed" — when paired with intent to file',
-            '  - "My order didn\'t arrive" / "I want a refund"',
-            '  - "I can\'t log in" / "My account is locked"',
+            'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
+            'first say something like "Shall I bring in Devon to file this?"',
+            'and wait for the user to say yes. Implicit consent does NOT count.',
+            'Vary the proposal phrasing every time.',
             '',
-            'DO NOT CALL for any of these (answer them yourself):',
-            '  - "I have a question" / "Just a question"',
-            '  - "How does this work?" / "How do I use ..."',
-            '  - "Are you able to tell me ..." / "Can you tell me ..."',
-            '  - "What is ..." / "Tell me about ..." / "Explain ..."',
+            'CALL ONLY WHEN BOTH are true:',
+            '  (1) the user has described a CONCRETE PROBLEM (bug, broken',
+            '      state, refund, account lockout, claim) — not a question',
+            '      about how something works, and',
+            '  (2) the user has EXPLICITLY agreed to be connected to a',
+            '      specialist (after you proposed it).',
+            '',
+            'NEVER CALL for any of these — answer them yourself inline using',
+            'search_knowledge first:',
+            '  - "How does X work?" / "What is X?" / "Explain X"',
+            '  - "Show me how to use X" / "How do I X?" / "Teach me"',
+            '  - "Tell me about X" / "I want to learn X" / "I am new"',
+            '  - "Help me understand X" / "Walk me through X"',
             '  - Any health, longevity, matchmaking, community, business,',
             '    diary, calendar, or general life-companion question',
+            '  - Anything that is a learning question, not a broken-state',
+            '    report. First-time users asking how to use the diary is a',
+            '    teaching moment, NOT a customer-support ticket.',
             '',
-            'The backend router also enforces this with a stay-inline gate.',
-            'If you call this tool and it returns "Stay with the user", do',
-            'NOT mention the routing — silently answer the question yourself.',
+            'GATE-A enforcement: the backend re-checks the user\'s actual',
+            'recent words (not your summary). If the gate returns STAY_INLINE,',
+            'do NOT mention the routing decision out loud — silently answer',
+            'the question. Same if the conversation\'s forward budget is',
+            'exhausted (max 1 forward + 1 return per conversation).',
             '',
-            'When the call DOES forward, speak a brief bridge sentence in the',
-            'user\'s language (e.g. "I\'ve passed that to Devon, our tech',
-            'colleague — he\'ll take over from here.") and STOP — the new',
-            'persona greets next.'
+            'AFTER A FORWARD FIRES: speak ONE short bridge sentence in your',
+            'own natural words. ANNOUNCE the handoff — never INTRODUCE the',
+            'specialist ("Hi, here is Devon" — that is DEVON\'S job in his',
+            'own voice). Vary your phrasing every time, never recite a',
+            'template. Then STOP — the next voice is the specialist\'s.'
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -3957,6 +4093,21 @@ async function executeLiveApiToolInner(
           };
         }
 
+        // Loop guard: cap at 1 forward + 1 return per conversation. After
+        // that, the user has used their forward budget — no more swaps to
+        // specialists. Swap-back to Vitana is always allowed (so specialists
+        // can return on auto-return), but a fresh forward AWAY from Vitana
+        // is blocked. The model reads the error and continues inline.
+        const swapCountForSwitch = ((session as any).swapCount as number | undefined) ?? 0;
+        if (swapCountForSwitch >= 2 && target !== 'vitana') {
+          console.log(`[VTID-02670] switch_persona blocked — forward cap reached (swapCount=${swapCountForSwitch}, target=${target})`);
+          return {
+            success: false,
+            result: '',
+            error: `Forward cap reached for this conversation (already had 1 forward + 1 return). The user stays with Vitana for the rest of this session. Answer them yourself; do NOT mention this routing decision out loud.`,
+          };
+        }
+
         try {
           if (target === 'vitana') {
             // Hand back to Vitana — clear all persona overrides so the
@@ -3974,16 +4125,17 @@ async function executeLiveApiToolInner(
             (session as any).personaSystemOverride = null;
             (session as any).personaVoiceOverride = null;
             (session as any).specialistContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
-            (session as any).lastTranscriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona);
-            const lang = session.lang || 'en';
-            const vitanaGreetings: Record<string, string> = {
-              en: "Welcome back. What's on your mind?",
-              de: "Willkommen zurück. Was beschäftigt dich gerade?",
-              fr: "Te revoilà. Qu'est-ce qui te préoccupe ?",
-              es: "Bienvenido de vuelta. ¿En qué piensas?",
-            };
-            (session as any).personaForcedFirstMessage = vitanaGreetings[lang] ?? vitanaGreetings['en'];
-            console.log(`[VTID-02047] switch_persona: ${currentPersona} → vitana queued`);
+            (session as any).lastTranscriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona, 'vitana');
+            // Loop fix: NO greeting on swap-back. The hardcoded "Welcome back.
+            // What's on your mind?" was the loop trigger — the user re-stated
+            // their question, Vitana forwarded it again. Vitana now stays
+            // silent and waits for the user to speak. Empty string suppresses
+            // the FORCED FIRST UTTERANCE block in the setup-message builder.
+            (session as any).personaForcedFirstMessage = '';
+            // Loop guard: count this swap and start cooldown.
+            (session as any).swapCount = (((session as any).swapCount as number | undefined) ?? 0) + 1;
+            (session as any).swapCooldownUntil = Date.now() + 90_000;
+            console.log(`[VTID-02670] switch_persona: ${currentPersona} → vitana queued (silent; swapCount=${(session as any).swapCount}, cooldown=90s)`);
           } else {
             // Swap to a specialist — load their prompt + voice from
             // agent_personas. No ticket created; just navigation.
@@ -4002,25 +4154,24 @@ async function executeLiveApiToolInner(
             (session as any).pendingPersonaSwap = target;
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
             const behavioralRule = buildPersonaBehavioralRule(target);
-            const transcriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona);
+            const transcriptSection = buildTranscriptSection(session.transcriptTurns, currentPersona, target);
             (session as any).specialistContextSection = userContextSection;
             (session as any).lastTranscriptSection = transcriptSection;
             (session as any).personaSystemOverride = personaPrompt +
               (userContextSection ? `\n\n${userContextSection}` : '') +
               (transcriptSection ? `\n\n${transcriptSection}` : '') +
               `\n\n${behavioralRule}` +
-              `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. Read the transcript above — the user has already been talking. Do NOT ask "what can I do for you?" Respond directly to what they said.` +
-              `\n\n[NAVIGATION TOOL] You have a switch_persona tool but you can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}'. You CANNOT forward to another specialist — Vitana decides routing. If the question isn't in your authority or you don't know, call switch_persona(to:'${RECEPTIONIST_PERSONA_KEY}'). Speak a one-line bridge then STOP.`;
+              `\n\n[NAVIGATION TOOL] You have a switch_persona tool. You can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}' — you cannot forward sideways to another specialist. If the question is outside your authority, return the user to Vitana with a brief bridge in your own words (vary phrasing) and STOP — do NOT speak after calling the tool.`;
             // VTID-02653 Phase 6: tenant-aware voice + greeting lookup.
-            // Tenant custom_greeting_templates win over platform per-language
-            // greetings; tenant disable was already filtered above.
             (session as any).personaVoiceOverride = _swapTenantId
               ? await registryGetPersonaVoiceForTenant(target, _swapTenantId)
               : await registryGetPersonaVoice(target);
             (session as any).personaForcedFirstMessage = _swapTenantId
               ? await registryGetPersonaGreetingForTenant(target, session.lang || 'en', _swapTenantId)
               : await registryGetPersonaGreeting(target, session.lang || 'en');
-            console.log(`[VTID-02047] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}`);
+            // Loop guard counter
+            (session as any).swapCount = (((session as any).swapCount as number | undefined) ?? 0) + 1;
+            console.log(`[VTID-02670] switch_persona: ${currentPersona} → ${target} queued, voice=${(session as any).personaVoiceOverride}, swapCount=${(session as any).swapCount}`);
           }
 
           // Notify the client UI
@@ -4042,7 +4193,7 @@ async function executeLiveApiToolInner(
           const targetLabel = target === 'vitana' ? 'Vitana' : (target.charAt(0).toUpperCase() + target.slice(1));
           return {
             success: true,
-            result: `Persona swap queued: ${currentPersona} → ${target}. Speak ONLY this short bridge sentence in the user's language and then STOP — do not continue: "One moment, ${targetLabel} will pick up." A different colleague will take over the call.`,
+            result: `Persona swap queued: ${currentPersona} → ${target}. Speak ONE short bridge sentence in your own natural words — ANNOUNCE the handoff (e.g. "I'll bring ${targetLabel} in", "letting ${targetLabel} take this", "${targetLabel} can help with that"). Vary your phrasing every time — never recite a template. Do NOT introduce ${targetLabel} ("Hi, here is X" — that's THEIR job in their own voice). Do NOT speak after the bridge. Then STOP.`,
           };
         } catch (err) {
           console.error('[VTID-02047] switch_persona failed:', err);
@@ -4057,6 +4208,29 @@ async function executeLiveApiToolInner(
         if (!summary) {
           return { success: false, result: '', error: 'summary is required' };
         }
+
+        // Loop guard: hard cap of 1 forward per conversation. Once swap count
+        // hits 2 (one forward + one return), block re-forward regardless of
+        // what the LLM decides. Also a cooldown period after swap-back-to-
+        // Vitana — prevents the immediate re-forward loop the user reported.
+        const swapCountForReport = ((session as any).swapCount as number | undefined) ?? 0;
+        const swapCooldownUntil = ((session as any).swapCooldownUntil as number | undefined) ?? 0;
+        if (swapCountForReport >= 2) {
+          console.log(`[VTID-02670] report_to_specialist blocked — loop guard cap reached (swapCount=${swapCountForReport})`);
+          return {
+            success: true,
+            result: `STAY_INLINE: This conversation already used its forward budget. Answer the user yourself as Vitana — do NOT mention the routing decision out loud, just continue helping inline.`,
+          };
+        }
+        if (Date.now() < swapCooldownUntil) {
+          const secondsLeft = Math.ceil((swapCooldownUntil - Date.now()) / 1000);
+          console.log(`[VTID-02670] report_to_specialist blocked — cooldown active (${secondsLeft}s left)`);
+          return {
+            success: true,
+            result: `STAY_INLINE: User just came back from a specialist (cooldown ${secondsLeft}s). Answer the question yourself as Vitana — do NOT mention the routing decision, just respond inline.`,
+          };
+        }
+
         try {
           const url = process.env.SUPABASE_URL!;
           const key = process.env.SUPABASE_SERVICE_ROLE!;
@@ -4078,9 +4252,14 @@ async function executeLiveApiToolInner(
               const rpcName = _reportTenantId
                 ? 'pick_specialist_for_text_tenant'
                 : 'pick_specialist_for_text';
+              // Gate A reads the user's RAW transcript, not the LLM-rewritten
+              // summary. The LLM compresses "how does X work?" into business-
+              // language like "user is asking about X feature", which bypasses
+              // stay-inline phrases. Raw user words preserve "how does", etc.
+              const gateInput = buildGateInputFromTranscript(session.transcriptTurns, summary);
               const rpcBody = _reportTenantId
-                ? { p_text: summary, p_tenant_id: _reportTenantId }
-                : { p_text: summary };
+                ? { p_text: gateInput, p_tenant_id: _reportTenantId }
+                : { p_text: gateInput };
               const rpcResp = await fetch(`${url}/rest/v1/rpc/${rpcName}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
@@ -4234,16 +4413,18 @@ async function executeLiveApiToolInner(
                 (session as any).pendingPersonaSwap = swapTo;
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
                 const behavioralRule = buildPersonaBehavioralRule(swapTo);
-                const transcriptSection = buildTranscriptSection(session.transcriptTurns, 'vitana');
+                const transcriptSection = buildTranscriptSection(session.transcriptTurns, 'vitana', swapTo);
                 // Cache for Vitana's prompt builder on the eventual swap-back.
                 (session as any).specialistContextSection = userContextSection;
                 (session as any).lastTranscriptSection = transcriptSection;
+                // Loop guard counter
+                (session as any).swapCount = (((session as any).swapCount as number | undefined) ?? 0) + 1;
                 (session as any).personaSystemOverride = personaPrompt +
                   (userContextSection ? `\n\n${userContextSection}` : '') +
                   (transcriptSection ? `\n\n${transcriptSection}` : '') +
                   `\n\n${behavioralRule}` +
-                  `\n\n[CONVERSATION HANDOFF] You have just been brought into an existing voice call. Vitana captured this summary at handoff: "${summary}". The transcript above is what the user ACTUALLY said. Use it. Do NOT ask "what can I do for you?" — answer the user's real question.` +
-                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool but you can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}'. You CANNOT forward to another specialist — that's Vitana's job. If the question isn't in your authority or you don't know, call switch_persona(to:'${RECEPTIONIST_PERSONA_KEY}') and let her decide. Speak a one-line bridge ("Let me bring you back to Vitana — one moment") then STOP.`;
+                  `\n\n[HANDOFF NOTE] Vitana captured this brief at handoff: "${summary}". The transcript above is the user's actual words. Synthesize what they reported in ONE sentence (your own words, not theirs) and confirm. Do NOT echo their wording back.` +
+                  `\n\n[NAVIGATION TOOL] You have a switch_persona tool. You can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}' — you cannot forward sideways to another specialist. If the question is outside your authority, return the user to Vitana with a brief bridge in your own words (vary your phrasing) and STOP — do NOT speak after calling the tool.`;
                 // VTID-02653 Phase 6: tenant-aware voice + greeting.
                 (session as any).personaVoiceOverride = _reportTenantId
                   ? await registryGetPersonaVoiceForTenant(swapTo, _reportTenantId)
@@ -4278,7 +4459,7 @@ async function executeLiveApiToolInner(
 
           return {
             success: true,
-            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Speak ONLY this short bridge sentence to the user (in their language) and then STOP — do not continue the conversation: "Let me bring in ${personaName.split(' ')[0]} — one moment." A different colleague will pick up the call right after you.`,
+            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Routed to ${personaName}. Speak ONE short bridge sentence in your own natural words — announce the handoff (vary phrasing every time, never recite a template). Do NOT introduce ${personaName.split(' ')[0]} ("Hi, here is X" — that is THEIR job to say in their own voice). Do NOT speak after the bridge. Then STOP.`,
           };
         } catch (err) {
           console.error('[VTID-02047] report_to_specialist failed:', err);
@@ -7281,8 +7462,9 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
-- Use report_to_specialist ONLY when the user EXPLICITLY asks to be connected to customer support, files a bug report, makes a claim, or asks to speak to a specialist by name. You are the user's life companion — health, longevity, matchmaking, community, business creation, daily emotional support, and general "how does X work" questions are YOURS to answer (use search_knowledge / search_memory / google_search). Forwarding is a RARE exception. Examples — "I have a question / how does this work / are you able to tell me / tell me about X" are NOT forwarding signals; answer them yourself. ONLY forward on phrases like "I'd like to talk to support", "connect me to a specialist", "I have a bug report", "I have a claim", "my account is locked". The router enforces this with a stay-inline override; if the router declines a forward, do NOT mention the routing — simply answer the question naturally.
-- Use switch_persona for NAVIGATION between team members WITHOUT filing a ticket. Examples: user says "switch me to Devon", "back to Vitana please", "ich möchte mit Mira sprechen", "verbinde mich mit Atlas", "actually I want to talk to Sage". Pass to=<persona> with the target. Speak a brief bridge ("Einen Moment, ich übergebe an Devon" / "One moment, switching to Vitana") and STOP — the new persona greets next. Use this when the user is just navigating; use report_to_specialist when they're filing a NEW claim/bug/support request.
+- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
+- Use report_to_specialist ONLY when the user has described a CONCRETE PROBLEM (bug, broken state, refund, account lockout, claim) AND has EXPLICITLY agreed to be connected after you proposed it. Always propose before calling: "Shall I bring in Devon to file this?" Wait for yes. Implicit consent does not count. The backend gate re-checks the user's actual recent words (not your summary). If the gate returns STAY_INLINE or the forward budget is exhausted, silently answer inline — never mention the routing decision.
+- Use switch_persona ONLY when the user explicitly names a colleague ("switch me to Devon", "ich möchte mit Mira sprechen"). After calling, speak ONE short bridge sentence in your OWN natural words — vary phrasing every time. ANNOUNCE the handoff ("I will bring Devon in"), never INTRODUCE ("Hi, here is Devon" — that is Devon's job in his own voice). Then STOP. After a specialist hands the user back to you, you stay SILENT until the user speaks. Do not greet, do not say "Welcome back", do not ask "What's on your mind?". Pick up naturally when the user speaks.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -8337,10 +8519,11 @@ async function connectToLiveAPI(
                           + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : '')
                           + (((session as any).specialistContextSection as string | undefined)
                               ? `\n\n${(session as any).specialistContextSection}\n\n${buildPersonaBehavioralRule('vitana')}`
-                              : '')
+                              : `\n\n${buildPersonaBehavioralRule('vitana')}`)
                           + (((session as any).lastTranscriptSection as string | undefined)
                               ? `\n\n${(session as any).lastTranscriptSection}`
-                              : ''),
+                              : '')
+                          + (((session as any).onboardingCohortBlock as string | undefined) ?? ''),
                         session.active_role,
                         session.conversationSummary,
                         // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
@@ -8773,6 +8956,57 @@ async function connectToLiveAPI(
                   text: fullTranscript,
                   timestamp: new Date().toISOString()
                 });
+
+                // Forwarding v2 anti-impersonation guard: detect if this
+                // utterance impersonates a different persona ("I am Devon"
+                // spoken by anyone NOT Devon, etc). One offense = log +
+                // inject a corrective directive into the upstream. Two
+                // offenses in a row = hard reconnect with persona override
+                // re-applied.
+                try {
+                  const activePersonaForCheck = ((session as any).activePersona as string | undefined) || 'vitana';
+                  const PERSONA_KEYS = ['vitana', 'devon', 'sage', 'atlas', 'mira'];
+                  const IMPERSONATION_RE = /\b(?:I(?:'?m| am)|this is|here(?:'?s| is)|on behalf of|me, |it'?s)\s+(vitana|devon|sage|atlas|mira)\b/i;
+                  const m = fullTranscript.match(IMPERSONATION_RE);
+                  if (m) {
+                    const claimed = m[1].toLowerCase();
+                    if (PERSONA_KEYS.includes(claimed) && claimed !== activePersonaForCheck) {
+                      const driftCount = (((session as any).identityDriftCount as number | undefined) ?? 0) + 1;
+                      (session as any).identityDriftCount = driftCount;
+                      console.warn(`[VTID-02670] Identity drift detected: active=${activePersonaForCheck}, claimed=${claimed}, count=${driftCount}, utterance="${fullTranscript.substring(0,120)}"`);
+                      // Best-effort OASIS log (non-blocking).
+                      import('../services/oasis-event-service').then(({ emitOasisEvent }) => {
+                        emitOasisEvent({
+                          vtid: 'VTID-02670',
+                          type: 'orb.persona.identity_drift' as any,
+                          source: 'orb-live',
+                          status: driftCount > 1 ? 'error' : 'warning',
+                          message: `${activePersonaForCheck} introduced themselves as ${claimed}`,
+                          payload: {
+                            session_id: session.sessionId,
+                            active_persona: activePersonaForCheck,
+                            claimed_persona: claimed,
+                            drift_count: driftCount,
+                            utterance: fullTranscript.substring(0, 500),
+                          },
+                          actor_id: session.identity?.user_id,
+                          actor_role: 'system',
+                          surface: 'orb',
+                          vitana_id: session.identity?.vitana_id ?? undefined,
+                        });
+                      }).catch(() => undefined);
+                      // On REPEAT drift, force-reconnect with the persona
+                      // override re-applied. The setup-message builder picks
+                      // up the latest persona state on the new connection.
+                      if (driftCount >= 2 && session.upstreamWs) {
+                        console.warn(`[VTID-02670] Forcing hard reconnect to re-anchor persona ${activePersonaForCheck}`);
+                        (session as any)._personaSwapInFlight = true;
+                        try { session.upstreamWs.close(); } catch { /* ignore */ }
+                      }
+                    }
+                  }
+                } catch { /* non-blocking */ }
+
                 // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
                 if (session.identity && session.identity.tenant_id && session.identity.user_id) {
                   addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript);
@@ -13837,7 +14071,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
         // Resolve effective role (same overrides as before — kept in sync with the Brain path above).
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
@@ -13891,6 +14125,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
         session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
         session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
         session.contextBootstrapBuiltAt = Date.now();
+        // Forwarding v2: cache the onboarding-cohort hint for first-30-day users.
+        // Computed once at bootstrap; never changes during a session.
+        try {
+          (session as any).onboardingCohortBlock = await fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
+        } catch { /* non-blocking */ }
         if (finalLang !== session.lang) {
           session.lang = finalLang;
         }
