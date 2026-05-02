@@ -5,6 +5,10 @@ livekit-plugins-deepgram>=0.6.0
 livekit-plugins-anthropic>=0.2.0
 livekit-plugins-cartesia>=0.4.0
 livekit-plugins-silero>=0.7.0
+# VTID-LIVEKIT-FOUNDATION: Google STT + LLM + TTS via Application Default
+# Credentials. Lets the all-Google cascade run without any third-party API
+# keys — Cloud Run service inherits the project's Vertex / Speech / TTS access.
+livekit-plugins-google>=0.8.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 httpx>=0.27.0
