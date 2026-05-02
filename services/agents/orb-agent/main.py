@@ -1,13 +1,16 @@
 """orb-agent entrypoint.
 
-Boots two things:
+Boots three things:
   1. An embedded FastAPI health server (Cloud Run probe target on $PORT).
-  2. The livekit-agents worker (when wired in the follow-up PR), which
-     dials the configured LiveKit URL and waits for room dispatch.
+  2. agents_registry self-register heartbeat (every 60s).
+  3. The livekit-agents worker — joins LiveKit rooms as a participant when
+     dispatched by the LiveKit server, runs the configured STT/LLM/TTS
+     cascade, dispatches gateway tools.
 
-Skeleton today: the worker isn't wired yet — main.py runs the health
-server only, registers with agents_registry, and logs that it's standby.
-This is sufficient for Cloud Run deploy + smoke tests to pass.
+The livekit-agents worker is the production path. If `livekit-agents`
+isn't installed (e.g. local dev without the heavy SDK), the agent boots
+in HEALTH-ONLY mode and logs a warning. This lets the gateway probe stay
+green while the worker is being wired up.
 """
 from __future__ import annotations
 
@@ -37,19 +40,56 @@ def configure_logging(level: str) -> None:
     )
 
 
-async def run() -> None:
-    cfg = AgentConfig.from_env()
-    configure_logging(cfg.log_level)
-    log = structlog.get_logger("orb-agent")
-    log.info("orb-agent.boot", version="0.1.0", livekit_url=cfg.livekit_url)
-
-    # Health server.
+async def _start_health_server(cfg: AgentConfig) -> tuple[uvicorn.Server, asyncio.Task[None]]:
     app = make_health_app()
     server_cfg = uvicorn.Config(
         app, host="0.0.0.0", port=cfg.health_port, log_config=None, access_log=False
     )
     server = uvicorn.Server(server_cfg)
-    server_task = asyncio.create_task(server.serve(), name="health-server")
+    task = asyncio.create_task(server.serve(), name="health-server")
+    return server, task
+
+
+def _start_livekit_worker(cfg: AgentConfig, log) -> asyncio.Task[None] | None:
+    """Boot the livekit-agents worker in a background task.
+
+    Returns None if the SDK isn't installed (HEALTH-ONLY mode). The agent
+    process stays alive serving health checks; LiveKit room dispatch will
+    obviously not work, but the gateway probes remain green.
+    """
+    try:
+        from livekit.agents import WorkerOptions, cli  # type: ignore[import-not-found]
+    except ImportError:
+        log.warning("livekit_worker.unavailable", reason="livekit-agents not installed; HEALTH-ONLY mode")
+        return None
+
+    from src.orb_agent.session import agent_entrypoint
+
+    opts = WorkerOptions(
+        entrypoint_fnc=agent_entrypoint,
+        ws_url=cfg.livekit_url,
+        api_key=cfg.livekit_api_key,
+        api_secret=cfg.livekit_api_secret,
+    )
+
+    async def _run() -> None:
+        try:
+            log.info("livekit_worker.starting", url=cfg.livekit_url)
+            await cli.run_app(opts)
+        except Exception as exc:  # noqa: BLE001
+            log.error("livekit_worker.crashed", err=str(exc))
+
+    return asyncio.create_task(_run(), name="livekit-worker")
+
+
+async def run() -> None:
+    cfg = AgentConfig.from_env()
+    configure_logging(cfg.log_level)
+    log = structlog.get_logger("orb-agent")
+    log.info("orb_agent.boot", version="0.1.0", livekit_url=cfg.livekit_url)
+
+    # Health server.
+    server, server_task = await _start_health_server(cfg)
 
     # agents_registry heartbeat.
     heartbeat = RegistryHeartbeat(
@@ -59,20 +99,12 @@ async def run() -> None:
     )
     heartbeat.start()
 
-    # TODO(VTID-LIVEKIT-FOUNDATION): wire livekit-agents worker here. Pseudocode:
-    #
-    #     from livekit.agents import WorkerOptions, cli
-    #     from src.orb_agent.session import AgentSession
-    #
-    #     worker_opts = WorkerOptions(
-    #         entrypoint_fnc=AgentSession.entrypoint,
-    #         max_concurrent_jobs=10,
-    #     )
-    #     cli.run_app(worker_opts)
-    #
-    # For the skeleton, we just keep the health server alive.
-
-    log.info("orb-agent.ready_skeleton", note="livekit worker not yet wired")
+    # livekit-agents worker (background).
+    worker_task = _start_livekit_worker(cfg, log)
+    if worker_task is None:
+        log.info("orb_agent.ready_health_only")
+    else:
+        log.info("orb_agent.ready", mode="livekit-worker+health")
 
     # Graceful shutdown on SIGTERM.
     stop = asyncio.Event()
@@ -83,11 +115,17 @@ async def run() -> None:
         except NotImplementedError:  # pragma: no cover (Windows)
             pass
     await stop.wait()
-    log.info("orb-agent.stopping")
+    log.info("orb_agent.stopping")
     await heartbeat.stop()
+    if worker_task is not None:
+        worker_task.cancel()
+        try:
+            await worker_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
     server.should_exit = True
     await server_task
-    log.info("orb-agent.stopped")
+    log.info("orb_agent.stopped")
 
 
 if __name__ == "__main__":

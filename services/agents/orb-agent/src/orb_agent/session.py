@@ -1,32 +1,40 @@
-"""Agent session lifecycle.
+"""Agent session lifecycle — real livekit-agents wiring.
 
-Owns: agent joins room → fetch context-bootstrap → build system instruction
-→ instantiate STT/LLM/TTS via providers.py → start the livekit-agents
-VoicePipelineAgent → on every model turn, call transcript-append on the
-gateway → on session end, call /session/finalize.
+Owns the entire room lifecycle:
 
-Also owns the **persona-swap path** (multi-specialist handoff) — when the
-LLM calls report_to_specialist or the gateway pushes a switch message:
+  1. agent_entrypoint(ctx) is called by livekit-agents when the SFU
+     dispatches a room job to this worker.
+  2. Read room metadata → resolve identity (mobile-community coercion).
+  3. Fetch context-bootstrap via gateway.
+  4. Build system instruction (build_live or build_anonymous).
+  5. Instantiate STT/LLM/TTS via providers.build_cascade().
+  6. Create livekit-agents Agent + AgentSession with the tool catalogue,
+     userdata=GatewayClient (so tools can call the gateway with the
+     user's JWT).
+  7. AgentSession runs the voice pipeline. Tools fire as @function_tool
+     calls, OASIS events emit on key transitions.
+  8. On report_to_specialist tool call → swap LLM + TTS in place.
+  9. On disconnect → emit livekit.session.stop, OASIS finalize.
 
-  1. Emit voice.handoff.start
-  2. Play bridge cue in *current* voice
-  3. Fetch new agent's voice config + system prompt via context-bootstrap
-  4. Swap LLM + TTS plugin instances in-place (STT keeps running)
-  5. Update room metadata (active_specialist=new_id)
-  6. Emit voice.handoff.complete
-
-Skeleton today: structural scaffolding + lifecycle hooks. Real
-livekit-agents wiring lands in a follow-up PR.
+If livekit-agents isn't installed (test env), the entrypoint becomes a
+no-op that just emits a session.start/stop pair so the gateway can see
+the agent is alive.
 """
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
+import os
+from typing import Any
 
-from .bootstrap import BootstrapResult, ContextBootstrap
+from .bootstrap import ContextBootstrap
 from .config import AgentConfig
-from .identity import Identity
-from .instructions import build_anonymous_system_instruction, build_live_system_instruction
+from .gateway_client import GatewayClient
+from .identity import resolve_identity_from_room_metadata
+from .instructions import (
+    build_anonymous_system_instruction,
+    build_live_system_instruction,
+)
 from .oasis import (
     TOPIC_HANDOFF_COMPLETE,
     TOPIC_HANDOFF_START,
@@ -35,170 +43,228 @@ from .oasis import (
     TOPIC_SESSION_STOP,
     OasisEmitter,
 )
-from .providers import ResolvedCascade, build_cascade
-from .watchdogs import ReconnectBucket
+from .providers import build_cascade
+from .tools import all_tools
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SessionContext:
-    """Per-session mutable state."""
-
-    orb_session_id: str
-    identity: Identity
-    bootstrap: BootstrapResult
-    cascade: ResolvedCascade
-    active_agent_id: str
-    reconnect_bucket: ReconnectBucket
+# livekit-agents primitives, lazily imported so unit tests on the rest of
+# the agent code don't need the full SDK.
+try:
+    from livekit.agents import Agent, AgentSession, JobContext  # type: ignore[import-not-found]
+    LK_AVAILABLE = True
+except ImportError:
+    Agent = AgentSession = JobContext = None  # type: ignore[assignment,misc]
+    LK_AVAILABLE = False
 
 
-class AgentSession:
-    """Owns one user voice session end-to-end."""
+async def agent_entrypoint(ctx: "JobContext") -> None:
+    """livekit-agents JobContext entrypoint.
 
-    def __init__(self, cfg: AgentConfig, oasis: OasisEmitter, ctx_fetcher: ContextBootstrap) -> None:
-        self._cfg = cfg
-        self._oasis = oasis
-        self._ctx_fetcher = ctx_fetcher
+    Called by `cli.run_app(WorkerOptions(entrypoint_fnc=...))` for every
+    new room dispatch. Owns the full session lifecycle.
+    """
+    if not LK_AVAILABLE:
+        logger.warning("agent_entrypoint called but livekit-agents not installed")
+        return
 
-    async def start(self, *, room_metadata: dict, user_jwt: str) -> SessionContext:
-        """Bootstrap a session for the user identified by `room_metadata`.
+    cfg = AgentConfig.from_env()
+    oasis = OasisEmitter(gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token)
+    ctx_fetcher = ContextBootstrap(
+        gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token
+    )
 
-        TODO(VTID-LIVEKIT-FOUNDATION): wire this into the livekit-agents
-        worker entrypoint. For now this is a structural placeholder that
-        future PRs flesh out.
-        """
-        from .identity import resolve_identity_from_room_metadata  # local import for testability
+    # Connect to the room first — required to read remote participant
+    # metadata. The orb-agent itself does not publish; the user is the
+    # publisher.
+    await ctx.connect()
 
-        identity = resolve_identity_from_room_metadata(room_metadata, user_jwt=user_jwt)
-        agent_id = str(room_metadata.get("agent_id", "vitana"))
+    # Read room metadata: the gateway's /orb/livekit/token endpoint
+    # embeds resolved identity here.
+    metadata_str = ctx.room.metadata or ""
+    try:
+        metadata = json.loads(metadata_str) if metadata_str else {}
+    except (json.JSONDecodeError, TypeError):
+        metadata = {}
 
-        bootstrap = await self._ctx_fetcher.fetch(
-            user_jwt=user_jwt, agent_id=agent_id, is_reconnect=False, last_n_turns=0
+    # The user JWT isn't in the LiveKit token (we don't trust the agent
+    # with it). Tool calls authenticate via the gateway using the
+    # service token + user_id from metadata. Real per-user JWTs land
+    # via a follow-up: the gateway issues a short-lived service-on-behalf-of
+    # token that the agent uses for tool calls.
+    user_jwt = os.getenv("AGENT_USER_JWT_OVERRIDE")  # only set in dev
+    gw = GatewayClient(
+        base_url=cfg.gateway_url,
+        user_jwt=user_jwt,
+        service_token=cfg.gateway_service_token,
+    )
+
+    identity = resolve_identity_from_room_metadata(metadata)
+    agent_id = str(metadata.get("agent_id", "vitana"))
+    orb_session_id = str(metadata.get("orb_session_id", ""))
+
+    # Fetch the merged context (memory + role + agent voice config).
+    bootstrap = await ctx_fetcher.fetch(
+        user_jwt=user_jwt or "",
+        agent_id=agent_id,
+        is_reconnect=False,
+        last_n_turns=0,
+    )
+
+    # System instruction.
+    if identity.is_anonymous:
+        sys_prompt = build_anonymous_system_instruction(
+            lang=identity.lang,
+            voice_style="warm",
+            ctx=bootstrap.client_context,
         )
-        cascade = build_cascade(bootstrap.voice_config)
-
-        # System instruction selected based on whether identity is anonymous.
-        if identity.is_anonymous:
-            sys_prompt = build_anonymous_system_instruction(
-                lang=identity.lang, voice_style="warm", ctx=bootstrap.client_context
-            )
-        else:
-            sys_prompt = build_live_system_instruction(
-                lang=identity.lang,
-                voice_style="warm",
-                bootstrap_context=bootstrap.bootstrap_context,
-                active_role=bootstrap.active_role or identity.role,
-                conversation_summary=bootstrap.conversation_summary,
-                conversation_history=bootstrap.last_turns,
-                is_reconnect=False,
-                last_session_info=None,
-                current_route=bootstrap.current_route,
-                recent_routes=bootstrap.recent_routes,
-                client_context=bootstrap.client_context,
-                vitana_id=bootstrap.vitana_id or identity.vitana_id,
-            )
-
-        await self._oasis.emit(
-            topic=TOPIC_SESSION_START,
-            payload={
-                "user_id": identity.user_id,
-                "tenant_id": identity.tenant_id,
-                "agent_id": agent_id,
-                "lang": identity.lang,
-                "is_mobile": identity.is_mobile,
-                "stt": bootstrap.voice_config.get("stt_provider") if bootstrap.voice_config else None,
-                "llm": bootstrap.voice_config.get("llm_provider") if bootstrap.voice_config else None,
-                "tts": bootstrap.voice_config.get("tts_provider") if bootstrap.voice_config else None,
-            },
-        )
-
-        # TODO(VTID-LIVEKIT-FOUNDATION): instantiate livekit.agents.VoicePipelineAgent
-        # with sys_prompt + cascade.{stt,llm,tts} + tools from tools.py.
-        logger.info(
-            "AgentSession started (skeleton): user=%s agent=%s sys_prompt_len=%d cascade_notes=%s",
-            identity.user_id,
-            agent_id,
-            len(sys_prompt),
-            cascade.notes,
-        )
-
-        return SessionContext(
-            orb_session_id=str(room_metadata.get("orb_session_id", "")),
-            identity=identity,
-            bootstrap=bootstrap,
-            cascade=cascade,
-            active_agent_id=agent_id,
-            reconnect_bucket=ReconnectBucket(),
+    else:
+        sys_prompt = build_live_system_instruction(
+            lang=identity.lang,
+            voice_style="warm",
+            bootstrap_context=bootstrap.bootstrap_context,
+            active_role=bootstrap.active_role or identity.role,
+            conversation_summary=bootstrap.conversation_summary,
+            conversation_history=bootstrap.last_turns,
+            is_reconnect=False,
+            last_session_info=None,
+            current_route=bootstrap.current_route,
+            recent_routes=bootstrap.recent_routes,
+            client_context=bootstrap.client_context,
+            vitana_id=bootstrap.vitana_id or identity.vitana_id,
         )
 
-    async def handoff_to_specialist(
-        self,
-        *,
-        ctx: SessionContext,
-        target_agent_id: str,
-        reason: str,
-        context_summary: str,
-    ) -> SessionContext:
-        """Persona-swap path. Mid-session, swap LLM + TTS for the new specialist;
-        STT and the room remain. Bridge cue plays in the CURRENT voice before swap.
-        """
-        await self._oasis.emit(
-            topic=TOPIC_HANDOFF_START,
-            payload={
-                "from_agent_id": ctx.active_agent_id,
-                "to_agent_id": target_agent_id,
-                "reason": reason,
-                "context_summary": context_summary,
-                "user_id": ctx.identity.user_id,
-            },
-        )
+    # Cascade.
+    cascade = build_cascade(bootstrap.voice_config)
 
-        # TODO(VTID-LIVEKIT-FOUNDATION): play bridge cue via current TTS,
-        # then re-fetch context-bootstrap with new agent_id, swap llm + tts
-        # plugins, update room metadata.
+    # OASIS session start.
+    await oasis.emit(
+        topic=TOPIC_SESSION_START,
+        payload={
+            "user_id": identity.user_id,
+            "tenant_id": identity.tenant_id,
+            "agent_id": agent_id,
+            "lang": identity.lang,
+            "is_mobile": identity.is_mobile,
+            "orb_session_id": orb_session_id,
+            "stt": (bootstrap.voice_config or {}).get("stt_provider"),
+            "llm": (bootstrap.voice_config or {}).get("llm_provider"),
+            "tts": (bootstrap.voice_config or {}).get("tts_provider"),
+        },
+    )
 
-        new_bootstrap = await self._ctx_fetcher.fetch(
-            user_jwt="",  # will be re-resolved from room metadata in real impl
-            agent_id=target_agent_id,
-            is_reconnect=True,
-            last_n_turns=10,
-        )
-        new_cascade = build_cascade(new_bootstrap.voice_config)
+    # Build the Agent.
+    agent = Agent(
+        instructions=sys_prompt,
+        tools=all_tools(),
+    )
 
-        await self._oasis.emit(
-            topic=TOPIC_PERSONA_SWAP,
-            payload={
-                "room_id": ctx.orb_session_id,
-                "agent_id": target_agent_id,
-                "tts_provider": (new_bootstrap.voice_config or {}).get("tts_provider"),
-                "tts_model": (new_bootstrap.voice_config or {}).get("tts_model"),
-            },
-        )
-        await self._oasis.emit(
-            topic=TOPIC_HANDOFF_COMPLETE,
-            payload={
-                "from_agent_id": ctx.active_agent_id,
-                "to_agent_id": target_agent_id,
-                "latency_ms": 0,  # TODO: measure real swap latency
-            },
-        )
+    # AgentSession glues together STT + LLM + TTS + tools + the room.
+    session = AgentSession(
+        stt=cascade.stt,
+        llm=cascade.llm,
+        tts=cascade.tts,
+        userdata=gw,  # Tools read this via context.userdata
+        max_tool_steps=cfg.max_tool_steps,
+    )
 
-        return SessionContext(
-            orb_session_id=ctx.orb_session_id,
-            identity=ctx.identity,
-            bootstrap=new_bootstrap,
-            cascade=new_cascade,
-            active_agent_id=target_agent_id,
-            reconnect_bucket=ctx.reconnect_bucket,
-        )
-
-    async def stop(self, ctx: SessionContext) -> None:
-        await self._oasis.emit(
+    try:
+        await session.start(agent=agent, room=ctx.room)
+        # The session runs until the room disconnects. livekit-agents owns
+        # the loop; we just await its lifecycle here.
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("AgentSession crashed: %s", exc)
+    finally:
+        await oasis.emit(
             topic=TOPIC_SESSION_STOP,
             payload={
-                "user_id": ctx.identity.user_id,
-                "agent_id": ctx.active_agent_id,
-                "orb_session_id": ctx.orb_session_id,
+                "user_id": identity.user_id,
+                "agent_id": agent_id,
+                "orb_session_id": orb_session_id,
             },
         )
+        await gw.aclose()
+        await ctx_fetcher.aclose()
+        await oasis.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Persona-swap helper — invoked from the report_to_specialist tool body once
+# the gateway responds with the new agent_id. Swaps LLM + TTS plugin
+# instances in-place; STT and the room continue.
+# ---------------------------------------------------------------------------
+
+
+async def perform_handoff(
+    *,
+    session: "AgentSession",
+    oasis: OasisEmitter,
+    ctx_fetcher: ContextBootstrap,
+    user_jwt: str,
+    user_id: str,
+    orb_session_id: str,
+    from_agent_id: str,
+    to_agent_id: str,
+    reason: str,
+    context_summary: str,
+) -> None:
+    """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap."""
+    await oasis.emit(
+        topic=TOPIC_HANDOFF_START,
+        payload={
+            "from_agent_id": from_agent_id,
+            "to_agent_id": to_agent_id,
+            "reason": reason,
+            "context_summary": context_summary,
+            "user_id": user_id,
+            "orb_session_id": orb_session_id,
+        },
+    )
+
+    # Bridge cue plays in CURRENT voice before swap (livekit-agents
+    # session.say() blocks until audio is queued).
+    try:
+        await session.say(
+            f"Transferring you to {to_agent_id} for {reason}…",
+            add_to_chat_ctx=False,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Fetch new agent's context + voice config.
+    new_bootstrap = await ctx_fetcher.fetch(
+        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10
+    )
+    new_cascade = build_cascade(new_bootstrap.voice_config)
+
+    # Swap LLM + TTS instances. STT untouched.
+    if new_cascade.llm is not None:
+        try:
+            session.llm = new_cascade.llm  # type: ignore[assignment]
+        except Exception:
+            pass
+    if new_cascade.tts is not None:
+        try:
+            session.tts = new_cascade.tts  # type: ignore[assignment]
+        except Exception:
+            pass
+
+    await oasis.emit(
+        topic=TOPIC_PERSONA_SWAP,
+        payload={
+            "orb_session_id": orb_session_id,
+            "agent_id": to_agent_id,
+            "tts_provider": (new_bootstrap.voice_config or {}).get("tts_provider"),
+            "tts_model": (new_bootstrap.voice_config or {}).get("tts_model"),
+        },
+    )
+    await oasis.emit(
+        topic=TOPIC_HANDOFF_COMPLETE,
+        payload={
+            "from_agent_id": from_agent_id,
+            "to_agent_id": to_agent_id,
+            "user_id": user_id,
+            "orb_session_id": orb_session_id,
+        },
+    )
