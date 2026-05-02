@@ -1575,13 +1575,33 @@ function buildPersonaBehavioralRule(personaKey: string): string {
   if (isSpecialist) {
     lines.push('');
     lines.push('[SYNTHESIZE ON FIRST CONTACT — specialist only]');
-    lines.push('On the very first turn after you receive a swap, read the transcript and');
-    lines.push('state what you understood in ONE sentence — do not echo the user verbatim,');
-    lines.push('do not summarize the whole transcript, do not ask "what can I do for you?".');
-    lines.push('Confirm intent in your own words. Examples (vary every time, never reuse exactly):');
-    lines.push('  "So you\'re seeing a crash on the diary screen — is that right?"');
-    lines.push('  "Bug on diary save, got it. Confirming before I file: ..."');
-    lines.push('  "Sounds like the diary save is breaking. Let me confirm..."');
+    lines.push('On the very first turn after you receive a swap, read the transcript carefully.');
+    lines.push('');
+    lines.push('  CASE A — the transcript + handoff brief contain SPECIFICS (which screen,');
+    lines.push('  which feature, what broke, error text, etc):');
+    lines.push('  → state what you understood in ONE sentence in your own words.');
+    lines.push('    Do not echo the user verbatim, do not summarize the whole transcript.');
+    lines.push('    Examples (vary every time, never reuse exactly):');
+    lines.push('      "So you\'re seeing a crash on the diary screen — is that right?"');
+    lines.push('      "Bug on diary save, got it. Confirming before I file: ..."');
+    lines.push('      "Sounds like the diary save is breaking. Let me confirm..."');
+    lines.push('');
+    lines.push('  CASE B — the brief is GENERIC (e.g. "user wants to report a bug") and the');
+    lines.push('  transcript has no concrete description of what broke:');
+    lines.push('  → ABSOLUTELY DO NOT INVENT THE ISSUE. Hallucinating a specific complaint');
+    lines.push('    that the user did not actually make is the worst possible failure mode —');
+    lines.push('    the user has to correct your fiction and the conversation falls apart.');
+    lines.push('  → Ask exactly ONE concrete diagnostic question to get specifics from the');
+    lines.push('    user IN THEIR LANGUAGE. Examples (vary, never reuse exactly):');
+    lines.push('      "Got it — what specifically is breaking? Which screen, which step?"');
+    lines.push('      "OK, I\'m here to help. What did you see go wrong?"');
+    lines.push('      "Tell me what happened — which feature, what error?"');
+    lines.push('  → Do NOT ask "what can I do for you?" — that\'s a cold restart and breaks');
+    lines.push('    the handoff continuity. Be specific to the bug-report context.');
+    lines.push('');
+    lines.push('  In CASE B, your goal on the first turn is INFORMATION GATHERING, not');
+    lines.push('  confirmation. Wait for the user\'s answer before claiming you understand');
+    lines.push('  anything. NEVER pretend you know what the issue is.');
 
     lines.push('');
     lines.push('[ACTION COMPLETE — specialist only]');
@@ -2296,12 +2316,22 @@ function buildLiveApiTools(
             'and wait for the user to say yes. Implicit consent does NOT count.',
             'Vary the proposal phrasing every time.',
             '',
-            'CALL ONLY WHEN BOTH are true:',
+            'CALL ONLY WHEN ALL THREE are true:',
             '  (1) the user has described a CONCRETE PROBLEM (bug, broken',
             '      state, refund, account lockout, claim) — not a question',
-            '      about how something works, and',
+            '      about how something works,',
             '  (2) the user has EXPLICITLY agreed to be connected to a',
-            '      specialist (after you proposed it).',
+            '      specialist (after you proposed it), and',
+            '  (3) you can write a SPECIFIC `summary` (>= 15 words) that',
+            '      describes WHAT broke, on WHICH screen/feature, with the',
+            '      user\'s own words. If you cannot — because the user only',
+            '      said "I want to report a bug" without details — DO NOT',
+            '      CALL THIS TOOL YET. Instead ask ONE follow-up question:',
+            '      "What\'s breaking — which screen or feature?" Get the',
+            '      details, THEN call this tool. A vague summary causes the',
+            '      specialist to invent the issue, which is worse than not',
+            '      forwarding at all. Generic summaries like "user wants to',
+            '      report a bug" are FORBIDDEN.',
             '',
             'NEVER CALL for any of these — answer them yourself inline using',
             'search_knowledge first:',
@@ -2345,7 +2375,7 @@ function buildLiveApiTools(
               },
               summary: {
                 type: 'string',
-                description: 'Concise one-paragraph summary of the user\'s report in their own words. Include any specifics they mentioned (screen, error, order id, account email, etc.).',
+                description: 'CONCRETE one-paragraph summary using the user\'s OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.',
               },
             },
             required: ['kind', 'summary'],
@@ -4272,6 +4302,32 @@ async function executeLiveApiToolInner(
         const specialistHint = String(args.specialist_hint || '').trim();
         if (!summary) {
           return { success: false, result: '', error: 'summary is required' };
+        }
+
+        // v2e: server-side block on vague summaries. The LLM tool description
+        // forbids placeholder summaries like "user wants to report a bug",
+        // but we enforce server-side too. A vague summary causes the receiving
+        // specialist to invent the issue (the user's most-recent complaint:
+        // Devon hallucinated a "language switch" bug because Vitana's summary
+        // was just "user wants to report a technical bug").
+        //
+        // Heuristics: too short OR matches a placeholder pattern.
+        const wordCount = summary.split(/\s+/).filter(Boolean).length;
+        const VAGUE_PATTERNS = [
+          /^user (wants|would like|wishes) to report (a|an|the)?\s*(technical |bug|issue|problem|claim|complaint|account|support)?\s*(report|issue|problem|claim|bug|complaint|question|something)\.?$/i,
+          /^user has (a|an|the)?\s*(bug|issue|problem|claim|complaint|account|support|technical)\s*(report|issue|problem|claim|bug|complaint|question|matter)\.?$/i,
+          /^report a (bug|issue|problem|claim|complaint|technical)\s*\.?$/i,
+          /^bug report\.?$/i,
+          /^something is broken\.?$/i,
+          /^(user|customer)\s+(needs help|wants help|has a question)\.?$/i,
+        ];
+        const isVague = wordCount < 12 || VAGUE_PATTERNS.some(re => re.test(summary));
+        if (isVague) {
+          console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${wordCount} words). Asking model to collect specifics.`);
+          return {
+            success: true,
+            result: `ASK_FOR_SPECIFICS: Your summary "${summary}" is too vague. Do NOT call this tool again until you have a concrete description. Speak ONE follow-up question to the user IN THEIR LANGUAGE asking what specifically broke (which screen / feature / error message / what they were doing). Vary your phrasing every call. Then wait for their answer. Only after you have specifics, call this tool again with a real description (>= 12 words, in the user's own words). Do NOT mention this internal routing — just ask the question naturally.`,
+          };
         }
 
         // Loop guard: hard cap of 1 forward per conversation. Once swap count
@@ -8611,13 +8667,18 @@ async function connectToLiveAPI(
                         // persona doesn't absorb another persona's lines as their own.
                         renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
                         // VTID-02047: persona swap to Vitana is NOT a generic
-                        // reconnect — Vitana should greet ("Welcome back…") not
-                        // stay silent per the reconnect-bucket "DO NOT speak"
-                        // rule. Force isReconnect=false when the swap-in-flight
-                        // flag is set so the bucket logic picks "first" / a
-                        // greeting instead.
+                        // v2e: REVERSED. The old behavior forced isReconnect=false
+                        // on swap-back so Vitana would greet. That caused two
+                        // failures the user reported: (1) "Welcome back. What's
+                        // on your mind?" loop trigger; (2) Vitana echoing the
+                        // specialist's most-recent (sometimes hallucinated)
+                        // utterance as her own. Now: on swap-back to Vitana,
+                        // force isReconnect=TRUE so the "DO NOT speak first"
+                        // rule applies. Vitana stays SILENT and waits for the
+                        // user to speak. The user will speak with their actual
+                        // intent — Vitana doesn't need to invent a topic.
                         ((session as any)._personaSwapInFlight
-                          ? false
+                          ? true
                           : ((session as any)._reconnectCount || 0) > 0)
                       )
                     : buildLiveSystemInstruction(
@@ -8639,11 +8700,12 @@ async function connectToLiveAPI(
                         // absorb Devon/Sage/Atlas/Mira lines as her own past
                         // speech ("Hi I'm Devon" with Vitana's voice).
                         renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
-                        // VTID-02047: persona swap to Vitana — see comment above.
-                        // Suppress the reconnect-bucket "DO NOT speak" rule so
-                        // Vitana actually greets the user back into the call.
+                        // v2e: REVERSED. See companion edit above for rationale.
+                        // On swap-back to Vitana, isReconnect=TRUE so the
+                        // "DO NOT speak first" rule fires. Vitana waits for
+                        // the user to speak — does NOT echo the specialist.
                         ((session as any)._personaSwapInFlight
-                          ? false
+                          ? true
                           : ((session as any)._reconnectCount || 0) > 0),
                         // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
                         // model uses this to pick a time-appropriate greeting and
