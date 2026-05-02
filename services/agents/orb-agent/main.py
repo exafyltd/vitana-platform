@@ -51,46 +51,60 @@ async def _start_health_server(cfg: AgentConfig) -> tuple[uvicorn.Server, asynci
     return server, task
 
 
-def _start_livekit_worker(cfg: AgentConfig, log) -> asyncio.Task[None] | None:
-    """Boot the livekit-agents worker in a background task.
+def _start_livekit_worker(cfg: AgentConfig, log) -> "asyncio.subprocess.Process | None":
+    """Boot the livekit-agents worker as a SUBPROCESS, not in-process.
 
-    Returns None when the worker is intentionally skipped (env-flag opt-out
-    or the SDK isn't installed). The agent process stays alive serving
-    health checks; LiveKit room dispatch obviously won't work but the
-    gateway probes remain green — fine for smoke-testing the deploy
-    pipeline + the test-page room-join path.
+    Why subprocess:
+      livekit.agents.cli.run_app() parses sys.argv and calls sys.exit()
+      on missing/unknown commands. Running it as an asyncio task in the
+      main process kills the health server (Cloud Run startup probe
+      then 404s, deploy fails). A subprocess isolates that exit so the
+      health server keeps running even when the worker crashes.
 
-    Set AGENT_ENABLE_WORKER=1 once we've validated the right embedding
-    pattern for livekit-agents.cli.run_app (current concern: it parses
-    sys.argv and may sys.exit, killing the health server with it).
+    The subprocess invokes `python -m livekit.agents start <module>` —
+    same as the official deployment pattern from
+    docs.livekit.io/agents/ops/deployment.
+
+    Returns None if AGENT_ENABLE_WORKER is not '1' (HEALTH-ONLY mode).
     """
     if os.getenv("AGENT_ENABLE_WORKER", "0") != "1":
         log.info("livekit_worker.disabled", reason="AGENT_ENABLE_WORKER!=1; HEALTH-ONLY mode")
         return None
 
     try:
-        from livekit.agents import WorkerOptions, cli  # type: ignore[import-not-found]
+        # Import probe — confirms the SDK is installed before we spawn.
+        import livekit.agents  # noqa: F401  # type: ignore[import-not-found]
     except ImportError:
         log.warning("livekit_worker.unavailable", reason="livekit-agents not installed; HEALTH-ONLY mode")
         return None
 
-    from src.orb_agent.session import agent_entrypoint
+    log.info("livekit_worker.spawning", url=cfg.livekit_url)
+    return None  # actual spawn happens in run() — needs the running event loop
 
-    opts = WorkerOptions(
-        entrypoint_fnc=agent_entrypoint,
-        ws_url=cfg.livekit_url,
-        api_key=cfg.livekit_api_key,
-        api_secret=cfg.livekit_api_secret,
+
+async def _spawn_worker_subprocess(cfg: AgentConfig, log):
+    """Spawn the livekit-agents worker as a subprocess. Returns the Process."""
+    if os.getenv("AGENT_ENABLE_WORKER", "0") != "1":
+        return None
+
+    try:
+        import livekit.agents  # noqa: F401  # type: ignore[import-not-found]
+    except ImportError:
+        log.warning("livekit_worker.unavailable", reason="livekit-agents not installed")
+        return None
+
+    env = os.environ.copy()
+    # The worker subprocess inherits LIVEKIT_URL/KEY/SECRET via env.
+
+    proc = await asyncio.create_subprocess_exec(
+        "python",
+        "-u",
+        "-m",
+        "src.orb_agent.worker_entry",
+        env=env,
     )
-
-    async def _run() -> None:
-        try:
-            log.info("livekit_worker.starting", url=cfg.livekit_url)
-            await cli.run_app(opts)
-        except Exception as exc:  # noqa: BLE001
-            log.error("livekit_worker.crashed", err=str(exc))
-
-    return asyncio.create_task(_run(), name="livekit-worker")
+    log.info("livekit_worker.spawned", pid=proc.pid)
+    return proc
 
 
 async def run() -> None:
@@ -110,12 +124,12 @@ async def run() -> None:
     )
     heartbeat.start()
 
-    # livekit-agents worker (background).
-    worker_task = _start_livekit_worker(cfg, log)
-    if worker_task is None:
+    # livekit-agents worker as subprocess (isolation from sys.exit).
+    worker_proc = await _spawn_worker_subprocess(cfg, log)
+    if worker_proc is None:
         log.info("orb_agent.ready_health_only")
     else:
-        log.info("orb_agent.ready", mode="livekit-worker+health")
+        log.info("orb_agent.ready", mode="livekit-worker+health", worker_pid=worker_proc.pid)
 
     # Graceful shutdown on SIGTERM.
     stop = asyncio.Event()
@@ -128,12 +142,15 @@ async def run() -> None:
     await stop.wait()
     log.info("orb_agent.stopping")
     await heartbeat.stop()
-    if worker_task is not None:
-        worker_task.cancel()
+    if worker_proc is not None:
         try:
-            await worker_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
+            worker_proc.terminate()
+            await asyncio.wait_for(worker_proc.wait(), timeout=10)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            try:
+                worker_proc.kill()
+            except ProcessLookupError:
+                pass
     server.should_exit = True
     await server_task
     log.info("orb_agent.stopped")
