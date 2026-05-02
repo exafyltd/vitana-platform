@@ -224,30 +224,67 @@ export async function dispatchFeedbackTicket(
     return { ok: false, error: 'NO_SPEC — call /draft-spec before dispatch' };
   }
 
-  // 1. Idempotency — if already linked, just look up the execution and
-  //    return. Operator can press Activate again on a still-running ticket
-  //    without duplicating.
-  if (ticket.linked_finding_id) {
-    const existingRecResp = await fetch(
-      `${s.url}/rest/v1/autopilot_recommendations?id=eq.${ticket.linked_finding_id}&select=id,status&limit=1`,
-      { headers: s.headers },
-    );
-    const existingRec = (await existingRecResp.json().catch(() => [])) as Array<{ id: string; status: string }>;
-    if (existingRec[0]) {
-      const execResp = await fetch(
-        `${s.url}/rest/v1/dev_autopilot_executions?finding_id=eq.${ticket.linked_finding_id}&select=id,status&order=created_at.desc&limit=1`,
+  // 1. Idempotency (VTID-02674): the recommendation has a UNIQUE constraint
+  //    on (source_type, signal_fingerprint). A previous failed attempt may
+  //    have left an orphan recommendation in the DB even after we rolled
+  //    back the ticket's linked_finding_id. So we check BOTH:
+  //      (a) ticket.linked_finding_id → recommendation row
+  //      (b) recommendation by signal_fingerprint = `feedback:<ticket_id>`
+  //    If either match exists, REUSE the recommendation (no INSERT) — that
+  //    avoids the 23505 "duplicate key" error we hit on retry after a
+  //    safety-gate rejection.
+  const existingFindingId = await (async (): Promise<string | null> => {
+    if (ticket.linked_finding_id) {
+      const r = await fetch(
+        `${s.url}/rest/v1/autopilot_recommendations?id=eq.${ticket.linked_finding_id}&select=id&limit=1`,
         { headers: s.headers },
       );
-      const exec = (await execResp.json().catch(() => [])) as Array<{ id: string; status: string }>;
+      const rows = (await r.json().catch(() => [])) as Array<{ id: string }>;
+      if (rows[0]) return rows[0].id;
+    }
+    // Fingerprint-based fallback — orphan recovery.
+    const fp = `feedback:${ticket.id}`;
+    const r = await fetch(
+      `${s.url}/rest/v1/autopilot_recommendations?signal_fingerprint=eq.${encodeURIComponent(fp)}&source_type=eq.dev_autopilot&select=id&limit=1`,
+      { headers: s.headers },
+    );
+    const rows = (await r.json().catch(() => [])) as Array<{ id: string }>;
+    return rows[0]?.id ?? null;
+  })();
+
+  if (existingFindingId) {
+    // Re-link the ticket if it was orphaned by a previous rollback.
+    await fetch(
+      `${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}`,
+      {
+        method: 'PATCH',
+        headers: { ...s.headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ linked_finding_id: existingFindingId }),
+      },
+    ).catch(() => { /* non-blocking */ });
+
+    // Bridge the existing finding to a fresh execution. The bridge itself
+    // is idempotent on inflight executions, so a re-Activate during cooling
+    // returns the same execution; otherwise it generates a new one.
+    const bridgeR = await bridgeActivationToExecution(existingFindingId, approvedBy ?? null);
+    if (!bridgeR.ok) {
+      const decision = (bridgeR.decision ?? null) as { violations?: BridgeViolation[] } | null;
+      const violations: BridgeViolation[] = decision?.violations
+        ? decision.violations.map(v => ({ code: v.code, message: v.message, detail: v.detail }))
+        : [{ code: 'bridge_failed', message: bridgeR.error ?? 'unknown bridge failure' }];
       return {
-        ok: true,
-        recommendation_id: existingRec[0].id,
-        execution_id: exec[0]?.id,
-        skipped: 'already_linked',
+        ok: false,
+        recommendation_id: existingFindingId,
+        error: `bridge failed: ${bridgeR.error ?? 'unknown'}`,
+        violations,
       };
     }
-    // linked_finding_id is set but the recommendation row was deleted —
-    // fall through and create a new one. Don't block the dispatch.
+    return {
+      ok: true,
+      recommendation_id: existingFindingId,
+      execution_id: bridgeR.execution_id,
+      skipped: ticket.linked_finding_id ? 'already_linked' : 'reused_orphan',
+    };
   }
 
   // 2. Pre-flight scope check + auto-retry (VTID-02671). Parse Devon's
