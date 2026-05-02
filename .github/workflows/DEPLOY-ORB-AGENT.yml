@@ -39,7 +39,7 @@ env:
   GCP_PROJECT_ID: lovable-vitana-vers1
   GCP_REGION: us-central1
   SERVICE_NAME: vitana-orb-agent
-  IMAGE_REPO: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana/orb-agent
+  IMAGE_REPO: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana-services/orb-agent
 
 jobs:
   build-and-deploy:
