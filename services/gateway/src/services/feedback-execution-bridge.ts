@@ -177,8 +177,13 @@ export async function dispatchFeedbackTicket(
     domain: 'feedback',
     risk_level: 'medium',
     risk_class: 'medium',
-    impact_score: 0.7,
-    effort_score: 0.5,
+    // VTID-02668: impact_score / effort_score are INTEGER (0-10 scale) per
+    // 20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql. The earlier
+    // 0.7 / 0.5 floats triggered Postgres 22P02 "invalid input syntax for
+    // type integer". 7 = high impact, 5 = medium effort, matching the
+    // auto_exec_eligible >=5 threshold.
+    impact_score: 7,
+    effort_score: 5,
     status: 'new',
     source_type: 'dev_autopilot',
     source_ref: `feedback_ticket:${ticket.id}`,
