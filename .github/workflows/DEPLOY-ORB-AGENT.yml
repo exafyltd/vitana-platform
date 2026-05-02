@@ -79,7 +79,7 @@ jobs:
             --image="$IMAGE" \
             --region="$GCP_REGION" \
             --project="$GCP_PROJECT_ID" \
-            --min-instances=0 \
+            --min-instances=1 \
             --max-instances=10 \
             --cpu=2 \
             --memory=4Gi \
