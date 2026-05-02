@@ -14337,6 +14337,16 @@ function renderVoiceLabProvidersPanel() {
  * Today: read-only listing of agents that have a row in agent_voice_configs,
  * plus a roster view of all agents in agents_registry.
  */
+/**
+ * VTID-LIVEKIT-FOUNDATION: Real Agent Voice Configuration panel.
+ *
+ * Per-agent STT/LLM/TTS dropdowns + Save + Test conversation. Reads from:
+ *   GET /api/v1/voice-providers              (registry, filtered by kind)
+ *   GET /api/v1/agents/:id/voice-config      (current config)
+ *   PUT /api/v1/agents/:id/voice-config      (save)
+ *   POST /api/v1/voice-providers/:id/test    (per-provider health dot)
+ *   POST /api/v1/agents/:id/voice-config/test-session  (ephemeral test token)
+ */
 function renderVoiceLabAgentConfigPanel() {
     var panel = document.createElement('div');
     panel.className = 'voice-lab-agent-config-panel';
@@ -14349,23 +14359,252 @@ function renderVoiceLabAgentConfigPanel() {
 
     var sub = document.createElement('div');
     sub.style.cssText = 'color:#94a3b8;font-size:13px;margin-bottom:16px;';
-    sub.innerHTML = 'Pick the STT / LLM / TTS lineup for each agent. Saved configs are read at the next session start.<br>'
-        + '<span style="color:#facc15;">Today this panel is READ-ONLY — save UI lands in follow-up PR.</span>';
+    sub.textContent = 'Pick the STT / LLM / TTS lineup for each agent. Saved configs are read at the next session start.';
     panel.appendChild(sub);
 
-    var note = document.createElement('div');
-    note.style.cssText = 'margin-top:24px;padding:16px;background:#1a2332;border-left:3px solid #facc15;color:#cbd5e1;font-size:13px;line-height:1.6;';
-    note.innerHTML = '<strong>What this surface will become</strong> (per the approved plan):'
-        + '<ul style="margin:8px 0 0 16px;padding:0;">'
-        + '<li>Per-agent panel listing every entry in <code>agents_registry</code></li>'
-        + '<li>Three dropdowns side-by-side: STT (provider + model + tunables), LLM (provider + model + temperature + max_tokens), TTS (provider + voice_id + stability)</li>'
-        + '<li>Auto-rendered options form per provider via <code>voice_providers.options_schema</code></li>'
-        + '<li>Green/red health dot per option from <code>POST /voice-providers/:id/test</code></li>'
-        + '<li>Cost-per-minute estimate next to each model</li>'
-        + '<li>"Test conversation" button — ephemeral session bound to unsaved config</li>'
-        + '<li>Audit timeline: every change with timestamp, operator, before/after diff</li>'
-        + '</ul>';
-    panel.appendChild(note);
+    var agentBar = document.createElement('div');
+    agentBar.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;';
+    agentBar.innerHTML = '<span style="color:#94a3b8;font-size:12px;align-self:center;">Agent:</span>';
+    panel.appendChild(agentBar);
+
+    var formContainer = document.createElement('div');
+    panel.appendChild(formContainer);
+
+    var saveBar = document.createElement('div');
+    saveBar.style.cssText = 'margin-top:16px;display:flex;gap:8px;align-items:center;';
+    panel.appendChild(saveBar);
+
+    // State container we mutate as the user clicks around.
+    var st = {
+        providers: [],          // full /voice-providers response
+        agents: ['orb-agent', 'vitana', 'sage', 'devon', 'atlas', 'mira'],
+        activeAgent: 'orb-agent',
+        config: null,           // current agent_voice_configs row
+        dirty: false,
+    };
+
+    function gw(path, opts) {
+        var url = (window.GATEWAY_URL || '') + path;
+        return fetch(url, opts).then(function (r) { return r.json(); });
+    }
+
+    function providerOptions(kind) {
+        return st.providers.filter(function (p) { return p.kind === kind; });
+    }
+
+    function streamingFlag(provider, modelId) {
+        var models = provider && Array.isArray(provider.models) ? provider.models : [];
+        for (var i = 0; i < models.length; i++) {
+            if (models[i].id === modelId) return models[i].streaming !== false;
+        }
+        return true;
+    }
+
+    function renderTierRow(label, kind, providerKey, modelKey, optionsKey) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:8px;margin-bottom:8px;align-items:center;';
+
+        var lbl = document.createElement('label');
+        lbl.textContent = label;
+        lbl.style.cssText = 'color:#facc15;font-family:monospace;font-size:12px;letter-spacing:0.05em;';
+        row.appendChild(lbl);
+
+        var providerSel = document.createElement('select');
+        providerSel.style.cssText = 'padding:6px 8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;';
+        var emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— choose ' + label.toLowerCase() + ' —';
+        providerSel.appendChild(emptyOpt);
+        providerOptions(kind).forEach(function (p) {
+            var opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.display_name + (p.notes ? ' ' : '');
+            providerSel.appendChild(opt);
+        });
+        if (st.config && st.config[providerKey]) providerSel.value = st.config[providerKey];
+        row.appendChild(providerSel);
+
+        var modelSel = document.createElement('select');
+        modelSel.style.cssText = providerSel.style.cssText;
+        row.appendChild(modelSel);
+
+        var statusDot = document.createElement('div');
+        statusDot.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;';
+        statusDot.innerHTML = '<span class="hd" style="width:8px;height:8px;border-radius:50%;background:#475569;"></span>'
+            + '<span class="lbl">probing…</span>';
+        row.appendChild(statusDot);
+
+        function repopulateModels() {
+            modelSel.innerHTML = '';
+            var pid = providerSel.value;
+            var prov = st.providers.find(function (p) { return p.id === pid; });
+            if (!prov) {
+                var blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = '—';
+                modelSel.appendChild(blank);
+                return;
+            }
+            (prov.models || []).forEach(function (m) {
+                var o = document.createElement('option');
+                o.value = m.id;
+                var streamingNote = m.streaming === false ? ' (non-streaming)' : '';
+                o.textContent = (m.display_name || m.id) + streamingNote;
+                modelSel.appendChild(o);
+            });
+            if (st.config && st.config[modelKey]) modelSel.value = st.config[modelKey];
+            // Update health dot for the chosen provider.
+            updateHealthDot();
+        }
+
+        function updateHealthDot() {
+            var pid = providerSel.value;
+            if (!pid) {
+                statusDot.querySelector('.hd').style.background = '#475569';
+                statusDot.querySelector('.lbl').textContent = '—';
+                return;
+            }
+            statusDot.querySelector('.lbl').textContent = 'probing…';
+            gw('/api/v1/voice-providers/' + encodeURIComponent(pid) + '/test', { method: 'POST' })
+                .then(function (body) {
+                    var ok = body && body.ok;
+                    statusDot.querySelector('.hd').style.background = ok ? '#22c55e' : '#ef4444';
+                    statusDot.querySelector('.lbl').textContent = (body && body.detail) || (ok ? 'reachable' : 'unreachable');
+                })
+                .catch(function () {
+                    statusDot.querySelector('.hd').style.background = '#ef4444';
+                    statusDot.querySelector('.lbl').textContent = 'probe failed';
+                });
+        }
+
+        providerSel.addEventListener('change', function () {
+            st.dirty = true;
+            repopulateModels();
+        });
+        modelSel.addEventListener('change', function () { st.dirty = true; });
+
+        repopulateModels();
+        return {
+            row: row,
+            getValue: function () {
+                return { provider: providerSel.value || null, model: modelSel.value || null };
+            },
+        };
+    }
+
+    function renderForm() {
+        formContainer.innerHTML = '';
+
+        var sttCtl = renderTierRow('STT', 'stt', 'stt_provider', 'stt_model', 'stt_options');
+        var llmCtl = renderTierRow('LLM', 'llm', 'llm_provider', 'llm_model', 'llm_options');
+        var ttsCtl = renderTierRow('TTS', 'tts', 'tts_provider', 'tts_model', 'tts_options');
+
+        formContainer.appendChild(sttCtl.row);
+        formContainer.appendChild(llmCtl.row);
+        formContainer.appendChild(ttsCtl.row);
+
+        saveBar.innerHTML = '';
+        var saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.style.cssText = 'padding:8px 16px;';
+        saveBtn.addEventListener('click', function () {
+            var stt = sttCtl.getValue();
+            var llm = llmCtl.getValue();
+            var tts = ttsCtl.getValue();
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+            gw('/api/v1/agents/' + encodeURIComponent(st.activeAgent) + '/voice-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    stt_provider: stt.provider, stt_model: stt.model,
+                    llm_provider: llm.provider, llm_model: llm.model,
+                    tts_provider: tts.provider, tts_model: tts.model,
+                }),
+            }).then(function (body) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+                if (body && body.ok) {
+                    st.config = body.config;
+                    st.dirty = false;
+                    showToast('Saved.', 'success');
+                } else {
+                    showToast('Save failed: ' + (body && body.error), 'error');
+                }
+            }).catch(function (e) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+                showToast('Save network error: ' + e.message, 'error');
+            });
+        });
+        saveBar.appendChild(saveBtn);
+
+        var testBtn = document.createElement('button');
+        testBtn.textContent = 'Test conversation';
+        testBtn.className = 'btn btn-secondary';
+        testBtn.style.cssText = 'padding:8px 16px;margin-left:8px;';
+        testBtn.title = 'Mints an ephemeral 5-min token bound to the proposed (unsaved) config';
+        testBtn.addEventListener('click', function () {
+            var stt = sttCtl.getValue();
+            var llm = llmCtl.getValue();
+            var tts = ttsCtl.getValue();
+            gw('/api/v1/agents/' + encodeURIComponent(st.activeAgent) + '/voice-config/test-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    stt_provider: stt.provider, stt_model: stt.model,
+                    llm_provider: llm.provider, llm_model: llm.model,
+                    tts_provider: tts.provider, tts_model: tts.model,
+                }),
+            }).then(function (body) {
+                if (body && body.ok && body.token) {
+                    showToast('Test token minted (5 min). URL: ' + body.url + ' room: ' + body.room, 'success');
+                } else {
+                    showToast('Test session failed: ' + (body && body.error), 'error');
+                }
+            });
+        });
+        saveBar.appendChild(testBtn);
+
+        var status = document.createElement('span');
+        status.style.cssText = 'color:#94a3b8;font-size:12px;margin-left:8px;';
+        status.textContent = st.config
+            ? ('current: ' + (st.config.transport || 'livekit_cascade'))
+            : '(no saved config — Save to create)';
+        saveBar.appendChild(status);
+    }
+
+    function selectAgent(agentId) {
+        st.activeAgent = agentId;
+        Array.prototype.forEach.call(agentBar.querySelectorAll('button'), function (b) {
+            b.classList.toggle('active', b.dataset.agent === agentId);
+            b.style.background = b.dataset.agent === agentId ? '#1e40af' : '#1a2332';
+        });
+        gw('/api/v1/agents/' + encodeURIComponent(agentId) + '/voice-config').then(function (body) {
+            st.config = (body && body.config) || null;
+            renderForm();
+        });
+    }
+
+    // Boot: load registry, render agent buttons, default-select first agent.
+    gw('/api/v1/voice-providers').then(function (body) {
+        st.providers = (body && body.providers) || [];
+        if (!st.providers.length) {
+            formContainer.innerHTML = '<div style="padding:16px;color:#94a3b8;">No providers registered. Apply migration #1156.</div>';
+            return;
+        }
+        st.agents.forEach(function (id) {
+            var b = document.createElement('button');
+            b.dataset.agent = id;
+            b.className = 'btn';
+            b.textContent = id;
+            b.style.cssText = 'padding:6px 12px;background:#1a2332;color:#e5e7eb;border:1px solid #334155;border-radius:4px;cursor:pointer;';
+            b.addEventListener('click', function () { selectAgent(id); });
+            agentBar.appendChild(b);
+        });
+        selectAgent(st.activeAgent);
+    });
 
     return panel;
 }
