@@ -3120,6 +3120,7 @@ function buildLiveApiTools(
             "  edit_partner_preferences → /me/profile?drawer=partner (private-by-default partner-finding prefs)",
             "  edit_service_offerings   → /me/profile?drawer=offerings (services I offer)",
             "  privacy_settings         → /profile/me/privacy (per-section visibility toggles)",
+            "  connected_apps           → /settings/connected-apps (link/unlink Google, YouTube, Spotify, Apple Music etc — use whenever the user needs to connect or reconnect a music/calendar/email service)",
             "  profile_with_match       → /u/<vitana_id>?match_intent=<intent_id> (matched user's profile with the matched post anchored)",
             "  discover_marketplace     → /discover/marketplace (commercial intents)",
             "  events_meetups           → /comm/events-meetups",
@@ -3144,7 +3145,7 @@ function buildLiveApiTools(
                   'open_asks','members',
                   'intent_match_detail','intent_post_public','profile_with_match',
                   'edit_dance_preferences','edit_partner_preferences','edit_service_offerings',
-                  'privacy_settings','discover_marketplace',
+                  'privacy_settings','connected_apps','discover_marketplace',
                   'events_meetups','community_feed',
                 ],
               },
@@ -6724,6 +6725,10 @@ async function executeLiveApiToolInner(
           case 'edit_partner_preferences': url = '/me/profile?drawer=partner'; title = 'Partner preferences'; break;
           case 'edit_service_offerings':   url = '/me/profile?drawer=offerings'; title = 'Service offerings'; break;
           case 'privacy_settings':         url = '/profile/me/privacy'; title = 'Privacy & Visibility'; break;
+          // VTID-02675: pairs with the play_music fallback at ~line 4801 which
+          // says "want me to take you to Connected Apps?". Without this case,
+          // the fuzzy resolver would land the user on a random Settings page.
+          case 'connected_apps':           url = '/settings/connected-apps'; title = 'Connected Apps'; break;
           case 'discover_marketplace':     url = '/discover/marketplace'; title = 'Marketplace'; break;
           case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
           case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
