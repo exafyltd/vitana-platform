@@ -69,7 +69,7 @@ router.get('/', (req: Request, res: Response) => {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
     res.setHeader('Content-Security-Policy',
-      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self' https://*.livekit.cloud wss://*.livekit.cloud; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
@@ -180,7 +180,7 @@ router.get('/*', (req: Request, res: Response, next: Function) => {
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseDomain = supabaseUrl ? new URL(supabaseUrl).origin : '';
     res.setHeader('Content-Security-Policy',
-      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; connect-src 'self' https://*.livekit.cloud wss://*.livekit.cloud; img-src 'self' ${supabaseDomain} https: data: blob:; media-src 'self' data:`);
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
