@@ -350,9 +350,19 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // file_outside_allow_scope rule forever. Re-extracting here makes the fix
   // retroactive for every existing plan without a regeneration pass.
   const freshFiles = extractFilePaths(plan.plan_markdown);
-  const files = freshFiles.length > 0
+  let files = freshFiles.length > 0
     ? freshFiles
     : (plan.files_referenced || []).map(String);
+  // VTID-02687: same fallback as runExecutionSession — for feedback-bridged
+  // findings, use the bridge-validated spec_snapshot.proposed_files when
+  // both the markdown extraction and stored column are empty. Required for
+  // stale plan_versions inserted before VTID-02680.
+  if (files.length === 0) {
+    const proposed = (rec.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
+    if (Array.isArray(proposed)) {
+      files = proposed.filter((p): p is string => typeof p === 'string' && p.includes('/'));
+    }
+  }
   const deletions = extractDeletions(plan.plan_markdown);
   const safetyPlan: SafetyPlan = {
     risk_class: (rec.risk_class || 'medium') as 'low' | 'medium' | 'high',
@@ -1127,9 +1137,30 @@ async function runExecutionSession(
 
   // Re-extract files_referenced from plan_markdown (see note in
   // approveAutoExecute). Falls back to the stored column for pathological
-  // plans that lack a well-formed Files-to-modify section.
+  // plans that lack a well-formed Files-to-modify section. VTID-02687:
+  // for feedback-bridged findings, also fall back to the bridge-validated
+  // spec_snapshot.proposed_files — that list is authoritative even when
+  // the planner LLM produced markdown without parseable file paths AND
+  // the stored files_referenced column is empty (stale plan_versions from
+  // before VTID-02680).
   const freshFiles = extractFilePaths(plan.plan_markdown);
-  const planFiles = freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []);
+  let planFiles = freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []);
+  if (planFiles.length === 0) {
+    const findR = await supa<Array<{ source_ref: string | null; spec_snapshot: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=source_ref,spec_snapshot&limit=1`,
+    );
+    const snap = findR.ok && findR.data && findR.data[0]?.spec_snapshot;
+    const proposed = snap && Array.isArray((snap as { proposed_files?: unknown }).proposed_files)
+      ? ((snap as { proposed_files?: unknown }).proposed_files as unknown[]).filter(
+          (p): p is string => typeof p === 'string' && p.includes('/'),
+        )
+      : [];
+    if (proposed.length > 0) {
+      console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] plan.files_referenced empty — falling back to spec_snapshot.proposed_files (${proposed.length} files)`);
+      planFiles = proposed;
+    }
+  }
   if (planFiles.length === 0) {
     return { ok: false, error: 'plan has no files_referenced — cannot execute', session_id: sessionId };
   }
