@@ -362,10 +362,21 @@ const vertexAdapter: ProviderAdapter = {
       ? tools.map(t => ({ name: t.name, description: t.description, parameters: t.inputSchema }))
       : undefined;
 
+    // VTID-02690: Preview models (e.g. `gemini-3.1-pro-preview`) are NOT
+    // in the Vertex v1 publisher catalog the @google-cloud/vertexai Node
+    // SDK queries — they're exposed via the consumer Generative Language
+    // API (AI Studio). The Python google-genai used by livekit-plugins-
+    // google with vertexai=True talks to a different Vertex endpoint
+    // that DOES expose them. Until we migrate to @google/genai for Node,
+    // route preview models directly to AI Studio (skips Vertex entirely).
+    const isPreviewModel = /-preview\b/i.test(model);
+    const aiStudioKey = process.env.GOOGLE_GEMINI_API_KEY;
+    const skipVertex = isPreviewModel && Boolean(aiStudioKey);
+
     // Prefer Vertex AI when GOOGLE_CLOUD_PROJECT is set (Cloud Run path).
     // Fall back to Google AI Studio when only GOOGLE_GEMINI_API_KEY is present.
     const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-    if (projectId) {
+    if (projectId && !skipVertex) {
       try {
         const { VertexAI } = await import('@google-cloud/vertexai');
         const location = process.env.VERTEX_LOCATION || 'us-central1';
@@ -438,8 +449,11 @@ const vertexAdapter: ProviderAdapter = {
     }
 
     // Google AI Studio path
-    const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+    const apiKey = aiStudioKey;
     if (!apiKey) return { ok: false, error: 'No Vertex/Google AI credentials available' };
+    if (skipVertex) {
+      console.log(`[llm-router] preview model "${model}" — routing direct to AI Studio (skip Vertex)`);
+    }
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
       const parts: Array<Record<string, unknown>> = [];
