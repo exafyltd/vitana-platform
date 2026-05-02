@@ -1,0 +1,118 @@
+"""STT/LLM/TTS plugin factory.
+
+Reads an `agent_voice_configs` row (joined into the context-bootstrap
+payload) and instantiates the configured trio. Plugins not selected are
+imported but not instantiated — keeps memory footprint low. Adding a
+provider is one entry in `_REGISTRY` plus a seed row in `voice_providers`.
+
+Live behavior is gated on the actual livekit-agents plugin packages being
+present at runtime. The skeleton uses lazy imports + a NotImplementedError
+fallback so the agent boots even if optional plugins aren't installed.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
+
+
+class _STTPlugin(Protocol):
+    """Anything livekit-agents recognizes as an STT — see livekit.agents.stt.STT."""
+
+    pass
+
+
+class _LLMPlugin(Protocol):
+    pass
+
+
+class _TTSPlugin(Protocol):
+    pass
+
+
+@dataclass
+class ResolvedCascade:
+    stt: _STTPlugin | None
+    llm: _LLMPlugin | None
+    tts: _TTSPlugin | None
+    notes: list[str]
+
+
+def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
+    """Instantiate the STT/LLM/TTS plugins per the agent_voice_configs row.
+
+    voice_config shape (matches PR #3 migration):
+      {
+        "stt_provider": "deepgram", "stt_model": "nova-3", "stt_options": {...},
+        "llm_provider": "anthropic", "llm_model": "claude-sonnet-4-6", "llm_options": {...},
+        "tts_provider": "cartesia", "tts_model": "sonic-3", "tts_options": {...}
+      }
+    """
+    if voice_config is None:
+        logger.warning("build_cascade: no voice_config provided, returning empty cascade")
+        return ResolvedCascade(stt=None, llm=None, tts=None, notes=["no voice_config"])
+
+    notes: list[str] = []
+    stt = _build_stt(voice_config.get("stt_provider"), voice_config.get("stt_model"), voice_config.get("stt_options", {}), notes)
+    llm = _build_llm(voice_config.get("llm_provider"), voice_config.get("llm_model"), voice_config.get("llm_options", {}), notes)
+    tts = _build_tts(voice_config.get("tts_provider"), voice_config.get("tts_model"), voice_config.get("tts_options", {}), notes)
+    return ResolvedCascade(stt=stt, llm=llm, tts=tts, notes=notes)
+
+
+def _build_stt(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _STTPlugin | None:
+    if provider == "deepgram":
+        try:
+            from livekit.plugins import deepgram  # type: ignore[import-not-found]
+            return deepgram.STT(model=model or "nova-3", **options)
+        except ImportError:
+            notes.append(f"STT provider 'deepgram' requested but livekit-plugins-deepgram not installed")
+            return None
+    if provider == "assemblyai":
+        try:
+            from livekit.plugins import assemblyai  # type: ignore[import-not-found]
+            return assemblyai.STT(**options)
+        except ImportError:
+            notes.append(f"STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
+            return None
+    notes.append(f"unknown or unsupported STT provider: {provider}")
+    return None
+
+
+def _build_llm(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _LLMPlugin | None:
+    if provider == "anthropic":
+        try:
+            from livekit.plugins import anthropic  # type: ignore[import-not-found]
+            return anthropic.LLM(model=model or "claude-sonnet-4-6", **options)
+        except ImportError:
+            notes.append("LLM provider 'anthropic' requested but livekit-plugins-anthropic not installed")
+            return None
+    if provider == "openai":
+        try:
+            from livekit.plugins import openai  # type: ignore[import-not-found]
+            return openai.LLM(model=model or "gpt-4o", **options)
+        except ImportError:
+            notes.append("LLM provider 'openai' requested but livekit-plugins-openai not installed")
+            return None
+    notes.append(f"unknown or unsupported LLM provider: {provider}")
+    return None
+
+
+def _build_tts(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _TTSPlugin | None:
+    if provider == "cartesia":
+        try:
+            from livekit.plugins import cartesia  # type: ignore[import-not-found]
+            return cartesia.TTS(model=model or "sonic-3", **options)
+        except ImportError:
+            notes.append("TTS provider 'cartesia' requested but livekit-plugins-cartesia not installed")
+            return None
+    if provider == "elevenlabs":
+        try:
+            from livekit.plugins import elevenlabs  # type: ignore[import-not-found]
+            return elevenlabs.TTS(model=model or "eleven_turbo_v2_5", **options)
+        except ImportError:
+            notes.append("TTS provider 'elevenlabs' requested but livekit-plugins-elevenlabs not installed")
+            return None
+    notes.append(f"unknown or unsupported TTS provider: {provider}")
+    return None

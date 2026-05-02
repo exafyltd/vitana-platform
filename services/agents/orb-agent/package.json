@@ -1,0 +1,12 @@
+{
+  "name": "@vitana/orb-agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python main.py",
+    "start": "python main.py",
+    "test": "pytest",
+    "lint": "ruff check .",
+    "typecheck": "mypy src"
+  }
+}
