@@ -801,7 +801,14 @@ interface GeminiLiveSession {
   // serializing with /live/session/start's response.
   contextReadyPromise?: Promise<void>;
   // VTID-01225: Transcript accumulation for Cognee extraction
-  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
+  // Forwarding v2d: `persona` records WHICH persona spoke this assistant turn
+  // (e.g. 'vitana' / 'devon' / 'sage' / 'atlas' / 'mira'). Without this, the
+  // conversation_history injected into the next persona's prompt labels every
+  // turn "Assistant" — so when Vitana receives the user back from Devon, she
+  // sees Devon's lines under the same "Assistant" label and continues them in
+  // her own voice ("Hi, my name is Devon" with Vitana's TTS). With persona
+  // labels, the history reads "Devon: ..." and Vitana clearly distinguishes.
+  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string; persona?: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
   // VTID-LINK-INJECT: Event title+URL pairs from search_events tool results, injected into output transcript at turn_complete
@@ -1474,6 +1481,33 @@ function buildTranscriptSection(
   lines.push(`The user has ALREADY explained what they want above. Do NOT ask "what can I do for you?".`);
   lines.push(`Synthesize their report into ONE sentence and confirm: "So you're seeing X — is that right?". Do not echo their exact words. Do not summarize the whole transcript. If the question is outside your authority or is an instruction-manual question, hand back to Vitana via switch_persona(to:'vitana') with a brief bridge — NEVER forward to another specialist.`);
   return lines.join('\n');
+}
+
+// Render the in-prompt conversation_history with per-turn persona labels so
+// the receiving persona doesn't absorb someone else's words as their own.
+// Each assistant turn carries its persona ('vitana'/'devon'/'sage'/'atlas'/
+// 'mira'); user turns are labeled "User". Output is plain text suitable for
+// the <conversation_history> block consumed by buildLiveSystemInstruction
+// and buildAnonymousSystemInstruction.
+function renderConversationHistoryWithPersonas(
+  turns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string; persona?: string }> | undefined,
+  recentN: number = 10,
+): string | undefined {
+  if (!turns || turns.length === 0) return undefined;
+  const slice = turns.slice(-recentN);
+  return slice
+    .map(t => {
+      if (t.role === 'user') return `User: ${t.text}`;
+      const p = (t.persona || '').toLowerCase();
+      const label = p === 'vitana' ? 'Vitana'
+        : p === 'devon' ? 'Devon'
+        : p === 'sage'  ? 'Sage'
+        : p === 'atlas' ? 'Atlas'
+        : p === 'mira'  ? 'Mira'
+        : 'Assistant';
+      return `${label}: ${t.text}`;
+    })
+    .join('\n');
 }
 
 // Build the explicit language directive for specialist personaSystemOverride.
@@ -8567,10 +8601,10 @@ async function connectToLiveAPI(
                         session.lang,
                         session.voiceStyle || 'friendly, calm, empathetic',
                         session.clientContext,
-                        // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity
-                        session.transcriptTurns.length > 0
-                          ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Vitana'}: ${t.text}`).join('\n')
-                          : undefined,
+                        // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity.
+                        // Forwarding v2d: persona-labeled so the receiving
+                        // persona doesn't absorb another persona's lines as their own.
+                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
                         // VTID-02047: persona swap to Vitana is NOT a generic
                         // reconnect — Vitana should greet ("Welcome back…") not
                         // stay silent per the reconnect-bucket "DO NOT speak"
@@ -8595,10 +8629,11 @@ async function connectToLiveAPI(
                           + (((session as any).onboardingCohortBlock as string | undefined) ?? ''),
                         session.active_role,
                         session.conversationSummary,
-                        // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
-                        session.transcriptTurns.length > 0
-                          ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                          : undefined,
+                        // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
+                        // Forwarding v2d: persona-labeled so Vitana doesn't
+                        // absorb Devon/Sage/Atlas/Mira lines as her own past
+                        // speech ("Hi I'm Devon" with Vitana's voice).
+                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
                         // VTID-02047: persona swap to Vitana — see comment above.
                         // Suppress the reconnect-bucket "DO NOT speak" rule so
                         // Vitana actually greets the user back into the call.
@@ -9014,26 +9049,45 @@ async function connectToLiveAPI(
               const fullTranscript = session.outputTranscriptBuffer.trim();
               chatBridgeAssistantText = fullTranscript;
 
+              // Forwarding v2d: the FORCED FIRST UTTERANCE flag MUST flip even
+              // for the greeting turn — that IS the forced utterance. Setting
+              // it inside the `else` branch (greeting-turn = false) was the
+              // bug: every transparent reconnect re-applied the greeting
+              // because the flag never got set on Devon's actual greeting.
+              if ((session as any).personaForcedFirstMessage
+                  && !((session as any).personaFirstUtteranceDelivered as boolean | undefined)) {
+                (session as any).personaFirstUtteranceDelivered = true;
+              }
+
               if (isGreetingTurn) {
                 console.log(`[VTID-VOICE-INIT] Skipping memory write for greeting turn: "${fullTranscript.substring(0, 80)}..."`);
-              } else {
-                console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
-
-                // Add to transcriptTurns for in-memory accumulation
+                // Forwarding v2d: still record greeting turns in
+                // transcriptTurns so the conversation_history that gets
+                // injected into a swapped persona's prompt shows what was
+                // already said. Without this, a specialist's greeting line
+                // (e.g. "Hi I'm Devon, what's the bug?") is missing from
+                // history when the user hands back to Vitana — and the model
+                // can fill the gap by inventing it in Vitana's voice.
                 session.transcriptTurns.push({
                   role: 'assistant',
                   text: fullTranscript,
-                  timestamp: new Date().toISOString()
+                  timestamp: new Date().toISOString(),
+                  persona: ((session as any).activePersona as string | undefined) || 'vitana',
                 });
+              } else {
+                console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
 
-                // Forwarding v2: mark the FORCED FIRST UTTERANCE block as
-                // consumed so subsequent transparent reconnects don't make
-                // the persona re-greet. The flag is reset whenever a fresh
-                // persona swap fires (see report_to_specialist + switch_persona).
-                if ((session as any).personaForcedFirstMessage
-                    && !((session as any).personaFirstUtteranceDelivered as boolean | undefined)) {
-                  (session as any).personaFirstUtteranceDelivered = true;
-                }
+                // Add to transcriptTurns for in-memory accumulation, recording
+                // which persona spoke this turn so downstream prompt builders
+                // can label it correctly (otherwise Vitana absorbs Devon's
+                // lines as her own past speech — the "Hi I'm Devon in Vitana
+                // voice" failure).
+                session.transcriptTurns.push({
+                  role: 'assistant',
+                  text: fullTranscript,
+                  timestamp: new Date().toISOString(),
+                  persona: ((session as any).activePersona as string | undefined) || 'vitana',
+                });
 
                 // Forwarding v2 anti-impersonation guard: detect if this
                 // utterance impersonates a different persona ("I am Devon"
