@@ -48,12 +48,21 @@ interface FeedbackTicketRow {
   linked_finding_id: string | null;
 }
 
+export interface BridgeViolation {
+  code: string;
+  message: string;
+  detail?: unknown;
+}
+
 export interface BridgeResult {
   ok: boolean;
   recommendation_id?: string;
   execution_id?: string;
   skipped?: string;
   error?: string;
+  // VTID-02669: structured violations (safety gate or local pre-flight) so
+  // the UI can render a bullet list and guide the supervisor to revise.
+  violations?: BridgeViolation[];
 }
 
 interface SupaConfig {
@@ -100,6 +109,86 @@ function extractProblemHeadline(specMd: string | null, raw: string | null): stri
   }
   if (raw && raw.trim()) return shortenForTitle(raw);
   return 'Feedback ticket — no spec';
+}
+
+// VTID-02669: parse Devon's "Files to touch" section out of spec_md so we can
+// (a) seed spec_snapshot.file_path with a real allow-scoped path for the
+// safety gate's pre-flight check (avoids file_outside_allow_scope on a null
+// file_path) and (b) fail FAST with a friendly violation if every proposed
+// file is in deny_scope — saves a planner round trip the gate would refuse.
+//
+// Devon's spec template (DEVON_SYSTEM in feedback-llm-resolvers.ts) emits a
+// `## Files to touch (best guess)` section with a bullet list. We grep for
+// path-shaped tokens (with at least one slash and a known extension).
+const FILE_PATH_REGEX = /([a-zA-Z0-9_./-]+\.(?:tsx?|jsx?|sql|md|yml|yaml|json|css|html|sh|py))/g;
+
+export function parseFilesToTouchFromSpec(specMd: string | null | undefined): string[] {
+  if (!specMd) return [];
+  const md = specMd.replace(/\r\n/g, '\n');
+  // Find the section heading variants. Tolerate slight wording drift.
+  const headingPattern = /^##+\s*Files?\s+to\s+touch\b[^\n]*$/im;
+  const startMatch = md.match(headingPattern);
+  if (!startMatch) {
+    // Fallback: pull file paths from anywhere in the doc.
+    return Array.from(new Set((md.match(FILE_PATH_REGEX) ?? []).filter(p => p.includes('/'))));
+  }
+  const startIdx = (startMatch.index ?? 0) + startMatch[0].length;
+  // Section ends at next H2/H3 or end of doc.
+  const after = md.slice(startIdx);
+  const nextHeading = after.match(/^##+\s/m);
+  const sectionBody = nextHeading ? after.slice(0, nextHeading.index) : after;
+  return Array.from(new Set((sectionBody.match(FILE_PATH_REGEX) ?? []).filter(p => p.includes('/'))));
+}
+
+interface SafetyConfigSummary {
+  allow_scope: string[];
+  deny_scope: string[];
+}
+
+async function loadSafetyConfig(s: SupaConfig): Promise<SafetyConfigSummary> {
+  const resp = await fetch(`${s.url}/rest/v1/dev_autopilot_config?id=eq.singleton&select=allow_scope,deny_scope&limit=1`, {
+    headers: s.headers,
+  });
+  if (!resp.ok) {
+    return {
+      allow_scope: [
+        'services/gateway/src/routes/**',
+        'services/gateway/src/services/**',
+        'services/gateway/src/frontend/command-hub/**',
+        'services/agents/**',
+      ],
+      deny_scope: [
+        'supabase/migrations/**',
+        '**/auth*',
+        '**/orb-live.ts',
+        '.github/workflows/**',
+        '**/.env*',
+      ],
+    };
+  }
+  const rows = (await resp.json().catch(() => [])) as Array<SafetyConfigSummary>;
+  return rows[0] ?? { allow_scope: [], deny_scope: [] };
+}
+
+function preflightFiles(files: string[], cfg: SafetyConfigSummary): {
+  allowed: string[];
+  denied: string[];
+  outside: string[];
+} {
+  // We import matchGlob lazily (require inside service module is fine in our
+  // runtime) so the bridge has no cyclic dep on the gate at module load.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { matchGlob } = require('./dev-autopilot-safety') as { matchGlob: (p: string, pat: string) => boolean };
+  const matchAny = (p: string, pats: string[]) => pats.some(pat => matchGlob(p, pat));
+  const allowed: string[] = [];
+  const denied: string[] = [];
+  const outside: string[] = [];
+  for (const f of files) {
+    if (matchAny(f, cfg.deny_scope)) denied.push(f);
+    else if (matchAny(f, cfg.allow_scope)) allowed.push(f);
+    else outside.push(f);
+  }
+  return { allowed, denied, outside };
 }
 
 /**
@@ -161,15 +250,56 @@ export async function dispatchFeedbackTicket(
     // fall through and create a new one. Don't block the dispatch.
   }
 
-  // 2. Build the recommendation. spec_snapshot is the payload the autopilot
+  // 2. Pre-flight scope check (VTID-02669). Pull "Files to touch" from
+  //    Devon's spec, validate against allow_scope / deny_scope. If every
+  //    proposed file is denied or out-of-scope, refuse with a structured
+  //    violation BEFORE inserting the recommendation — saves a planner
+  //    round trip the safety gate would refuse anyway and gives the
+  //    supervisor a clear, actionable error.
+  const proposedFiles = parseFilesToTouchFromSpec(ticket.spec_md);
+  const cfg = await loadSafetyConfig(s);
+  const flight = preflightFiles(proposedFiles, cfg);
+  if (proposedFiles.length === 0) {
+    return {
+      ok: false,
+      error: 'NO_FILES_IN_SPEC',
+      violations: [{
+        code: 'no_files_in_spec',
+        message: "Devon's spec didn't list any files to touch. Add a `## Files to touch` section with concrete paths, then Re-generate.",
+      }],
+    };
+  }
+  if (flight.allowed.length === 0) {
+    const violations: BridgeViolation[] = [];
+    if (flight.denied.length > 0) {
+      violations.push({
+        code: 'file_in_deny_scope',
+        message: `Every proposed file is in the dev autopilot deny-scope: ${flight.denied.join(', ')}. Revise your instructions to scope the fix to allowed paths (gateway routes/services/frontend, agents). Files like orb-live.ts, supabase/migrations/**, and .github/workflows/** are intentionally excluded.`,
+        detail: { denied: flight.denied, deny_scope: cfg.deny_scope },
+      });
+    }
+    if (flight.outside.length > 0) {
+      violations.push({
+        code: 'file_outside_allow_scope',
+        message: `Files outside the allow-scope: ${flight.outside.join(', ')}. Allow scope: ${cfg.allow_scope.join(', ')}.`,
+        detail: { outside: flight.outside, allow_scope: cfg.allow_scope },
+      });
+    }
+    return { ok: false, error: 'NO_ALLOWED_FILES', violations };
+  }
+
+  // 3. Build the recommendation. spec_snapshot is the payload the autopilot
   //    executor reads at run-time. We pack the spec and supervisor notes so
-  //    the Claude session has everything it needs.
+  //    the Claude session has everything it needs. Set file_path to the
+  //    first allow-scoped file so the planner has a real seed (the safety
+  //    pre-flight at listing time also reads file_path).
   const headline = extractProblemHeadline(ticket.spec_md, ticket.raw_transcript);
   const title = `[${ticket.ticket_number ?? 'feedback'}] ${shortenForTitle(headline, 100)}`;
   const summary = ticket.supervisor_notes
     ? `${shortenForTitle(headline, 200)} — ${shortenForTitle(ticket.supervisor_notes, 280)}`
     : shortenForTitle(headline, 480);
   const now = new Date().toISOString();
+  const seedFilePath = flight.allowed[0];
 
   const payload = {
     title,
@@ -195,7 +325,8 @@ export async function dispatchFeedbackTicket(
     spec_snapshot: {
       // Standard dev_autopilot fields the executor / planner expect.
       signal_type: 'feedback_ticket',
-      file_path: null,
+      file_path: seedFilePath,
+      proposed_files: flight.allowed,
       line_number: null,
       suggested_action: spec,
       scanner: 'feedback_pipeline',
@@ -246,12 +377,33 @@ export async function dispatchFeedbackTicket(
   //    the next backgroundExecutorTick claims it (~30s).
   const bridge = await bridgeActivationToExecution(findingId, approvedBy ?? null);
   if (!bridge.ok) {
-    // Don't unset linked_finding_id — the recommendation exists; the bridge
-    // just couldn't kick the execution. Operator can retry.
+    // VTID-02669: surface decision.violations[] from the safety gate so the
+    // UI can show exactly which rule rejected the recommendation. Common
+    // post-pre-flight cases: tests_missing (Devon didn't propose a test
+    // file), daily_budget_exhausted, kill_switch_engaged, or the LLM
+    // planner expanded files_to_modify outside what the bridge pre-flight
+    // saw.
+    const decision = (bridge.decision ?? null) as { violations?: BridgeViolation[] } | null;
+    const violations: BridgeViolation[] = decision?.violations
+      ? decision.violations.map(v => ({ code: v.code, message: v.message, detail: v.detail }))
+      : [{ code: 'bridge_failed', message: bridge.error ?? 'unknown bridge failure' }];
+
+    // VTID-02669: rollback the linked_finding_id so subsequent retries
+    // start fresh — otherwise the supervisor is stuck with a stale link.
+    await fetch(
+      `${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}`,
+      {
+        method: 'PATCH',
+        headers: { ...s.headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ linked_finding_id: null }),
+      },
+    ).catch(() => { /* non-blocking */ });
+
     return {
       ok: false,
       recommendation_id: findingId,
       error: `bridge failed: ${bridge.error ?? 'unknown'}`,
+      violations,
     };
   }
 

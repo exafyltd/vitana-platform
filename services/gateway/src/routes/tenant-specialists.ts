@@ -828,18 +828,32 @@ router.post('/:tenantId/tickets/:id/draft-spec', async (req: Request, res: Respo
 });
 
 // ---------------------------------------------------------------------------
-// POST /:tenantId/tickets/:id/activate — VTID-02664 (refactored)
+// POST /:tenantId/tickets/:id/activate — VTID-02669 (atomic, last-human-touch)
 // ---------------------------------------------------------------------------
-// Activate is now pure status advancement. It NO LONGER drafts. The
-// supervisor must call /draft-spec first when a draft is required;
-// otherwise this endpoint returns DRAFT_REQUIRED so the UI can guide
-// them to write instructions and generate the spec first.
+// Activate IS the last human touch. After this call returns ok, the ticket
+// is autonomous:
+//   bug / ux_issue:     dispatch to dev autopilot (atomic) → cooling →
+//                       running → ci → merging → deploying → verifying →
+//                       completed → reconciler closes the ticket.
+//   support_question:   answer_ready → resolved (Sage's draft is delivered).
+//   marketplace_claim:  spec_ready → in_progress (Atlas resolution waits
+//                       for executor adapter — out of scope this PR).
+//   account_issue:      same as marketplace_claim for now.
+//   feedback / feature_request: triaged → in_progress (no draft layer).
 //
-//   spec_ready    →  in_progress
-//   answer_ready  →  resolved (sends Sage's drafted answer)
-//   in_progress   →  resolved (manual close)
-//   <needs_draft> →  409 DRAFT_REQUIRED (call /draft-spec first)
-//   <terminal>    →  409 ALREADY_TERMINAL
+// Atomicity contract for bug/ux_issue:
+//   - We dispatch BEFORE flipping status.
+//   - On dispatch success: single update flips status to in_progress AND
+//     stamps linked_finding_id. The supervisor sees the progress bar.
+//   - On dispatch failure (safety gate / pre-flight): status stays
+//     spec_ready, we return 409 with violations[]. The drawer renders
+//     them inline. No "stranded in_progress" state ever.
+//
+// Hard removed (was in earlier phases):
+//   - The "click Activate again on in_progress to resolve" path. The
+//     reconciler closes tickets when the autopilot execution completes.
+//   - The standalone /dispatch endpoint (VTID-02667). Recovery is now
+//     re-Activate from spec_ready, not a separate button.
 router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Response) => {
   const tenantId = req.params.tenantId;
   const userId = await ensureTenantAdmin(req, res, tenantId);
@@ -849,6 +863,9 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   const t = loaded.ticket as {
     id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null;
     spec_md: string | null; draft_answer_md: string | null; resolution_md: string | null;
+    supervisor_notes: string | null; raw_transcript: string | null;
+    screen_path: string | null; app_version: string | null;
+    linked_finding_id: string | null;
   };
 
   const supabase = getServiceClient();
@@ -856,15 +873,22 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   if (TERMINAL.has(t.status)) {
     return res.status(409).json({ ok: false, error: 'ALREADY_TERMINAL', status: t.status });
   }
+  if (t.status === 'in_progress') {
+    return res.status(409).json({
+      ok: false,
+      error: 'ALREADY_IN_PROGRESS',
+      message: 'This ticket is already running. The autopilot will close it when the run completes.',
+      status: t.status,
+    });
+  }
 
-  // Kinds with a draft layer require the draft to exist before Activate.
   const KINDS_WITH_DRAFT = new Set(['support_question', 'bug', 'ux_issue', 'marketplace_claim', 'account_issue']);
   const NEEDS_DRAFT = new Set(['new', 'triaged', 'spec_pending', 'answer_pending', 'needs_more_info', 'reopened']);
   if (KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
     return res.status(409).json({
       ok: false,
       error: 'DRAFT_REQUIRED',
-      message: 'Generate a spec / answer / resolution first via /draft-spec.',
+      message: 'Generate a spec / answer / resolution first.',
       status: t.status,
       kind: t.kind,
     });
@@ -872,63 +896,79 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
 
   let newStatus = t.status;
   let action = '';
+  let dispatchInfo:
+    | { recommendation_id?: string; execution_id?: string; skipped?: string }
+    | null = null;
 
-  // For kinds without a draft layer (feedback / feature_request), advance
-  // straight from new/triaged → in_progress (the supervisor's instructions
-  // go to supervisor_notes via the draft-spec UI even though no LLM ran).
-  if (!KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
+  // ATOMIC PATH for bug / ux_issue from spec_ready:
+  // dispatch → on success, flip status; on failure, stay at spec_ready
+  // and return 409 with violations.
+  if ((t.kind === 'bug' || t.kind === 'ux_issue') && t.status === 'spec_ready') {
+    const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
+    const dispatch = await dispatchFeedbackTicket(t as any, userId);
+    if (!dispatch.ok) {
+      return res.status(409).json({
+        ok: false,
+        error: 'DISPATCH_BLOCKED',
+        message: dispatch.error ?? 'safety gate or pre-flight rejected the spec',
+        violations: dispatch.violations ?? [],
+        status: t.status,
+      });
+    }
+    // Dispatch succeeded — atomically flip status + stamp linked_finding_id
+    // (the bridge already wrote linked_finding_id; we do another write so
+    // status + audit are coherent if the bridge's intermediate write
+    // briefly persisted nothing).
+    const { error: upErr } = await supabase
+      .from('feedback_tickets')
+      .update({ status: 'in_progress', linked_finding_id: dispatch.recommendation_id ?? null })
+      .eq('id', t.id);
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    newStatus = 'in_progress';
+    action = 'dispatched';
+    dispatchInfo = {
+      recommendation_id: dispatch.recommendation_id,
+      execution_id: dispatch.execution_id,
+      skipped: dispatch.skipped,
+    };
+  }
+
+  // support_question: answer_ready → resolved (Sage's draft is delivered).
+  // The actual delivery to the user (push notification / inbox) is a
+  // separate follow-up; for now status flip + audit is the contract.
+  else if (t.kind === 'support_question' && t.status === 'answer_ready') {
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
+      .eq('id', t.id).select('status').single();
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
+  }
+
+  // marketplace_claim / account_issue: spec_ready → in_progress (no
+  // executor adapter yet — these stay in_progress until manually closed).
+  else if ((t.kind === 'marketplace_claim' || t.kind === 'account_issue') && t.status === 'spec_ready') {
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    if (u) { newStatus = 'in_progress'; action = 'approved'; }
+  }
+
+  // feedback / feature_request: NEEDS_DRAFT → in_progress.
+  else if (!KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
     const { data: u, error: upErr } = await supabase.from('feedback_tickets')
       .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     if (u) { newStatus = 'in_progress'; action = 'activated'; }
   }
 
-  if (newStatus === 'spec_ready') {
-    const { data: u } = await supabase.from('feedback_tickets')
-      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
-    if (u) { newStatus = 'in_progress'; action = 'approved'; }
-  } else if (newStatus === 'answer_ready') {
-    const { data: u } = await supabase.from('feedback_tickets')
-      .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
-      .eq('id', t.id).select('status').single();
-    if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
-  } else if (newStatus === 'in_progress' && action !== 'activated') {
-    // already in progress and supervisor hits Activate again → resolve manually
-    const { data: u } = await supabase.from('feedback_tickets')
-      .update({ status: 'resolved', resolved_at: new Date().toISOString() })
-      .eq('id', t.id).select('status').single();
-    if (u) { newStatus = 'resolved'; action = 'resolved'; }
-  }
-
-  // VTID-02665: dispatch bug / ux_issue tickets through the dev autopilot
-  // pipeline once they enter in_progress. The bridge inserts an
-  // autopilot_recommendations row and creates a dev_autopilot_executions
-  // row that backgroundExecutorTick will claim on its next pass (~30s).
-  // The ticket's spec_md becomes the executor's spec; supervisor_notes is
-  // packed into spec_snapshot.feedback for the planner to see.
-  let dispatchInfo: { recommendation_id?: string; execution_id?: string; skipped?: string; error?: string } | null = null;
-  if (newStatus === 'in_progress' && (t.kind === 'bug' || t.kind === 'ux_issue')) {
-    try {
-      // Re-fetch the ticket so we have the latest spec_md / supervisor_notes
-      // (an earlier /draft-spec call in the same supervisor session sets
-      // both — but loaded.ticket above was fetched before any patches).
-      const { data: fresh } = await supabase.from('feedback_tickets')
-        .select('id, ticket_number, kind, status, spec_md, supervisor_notes, raw_transcript, vitana_id, screen_path, app_version, linked_finding_id')
-        .eq('id', t.id).maybeSingle();
-      if (fresh) {
-        const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
-        const r = await dispatchFeedbackTicket(fresh as any, userId);
-        dispatchInfo = {
-          recommendation_id: r.recommendation_id,
-          execution_id: r.execution_id,
-          skipped: r.skipped,
-          error: r.ok ? undefined : r.error,
-        };
-      }
-    } catch (err) {
-      console.warn(`[VTID-02665] dispatchFeedbackTicket failed for ${t.ticket_number}:`, err);
-      dispatchInfo = { error: err instanceof Error ? err.message : 'unknown' };
-    }
+  else {
+    return res.status(409).json({
+      ok: false,
+      error: 'INVALID_TRANSITION',
+      message: `No Activate transition defined for kind=${t.kind} status=${t.status}.`,
+      status: t.status,
+      kind: t.kind,
+    });
   }
 
   // Audit + OASIS
@@ -1050,69 +1090,10 @@ router.put('/:tenantId/tickets/:id/reclassify', async (req: Request, res: Respon
   return res.json({ ok: true, ticket_id: t.id, kind: v.data.kind, status: 'triaged' });
 });
 
-// ---------------------------------------------------------------------------
-// POST /:tenantId/tickets/:id/dispatch — VTID-02667
-// ---------------------------------------------------------------------------
-// Manual dispatch trigger for tickets that landed in_progress without
-// linked_finding_id being set (e.g. activated before VTID-02665 deployed,
-// or where the bridge errored silently). Idempotent — if linked_finding_id
-// is already set, returns the existing recommendation/execution.
-//
-// Requirements:
-//   - kind ∈ {bug, ux_issue}
-//   - status = 'in_progress' OR 'spec_ready'
-//   - spec_md is non-empty
-router.post('/:tenantId/tickets/:id/dispatch', async (req: Request, res: Response) => {
-  const tenantId = req.params.tenantId;
-  const userId = await ensureTenantAdmin(req, res, tenantId);
-  if (!userId) return;
-  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
-  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
-  const t = loaded.ticket as {
-    id: string; ticket_number: string; kind: string; status: string;
-    spec_md: string | null; supervisor_notes: string | null;
-    raw_transcript: string | null; vitana_id: string | null;
-    screen_path: string | null; app_version: string | null;
-    linked_finding_id: string | null;
-  };
-
-  if (t.kind !== 'bug' && t.kind !== 'ux_issue') {
-    return res.status(409).json({ ok: false, error: 'KIND_NOT_DISPATCHABLE', kind: t.kind });
-  }
-  const VALID = new Set(['in_progress', 'spec_ready']);
-  if (!VALID.has(t.status)) {
-    return res.status(409).json({ ok: false, error: 'STATUS_NOT_DISPATCHABLE', status: t.status });
-  }
-  if (!t.spec_md || !t.spec_md.trim()) {
-    return res.status(409).json({ ok: false, error: 'NO_SPEC' });
-  }
-
-  // If status is spec_ready, advance to in_progress first so the activation
-  // semantics match the normal flow.
-  if (t.status === 'spec_ready') {
-    const supabase = getServiceClient();
-    await supabase.from('feedback_tickets').update({ status: 'in_progress' }).eq('id', t.id);
-    t.status = 'in_progress';
-  }
-
-  try {
-    const { dispatchFeedbackTicket } = await import('../services/feedback-execution-bridge');
-    const r = await dispatchFeedbackTicket(t as any, userId);
-    if (!r.ok) {
-      return res.status(502).json({ ok: false, error: r.error ?? 'DISPATCH_FAILED' });
-    }
-    return res.json({
-      ok: true,
-      ticket_id: t.id,
-      ticket_number: t.ticket_number,
-      recommendation_id: r.recommendation_id,
-      execution_id: r.execution_id,
-      skipped: r.skipped,
-    });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'unknown' });
-  }
-});
+// VTID-02669: the standalone POST /dispatch endpoint (VTID-02667) is
+// REMOVED. Recovery from a stranded ticket is now: reset to spec_ready
+// (data fixup) and the next /activate atomically dispatches with proper
+// violation surfacing.
 
 void VTID;
 export default router;

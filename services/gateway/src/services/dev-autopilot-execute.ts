@@ -485,7 +485,7 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
 export async function bridgeActivationToExecution(
   findingId: string,
   approvedBy: string | null = null,
-): Promise<{ ok: boolean; execution_id?: string; error?: string; skipped?: string }> {
+): Promise<{ ok: boolean; execution_id?: string; error?: string; skipped?: string; decision?: unknown }> {
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
 
@@ -536,7 +536,14 @@ export async function bridgeActivationToExecution(
   //    execute_after back to now so the next tick claims it.
   const approval = await approveAutoExecute({ finding_id: findingId, approved_by: approvedBy || undefined });
   if (!approval.ok || !approval.execution) {
-    return { ok: false, error: approval.error || 'approval failed' };
+    // VTID-02669: surface decision.violations[] so the caller (and the UI)
+    // can show exactly which gate rule blocked. Previously this swallowed
+    // the array and only returned a generic message.
+    return {
+      ok: false,
+      error: approval.error || 'approval failed',
+      decision: approval.decision,
+    };
   }
   const execId = approval.execution.id;
   await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
@@ -1824,6 +1831,22 @@ export async function backgroundExecutorTick(): Promise<void> {
     await reconcileStuckExecutions(s);
   } catch (err) {
     console.error(`${LOG_PREFIX} reconciler error:`, err);
+  }
+
+  // 0c-bis. VTID-02669: feedback ticket completion reconciler. Closes
+  // feedback_tickets whose linked dev_autopilot_executions reached a
+  // terminal state (completed → resolved + playwright_verified stamp;
+  // failed → needs_more_info with note). Without this, a completed run
+  // leaves the ticket in_progress forever and the supervisor never gets
+  // a "shipped" signal.
+  try {
+    const { reconcileCompletedFeedbackTickets } = await import('./feedback-completion-reconciler');
+    const r = await reconcileCompletedFeedbackTickets(s);
+    if (r.closed > 0 || r.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-completion: closed=${r.closed} failed=${r.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-completion reconciler error:`, err);
   }
 
   // 0d. Auto-archive watchdog: any execution in a terminal-failure state
