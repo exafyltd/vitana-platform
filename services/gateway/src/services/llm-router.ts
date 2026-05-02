@@ -417,7 +417,23 @@ const vertexAdapter: ProviderAdapter = {
           },
         };
       } catch (err) {
-        return { ok: false, error: `Vertex threw: ${String(err).slice(0, 300)}` };
+        const errStr = String(err);
+        // VTID-02689: fall through to AI Studio when Vertex doesn't have
+        // the model. Preview models like `gemini-3.1-pro-preview` are
+        // exposed via generativelanguage.googleapis.com (consumer/AI Studio
+        // endpoint) but not the Vertex v1 publisher catalog used by the
+        // @google-cloud/vertexai Node SDK. The Python google-genai SDK
+        // (used by livekit-plugins-google with vertexai=True) talks to a
+        // different Vertex endpoint that DOES expose the preview models.
+        // Until we migrate this adapter to @google/genai, AI Studio is the
+        // path that works for preview models.
+        if (errStr.match(/Publisher Model.*not found|404 Not Found|model.*not.*supported/i)
+          && process.env.GOOGLE_GEMINI_API_KEY) {
+          console.log(`[llm-router] Vertex returned 404 for model "${model}" — falling through to AI Studio`);
+          // fall through to AI Studio block below
+        } else {
+          return { ok: false, error: `Vertex threw: ${errStr.slice(0, 300)}` };
+        }
       }
     }
 
