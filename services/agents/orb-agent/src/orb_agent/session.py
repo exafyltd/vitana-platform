@@ -154,19 +154,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         },
     )
 
-    # Build the Agent.
+    # VTID-02696: Smoke-test path — tools temporarily disabled.
+    # all_tools() returns the raw async functions decorated with
+    # @function_tool, but livekit-agents 0.12 expects FunctionTool instances
+    # — the decorator usage needs to be revisited (likely needs `()` or
+    # different signature). Without the framework's FunctionTool wrapper,
+    # AgentSession.start() raises ValueError at session boot. Disabling
+    # tools entirely so the basic STT/LLM/TTS round-trip works for the
+    # smoke test; tool wiring lands in a follow-up.
     agent = Agent(
         instructions=sys_prompt,
-        tools=all_tools(),
+        tools=[],  # TODO(VTID-LIVEKIT-TOOLS): re-enable after fixing decorator wrapping
     )
 
-    # AgentSession glues together STT + LLM + TTS + tools + the room.
+    # AgentSession glues together STT + LLM + TTS + the room.
+    # `userdata=gw` would carry the per-session GatewayClient for tool
+    # bodies — re-enabled with tool wiring.
     session = AgentSession(
         stt=cascade.stt,
         llm=cascade.llm,
         tts=cascade.tts,
-        userdata=gw,  # Tools read this via context.userdata
-        max_tool_steps=cfg.max_tool_steps,
     )
 
     try:

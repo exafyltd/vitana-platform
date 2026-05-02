@@ -42,18 +42,20 @@ class RegistryHeartbeat:
         timeout_s: float = 5.0,
     ) -> None:
         self._endpoint = gateway_url.rstrip("/") + "/api/v1/agents/registry/heartbeat"
-        self._headers = {
-            "Authorization": f"Bearer {service_token}",
-            "Content-Type": "application/json",
-        }
+        self._headers: dict[str, str] = {"Content-Type": "application/json"}
+        self._token_present = bool(service_token)
+        if service_token:
+            self._headers["Authorization"] = f"Bearer {service_token}"
         self._interval_s = interval_s
         self._timeout_s = timeout_s
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
 
     def start(self) -> None:
-        if self._task is None:
+        if self._task is None and self._token_present:
             self._task = asyncio.create_task(self._loop())
+        elif not self._token_present:
+            logger.info("registry_heartbeat.disabled — GATEWAY_SERVICE_TOKEN not set")
 
     async def stop(self) -> None:
         self._stop.set()

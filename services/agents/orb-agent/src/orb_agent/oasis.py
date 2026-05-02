@@ -20,10 +20,10 @@ class OasisEmitter:
 
     def __init__(self, gateway_url: str, service_token: str, *, timeout_s: float = 5.0) -> None:
         self._endpoint = gateway_url.rstrip("/") + "/api/v1/oasis/emit"
-        self._headers = {
-            "Authorization": f"Bearer {service_token}",
-            "Content-Type": "application/json",
-        }
+        self._headers: dict[str, str] = {"Content-Type": "application/json"}
+        if service_token:
+            self._headers["Authorization"] = f"Bearer {service_token}"
+        self._token_present = bool(service_token)
         self._client = httpx.AsyncClient(timeout=timeout_s)
 
     async def emit(
@@ -36,6 +36,11 @@ class OasisEmitter:
         """Fire-and-log emit. Errors are logged, never raised — telemetry must
         never break the voice path."""
         body = {"topic": topic, "payload": payload or {}, "vtid": vtid}
+        if not self._token_present:
+            # No service token configured — skip the network call entirely
+            # rather than spamming logs every time. Telemetry comes back
+            # online when GATEWAY_SERVICE_TOKEN is set.
+            return
         try:
             r = await self._client.post(self._endpoint, json=body, headers=self._headers)
             if r.status_code >= 400:
