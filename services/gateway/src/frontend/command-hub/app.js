@@ -2891,7 +2891,8 @@ const NAVIGATION_CONFIG = [
             { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
             { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
             { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
+            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" },
+            { "key": "livekit-test", "path": "/command-hub/testing-qa/livekit-test/" }
         ]
     },
     {
@@ -6360,6 +6361,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingE2eView());
     } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
         container.appendChild(renderTestingCiReportsView());
+    } else if (moduleKey === 'testing-qa' && tab === 'livekit-test') {
+        // VTID-LIVEKIT-FOUNDATION: standalone test page for the LiveKit pipeline
+        container.appendChild(renderLivekitTestView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -34542,6 +34546,266 @@ async function triggerOrbMonitor(btn) {
         btn.textContent = originalLabel;
         showToast('Network error: ' + (e.message || 'Unknown'), 'error');
     }
+}
+
+/**
+ * VTID-LIVEKIT-FOUNDATION: standalone LiveKit test page.
+ *
+ * Lives at /command-hub/testing-qa/livekit-test/. Independent of the
+ * production ORB widget — tests the LiveKit pipeline end-to-end without
+ * touching anything else.
+ *
+ * Flow when "Connect" is pressed:
+ *   1. Lazy-load livekit-client UMD bundle from CDN (cached after first hit).
+ *   2. POST /api/v1/orb/livekit/token with current user's Bearer token.
+ *      - 503 provider_standby → show clear "active=vertex, flip in Voice Lab" hint.
+ *      - 500 livekit_misconfigured → show "secrets not set" hint.
+ *   3. new LivekitClient.Room({ adaptiveStream, dynacast }).connect(url, token).
+ *   4. setMicrophoneEnabled(true) — publishes mic.
+ *   5. RoomEvent.TrackSubscribed → attach remote audio track to a hidden <audio>.
+ *   6. RoomEvent.DataReceived → append JSON-decoded events to the on-screen log.
+ *
+ * "Disconnect" tears down the Room + microphone.
+ */
+function renderLivekitTestView() {
+    var container = document.createElement('div');
+    container.className = 'livekit-test-view';
+    container.style.cssText = 'padding:24px;max-width:1100px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#e5e7eb;';
+
+    container.innerHTML = '<h2 style="margin:0 0 4px;color:#facc15;">LiveKit Pipeline Test</h2>'
+        + '<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Standalone test page for the LiveKit voice pipeline. Bypasses the production ORB widget. Use this to verify the cascade (STT/LLM/TTS) end-to-end before flipping the active provider for real users.</p>';
+
+    var statusPanel = document.createElement('div');
+    statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
+    statusPanel.innerHTML =
+          '<div><span style="color:#94a3b8;font-size:11px;">CONNECTION</span><br><span class="lkt-state" style="color:#facc15;font-weight:bold;">disconnected</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">ACTIVE PROVIDER</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">MIC</span><br><span class="lkt-mic" style="color:#facc15;font-weight:bold;">off</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
+    container.appendChild(statusPanel);
+
+    var controls = document.createElement('div');
+    controls.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;';
+    controls.innerHTML =
+          '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
+        + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
+        + '<select class="lkt-mode" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
+        +   '<option value="active">Production token (active provider must be livekit)</option>'
+        +   '<option value="test-session">Test-session token (any active provider)</option>'
+        + '</select>'
+        + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
+        + '<a href="/command-hub/diagnostics/voice-lab/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Lab</a>';
+    container.appendChild(controls);
+
+    var hint = document.createElement('div');
+    hint.className = 'lkt-hint';
+    hint.style.cssText = 'padding:10px 12px;background:#1a2332;border-left:3px solid #facc15;font-size:12px;color:#cbd5e1;margin-bottom:16px;line-height:1.6;';
+    hint.innerHTML = '<strong>Production token</strong>: mints via <code>POST /api/v1/orb/livekit/token</code> — refuses with 503 if the active provider is Vertex. Use this to verify the real flow.<br>'
+        + '<strong>Test-session token</strong>: mints via <code>POST /api/v1/agents/:id/voice-config/test-session</code> — works regardless of active provider. Use this to test config changes before flipping.';
+    container.appendChild(hint);
+
+    var logContainer = document.createElement('div');
+    logContainer.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;';
+
+    var transcript = document.createElement('div');
+    transcript.style.cssText = 'background:#0f172a;padding:12px;border-radius:8px;height:380px;overflow-y:auto;';
+    transcript.innerHTML = '<h4 style="margin:0 0 8px;color:#facc15;font-size:12px;letter-spacing:0.05em;">TRANSCRIPT</h4><div class="lkt-transcript" style="font-family:monospace;font-size:12px;color:#cbd5e1;white-space:pre-wrap;">— no transcript yet —</div>';
+    logContainer.appendChild(transcript);
+
+    var eventLog = document.createElement('div');
+    eventLog.style.cssText = 'background:#0f172a;padding:12px;border-radius:8px;height:380px;overflow-y:auto;';
+    eventLog.innerHTML = '<h4 style="margin:0 0 8px;color:#facc15;font-size:12px;letter-spacing:0.05em;">EVENT LOG</h4><div class="lkt-events" style="font-family:monospace;font-size:11px;color:#94a3b8;line-height:1.5;"></div>';
+    logContainer.appendChild(eventLog);
+
+    container.appendChild(logContainer);
+
+    // --- behaviour ---
+    var stateEl = container.querySelector('.lkt-state');
+    var activeEl = container.querySelector('.lkt-active');
+    var micEl = container.querySelector('.lkt-mic');
+    var speakingEl = container.querySelector('.lkt-speaking');
+    var connectBtn = container.querySelector('.lkt-connect');
+    var disconnectBtn = container.querySelector('.lkt-disconnect');
+    var modeSel = container.querySelector('.lkt-mode');
+    var agentInput = container.querySelector('.lkt-agent');
+    var transcriptEl = container.querySelector('.lkt-transcript');
+    var eventsEl = container.querySelector('.lkt-events');
+
+    var room = null;
+    var attachedAudio = [];
+
+    function log(kind, msg, data) {
+        var ts = new Date().toISOString().slice(11, 19);
+        var color = kind === 'error' ? '#ef4444' : kind === 'event' ? '#60a5fa' : '#22c55e';
+        var line = document.createElement('div');
+        line.innerHTML = '<span style="color:#475569;">' + ts + '</span> '
+            + '<span style="color:' + color + ';">[' + kind + ']</span> '
+            + escapeHtml(msg)
+            + (data !== undefined ? ' <span style="color:#64748b;">' + escapeHtml(JSON.stringify(data)) + '</span>' : '');
+        eventsEl.appendChild(line);
+        eventsEl.scrollTop = eventsEl.scrollHeight;
+    }
+
+    function setState(s) { stateEl.textContent = s; stateEl.style.color = s === 'connected' ? '#22c55e' : s === 'connecting' ? '#facc15' : '#94a3b8'; }
+    function setMic(on) { micEl.textContent = on ? 'on' : 'off'; micEl.style.color = on ? '#22c55e' : '#94a3b8'; }
+    function setSpeaking(on) { speakingEl.textContent = on ? 'yes' : 'no'; speakingEl.style.color = on ? '#22c55e' : '#94a3b8'; }
+    function appendTranscript(who, text) {
+        if (transcriptEl.textContent === '— no transcript yet —') transcriptEl.textContent = '';
+        var line = document.createElement('div');
+        line.style.cssText = 'margin-bottom:6px;';
+        line.innerHTML = '<span style="color:' + (who === 'user' ? '#60a5fa' : '#facc15') + ';">' + who + ':</span> ' + escapeHtml(text);
+        transcriptEl.appendChild(line);
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    // Load active provider on mount.
+    fetch((window.GATEWAY_URL || '') + '/api/v1/orb/active-provider')
+        .then(function (r) { return r.json(); })
+        .then(function (body) {
+            var p = body && body.active_provider || 'unknown';
+            activeEl.textContent = p;
+            activeEl.style.color = p === 'livekit' ? '#22c55e' : '#facc15';
+        })
+        .catch(function () { activeEl.textContent = '(unreachable)'; activeEl.style.color = '#ef4444'; });
+
+    function loadLivekitClient() {
+        // Lazy-load the UMD build from jsDelivr. No npm install needed in
+        // the gateway because this is a vanilla JS surface.
+        if (window.LivekitClient || window.LiveKit || window.LK) {
+            return Promise.resolve(window.LivekitClient || window.LiveKit || window.LK);
+        }
+        return new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/livekit-client@2.5.0/dist/livekit-client.umd.min.js';
+            script.onload = function () {
+                resolve(window.LivekitClient || window.LiveKit || window.LK);
+            };
+            script.onerror = function () {
+                reject(new Error('failed to load livekit-client UMD bundle from CDN'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    async function mintToken() {
+        var mode = modeSel.value;
+        var agentId = agentInput.value || 'orb-agent';
+        // Get current user's Bearer token from Supabase session in localStorage.
+        var supKey = Object.keys(localStorage).find(function (k) { return /sb-.*-auth-token/.test(k); });
+        var token = null;
+        if (supKey) {
+            try {
+                var parsed = JSON.parse(localStorage.getItem(supKey));
+                token = parsed && (parsed.access_token || (parsed.currentSession && parsed.currentSession.access_token));
+            } catch (e) {}
+        }
+        token = token || localStorage.getItem('vitana.authToken');
+        if (!token) throw new Error('no auth token in localStorage — sign in first');
+
+        var url, body;
+        if (mode === 'test-session') {
+            url = (window.GATEWAY_URL || '') + '/api/v1/agents/' + encodeURIComponent(agentId) + '/voice-config/test-session';
+            body = {};
+        } else {
+            url = (window.GATEWAY_URL || '') + '/api/v1/orb/livekit/token';
+            body = { lang: 'en', agent_id: agentId };
+        }
+        log('event', 'POST ' + url);
+        var res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        var json = await res.json();
+        if (res.status === 503) {
+            throw new Error('provider_standby — active is "' + (json.active_provider || 'vertex') + '". Flip in Voice Lab first, OR switch the dropdown above to "Test-session token".');
+        }
+        if (!res.ok) {
+            throw new Error('token mint failed (' + res.status + '): ' + (json.error || JSON.stringify(json)));
+        }
+        if (!json.url || !json.token) {
+            throw new Error('token response missing url/token: ' + JSON.stringify(json));
+        }
+        log('info', 'token minted', { url: json.url, room: json.room });
+        return json;
+    }
+
+    async function connect() {
+        connectBtn.disabled = true;
+        setState('connecting');
+        try {
+            var LivekitClient = await loadLivekitClient();
+            log('event', 'livekit-client UMD loaded');
+            var minted = await mintToken();
+            room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+            room.on(LivekitClient.RoomEvent.ConnectionStateChanged, function (s) {
+                log('event', 'ConnectionStateChanged', { state: s });
+                if (s === LivekitClient.ConnectionState.Connected) {
+                    setState('connected');
+                    disconnectBtn.disabled = false;
+                } else if (s === LivekitClient.ConnectionState.Disconnected) {
+                    setState('disconnected');
+                    setMic(false);
+                    setSpeaking(false);
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                }
+            });
+
+            room.on(LivekitClient.RoomEvent.TrackSubscribed, function (track, _pub, participant) {
+                log('event', 'TrackSubscribed', { kind: track.kind, participant: participant.identity });
+                if (track.kind === LivekitClient.Track.Kind.Audio) {
+                    var el = track.attach();
+                    el.style.display = 'none';
+                    document.body.appendChild(el);
+                    attachedAudio.push(el);
+                    track.on('started', function () { setSpeaking(true); });
+                    track.on('ended', function () { setSpeaking(false); });
+                }
+            });
+
+            room.on(LivekitClient.RoomEvent.DataReceived, function (payload) {
+                try {
+                    var msg = JSON.parse(new TextDecoder().decode(payload));
+                    log('event', 'DataReceived', msg);
+                    if (msg.type === 'transcript') appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
+                    if (msg.type === 'tool_call') log('event', 'tool_call', msg);
+                } catch (e) { log('event', 'DataReceived (non-json)', { len: payload && payload.byteLength }); }
+            });
+
+            await room.connect(minted.url, minted.token);
+            log('info', 'room.connect resolved');
+            await room.localParticipant.setMicrophoneEnabled(true);
+            setMic(true);
+            log('info', 'mic enabled — speak now');
+        } catch (e) {
+            log('error', e.message || String(e));
+            setState('disconnected');
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+        }
+    }
+
+    function disconnect() {
+        if (room) {
+            room.disconnect().catch(function () {});
+            room = null;
+        }
+        attachedAudio.forEach(function (el) { try { el.remove(); } catch (e) {} });
+        attachedAudio = [];
+        setState('disconnected');
+        setMic(false);
+        setSpeaking(false);
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+        log('info', 'disconnected');
+    }
+
+    connectBtn.addEventListener('click', connect);
+    disconnectBtn.addEventListener('click', disconnect);
+
+    return container;
 }
 
 function renderTestingCiReportsView() {
