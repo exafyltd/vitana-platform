@@ -295,11 +295,12 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     id: string;
     risk_class: 'low' | 'medium' | 'high' | null;
     source_type: string;
+    source_ref: string | null;
     spec_snapshot: Record<string, unknown>;
     status: string;
   }>>(
     s,
-    `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&select=id,risk_class,source_type,spec_snapshot,status&limit=1`,
+    `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&select=id,risk_class,source_type,source_ref,spec_snapshot,status&limit=1`,
   );
   if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
   const rec = recR.data[0];
@@ -358,6 +359,12 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     files_to_modify: files,
     files_to_delete: deletions,
   };
+  // VTID-02676: feedback-bridged findings bypass the kill_switch only.
+  // All other gate rules still apply.
+  const isFeedbackLane = rec.source_type === 'dev_autopilot'
+    && typeof rec.source_ref === 'string'
+    && rec.source_ref.startsWith('feedback_ticket:');
+
   const safetyCtx: SafetyContext = {
     config: {
       kill_switch: cfg.kill_switch,
@@ -369,6 +376,7 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     },
     approved_today: approvedToday,
     auto_fix_depth: 0,
+    is_feedback_lane: isFeedbackLane,
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
