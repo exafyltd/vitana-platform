@@ -1566,6 +1566,79 @@ function buildSwapBackWelcomeBlock(fromPersonaKey: string, lang: string | undefi
   return lines.join('\n');
 }
 
+// v3a: Specialist's first-turn vs mid-conversation prompt block — toggled
+// based on whether the specialist has already delivered their first turn
+// after the swap. Without this gate, the model re-greets on every Gemini
+// Live transparent reconnect (~9 min cycle), because the static prompt
+// text says "your first utterance after this swap is identify + ask",
+// which the model interprets as "I should greet now" on every reconnect.
+//
+// firstTurnDelivered=false → output the [FIRST TURN] block (greet + ask).
+// firstTurnDelivered=true  → output the [MID-INTAKE] block (do NOT greet
+//                            again, continue from the recent transcript).
+function buildSpecialistTurnPhaseBlock(firstTurnDelivered: boolean): string {
+  if (!firstTurnDelivered) {
+    return [
+      '',
+      '[FIRST TURN — SPECIALIST]',
+      'Your first utterance after this swap is ONE turn with TWO parts:',
+      '  (1) IDENTIFY YOURSELF in ONE short clause — your name and what you handle.',
+      '      Examples (vary every call, never recite verbatim):',
+      '        "Hi, this is Devon, I cover technical issues."',
+      '        "Hey, Devon here — I handle bugs."',
+      '        "Hi, I\'m Devon, the tech colleague."',
+      '  (2) ASK FOR DETAILS — invite the user to elaborate so you understand',
+      '      what to fix. Examples (vary, never recite):',
+      '        "Can you explain a bit more about what\'s happening?"',
+      '        "Tell me what specifically broke — which screen, what action?"',
+      '        "Walk me through what you\'re seeing."',
+      '',
+      '  EDGE CASE — if Vitana\'s handoff brief AND the transcript already contain',
+      '  specifics (which screen, what error, what action), you may collapse the ASK',
+      '  into a confirmation: "Hi, Devon here — so you\'re seeing X on screen Y, is',
+      '  that right?" In doubt, default to asking for more.',
+      '',
+      '  RULES on every first turn:',
+      '  — Vary your wording every single call. NEVER recite a template.',
+      '  — Match the user\'s language exactly (per LANGUAGE LOCK above).',
+      '  — Cap at ~2 short sentences. Brevity matters.',
+      '  — DO NOT fire the auto-return ("anything else, or back to Vitana?") on the',
+      '    first turn. That belongs at the END of intake, not the beginning.',
+      '  — DO NOT ask "what can I do for you?" — Vitana already explained context.',
+      '  — DO NOT echo the user\'s words verbatim.',
+      '  — DO NOT invent a specific issue if you don\'t have one (no hallucinations).',
+      '    If specifics are missing, ASK ONE question instead of inventing.',
+    ].join('\n');
+  }
+  return [
+    '',
+    '[MID-INTAKE — DO NOT RE-GREET]',
+    'You ALREADY greeted the user on this swap. You are NOW MID-CONVERSATION.',
+    'This setup message is being rebuilt because of an internal session reconnect',
+    '(transparent to the user — they don\'t know it happened). They are still in',
+    'the SAME conversation with you that started a moment ago.',
+    '',
+    'ABSOLUTELY DO NOT:',
+    '  — re-introduce yourself ("Hi, this is Devon" — you already said that)',
+    '  — re-greet ("Hi" / "Hello" / "Hi there" — forbidden)',
+    '  — restart the intake ("Can you explain what happened?" again — already asked)',
+    '  — fire the auto-return / close question on the first utterance after reconnect',
+    '  — say "what can I do for you?" or any cold-start phrase',
+    '',
+    'WHAT TO DO:',
+    '  — Read the recent transcript (last few turns) above. Determine where the',
+    '    conversation actually was when the reconnect happened.',
+    '  — Continue from there as if no interruption happened. The user did not notice.',
+    '  — If the user just answered your last question, respond to their answer.',
+    '  — If the user is mid-explanation, ask the next focused diagnostic question.',
+    '  — If you had just filed the ticket and asked the close question, wait for',
+    '    their reply (don\'t re-ask).',
+    '',
+    'The conversation is in flight. Pick up exactly where it left off, in the user\'s',
+    'language, in your own voice and identity. NO greeting, NO restart.',
+  ].join('\n');
+}
+
 function buildSpecialistLanguageDirective(lang: string | undefined): string {
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
@@ -1624,35 +1697,15 @@ function buildPersonaBehavioralRule(personaKey: string): string {
   lines.push('Examples below are GUIDANCE, not scripts — never recite them verbatim.');
 
   if (isSpecialist) {
-    lines.push('');
-    lines.push('[FIRST TURN — SPECIALIST]');
-    lines.push('Your first utterance after this swap is ONE turn with TWO parts:');
-    lines.push('  (1) IDENTIFY YOURSELF in ONE short clause — your name and what you handle.');
-    lines.push('      Examples (vary every call, never recite verbatim):');
-    lines.push('        "Hi, this is Devon, I cover technical issues."');
-    lines.push('        "Hey, Devon here — I handle bugs."');
-    lines.push('        "Hi, I\'m Devon, the tech colleague."');
-    lines.push('  (2) ASK FOR DETAILS — invite the user to elaborate so you understand');
-    lines.push('      what to fix. Examples (vary, never recite):');
-    lines.push('        "Can you explain a bit more about what\'s happening?"');
-    lines.push('        "Tell me what specifically broke — which screen, what action?"');
-    lines.push('        "Walk me through what you\'re seeing."');
-    lines.push('');
-    lines.push('  EDGE CASE — if Vitana\'s handoff brief AND the transcript already contain');
-    lines.push('  specifics (which screen, what error, what action), you may collapse the ASK');
-    lines.push('  into a confirmation: "Hi, Devon here — so you\'re seeing X on screen Y, is');
-    lines.push('  that right?" In doubt, default to asking for more.');
-    lines.push('');
-    lines.push('  RULES on every first turn:');
-    lines.push('  — Vary your wording every single call. NEVER recite a template.');
-    lines.push('  — Match the user\'s language exactly (per LANGUAGE LOCK above).');
-    lines.push('  — Cap at ~2 short sentences. Brevity matters.');
-    lines.push('  — DO NOT fire the auto-return ("anything else, or back to Vitana?") on the');
-    lines.push('    first turn. That belongs at the END of intake, not the beginning.');
-    lines.push('  — DO NOT ask "what can I do for you?" — Vitana already explained context.');
-    lines.push('  — DO NOT echo the user\'s words verbatim.');
-    lines.push('  — DO NOT invent a specific issue if you don\'t have one (no hallucinations).');
-    lines.push('    If specifics are missing, ASK ONE question instead of inventing.');
+    // v3a: the FIRST TURN block was MOVED OUT of this static rule. It's
+    // now appended dynamically by buildSpecialistTurnPhaseBlock at the
+    // setup-message build site, gated on personaFirstUtteranceDelivered.
+    // Reason: this static text is set once at swap time and frozen in
+    // personaSystemOverride. Gemini Live transparent-reconnects every few
+    // minutes and rebuilds the setup; if the [FIRST TURN] block is in the
+    // static text, the model reads it again on every reconnect and
+    // re-greets (Devon → "Hi I'm Devon" mid-conversation). Pulling the
+    // block out and gating on the flag fixes that.
 
     lines.push('');
     lines.push('[CLOSE QUESTION + GOODBYE — specialist only]');
@@ -8764,6 +8817,11 @@ async function connectToLiveAPI(
                       && !((session as any).personaFirstUtteranceDelivered as boolean | undefined))
                     ? `\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\n"${(session as any).personaForcedFirstMessage}"\nDo not greet with anything else first. Then continue the intake naturally.`
                     : '')
+                  // v3a: dynamically inject the FIRST TURN block (greet + ask
+                  // for details) only on the actual first turn after a swap.
+                  // After Devon has spoken once, swap to MID-INTAKE block
+                  // which forbids re-greeting on transparent reconnects.
+                  + `\n\n${buildSpecialistTurnPhaseBlock(!!((session as any).personaFirstUtteranceDelivered))}`
                 : (session.isAnonymous
                     ? buildAnonymousSystemInstruction(
                         session.lang,
