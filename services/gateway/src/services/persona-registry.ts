@@ -89,6 +89,16 @@ export function clearPersonaRegistryCache(): void {
   cache = null;
 }
 
+function extractLocale(langOrCtx: any): string {
+  let locale = 'en';
+  if (typeof langOrCtx === 'string') {
+    locale = langOrCtx;
+  } else if (langOrCtx && typeof langOrCtx === 'object') {
+    locale = langOrCtx.user?.locale || langOrCtx.session?.language || 'en';
+  }
+  return typeof locale === 'string' ? locale.split('-')[0].toLowerCase() : 'en';
+}
+
 /**
  * Returns the persona's voice_id, falling back to '' (caller decides what
  * the empty sentinel means — typically "use language default voice").
@@ -102,7 +112,8 @@ export async function getPersonaVoice(key: string): Promise<string> {
  * Returns the persona's greeting in the requested language, falling
  * through `lang → 'en' → generic` so a missing language never hard-fails.
  */
-export async function getPersonaGreeting(key: string, lang: string): Promise<string> {
+export async function getPersonaGreeting(key: string, langOrCtx: any): Promise<string> {
+  const lang = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistry();
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
@@ -281,9 +292,10 @@ export async function getPersonaVoiceForTenant(key: string, tenantId: string): P
  */
 export async function getPersonaGreetingForTenant(
   key: string,
-  lang: string,
+  langOrCtx: any,
   tenantId: string,
 ): Promise<string> {
+  const lang = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistryForTenant(tenantId);
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
