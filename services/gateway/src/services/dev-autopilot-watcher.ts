@@ -342,28 +342,36 @@ export async function ciWatcherTick(): Promise<void> {
       continue;
     }
 
-    // VTID-02694b: tighten gate after the 2026-05-03 incident.
+    // VTID-02694c: tighten further after PRs #1244 and #1247 slipped through
+    // VTID-02694b. Root cause was a race: when the watcher tick fetched
+    // prStatus, several CI checks hadn't reported yet (not present in
+    // prStatus.checks), so analysis.failedNames was [] and mState was
+    // 'unstable' (which #1240 considered fine). Watcher merged. ~13 seconds
+    // later the late checks reported FAILURE. Both PRs broke the build.
     //
-    // VTID-02694 (PR #1240) trusted ONLY mergeable_state. Production proved
-    // unsafe: PR #1243 had mergeable_state='clean' (only the 2 branch-
-    // protection-required checks were green) but `validate` and
-    // `Gateway Service Tests` (which run in CI but aren't in the
-    // branch-protection list) were FAILING. Autopilot trusted GitHub's
-    // signal and auto-merged broken code (commit 9a09886a) which broke
-    // every subsequent gateway deploy until manual revert (PR #1245).
+    // GitHub docs state explicitly:
+    //   'clean'    — Mergeable AND passing commit status (every reported
+    //                check is success/neutral/skipped)
+    //   'unstable' — Mergeable BUT non-passing commit status (at least one
+    //                check is failing — required or not)
     //
-    // Defense-in-depth gate: BOTH must pass before we merge.
-    //   1. mergeable_state in (clean, unstable) — branch-protection happy
-    //   2. analysis.failedNames is empty — NO failing checks at all,
-    //      required or not. Catches `validate` / `Gateway Service Tests`
-    //      style failures that branch-protection considers "non-required"
-    //      but which are load-bearing for the gateway build.
+    // So 'unstable' is GitHub's own signal that something is failing. We
+    // were ignoring that signal. Fix: ONLY 'clean' allows merge. Combined
+    // with the 'analysis.failedNames empty' check this gives belt-and-
+    // suspenders against both the GitHub-not-reporting-yet race AND any
+    // analyzer parsing miss.
+    //
+    // Plus: defense against the eventual-consistency race itself —
+    // re-fetch prStatus after a short wait and verify gate AGAIN before
+    // merging. If a late check has now reported a failure, we catch it.
     const hasAnyFailingChecks = analysis.failedNames.length > 0;
-    if (mState === 'dirty' || mState === 'blocked' || hasAnyFailingChecks) {
+    if (mState !== 'clean' || hasAnyFailingChecks) {
       const failureReason =
         mState === 'dirty' ? 'merge conflict (dirty)'
         : mState === 'blocked' ? 'branch-protection blocked'
-        : `failing checks (non-required count toward gate too): ${analysis.failedNames.join(', ')}`;
+        : mState === 'unstable' ? `unstable: GitHub reports non-passing checks (failing names so far: ${analysis.failedNames.join(', ') || '(none reported yet — wait)'})`
+        : hasAnyFailingChecks ? `failing checks: ${analysis.failedNames.join(', ')}`
+        : `unexpected mergeable_state=${mState}`;
       await transitionStatus(s, exec.id, 'ci', 'failed', {
         metadata: {
           ...(exec.metadata || {}),
@@ -384,7 +392,46 @@ export async function ciWatcherTick(): Promise<void> {
       continue;
     }
 
-    // mState in (clean, unstable) AND zero failing checks → merge.
+    // mState === 'clean' AND zero failing checks reported → tentative merge.
+    // Belt-and-suspenders: wait 30s, re-fetch, re-evaluate gate. Catches the
+    // late-reporting check race that broke PRs #1244 and #1247.
+    await new Promise(r => setTimeout(r, 30_000));
+    let recheckStatus: typeof prStatus | null = null;
+    try {
+      recheckStatus = await githubService.getPrStatus(GITHUB_REPO, exec.pr_number);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] recheck getPrStatus failed: ${err}; refusing merge`);
+      continue;
+    }
+    if (!recheckStatus) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] recheck returned null; refusing merge`);
+      continue;
+    }
+    const recheckAnalysis = analyzeCiStatus(recheckStatus.checks || []);
+    const recheckMState = (recheckStatus as { pr?: { mergeable_state?: string } }).pr?.mergeable_state;
+    if (recheckMState !== 'clean' || recheckAnalysis.failedNames.length > 0 || recheckAnalysis.state === 'pending') {
+      const reason = `recheck after 30s: mergeable_state=${recheckMState}, failures=${JSON.stringify(recheckAnalysis.failedNames)}, state=${recheckAnalysis.state}`;
+      await transitionStatus(s, exec.id, 'ci', 'failed', {
+        metadata: {
+          ...(exec.metadata || {}),
+          failed_checks: recheckAnalysis.failedNames,
+          mergeable_state: recheckMState,
+          gate_reason: reason,
+        },
+      });
+      await emitOasisEvent({
+        vtid: WATCHER_VTID,
+        type: 'dev_autopilot.execution.ci_failed',
+        source: 'dev-autopilot-watcher',
+        status: 'error',
+        message: `Execution ${exec.id.slice(0, 8)} CI failed (recheck): ${reason}`,
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: recheckAnalysis.failedNames, mergeable_state: recheckMState, gate_reason: reason },
+      });
+      await bridgeFailure(exec.id, 'ci', reason);
+      continue;
+    }
+
+    // Both gate evaluations passed. Proceed with merge.
     await transitionStatus(s, exec.id, 'ci', 'merging');
     await emitOasisEvent({
       vtid: WATCHER_VTID,
