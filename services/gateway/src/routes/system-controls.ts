@@ -1,0 +1,21 @@
+import { Router } from 'express';
+import { getSystemControl } from '../services/system-controls';
+
+const router = Router();
+
+router.get('/:key', async (req, res, next) => {
+  try {
+    const key = req.params.key;
+    const control = await getSystemControl(key);
+
+    if (!control) {
+      return res.status(404).json({ error: 'System control not found' });
+    }
+
+    return res.status(200).json(control);
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;
