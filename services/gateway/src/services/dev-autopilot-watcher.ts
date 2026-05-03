@@ -342,12 +342,34 @@ export async function ciWatcherTick(): Promise<void> {
       continue;
     }
 
-    if (mState === 'dirty' || mState === 'blocked') {
+    // VTID-02694b: tighten gate after the 2026-05-03 incident.
+    //
+    // VTID-02694 (PR #1240) trusted ONLY mergeable_state. Production proved
+    // unsafe: PR #1243 had mergeable_state='clean' (only the 2 branch-
+    // protection-required checks were green) but `validate` and
+    // `Gateway Service Tests` (which run in CI but aren't in the
+    // branch-protection list) were FAILING. Autopilot trusted GitHub's
+    // signal and auto-merged broken code (commit 9a09886a) which broke
+    // every subsequent gateway deploy until manual revert (PR #1245).
+    //
+    // Defense-in-depth gate: BOTH must pass before we merge.
+    //   1. mergeable_state in (clean, unstable) — branch-protection happy
+    //   2. analysis.failedNames is empty — NO failing checks at all,
+    //      required or not. Catches `validate` / `Gateway Service Tests`
+    //      style failures that branch-protection considers "non-required"
+    //      but which are load-bearing for the gateway build.
+    const hasAnyFailingChecks = analysis.failedNames.length > 0;
+    if (mState === 'dirty' || mState === 'blocked' || hasAnyFailingChecks) {
+      const failureReason =
+        mState === 'dirty' ? 'merge conflict (dirty)'
+        : mState === 'blocked' ? 'branch-protection blocked'
+        : `failing checks (non-required count toward gate too): ${analysis.failedNames.join(', ')}`;
       await transitionStatus(s, exec.id, 'ci', 'failed', {
         metadata: {
           ...(exec.metadata || {}),
           failed_checks: analysis.failedNames,
           mergeable_state: mState,
+          gate_reason: failureReason,
         },
       });
       await emitOasisEvent({
@@ -355,16 +377,14 @@ export async function ciWatcherTick(): Promise<void> {
         type: 'dev_autopilot.execution.ci_failed',
         source: 'dev-autopilot-watcher',
         status: 'error',
-        message: `Execution ${exec.id.slice(0, 8)} CI failed (mergeable_state=${mState}): ${analysis.failedNames.join(', ') || 'no failing check names'}`,
-        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState },
+        message: `Execution ${exec.id.slice(0, 8)} CI failed: ${failureReason}`,
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState, gate_reason: failureReason },
       });
-      await bridgeFailure(exec.id, 'ci', `mergeable_state=${mState}: ${analysis.failedNames.join(', ')}`);
+      await bridgeFailure(exec.id, 'ci', failureReason);
       continue;
     }
 
-    // mState === 'clean' or 'unstable' → branch protection permits merge.
-    // 'unstable' means some non-required checks failed; we surface their
-    // names in the event payload but do not block the merge.
+    // mState in (clean, unstable) AND zero failing checks → merge.
     await transitionStatus(s, exec.id, 'ci', 'merging');
     await emitOasisEvent({
       vtid: WATCHER_VTID,
