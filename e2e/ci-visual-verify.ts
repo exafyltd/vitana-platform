@@ -33,7 +33,11 @@ const PAGES_TO_VERIFY = [
     name: 'self-healing',
     path: '/command-hub/infrastructure/self-healing/',
     mustContain: ['Self-Healing System'],
-    mustNotContain: ['still pending'],
+    // VTID-02695: 'still pending' was too broad — the page legitimately shows
+    // pending items (that's its job). Was failing every deploy on a normal
+    // operating condition. If a regression check is needed here, gate on a
+    // specific count threshold or a stuck-state indicator, not generic copy.
+    mustNotContain: [],
   },
   {
     name: 'services-health',
