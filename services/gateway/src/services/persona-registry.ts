@@ -98,11 +98,23 @@ export async function getPersonaVoice(key: string): Promise<string> {
   return reg.get(key)?.voice_id ?? '';
 }
 
+function extractLocale(langOrCtx: any): string {
+  let raw = 'en';
+  if (typeof langOrCtx === 'string') {
+    raw = langOrCtx;
+  } else if (langOrCtx && typeof langOrCtx === 'object') {
+    raw = langOrCtx.user?.locale || langOrCtx.session?.language || 'en';
+  }
+  if (typeof raw !== 'string') return 'en';
+  return raw.split('-')[0].toLowerCase();
+}
+
 /**
  * Returns the persona's greeting in the requested language, falling
  * through `lang → 'en' → generic` so a missing language never hard-fails.
  */
-export async function getPersonaGreeting(key: string, lang: string): Promise<string> {
+export async function getPersonaGreeting(key: string, langOrCtx: any): Promise<string> {
+  const lang = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistry();
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
@@ -281,9 +293,10 @@ export async function getPersonaVoiceForTenant(key: string, tenantId: string): P
  */
 export async function getPersonaGreetingForTenant(
   key: string,
-  lang: string,
+  langOrCtx: any,
   tenantId: string,
 ): Promise<string> {
+  const lang = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistryForTenant(tenantId);
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
