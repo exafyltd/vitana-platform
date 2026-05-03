@@ -4463,6 +4463,27 @@ async function executeLiveApiToolInner(
           return { success: false, result: '', error: 'summary is required' };
         }
 
+        // v3b: ONLY Vitana files tickets. If a specialist calls this tool
+        // (which they can — it's in the shared tool registry), the gateway
+        // treats the call as a swap and resets personaFirstUtteranceDelivered
+        // → on next setup-message rebuild the model gets the FIRST TURN block
+        // again and re-greets ("Hi I'm Devon..."). User-reported regression:
+        // even after v3a, Devon greeted again because Devon himself called
+        // report_to_specialist mid-conversation to "file" the bug he'd just
+        // heard, and the swap logic reset his first-turn flag.
+        //
+        // Block: if the active persona is NOT Vitana, refuse this tool. The
+        // specialist's job is intake into the EXISTING ticket Vitana already
+        // filed — not file a fresh one.
+        const _activePersonaForReport = ((session as any).activePersona as string | undefined) || 'vitana';
+        if (_activePersonaForReport !== 'vitana' && _activePersonaForReport !== '') {
+          console.log(`[VTID-02684] report_to_specialist refused — caller is specialist '${_activePersonaForReport}', only vitana files tickets`);
+          return {
+            success: true,
+            result: `STAY_IN_INTAKE: You (${_activePersonaForReport}) are NOT allowed to file new tickets — only Vitana files. The user is already talking to YOU because Vitana has ALREADY filed the ticket for this issue. Your job is to continue the intake — gather details, write them into the existing ticket via your intake tools, then close with the standard close-question + goodbye flow. Do NOT call report_to_specialist again. Do NOT swap personas. Just respond to the user in your own language and continue the conversation from where it was.`,
+          };
+        }
+
         // v2e: server-side block on vague summaries. The LLM tool description
         // forbids placeholder summaries like "user wants to report a bug",
         // but we enforce server-side too. A vague summary causes the receiving
