@@ -952,13 +952,37 @@ function buildExecutionPrompt(
   lessons?: ExecutionLesson[],
 ): string {
   const lines: string[] = [];
+  // VTID-02692: LOCKED file list at the very top. The executor LLM (Gemini
+  // 3.1 Pro Preview, Sonnet 4 fallback) was hallucinating Python paths
+  // like services/agents/voice/*.py despite the plan listing the correct
+  // TypeScript files. The validator caught it ("LLM emitted files outside
+  // the plan's files_referenced") but only AFTER the LLM had spent a full
+  // call producing garbage. Hard-anchoring the file list here, BEFORE the
+  // plan, eliminates the ambiguity. Validator still acts as a safety net.
+  const lockedFiles = fileCtx.map(f => f.path);
   lines.push(
     `# Developer Autopilot — Execute plan ${findingId} (plan v${planVersion})`,
     ``,
+    `## LOCKED FILE LIST — DO NOT DEVIATE`,
+    ``,
+    `You MUST emit a \`<<<FILE …>>>\` block for ONLY these exact paths`,
+    `(verbatim — copy them character-for-character):`,
+    ``,
+    ...lockedFiles.map(p => `- \`${p}\``),
+    ``,
+    `Hard rules:`,
+    `- Do NOT emit any file outside this list — the post-LLM validator`,
+    `  rejects the entire diff if it sees a path not in this list, and the`,
+    `  ticket falls into self-heal.`,
+    `- Do NOT translate paths (e.g. .ts ↔ .py). The codebase is TypeScript`,
+    `  + Node only; Python paths are always hallucinations.`,
+    `- If the plan implies an additional file you'd want to touch, do NOT`,
+    `  add it. Instead, narrow the change to fit the locked list, or write`,
+    `  the missing-file note in the PR_BODY for the operator to follow up.`,
+    ``,
     `You are producing the exact file contents for a new branch \`${branch}\` that`,
     `will be opened as a pull request. Follow the plan **exactly**. Do not expand`,
-    `scope — only touch the files the plan lists. Do not add commentary outside`,
-    `the final JSON object.`,
+    `scope — only touch the files in the LOCKED list above.`,
     ``,
     `## Plan`,
     ``,
