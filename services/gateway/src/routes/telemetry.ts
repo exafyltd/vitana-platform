@@ -1,7 +1,8 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
+import { supabase } from "../lib/supabase";
 
 export const router = Router();
 
@@ -24,9 +25,49 @@ const TelemetryEventSchema = z.object({
 
 type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
+// Middleware to enforce authentication for modifying telemetry
+const requireAuthenticatedUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    let token = "";
+    
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7);
+    } else if (req.headers.cookie) {
+      const match = req.headers.cookie.match(/(?:^|;\s*)(?:sb-[a-z0-9]+-auth-token|supabase-auth-token)=([^;]+)/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(match[1]));
+          token = parsed.access_token || (Array.isArray(parsed) ? parsed[0] : match[1]);
+        } catch {
+          token = match[1];
+        }
+      }
+    }
+
+    if (!token) {
+      res.status(401).json({ error: "Unauthorized", detail: "Missing authentication token" });
+      return;
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+
+    if (error || !data?.user) {
+      res.status(401).json({ error: "Unauthorized", detail: "Invalid token" });
+      return;
+    }
+
+    next();
+  } catch (e: any) {
+    console.error("❌ Auth middleware error:", e);
+    res.status(500).json({ error: "Internal server error", detail: e.message });
+    return;
+  }
+};
+
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
-router.post("/event", async (req: Request, res: Response) => {
+router.post("/event", requireAuthenticatedUser, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -146,7 +187,7 @@ router.post("/event", async (req: Request, res: Response) => {
 
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
-router.post("/batch", async (req: Request, res: Response) => {
+router.post("/batch", requireAuthenticatedUser, async (req: Request, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
