@@ -350,13 +350,22 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // file_outside_allow_scope rule forever. Re-extracting here makes the fix
   // retroactive for every existing plan without a regeneration pass.
   const freshFiles = extractFilePaths(plan.plan_markdown);
-  let files = freshFiles.length > 0
-    ? freshFiles
-    : (plan.files_referenced || []).map(String);
-  // VTID-02687: same fallback as runExecutionSession — for feedback-bridged
-  // findings, use the bridge-validated spec_snapshot.proposed_files when
-  // both the markdown extraction and stored column are empty. Required for
-  // stale plan_versions inserted before VTID-02680.
+  // VTID-02693: for feedback findings, ALWAYS prefer the stored
+  // files_referenced (= bridge's pre-validated proposed_files) over
+  // freshFiles. The planner's plan_markdown sometimes lists only the
+  // source file and omits the co-located test file in its "Files to
+  // modify" section even though Devon's spec has both — that misses the
+  // tests_missing safety check. proposed_files is the authoritative list
+  // because the bridge already validated it against allow_scope.
+  const isFeedbackFinding = rec.source_type === 'dev_autopilot'
+    && typeof rec.source_ref === 'string'
+    && rec.source_ref.startsWith('feedback_ticket:');
+  let files = isFeedbackFinding && (plan.files_referenced || []).length > 0
+    ? (plan.files_referenced || []).map(String)
+    : (freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []).map(String));
+  // VTID-02687: fallback for stale plan_versions where neither
+  // freshFiles nor files_referenced has anything — read proposed_files
+  // off the recommendation directly.
   if (files.length === 0) {
     const proposed = (rec.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
     if (Array.isArray(proposed)) {
