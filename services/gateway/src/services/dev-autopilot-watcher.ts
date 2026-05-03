@@ -328,31 +328,57 @@ export async function ciWatcherTick(): Promise<void> {
     const analysis = analyzeCiStatus(prStatus.checks || []);
     if (analysis.state === 'pending') continue;
 
-    if (analysis.state === 'failing') {
+    // VTID-02694: trust GitHub's mergeable_state (which reflects branch
+    // protection rules) instead of failing on any red check. Otherwise
+    // the autopilot blocks on pre-existing-broken non-required checks
+    // that humans merge through every day. mergeable_state values:
+    //   'clean'    — required checks pass, no conflicts → merge OK
+    //   'unstable' — required checks pass, some non-required fail → merge OK
+    //   'blocked'  — required check failed OR review missing → fail
+    //   'dirty'    — merge conflicts → fail
+    //   'unknown' / 'has_hooks' / 'behind' — still settling → wait
+    const mState = (prStatus as { pr?: { mergeable_state?: string } }).pr?.mergeable_state;
+    if (mState === 'unknown' || mState === 'has_hooks' || mState === 'behind' || !mState) {
+      continue;
+    }
+
+    if (mState === 'dirty' || mState === 'blocked') {
       await transitionStatus(s, exec.id, 'ci', 'failed', {
-        metadata: { ...(exec.metadata || {}), failed_checks: analysis.failedNames },
+        metadata: {
+          ...(exec.metadata || {}),
+          failed_checks: analysis.failedNames,
+          mergeable_state: mState,
+        },
       });
       await emitOasisEvent({
         vtid: WATCHER_VTID,
         type: 'dev_autopilot.execution.ci_failed',
         source: 'dev-autopilot-watcher',
         status: 'error',
-        message: `Execution ${exec.id.slice(0, 8)} CI failed: ${analysis.failedNames.join(', ')}`,
-        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames },
+        message: `Execution ${exec.id.slice(0, 8)} CI failed (mergeable_state=${mState}): ${analysis.failedNames.join(', ') || 'no failing check names'}`,
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState },
       });
-      await bridgeFailure(exec.id, 'ci', `failing checks: ${analysis.failedNames.join(', ')}`);
+      await bridgeFailure(exec.id, 'ci', `mergeable_state=${mState}: ${analysis.failedNames.join(', ')}`);
       continue;
     }
 
-    // Passing → merge
+    // mState === 'clean' or 'unstable' → branch protection permits merge.
+    // 'unstable' means some non-required checks failed; we surface their
+    // names in the event payload but do not block the merge.
     await transitionStatus(s, exec.id, 'ci', 'merging');
     await emitOasisEvent({
       vtid: WATCHER_VTID,
       type: 'dev_autopilot.execution.ci_passed',
       source: 'dev-autopilot-watcher',
       status: 'success',
-      message: `Execution ${exec.id.slice(0, 8)} CI passed`,
-      payload: { execution_id: exec.id, pr_url: exec.pr_url, checks: prStatus.checks.length },
+      message: `Execution ${exec.id.slice(0, 8)} CI passed (mergeable_state=${mState})`,
+      payload: {
+        execution_id: exec.id,
+        pr_url: exec.pr_url,
+        checks: prStatus.checks.length,
+        mergeable_state: mState,
+        non_blocking_failures: analysis.failedNames,
+      },
     });
 
     // Defense-in-depth: check risk class one more time before auto-merging.
