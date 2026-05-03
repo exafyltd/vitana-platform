@@ -1,0 +1,16 @@
+import { Router, Request, Response } from 'express';
+import { limitPathParams } from '../middleware/paramLimit';
+
+const router = Router();
+
+router.use(limitPathParams());
+
+router.get('/:projectId', (req: Request, res: Response) => {
+  res.status(200).json({ project: req.params.projectId });
+});
+
+router.post('/:projectId/tasks/:taskId', (req: Request, res: Response) => {
+  res.status(200).json({ task: req.params.taskId });
+});
+
+export default router;
