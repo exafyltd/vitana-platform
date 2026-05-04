@@ -97,7 +97,7 @@ router.post("/event", requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
 
     const data = await resp.json();
-    console.log(`✅ Telemetry event persisted: ${payload.id} - ${payload.vtid}/${payload.kind}`);
+    console.log(`✅ Telemetry event persisted (authenticated): ${payload.id} - ${payload.vtid}/${payload.kind}`);
 
     // Broadcast to SSE (import from devhub)
     // Note: We'll need to export broadcastEvent from devhub.ts
@@ -221,7 +221,7 @@ router.post("/batch", requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
 
     const data = await resp.json();
-    console.log(`✅ Batch telemetry persisted: ${payloads.length} events`);
+    console.log(`✅ Batch telemetry persisted (authenticated): ${payloads.length} events`);
 
     // Broadcast each to SSE
     try {
@@ -293,7 +293,7 @@ router.get("/health", (_req: Request, res: Response) => {
  */
 // Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
 router.get("/snapshot", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  console.log("[Telemetry Snapshot] Request received");
+  console.log(`[Telemetry Snapshot] Request received from user ${req.identity?.user_id || 'unknown'}`);
 
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
