@@ -289,7 +289,7 @@ router.get("/health", (_req: Request, res: Response) => {
  * This endpoint is used by the frontend for auto-loading telemetry
  * when the Operator Console / Command Hub opens.
  */
-router.get("/snapshot", async (req: Request, res: Response) => {
+router.get("/snapshot", requireAuth, async (req: Request, res: Response) => {
   console.log("[Telemetry Snapshot] Request received");
 
   try {

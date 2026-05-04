@@ -116,4 +116,35 @@ describe('Telemetry Routes Auth Enforcement', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('GET /api/v1/telemetry/snapshot', () => {
+    it('should return 401 when no authorization header is provided', async () => {
+      const response = await request(app)
+        .get('/api/v1/telemetry/snapshot')
+        .query({ limit: 5 });
+      
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Unauthorized');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should proceed and return 200 when a valid authorization token is provided', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([]) // Events
+      }).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([]) // Counters
+      });
+
+      const response = await request(app)
+        .get('/api/v1/telemetry/snapshot')
+        .set('Authorization', 'Bearer valid-token')
+        .query({ limit: 5 });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
 });
