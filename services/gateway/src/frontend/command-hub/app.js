@@ -35066,6 +35066,7 @@ function renderLivekitTestView() {
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
+        + '<button class="lkt-diagnose" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics</button>'
         + '<select class="lkt-mode" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
         +   '<option value="active">Production token (active provider must be livekit)</option>'
         +   '<option value="test-session">Test-session token (any active provider)</option>'
@@ -35073,6 +35074,13 @@ function renderLivekitTestView() {
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
         + '<a href="/command-hub/diagnostics/voice-lab/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Lab</a>';
     container.appendChild(controls);
+
+    // Diagnostics panel — fed by the "Run Diagnostics" button below.
+    var diagPanel = document.createElement('div');
+    diagPanel.className = 'lkt-diag-panel';
+    diagPanel.style.cssText = 'display:none;margin-bottom:16px;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #334155;max-height:520px;overflow-y:auto;';
+    diagPanel.innerHTML = '<h4 style="margin:0 0 8px;color:#facc15;font-size:13px;letter-spacing:0.05em;">DIAGNOSTICS — every tool against your account</h4><div class="lkt-diag-body" style="font-family:monospace;font-size:12px;color:#cbd5e1;line-height:1.5;"></div>';
+    container.appendChild(diagPanel);
 
     var hint = document.createElement('div');
     hint.className = 'lkt-hint';
@@ -35116,6 +35124,9 @@ function renderLivekitTestView() {
     var passwordInput = container.querySelector('.lkt-password');
     var signinBtn = container.querySelector('.lkt-signin');
     var signoutBtn = container.querySelector('.lkt-signout');
+    var diagnoseBtn = container.querySelector('.lkt-diagnose');
+    var diagPanelEl = container.querySelector('.lkt-diag-panel');
+    var diagBodyEl = container.querySelector('.lkt-diag-body');
 
     var room = null;
     var attachedAudio = [];
@@ -35219,6 +35230,257 @@ function renderLivekitTestView() {
     passwordInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doSignIn(); });
     emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') passwordInput.focus(); });
     refreshAuthUI();
+
+    // Diagnostics — runs every tool against the user's signed-in JWT and
+    // prints pass/fail. Mirrors the Python harness at /tmp/test_livekit_e2e.py
+    // so we can prove from the browser what the agent sees against THIS
+    // user's account specifically.
+    function diagAppend(line) {
+        var d = document.createElement('div');
+        d.innerHTML = line;
+        diagBodyEl.appendChild(d);
+        diagPanelEl.scrollTop = diagPanelEl.scrollHeight;
+    }
+    function diagRow(category, name, ok, detail) {
+        var glyph = ok
+            ? '<span style="color:#22c55e;">✓</span>'
+            : '<span style="color:#ef4444;">✗</span>';
+        var safeDetail = String(detail || '').replace(/[<>&]/g, function (c) {
+            return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;';
+        });
+        diagAppend(
+            glyph +
+                ' <span style="color:#94a3b8;">[' +
+                category +
+                ']</span> ' +
+                name +
+                ' <span style="color:#64748b;">' +
+                safeDetail.slice(0, 140) +
+                '</span>',
+        );
+    }
+    async function diagFetch(method, url, body, opts) {
+        opts = opts || {};
+        var session = readToken();
+        if (!session || !session.token) {
+            return { ok: false, status: 0, body: null, error: 'no_token' };
+        }
+        try {
+            var res = await fetch((window.GATEWAY_URL || '') + url, {
+                method: method,
+                headers: {
+                    Authorization: 'Bearer ' + session.token,
+                    'Content-Type': 'application/json',
+                },
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            var json = null;
+            try {
+                json = await res.json();
+            } catch (e) {}
+            return { ok: res.status >= 200 && res.status < 300, status: res.status, body: json };
+        } catch (err) {
+            return { ok: false, status: 0, body: null, error: String(err) };
+        }
+    }
+    async function diagDispatch(name, args) {
+        var r = await diagFetch('POST', '/api/v1/orb/tool', { name: name, args: args || {} });
+        var passed = r.ok && r.body && 'ok' in r.body;
+        var text =
+            (r.body && (r.body.text || (r.body.result && JSON.stringify(r.body.result)))) || '';
+        diagRow(
+            'tool',
+            'dispatch:' + name,
+            passed,
+            (r.status || 'ERR') + ' ok=' + (r.body && r.body.ok) + ' ' + text,
+        );
+        return r;
+    }
+    async function runDiagnostics() {
+        diagPanelEl.style.display = 'block';
+        diagBodyEl.innerHTML = '';
+        diagAppend('<strong style="color:#facc15;">Running diagnostics…</strong>');
+        var session = readToken();
+        if (!session || !session.token) {
+            diagRow('auth', 'token in localStorage', false, 'no token — sign in first');
+            return;
+        }
+        diagRow('auth', 'token in localStorage', true, 'len=' + session.token.length);
+
+        // Phase 1: auth round-trip
+        var me = await diagFetch('GET', '/api/v1/auth/me');
+        diagRow(
+            'auth',
+            '/auth/me round-trip',
+            me.ok,
+            me.status +
+                ' user_id=' +
+                (me.body && me.body.identity && me.body.identity.user_id) +
+                ' email=' +
+                (me.body && me.body.identity && me.body.identity.email),
+        );
+        if (!me.ok) {
+            diagRow('auth', 'STOP', false, 'auth failed — every other call will 401');
+            return;
+        }
+
+        // Phase 2: bootstrap enrichment
+        var bs = await diagFetch('GET', '/api/v1/orb/context-bootstrap?agent_id=orb-agent');
+        var ctx = (bs.body && bs.body.bootstrap_context) || '';
+        diagRow('bootstrap', 'context-bootstrap reachable', bs.ok, bs.status + '');
+        diagRow('bootstrap', 'bootstrap_context length > 200', ctx.length > 200, 'len=' + ctx.length);
+        diagRow(
+            'bootstrap',
+            'vitana_id present',
+            !!(bs.body && bs.body.vitana_id),
+            String((bs.body && bs.body.vitana_id) || ''),
+        );
+        diagRow(
+            'bootstrap',
+            '## Verified facts block',
+            ctx.indexOf('Verified facts') !== -1,
+            ctx.indexOf('Verified facts') !== -1 ? 'found' : 'missing',
+        );
+        diagRow(
+            'bootstrap',
+            '## Vitana Index block',
+            ctx.indexOf('## Vitana Index') !== -1,
+            ctx.indexOf('## Vitana Index') !== -1 ? 'found' : 'missing',
+        );
+        diagRow(
+            'bootstrap',
+            'voice_config llm_model',
+            !!(bs.body && bs.body.voice_config && bs.body.voice_config.llm_model),
+            String((bs.body && bs.body.voice_config && bs.body.voice_config.llm_model) || ''),
+        );
+
+        // Phase 3: direct-route tools
+        diagAppend('<br><strong style="color:#facc15;">Direct-route tools (18):</strong>');
+        var k = await diagFetch('POST', '/api/v1/assistant/knowledge/search', { query: 'autopilot' });
+        diagRow('tool', 'search_knowledge', k.ok, k.status + '');
+
+        var sc = await diagFetch('GET', '/api/v1/calendar/events?q=meeting');
+        diagRow('tool', 'search_calendar', sc.ok, sc.status + '');
+
+        var st = await diagFetch('GET', '/api/v1/calendar/events/today');
+        diagRow('tool', 'get_schedule', st.ok, st.status + '');
+
+        var ce = await diagFetch('POST', '/api/v1/calendar/events', {
+            title: '[TEST] diagnostics probe',
+            start_time: '2026-12-31T15:00:00Z',
+            end_time: '2026-12-31T15:30:00Z',
+        });
+        diagRow('tool', 'create_calendar_event', ce.ok, ce.status + '');
+        var ceId = ce.body && ((ce.body.data && ce.body.data.id) || ce.body.id);
+        if (ceId) await diagFetch('DELETE', '/api/v1/calendar/events/' + ceId);
+
+        var ca = await diagFetch('POST', '/api/v1/calendar/events', {
+            title: '[TEST] add_to_calendar probe',
+            start_time: '2026-12-31T17:00:00Z',
+            end_time: '2026-12-31T17:15:00Z',
+        });
+        diagRow('tool', 'add_to_calendar', ca.ok, ca.status + '');
+        var caId = ca.body && ((ca.body.data && ca.body.data.id) || ca.body.id);
+        if (caId) await diagFetch('DELETE', '/api/v1/calendar/events/' + caId);
+
+        var rec = await diagFetch('GET', '/api/v1/autopilot/recommendations');
+        diagRow('tool', 'get_recommendations', rec.ok, rec.status + '');
+        var recId = null;
+        if (rec.ok && rec.body && Array.isArray(rec.body.recommendations) && rec.body.recommendations[0]) {
+            recId = rec.body.recommendations[0].id;
+        }
+        if (recId) {
+            var act = await diagFetch('POST', '/api/v1/autopilot/recommendations/' + recId + '/activate', {});
+            diagRow('tool', 'activate_recommendation', act.ok, act.status + '');
+        } else {
+            diagRow('tool', 'activate_recommendation', true, 'skipped (no rec_id)');
+        }
+
+        var idx = await diagFetch('GET', '/api/v1/vitana-index');
+        diagRow('tool', 'get_vitana_index', idx.ok, idx.status + ' total=' + (idx.body && idx.body.snapshot && idx.body.snapshot.total));
+
+        var sug = await diagFetch('GET', '/api/v1/vitana-index/suggestions');
+        diagRow('tool', 'get_index_improvement_suggestions', sug.ok, sug.status + '');
+
+        var dy = await diagFetch('POST', '/api/v1/memory/diary/sync-index', { raw_text: '[TEST] diagnostics probe — drank water and walked' });
+        diagRow('tool', 'save_diary_entry', dy.ok, dy.status + '');
+
+        var sr = await diagFetch('POST', '/api/v1/reminders', {
+            action_text: '[TEST] probe',
+            spoken_message: '[TEST]',
+            scheduled_for_iso: '2026-08-01T08:00:00Z',
+        });
+        diagRow('tool', 'set_reminder', sr.ok, sr.status + '');
+        var rId = sr.body && ((sr.body.data && sr.body.data.id) || sr.body.id);
+
+        var fr = await diagFetch('GET', '/api/v1/reminders');
+        diagRow('tool', 'find_reminders', fr.ok, fr.status + '');
+        if (rId) {
+            var dr = await diagFetch('DELETE', '/api/v1/reminders/' + rId);
+            diagRow('tool', 'delete_reminder', dr.ok, dr.status + '');
+        }
+
+        var pi = await diagFetch('POST', '/api/v1/intents', {
+            intent_kind: 'social_seek',
+            title: '[TEST] diagnostics probe — coffee buddy',
+            scope: 'Looking for someone to grab coffee with one afternoon next week. Casual, talk about longevity. (harness probe — safe to ignore)',
+        });
+        diagRow('tool', 'post_intent', pi.ok || pi.status === 200, pi.status + '');
+        var intentId =
+            pi.body && (pi.body.intent_id || (pi.body.intent && pi.body.intent.intent_id) || (pi.body.data && pi.body.data.id));
+
+        var li = await diagFetch('GET', '/api/v1/intents');
+        diagRow('tool', 'list_my_intents', li.ok, li.status + '');
+
+        var vm = await diagFetch('GET', '/api/v1/intent-matches/incoming');
+        diagRow('tool', 'view_intent_matches', vm.ok, vm.status + '');
+
+        if (intentId) {
+            var mm = await diagFetch('GET', '/api/v1/intents/' + intentId + '/matchmaker');
+            diagRow('tool', 'get_matchmaker_result', mm.ok || mm.status === 202, mm.status + '');
+            var mf = await diagFetch('POST', '/api/v1/intents/' + intentId + '/close', {});
+            diagRow('tool', 'mark_intent_fulfilled', mf.ok, mf.status + '');
+        }
+
+        // Phase 4: dispatcher tools (22)
+        diagAppend('<br><strong style="color:#facc15;">Dispatcher tools (22):</strong>');
+        await diagDispatch('search_memory', { query: 'vitana', limit: 5 });
+        await diagDispatch('search_web', { query: 'longevity' });
+        await diagDispatch('recall_conversation_at_time', { when: 'yesterday' });
+        await diagDispatch('switch_persona', { persona: 'warm' });
+        await diagDispatch('report_to_specialist', { specialist: 'devon', reason: 'probe', context_summary: 'probe' });
+        await diagDispatch('search_events', { query: '' });
+        await diagDispatch('search_community', { query: '' });
+        await diagDispatch('play_music', { query: 'calm' });
+        await diagDispatch('set_capability_preference', { capability: 'music.play', provider: 'spotify' });
+        await diagDispatch('read_email', {});
+        await diagDispatch('find_contact', { query: 'test' });
+        await diagDispatch('consult_external_ai', { prompt: 'test' });
+        await diagDispatch('create_index_improvement_plan', { target_pillar: 'nutrition' });
+        await diagDispatch('ask_pillar_agent', { pillar: 'nutrition', question: 'what should I eat?' });
+        await diagDispatch('explain_feature', { feature: 'diary' });
+        await diagDispatch('resolve_recipient', { name: 'test' });
+        var meId = me.body && me.body.identity && me.body.identity.user_id;
+        if (meId) {
+            await diagDispatch('send_chat_message', { recipient_id: meId, body_text: '[TEST] diag probe' });
+            await diagDispatch('share_link', { url: 'https://vitana.app/test', with_recipient: meId });
+            await diagDispatch('share_intent_post', { intent_id: '00000000-0000-0000-0000-000000000000', with_recipient: meId });
+        }
+        await diagDispatch('scan_existing_matches', {});
+        await diagDispatch('respond_to_match', { match_id: '00000000-0000-0000-0000-000000000000', response: 'interested' });
+        await diagDispatch('navigate_to_screen', { target: 'diary' });
+
+        diagAppend('<br><strong style="color:#22c55e;">Diagnostics complete.</strong> Scroll up to see results.');
+    }
+    diagnoseBtn.addEventListener('click', function () {
+        diagnoseBtn.disabled = true;
+        var origText = diagnoseBtn.textContent;
+        diagnoseBtn.textContent = '⚙ Running…';
+        runDiagnostics().finally(function () {
+            diagnoseBtn.disabled = false;
+            diagnoseBtn.textContent = origText;
+        });
+    });
 
     function log(kind, msg, data) {
         var ts = new Date().toISOString().slice(11, 19);
