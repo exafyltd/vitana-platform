@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
-import { requireAuth } from "../middleware/auth-supabase-jwt";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth-supabase-jwt";
 
 export const router = Router();
 
@@ -28,7 +28,7 @@ type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
 // Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.post("/event", requireAuth, async (req: Request, res: Response) => {
+router.post("/event", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -149,7 +149,7 @@ router.post("/event", requireAuth, async (req: Request, res: Response) => {
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
 // Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.post("/batch", requireAuth, async (req: Request, res: Response) => {
+router.post("/batch", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
@@ -292,7 +292,7 @@ router.get("/health", (_req: Request, res: Response) => {
  * when the Operator Console / Command Hub opens.
  */
 // Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.get("/snapshot", requireAuth, async (req: Request, res: Response) => {
+router.get("/snapshot", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log("[Telemetry Snapshot] Request received");
 
   try {
