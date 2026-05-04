@@ -447,35 +447,158 @@ router.get(
       voiceConfig = (data as Record<string, unknown> | null) ?? null;
     }
 
-    // Memory garden: best-effort top-N. Full retrieval-router context port
-    // (memory + last session + admin briefing + profiler) lands in a
-    // follow-up PR.
+    // VTID-LIVEKIT-BOOTSTRAP-IDENTITY: enrich the bootstrap context with the
+    // user's identity facts so the agent's system prompt can answer "do you
+    // know who I am?" correctly. Vertex's full system instruction builder
+    // (orb-live.ts:7653) wires 23 awareness signals; until that builder is
+    // hoisted into a shared module (planned PR 2b), inject the highest-
+    // impact identity-core facts here.
     const memoryItems: Array<{ id: string; text: string }> = [];
+    let displayName: string | null = null;
+    let registrationSeq: number | null = null;
+    let identityFacts: Array<{ fact_key: string; fact_value: string; entity: string }> = [];
+    let indexSnapshot: {
+      total: number;
+      tier: string;
+      pillars: Record<string, number>;
+      weakest: string | null;
+    } | null = null;
+
     if (sb && userId) {
-      const { data: items } = await sb
-        .from('memory_garden')
-        .select('id, content')
-        .eq('user_id', userId)
-        .order('updated_at', { ascending: false })
-        .limit(5);
-      if (items) {
-        for (const it of items as Array<Record<string, unknown>>) {
-          memoryItems.push({
-            id: String(it.id ?? ''),
-            text: String(it.content ?? ''),
-          });
+      // Memory items top-5 — note the table is `memory_items`, not `memory_garden`.
+      try {
+        const { data: items } = await sb
+          .from('memory_items')
+          .select('id, content')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (items) {
+          for (const it of items as Array<Record<string, unknown>>) {
+            const text = String(it.content ?? '').trim();
+            if (text) {
+              memoryItems.push({ id: String(it.id ?? ''), text });
+            }
+          }
         }
+      } catch {
+        /* best-effort — table layout varies across environments */
+      }
+
+      // app_users — display_name + registration_seq for tenure hints.
+      try {
+        const { data: app } = await sb
+          .from('app_users')
+          .select('display_name, registration_seq')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (app) {
+          displayName = (app as { display_name?: string | null }).display_name ?? null;
+          registrationSeq =
+            (app as { registration_seq?: number | null }).registration_seq ?? null;
+        }
+      } catch {
+        /* best-effort */
+      }
+
+      // memory_facts — identity-core keys (mirrors IDENTITY_CORE_KEYS in
+      // services/gateway/src/services/context-pack-builder.ts:60).
+      try {
+        const IDENTITY_CORE_KEYS = [
+          'user_name', 'user_birthday', 'user_residence', 'user_hometown',
+          'user_company', 'user_occupation', 'user_email',
+          'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
+          'fiancee_birthday',
+          'user_health_condition', 'user_medication', 'user_allergy',
+          'preferred_language',
+        ];
+        const { data: facts } = await sb
+          .from('memory_facts')
+          .select('fact_key, fact_value, entity')
+          .eq('user_id', userId)
+          .in('fact_key', IDENTITY_CORE_KEYS)
+          .is('superseded_by', null)
+          .order('provenance_confidence', { ascending: false })
+          .limit(40);
+        identityFacts =
+          (facts as Array<{ fact_key: string; fact_value: string; entity: string }>) ?? [];
+      } catch {
+        /* best-effort */
+      }
+
+      // Latest Vitana Index snapshot — total + 5 pillars + weakest.
+      try {
+        const { data: idx } = await sb
+          .from('vitana_index_scores')
+          .select('total_score, tier, pillars, weakest_pillar')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (idx) {
+          indexSnapshot = {
+            total: Number((idx as { total_score?: number }).total_score ?? 0),
+            tier: String((idx as { tier?: string }).tier ?? 'unknown'),
+            pillars:
+              ((idx as { pillars?: Record<string, number> }).pillars ?? {}) as Record<
+                string,
+                number
+              >,
+            weakest: (idx as { weakest_pillar?: string | null }).weakest_pillar ?? null,
+          };
+        }
+      } catch {
+        /* best-effort */
       }
     }
 
+    const vitanaId = req.identity?.vitana_id ?? null;
+
     const ctxParts: string[] = [];
-    if (userId) ctxParts.push(`User ID: ${userId}.`);
+    // Authoritative identity header — pinned at top so the LLM treats it
+    // as ground truth, mirrors the role/vitana-id headers Vertex pins.
+    if (displayName) {
+      ctxParts.push(`Authoritative identity: the user's name is ${displayName}.`);
+    }
+    if (vitanaId) {
+      ctxParts.push(`The user's Vitana ID (canonical handle) is @${vitanaId}.`);
+    }
+    if (userId) ctxParts.push(`Internal user UUID: ${userId}.`);
     if (tenantId) ctxParts.push(`Tenant: ${tenantId}.`);
     ctxParts.push(`Role: ${role}.`);
     ctxParts.push(`Language: ${lang}.`);
+    if (registrationSeq !== null) {
+      ctxParts.push(`Registration sequence: ${registrationSeq}.`);
+    }
+
+    // Verified facts — same shape Vertex injects via memory_facts.
+    if (identityFacts.length > 0) {
+      const factLines = identityFacts.map((f) => {
+        const scope = f.entity === 'self' ? '' : ` (${f.entity})`;
+        return `- ${f.fact_key}${scope}: ${f.fact_value}`;
+      });
+      ctxParts.push(
+        `## Verified facts about this user (do NOT invent, do NOT contradict):\n${factLines.join('\n')}`,
+      );
+    }
+
+    // Vitana Index snapshot — mirrors the [HEALTH] block Vertex injects.
+    if (indexSnapshot) {
+      const pillarLines = Object.entries(indexSnapshot.pillars)
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join('\n');
+      ctxParts.push(
+        `## Vitana Index\nTotal: ${indexSnapshot.total} (Tier: ${indexSnapshot.tier}).${
+          indexSnapshot.weakest ? ` Weakest pillar: ${indexSnapshot.weakest}.` : ''
+        }\nPillars:\n${pillarLines}`,
+      );
+    }
+
     if (memoryItems.length) {
       ctxParts.push(
-        `Recent memory:\n${memoryItems.map((m) => `- ${m.text.slice(0, 200)}`).join('\n')}`,
+        `## Recent memory items\n${memoryItems
+          .map((m) => `- ${m.text.slice(0, 300)}`)
+          .join('\n')}`,
       );
     }
 

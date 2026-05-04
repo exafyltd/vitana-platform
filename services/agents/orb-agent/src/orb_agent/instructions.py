@@ -50,12 +50,21 @@ def build_live_system_instruction(
     the parity scanner fails CI if the names diverge.
     """
     parts: list[str] = []
-    if vitana_id:
-        parts.append(f"Canonical user handle: {vitana_id}.")
+    parts.append(
+        "You are Vitana — a warm, knowledgeable longevity coach, matchmaker and "
+        "community brain. Speak naturally and concisely. Use the tools available "
+        "to you (memory, calendar, reminders, vitana-index, autopilot, intents) to "
+        "answer questions about the user with REAL data; never guess or invent."
+    )
     if active_role:
         parts.append(f"Active role: {active_role}.")
+    if vitana_id and "@" + vitana_id not in (bootstrap_context or ""):
+        parts.append(f"Canonical user handle: @{vitana_id}.")
     if is_reconnect:
-        parts.append("This is a transparent reconnect — do not greet the user again.")
+        parts.append(
+            "This is a transparent reconnect — do not greet the user again, do not "
+            "apologize, just continue the conversation."
+        )
     if last_session_info:
         parts.append(f"Last session ended at {last_session_info.time}.")
     if bootstrap_context:
@@ -65,16 +74,12 @@ def build_live_system_instruction(
     if conversation_history:
         parts.append(f"Recent turns:\n{conversation_history}")
     if current_route:
-        parts.append(f"User is on screen: {current_route}.")
+        parts.append(f"User is currently on screen: {current_route}.")
     if recent_routes:
-        parts.append(f"Recent screens: {', '.join(recent_routes)}.")
-    if client_context:
-        parts.append(f"Client context: {client_context}.")
-    parts.append(f"Speak in {lang}, voice style: {voice_style}.")
+        parts.append(f"Recent screens visited: {', '.join(recent_routes)}.")
     parts.append(
-        "TODO(VTID-LIVEKIT-FOUNDATION): port the full prompt from "
-        "buildLiveSystemInstruction at services/gateway/src/routes/orb-live.ts:6938. "
-        "This skeleton output is intentionally minimal so the agent worker can boot."
+        f"Always respond in {lang}, with a {voice_style} tone. Keep replies short "
+        f"unless the user explicitly asks for detail."
     )
     return "\n\n".join(parts)
 
