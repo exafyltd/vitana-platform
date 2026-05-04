@@ -183,11 +183,20 @@ async function tool_report_to_specialist(args: ToolArgs): Promise<ToolResult> {
 
 async function tool_search_events(args: ToolArgs, _id: Identity, sb: SupabaseClient): Promise<ToolResult> {
   const query = String(args.query ?? '').trim().toLowerCase();
-  // community_events table — best-effort filter on title/description/tags.
-  const sel = sb.from('community_events').select('id, title, description, starts_at, location, event_type').gte('starts_at', new Date().toISOString()).order('starts_at').limit(20);
-  const { data, error } = await sel;
+  // VTID-01270A: events live in `global_community_events` on the platform
+  // Supabase (per orb-live.ts:4961 + gemini-operator.ts:2114).
+  const { data, error } = await sb
+    .from('global_community_events')
+    .select('id, title, description, start_time, end_time, location, virtual_link, slug')
+    .gte('start_time', new Date().toISOString())
+    .order('start_time', { ascending: true })
+    .limit(20);
   if (error) {
-    return { ok: true, result: { events: [] }, text: `Couldn't search events right now: ${error.message}` };
+    return {
+      ok: true,
+      result: { events: [] },
+      text: `Couldn't search events right now: ${error.message}`,
+    };
   }
   const filtered = query
     ? (data || []).filter(
@@ -202,41 +211,48 @@ async function tool_search_events(args: ToolArgs, _id: Identity, sb: SupabaseCli
       events: filtered.slice(0, 10).map((e) => ({
         id: e.id,
         title: e.title,
-        when: e.starts_at,
-        location: e.location,
-        type: e.event_type,
+        when: e.start_time,
+        location: e.location || e.virtual_link,
+        slug: e.slug,
       })),
     },
+    text:
+      filtered.length === 0
+        ? 'No upcoming events found right now.'
+        : `Found ${filtered.length} upcoming event${filtered.length === 1 ? '' : 's'}.`,
   };
 }
 
 async function tool_search_community(args: ToolArgs, _id: Identity, sb: SupabaseClient): Promise<ToolResult> {
   const query = String(args.query ?? '').trim().toLowerCase();
+  // community_groups exists per services/gateway/src/routes/community.ts:298;
+  // some projects narrow which columns are selectable, so try the lean
+  // columnset and fall back gracefully.
   const { data, error } = await sb
     .from('community_groups')
-    .select('id, name, description, member_count, tags')
-    .order('member_count', { ascending: false, nullsFirst: false })
-    .limit(50);
+    .select('id, name, slug')
+    .limit(100);
   if (error) {
-    return { ok: true, result: { groups: [] }, text: `Couldn't search community right now: ${error.message}` };
+    return {
+      ok: true,
+      result: { groups: [] },
+      text: `Community group search isn't available right now: ${error.message}`,
+    };
   }
   const filtered = query
-    ? (data || []).filter(
-        (g: { name?: string; description?: string }) =>
-          (g.name || '').toLowerCase().includes(query) ||
-          (g.description || '').toLowerCase().includes(query),
+    ? (data || []).filter((g: { name?: string }) =>
+        (g.name || '').toLowerCase().includes(query),
       )
     : data || [];
   return {
     ok: true,
     result: {
-      groups: filtered.slice(0, 10).map((g) => ({
-        id: g.id,
-        name: g.name,
-        members: g.member_count,
-        tags: g.tags,
-      })),
+      groups: filtered.slice(0, 10).map((g) => ({ id: g.id, name: g.name, slug: g.slug })),
     },
+    text:
+      filtered.length === 0
+        ? `No matching community groups found for "${query || 'all'}".`
+        : `Found ${filtered.length} group${filtered.length === 1 ? '' : 's'}.`,
   };
 }
 
