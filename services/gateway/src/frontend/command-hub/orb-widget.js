@@ -464,6 +464,39 @@
     } catch (e) { /* ignore */ }
   }
 
+  // VTID-02710: Keep playbackCtx warm during the 2-5s wait between session
+  // start and first Gemini audio chunk. iOS Safari/WKWebView auto-suspends an
+  // idle AudioContext after a few hundred ms of silence, and ctx.resume()
+  // outside a user gesture is unreliable on iOS — chunks drop into a dead
+  // queue (line ~810 in _processQueue) and the user hears nothing through the
+  // entire greeting. A looping inaudible BufferSource counts as "audio
+  // playing" to iOS, so the ctx stays in the running state until the first
+  // real chunk arrives. Caller is responsible for stopping it (on first
+  // audio_out chunk and on session teardown).
+  function _startCtxKeepAlive() {
+    var ctx = _s.playbackCtx;
+    if (!ctx || ctx.state === 'closed') return;
+    if (_s._ctxKeepAliveSrc) return;
+    try {
+      var buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.5)), ctx.sampleRate);
+      var src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      src.connect(ctx.destination);
+      src.start(0);
+      _s._ctxKeepAliveSrc = src;
+    } catch (e) {
+      console.warn('[VTOrb] _startCtxKeepAlive failed:', e && e.message);
+    }
+  }
+
+  function _stopCtxKeepAlive() {
+    var src = _s._ctxKeepAliveSrc;
+    if (!src) return;
+    try { src.stop(0); src.disconnect(); } catch (e) { /* ignore */ }
+    _s._ctxKeepAliveSrc = null;
+  }
+
   // ============================================================
   // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT
   //                       + BOOTSTRAP-ORB-MODERN-RECOVERY)
@@ -946,6 +979,13 @@
     // Play activation chime immediately
     _playChime(_s.playbackCtx);
 
+    // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
+    // The chime ends ~400 ms after this call; without an active source after
+    // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
+    // greeting and the first chunks drop silently. Stopped in the audio_out
+    // handler on first real chunk, and in _sessionStop on teardown.
+    _startCtxKeepAlive();
+
     try {
       var headers = { 'Content-Type': 'application/json' };
       if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
@@ -1103,6 +1143,10 @@
     if (_s.captureProcessor) { _s.captureProcessor.disconnect(); _s.captureProcessor = null; }
     if (_s.captureCtx) { _s.captureCtx.close().catch(function () {}); _s.captureCtx = null; }
 
+    // VTID-02710: stop the iOS ctx keep-alive (if it was still running because
+    // the session ended before any audio arrived) before closing the ctx.
+    _stopCtxKeepAlive();
+
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
 
@@ -1232,6 +1276,10 @@
           if (!_s.greetingAudioReceived) {
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
+            // VTID-02710: real audio is taking over — release the keep-alive
+            // pump so it doesn't quietly waste cycles for the rest of the
+            // session.
+            _stopCtxKeepAlive();
           }
           // Update to SPEAKING when audio arrives — but respect MUTED state.
           // If muted, keep visual state as muted but track that model is speaking
