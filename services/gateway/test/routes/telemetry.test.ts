@@ -1,10 +1,10 @@
 import request from 'supertest';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { router } from '../../src/routes/telemetry';
 
 // Mock auth middleware to simulate authenticated and unauthenticated states
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
-  requireAuth: jest.fn((req, res, next) => {
+  requireAuth: jest.fn((req: Request & { identity?: any }, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer valid-token')) {
       req.identity = { user_id: 'test-user', email: 'test@example.com' };
