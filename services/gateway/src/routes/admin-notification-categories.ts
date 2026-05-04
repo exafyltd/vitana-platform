@@ -15,7 +15,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
 import { notifyUser, NotificationPayload } from '../services/notification-service';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
@@ -25,15 +25,6 @@ const VTID = 'ADMIN-NOTIF-CATEGORIES';
 const VALID_TYPES = ['chat', 'calendar', 'community'];
 
 router.use(requireAuth, requireExafyAdmin);
-
-// ── Supabase ────────────────────────────────────────────────
-
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE!
-  );
-}
 
 // ── Slug helper ─────────────────────────────────────────────
 
@@ -48,6 +39,8 @@ function toSlug(name: string): string {
 
 router.get('/', async (req: Request, res: Response) => {
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
+
   const { type, tenant_id, include_inactive } = req.query;
 
   let query = supabase
@@ -89,6 +82,8 @@ router.get('/', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
+
   const { data, error } = await supabase
     .from('notification_categories')
     .select('*')
@@ -108,6 +103,8 @@ router.post('/', async (req: Request, res: Response) => {
   const identity = (req as AuthenticatedRequest).identity!;
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
+
   const {
     type,
     display_name,
@@ -172,6 +169,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
   const identity = (req as AuthenticatedRequest).identity!;
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
+
   const allowedFields = ['display_name', 'description', 'icon', 'sort_order', 'is_active', 'default_enabled', 'mapped_types'];
   const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
 
@@ -211,6 +210,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
   const identity = (req as AuthenticatedRequest).identity!;
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
+
   const { data, error } = await supabase
     .from('notification_categories')
     .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -236,6 +237,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
   const identity = (req as AuthenticatedRequest).identity!;
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
   // Get the category
   const { data: category, error: catError } = await supabase
