@@ -526,26 +526,48 @@ router.get(
         /* best-effort */
       }
 
-      // Latest Vitana Index snapshot — total + 5 pillars + weakest.
+      // Latest Vitana Index snapshot — column shape mirrors
+      // INDEX_SELECT_COLUMNS in services/gateway/src/services/user-context-profiler.ts:315.
+      // Per-pillar scores live as flat columns (score_nutrition,
+      // score_hydration, …); the total is `score_total`, not `total_score`;
+      // and there is no `tier` or `weakest_pillar` column — both are
+      // derived. Recompute them here so this route stays self-contained.
       try {
         const { data: idx } = await sb
           .from('vitana_index_scores')
-          .select('total_score, tier, pillars, weakest_pillar')
+          .select(
+            'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental',
+          )
           .eq('user_id', userId)
-          .order('created_at', { ascending: false })
+          .order('date', { ascending: false })
           .limit(1)
           .maybeSingle();
         if (idx) {
-          indexSnapshot = {
-            total: Number((idx as { total_score?: number }).total_score ?? 0),
-            tier: String((idx as { tier?: string }).tier ?? 'unknown'),
-            pillars:
-              ((idx as { pillars?: Record<string, number> }).pillars ?? {}) as Record<
-                string,
-                number
-              >,
-            weakest: (idx as { weakest_pillar?: string | null }).weakest_pillar ?? null,
+          const row = idx as Record<string, number | string | null>;
+          const pillars: Record<string, number> = {
+            nutrition: Number(row.score_nutrition ?? 0),
+            hydration: Number(row.score_hydration ?? 0),
+            exercise: Number(row.score_exercise ?? 0),
+            sleep: Number(row.score_sleep ?? 0),
+            mental: Number(row.score_mental ?? 0),
           };
+          let weakestKey: string | null = null;
+          let weakestVal = Number.POSITIVE_INFINITY;
+          for (const [k, v] of Object.entries(pillars)) {
+            if (v < weakestVal) {
+              weakestVal = v;
+              weakestKey = k;
+            }
+          }
+          const total = Number(row.score_total ?? 0);
+          // Tier ladder mirrors the lib/vitana-pillars.ts boundaries.
+          const tier =
+            total >= 800 ? 'Elite' :
+            total >= 700 ? 'Really good' :
+            total >= 500 ? 'Strong' :
+            total >= 350 ? 'Building' :
+            total >= 150 ? 'Early' : 'Starting';
+          indexSnapshot = { total, tier, pillars, weakest: weakestKey };
         }
       } catch {
         /* best-effort */
