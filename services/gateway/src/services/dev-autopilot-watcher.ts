@@ -226,11 +226,25 @@ export function analyzeVerificationWindow(
   const elapsed = Date.now() - start;
   // New error events emitted DURING the window that are NOT for our own
   // execution VTID lineage count as blast-radius signal.
+  //
+  // VTID-02699: Exclude `dev_autopilot.*` topics regardless of vtid.
+  // Other autopilot executions' CI failures use the shared
+  // `vtid: VTID-DEV-AUTOPILOT` and topic `dev_autopilot.execution.ci_failed`
+  // — those represent OTHER executions failing in CI, not production
+  // blast radius from THIS execution's deploy. Same for any internal
+  // autopilot lifecycle errors. "Blast radius" should mean "user-facing
+  // production errors after my deploy" — not noise from the autopilot
+  // pipeline itself, especially during a multi-execution batch.
   const blastRadius = events.filter((e) => {
     const at = e.created_at ? new Date(e.created_at).getTime() : 0;
     if (at < start) return false;
     if (e.status !== 'error') return false;
     if (!e.vtid || e.vtid.startsWith(ourVtidPrefix)) return false;
+    if (typeof e.type === 'string' && (
+      e.type.startsWith('dev_autopilot.') ||
+      e.type.startsWith('self_healing.') ||
+      e.type.startsWith('cicd.')
+    )) return false;
     return true;
   });
   if (blastRadius.length > 0) {
