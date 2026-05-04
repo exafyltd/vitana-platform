@@ -34,6 +34,12 @@ export interface RedactedMatch extends Omit<MatchRow, 'vitana_id_a' | 'vitana_id
   vitana_id_a: string | null;
   vitana_id_b: string | null;
   redacted: boolean;
+  // E6 — counterparty profile fields populated by enrichMatchesWithCounterpartyProfiles.
+  // null when redacted, when the counterparty is hidden (global_community_profiles.is_visible=false),
+  // or when the field is unset in profiles.
+  partner_display_name?: string | null;
+  partner_avatar_url?: string | null;
+  partner_gender?: 'male' | 'female' | null;
 }
 
 /**
