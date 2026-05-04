@@ -403,6 +403,7 @@ CREATE TABLE my_new_table (
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
+| 2026-05-04 | Added nullable `linked_reminder_id` (FK → reminders.id, ON DELETE SET NULL) + supporting partial index to `autopilot_recommendations`. Lets server-side callers spawn a `created_via='system'` reminder for a recommendation and record the link. Additive, no backfill. | Claude | BOOTSTRAP-REMINDERS-AUTOPILOT-LINK |
 
 ---
 

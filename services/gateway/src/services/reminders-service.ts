@@ -158,6 +158,41 @@ export async function createReminder(
 }
 
 /**
+ * Spawn a system-origin reminder on behalf of an autopilot recommendation
+ * and link the rows together. Used by server-side callers (recommendation
+ * engine, automation handlers, future autopilot-worker integrations) to
+ * populate the "Suggested by Vitana" surface on the frontend.
+ *
+ * The created reminder always has `created_via='system'`, so callers should
+ * NOT use this path for user-initiated scheduling — that still goes through
+ * `createReminder({...created_via:'ui'|'voice'})`.
+ *
+ * Sets `autopilot_recommendations.linked_reminder_id` to the new reminder's
+ * id. Best-effort: if the link update fails, the reminder still exists and
+ * the failure is logged (the back-link is a navigability nicety, not a
+ * correctness invariant).
+ */
+export async function createReminderForRecommendation(
+  admin: SupabaseClient,
+  recommendationId: string,
+  input: Omit<CreateReminderInput, 'created_via'>,
+): Promise<ReminderRow> {
+  const reminder = await createReminder(admin, { ...input, created_via: 'system' });
+
+  const { error: linkErr } = await admin
+    .from('autopilot_recommendations')
+    .update({ linked_reminder_id: reminder.id, updated_at: new Date().toISOString() })
+    .eq('id', recommendationId);
+  if (linkErr) {
+    console.warn(
+      `[${VTID}] linked_reminder_id update failed for recommendation ${recommendationId}: ${linkErr.message}`,
+    );
+  }
+
+  return reminder;
+}
+
+/**
  * Soft-delete a reminder (single) or all active reminders for a user.
  * Returns the number of rows cancelled. Emits a single OASIS event.
  */
