@@ -26,8 +26,8 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   }
 }));
 
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({
+jest.mock('../src/lib/supabase', () => ({
+  getSupabase: () => ({
     from: () => ({
       select: function () { return this; },
       order: function () { return this; },
