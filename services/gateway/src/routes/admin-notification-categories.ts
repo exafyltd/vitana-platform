@@ -11,12 +11,12 @@
  * - POST   /:id/test      — Send test notification to admin
  *
  * Security:
- * - All endpoints are protected by the `requireExafyAdmin` middleware.
+ * - All endpoints are protected by the `requireAdmin` middleware.
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { createUserSupabaseClient } from '../lib/supabase-user';
+import { requireAdmin } from '../middleware/requireAdmin';
 import { notifyUser, NotificationPayload } from '../services/notification-service';
 
 const router = Router();
@@ -24,42 +24,9 @@ const VTID = 'ADMIN-NOTIF-CATEGORIES';
 
 const VALID_TYPES = ['chat', 'calendar', 'community'];
 
-// ── Auth Helper ─────────────────────────────────────────────
-
-function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
-}
-
 // ── Auth Middleware ─────────────────────────────────────────
 
-async function requireExafyAdmin(req: Request, res: Response, next: NextFunction) {
-  const token = getBearerToken(req);
-  if (!token) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-
-  try {
-    const userClient = createUserSupabaseClient(token);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData?.user) {
-      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
-    }
-
-    const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
-      return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
-    }
-
-    // Attach user info to request for downstream handlers
-    (req as any).authUser = { user_id: authData.user.id, email: authData.user.email || 'unknown' };
-    next();
-  } catch (err: any) {
-    console.error(`[${VTID}] Auth error:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-}
-
-router.use(requireExafyAdmin);
+router.use(requireAdmin);
 
 // ── Supabase ────────────────────────────────────────────────
 
@@ -140,7 +107,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 // ── POST / — Create category ───────────────────────────────
 
 router.post('/', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
+  const authUser = {
+    user_id: (req as any).user?.id,
+    email: (req as any).user?.email ?? 'unknown',
+  };
 
   const supabase = getSupabase();
   const {
@@ -204,7 +174,10 @@ router.post('/', async (req: Request, res: Response) => {
 // ── PATCH /:id — Update category ────────────────────────────
 
 router.patch('/:id', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
+  const authUser = {
+    user_id: (req as any).user?.id,
+    email: (req as any).user?.email ?? 'unknown',
+  };
 
   const supabase = getSupabase();
   const allowedFields = ['display_name', 'description', 'icon', 'sort_order', 'is_active', 'default_enabled', 'mapped_types'];
@@ -243,7 +216,10 @@ router.patch('/:id', async (req: Request, res: Response) => {
 // ── DELETE /:id — Soft-delete (set is_active=false) ─────────
 
 router.delete('/:id', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
+  const authUser = {
+    user_id: (req as any).user?.id,
+    email: (req as any).user?.email ?? 'unknown',
+  };
 
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -268,7 +244,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
 // ── POST /:id/test — Send test notification to admin ────────
 
 router.post('/:id/test', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
+  const authUser = {
+    user_id: (req as any).user?.id,
+    email: (req as any).user?.email ?? 'unknown',
+  };
 
   const supabase = getSupabase();
 
