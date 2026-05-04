@@ -1,7 +1,8 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
+import { supabase } from "../lib/supabase";
 
 export const router = Router();
 
@@ -24,9 +25,38 @@ const TelemetryEventSchema = z.object({
 
 type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
+// Auth middleware to protect write operations
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    let token: string | undefined;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7);
+    } else if ((req as any).cookies) {
+      token = (req as any).cookies["sb-access-token"] || (req as any).cookies["supabase-auth-token"];
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+    
+    if (error || !data?.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    next();
+  } catch (err: any) {
+    console.error("Auth middleware error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
-router.post("/event", async (req: Request, res: Response) => {
+router.post("/event", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -146,7 +176,7 @@ router.post("/event", async (req: Request, res: Response) => {
 
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
-router.post("/batch", async (req: Request, res: Response) => {
+router.post("/batch", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
