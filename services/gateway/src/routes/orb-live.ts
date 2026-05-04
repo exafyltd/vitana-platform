@@ -6554,6 +6554,10 @@ async function executeLiveApiToolInner(
         if (!utterance) {
           return { success: false, result: '', error: 'utterance is required' };
         }
+        // VTID-02716: once the row is inserted, no error path may report failure to the user.
+        let postedIntentId: string | null = null;
+        let postedVid: string | null = null;
+        let postedKind: string | null = null;
         try {
           const { classifyIntentKind } = await import('../services/intent-classifier');
           const { extractIntent } = await import('../services/intent-extractor');
@@ -6674,11 +6678,25 @@ async function executeLiveApiToolInner(
 
           const intentId = (inserted as any).intent_id;
           const vid = (inserted as any).requester_vitana_id;
+          postedIntentId = intentId;
+          postedVid = vid;
+          postedKind = intentKind;
 
-          const embedding = await embedIntent({ intent_kind: intentKind, category: extract.category, title: extract.title!, scope: extract.scope!, kind_payload: extract.kind_payload });
-          if (embedding) {
-            await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+          // VTID-02716: row is now in user_intents — every side-effect below must be
+          // best-effort. A throw here would otherwise reach the outer catch and Gemini
+          // would say "I have a problem making the post" while the post sits in the user's list.
+          try {
+            const embedding = await embedIntent({ intent_kind: intentKind, category: extract.category, title: extract.title!, scope: extract.scope!, kind_payload: extract.kind_payload });
+            if (embedding) {
+              const { error: embedUpdErr } = await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+              if (embedUpdErr) {
+                console.warn(`[VTID-02716] post_intent embedding update non-fatal: ${embedUpdErr.message}`);
+              }
+            }
+          } catch (err: any) {
+            console.warn(`[VTID-02716] post_intent embedding non-fatal: ${err?.message}`);
           }
+
           writeIntentFacts({
             user_id: session.identity!.user_id,
             tenant_id: session.identity!.tenant_id!,
@@ -6755,6 +6773,26 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[VTID-01975] post_intent error:', err?.message);
+          // VTID-02716: if the row was already inserted, never tell the user it failed.
+          if (postedIntentId) {
+            console.warn(`[VTID-02716] post_intent post-insert throw recovered; intent_id=${postedIntentId}`);
+            return {
+              success: true,
+              result: JSON.stringify({
+                ok: true,
+                stage: 'posted',
+                intent_id: postedIntentId,
+                vitana_id: postedVid,
+                intent_kind: postedKind,
+                match_count: 0,
+                top_matches: [],
+                compass_aligned: false,
+                partner_seek_redacted: postedKind === 'partner_seek',
+                cold_start: true,
+                degraded: true,
+              }),
+            };
+          }
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
