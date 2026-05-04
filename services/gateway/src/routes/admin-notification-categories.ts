@@ -14,7 +14,7 @@
  * - All endpoints are protected by the `requireExafyAdmin` middleware.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { notifyUser, NotificationPayload } from '../services/notification-service';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
@@ -37,7 +37,7 @@ function toSlug(name: string): string {
 
 // ── GET / — List all categories ─────────────────────────────
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
@@ -80,7 +80,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // ── GET /:id — Get single category ─────────────────────────
 
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
@@ -99,8 +99,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 // ── POST / — Create category ───────────────────────────────
 
-router.post('/', async (req: Request, res: Response) => {
-  const identity = (req as AuthenticatedRequest).identity!;
+router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity!;
 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
@@ -165,8 +165,8 @@ router.post('/', async (req: Request, res: Response) => {
 
 // ── PATCH /:id — Update category ────────────────────────────
 
-router.patch('/:id', async (req: Request, res: Response) => {
-  const identity = (req as AuthenticatedRequest).identity!;
+router.patch('/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity!;
 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
@@ -206,8 +206,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 // ── DELETE /:id — Soft-delete (set is_active=false) ─────────
 
-router.delete('/:id', async (req: Request, res: Response) => {
-  const identity = (req as AuthenticatedRequest).identity!;
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity!;
 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
@@ -233,8 +233,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 // ── POST /:id/test — Send test notification to admin ────────
 
-router.post('/:id/test', async (req: Request, res: Response) => {
-  const identity = (req as AuthenticatedRequest).identity!;
+router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity!;
 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });

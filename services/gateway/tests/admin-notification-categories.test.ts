@@ -36,6 +36,7 @@ jest.mock('../src/lib/supabase', () => ({
       is: function () { return this; },
       insert: function () { return this; },
       update: function () { return this; },
+      limit: function () { return this; },
       single: function () { return Promise.resolve({ data: { id: 'test-cat', type: 'chat', slug: 'test' }, error: null }); },
       then: function (resolve: any, reject: any) {
         return Promise.resolve({ data: [{ id: 'test-cat', type: 'chat', slug: 'test' }], error: null }).then(resolve, reject);
