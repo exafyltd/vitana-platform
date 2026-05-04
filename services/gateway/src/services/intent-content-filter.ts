@@ -24,11 +24,39 @@ const PII_EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 const PII_PHONE = /\b\+?\d[\d\s\-]{7,}\d\b/;
 const PII_IBAN = /\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b/;
 
+function isValidLuhn(value: string): boolean {
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = value.length - 1; i >= 0; i--) {
+    let digit = parseInt(value.charAt(i), 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
 function detectPII(text: string): string[] {
   const found: string[] = [];
   if (PII_EMAIL.test(text)) found.push('email');
   if (PII_PHONE.test(text)) found.push('phone');
   if (PII_IBAN.test(text)) found.push('iban');
+
+  const ccRegex = /\b(?:\d[ -]*){13,19}\b/g;
+  let match;
+  while ((match = ccRegex.exec(text)) !== null) {
+    const digitsOnly = match[0].replace(/[ -]/g, '');
+    if (digitsOnly.length >= 13 && digitsOnly.length <= 19) {
+      if (isValidLuhn(digitsOnly)) {
+        found.push('credit_card');
+        break;
+      }
+    }
+  }
+
   return found;
 }
 
