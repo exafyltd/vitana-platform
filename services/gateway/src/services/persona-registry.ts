@@ -104,9 +104,9 @@ function extractLocale(langOrCtx: any): string {
   if (typeof langOrCtx === 'string') {
     val = langOrCtx;
   } else if (typeof langOrCtx === 'object') {
-    val = langOrCtx.user?.locale || langOrCtx.session?.language || langOrCtx.language || 'en';
+    val = langOrCtx.user?.locale || langOrCtx.session?.language || langOrCtx.locale || langOrCtx.language || 'en';
   }
-  if (typeof val !== 'string') {
+  if (typeof val !== 'string' || val === '[object Object]') {
     val = 'en';
   }
   return val.split('-')[0].toLowerCase() || 'en';
