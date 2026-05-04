@@ -12,51 +12,21 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { createUserSupabaseClient } from '../lib/supabase-user';
 import { notifyUser, notifyUsersAsync, NotificationPayload } from '../services/notification-service';
+import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'ADMIN-NOTIFICATIONS';
 
-// ── Auth Helper ─────────────────────────────────────────────
-
-function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
-}
-
-async function verifyExafyAdmin(
-  req: Request
-): Promise<{ ok: true; user_id: string; email: string } | { ok: false; status: number; error: string }> {
-  const token = getBearerToken(req);
-  if (!token) return { ok: false, status: 401, error: 'UNAUTHENTICATED' };
-
-  try {
-    const userClient = createUserSupabaseClient(token);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData?.user) return { ok: false, status: 401, error: 'INVALID_TOKEN' };
-
-    const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
-      return { ok: false, status: 403, error: 'FORBIDDEN' };
-    }
-
-    return { ok: true, user_id: authData.user.id, email: authData.user.email || 'unknown' };
-  } catch (err: any) {
-    console.error(`[${VTID}] Auth error:`, err.message);
-    return { ok: false, status: 500, error: 'INTERNAL_ERROR' };
-  }
-}
+router.use(requireExafyAdmin);
 
 // ── POST /compose — Send notification to user(s) ────────────
 
-router.post('/compose', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.post('/compose', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
+
+  const email = req.identity?.email || 'unknown';
 
   const {
     recipient_ids,   // string[] — specific user IDs
@@ -148,7 +118,7 @@ router.post('/compose', async (req: Request, res: Response) => {
         payload,
         supabase
       );
-      console.log(`[${VTID}] Composed notification for 1 user by ${authResult.email}: type=${notificationType}`);
+      console.log(`[${VTID}] Composed notification for 1 user by ${email}: type=${notificationType}`);
       return res.json({ ok: true, sent_to: 1, result });
     }
 
@@ -161,7 +131,7 @@ router.post('/compose', async (req: Request, res: Response) => {
       supabase
     );
 
-    console.log(`[${VTID}] Composed notification for ${targetUserIds.length} users by ${authResult.email}: type=${notificationType}`);
+    console.log(`[${VTID}] Composed notification for ${targetUserIds.length} users by ${email}: type=${notificationType}`);
 
     return res.json({
       ok: true,
@@ -176,10 +146,7 @@ router.post('/compose', async (req: Request, res: Response) => {
 
 // ── GET /sent — Admin notification log ──────────────────────
 
-router.get('/sent', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/sent', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -223,10 +190,7 @@ router.get('/sent', async (req: Request, res: Response) => {
 
 // ── GET /preferences/stats — Aggregate preference statistics ─
 
-router.get('/preferences/stats', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/preferences/stats', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
