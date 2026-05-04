@@ -11,7 +11,7 @@
  * - POST   /:id/test      — Send test notification to admin
  *
  * Security:
- * - All endpoints are protected by the `requireExafyAdmin` middleware.
+ * - All endpoints are protected by declarative `requireAuth` and `requireExafyAdmin` middleware.
  */
 
 import { Router, Response } from 'express';

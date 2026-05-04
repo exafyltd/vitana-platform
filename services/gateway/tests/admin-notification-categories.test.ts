@@ -49,7 +49,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/v1/admin/notification-categories', adminNotificationCategoriesRouter);
 
-describe('Admin Notification Categories API — Auth boundaries', () => {
+describe('Admin Notification Categories API — Middleware Auth Boundaries', () => {
   it('should return 401 UNAUTHENTICATED when no token is provided', async () => {
     const response = await request(app).get('/api/v1/admin/notification-categories');
     expect(response.status).toBe(401);
