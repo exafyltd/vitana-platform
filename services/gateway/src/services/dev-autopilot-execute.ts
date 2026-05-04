@@ -837,6 +837,30 @@ async function openPullRequest(
   return { ok: true, url: r.data.html_url, number: r.data.number };
 }
 
+// VTID-AUTOPILOT-NOEMPTY: count files that actually changed on `branch`
+// vs `baseBranch`. The model occasionally emits a <<<FILE …>>> block whose
+// content is byte-identical to the file already on main — `putFileToBranch`
+// then writes a no-op commit (parent tree == new tree) and `openPullRequest`
+// happily produces an empty PR that passes every CI check vacuously
+// (tsc on a 0-line diff is trivially green, naming has no new files,
+// tests don't run on unchanged code). Branch protection's `validate` is
+// satisfied, the v3 merge gate fires, and the autopilot reports "merged"
+// while shipping nothing. PRs #1626, #1630, #1634, #1635 (4 of 7 in the
+// 2026-05-04 14:48 drain) were no-op merges of this kind. Adding this guard
+// pre-PR means the bridge sees a real failure and can feed back to the
+// LLM as "your output produced no actual diff — review the spec or surface
+// the gap" instead of silently shipping nothing.
+async function compareBranchFiles(
+  branch: string,
+  baseBranch: string,
+): Promise<{ ok: boolean; changedFiles?: number; error?: string }> {
+  const r = await githubRequest<{ files?: Array<unknown>; total_commits?: number }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`,
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error || 'compare failed' };
+  return { ok: true, changedFiles: (r.data.files || []).length };
+}
+
 // =============================================================================
 // Messages API — ask Claude to produce the file contents
 // =============================================================================
@@ -1402,6 +1426,24 @@ async function runExecutionSession(
     const msg = `${vtidLike}: ${f.action} ${f.path}`;
     const wr = await putFileToBranch(branch, f.path, f.content!, msg, shaArg);
     if (!wr.ok) return { ok: false, error: `write ${f.path}: ${wr.error}`, session_id: sessionId, branch };
+  }
+
+  // 5b. VTID-AUTOPILOT-NOEMPTY — refuse to open a PR with a 0-file diff.
+  // See compareBranchFiles() for the failure mode this prevents.
+  const cmp = await compareBranchFiles(branch, GITHUB_BASE_BRANCH);
+  if (!cmp.ok) {
+    return { ok: false, error: `compare ${branch}..${GITHUB_BASE_BRANCH}: ${cmp.error}`, session_id: sessionId, branch };
+  }
+  if ((cmp.changedFiles ?? 0) === 0) {
+    return {
+      ok: false,
+      error: 'LLM output produced no actual diff — every emitted file matched main byte-for-byte. '
+        + 'Either the model judged no change was needed (surface the gap in the plan instead of '
+        + 'echoing existing content) or the diff was lost in serialization. Refusing to open an '
+        + 'empty PR.',
+      session_id: sessionId,
+      branch,
+    };
   }
 
   // 6. Open PR
