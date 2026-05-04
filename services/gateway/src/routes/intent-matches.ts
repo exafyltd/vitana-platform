@@ -14,7 +14,8 @@ import {
   requireTenant,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
-import { redactMatchForReader, tryUnlockReveal } from '../services/intent-mutual-reveal';
+import { tryUnlockReveal } from '../services/intent-mutual-reveal';
+import { enrichMatchesWithCounterpartyProfiles } from '../services/intent-match-enrich';
 import { notifyMutualInterest } from '../services/intent-notifier';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { MatchRow } from '../services/intent-matcher';
@@ -56,8 +57,8 @@ router.get('/outgoing', requireAuth, requireTenant, async (req: Request, res: Re
     .limit(limit);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  const redacted = await Promise.all(((data ?? []) as MatchRow[]).map(m => redactMatchForReader(m, identity.user_id)));
-  return res.json({ ok: true, matches: redacted });
+  const enriched = await enrichMatchesWithCounterpartyProfiles((data ?? []) as MatchRow[], identity.user_id);
+  return res.json({ ok: true, matches: enriched });
 });
 
 // ── GET /intent-matches/incoming (I'm party B) ───────────────
@@ -84,8 +85,8 @@ router.get('/incoming', requireAuth, requireTenant, async (req: Request, res: Re
     .limit(limit);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  const redacted = await Promise.all(((data ?? []) as MatchRow[]).map(m => redactMatchForReader(m, identity.user_id)));
-  return res.json({ ok: true, matches: redacted });
+  const enriched = await enrichMatchesWithCounterpartyProfiles((data ?? []) as MatchRow[], identity.user_id);
+  return res.json({ ok: true, matches: enriched });
 });
 
 // ── POST /intent-matches/:id/state ───────────────────────────

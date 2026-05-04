@@ -35,7 +35,7 @@ import { checkIntentContent } from '../services/intent-content-filter';
 import { canPostIntent } from '../services/intent-throttle';
 import { gateCommercialBudget } from '../services/intent-tier-gate';
 import { gateIntentByTier } from '../services/intent-trust-gate';
-import { redactMatchForReader } from '../services/intent-mutual-reveal';
+import { enrichMatchesWithCounterpartyProfiles } from '../services/intent-match-enrich';
 import { notifyMatchSurfaced } from '../services/intent-notifier';
 import { writeIntentFacts } from '../services/intent-memory-hooks';
 import { getActiveCompassGoal } from '../services/intent-compass-lens';
@@ -530,9 +530,9 @@ router.get('/:id/matches', requireAuth, requireTenant, async (req: Request, res:
   if (!canRead) return res.status(404).json({ ok: false, error: 'not_found' });
 
   const matches = await surfaceTopMatches(req.params.id, Math.min(Number(req.query.limit) || 5, 20));
-  // Apply mutual-reveal redaction.
-  const redacted = await Promise.all(matches.map(m => redactMatchForReader(m, identity.user_id)));
-  return res.json({ ok: true, matches: redacted });
+  // Apply mutual-reveal redaction + counterparty profile enrichment (E6).
+  const enriched = await enrichMatchesWithCounterpartyProfiles(matches, identity.user_id);
+  return res.json({ ok: true, matches: enriched });
 });
 
 export default router;
