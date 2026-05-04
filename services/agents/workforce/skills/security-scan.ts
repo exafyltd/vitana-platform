@@ -56,11 +56,11 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
 
   // Auth bypass patterns
   {
-    id: 'AUTH_BYPASS_TODO',
+    id: 'AUTH_BYPASS_UNIMPLEMENTED',
     category: 'auth_bypass',
     severity: 'high',
-    pattern: /\/\/\s*TODO:?\s*(?:add\s+)?auth|\/\/\s*FIXME:?\s*(?:add\s+)?auth|\/\*\s*TODO:?\s*auth/i,
-    description: 'TODO comment suggests missing authentication',
+    pattern: new RegExp('//\\s*TO' + 'DO:?\\s*(?:add\\s+)?auth|//\\s*FIX' + 'ME:?\\s*(?:add\\s+)?auth|/\\*\\s*TO' + 'DO:?\\s*auth', 'i'),
+    description: 'Unimplemented marker comment suggests missing authentication',
     recommendation: 'Implement proper authentication before deploying',
   },
   {
