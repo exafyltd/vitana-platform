@@ -23,6 +23,7 @@
 import githubService from './github-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
+import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -324,6 +325,12 @@ async function transitionStatus(
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ status: toStatus, updated_at: new Date().toISOString(), ...extras }),
   });
+  // VTID-AUTOPILOT-DUPMERGE: fire shared terminal side effects on success.
+  // Without this, the watcher's `verifying → completed` transition never
+  // flips the recommendation `new → completed`, and autoApproveTick re-
+  // approves the same finding on the next 30s tick. See
+  // applyExecTerminalSideEffects() docstring for incident detail.
+  if (r.ok) applyExecTerminalSideEffects(s, execId, toStatus);
   return r.ok;
 }
 

@@ -1518,6 +1518,96 @@ const RECONCILE_TIMEOUT_MS: Record<string, number> = {
 
 const RECONCILE_BATCH_SIZE = 10;
 
+/**
+ * VTID-AUTOPILOT-DUPMERGE: shared side-effect handler for any terminal
+ * execution-status transition (regardless of which subsystem owns the
+ * transition). Records outcome bookkeeping for both success/failure, AND on
+ * SUCCESS flips the source recommendation `new → completed` so the next
+ * autoApproveTick() doesn't re-pick the same finding.
+ *
+ * Bug history: this block originally lived inline in `patchExecution` only,
+ * which meant it fired for the reconciler-owned terminal transitions but
+ * NOT for the watcher-owned `verifying → completed` transition (the
+ * normal happy path). Result: 2026-05-04 drain produced 4 separate merged
+ * PRs for finding 4bc912a4 (#1629/#1648/#1653/#1667 all touching
+ * services/gateway/src/routes/telemetry.ts) — the watcher merged each one
+ * cleanly, but never flipped the recommendation, so autoApproveTick re-
+ * approved the same finding on the next 30s tick. Centralizing here lets
+ * `dev-autopilot-watcher.ts:transitionStatus` call the same path.
+ *
+ * Exported (not just internal) so the watcher can import it without a
+ * circular dependency (watcher → execute is the only direction in use).
+ *
+ * Fire-and-forget by design: outcome bookkeeping must never fail the
+ * primary status patch. Errors are logged, not thrown.
+ */
+export function applyExecTerminalSideEffects(
+  s: SupaConfig,
+  executionId: string,
+  status: string,
+): void {
+  if (status !== 'completed' && status !== 'failed') return;
+  void (async () => {
+    try {
+      const lookupR = await supa<Array<{ finding_id: string; pr_url: string | null; pr_number: number | null }>>(
+        s,
+        `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=finding_id,pr_url,pr_number&limit=1`,
+      );
+      if (!lookupR.ok) return;
+      const exec = lookupR.data?.[0];
+      if (!exec || !exec.finding_id) return;
+      const finding_id = exec.finding_id;
+
+      await recordExecOutcome(
+        finding_id,
+        status === 'completed' ? 'success' : 'failure',
+      );
+
+      if (status !== 'completed') return;
+
+      // Only flip findings that are still 'new' — preserves any human
+      // override (rejected/snoozed/activated) the operator may have set.
+      const findingPatchR = await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'completed',
+            merged_pr_url: exec.pr_url ?? null,
+            merged_pr_number: exec.pr_number ?? null,
+            completed_at: new Date().toISOString(),
+          }),
+        },
+      );
+      if (findingPatchR.ok) {
+        await emitOasisEvent({
+          vtid: EXEC_VTID,
+          type: 'dev_autopilot.finding.completed',
+          source: 'dev-autopilot',
+          status: 'success',
+          message: `Finding ${finding_id.slice(0, 8)} completed via execution ${executionId.slice(0, 8)}`
+            + (exec.pr_number ? ` (PR #${exec.pr_number})` : ''),
+          payload: {
+            finding_id,
+            execution_id: executionId,
+            pr_url: exec.pr_url ?? null,
+            pr_number: exec.pr_number ?? null,
+          },
+        });
+      } else {
+        // Don't propagate — outcome bookkeeping is best-effort.
+        console.warn(
+          `${LOG_PREFIX} finding completion patch failed for ${finding_id.slice(0, 8)}: ${findingPatchR.error}`,
+        );
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${executionId.slice(0, 8)}:`, err);
+    }
+  })();
+}
+
 async function patchExecution(
   s: SupaConfig,
   id: string,
@@ -1528,76 +1618,8 @@ async function patchExecution(
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
   });
-  // Outcomes substrate: when an execution reaches a terminal state, look up
-  // its finding_id and backfill the open outcome row. Centralizing here
-  // covers all 9+ patch-to-terminal call sites without per-site changes.
-  // VTID-02639: also flip the finding to status='completed' on a SUCCESSFUL
-  // terminal transition + write the merged-PR backref. Without this, the
-  // finding stays status='new' forever, autoApproveTick() re-approves it on
-  // the next pass, and a fresh duplicate PR opens against the same source
-  // signal. (Failure backfills outcomes only — the finding stays 'new' so
-  // the operator/self-healer can decide what's next.)
-  if (r.ok && (fields.status === 'completed' || fields.status === 'failed')) {
-    void (async () => {
-      try {
-        const lookupR = await supa<Array<{ finding_id: string; pr_url: string | null; pr_number: number | null }>>(
-          s,
-          `/rest/v1/dev_autopilot_executions?id=eq.${id}&select=finding_id,pr_url,pr_number&limit=1`,
-        );
-        if (!lookupR.ok) return;
-        const exec = lookupR.data?.[0];
-        if (!exec || !exec.finding_id) return;
-        const finding_id = exec.finding_id;
-
-        await recordExecOutcome(
-          finding_id,
-          fields.status === 'completed' ? 'success' : 'failure',
-        );
-
-        if (fields.status !== 'completed') return;
-
-        // Only flip findings that are still 'new' — preserves any human
-        // override (rejected/snoozed/activated) the operator may have set.
-        const findingPatchR = await supa(
-          s,
-          `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&status=eq.new`,
-          {
-            method: 'PATCH',
-            headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify({
-              status: 'completed',
-              merged_pr_url: exec.pr_url ?? null,
-              merged_pr_number: exec.pr_number ?? null,
-              completed_at: new Date().toISOString(),
-            }),
-          },
-        );
-        if (findingPatchR.ok) {
-          await emitOasisEvent({
-            vtid: EXEC_VTID,
-            type: 'dev_autopilot.finding.completed',
-            source: 'dev-autopilot',
-            status: 'success',
-            message: `Finding ${finding_id.slice(0, 8)} completed via execution ${id.slice(0, 8)}`
-              + (exec.pr_number ? ` (PR #${exec.pr_number})` : ''),
-            payload: {
-              finding_id,
-              execution_id: id,
-              pr_url: exec.pr_url ?? null,
-              pr_number: exec.pr_number ?? null,
-            },
-          });
-        } else {
-          // Don't fail the patchExecution call — outcome bookkeeping is
-          // best-effort. Just log so the dashboards/SRE see the gap.
-          console.warn(
-            `${LOG_PREFIX} finding completion patch failed for ${finding_id.slice(0, 8)}: ${findingPatchR.error}`,
-          );
-        }
-      } catch (err) {
-        console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${id.slice(0, 8)}:`, err);
-      }
-    })();
+  if (r.ok && typeof fields.status === 'string') {
+    applyExecTerminalSideEffects(s, id, fields.status);
   }
 
   // VTID-02001: surface successful auto-fixes to the Self-Healing screen.
