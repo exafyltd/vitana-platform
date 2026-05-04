@@ -11,12 +11,12 @@
  * - POST   /:id/test      — Send test notification to admin
  *
  * Security:
- * - All endpoints are protected by the `requireExafyAdmin` middleware.
+ * - All endpoints are protected by the `requireAdmin` middleware.
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { createUserSupabaseClient } from '../lib/supabase-user';
+import { requireAdmin } from '../middleware/requireAdmin';
 import { notifyUser, NotificationPayload } from '../services/notification-service';
 
 const router = Router();
@@ -24,42 +24,9 @@ const VTID = 'ADMIN-NOTIF-CATEGORIES';
 
 const VALID_TYPES = ['chat', 'calendar', 'community'];
 
-// ── Auth Helper ─────────────────────────────────────────────
-
-function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
-}
-
 // ── Auth Middleware ─────────────────────────────────────────
 
-async function requireExafyAdmin(req: Request, res: Response, next: NextFunction) {
-  const token = getBearerToken(req);
-  if (!token) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-
-  try {
-    const userClient = createUserSupabaseClient(token);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData?.user) {
-      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
-    }
-
-    const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
-      return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
-    }
-
-    // Attach user info to request for downstream handlers
-    (req as any).authUser = { user_id: authData.user.id, email: authData.user.email || 'unknown' };
-    next();
-  } catch (err: any) {
-    console.error(`[${VTID}] Auth error:`, err.message);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
-  }
-}
-
-router.use(requireExafyAdmin);
+router.use(requireAdmin);
 
 // ── Supabase ────────────────────────────────────────────────
 
@@ -140,8 +107,6 @@ router.get('/:id', async (req: Request, res: Response) => {
 // ── POST / — Create category ───────────────────────────────
 
 router.post('/', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
-
   const supabase = getSupabase();
   const {
     type,
@@ -180,7 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
     default_enabled: default_enabled ?? true,
     mapped_types: mapped_types || [],
     tenant_id: tenant_id || null,
-    created_by: authUser.user_id,
+    created_by: (req as any).user?.id,
   };
 
   const { data, error } = await supabase
@@ -197,15 +162,13 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  console.log(`[${VTID}] Created category "${slug}" (${type}) by ${authUser.email}`);
+  console.log(`[${VTID}] Created category "${slug}" (${type}) by ${(req as any).user?.email ?? 'unknown'}`);
   return res.status(201).json({ ok: true, data });
 });
 
 // ── PATCH /:id — Update category ────────────────────────────
 
 router.patch('/:id', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
-
   const supabase = getSupabase();
   const allowedFields = ['display_name', 'description', 'icon', 'sort_order', 'is_active', 'default_enabled', 'mapped_types'];
   const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -236,15 +199,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
   }
 
-  console.log(`[${VTID}] Updated category "${data.slug}" by ${authUser.email}`);
+  console.log(`[${VTID}] Updated category "${data.slug}" by ${(req as any).user?.email ?? 'unknown'}`);
   return res.json({ ok: true, data });
 });
 
 // ── DELETE /:id — Soft-delete (set is_active=false) ─────────
 
 router.delete('/:id', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
-
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('notification_categories')
@@ -261,15 +222,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
   }
 
-  console.log(`[${VTID}] Soft-deleted category "${data.slug}" by ${authUser.email}`);
+  console.log(`[${VTID}] Soft-deleted category "${data.slug}" by ${(req as any).user?.email ?? 'unknown'}`);
   return res.json({ ok: true, data });
 });
 
 // ── POST /:id/test — Send test notification to admin ────────
 
 router.post('/:id/test', async (req: Request, res: Response) => {
-  const { authUser } = req as any;
-
   const supabase = getSupabase();
 
   // Get the category
@@ -296,15 +255,15 @@ router.post('/:id/test', async (req: Request, res: Response) => {
   const { data: tenantRow } = await supabase
     .from('user_tenants')
     .select('tenant_id')
-    .eq('user_id', authUser.user_id)
+    .eq('user_id', (req as any).user?.id)
     .limit(1)
     .single();
 
   const tenantId = tenantRow?.tenant_id || '00000000-0000-0000-0000-000000000000';
 
   try {
-    const result = await notifyUser(authUser.user_id, tenantId, testType, payload, supabase);
-    console.log(`[${VTID}] Test notification sent for category "${category.slug}" by ${authUser.email}`);
+    const result = await notifyUser((req as any).user?.id, tenantId, testType, payload, supabase);
+    console.log(`[${VTID}] Test notification sent for category "${category.slug}" by ${(req as any).user?.email ?? 'unknown'}`);
     return res.json({ ok: true, result });
   } catch (err: any) {
     console.error(`[${VTID}] POST /:id/test error:`, err.message);
