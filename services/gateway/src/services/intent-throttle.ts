@@ -3,10 +3,11 @@
  *
  * Per-user posting caps to deter spam and bound new-account abuse:
  *   - Account < 7 days old: 1 open intent across all kinds, max budget €500.
- *   - Mature accounts: 5 open intents per kind, 3 posts per kind per 24h.
+ *   - Mature accounts: 20 open intents per kind, 3 posts per kind per 24h.
  *
- * Cap is opinionated for P2-A; real tuning happens once P2-B telemetry
- * arrives.
+ * VTID-02719 (2026-05-04): per-kind open cap raised 5 → 20 after early
+ * users hit the limit on legitimate use. Daily 3/24h anti-spam cap
+ * unchanged.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -28,7 +29,7 @@ interface ThrottleResult {
 const NEW_ACCOUNT_DAYS = 7;
 const NEW_ACCOUNT_MAX_OPEN = 1;
 const NEW_ACCOUNT_MAX_BUDGET_EUR = 500;
-const MATURE_MAX_OPEN_PER_KIND = 5;
+const MATURE_MAX_OPEN_PER_KIND = 20;
 const MATURE_MAX_POSTS_PER_KIND_PER_24H = 3;
 
 export async function canPostIntent(args: {
@@ -82,13 +83,17 @@ export async function canPostIntent(args: {
   }
 
   // 4. Daily post cap per kind (mature).
+  // VTID-02719: exclude user-closed rows so manually freeing a slot also frees
+  // the 24h slot. Other terminal statuses (flagged/rejected) still count, so
+  // anti-spam is preserved.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { count: dayCount } = await supabase
     .from('user_intents')
     .select('*', { count: 'exact', head: true })
     .eq('requester_user_id', args.userId)
     .eq('intent_kind', args.kind)
-    .gte('created_at', since);
+    .gte('created_at', since)
+    .neq('status', 'closed');
 
   if (!isNewAccount && (dayCount ?? 0) >= MATURE_MAX_POSTS_PER_KIND_PER_24H) {
     return { ok: false, reason: 'daily_post_cap', detail: `Max ${MATURE_MAX_POSTS_PER_KIND_PER_24H} ${args.kind} posts per 24h.` };
