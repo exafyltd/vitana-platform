@@ -10644,31 +10644,38 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   const stage = ((session as any).reconnectStage as string) || 'idle';
   const reconnectCount = ((session as any)._reconnectCount || 0);
 
-  // Localized "Sorry, …" intros. Kept short on purpose — single sentence.
-  // Gemini will follow the structural instructions for the rest.
+  // VTID-02715 — neutral disconnect copy.
+  //  - Words "internet" / "network" never appear: the user's Wi-Fi is fine,
+  //    the drop is on the upstream WS side and we don't shift blame.
+  //  - `listening_user_speaking` no longer asks the user to repeat their
+  //    last 10 seconds — the partial utterance IS in the conversation
+  //    history that's injected into the system instruction; Gemini
+  //    paraphrases it back ("You were saying X — go on") instead of
+  //    forcing a replay. The structural rule below tells Gemini to fall
+  //    back to a neutral resume if the partial really is empty.
   const intros: Record<string, Record<string, string>> = {
     en: {
-      thinking: "Sorry, we got disconnected. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
-      listening_user_speaking: "Sorry, we got interrupted before I caught your full question. Could you please repeat what you were saying? I'm here and listening.",
-      speaking: "Sorry, we got disconnected while I was answering. Let me continue:",
+      thinking: "Sorry, we lost the connection for a moment. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
+      listening_user_speaking: "Sorry, we lost the connection mid-sentence. You were saying <PARAPHRASE THEIR PARTIAL UTTERANCE IN 3-6 WORDS> — go on, I'm listening.",
+      speaking: "Sorry, we lost the connection while I was answering. Let me continue:",
       idle: "I'm back. What would you like to talk about?"
     },
     de: {
-      thinking: "Entschuldige, die Verbindung war unterbrochen. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
-      listening_user_speaking: "Entschuldige, wir wurden unterbrochen, bevor ich deine ganze Frage gehört habe. Könntest du bitte wiederholen, was du gesagt hast? Ich höre zu.",
-      speaking: "Entschuldige, die Verbindung war unterbrochen, während ich geantwortet habe. Ich mache weiter:",
+      thinking: "Entschuldige, die Verbindung war kurz weg. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
+      listening_user_speaking: "Entschuldige, die Verbindung war kurz weg, während du gesprochen hast. Du warst gerade bei <PARAPHRASIERE DAS UNTERBROCHENE THEMA IN 3-6 WORTEN> — sprich ruhig weiter, ich höre zu.",
+      speaking: "Entschuldige, die Verbindung war kurz weg, während ich geantwortet habe. Ich mache weiter:",
       idle: "Ich bin wieder da. Worüber möchtest du sprechen?"
     },
     fr: {
-      thinking: "Désolé, nous avons été déconnectés. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
-      listening_user_speaking: "Désolé, nous avons été interrompus avant que je n'entende votre question complète. Pouvez-vous la répéter ? Je vous écoute.",
-      speaking: "Désolé, nous avons été déconnectés pendant que je répondais. Je continue :",
+      thinking: "Désolé, la connexion a sauté un instant. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
+      listening_user_speaking: "Désolé, la connexion a sauté en plein milieu. Vous étiez en train de parler de <PARAPHRASEZ EN 3-6 MOTS> — continuez, je vous écoute.",
+      speaking: "Désolé, la connexion a sauté pendant que je répondais. Je continue :",
       idle: "Je suis de retour. De quoi voulez-vous parler ?"
     },
     es: {
-      thinking: "Perdón, nos desconectamos. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
-      listening_user_speaking: "Perdón, nos interrumpimos antes de que oyera tu pregunta completa. ¿Podrías repetirla? Te escucho.",
-      speaking: "Perdón, nos desconectamos mientras yo respondía. Continúo:",
+      thinking: "Perdón, se cortó la conexión un momento. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
+      listening_user_speaking: "Perdón, se cortó la conexión mientras hablabas. Estabas comentando sobre <PARAFRASEA EN 3-6 PALABRAS> — sigue, te escucho.",
+      speaking: "Perdón, se cortó la conexión mientras yo respondía. Continúo:",
       idle: "Estoy de vuelta. ¿De qué quieres hablar?"
     }
   };
@@ -10678,8 +10685,12 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
 
   // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
   // open AND what to do next (answer / wait / continue) based on the stage.
+  // VTID-02715: language is "brief connection blip" not "network disconnect"
+  // — Gemini was paraphrasing "network" → "internet" to the user, who has
+  // perfectly working Wi-Fi. The drop is on the upstream WS / Cloud Run
+  // side; we don't blame the user's network.
   const prompt = [
-    'You are recovering from a brief network disconnect that interrupted a live voice conversation.',
+    'You are recovering from a brief connection blip that interrupted a live voice conversation.',
     '',
     'Read the conversation history that has been injected into your system instruction.',
     '',
@@ -10687,7 +10698,7 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
     '',
     'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action:',
     `- For stage "thinking": open with "${stageIntros.thinking}" and IMMEDIATELY answer the user's last question using the conversation history. Replace the placeholder with a brief 3-6 word paraphrase of the user's actual last turn topic. Do NOT repeat their words verbatim. Keep the answer focused and concise.`,
-    `- For stage "listening_user_speaking": say "${stageIntros.listening_user_speaking}" and then STOP and wait for the user. Do NOT guess what they were going to ask.`,
+    `- For stage "listening_user_speaking": open with "${stageIntros.listening_user_speaking}". CRITICAL: you must paraphrase the user's most recent partial utterance from the conversation history into the placeholder (3-6 words, capturing the topic — e.g. "your sleep last week", "the magnesium reminder", "your trip to Mallorca"). NEVER ask the user to repeat what they said — their words are in the history; use them. If the partial really is empty (no recent user turn at all in history), fall back to: "Sorry, we lost the connection — please go on, I'm listening." Then STOP and wait. Do NOT guess what they were going to ask next.`,
     `- For stage "speaking": say "${stageIntros.speaking}" and then RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
     `- For stage "idle" or unknown: say "${stageIntros.idle}" and wait.`,
     '',
@@ -10696,6 +10707,7 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
     '- Do NOT introduce yourself.',
     '- Do NOT say "Hello", "Hi", or the user\'s name.',
     '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
+    '- Do NOT use the words "internet", "network", "Wi-Fi" or equivalents — say "connection" or "we got cut off". The drop is on our side.',
     '- Use the word "Sorry" / equivalent ONCE, not repeatedly.',
     '- Speak immediately when this prompt arrives.',
     '',
