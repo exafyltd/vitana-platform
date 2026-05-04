@@ -25,8 +25,15 @@ from typing import Any
 from .gateway_client import GatewayClient, summarize
 
 # livekit-agents plumbing — `@function_tool` decorator + RunContext.
+# In livekit-agents 1.x, `RunContext` lives at `livekit.agents` (it moved out
+# of `livekit.agents.llm` during the 1.0 split). The `function_tool` decorator
+# stayed under `livekit.agents.llm`. Importing from the wrong path silently
+# falls into the ImportError branch below, which substitutes a no-op decorator
+# that returns the raw function — and `Agent(tools=[...])` then rejects the
+# raw functions at session start. That was the actual blocker for VTID-LIVEKIT-TOOLS.
 try:
-    from livekit.agents.llm import RunContext, function_tool  # type: ignore[import-not-found]
+    from livekit.agents import RunContext  # type: ignore[import-not-found]
+    from livekit.agents.llm import function_tool  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover
 
     class RunContext:  # type: ignore[no-redef]

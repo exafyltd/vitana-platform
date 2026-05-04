@@ -48,6 +48,11 @@ from .tools import all_tools
 
 logger = logging.getLogger(__name__)
 
+# Tool-loop guard threshold (matches Vertex VTID-TOOLGUARD). livekit-agents'
+# AgentSession enforces tool_choice='none' once max_tool_steps consecutive
+# tool calls happen without the LLM emitting an audio response.
+MAX_TOOL_STEPS = 5
+
 
 # livekit-agents primitives, lazily imported so unit tests on the rest of
 # the agent code don't need the full SDK.
@@ -154,26 +159,31 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         },
     )
 
-    # VTID-02696: Smoke-test path — tools temporarily disabled.
-    # all_tools() returns the raw async functions decorated with
-    # @function_tool, but livekit-agents 0.12 expects FunctionTool instances
-    # — the decorator usage needs to be revisited (likely needs `()` or
-    # different signature). Without the framework's FunctionTool wrapper,
-    # AgentSession.start() raises ValueError at session boot. Disabling
-    # tools entirely so the basic STT/LLM/TTS round-trip works for the
-    # smoke test; tool wiring lands in a follow-up.
+    # Tool catalogue from tools.py — every @function_tool-decorated async
+    # function in the module, exported via all_tools(). Each tool body is a
+    # thin async call to a gateway endpoint via the GatewayClient carried on
+    # RunContext.userdata (set on AgentSession below).
+    #
+    # VTID-LIVEKIT-TOOLS root cause: the earlier blocker was a wrong import
+    # path in tools.py (`from livekit.agents.llm import RunContext` no longer
+    # exists in livekit-agents 1.x; RunContext moved to `livekit.agents`). The
+    # try/except ImportError fallback was substituting a no-op decorator that
+    # returned the raw function, which AgentSession then rejected. Fix landed
+    # in tools.py's import block; tools list is now real.
     agent = Agent(
         instructions=sys_prompt,
-        tools=[],  # TODO(VTID-LIVEKIT-TOOLS): re-enable after fixing decorator wrapping
+        tools=list(all_tools()),
     )
 
-    # AgentSession glues together STT + LLM + TTS + the room.
-    # `userdata=gw` would carry the per-session GatewayClient for tool
-    # bodies — re-enabled with tool wiring.
+    # AgentSession glues together STT + LLM + TTS + the room. userdata
+    # carries the per-session GatewayClient so each tool body can pull it off
+    # RunContext.userdata. max_tool_steps is the tool-loop guard threshold.
     session = AgentSession(
         stt=cascade.stt,
         llm=cascade.llm,
         tts=cascade.tts,
+        userdata=gw,
+        max_tool_steps=MAX_TOOL_STEPS,
     )
 
     try:
