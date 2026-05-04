@@ -24,6 +24,7 @@ const VTID = 'ADMIN-NOTIF-CATEGORIES';
 
 const VALID_TYPES = ['chat', 'calendar', 'community'];
 
+// Enforce authentication and Exafy admin role for all endpoints in this router
 router.use(requireAuth, requireExafyAdmin);
 
 // ── Slug helper ─────────────────────────────────────────────
