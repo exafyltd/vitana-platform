@@ -22,6 +22,7 @@ the agent is alive.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -194,24 +195,90 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         max_tool_steps=MAX_TOOL_STEPS,
     )
 
+    # Wire teardown for AFTER the room disconnects, not for after start()
+    # returns. AgentSession.start() exits as soon as the room IO and the
+    # background tasks are wired (it does NOT block until disconnect — it
+    # returns RunResult|None). If we close GatewayClient/OasisEmitter in a
+    # bare `finally:` here, every tool call lands on a closed client and
+    # the session telemetry stops half a second after it began. Move the
+    # cleanup to ctx.add_shutdown_callback so it fires when the room ends.
+    disconnected_evt = asyncio.Event()
+
+    async def _teardown() -> None:
+        try:
+            await oasis.emit(
+                topic=TOPIC_SESSION_STOP,
+                payload={
+                    "user_id": identity.user_id,
+                    "agent_id": agent_id,
+                    "orb_session_id": orb_session_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("session.stop oasis emit failed: %s", exc)
+        try:
+            await gw.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await ctx_fetcher.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await oasis.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+        disconnected_evt.set()
+
+    ctx.add_shutdown_callback(_teardown)
+
     try:
         await session.start(agent=agent, room=ctx.room)
-        # The session runs until the room disconnects. livekit-agents owns
-        # the loop; we just await its lifecycle here.
     except Exception as exc:  # noqa: BLE001
-        logger.exception("AgentSession crashed: %s", exc)
-    finally:
-        await oasis.emit(
-            topic=TOPIC_SESSION_STOP,
-            payload={
-                "user_id": identity.user_id,
-                "agent_id": agent_id,
-                "orb_session_id": orb_session_id,
-            },
-        )
-        await gw.aclose()
-        await ctx_fetcher.aclose()
-        await oasis.aclose()
+        logger.exception("AgentSession.start crashed: %s", exc)
+        return
+
+    # Initial greeting — fire as soon as the session is ready so the user
+    # hears their personalized hello on connect. Mirrors the Vertex pipeline
+    # behaviour (orb-live.ts opens with a generated greeting). The
+    # bootstrap_context already has the user's display_name / vitana_id /
+    # verified facts, so the LLM can reach into the prompt and pull the
+    # right name without an extra tool call.
+    if not identity.is_anonymous:
+        try:
+            await session.generate_reply(
+                instructions=(
+                    "Greet the user warmly RIGHT NOW. Pull their first name from "
+                    "the verified-facts block of your context (look for "
+                    "`user_name` or the `Authoritative identity` line). Confirm "
+                    "you recognize them by mentioning their @vitana_id handle. "
+                    "Keep it ONE short sentence followed by a brief 'what can I "
+                    "help with?'. If — and ONLY if — neither a name nor a "
+                    f"@vitana_id is present, fall back to: 'Hi! I'm Vitana — "
+                    f"signed in as {identity.user_id[:8]}…, what can I help with "
+                    "today?'."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("initial greeting generate_reply failed: %s", exc)
+    else:
+        try:
+            await session.generate_reply(
+                instructions=(
+                    "Greet the visitor briefly as Vitana. They are not signed "
+                    "in, so do not invent personal details. Offer to help with "
+                    "general questions or guide them to sign in for personalized "
+                    "answers. One short sentence."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("anonymous greeting generate_reply failed: %s", exc)
+
+    # Park here until the room disconnects. The AgentSession keeps running
+    # autonomously via the tasks it spawned in start(); we just need to
+    # keep the entrypoint alive so the shutdown callback above fires at
+    # the right moment.
+    await disconnected_evt.wait()
 
 
 # ---------------------------------------------------------------------------
