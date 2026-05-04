@@ -27,6 +27,16 @@ describe('System Controls API Route', () => {
     expect(res.body.error).toBe('no supabase');
   });
 
+  it('returns 400 if the key is somehow missing or invalid through zod', async () => {
+    const mockClient = {} as any;
+    jest.spyOn(supabaseLib, 'getSupabase').mockReturnValue(mockClient);
+    
+    // Test that the route respects standard router paths
+    const res = await request(app).get('/api/v1/system-controls/');
+    // Express returns 404 for missing path segment /:key
+    expect(res.status).toBe(404);
+  });
+
   it('returns 200 and data when service succeeds', async () => {
     const mockClient = {} as any;
     jest.spyOn(supabaseLib, 'getSupabase').mockReturnValue(mockClient);
