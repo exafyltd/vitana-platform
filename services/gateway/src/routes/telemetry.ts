@@ -27,6 +27,7 @@ type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
+// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
 router.post("/event", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate request body
@@ -147,6 +148,7 @@ router.post("/event", requireAuth, async (req: Request, res: Response) => {
 
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
+// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
 router.post("/batch", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate that body is an array
@@ -289,6 +291,7 @@ router.get("/health", (_req: Request, res: Response) => {
  * This endpoint is used by the frontend for auto-loading telemetry
  * when the Operator Console / Command Hub opens.
  */
+// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
 router.get("/snapshot", requireAuth, async (req: Request, res: Response) => {
   console.log("[Telemetry Snapshot] Request received");
 
