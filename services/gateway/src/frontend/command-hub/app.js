@@ -6172,21 +6172,10 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'controls') {
         // VTID-01181: Governance Controls (System Arming Panel)
         container.appendChild(renderGovernanceControlsView());
-    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
-        // VTID-01086: Memory Garden UI Deepening
-        container.appendChild(renderMemoryGardenView());
-    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'knowledge-graph') {
-        // Intelligence & Memory: Knowledge Graph visualization
-        container.appendChild(renderKnowledgeGraphView());
-    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'embeddings') {
-        // Intelligence & Memory: Embeddings management
-        container.appendChild(renderEmbeddingsView());
-    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'recall') {
-        // Intelligence & Memory: Recall testing and debugging
-        container.appendChild(renderRecallView());
-    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'inspector') {
-        // Intelligence & Memory: AI Inspector for debugging
-        container.appendChild(renderInspectorView());
+    } else if (moduleKey === 'intelligence-memory-dev') {
+        // VTID-02636: Memory Operations dashboard — all 5 tabs backed by
+        // real broker / table data (replaces the legacy mock renderers).
+        container.appendChild(renderMemoryOpsView(tab || 'memory-vault'));
     } else if (moduleKey === 'admin' && tab === 'users') {
         // VTID-01195: Admin Users v1 - Split layout with user list + detail
         container.appendChild(renderAdminUsersView());
@@ -45907,4 +45896,449 @@ function openNewSpecialistWizard() {
 
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
+}
+
+// =============================================================================
+// VTID-02636 — Memory Operations dashboard
+// =============================================================================
+// Replaces the 5 legacy mock tabs (Memory Vault, Knowledge Graph, Embeddings,
+// Recall, Inspector) with real data backed by:
+//   GET  /api/v1/admin/memory/health         — flags, table counts, runs, events
+//   GET  /api/v1/admin/memory/graph-sample   — recent mem_graph_edges
+//   GET  /api/v1/admin/memory/embeddings     — vector-table counts
+//   GET  /api/v1/admin/memory/profile        — buildAgentProfile markdown
+//   GET  /api/v1/admin/memory/context        — broker MemoryPack (intent-driven)
+//   POST /api/v1/admin/consolidator/run      — manual consolidator trigger
+//
+// Single shared cache `state.memoryOps` so tab switches don't re-fetch.
+
+function renderMemoryOpsView(tab) {
+    if (!state.memoryOps) {
+        state.memoryOps = { health: null, healthAt: 0, graph: null, embeddings: null, lastProfile: null, lastContext: null };
+    }
+    var container = document.createElement('div');
+    container.className = 'intelligence-container memory-ops-container';
+    container.style.padding = '16px 24px 32px';
+
+    if (tab === 'knowledge-graph')      memoryOpsRenderKnowledgeGraph(container);
+    else if (tab === 'embeddings')      memoryOpsRenderEmbeddings(container);
+    else if (tab === 'recall')          memoryOpsRenderRecall(container);
+    else if (tab === 'inspector')       memoryOpsRenderInspector(container);
+    else                                memoryOpsRenderMemoryVault(container);
+    return container;
+}
+
+function memoryOpsFetchHealth() {
+    var now = Date.now();
+    var ttl = 15000;
+    if (state.memoryOps && state.memoryOps.health && (now - state.memoryOps.healthAt) < ttl) {
+        return Promise.resolve(state.memoryOps.health);
+    }
+    return fetch('/api/v1/admin/memory/health', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { state.memoryOps.health = d; state.memoryOps.healthAt = Date.now(); return d; })
+        .catch(function (e) { return { ok: false, error: String(e && e.message || e) }; });
+}
+
+function memoryOpsHeader(container, title, subtitle, actionsBuilder) {
+    var hdr = document.createElement('div');
+    hdr.style.display = 'flex';
+    hdr.style.alignItems = 'flex-start';
+    hdr.style.justifyContent = 'space-between';
+    hdr.style.marginBottom = '16px';
+    var ttlWrap = document.createElement('div');
+    var h2 = document.createElement('h2'); h2.textContent = title; h2.style.margin = '0 0 4px';
+    var sub = document.createElement('p'); sub.textContent = subtitle || ''; sub.className = 'section-subtitle'; sub.style.margin = '0';
+    ttlWrap.appendChild(h2);
+    if (subtitle) ttlWrap.appendChild(sub);
+    hdr.appendChild(ttlWrap);
+    if (actionsBuilder) {
+        var act = document.createElement('div');
+        actionsBuilder(act);
+        hdr.appendChild(act);
+    }
+    container.appendChild(hdr);
+}
+
+function memoryOpsStatGrid(container, items) {
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+    grid.style.gap = '12px';
+    grid.style.marginBottom = '16px';
+    items.forEach(function (s) {
+        var card = document.createElement('div');
+        card.className = 'stat-card';
+        card.style.background = 'rgba(255,255,255,0.03)';
+        card.style.border = '1px solid rgba(255,255,255,0.08)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '12px 14px';
+        var v = document.createElement('div'); v.style.fontSize = '22px'; v.style.fontWeight = '600'; v.style.color = s.color || '#fff'; v.textContent = String(s.value);
+        var l = document.createElement('div'); l.style.fontSize = '12px'; l.style.opacity = '0.7'; l.style.marginTop = '4px'; l.textContent = s.label;
+        card.appendChild(v); card.appendChild(l);
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+}
+
+function memoryOpsLoading(parent, label) {
+    var d = document.createElement('div');
+    d.textContent = label || 'Loading…';
+    d.style.padding = '12px';
+    d.style.opacity = '0.6';
+    parent.appendChild(d);
+    return d;
+}
+
+function memoryOpsErrorBox(parent, msg) {
+    var d = document.createElement('div');
+    d.textContent = msg;
+    d.style.padding = '10px 12px';
+    d.style.background = 'rgba(255,80,80,0.1)';
+    d.style.color = '#ff8080';
+    d.style.border = '1px solid rgba(255,80,80,0.25)';
+    d.style.borderRadius = '6px';
+    parent.appendChild(d);
+}
+
+function memoryOpsTimeAgo(iso) {
+    if (!iso) return '';
+    var t = new Date(iso).getTime();
+    if (!t) return '';
+    var s = Math.floor((Date.now() - t) / 1000);
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+}
+
+// ---- Memory Vault tab --------------------------------------------------------
+function memoryOpsRenderMemoryVault(container) {
+    memoryOpsHeader(container, 'Memory Vault — Operations',
+        'Live broker health, table counts, recent consolidator runs, and per-user profile preview.',
+        function (act) {
+            var btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.textContent = 'Refresh';
+            btn.onclick = function () {
+                state.memoryOps.health = null;
+                state.memoryOps.healthAt = 0;
+                renderApp();
+            };
+            act.appendChild(btn);
+            var runBtn = document.createElement('button');
+            runBtn.className = 'btn btn-secondary';
+            runBtn.style.marginLeft = '8px';
+            runBtn.textContent = 'Run consolidator (me)';
+            runBtn.onclick = function () {
+                runBtn.disabled = true;
+                runBtn.textContent = 'Running…';
+                var body = JSON.stringify({
+                    tenant_id: state.meContext && state.meContext.tenant_id,
+                    user_id: state.meContext && state.meContext.user_id,
+                });
+                fetch('/api/v1/admin/consolidator/run', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: body,
+                }).then(function (r) { return r.json(); }).then(function (d) {
+                    runBtn.disabled = false;
+                    runBtn.textContent = 'Run consolidator (me)';
+                    state.memoryOps.health = null;
+                    state.memoryOps.healthAt = 0;
+                    showToast('Consolidator: ' + (d && d.status), d && d.status === 'success' ? 'success' : 'warning');
+                }).catch(function (e) {
+                    runBtn.disabled = false;
+                    runBtn.textContent = 'Run consolidator (me)';
+                    showToast('Consolidator failed: ' + (e && e.message || e), 'error');
+                });
+            };
+            act.appendChild(runBtn);
+        });
+
+    var contentWrap = document.createElement('div');
+    container.appendChild(contentWrap);
+    var loading = memoryOpsLoading(contentWrap, 'Loading memory health…');
+
+    memoryOpsFetchHealth().then(function (d) {
+        contentWrap.removeChild(loading);
+        if (!d || !d.ok) { memoryOpsErrorBox(contentWrap, 'Health unavailable: ' + (d && d.error || 'unknown')); return; }
+        var tc = d.table_counts || {};
+        memoryOpsStatGrid(contentWrap, [
+            { label: 'mem_episodes',    value: tc.mem_episodes != null ? tc.mem_episodes.toLocaleString() : 'n/a' },
+            { label: 'mem_facts',       value: tc.mem_facts != null ? tc.mem_facts.toLocaleString() : 'n/a' },
+            { label: 'mem_graph_edges', value: tc.mem_graph_edges != null ? tc.mem_graph_edges.toLocaleString() : 'n/a' },
+            { label: 'biometric_trends', value: tc.biometric_trends != null ? tc.biometric_trends.toLocaleString() : 'n/a' },
+            { label: 'trajectory_snapshots', value: tc.vitana_index_trajectory_snapshots != null ? tc.vitana_index_trajectory_snapshots.toLocaleString() : 'n/a' },
+            { label: 'consolidator_runs', value: tc.consolidator_runs != null ? tc.consolidator_runs.toLocaleString() : 'n/a' },
+            { label: 'memory_diary_entries', value: tc.memory_diary_entries != null ? tc.memory_diary_entries.toLocaleString() : 'n/a' },
+            { label: 'feature_introductions', value: tc.user_feature_introductions != null ? tc.user_feature_introductions.toLocaleString() : 'n/a' },
+        ]);
+
+        // Flags row
+        var flagsTitle = document.createElement('h3'); flagsTitle.textContent = 'Flags'; flagsTitle.style.margin = '12px 0 8px'; contentWrap.appendChild(flagsTitle);
+        var flagsRow = document.createElement('div'); flagsRow.style.display = 'flex'; flagsRow.style.flexWrap = 'wrap'; flagsRow.style.gap = '8px';
+        Object.keys(d.flags || {}).forEach(function (k) {
+            var v = d.flags[k];
+            var pill = document.createElement('span');
+            pill.style.padding = '4px 10px'; pill.style.borderRadius = '12px'; pill.style.fontSize = '12px';
+            var color = v === true ? '#3ddc84' : v === false ? '#ff8080' : '#aaa';
+            pill.style.background = 'rgba(255,255,255,0.05)';
+            pill.style.border = '1px solid ' + color;
+            pill.style.color = color;
+            pill.textContent = k + ' = ' + (v == null ? 'n/a' : String(v));
+            flagsRow.appendChild(pill);
+        });
+        contentWrap.appendChild(flagsRow);
+
+        // Recent runs
+        var runsTitle = document.createElement('h3'); runsTitle.textContent = 'Recent consolidator runs'; runsTitle.style.margin = '20px 0 8px'; contentWrap.appendChild(runsTitle);
+        var runs = d.consolidator_runs || [];
+        if (runs.length === 0) {
+            var empty = document.createElement('div'); empty.textContent = 'No runs yet.'; empty.style.opacity = '0.6'; contentWrap.appendChild(empty);
+        } else {
+            var runsList = document.createElement('div');
+            runsList.style.display = 'flex'; runsList.style.flexDirection = 'column'; runsList.style.gap = '6px';
+            runs.forEach(function (r) {
+                var row = document.createElement('div');
+                row.style.padding = '8px 10px'; row.style.background = 'rgba(255,255,255,0.03)'; row.style.border = '1px solid rgba(255,255,255,0.08)'; row.style.borderRadius = '6px';
+                row.style.fontFamily = 'monospace'; row.style.fontSize = '12px';
+                var loops = (r.summary && r.summary.loops) || [];
+                var loopSummary = loops.map(function (l) { return l.loop + ':' + (l.ok ? '✓' : '✗') + l.processed; }).join(' ');
+                var color = r.status === 'success' ? '#3ddc84' : (r.status === 'partial' ? '#f0b400' : '#ff8080');
+                row.innerHTML = '<span style="color:' + color + ';font-weight:600">' + r.status + '</span>' +
+                                ' · <span>' + (r.triggered_by || '?') + '</span>' +
+                                ' · <span style="opacity:0.7">' + memoryOpsTimeAgo(r.triggered_at) + '</span>' +
+                                ' · <span style="opacity:0.85">' + loopSummary + '</span>';
+                runsList.appendChild(row);
+            });
+            contentWrap.appendChild(runsList);
+        }
+
+        // Profile preview for current user
+        var profTitle = document.createElement('h3'); profTitle.textContent = 'Agent profile preview (current user)'; profTitle.style.margin = '20px 0 8px'; contentWrap.appendChild(profTitle);
+        var profBox = document.createElement('pre');
+        profBox.style.background = 'rgba(255,255,255,0.03)'; profBox.style.border = '1px solid rgba(255,255,255,0.08)';
+        profBox.style.borderRadius = '6px'; profBox.style.padding = '12px'; profBox.style.maxHeight = '480px'; profBox.style.overflow = 'auto';
+        profBox.style.fontSize = '12px'; profBox.style.whiteSpace = 'pre-wrap';
+        profBox.textContent = 'Loading profile…';
+        contentWrap.appendChild(profBox);
+        var me = state.meContext;
+        if (me && me.tenant_id && me.user_id) {
+            var url = '/api/v1/admin/memory/profile?tenant_id=' + encodeURIComponent(me.tenant_id) + '&user_id=' + encodeURIComponent(me.user_id);
+            fetch(url, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).then(function (p) {
+                if (p && p.ok) {
+                    profBox.textContent = p.markdown || '(empty profile)';
+                } else {
+                    profBox.textContent = 'Profile unavailable: ' + (p && p.error || 'unknown');
+                }
+            }).catch(function (e) { profBox.textContent = 'Profile fetch failed: ' + (e && e.message || e); });
+        } else {
+            profBox.textContent = '(me context not loaded — profile unavailable)';
+        }
+    });
+}
+
+// ---- Knowledge Graph tab -----------------------------------------------------
+function memoryOpsRenderKnowledgeGraph(container) {
+    memoryOpsHeader(container, 'Knowledge Graph — Live edges',
+        'Recent rows from mem_graph_edges (Phase 5b dual-write target) + legacy relationship_edges.');
+
+    var contentWrap = document.createElement('div');
+    container.appendChild(contentWrap);
+    var loading = memoryOpsLoading(contentWrap, 'Loading edges…');
+
+    fetch('/api/v1/admin/memory/graph-sample', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            contentWrap.removeChild(loading);
+            if (!d || !d.ok) { memoryOpsErrorBox(contentWrap, 'Failed to load graph: ' + (d && d.error || 'unknown')); return; }
+            memoryOpsStatGrid(contentWrap, [
+                { label: 'mem_graph_edges (sample)', value: (d.mem_graph_edges || []).length },
+                { label: 'relationship_edges (sample)', value: (d.relationship_edges || []).length },
+            ]);
+            renderEdgesTable(contentWrap, 'mem_graph_edges', d.mem_graph_edges, ['source_kind', 'source_id', 'edge_type', 'target_kind', 'target_id', 'strength', 'asserted_at']);
+            renderEdgesTable(contentWrap, 'relationship_edges (legacy)', d.relationship_edges, ['source_type', 'source_id', 'edge_type', 'target_type', 'target_id', 'strength', 'last_interaction_at']);
+        });
+}
+
+function renderEdgesTable(container, title, rows, cols) {
+    var h = document.createElement('h3'); h.textContent = title + ' — ' + ((rows || []).length) + ' rows'; h.style.margin = '20px 0 8px'; container.appendChild(h);
+    if (!rows || rows.length === 0) { var e = document.createElement('div'); e.textContent = 'No rows.'; e.style.opacity = '0.6'; container.appendChild(e); return; }
+    var t = document.createElement('table');
+    t.style.width = '100%'; t.style.fontSize = '12px'; t.style.fontFamily = 'monospace'; t.style.borderCollapse = 'collapse';
+    var thead = document.createElement('thead');
+    var trh = document.createElement('tr');
+    cols.forEach(function (c) { var th = document.createElement('th'); th.textContent = c; th.style.textAlign = 'left'; th.style.padding = '6px 8px'; th.style.borderBottom = '1px solid rgba(255,255,255,0.15)'; trh.appendChild(th); });
+    thead.appendChild(trh); t.appendChild(thead);
+    var tb = document.createElement('tbody');
+    rows.slice(0, 50).forEach(function (r) {
+        var tr = document.createElement('tr');
+        cols.forEach(function (c) {
+            var td = document.createElement('td');
+            var v = r[c];
+            if (v && (c === 'source_id' || c === 'target_id') && String(v).length > 12) v = String(v).slice(0, 8) + '…';
+            if ((c === 'asserted_at' || c === 'last_interaction_at') && v) v = String(v).slice(0, 19);
+            td.textContent = v == null ? '' : String(v);
+            td.style.padding = '4px 8px'; td.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+            tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+    });
+    t.appendChild(tb); container.appendChild(t);
+}
+
+// ---- Embeddings tab ----------------------------------------------------------
+function memoryOpsRenderEmbeddings(container) {
+    memoryOpsHeader(container, 'Embeddings — Live counts',
+        'Real per-table embedding counts. Numbers come straight from Postgres COUNT(*).');
+
+    var contentWrap = document.createElement('div');
+    container.appendChild(contentWrap);
+    var loading = memoryOpsLoading(contentWrap, 'Loading embedding stats…');
+
+    fetch('/api/v1/admin/memory/embeddings', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            contentWrap.removeChild(loading);
+            if (!d || !d.ok) { memoryOpsErrorBox(contentWrap, 'Failed to load embeddings: ' + (d && d.error || 'unknown')); return; }
+            var collections = d.collections || [];
+            var totalVecs = 0;
+            collections.forEach(function (c) { if (typeof c.vectors === 'number') totalVecs += c.vectors; });
+            memoryOpsStatGrid(contentWrap, [
+                { label: 'Collections', value: collections.length },
+                { label: 'Total Vectors', value: totalVecs.toLocaleString() },
+                { label: 'Dimensions', value: 1536 },
+                { label: 'Model', value: 'text-embedding-3-small' },
+            ]);
+            var grid = document.createElement('div');
+            grid.style.display = 'grid'; grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))'; grid.style.gap = '12px';
+            collections.forEach(function (c) {
+                var card = document.createElement('div');
+                card.style.background = 'rgba(255,255,255,0.03)'; card.style.border = '1px solid rgba(255,255,255,0.08)'; card.style.borderRadius = '8px'; card.style.padding = '14px';
+                var name = document.createElement('div'); name.style.fontWeight = '600'; name.textContent = c.key;
+                var stat = document.createElement('div'); stat.style.fontSize = '20px'; stat.style.margin = '6px 0'; stat.textContent = c.vectors == null ? 'n/a' : c.vectors.toLocaleString() + ' vectors';
+                var meta = document.createElement('div'); meta.style.fontSize = '12px'; meta.style.opacity = '0.7'; meta.textContent = (c.model || '') + ' · ' + (c.dimensions || '?') + 'd · ' + (c.status || '?');
+                card.appendChild(name); card.appendChild(stat); card.appendChild(meta);
+                grid.appendChild(card);
+            });
+            contentWrap.appendChild(grid);
+        });
+}
+
+// ---- Recall tab --------------------------------------------------------------
+function memoryOpsRenderRecall(container) {
+    memoryOpsHeader(container, 'Recall — Live broker test',
+        'Calls getMemoryContext({intent}) against the rebuilt broker. Returns the actual MemoryPack the brain would consume.');
+
+    var form = document.createElement('div');
+    form.style.display = 'grid'; form.style.gridTemplateColumns = '1fr 200px 120px'; form.style.gap = '8px'; form.style.marginBottom = '12px';
+
+    var queryInput = document.createElement('input');
+    queryInput.type = 'text';
+    queryInput.placeholder = 'Optional query (semantic-rerank EPISODIC)';
+    queryInput.style.background = 'rgba(255,255,255,0.05)'; queryInput.style.border = '1px solid rgba(255,255,255,0.15)'; queryInput.style.borderRadius = '6px'; queryInput.style.padding = '8px 10px'; queryInput.style.color = '#fff';
+
+    var intentSel = document.createElement('select');
+    ['recall_history','recall_recent','identity','plan_next_action','open_session','health_query','index_status','goal_check','social_query','community_intent','system_introspect'].forEach(function (i) {
+        var o = document.createElement('option'); o.value = i; o.textContent = i; if (i === 'open_session') o.selected = true; intentSel.appendChild(o);
+    });
+    intentSel.style.background = 'rgba(255,255,255,0.05)'; intentSel.style.border = '1px solid rgba(255,255,255,0.15)'; intentSel.style.borderRadius = '6px'; intentSel.style.padding = '8px 10px'; intentSel.style.color = '#fff';
+
+    var runBtn = document.createElement('button');
+    runBtn.className = 'btn btn-primary';
+    runBtn.textContent = 'Run recall';
+
+    form.appendChild(queryInput); form.appendChild(intentSel); form.appendChild(runBtn);
+    container.appendChild(form);
+
+    var resultBox = document.createElement('div');
+    container.appendChild(resultBox);
+
+    runBtn.onclick = function () {
+        var me = state.meContext;
+        if (!me || !me.tenant_id || !me.user_id) { resultBox.textContent = 'me context not loaded'; return; }
+        runBtn.disabled = true; runBtn.textContent = 'Running…';
+        resultBox.innerHTML = '';
+        var loading = memoryOpsLoading(resultBox, 'Calling broker…');
+        var body = {
+            tenant_id: me.tenant_id,
+            user_id: me.user_id,
+            intent: intentSel.value,
+        };
+        if (queryInput.value) body.query = queryInput.value;
+        fetch('/api/v1/admin/memory/context', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(body),
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            resultBox.removeChild(loading);
+            runBtn.disabled = false; runBtn.textContent = 'Run recall';
+            if (!d || !d.ok) { memoryOpsErrorBox(resultBox, 'Recall failed: ' + (d && d.error || 'unknown')); return; }
+            var meta = d.meta || {};
+            memoryOpsStatGrid(resultBox, [
+                { label: 'block_count', value: meta.block_count || 0 },
+                { label: 'streams_hit', value: (meta.streams_hit || []).length },
+                { label: 'total_latency_ms', value: meta.total_latency_ms || 0 },
+                { label: 'pack_size_bytes', value: (meta.pack_size_bytes || 0).toLocaleString() },
+                { label: 'degraded', value: meta.degraded ? 'yes' : 'no', color: meta.degraded ? '#ff8080' : '#3ddc84' },
+            ]);
+            var streamsTitle = document.createElement('h3'); streamsTitle.textContent = 'Streams hit'; streamsTitle.style.margin = '12px 0 6px'; resultBox.appendChild(streamsTitle);
+            var streams = document.createElement('div'); streams.style.display = 'flex'; streams.style.flexWrap = 'wrap'; streams.style.gap = '6px';
+            (meta.streams_hit || []).forEach(function (s) {
+                var p = document.createElement('span');
+                p.style.padding = '3px 8px'; p.style.background = 'rgba(255,255,255,0.05)'; p.style.borderRadius = '10px'; p.style.fontSize = '11px'; p.style.fontFamily = 'monospace';
+                var ms = (meta.latency_ms_per_stream || {})[s];
+                p.textContent = s + (ms ? ' (' + ms + 'ms)' : '');
+                streams.appendChild(p);
+            });
+            resultBox.appendChild(streams);
+            var blocksTitle = document.createElement('h3'); blocksTitle.textContent = 'Pack contents'; blocksTitle.style.margin = '12px 0 6px'; resultBox.appendChild(blocksTitle);
+            var pre = document.createElement('pre');
+            pre.style.background = 'rgba(255,255,255,0.03)'; pre.style.border = '1px solid rgba(255,255,255,0.08)'; pre.style.borderRadius = '6px'; pre.style.padding = '12px'; pre.style.maxHeight = '480px'; pre.style.overflow = 'auto'; pre.style.fontSize = '11px';
+            pre.textContent = JSON.stringify(d.blocks, null, 2);
+            resultBox.appendChild(pre);
+        }).catch(function (e) {
+            resultBox.removeChild(loading);
+            runBtn.disabled = false; runBtn.textContent = 'Run recall';
+            memoryOpsErrorBox(resultBox, 'Recall error: ' + (e && e.message || e));
+        });
+    };
+}
+
+// ---- Inspector tab -----------------------------------------------------------
+function memoryOpsRenderInspector(container) {
+    memoryOpsHeader(container, 'Inspector — Live memory events',
+        'Last 24h of OASIS events with topic memory.* / orb.memory.* — real telemetry, not fixtures.');
+
+    var contentWrap = document.createElement('div');
+    container.appendChild(contentWrap);
+    var loading = memoryOpsLoading(contentWrap, 'Loading events…');
+
+    memoryOpsFetchHealth().then(function (d) {
+        contentWrap.removeChild(loading);
+        if (!d || !d.ok) { memoryOpsErrorBox(contentWrap, 'Failed: ' + (d && d.error || 'unknown')); return; }
+        var ev = d.memory_events || [];
+        var idl = d.identity_lock_attempts || [];
+        memoryOpsStatGrid(contentWrap, [
+            { label: 'memory.* events (24h)', value: ev.length },
+            { label: 'identity-lock attempts', value: idl.length },
+        ]);
+        var listTitle = document.createElement('h3'); listTitle.textContent = 'Recent events'; listTitle.style.margin = '20px 0 8px'; contentWrap.appendChild(listTitle);
+        if (ev.length === 0) { var em = document.createElement('div'); em.textContent = 'No memory events in the last 24h.'; em.style.opacity = '0.6'; contentWrap.appendChild(em); return; }
+        var list = document.createElement('div'); list.style.display = 'flex'; list.style.flexDirection = 'column'; list.style.gap = '6px';
+        ev.forEach(function (e) {
+            var row = document.createElement('div');
+            row.style.padding = '8px 10px'; row.style.background = 'rgba(255,255,255,0.03)'; row.style.border = '1px solid rgba(255,255,255,0.08)'; row.style.borderRadius = '6px';
+            row.style.fontFamily = 'monospace'; row.style.fontSize = '12px';
+            var color = e.status === 'success' ? '#3ddc84' : e.status === 'warning' ? '#f0b400' : e.status === 'error' ? '#ff8080' : '#aaa';
+            row.innerHTML = '<span style="color:' + color + ';font-weight:600">' + (e.status || 'info') + '</span>' +
+                            ' · <span style="opacity:0.85">' + (e.topic || '') + '</span>' +
+                            ' · <span style="opacity:0.7">' + memoryOpsTimeAgo(e.created_at) + '</span>' +
+                            ' · <span>' + (e.vtid || '') + '</span>' +
+                            '<div style="margin-top:4px;opacity:0.85">' + (e.message || '').replace(/</g, '&lt;') + '</div>';
+            list.appendChild(row);
+        });
+        contentWrap.appendChild(list);
+    });
 }
