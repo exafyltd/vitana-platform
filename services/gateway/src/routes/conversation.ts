@@ -460,7 +460,7 @@ ${channelInstructions}`;
       });
 
       reply = geminiResult.reply;
-      modelUsed = 'gemini-2.5-pro'; // TODO: Get from routing policy
+      modelUsed = 'gemini-2.5-pro'; // tracked: VTID-01216 Get from routing policy
 
       // Track conversation history for context continuity
       thread.history.push({ role: 'user', content: message.text });
