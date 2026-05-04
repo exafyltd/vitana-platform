@@ -64,11 +64,20 @@ describe('Admin Notification Categories API — Auth boundaries', () => {
     expect(response.body).toEqual({ ok: false, error: 'FORBIDDEN' });
   });
 
-  it('should return 200 OK when user is a valid authenticated admin', async () => {
+  it('should return 200 OK when user is a valid authenticated admin on GET', async () => {
     const response = await request(app)
       .get('/api/v1/admin/notification-categories')
       .set('Authorization', 'Bearer valid-admin');
     expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+  });
+
+  it('should return 201 Created when user is a valid authenticated admin on POST', async () => {
+    const response = await request(app)
+      .post('/api/v1/admin/notification-categories')
+      .set('Authorization', 'Bearer valid-admin')
+      .send({ type: 'chat', display_name: 'Test Category' });
+    expect(response.status).toBe(201);
     expect(response.body.ok).toBe(true);
   });
 });
