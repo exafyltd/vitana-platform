@@ -89,6 +89,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
   const orbLivekitRouter = require('./routes/orb-livekit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  const orbToolRouter = require('./routes/orb-tool').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
   // VTID-01222: WebSocket server initialization for ORB Live API
   const { initializeOrbWebSocket } = require('./routes/orb-live');
@@ -664,6 +665,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-LIVEKIT-TOOLS: dispatcher endpoint that wraps every tool whose Vertex
+  // implementation is inline-only in orb-live.ts. Single POST /api/v1/orb/tool
+  // route with per-tool handlers — see services/gateway/src/routes/orb-tool.ts.
+  mountRouterSync(app, '/api/v1', orbToolRouter, { owner: 'orb-tool-dispatcher' });
 
   // BOOTSTRAP-AWARENESS-REGISTRY: admin API for the Awareness Registry
   mountRouterSync(app, '/api/v1/awareness', awarenessConfigRouter, { owner: 'awareness-registry' });

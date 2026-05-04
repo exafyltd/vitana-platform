@@ -67,6 +67,17 @@ def _gw(ctx: RunContext) -> GatewayClient:
     return gw
 
 
+async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Forward to the gateway's POST /api/v1/orb/tool dispatcher (VTID-LIVEKIT-TOOLS).
+
+    Used by tools whose Vertex implementation is inline-only in orb-live.ts —
+    the dispatcher (services/gateway/src/routes/orb-tool.ts) holds the lifted
+    business logic. Tools whose endpoint already exists as a standalone route
+    keep calling it directly (calendar, reminders, intents, vitana-index).
+    """
+    return await _gw(ctx).post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+
+
 # ---------------------------------------------------------------------------
 # Memory / Knowledge / Recall
 # ---------------------------------------------------------------------------
@@ -80,7 +91,7 @@ async def search_memory(context: RunContext, query: str, limit: int = 5) -> str:
         query: Free-text search phrase.
         limit: Max number of entries to return (1..20).
     """
-    body = await _gw(context).post("/api/v1/memory/search", {"query": query, "limit": min(20, max(1, limit))})
+    body = await _dispatch(context, "search_memory", {"query": query, "limit": min(20, max(1, limit))})
     return summarize(body)
 
 
@@ -94,7 +105,7 @@ async def search_knowledge(context: RunContext, query: str) -> str:
 @function_tool
 async def search_web(context: RunContext, query: str) -> str:
     """Web search via the configured external-search provider."""
-    body = await _gw(context).post("/api/v1/web/search", {"query": query})
+    body = await _dispatch(context, "search_web", {"query": query})
     return summarize(body)
 
 
@@ -105,7 +116,7 @@ async def recall_conversation_at_time(context: RunContext, when: str) -> str:
     Args:
         when: Natural-language time anchor, e.g. "yesterday morning", "two days ago".
     """
-    body = await _gw(context).post("/api/v1/memory/recall-at-time", {"when": when})
+    body = await _dispatch(context, "recall_conversation_at_time", {"when": when})
     return summarize(body)
 
 
@@ -121,7 +132,7 @@ async def switch_persona(context: RunContext, persona: str) -> str:
     Args:
         persona: Target persona name (e.g. "warm", "concise", "playful").
     """
-    body = await _gw(context).post("/api/v1/orb/persona/switch", {"persona": persona})
+    body = await _dispatch(context, "switch_persona", {"persona": persona})
     return summarize(body)
 
 
@@ -139,8 +150,9 @@ async def report_to_specialist(
         reason: Why the user is being handed off.
         context_summary: Short summary the specialist needs to pick up the conversation.
     """
-    body = await _gw(context).post(
-        "/api/v1/orb/handoff",
+    body = await _dispatch(
+        context,
+        "report_to_specialist",
         {"specialist": specialist, "reason": reason, "context_summary": context_summary},
     )
     return summarize(body)
@@ -207,14 +219,14 @@ async def get_schedule(context: RunContext, date_iso: str | None = None) -> str:
 @function_tool
 async def search_events(context: RunContext, query: str) -> str:
     """Search community events / meetups (VTID-01270A)."""
-    body = await _gw(context).get("/api/v1/community/events/search", {"query": query})
+    body = await _dispatch(context, "search_events", {"query": query})
     return summarize(body)
 
 
 @function_tool
 async def search_community(context: RunContext, query: str) -> str:
     """Search community groups / channels (VTID-01270A)."""
-    body = await _gw(context).get("/api/v1/community/groups/search", {"query": query})
+    body = await _dispatch(context, "search_community", {"query": query})
     return summarize(body)
 
 
@@ -233,19 +245,18 @@ async def get_recommendations(context: RunContext) -> str:
 @function_tool
 async def play_music(context: RunContext, query: str, provider: str | None = None) -> str:
     """Play music via Spotify / Apple Music / Google / Vitana Hub (VTID-01941)."""
-    body = await _gw(context).post(
-        "/api/v1/integrations/music/play",
-        {"query": query, "provider": provider} if provider else {"query": query},
-    )
+    args: dict[str, Any] = {"query": query}
+    if provider:
+        args["provider"] = provider
+    body = await _dispatch(context, "play_music", args)
     return summarize(body)
 
 
 @function_tool
 async def set_capability_preference(context: RunContext, capability: str, provider: str) -> str:
     """Set the default provider for a capability (VTID-01942)."""
-    body = await _gw(context).put(
-        "/api/v1/integrations/preferences",
-        {"capability": capability, "provider": provider},
+    body = await _dispatch(
+        context, "set_capability_preference", {"capability": capability, "provider": provider}
     )
     return summarize(body)
 
@@ -258,14 +269,14 @@ async def set_capability_preference(context: RunContext, capability: str, provid
 @function_tool
 async def read_email(context: RunContext) -> str:
     """Read the user's recent unread emails (VTID-01943)."""
-    body = await _gw(context).get("/api/v1/integrations/email/recent")
+    body = await _dispatch(context, "read_email", {})
     return summarize(body)
 
 
 @function_tool
 async def find_contact(context: RunContext, query: str) -> str:
     """Find a contact in the user's contact book (VTID-01943)."""
-    body = await _gw(context).get("/api/v1/contacts/search", {"query": query})
+    body = await _dispatch(context, "find_contact", {"query": query})
     return summarize(body)
 
 
@@ -279,10 +290,10 @@ async def consult_external_ai(
     context: RunContext, prompt: str, provider: str | None = None
 ) -> str:
     """Forward a prompt to the user's connected external AI account (ChatGPT / Claude / Gemini)."""
-    payload: dict[str, Any] = {"prompt": prompt}
+    args: dict[str, Any] = {"prompt": prompt}
     if provider:
-        payload["provider"] = provider
-    body = await _gw(context).post("/api/v1/integrations/ai-assistants/forward", payload)
+        args["provider"] = provider
+    body = await _dispatch(context, "consult_external_ai", args)
     return summarize(body)
 
 
@@ -308,9 +319,7 @@ async def get_index_improvement_suggestions(context: RunContext) -> str:
 @function_tool
 async def create_index_improvement_plan(context: RunContext, target_pillar: str) -> str:
     """Create a multi-step plan to improve a specific pillar (VTID-01983)."""
-    body = await _gw(context).post(
-        "/api/v1/vitana-index/plan", {"target_pillar": target_pillar}
-    )
+    body = await _dispatch(context, "create_index_improvement_plan", {"target_pillar": target_pillar})
     return summarize(body)
 
 
@@ -372,16 +381,14 @@ async def delete_reminder(context: RunContext, reminder_id: str) -> str:
 @function_tool
 async def ask_pillar_agent(context: RunContext, pillar: str, question: str) -> str:
     """Ask a specific pillar agent (Nutrition / Hydration / Exercise / Sleep / Mental)."""
-    body = await _gw(context).post(
-        "/api/v1/pillar-agents/ask", {"pillar": pillar, "question": question}
-    )
+    body = await _dispatch(context, "ask_pillar_agent", {"pillar": pillar, "question": question})
     return summarize(body)
 
 
 @function_tool
 async def explain_feature(context: RunContext, feature: str) -> str:
     """Explain a Vitana feature in plain language."""
-    body = await _gw(context).get("/api/v1/features/explain", {"feature": feature})
+    body = await _dispatch(context, "explain_feature", {"feature": feature})
     return summarize(body)
 
 
@@ -393,15 +400,15 @@ async def explain_feature(context: RunContext, feature: str) -> str:
 @function_tool
 async def resolve_recipient(context: RunContext, name: str) -> str:
     """Step 1 of 3-step send-message flow: resolve a name to candidates."""
-    body = await _gw(context).post("/api/v1/messaging/candidate", {"name": name})
+    body = await _dispatch(context, "resolve_recipient", {"name": name})
     return summarize(body)
 
 
 @function_tool
 async def send_chat_message(context: RunContext, recipient_id: str, body_text: str) -> str:
     """Step 3: send the message after the user confirms the recipient."""
-    body = await _gw(context).post(
-        "/api/v1/messaging/send", {"recipient_id": recipient_id, "body": body_text}
+    body = await _dispatch(
+        context, "send_chat_message", {"recipient_id": recipient_id, "body_text": body_text}
     )
     return summarize(body)
 
@@ -428,10 +435,10 @@ async def activate_recommendation(context: RunContext, recommendation_id: str) -
 @function_tool
 async def share_link(context: RunContext, url: str, with_recipient: str | None = None) -> str:
     """Share a link, optionally with a contact."""
-    payload: dict[str, Any] = {"url": url}
+    args: dict[str, Any] = {"url": url}
     if with_recipient:
-        payload["with_recipient"] = with_recipient
-    body = await _gw(context).post("/api/v1/sharing/link", payload)
+        args["with_recipient"] = with_recipient
+    body = await _dispatch(context, "share_link", args)
     return summarize(body)
 
 
@@ -483,12 +490,13 @@ async def list_my_intents(context: RunContext) -> str:
 
 @function_tool
 async def respond_to_match(context: RunContext, match_id: str, response: str) -> str:
-    """Respond to a match candidate (VTID-01976)."""
-    # /api/v1/intent-matches/:id/state takes {state} as body; pass the user's
-    # 'response' string through unchanged and let the gateway map it.
-    body = await _gw(context).post(
-        f"/api/v1/intent-matches/{match_id}/state", {"state": response}
-    )
+    """Respond to a match candidate (VTID-01976).
+
+    Args:
+        match_id: The intent_match id.
+        response: One of 'interested' | 'declined' | 'pending' | 'accepted'.
+    """
+    body = await _dispatch(context, "respond_to_match", {"match_id": match_id, "response": response})
     return summarize(body)
 
 
@@ -502,8 +510,8 @@ async def mark_intent_fulfilled(context: RunContext, intent_id: str) -> str:
 @function_tool
 async def share_intent_post(context: RunContext, intent_id: str, with_recipient: str) -> str:
     """Share an intent post with a contact."""
-    body = await _gw(context).post(
-        f"/api/v1/intents/{intent_id}/share", {"with_recipient": with_recipient}
+    body = await _dispatch(
+        context, "share_intent_post", {"intent_id": intent_id, "with_recipient": with_recipient}
     )
     return summarize(body)
 
@@ -511,7 +519,7 @@ async def share_intent_post(context: RunContext, intent_id: str, with_recipient:
 @function_tool
 async def scan_existing_matches(context: RunContext) -> str:
     """Scan for matches across all open intents."""
-    body = await _gw(context).post("/api/v1/intents/scan-matches")
+    body = await _dispatch(context, "scan_existing_matches", {})
     return summarize(body)
 
 
@@ -538,7 +546,7 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
     Args:
         target: Named screen identifier from the spec's navigation registry.
     """
-    body = await _gw(context).post("/api/v1/navigator/dispatch", {"target": target})
+    body = await _dispatch(context, "navigate_to_screen", {"target": target})
     return summarize(body)
 
 
@@ -548,66 +556,67 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
 
 
 def all_tool_names() -> list[str]:
-    """Returns the names of every @function_tool in this module that has a
-    working gateway endpoint right now.
+    """Returns the names of every @function_tool in this module — the full
+    catalogue the LiveKit Agent registers with the LLM.
 
-    Tools whose business logic is currently inline in orb-live.ts (Vertex
-    pipeline) and not yet exposed as standalone HTTP routes are tracked in
-    DEFERRED_TOOL_NAMES below. Re-enable each there as its endpoint lands.
+    Each name corresponds to an entry in voice-pipeline-spec/spec.json.tools.
+    Tools fall into two categories by transport:
 
-    Used by tests/test_tools_catalogue.py to assert the tool list matches
-    voice-pipeline-spec/spec.json. Update when wiring or unwiring a tool.
+    1. Direct routes — call a standalone gateway endpoint (calendar, reminders,
+       intents, vitana-index, autopilot/recommendations, knowledge search).
+    2. Dispatcher routes — call POST /api/v1/orb/tool (services/gateway/src/
+       routes/orb-tool.ts) which wraps the inline Vertex case-body logic for
+       tools that aren't exposed as standalone routes (search_memory,
+       search_events, find_contact, send_chat_message, navigate_to_screen, …).
+
+    All 40 names are active. The dispatcher returns structured graceful
+    responses (not 404s) for tools whose underlying integration the user
+    hasn't connected yet — the LLM narrates "you need to connect Spotify
+    first" instead of apologizing about access.
     """
     return [
-        # Memory / Knowledge
-        "search_knowledge",
+        # Memory / Knowledge / Recall (4)
+        "search_memory", "search_knowledge", "search_web", "recall_conversation_at_time",
+        # Persona / Handoff (2)
+        "switch_persona", "report_to_specialist",
         # Calendar (4)
         "search_calendar", "create_calendar_event", "add_to_calendar", "get_schedule",
-        # Recommendations (2)
-        "get_recommendations", "activate_recommendation",
-        # Vitana Index (2)
-        "get_vitana_index", "get_index_improvement_suggestions",
-        # Diary
+        # Community / Events / Recommendations (3)
+        "search_events", "search_community", "get_recommendations",
+        # Media / Capability prefs (2)
+        "play_music", "set_capability_preference",
+        # Email / Contacts (2)
+        "read_email", "find_contact",
+        # External AI bridge (1)
+        "consult_external_ai",
+        # Vitana Index (3)
+        "get_vitana_index", "get_index_improvement_suggestions", "create_index_improvement_plan",
+        # Diary (1)
         "save_diary_entry",
         # Reminders (3)
         "set_reminder", "find_reminders", "delete_reminder",
-        # Intents (5)
-        "post_intent", "view_intent_matches", "list_my_intents",
-        "mark_intent_fulfilled", "get_matchmaker_result",
+        # Pillar agents / Feature explanations (2)
+        "ask_pillar_agent", "explain_feature",
+        # Messaging (2)
+        "resolve_recipient", "send_chat_message",
+        # Autopilot activation (1)
+        "activate_recommendation",
+        # Sharing (1)
+        "share_link",
+        # Vitana Intent Engine (8)
+        "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
+        "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches",
+        "get_matchmaker_result",
+        # Navigation (1)
+        "navigate_to_screen",
     ]
 
 
-# Tools whose Vertex implementation is INLINE inside orb-live.ts case
-# blocks (not exposed as HTTP routes). Calling their gateway URL today
-# returns 404 because no router handles it. Each lands in a follow-up
-# PR that either (a) lifts the inline logic into a route file, or (b)
-# adds a generic POST /api/v1/orb/tool dispatcher that wraps the inline
-# logic. Until then we exclude them from the live catalogue so the LLM
-# doesn't try to call them and apologize for "no access".
-DEFERRED_TOOL_NAMES: list[str] = [
-    "search_memory",                  # orb-live.ts:4125 inline
-    "search_web",                     # orb-live.ts:4232 inline
-    "recall_conversation_at_time",    # no Vertex equivalent
-    "switch_persona",                 # orb-live.ts:2385 inline
-    "report_to_specialist",           # orb-live.ts:4458 — PR 5/6
-    "search_events",                  # orb-live.ts inline
-    "search_community",               # orb-live.ts inline
-    "play_music",                     # orb-live.ts:5251 inline
-    "set_capability_preference",      # orb-live.ts:5385 inline
-    "read_email",                     # orb-live.ts:5449 inline
-    "find_contact",                   # orb-live.ts:5452 inline
-    "consult_external_ai",            # orb-live.ts:2549 inline (path mismatch)
-    "create_index_improvement_plan",  # orb-live.ts:5758 inline
-    "ask_pillar_agent",               # orb-live.ts:6183 inline
-    "explain_feature",                # orb-live.ts:6231 inline
-    "resolve_recipient",              # orb-live.ts:6278 inline
-    "send_chat_message",              # orb-live.ts:6326 inline
-    "share_link",                     # orb-live.ts inline
-    "scan_existing_matches",          # orb-live.ts inline
-    "share_intent_post",              # orb-live.ts inline
-    "respond_to_match",               # path uncertain — need check
-    "navigate_to_screen",             # orb-live.ts:6959 inline
-]
+# All tools are now active. DEFERRED_TOOL_NAMES retained for parity-test
+# back-compat — empty since the dispatcher (services/gateway/src/routes/
+# orb-tool.ts) covers every previously-deferred tool with at least a
+# graceful structured response.
+DEFERRED_TOOL_NAMES: list[str] = []
 
 
 def all_tools() -> list[Any]:
