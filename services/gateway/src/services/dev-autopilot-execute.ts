@@ -1432,6 +1432,7 @@ interface StuckExecRow {
   pr_number: number | null;
   branch: string | null;
   updated_at: string;
+  metadata: Record<string, unknown> | null;
 }
 
 /** Per-state timeout. Beyond this, the state is considered "stuck" and
@@ -1713,24 +1714,43 @@ async function reconcileMerging(s: SupaConfig, exec: StuckExecRow): Promise<void
 /** Reconcile status='deploying'. Source of truth: oasis_events for
  *  deploy.gateway.success or any event tagged with the merge SHA / branch. */
 async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
-  // Look for a deploy success event newer than the execution's last update.
+  // VTID-02697: Two bugs in the previous version:
+  //   1. Filtered on `type=in.(...)` but the column is `topic` — the request
+  //      400'd, returned empty, and we always concluded "no deploy event"
+  //      regardless of reality.
+  //   2. Even when the column was right, it took ANY recent deploy event
+  //      across the platform as proof that THIS exec deployed. False
+  //      positive risk during concurrent autopilot runs.
+  //
+  // Fixed query uses `topic` and selects `metadata` so we can match by
+  // merge SHA (set on the exec when the watcher merges its PR).
   const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.deploying * 2).toISOString();
-  const deployR = await supa<Array<{ id: string; type: string; created_at: string }>>(s,
-    `/rest/v1/oasis_events?type=in.(deploy.gateway.success,deploy.success,vtid.lifecycle.deployed)`
-    + `&created_at=gte.${since}&order=created_at.desc&limit=20&select=id,type,created_at`);
+  const deployR = await supa<Array<{ id: string; topic: string; created_at: string; metadata?: Record<string, unknown> }>>(s,
+    `/rest/v1/oasis_events?topic=in.(deploy.gateway.success,deploy.success,vtid.lifecycle.deployed)`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=20&select=id,topic,created_at,metadata`);
   if (deployR.ok && deployR.data && deployR.data.length > 0) {
-    // We saw at least one recent deploy success event. Best-effort: advance
-    // this execution to verifying; the verification step will run next.
-    await patchExecution(s, exec.id, { status: 'verifying' });
-    await emitOasisEvent({
-      vtid: EXEC_VTID,
-      type: 'dev_autopilot.execution.deployed',
-      source: 'dev-autopilot',
-      status: 'success',
-      message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
-      payload: { execution_id: exec.id, deploy_event_id: deployR.data[0].id, reconciled_from: 'deploying' },
-    });
-    return;
+    const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+    // Prefer events whose git_commit matches the exec's merge SHA. If the
+    // exec has no merge_sha (older row from before VTID-02697), fall back
+    // to the original "any recent deploy success" behavior.
+    const matched = mergeSha
+      ? deployR.data.find((e) => {
+          const m = (e.metadata as { git_commit?: string } | null | undefined);
+          return typeof m?.git_commit === 'string' && m.git_commit === mergeSha;
+        })
+      : deployR.data[0];
+    if (matched) {
+      await patchExecution(s, exec.id, { status: 'verifying' });
+      await emitOasisEvent({
+        vtid: EXEC_VTID,
+        type: 'dev_autopilot.execution.deployed',
+        source: 'dev-autopilot',
+        status: 'success',
+        message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
+        payload: { execution_id: exec.id, deploy_event_id: matched.id, reconciled_from: 'deploying', matched_by: mergeSha ? 'merge_sha' : 'recency' },
+      });
+      return;
+    }
   }
 
   // No deploy event seen within the look-back window — fail.
@@ -1754,10 +1774,12 @@ async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<vo
  *  recent verification-passed event. */
 async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
   // Look for a verification event tagged for this execution.
+  // VTID-02697: same fix as reconcileDeploying — column is `topic`, not
+  // `type`. The previous query 400'd silently.
   const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.verifying * 2).toISOString();
-  const verifyR = await supa<Array<{ id: string; type: string }>>(s,
-    `/rest/v1/oasis_events?type=in.(dev_autopilot.execution.verification_passed,vtid.lifecycle.completed)`
-    + `&created_at=gte.${since}&order=created_at.desc&limit=10&select=id,type`);
+  const verifyR = await supa<Array<{ id: string; topic: string }>>(s,
+    `/rest/v1/oasis_events?topic=in.(dev_autopilot.execution.verification_passed,vtid.lifecycle.completed)`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=10&select=id,topic`);
   if (verifyR.ok && verifyR.data && verifyR.data.length > 0) {
     await patchExecution(s, exec.id, {
       status: 'completed',
@@ -1815,7 +1837,7 @@ export async function reconcileStuckExecutions(s: SupaConfig): Promise<void> {
     const cutoff = new Date(Date.now() - RECONCILE_TIMEOUT_MS[status]).toISOString();
     const stuckR = await supa<StuckExecRow[]>(s,
       `/rest/v1/dev_autopilot_executions?status=eq.${status}&updated_at=lt.${cutoff}`
-      + `&select=id,finding_id,status,pr_url,pr_number,branch,updated_at`
+      + `&select=id,finding_id,status,pr_url,pr_number,branch,updated_at,metadata`
       + `&order=updated_at.asc&limit=${RECONCILE_BATCH_SIZE}`);
     if (!stuckR.ok || !stuckR.data || stuckR.data.length === 0) continue;
     console.log(`${LOG_PREFIX} reconciler: ${stuckR.data.length} execution(s) stuck in '${status}'`);

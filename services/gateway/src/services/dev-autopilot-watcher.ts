@@ -178,10 +178,20 @@ export type DeployOutcome = 'success' | 'failed' | 'pending';
 
 export function findDeployOutcomeForExecution(
   events: Array<{ type: string; payload?: Record<string, unknown>; created_at?: string; status?: string }>,
-  exec: { pr_url?: string | null; pr_number?: number | null; branch?: string | null; updated_at?: string },
+  exec: { pr_url?: string | null; pr_number?: number | null; branch?: string | null; updated_at?: string; metadata?: Record<string, unknown> | null },
 ): DeployOutcome {
-  // We match on whatever signal we have — pr_url (most specific), pr_number,
-  // branch name, or fall back to time-window if none of the above match.
+  // VTID-02697: Match on whatever signal we have. The `branch` check used to
+  // be the primary post-merge fallback, but the EXEC-DEPLOY workflow emits
+  // `deploy.gateway.success` with `metadata.branch = "main"` (because the
+  // workflow runs against main after merge). The exec, however, stores its
+  // FEATURE branch (e.g. `dev-autopilot/abc12345`). Result: branch never
+  // matches and the deploy reconciler hits its 30m timeout, marking the
+  // execution failed — even though the deploy genuinely succeeded.
+  //
+  // Fix: when the CI watcher auto-merges the PR, it now stamps the merge
+  // commit SHA on `exec.metadata.merge_sha`. Match by that against the
+  // event's `metadata.git_commit` for a definitive post-merge link.
+  const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
   const since = exec.updated_at ? new Date(exec.updated_at).getTime() : 0;
   const matches = events.filter((e) => {
     const created = e.created_at ? new Date(e.created_at).getTime() : 0;
@@ -189,6 +199,7 @@ export function findDeployOutcomeForExecution(
     const p = e.payload || {};
     if (exec.pr_url && p.pr_url === exec.pr_url) return true;
     if (exec.pr_number && (p.pr_number === exec.pr_number || p.pr === exec.pr_number)) return true;
+    if (mergeSha && typeof p.git_commit === 'string' && p.git_commit === mergeSha) return true;
     if (exec.branch && (p.branch === exec.branch || p.head_branch === exec.branch)) return true;
     return false;
   });
@@ -482,7 +493,13 @@ export async function ciWatcherTick(): Promise<void> {
         'squash',
       );
       if (mergeRes.merged) {
-        await transitionStatus(s, exec.id, 'merging', 'deploying');
+        // VTID-02697: stamp the merge commit SHA on the exec so the deploy
+        // reconciler can match the post-merge `deploy.gateway.success` event
+        // (which carries `metadata.git_commit = <merge SHA>` and
+        // `metadata.branch = "main"`, NOT the feature branch).
+        await transitionStatus(s, exec.id, 'merging', 'deploying', {
+          metadata: { ...(exec.metadata || {}), merge_sha: mergeRes.sha },
+        });
         await emitOasisEvent({
           vtid: WATCHER_VTID,
           type: 'dev_autopilot.execution.pr_merged',
