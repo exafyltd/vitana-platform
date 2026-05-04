@@ -1,67 +1,122 @@
 # Vitana Platform — Live Status
 
-**Updated:** 2026-05-04T10:59:39.926981Z
-**Summary:** 54/54 services live
+**Updated:** 2026-05-04T12:22:31.575528Z
+**Summary:** 0/54 services live
 
 ## Service Health
 
 | Service | Status | HTTP |
 |---------|--------|------|
-| Gateway | ✅ Live | 200 |
-| Gateway Alive | ✅ Live | 200 |
-| Auth | ✅ Live | 200 |
-| CI/CD | ✅ Live | 200 |
-| Execute Runner | ✅ Live | 200 |
-| Operator | ✅ Live | 200 |
-| Operator Deployments | ✅ Live | 200 |
-| Telemetry | ✅ Live | 200 |
-| Events | ✅ Live | 200 |
-| Command Hub UI | ✅ Live | 200 |
-| Assistant | ✅ Live | 200 |
-| Knowledge Hub | ✅ Live | 200 |
-| ORB Live | ✅ Live | 200 |
-| Voice Lab | ✅ Live | 200 |
-| Conversation Intelligence | ✅ Live | 200 |
-| Conversation Tools | ✅ Live | 200 |
-| Autopilot | ✅ Live | 200 |
-| Autopilot Pipeline | ✅ Live | 200 |
-| Autopilot Prompts | ✅ Live | 200 |
-| Autopilot Recommendations | ✅ Live | 200 |
-| Automations | ✅ Live | 200 |
-| Recommendation Inbox | ✅ Live | 200 |
-| Memory | ✅ Live | 200 |
-| Semantic Memory | ✅ Live | 200 |
-| Diary | ✅ Live | 200 |
-| Health Capacity | ✅ Live | 200 |
-| Scheduler | ✅ Live | 200 |
-| Scheduled Notifications | ✅ Live | 200 |
-| Email Intake | ✅ Live | 200 |
-| Community | ✅ Live | 200 |
-| Relationships | ✅ Live | 200 |
-| Matchmaking | ✅ Live | 200 |
-| Personalization | ✅ Live | 200 |
-| Live Rooms | ✅ Live | 200 |
-| Social Context | ✅ Live | 200 |
-| Social Connect | ✅ Live | 200 |
-| Social Alignment | ✅ Live | 200 |
-| Topics | ✅ Live | 200 |
-| Domain Routing | ✅ Live | 200 |
-| Locations | ✅ Live | 200 |
-| Offers | ✅ Live | 200 |
-| Feedback Correction | ✅ Live | 200 |
-| Voice Feedback | ✅ Live | 200 |
-| Situational Awareness | ✅ Live | 200 |
-| Availability & Readiness | ✅ Live | 200 |
-| Environmental Mobility | ✅ Live | 200 |
-| User Preferences | ✅ Live | 200 |
-| Taste Alignment | ✅ Live | 200 |
-| Overload Detection | ✅ Live | 200 |
-| Risk Mitigation | ✅ Live | 200 |
-| Opportunity Surfacing | ✅ Live | 200 |
-| Visual Interactive | ✅ Live | 200 |
-| VTID Terminalize | ✅ Live | 200 |
-| VTID | ✅ Live | 200 |
+| Gateway | ❌ Down | 429 |
+| Gateway Alive | ❌ Down | 429 |
+| Auth | ❌ Down | 429 |
+| CI/CD | ❌ Down | 429 |
+| Execute Runner | ❌ Down | 429 |
+| Operator | ❌ Down | 429 |
+| Operator Deployments | ❌ Down | 429 |
+| Telemetry | ❌ Down | 429 |
+| Events | ❌ Down | 429 |
+| Command Hub UI | ❌ Down | 429 |
+| Assistant | ❌ Down | 429 |
+| Knowledge Hub | ❌ Down | 429 |
+| ORB Live | ⏱️ Timeout | — |
+| Voice Lab | ❌ Down | 429 |
+| Conversation Intelligence | ❌ Down | 429 |
+| Conversation Tools | ❌ Down | 429 |
+| Autopilot | ❌ Down | 429 |
+| Autopilot Pipeline | ❌ Down | 429 |
+| Autopilot Prompts | ❌ Down | 429 |
+| Autopilot Recommendations | ❌ Down | 429 |
+| Automations | ❌ Down | 429 |
+| Recommendation Inbox | ❌ Down | 429 |
+| Memory | ❌ Down | 429 |
+| Semantic Memory | ❌ Down | 429 |
+| Diary | ❌ Down | 429 |
+| Health Capacity | ❌ Down | 429 |
+| Scheduler | ❌ Down | 429 |
+| Scheduled Notifications | ❌ Down | 429 |
+| Email Intake | ❌ Down | 429 |
+| Community | ❌ Down | 429 |
+| Relationships | ❌ Down | 429 |
+| Matchmaking | ❌ Down | 429 |
+| Personalization | ❌ Down | 429 |
+| Live Rooms | ❌ Down | 429 |
+| Social Context | ❌ Down | 429 |
+| Social Connect | ❌ Down | 429 |
+| Social Alignment | ❌ Down | 429 |
+| Topics | ⏱️ Timeout | — |
+| Domain Routing | ⏱️ Timeout | — |
+| Locations | ❌ Down | 429 |
+| Offers | ❌ Down | 429 |
+| Feedback Correction | ❌ Down | 429 |
+| Voice Feedback | ❌ Down | 429 |
+| Situational Awareness | ❌ Down | 429 |
+| Availability & Readiness | ❌ Down | 429 |
+| Environmental Mobility | ⏱️ Timeout | — |
+| User Preferences | ⏱️ Timeout | — |
+| Taste Alignment | ❌ Down | 429 |
+| Overload Detection | ❌ Down | 429 |
+| Risk Mitigation | ❌ Down | 429 |
+| Opportunity Surfacing | ❌ Down | 429 |
+| Visual Interactive | ❌ Down | 429 |
+| VTID Terminalize | ❌ Down | 429 |
+| VTID | ❌ Down | 429 |
 
+### ⚠️ Down Services
+- Gateway
+- Gateway Alive
+- Auth
+- CI/CD
+- Execute Runner
+- Operator
+- Operator Deployments
+- Telemetry
+- Events
+- Command Hub UI
+- Assistant
+- Knowledge Hub
+- ORB Live
+- Voice Lab
+- Conversation Intelligence
+- Conversation Tools
+- Autopilot
+- Autopilot Pipeline
+- Autopilot Prompts
+- Autopilot Recommendations
+- Automations
+- Recommendation Inbox
+- Memory
+- Semantic Memory
+- Diary
+- Health Capacity
+- Scheduler
+- Scheduled Notifications
+- Email Intake
+- Community
+- Relationships
+- Matchmaking
+- Personalization
+- Live Rooms
+- Social Context
+- Social Connect
+- Social Alignment
+- Topics
+- Domain Routing
+- Locations
+- Offers
+- Feedback Correction
+- Voice Feedback
+- Situational Awareness
+- Availability & Readiness
+- Environmental Mobility
+- User Preferences
+- Taste Alignment
+- Overload Detection
+- Risk Mitigation
+- Opportunity Surfacing
+- Visual Interactive
+- VTID Terminalize
+- VTID
 
 
 ---
