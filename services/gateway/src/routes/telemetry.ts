@@ -1,10 +1,51 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
-import { requireAuth, AuthenticatedRequest } from "../middleware/auth-supabase-jwt";
+import { AuthenticatedRequest } from "../middleware/auth-supabase-jwt";
+import { getSupabase } from "../lib/supabase";
 
 export const router = Router();
+
+// Middleware to strictly verify via supabase.auth.getUser as required
+const requireAuthenticatedUser = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    const token = authHeader.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.error("❌ Gateway misconfigured: No Supabase client");
+      return res.status(503).json({ error: "Service unavailable", detail: "Database not reachable" });
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Attach minimal identity for downstream handlers
+    (req as AuthenticatedRequest).identity = {
+      user_id: data.user.id,
+      email: data.user.email || null,
+      tenant_id: null,
+      exafy_admin: false,
+      role: null,
+    };
+
+    return next();
+  } catch (err) {
+    console.error("❌ Auth middleware error:", err);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+};
 
 // Telemetry Event Schema (TickerEvent format)
 // VTID-0526-D: Added task_stage for 4-stage mapping
@@ -27,8 +68,8 @@ type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
-// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.post("/event", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Security: requireAuthenticatedUser mitigates RLS gap on oasis_events by enforcing application-level authentication
+router.post("/event", requireAuthenticatedUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -148,8 +189,8 @@ router.post("/event", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
-// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.post("/batch", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Security: requireAuthenticatedUser mitigates RLS gap on oasis_events by enforcing application-level authentication
+router.post("/batch", requireAuthenticatedUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
@@ -291,8 +332,8 @@ router.get("/health", (_req: Request, res: Response) => {
  * This endpoint is used by the frontend for auto-loading telemetry
  * when the Operator Console / Command Hub opens.
  */
-// Security: requireAuth mitigates RLS gap on oasis_events by enforcing application-level authentication
-router.get("/snapshot", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Security: requireAuthenticatedUser mitigates RLS gap on oasis_events by enforcing application-level authentication
+router.get("/snapshot", requireAuthenticatedUser, async (req: AuthenticatedRequest, res: Response) => {
   console.log("[Telemetry Snapshot] Request received");
 
   try {
