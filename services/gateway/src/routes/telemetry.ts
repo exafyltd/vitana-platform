@@ -361,7 +361,7 @@ router.get("/snapshot", requireAuth, async (req: AuthenticatedRequest, res: Resp
       if (Array.isArray(rpcResult)) {
         for (const row of rpcResult) {
           if (isValidStage(row.task_stage)) {
-            counters[row.task_stage] = parseInt(String(row.count)) || 0;
+            counters[row.task_stage as keyof StageCounters] = parseInt(String(row.count)) || 0;
           }
         }
       }
@@ -386,7 +386,7 @@ router.get("/snapshot", requireAuth, async (req: AuthenticatedRequest, res: Resp
         const countEvents = (await countResp.json()) as Array<{ task_stage: string }>;
         for (const event of countEvents) {
           if (isValidStage(event.task_stage)) {
-            counters[event.task_stage]++;
+            counters[event.task_stage as keyof StageCounters]++;
           }
         }
       }
