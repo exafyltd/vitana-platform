@@ -21,6 +21,8 @@ import {
 import { getMemoryContext, MemoryIntent, MemoryBlockKind } from '../services/memory-broker';
 import { buildAgentProfile } from '../services/agent-profile-service';
 import { runConsolidator, LoopId } from '../services/nightly-consolidator';
+import { getSupabase } from '../lib/supabase';
+import { getSystemControl } from '../services/system-controls-service';
 
 const router = Router();
 // VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
@@ -143,6 +145,168 @@ router.post('/admin/memory/profile', async (req: AuthenticatedRequest, res: Resp
   });
 
   return res.json(profile);
+});
+
+// VTID-02636 — Memory Operations dashboard data feed.
+// Single endpoint that aggregates everything the Command Hub
+// "intelligence-memory-dev" surface needs to render the 5 tabs against
+// real data. All queries are best-effort: any single failure falls back to
+// 0 / empty so the dashboard always renders.
+router.get('/admin/memory/health', async (_req: AuthenticatedRequest, res: Response) => {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: false, error: 'no supabase' });
+
+  const TABLES = [
+    'mem_episodes',
+    'mem_facts',
+    'mem_graph_edges',
+    'biometric_trends',
+    'biometric_events',
+    'vitana_index_trajectory_snapshots',
+    'index_delta_observations',
+    'drift_adaptation_plans',
+    'consolidator_runs',
+    'user_feature_introductions',
+    'memory_diary_entries',
+    'memory_facts',
+    'memory_items',
+    'autopilot_recommendations',
+    'user_proactive_pause',
+  ];
+
+  const tableCounts: Record<string, number | null> = {};
+  await Promise.all(TABLES.map(async (t) => {
+    try {
+      const r = await supabase.from(t).select('*', { count: 'exact', head: true });
+      tableCounts[t] = r.error ? null : (r.count ?? 0);
+    } catch {
+      tableCounts[t] = null;
+    }
+  }));
+
+  const flagKeys = [
+    'memory_broker_enabled',
+    'consolidator_enabled',
+    'cognee_extraction_enabled',
+    'index_delta_learner_enabled',
+    'tier0_redis_enabled',
+    'vitana_brain_enabled',
+    'vitana_brain_orb_enabled',
+  ];
+  const flags: Record<string, boolean | null> = {};
+  await Promise.all(flagKeys.map(async (k) => {
+    try {
+      const c = await getSystemControl(k);
+      flags[k] = c ? !!c.enabled : null;
+    } catch {
+      flags[k] = null;
+    }
+  }));
+
+  let consolidatorRuns: any[] = [];
+  try {
+    const r = await supabase
+      .from('consolidator_runs')
+      .select('id, triggered_by, triggered_at, finished_at, status, summary, tenant_id')
+      .order('triggered_at', { ascending: false })
+      .limit(10);
+    consolidatorRuns = r.data ?? [];
+  } catch { consolidatorRuns = []; }
+
+  let memoryEvents: any[] = [];
+  try {
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const r = await supabase
+      .from('oasis_events')
+      .select('id, topic, vtid, status, message, payload, created_at, source')
+      .or('topic.ilike.memory.%,topic.ilike.orb.memory.%')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(25);
+    memoryEvents = r.data ?? [];
+  } catch { memoryEvents = []; }
+
+  let identityLockAttempts: any[] = [];
+  try {
+    const r = await supabase
+      .from('oasis_events')
+      .select('id, topic, vtid, status, message, payload, created_at')
+      .ilike('topic', 'memory.identity.%')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    identityLockAttempts = r.data ?? [];
+  } catch { identityLockAttempts = []; }
+
+  return res.json({
+    ok: true,
+    fetched_at: new Date().toISOString(),
+    duration_ms: Date.now() - t0,
+    flags,
+    table_counts: tableCounts,
+    consolidator_runs: consolidatorRuns,
+    memory_events: memoryEvents,
+    identity_lock_attempts: identityLockAttempts,
+  });
+});
+
+router.get('/admin/memory/graph-sample', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: false, error: 'no supabase' });
+  const userId = req.query.user_id ? String(req.query.user_id) : null;
+
+  let memEdges: any[] = [];
+  try {
+    let q = supabase
+      .from('mem_graph_edges')
+      .select('id, tenant_id, user_id, source_kind, source_id, edge_type, target_kind, target_id, strength, asserted_at')
+      .order('asserted_at', { ascending: false })
+      .limit(50);
+    if (userId) q = q.eq('user_id', userId);
+    const r = await q;
+    memEdges = r.data ?? [];
+  } catch { memEdges = []; }
+
+  let legacyEdges: any[] = [];
+  try {
+    let q = supabase
+      .from('relationship_edges')
+      .select('id, tenant_id, source_type, source_id, target_type, target_id, edge_type, strength, last_interaction_at')
+      .order('last_interaction_at', { ascending: false, nullsFirst: false })
+      .limit(50);
+    if (userId) q = q.eq('source_id', userId);
+    const r = await q;
+    legacyEdges = r.data ?? [];
+  } catch { legacyEdges = []; }
+
+  return res.json({
+    ok: true,
+    mem_graph_edges: memEdges,
+    relationship_edges: legacyEdges,
+  });
+});
+
+router.get('/admin/memory/embeddings', async (_req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: false, error: 'no supabase' });
+
+  const collections = [
+    { key: 'memory_items',     model: 'text-embedding-3-small', dimensions: 1536 },
+    { key: 'mem_episodes',     model: 'text-embedding-3-small', dimensions: 1536 },
+    { key: 'memory_diary_entries', model: 'text-embedding-3-small', dimensions: 1536 },
+  ];
+
+  const out: any[] = [];
+  await Promise.all(collections.map(async (c) => {
+    try {
+      const r = await supabase.from(c.key).select('*', { count: 'exact', head: true });
+      out.push({ ...c, vectors: r.error ? null : (r.count ?? 0), status: r.error ? 'error' : 'active' });
+    } catch {
+      out.push({ ...c, vectors: null, status: 'error' });
+    }
+  }));
+
+  return res.json({ ok: true, collections: out });
 });
 
 // VTID-02632 — Phase 8 — admin consolidator smoke endpoint.
