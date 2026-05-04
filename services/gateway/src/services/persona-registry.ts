@@ -100,28 +100,27 @@ export async function getPersonaVoice(key: string): Promise<string> {
 
 function extractLocale(langOrCtx: any): string {
   if (!langOrCtx) return 'en';
-  
-  if (typeof langOrCtx === 'string' && langOrCtx.trim().startsWith('{')) {
+
+  let val = langOrCtx;
+
+  if (typeof val === 'string' && val.trim().startsWith('{')) {
     try {
-      const parsed = JSON.parse(langOrCtx);
+      const parsed = JSON.parse(val);
       if (typeof parsed === 'object' && parsed !== null) {
-        langOrCtx = parsed;
+        val = parsed;
       }
     } catch (e) {
       // ignore, keep as string
     }
   }
 
-  let val: any = 'en';
-  if (typeof langOrCtx === 'string') {
-    val = langOrCtx;
-  } else if (typeof langOrCtx === 'object' && langOrCtx !== null) {
-    val = langOrCtx.user?.locale 
-       || langOrCtx.user?.language 
-       || langOrCtx.session?.locale 
-       || langOrCtx.session?.language 
-       || langOrCtx.locale 
-       || langOrCtx.language 
+  if (typeof val === 'object' && val !== null) {
+    val = val.user?.locale 
+       || val.user?.language 
+       || val.session?.locale 
+       || val.session?.language 
+       || val.locale 
+       || val.language 
        || 'en';
   }
 
@@ -136,8 +135,8 @@ function extractLocale(langOrCtx: any): string {
  * Returns the persona's greeting in the requested language, falling
  * through `lang → 'en' → generic` so a missing language never hard-fails.
  */
-export async function getPersonaGreeting(key: string, lang: any): Promise<string> {
-  const locale = extractLocale(lang);
+export async function getPersonaGreeting(key: string, langOrCtx: any): Promise<string> {
+  const locale = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistry();
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
@@ -316,10 +315,10 @@ export async function getPersonaVoiceForTenant(key: string, tenantId: string): P
  */
 export async function getPersonaGreetingForTenant(
   key: string,
-  lang: any,
+  langOrCtx: any,
   tenantId: string,
 ): Promise<string> {
-  const locale = extractLocale(lang);
+  const locale = extractLocale(langOrCtx);
   const reg = await loadPersonaRegistryForTenant(tenantId);
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
