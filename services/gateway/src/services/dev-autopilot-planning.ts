@@ -33,6 +33,7 @@ import { emitOasisEvent } from './oasis-event-service';
 import { renderPlanHtml } from './dev-autopilot-html';
 import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure, isWorkerBinaryMissing } from './dev-autopilot-self-heal-log';
+import { loadAutopilotContext } from './dev-autopilot/context-loader';
 import {
   extractTableNames,
   loadSchemaSnippets,
@@ -362,6 +363,16 @@ export function buildPlanningPrompt(
     `You are generating a plan that a developer will approve with one click.`,
     `A single click triggers end-to-end execution (branch → edits → PR → CI →`,
     `merge → deploy). Depth and precision matter.`,
+    ``,
+    `## Codebase conventions + imports surface`,
+    ``,
+    `READ THIS FIRST. Reference these rules in your Files-to-modify and`,
+    `Implementation steps so the executor doesn't hallucinate APIs or`,
+    `produce non-conforming filenames.`,
+    ``,
+    loadAutopilotContext(),
+    ``,
+    `---`,
     ``,
     `## Finding`,
     `- **Title:** ${finding.title}`,

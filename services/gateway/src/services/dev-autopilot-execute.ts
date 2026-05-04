@@ -40,6 +40,7 @@ import { extractFilePaths, generatePlanVersion } from './dev-autopilot-planning'
 import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure, writeAutopilotSuccess } from './dev-autopilot-self-heal-log';
 import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
+import { loadAutopilotContext } from './dev-autopilot/context-loader';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -971,6 +972,16 @@ function buildExecutionPrompt(
   const lockedFiles = fileCtx.map(f => f.path);
   lines.push(
     `# Developer Autopilot — Execute plan ${findingId} (plan v${planVersion})`,
+    ``,
+    `## Codebase conventions + imports surface`,
+    ``,
+    `READ THIS FIRST. Apply these rules to every file you emit. Common`,
+    `hallucinations the autopilot has made before are listed at the bottom`,
+    `of the conventions block.`,
+    ``,
+    loadAutopilotContext(),
+    ``,
+    `---`,
     ``,
     `## LOCKED FILE LIST — DO NOT DEVIATE`,
     ``,

@@ -203,6 +203,7 @@ type EscalateReason =
   | 'stale_no_progress'
   | 'stale_agent_exhausted'
   | 'environmental_blocker'
+  | 'ci_bridge_owned'
   | 'probe_verified'
   | 'probe_failed';
 
@@ -508,6 +509,29 @@ async function runReconcileCycle(thresholdMs: number): Promise<void> {
       if (row.failure_class === 'environmental_blocker') {
         console.log(`${LOG_PREFIX} env-blocker for ${row.vtid}: skipping triage agent + spawn (operator must fix host)`);
         await markEscalated(row, 'environmental_blocker', http_status);
+        continue;
+      }
+
+      // CI-FAILURE SHORT-CIRCUIT (2026-05-03 incident): the dev-autopilot
+      // bridge owns the CI-failure → revert-PR → spawn-child-execution
+      // recovery path. It already retries up to `max_auto_fix_depth` and
+      // then escalates cleanly. The reconciler's separate triage-then-spawn
+      // path is redundant for those failures and creates phantom SELF-HEAL
+      // retry VTIDs in `vtid_ledger` that the operator sees as duplicate
+      // work. During a 60-min batch test, this leaked 9 SELF-HEAL VTIDs
+      // even though the bridge had cleanly handled every CI failure.
+      //
+      // Skip if the underlying execution row is in a state the bridge owns:
+      //   - failed_escalated (bridge already escalated; respect that)
+      //   - reverted (CI failed, bridge reverted, depth-cap may have been hit)
+      // These never need reconciler triage — they need either a human review
+      // (failed_escalated) or a planner re-prompt (reverted at depth-cap).
+      const bridgeStage = (row.diagnosis || {} as any).stage
+        || (row.diagnosis || {} as any).failure_stage
+        || row.failure_class;
+      if (bridgeStage === 'ci' || row.failure_class === 'ci_check_failed') {
+        console.log(`${LOG_PREFIX} ci-failure for ${row.vtid}: bridge owns this, skipping reconciler triage spawn`);
+        await markEscalated(row, 'ci_bridge_owned', http_status);
         continue;
       }
 
