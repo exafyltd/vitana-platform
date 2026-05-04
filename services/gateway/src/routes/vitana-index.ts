@@ -134,11 +134,11 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
   try {
     const { data, error } = await client
       .from('autopilot_recommendations')
-      .select('id, title, summary, contribution_vector, priority, status')
+      .select('id, title, summary, contribution_vector, impact_score, status')
       .eq('user_id', userId)
       .in('status', ['pending', 'new', 'snoozed'])
       .not('contribution_vector', 'is', null)
-      .order('priority', { ascending: false })
+      .order('impact_score', { ascending: false, nullsFirst: false })
       .limit(50);
 
     if (error) {
@@ -148,7 +148,7 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
     }
 
     const ranked = (data || [])
-      .map((r: { id: string; title: string; summary: string; contribution_vector: Record<string, number> | null; priority: number; status: string }) => {
+      .map((r: { id: string; title: string; summary: string; contribution_vector: Record<string, number> | null; impact_score: number | null; status: string }) => {
         const cv = r.contribution_vector;
         const lift = cv && typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
         return { ...r, _lift: lift };
