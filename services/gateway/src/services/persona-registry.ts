@@ -98,16 +98,31 @@ export async function getPersonaVoice(key: string): Promise<string> {
   return reg.get(key)?.voice_id ?? '';
 }
 
+function extractLocale(langOrCtx: any): string {
+  if (!langOrCtx) return 'en';
+  let val = 'en';
+  if (typeof langOrCtx === 'string') {
+    val = langOrCtx;
+  } else if (typeof langOrCtx === 'object') {
+    val = langOrCtx.user?.locale || langOrCtx.session?.language || langOrCtx.language || 'en';
+  }
+  if (typeof val !== 'string') {
+    val = 'en';
+  }
+  return val.split('-')[0].toLowerCase() || 'en';
+}
+
 /**
  * Returns the persona's greeting in the requested language, falling
  * through `lang → 'en' → generic` so a missing language never hard-fails.
  */
-export async function getPersonaGreeting(key: string, lang: string): Promise<string> {
+export async function getPersonaGreeting(key: string, lang: any): Promise<string> {
+  const locale = extractLocale(lang);
   const reg = await loadPersonaRegistry();
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
   const tpls = p.greeting_templates ?? {};
-  if (tpls[lang]) return tpls[lang];
+  if (tpls[locale]) return tpls[locale];
   if (tpls['en']) return tpls['en'];
   // Last-resort generic — covers the "operator just inserted a new persona
   // and forgot to fill greeting_templates" case so the swap never sounds
@@ -281,14 +296,15 @@ export async function getPersonaVoiceForTenant(key: string, tenantId: string): P
  */
 export async function getPersonaGreetingForTenant(
   key: string,
-  lang: string,
+  lang: any,
   tenantId: string,
 ): Promise<string> {
+  const locale = extractLocale(lang);
   const reg = await loadPersonaRegistryForTenant(tenantId);
   const p = reg.get(key);
   if (!p) return `Hi, ${key} here. How can I help?`;
   const tpls = p.greeting_templates ?? {};
-  if (tpls[lang]) return tpls[lang];
+  if (tpls[locale]) return tpls[locale];
   if (tpls['en']) return tpls['en'];
   return `Hi, ${p.display_name} here. How can I help?`;
 }
