@@ -87,7 +87,7 @@ async def search_memory(context: RunContext, query: str, limit: int = 5) -> str:
 @function_tool
 async def search_knowledge(context: RunContext, query: str) -> str:
     """Search the Vitana Knowledge Hub (longevity, platform docs)."""
-    body = await _gw(context).post("/api/v1/knowledge/search", {"query": query})
+    body = await _gw(context).post("/api/v1/assistant/knowledge/search", {"query": query})
     return summarize(body)
 
 
@@ -155,8 +155,8 @@ async def report_to_specialist(
 async def search_calendar(context: RunContext, query: str, days_ahead: int = 14) -> str:
     """Search the user's calendar for upcoming events matching `query`."""
     body = await _gw(context).get(
-        "/api/v1/integrations/calendar/events",
-        {"query": query, "days_ahead": days_ahead},
+        "/api/v1/calendar/events",
+        {"q": query, "days_ahead": days_ahead},
     )
     return summarize(body)
 
@@ -167,7 +167,7 @@ async def create_calendar_event(
 ) -> str:
     """Create a calendar event."""
     body = await _gw(context).post(
-        "/api/v1/integrations/calendar/events",
+        "/api/v1/calendar/events",
         {"title": title, "when_iso": when_iso, "duration_min": duration_min},
     )
     return summarize(body)
@@ -177,7 +177,7 @@ async def create_calendar_event(
 async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str:
     """Add an event to the user's calendar (VTID-01943)."""
     body = await _gw(context).post(
-        "/api/v1/integrations/calendar/events",
+        "/api/v1/calendar/events",
         {"title": title, "when_iso": when_iso},
     )
     return summarize(body)
@@ -186,10 +186,16 @@ async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str
 @function_tool
 async def get_schedule(context: RunContext, date_iso: str | None = None) -> str:
     """Return the user's schedule for a given date (defaults to today)."""
-    params: dict[str, Any] = {}
+    # Calendar router exposes /events/today and /events/upcoming. Without a
+    # specific date we default to /today; with a date we fall back to the
+    # generic /events search constrained to that day.
     if date_iso:
-        params["date_iso"] = date_iso
-    body = await _gw(context).get("/api/v1/integrations/calendar/schedule", params)
+        body = await _gw(context).get(
+            "/api/v1/calendar/events",
+            {"from": date_iso, "to": date_iso},
+        )
+    else:
+        body = await _gw(context).get("/api/v1/calendar/events/today")
     return summarize(body)
 
 
@@ -434,22 +440,26 @@ async def post_intent(context: RunContext, kind: str, body_text: str) -> str:
 @function_tool
 async def view_intent_matches(context: RunContext) -> str:
     """View match candidates for the user's open intents (VTID-01976)."""
-    body = await _gw(context).get("/api/v1/intents/matches")
+    # Mounted at /api/v1/intent-matches/{outgoing,incoming}; surface incoming
+    # matches (the ones the LLM cares about — what came back to the user).
+    body = await _gw(context).get("/api/v1/intent-matches/incoming")
     return summarize(body)
 
 
 @function_tool
 async def list_my_intents(context: RunContext) -> str:
     """List the user's open and historical intents."""
-    body = await _gw(context).get("/api/v1/intents/mine")
+    body = await _gw(context).get("/api/v1/intents")
     return summarize(body)
 
 
 @function_tool
 async def respond_to_match(context: RunContext, match_id: str, response: str) -> str:
     """Respond to a match candidate (VTID-01976)."""
+    # /api/v1/intent-matches/:id/state takes {state} as body; pass the user's
+    # 'response' string through unchanged and let the gateway map it.
     body = await _gw(context).post(
-        f"/api/v1/intents/matches/{match_id}/respond", {"response": response}
+        f"/api/v1/intent-matches/{match_id}/state", {"state": response}
     )
     return summarize(body)
 
@@ -457,7 +467,7 @@ async def respond_to_match(context: RunContext, match_id: str, response: str) ->
 @function_tool
 async def mark_intent_fulfilled(context: RunContext, intent_id: str) -> str:
     """Mark an intent as fulfilled."""
-    body = await _gw(context).post(f"/api/v1/intents/{intent_id}/fulfill")
+    body = await _gw(context).post(f"/api/v1/intents/{intent_id}/close")
     return summarize(body)
 
 
@@ -478,9 +488,9 @@ async def scan_existing_matches(context: RunContext) -> str:
 
 
 @function_tool
-async def get_matchmaker_result(context: RunContext, intent_id: str) -> str:
+async def get_matchmaker_result(context: RunContext, intent_id: str) -> str:  # noqa: D401
     """Get the matchmaker's current result for a specific intent."""
-    body = await _gw(context).get(f"/api/v1/intents/{intent_id}/matchmaker-result")
+    body = await _gw(context).get(f"/api/v1/intents/{intent_id}/matchmaker")
     return summarize(body)
 
 
