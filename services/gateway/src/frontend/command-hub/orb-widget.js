@@ -1380,15 +1380,27 @@
               // Gemini just answered verbally, and both sides wait in silence.
               // The nudge updates the status text and plays the ready beep
               // again so the user knows the orb is still alive and waiting.
+              // The check self-reschedules if the user actually IS talking
+              // (VAD updates _s._lastSpeechAt) so we never beep mid-sentence.
+              _s._lastSpeechAt = 0;
               clearTimeout(_s._listeningIdleTimer);
-              _s._listeningIdleTimer = setTimeout(function () {
-                if (_s.voiceState !== 'LISTENING' || !_s.active) return;
-                _setStatus(_cfg.lang.startsWith('de')
-                  ? 'Ich höre noch zu. Sag mir, was ich tun soll!'
-                  : "I'm still listening. Tell me what you'd like to do!");
-                _playReadyBeep();
-                _updateUI();
-              }, 15000);
+              (function _armIdleNudge(delay) {
+                _s._listeningIdleTimer = setTimeout(function check() {
+                  if (_s.voiceState !== 'LISTENING' || !_s.active) return;
+                  var sinceSpeech = _s._lastSpeechAt
+                    ? Date.now() - _s._lastSpeechAt
+                    : Infinity;
+                  if (sinceSpeech < 15000) {
+                    _armIdleNudge(15000 - sinceSpeech + 200);
+                    return;
+                  }
+                  _setStatus(_cfg.lang.startsWith('de')
+                    ? 'Ich höre noch zu. Sag mir, was ich tun soll!'
+                    : "I'm still listening. Tell me what you'd like to do!");
+                  _playReadyBeep();
+                  _updateUI();
+                }, delay);
+              })(15000);
             }
           }, 300);
         })();
@@ -1721,6 +1733,11 @@
       } else {
         vadFrames = 0;
         vadInterruptSent = false;
+        // Record real user speech so the listening-idle nudge timer can
+        // defer itself instead of beeping over the user mid-sentence.
+        if (rms > vadThreshold) {
+          _s._lastSpeechAt = Date.now();
+        }
       }
 
       // Post-turn cooldown (500ms) — server-side turn_complete
