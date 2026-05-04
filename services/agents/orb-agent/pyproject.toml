@@ -7,7 +7,10 @@ readme = "README.md"
 license = { text = "Proprietary" }
 
 dependencies = [
-    "livekit-agents>=0.12.0",
+    # >=1.0 required: RunContext moved from livekit.agents.llm to livekit.agents
+    # in the 1.0 split, and AgentSession gained `userdata` + `max_tool_steps`
+    # constructor kwargs we depend on for tool wiring.
+    "livekit-agents>=1.0.0",
     "livekit-plugins-deepgram>=0.6.0",
     "livekit-plugins-anthropic>=0.2.0",
     "livekit-plugins-cartesia>=0.4.0",
