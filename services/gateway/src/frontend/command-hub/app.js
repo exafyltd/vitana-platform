@@ -35041,6 +35041,28 @@ function renderLivekitTestView() {
     container.innerHTML = '<h2 style="margin:0 0 4px;color:#facc15;">LiveKit Pipeline Test</h2>'
         + '<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Standalone test page for the LiveKit voice pipeline. Bypasses the production ORB widget. The Vertex/SSE ORB is hidden while this page is open so the two pipelines don\'t collide on the mic. Use this to verify the cascade (STT/LLM/TTS) end-to-end before flipping the active provider for real users.</p>';
 
+    // Sign-in panel — VTID-LIVEKIT-TESTPAGE-AUTH. The test page is reachable
+    // without going through the main vitana-v1 login, so without a session
+    // here every gateway tool call from the agent comes back 401 and the
+    // model can't access any user-scoped data. Posting to /api/v1/auth/login
+    // reuses the same Supabase Auth flow the production app uses; the
+    // resulting access_token is stashed in localStorage so the existing
+    // mintToken() path picks it up unchanged.
+    var authPanel = document.createElement('div');
+    authPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
+    authPanel.innerHTML =
+          '<div class="lkt-auth-status" style="font-size:13px;color:#94a3b8;margin-bottom:10px;">Checking session…</div>'
+        + '<div class="lkt-auth-form" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;">'
+        +   '<input class="lkt-email" type="email" placeholder="email" autocomplete="email" style="flex:1;min-width:200px;padding:8px 10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155;border-radius:4px;" />'
+        +   '<input class="lkt-password" type="password" placeholder="password" autocomplete="current-password" style="flex:1;min-width:200px;padding:8px 10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155;border-radius:4px;" />'
+        +   '<button class="lkt-signin" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">Sign In</button>'
+        + '</div>'
+        + '<div class="lkt-auth-signedin" style="display:none;align-items:center;gap:12px;">'
+        +   '<span class="lkt-auth-email" style="color:#22c55e;font-weight:bold;font-size:13px;"></span>'
+        +   '<button class="lkt-signout" style="padding:6px 12px;background:#475569;color:#e5e7eb;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Sign Out</button>'
+        + '</div>';
+    container.appendChild(authPanel);
+
     var statusPanel = document.createElement('div');
     statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
     statusPanel.innerHTML =
@@ -35097,8 +35119,117 @@ function renderLivekitTestView() {
     var transcriptEl = container.querySelector('.lkt-transcript');
     var eventsEl = container.querySelector('.lkt-events');
 
+    var authStatusEl = container.querySelector('.lkt-auth-status');
+    var authFormEl = container.querySelector('.lkt-auth-form');
+    var authSignedInEl = container.querySelector('.lkt-auth-signedin');
+    var authEmailEl = container.querySelector('.lkt-auth-email');
+    var emailInput = container.querySelector('.lkt-email');
+    var passwordInput = container.querySelector('.lkt-password');
+    var signinBtn = container.querySelector('.lkt-signin');
+    var signoutBtn = container.querySelector('.lkt-signout');
+
     var room = null;
     var attachedAudio = [];
+
+    function readToken() {
+        var supKey = Object.keys(localStorage).find(function (k) { return /sb-.*-auth-token/.test(k); });
+        if (supKey) {
+            try {
+                var parsed = JSON.parse(localStorage.getItem(supKey));
+                var t = parsed && (parsed.access_token || (parsed.currentSession && parsed.currentSession.access_token));
+                if (t) return { token: t, email: parsed.user && parsed.user.email || (parsed.currentSession && parsed.currentSession.user && parsed.currentSession.user.email) || null };
+            } catch (e) {}
+        }
+        var fallback = localStorage.getItem('vitana.authToken');
+        if (fallback) return { token: fallback, email: localStorage.getItem('vitana.authEmail') };
+        return null;
+    }
+
+    function tokenLooksValid(token) {
+        // JWT exp check — defense against expired tokens lingering in localStorage.
+        try {
+            var parts = token.split('.');
+            if (parts.length !== 3) return false;
+            var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() + 30 * 1000;
+        } catch (e) { return false; }
+    }
+
+    function refreshAuthUI() {
+        var session = readToken();
+        var valid = session && session.token && tokenLooksValid(session.token);
+        if (valid) {
+            authStatusEl.style.display = 'none';
+            authFormEl.style.display = 'none';
+            authSignedInEl.style.display = 'flex';
+            authEmailEl.textContent = '✓ Signed in as ' + (session.email || '(unknown email)');
+            connectBtn.disabled = false;
+            return true;
+        }
+        authStatusEl.style.display = 'block';
+        authStatusEl.textContent = 'Sign in with your Vitana credentials so the agent can fetch your real data:';
+        authFormEl.style.display = 'flex';
+        authSignedInEl.style.display = 'none';
+        connectBtn.disabled = true;
+        return false;
+    }
+
+    async function doSignIn() {
+        var email = (emailInput.value || '').trim();
+        var password = passwordInput.value || '';
+        if (!email || !password) {
+            log('error', 'sign-in failed', { reason: 'email and password required' });
+            return;
+        }
+        signinBtn.disabled = true;
+        signinBtn.textContent = '…';
+        try {
+            var res = await fetch((window.GATEWAY_URL || '') + '/api/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password }),
+            });
+            var json = await res.json();
+            if (!res.ok || !json.access_token) {
+                log('error', 'sign-in failed', { status: res.status, error: json.error || json.message });
+                authStatusEl.style.display = 'block';
+                authStatusEl.style.color = '#ef4444';
+                authStatusEl.textContent = 'Sign-in failed: ' + (json.message || json.error || res.status);
+                return;
+            }
+            // Store both keys mintToken() looks for. Also stash email for the
+            // signed-in display and so refresh-from-localStorage works after reload.
+            localStorage.setItem('vitana.authToken', json.access_token);
+            if (json.user && json.user.email) {
+                localStorage.setItem('vitana.authEmail', json.user.email);
+            }
+            log('info', 'sign-in OK', { email: json.user && json.user.email });
+            passwordInput.value = '';
+            refreshAuthUI();
+        } catch (err) {
+            log('error', 'sign-in network error', { err: String(err) });
+        } finally {
+            signinBtn.disabled = false;
+            signinBtn.textContent = 'Sign In';
+        }
+    }
+
+    function doSignOut() {
+        // Clear every key that mintToken() inspects.
+        Object.keys(localStorage)
+            .filter(function (k) { return /sb-.*-auth-token/.test(k); })
+            .forEach(function (k) { localStorage.removeItem(k); });
+        localStorage.removeItem('vitana.authToken');
+        localStorage.removeItem('vitana.authEmail');
+        log('info', 'signed out');
+        refreshAuthUI();
+    }
+
+    signinBtn.addEventListener('click', doSignIn);
+    signoutBtn.addEventListener('click', doSignOut);
+    passwordInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doSignIn(); });
+    emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') passwordInput.focus(); });
+    refreshAuthUI();
 
     function log(kind, msg, data) {
         var ts = new Date().toISOString().slice(11, 19);
