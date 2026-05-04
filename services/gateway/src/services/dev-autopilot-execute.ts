@@ -1436,12 +1436,21 @@ interface StuckExecRow {
 }
 
 /** Per-state timeout. Beyond this, the state is considered "stuck" and
- *  the reconciler asks reality. */
+ *  the reconciler asks reality.
+ *
+ * VTID-02698: bumped `verifying` from 15m → 60m. The watcher's
+ * `verificationWatcherTick` owns the verifying state with a 30m
+ * window of error-event analysis; the executor's `reconcileVerifying`
+ * was firing FIRST (at 15m) with a brittle single `/alive` probe and
+ * marking healthy execs failed when the probe hit a 429 from a deploy-
+ * churn rate-limit. Bumping past the watcher's window lets the proper
+ * owner advance the state; the executor only steps in if the watcher
+ * is genuinely broken. */
 const RECONCILE_TIMEOUT_MS: Record<string, number> = {
   ci:        30 * 60 * 1000,  // 30 min
   merging:   15 * 60 * 1000,  // 15 min
   deploying: 30 * 60 * 1000,  // 30 min
-  verifying: 15 * 60 * 1000,  // 15 min
+  verifying: 60 * 60 * 1000,  // 60 min — must exceed watcher's 30m window
 };
 
 const RECONCILE_BATCH_SIZE = 10;
@@ -1646,7 +1655,7 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
     await patchExecution(s, exec.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
-      metadata: { error: 'reconciler: PR closed without merge' },
+      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge' },
     });
     await emitOasisEvent({
       vtid: EXEC_VTID,
@@ -1668,7 +1677,7 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
     await patchExecution(s, exec.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
-      metadata: { error: `reconciler: PR mergeable_state=${prR.data.mergeable_state} after ${RECONCILE_TIMEOUT_MS.ci / 60_000}m` },
+      metadata: { ...(exec.metadata || {}), error: `reconciler: PR mergeable_state=${prR.data.mergeable_state} after ${RECONCILE_TIMEOUT_MS.ci / 60_000}m` },
     });
     await emitOasisEvent({
       vtid: EXEC_VTID,
@@ -1704,7 +1713,7 @@ async function reconcileMerging(s: SupaConfig, exec: StuckExecRow): Promise<void
     await patchExecution(s, exec.id, {
       status: 'failed',
       completed_at: new Date().toISOString(),
-      metadata: { error: 'reconciler: PR closed without merge while in merging' },
+      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge while in merging' },
     });
     bridgeFailure(exec.id, 'merging', 'PR closed without merge').catch(() => {});
   }
@@ -1757,7 +1766,7 @@ async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<vo
   await patchExecution(s, exec.id, {
     status: 'failed',
     completed_at: new Date().toISOString(),
-    metadata: { error: `reconciler: no deploy success event observed after ${RECONCILE_TIMEOUT_MS.deploying / 60_000}m in deploying` },
+    metadata: { ...(exec.metadata || {}), error: `reconciler: no deploy success event observed after ${RECONCILE_TIMEOUT_MS.deploying / 60_000}m in deploying` },
   });
   await emitOasisEvent({
     vtid: EXEC_VTID,
@@ -1797,14 +1806,25 @@ async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<vo
   }
 
   // No verification event — best-effort: probe /alive ourselves. If 200,
-  // call it good. (Conservative: only complete if /alive returns 200; else
-  // fail.)
+  // call it good.
+  //
+  // VTID-02698: probe up to 3 times with 5s spacing. A single transient
+  // 429 (rate-limited during deploy churn) or 503 (Cloud Run cold start)
+  // shouldn't fail an execution that's otherwise healthy. Only treat
+  // 4xx-non-429 / 5xx-non-503 / network errors as definitive failure.
   const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
   let alive = false;
-  try {
-    const r = await fetch(`${gatewayUrl}/alive`);
-    alive = r.ok;
-  } catch { /* alive=false */ }
+  let lastStatus: number | null = null;
+  for (let attempt = 0; attempt < 3 && !alive; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, 5000));
+    try {
+      const r = await fetch(`${gatewayUrl}/alive`);
+      lastStatus = r.status;
+      if (r.ok) { alive = true; break; }
+      // 429/503 = transient, retry. Anything else = definitive non-alive.
+      if (r.status !== 429 && r.status !== 503) break;
+    } catch { /* network error — retry */ }
+  }
 
   if (alive) {
     await patchExecution(s, exec.id, {
@@ -1822,10 +1842,16 @@ async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<vo
     return;
   }
 
+  // VTID-02698: spread existing metadata so we don't blow away merge_sha
+  // (set by the watcher at merge) or other fields the reconciler may
+  // need on subsequent passes / for postmortem.
   await patchExecution(s, exec.id, {
     status: 'failed',
     completed_at: new Date().toISOString(),
-    metadata: { error: `reconciler: /alive failed after ${RECONCILE_TIMEOUT_MS.verifying / 60_000}m in verifying` },
+    metadata: {
+      ...(exec.metadata || {}),
+      error: `reconciler: /alive failed after ${RECONCILE_TIMEOUT_MS.verifying / 60_000}m in verifying (last_status=${lastStatus})`,
+    },
   });
   bridgeFailure(exec.id, 'verifying', '/alive probe failed').catch(() => {});
 }
