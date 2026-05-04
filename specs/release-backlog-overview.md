@@ -1,8 +1,9 @@
 # Release Backlog & Versioning Overview
 
-**Status:** Draft
+**Status:** Draft (refined after walkthrough — Command Hub placement resolved)
 **Branch:** `claude/backlog-versioning-structure-7frZn`
 **Companion spec:** `vitana-v1/docs/release-backlog-overview-screen.md`
+**Decisions reference:** `vitana-v1/docs/role-cleanup-decisions.md`
 **VTID:** _to be claimed before merge_
 
 ---
@@ -48,14 +49,18 @@ Vitanaland (platform)
 Tenants
   └─ MAXINA  (tenant_id = ...)
        ├─ Desktop (web responsive)   — app version + min platform version
-       ├─ iOS                        — app version + min platform version
-       └─ Android                    — app version + min platform version
+       ├─ iOS                        — app version + min platform version *(Community-only feature set)*
+       └─ Android                    — app version + min platform version *(Community-only feature set)*
   └─ <future tenant>
        └─ ...
 ```
 
 Each tenant-app row pins a **min platform version** and a **target platform
 version**. The overview renders a compatibility badge per cell (`✓` / `⚠ behind` / `✗ breaking`).
+
+> **Mobile policy** (decided in role walkthrough): MAXINA iOS and Android ship
+> only the Community feature set. Compatibility tracking for mobile surfaces
+> only ever compares against Community-scope platform contracts.
 
 ---
 
@@ -103,7 +108,9 @@ CREATE INDEX idx_release_components_owner_tenant
 
 ### `release_history`
 
-Append-only log of every release event for a component.
+Append-only log of every release event for a component. The `changelog` column
+is what the tenant-side **Changelog tab** authors and what `/api/v1/releases/changelog/public`
+serves to App Store / Play Store / in-app `/changelog` for stable releases.
 
 ```sql
 CREATE TABLE release_history (
@@ -165,14 +172,14 @@ same Command Hub / tenant-admin pattern used by `routines`.
 
 | Method | Path | Purpose | Roles |
 |--------|------|---------|-------|
-| `GET` | `/api/v1/releases/components` | List components (filters: `owner`, `tenant_id`, `surface`) | platform_admin, tenant_admin (own tenant only) |
+| `GET` | `/api/v1/releases/components` | List components (filters: `owner`, `tenant_id`, `surface`) | developer / super-admin / tenant_admin (own tenant only) |
 | `GET` | `/api/v1/releases/components/:id` | Component detail incl. last 10 releases | as above |
-| `POST` | `/api/v1/releases/components` | Register new component | platform_admin |
-| `PATCH` | `/api/v1/releases/components/:id` | Update current version / channel / pins | platform_admin (any), tenant_admin (own tenant rows only) |
+| `POST` | `/api/v1/releases/components` | Register new component | developer / super-admin |
+| `PATCH` | `/api/v1/releases/components/:id` | Update current version / channel / pins | developer / super-admin (any), tenant_admin (own tenant rows only) |
 | `GET` | `/api/v1/releases/history` | Filter by `component_id`, `channel`, date range | as list |
-| `POST` | `/api/v1/releases/history` | Record a release (creates history row + updates `current_*` on component atomically) | platform_admin / tenant_admin (own) |
+| `POST` | `/api/v1/releases/history` | Record a release (creates history row + updates `current_*` on component atomically) | developer / super-admin / tenant_admin (own) |
 | `GET` | `/api/v1/releases/backlog` | List backlog items, filterable; tenant role sees only `visibility IN ('tenant','public')` for their components | role-aware |
-| `POST` `PATCH` `DELETE` | `/api/v1/releases/backlog/:id` | CRUD backlog items | platform_admin / tenant_admin (own) |
+| `POST` `PATCH` `DELETE` | `/api/v1/releases/backlog/:id` | CRUD backlog items | developer / super-admin / tenant_admin (own) |
 | `GET` | `/api/v1/releases/overview` | The matrix payload the overview screen renders in one call | role-aware |
 | `GET` | `/api/v1/releases/changelog/public` | Public stable-channel changelog (no auth) | anyone |
 
@@ -223,16 +230,30 @@ Following the existing `oasis_events` pattern (see DATABASE_SCHEMA.md):
 - `release.compatibility.broken` — emitted when a platform.sdk release moves a
   tenant surface from `ok` → `breaking`. This is the trigger for the orange
   badge in Command Hub.
+- `release.changelog.published` — emitted when a tenant_admin promotes a
+  changelog draft to `stable`. Triggers the propagation to App Store / Play
+  Store / in-app `/changelog`.
 
 ---
 
-## 6. Command Hub UI surface
+## 6. UI surfaces — where each role finds it
 
-Lives in Command Hub at `Releases` (top-level nav item, same level as
-`Routines`). One screen, role-aware.
+Three distinct surfaces, all driven by the same data model + API.
+
+### 6.1 Command Hub — `/dev/releases` (Developer + Exafy super-admin)
+
+**Lives in:** `vitana-v1` at `/dev/releases` (the in-app Command Hub —
+resolved from § 9 open question; access is gated per `role-cleanup-decisions.md` § Q1
+to Developer + `isExafyAdmin` only).
+
+**Page file (new):** `src/pages/dev/DevReleases.tsx`
+**Imports from:** existing `DevLayout.tsx` shell
+
+System-wide release matrix. Read/write across all tenants and all platform
+components.
 
 ```
-┌─ Releases ─────────────────────────────────────────────────────┐
+┌─ /dev/releases ────────────────────────────────────────────────┐
 │                                                                │
 │  PLATFORM                                                      │
 │  ┌──────────────┬─────────┬──────────┬───────────┬──────────┐  │
@@ -258,14 +279,79 @@ Lives in Command Hub at `Releases` (top-level nav item, same level as
 Click any row → drawer with full release history + open backlog items for
 that component.
 
+### 6.2 Command Hub — `/dev/docs/backlog` (Developer + Exafy super-admin)
+
+**Lives in:** `vitana-v1` extending the existing `/dev/docs` hub
+(`DevDocs.tsx` already supports sub-tabs `/dev/docs/catalogs`,
+`/dev/docs/screen-lists`, `/dev/docs/frontpages`, `/dev/docs/role-views` —
+adding `/dev/docs/backlog` follows the existing pattern).
+
+**Purpose:** markdown doc viewer that renders the `docs/*.md` spec/decision
+files directly in-app, so a developer working in Command Hub can read the
+rationale without leaving the surface or context-switching to GitHub.
+
+**Files surfaced:**
+- `docs/release-backlog-overview-screen.md` — this spec's frontend half
+- `docs/feature-catalog-by-role.md` — feature inventory by role
+- `docs/role-cleanup-decisions.md` — Q1–Q7 decisions
+- `vitana-platform/specs/release-backlog-overview.md` — canonical spec (proxied via gateway)
+
+**Implementation approach:** the page reads a curated list of doc paths from
+config, fetches the markdown via the existing gateway (or directly from the
+repo if served statically), and renders with the existing markdown component
+already used in the app. No CMS, no duplication of content — the repo files
+are the source of truth.
+
+### 6.3 Admin (tenant) — `/admin/releases` (Tenant Admin)
+
+**Lives in:** `vitana-v1` at `/admin/releases` — under the tenant Admin pages
+shell, gated by `<ProtectedRoute requiredRole="admin">` and scoped to the
+caller's tenant.
+
+**Page file (new):** `src/pages/admin/Releases.tsx`
+
+**Three tabs under one route:**
+
+| Tab | Path | Purpose |
+|-----|------|---------|
+| **Overview** | `/admin/releases` (default) | Read-only matrix — platform versions MAXINA depends on + MAXINA's surfaces (Desktop / iOS / Android) + compatibility badges |
+| **Changelog** | `/admin/releases/changelog` | Authoring UI — markdown editor for the `release_history.changelog` field, channel selector, version picker. On stable publish, content propagates to App Store / Play Store / in-app `/changelog` |
+| **Backlog** | `/admin/releases/backlog` | CRUD on `release_backlog_items` for MAXINA's components — title, summary, status, target version, optional VTID link |
+
+Tab switching is shallow (no full-page reload). All three tabs hit the same
+endpoints — the gateway scopes results to the caller's tenant.
+
+The full layout details for each tab live in
+`vitana-v1/docs/release-backlog-overview-screen.md`.
+
 ---
 
-## 7. Tenant-side widget contract
+## 7. RBAC matrix
 
-`vitana-v1` (MAXINA) renders a compact "My Releases" widget inside its own
-tenant admin (see companion spec). It calls
-`GET /api/v1/releases/overview` — the gateway scopes the response to the
-caller's tenant when the role is `tenant_admin`, returning:
+Aligned to the canonical 6-role model + Exafy super-admin (per
+`role-cleanup-decisions.md`):
+
+| Role | `/dev/releases` | `/dev/docs/backlog` | `/admin/releases` Overview | `/admin/releases` Changelog | `/admin/releases` Backlog | Public `/changelog` |
+|------|-----------------|---------------------|----------------------------|------------------------------|---------------------------|---------------------|
+| Community | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ read |
+| Patient | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ read |
+| Professional | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ read |
+| Staff | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ read |
+| Admin (tenant) | ❌ | ❌ | ✅ read own | ✅ author own | ✅ CRUD own | ✅ read |
+| Developer | ✅ full | ✅ read | ✅ read all | ✅ author all | ✅ CRUD all | ✅ read |
+| Exafy super-admin (`isExafyAdmin`) | ✅ full | ✅ read | ✅ full | ✅ full | ✅ full | ✅ read |
+
+Mobile devices: `useIsMobile()` forces role to `community` (per Q3), so all
+release-tracking surfaces are desktop-only — including for tenant admins.
+
+---
+
+## 8. Tenant-side widget contract (consumed by vitana-v1)
+
+The gateway scopes the `/api/v1/releases/overview` response based on the
+caller's role/tenant. From the frontend's perspective there is no special
+tenant-only endpoint — the API just returns less data when called with a
+tenant_admin token:
 
 - the **full platform** section (read-only — tenant needs to see what they
   depend on)
@@ -274,19 +360,6 @@ caller's tenant when the role is `tenant_admin`, returning:
 
 This keeps the tenant view a strict subset of the Hub view, with no second
 data path to maintain.
-
----
-
-## 8. Roles & RBAC
-
-| Role | Can see | Can edit |
-|------|---------|----------|
-| `platform_admin` (Vitanaland) | everything, all channels, internal notes | everything |
-| `release_manager` | everything | publish releases, edit backlog, no schema |
-| `tenant_admin` (e.g. MAXINA admin) | platform read-only + own tenant + own backlog (`visibility ≥ tenant`) | own tenant components + own backlog |
-| `developer` | same as tenant_admin for their tenant; platform read | own backlog items only |
-| `qa` | all components, internal+beta channels prominent | flag blockers (status=`blocked`) |
-| `end_user` (in MAXINA app) | nothing in Hub; sees only `/api/v1/releases/changelog/public` rendered as in-app changelog | — |
 
 ---
 
@@ -307,14 +380,22 @@ data path to maintain.
    `PATCH` on `current_channel`? Promote endpoint reads better in audit logs
    and emits a clean `release.promoted` OASIS event.
 
-4. **Public changelog source of truth.** Render from
-   `release_history WHERE channel='stable' AND component IN (public set)` —
-   confirm which components are public-facing (probably: Command Hub no,
-   MAXINA iOS/Android/Desktop yes, vitanaland.com yes).
+4. **Public changelog component allowlist.** Confirm which components are
+   public-facing — likely: Command Hub no, MAXINA iOS/Android/Desktop yes,
+   vitanaland.com yes. Drives what `/api/v1/releases/changelog/public`
+   returns.
 
-5. **Where does Command Hub frontend actually live?** This spec assumes it's
-   served from `services/gateway` or a sibling package. If it's a separate
-   repo / package, the UI section needs a path correction.
+5. ~~**Where does Command Hub frontend actually live?**~~ **RESOLVED:**
+   Command Hub UI lives in `vitana-v1` at `/dev/*` (in-app, gated to
+   Developer + Exafy super-admin per Q1 decision). Both `/dev/releases`
+   and `/dev/docs/backlog` are added as sub-routes.
+
+6. **App Store / Play Store changelog propagation mechanism.** When a
+   tenant_admin publishes a stable changelog via `/admin/releases/changelog`,
+   does it auto-push to App Store Connect / Play Console (via API), or does
+   it emit an OASIS event that a separate worker picks up? Worker pattern
+   is more decoupled but adds latency; API pattern is direct but couples
+   tenant_admin actions to external service uptime. Recommend worker.
 
 ---
 
@@ -323,6 +404,8 @@ data path to maintain.
 - **Phase 1 (this branch, docs only):** specs land on both repos, review.
 - **Phase 2:** add tables + migration + DATABASE_SCHEMA.md update; wire
   `GET /releases/overview` only (read-only, seeded data).
-- **Phase 3:** Command Hub `Releases` screen consuming the overview endpoint.
-- **Phase 4:** write endpoints + backlog CRUD; tenant-side widget in vitana-v1.
-- **Phase 5:** OASIS events + public changelog endpoint.
+- **Phase 3a:** Command Hub `/dev/releases` matrix screen consuming the overview endpoint.
+- **Phase 3b:** Command Hub `/dev/docs/backlog` markdown-viewer sub-tab (extends existing `DevDocs.tsx`).
+- **Phase 4:** write endpoints + backlog CRUD; `/admin/releases` 3-tab screen in vitana-v1.
+- **Phase 5:** changelog publishing pipeline + App Store / Play Store propagation worker; public `/changelog` route.
+- **Phase 6:** OASIS events fully wired; rollback flow.
