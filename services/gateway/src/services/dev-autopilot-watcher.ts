@@ -203,10 +203,44 @@ export function findDeployOutcomeForExecution(
     if (exec.branch && (p.branch === exec.branch || p.head_branch === exec.branch)) return true;
     return false;
   });
-  if (matches.length === 0) return 'pending';
-  // Fail beats success — if any failure event matches, treat as failed.
-  if (matches.some((e) => e.type === 'deploy.gateway.failed' || e.status === 'error')) return 'failed';
-  if (matches.some((e) => e.type === 'deploy.gateway.success')) return 'success';
+  if (matches.length > 0) {
+    // Fail beats success — if any failure event matches, treat as failed.
+    if (matches.some((e) => e.type === 'deploy.gateway.failed' || e.status === 'error')) return 'failed';
+    if (matches.some((e) => e.type === 'deploy.gateway.success')) return 'success';
+  }
+
+  // VTID-02700: post-merge fallback. The auto-deploy workflow collapses
+  // queued commits — when 3 PRs merge in 30s, Cloud Run typically only
+  // runs ONE deploy on the latest tip, and the intermediate merges
+  // never get their own `deploy.gateway.success` event. If we required
+  // a strict SHA match (VTID-02697), those intermediate execs would
+  // sit in `deploying` until the 30m timeout and falsely fail.
+  //
+  // Reality: if a `deploy.gateway.success` event for `branch=main`
+  // landed AFTER my exec's merge time and BEFORE my deploy timeout,
+  // my merge_sha is in production (git is linear; whatever main was
+  // when EXEC-DEPLOY checked out is what got deployed, and my merge
+  // is an ancestor of that tip). Accept the most recent post-merge
+  // success as proof of life.
+  if (mergeSha) {
+    const postMerge = events
+      .filter((e) => {
+        const created = e.created_at ? new Date(e.created_at).getTime() : 0;
+        if (created < since) return false;
+        const p = e.payload || {};
+        return p.branch === 'main' || p.head_branch === 'main';
+      });
+    if (postMerge.some((e) => e.type === 'deploy.gateway.failed' || e.status === 'error')) {
+      // A subsequent deploy failed — could mean my merge broke something.
+      // Be conservative and treat as failed; if it's noise, the watcher
+      // will surface it via the verification window's blast-radius check.
+      return 'failed';
+    }
+    if (postMerge.some((e) => e.type === 'deploy.gateway.success')) {
+      return 'success';
+    }
+  }
+
   return 'pending';
 }
 
