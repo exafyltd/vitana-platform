@@ -20,7 +20,7 @@ import { notifyUser, NotificationPayload } from '../services/notification-servic
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
-const VTID = 'ADMIN-NOTIF-CATEGORIES';
+const VTID = 'BOOTSTRAP-NOTIF-CATEGORIES';
 
 const VALID_TYPES = ['chat', 'calendar', 'community'];
 
