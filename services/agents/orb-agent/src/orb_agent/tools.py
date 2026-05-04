@@ -322,7 +322,7 @@ async def create_index_improvement_plan(context: RunContext, target_pillar: str)
 @function_tool
 async def save_diary_entry(context: RunContext, text: str) -> str:
     """Save a diary entry. Triggers Vitana Index recompute via /memory/diary/sync-index (VTID-01983)."""
-    body = await _gw(context).post("/api/v1/memory/diary/sync-index", {"text": text})
+    body = await _gw(context).post("/api/v1/memory/diary/sync-index", {"raw_text": text})
     return summarize(body)
 
 
@@ -333,9 +333,19 @@ async def save_diary_entry(context: RunContext, text: str) -> str:
 
 @function_tool
 async def set_reminder(context: RunContext, text: str, when_iso: str) -> str:
-    """Set a reminder (VTID-02601)."""
+    """Set a reminder (VTID-02601).
+
+    Args:
+        text: Short action label, e.g. "take magnesium". <=60 chars.
+        when_iso: When to fire, ISO 8601 UTC. Must be 60s..90 days in the future.
+    """
     body = await _gw(context).post(
-        "/api/v1/reminders", {"text": text, "when_iso": when_iso}
+        "/api/v1/reminders",
+        {
+            "action_text": text,
+            "spoken_message": text,
+            "scheduled_for_iso": when_iso,
+        },
     )
     return summarize(body)
 
@@ -432,8 +442,26 @@ async def share_link(context: RunContext, url: str, with_recipient: str | None =
 
 @function_tool
 async def post_intent(context: RunContext, kind: str, body_text: str) -> str:
-    """Post an intent (commercial_buy/sell, activity_seek, partner_seek, social_seek, mutual_aid) (VTID-01975)."""
-    body = await _gw(context).post("/api/v1/intents", {"kind": kind, "body": body_text})
+    """Post an intent (VTID-01975).
+
+    Args:
+        kind: One of commercial_buy, commercial_sell, activity_seek,
+            partner_seek, social_seek, mutual_aid, learning_seek, mentor_seek.
+        body_text: The user's natural-language description of the intent
+            (used for both title and scope; classifier expands as needed).
+    """
+    # Endpoint accepts either {intent_kind, title, scope} or just
+    # {utterance} (which classifier expands). We send the explicit form
+    # since we already have the kind. Title is a short prefix of the
+    # body; scope is the full text (must be 20–1500 chars).
+    title = body_text[:80] if len(body_text) >= 3 else f"{kind} request"
+    if len(title) < 3:
+        title = f"{kind} request"
+    scope = body_text if len(body_text) >= 20 else (body_text + " — looking for matches in the community").ljust(20)[:1500]
+    body = await _gw(context).post(
+        "/api/v1/intents",
+        {"intent_kind": kind, "title": title, "scope": scope},
+    )
     return summarize(body)
 
 
@@ -520,30 +548,66 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
 
 
 def all_tool_names() -> list[str]:
-    """Returns the names of every @function_tool in this module.
+    """Returns the names of every @function_tool in this module that has a
+    working gateway endpoint right now.
+
+    Tools whose business logic is currently inline in orb-live.ts (Vertex
+    pipeline) and not yet exposed as standalone HTTP routes are tracked in
+    DEFERRED_TOOL_NAMES below. Re-enable each there as its endpoint lands.
 
     Used by tests/test_tools_catalogue.py to assert the tool list matches
-    voice-pipeline-spec/spec.json. Update when adding/removing a tool.
+    voice-pipeline-spec/spec.json. Update when wiring or unwiring a tool.
     """
     return [
-        "search_memory", "search_knowledge", "search_web", "recall_conversation_at_time",
-        "switch_persona", "report_to_specialist",
+        # Memory / Knowledge
+        "search_knowledge",
+        # Calendar (4)
         "search_calendar", "create_calendar_event", "add_to_calendar", "get_schedule",
-        "search_events", "search_community", "get_recommendations",
-        "play_music", "set_capability_preference",
-        "read_email", "find_contact",
-        "consult_external_ai",
-        "get_vitana_index", "get_index_improvement_suggestions", "create_index_improvement_plan",
+        # Recommendations (2)
+        "get_recommendations", "activate_recommendation",
+        # Vitana Index (2)
+        "get_vitana_index", "get_index_improvement_suggestions",
+        # Diary
         "save_diary_entry",
+        # Reminders (3)
         "set_reminder", "find_reminders", "delete_reminder",
-        "ask_pillar_agent", "explain_feature",
-        "resolve_recipient", "send_chat_message",
-        "activate_recommendation",
-        "share_link",
-        "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
-        "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches", "get_matchmaker_result",
-        "navigate_to_screen",
+        # Intents (5)
+        "post_intent", "view_intent_matches", "list_my_intents",
+        "mark_intent_fulfilled", "get_matchmaker_result",
     ]
+
+
+# Tools whose Vertex implementation is INLINE inside orb-live.ts case
+# blocks (not exposed as HTTP routes). Calling their gateway URL today
+# returns 404 because no router handles it. Each lands in a follow-up
+# PR that either (a) lifts the inline logic into a route file, or (b)
+# adds a generic POST /api/v1/orb/tool dispatcher that wraps the inline
+# logic. Until then we exclude them from the live catalogue so the LLM
+# doesn't try to call them and apologize for "no access".
+DEFERRED_TOOL_NAMES: list[str] = [
+    "search_memory",                  # orb-live.ts:4125 inline
+    "search_web",                     # orb-live.ts:4232 inline
+    "recall_conversation_at_time",    # no Vertex equivalent
+    "switch_persona",                 # orb-live.ts:2385 inline
+    "report_to_specialist",           # orb-live.ts:4458 — PR 5/6
+    "search_events",                  # orb-live.ts inline
+    "search_community",               # orb-live.ts inline
+    "play_music",                     # orb-live.ts:5251 inline
+    "set_capability_preference",      # orb-live.ts:5385 inline
+    "read_email",                     # orb-live.ts:5449 inline
+    "find_contact",                   # orb-live.ts:5452 inline
+    "consult_external_ai",            # orb-live.ts:2549 inline (path mismatch)
+    "create_index_improvement_plan",  # orb-live.ts:5758 inline
+    "ask_pillar_agent",               # orb-live.ts:6183 inline
+    "explain_feature",                # orb-live.ts:6231 inline
+    "resolve_recipient",              # orb-live.ts:6278 inline
+    "send_chat_message",              # orb-live.ts:6326 inline
+    "share_link",                     # orb-live.ts inline
+    "scan_existing_matches",          # orb-live.ts inline
+    "share_intent_post",              # orb-live.ts inline
+    "respond_to_match",               # path uncertain — need check
+    "navigate_to_screen",             # orb-live.ts:6959 inline
+]
 
 
 def all_tools() -> list[Any]:
