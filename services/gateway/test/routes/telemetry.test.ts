@@ -23,6 +23,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/v1/telemetry', router);
 
+// Tests that application-level auth is enforced to protect oasis_events from unauthenticated access
 describe('Telemetry Routes Auth Enforcement', () => {
   const originalFetch = global.fetch;
   const mockFetch = jest.fn();
