@@ -1,9 +1,35 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
+import { supabase } from "../lib/supabase";
 
 export const router = Router();
+
+// Middleware to require Supabase authentication
+const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized", detail: "Missing or invalid Authorization header" });
+      return;
+    }
+
+    const token = authHeader.substring(7);
+    const { data, error } = await supabase.auth.getUser(token);
+
+    if (error || !data.user) {
+      res.status(401).json({ error: "Unauthorized", detail: "Invalid token" });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    console.error("Auth middleware error:", error);
+    res.status(401).json({ error: "Unauthorized", detail: "Authentication failed" });
+    return;
+  }
+};
 
 // Telemetry Event Schema (TickerEvent format)
 // VTID-0526-D: Added task_stage for 4-stage mapping
@@ -26,7 +52,7 @@ type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
 // POST /event - Single telemetry event
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
-router.post("/event", async (req: Request, res: Response) => {
+router.post("/event", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -146,7 +172,7 @@ router.post("/event", async (req: Request, res: Response) => {
 
 // POST /batch - Batch telemetry events
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
-router.post("/batch", async (req: Request, res: Response) => {
+router.post("/batch", requireAuth, async (req: Request, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
