@@ -686,6 +686,172 @@ router.post('/:tenantId/tickets/:id/reject', async (req: Request, res: Response)
 });
 
 // ---------------------------------------------------------------------------
+// POST /:tenantId/tickets/:id/rollback — VTID-02702
+// ---------------------------------------------------------------------------
+// Rollback an autopilot-resolved ticket: creates a revert PR for the merge
+// commit that closed it, the watcher auto-merges + deploys, the ticket
+// flips back to `reopened`. Available for 3 days after `resolved_at`.
+//
+// Eligibility:
+//   - status === 'resolved'
+//   - auto_resolved === true
+//   - rolled_back_at IS NULL (idempotency)
+//   - now() < resolved_at + ROLLBACK_WINDOW_HOURS (default 72h, env override)
+//   - linked_pr_url present (otherwise we have nothing to revert)
+//
+// Response: { ok, ticket_id, ticket_number, revert_pr_url }
+
+const ROLLBACK_WINDOW_HOURS = Number.parseInt(process.env.FEEDBACK_ROLLBACK_WINDOW_HOURS || '72', 10);
+
+router.post('/:tenantId/tickets/:id/rollback', async (req: Request, res: Response) => {
+  const tenantId = req.params.tenantId;
+  const userId = await ensureTenantAdmin(req, res, tenantId);
+  if (!userId) return;
+  const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
+  if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
+
+  const t = loaded.ticket as {
+    id: string;
+    ticket_number: string;
+    status: string;
+    auto_resolved: boolean | null;
+    resolved_at: string | null;
+    rolled_back_at: string | null;
+    linked_pr_url: string | null;
+    linked_finding_id: string | null;
+  };
+
+  if (t.status !== 'resolved') {
+    return res.status(409).json({ ok: false, error: 'NOT_RESOLVED', message: `ticket status is ${t.status}; only resolved tickets are rollback-able`, status: t.status });
+  }
+  if (!t.auto_resolved) {
+    return res.status(409).json({ ok: false, error: 'NOT_AUTOPILOT_RESOLVED', message: 'manual resolutions cannot be rolled back via this flow' });
+  }
+  if (t.rolled_back_at) {
+    return res.status(409).json({ ok: false, error: 'ALREADY_ROLLED_BACK', rolled_back_at: t.rolled_back_at });
+  }
+  if (!t.resolved_at) {
+    return res.status(409).json({ ok: false, error: 'MISSING_RESOLVED_AT' });
+  }
+  const ageMs = Date.now() - new Date(t.resolved_at).getTime();
+  const windowMs = ROLLBACK_WINDOW_HOURS * 60 * 60 * 1000;
+  if (ageMs >= windowMs) {
+    return res.status(409).json({
+      ok: false,
+      error: 'ROLLBACK_WINDOW_EXPIRED',
+      window_hours: ROLLBACK_WINDOW_HOURS,
+      age_hours: Math.round(ageMs / 3_600_000),
+    });
+  }
+  if (!t.linked_pr_url) {
+    return res.status(409).json({ ok: false, error: 'NO_LINKED_PR', message: 'ticket has no linked_pr_url to revert' });
+  }
+  if (!t.linked_finding_id) {
+    return res.status(409).json({ ok: false, error: 'NO_LINKED_FINDING' });
+  }
+
+  // Look up the execution row so we can get the merge SHA.
+  const supabase = getServiceClient();
+  const { data: exec } = await supabase
+    .from('dev_autopilot_executions')
+    .select('id, status, pr_url, pr_number, metadata')
+    .eq('finding_id', t.linked_finding_id)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!exec) {
+    return res.status(409).json({ ok: false, error: 'NO_COMPLETED_EXEC' });
+  }
+  const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+  if (!mergeSha) {
+    return res.status(409).json({ ok: false, error: 'NO_MERGE_SHA_ON_EXEC', message: 'execution metadata missing merge_sha — likely an older row from before VTID-02697; rollback unavailable' });
+  }
+
+  // Create the revert PR via GitHub API.
+  const repo = process.env.DEV_AUTOPILOT_GITHUB_REPO || 'exafyltd/vitana-platform';
+  const branchName = `rollback/${t.ticket_number.toLowerCase()}-${Date.now()}`;
+  const prTitle = `Revert autopilot fix for ${t.ticket_number}`;
+  const prBody = [
+    `Rollback of ${t.linked_pr_url} requested by tenant admin within the ${ROLLBACK_WINDOW_HOURS}h post-resolve window (VTID-02702).`,
+    '',
+    `Original ticket: ${t.ticket_number}`,
+    `Reverted merge: ${mergeSha}`,
+    '',
+    'This revert PR was generated automatically. Auto-merging through the standard CI gate.',
+  ].join('\n');
+
+  let revertPr: { number: number; html_url: string };
+  try {
+    const { createRevertPullRequest } = await import('../services/github-service');
+    revertPr = await createRevertPullRequest(repo, mergeSha, branchName, prTitle, prBody);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(502).json({ ok: false, error: 'REVERT_PR_FAILED', detail: msg });
+  }
+
+  // Stamp the ticket: rolled_back_at + rollback_pr_url + rolled_back_by, flip
+  // status back to 'reopened' so a fresh autopilot attempt can be launched
+  // (or so the supervisor can refine the spec and try again).
+  const nowIso = new Date().toISOString();
+  const { error: upErr } = await supabase
+    .from('feedback_tickets')
+    .update({
+      status: 'reopened',
+      rolled_back_at: nowIso,
+      rollback_pr_url: revertPr.html_url,
+      rolled_back_by: userId,
+    })
+    .eq('id', t.id);
+  if (upErr) {
+    return res.status(502).json({ ok: false, error: 'TICKET_UPDATE_FAILED', detail: upErr.message });
+  }
+
+  // Audit + OASIS event for traceability.
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_disable', // closest existing slot
+    after_state: {
+      ticket_id: t.id,
+      ticket_number: t.ticket_number,
+      revert_pr_url: revertPr.html_url,
+      reverted_merge_sha: mergeSha,
+    },
+  });
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-02702',
+      type: 'feedback.ticket.rolled_back' as any,
+      source: 'tenant-admin-rollback',
+      status: 'info',
+      message: `Tenant ${tenantId} rolled back ticket ${t.ticket_number} (revert PR ${revertPr.html_url})`,
+      payload: {
+        ticket_id: t.id,
+        ticket_number: t.ticket_number,
+        original_pr_url: t.linked_pr_url,
+        revert_pr_url: revertPr.html_url,
+        reverted_merge_sha: mergeSha,
+      },
+      actor_id: userId,
+      actor_role: 'admin',
+      surface: 'operator',
+    });
+  } catch { /* non-blocking */ }
+
+  return res.json({
+    ok: true,
+    ticket_id: t.id,
+    ticket_number: t.ticket_number,
+    revert_pr_url: revertPr.html_url,
+    revert_pr_number: revertPr.number,
+    new_status: 'reopened',
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /:tenantId/tickets/:id/draft-spec — VTID-02664
 // ---------------------------------------------------------------------------
 // Generates the resolver draft (Devon spec / Sage answer / Atlas or Mira
