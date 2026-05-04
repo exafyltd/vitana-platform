@@ -60,7 +60,17 @@ const MESSAGES_TIMEOUT_MS = 720_000; // 12 min
 const EXECUTION_MODEL = process.env.DEV_AUTOPILOT_EXECUTION_MODEL || 'claude-sonnet-4-6';
 // Upper bound for total output tokens. One plan may touch up to ~5 files;
 // ~3000 tokens/file is a generous budget. Sonnet 4.6 supports 16k out.
-const MESSAGES_MAX_TOKENS = 16000;
+//
+// 2026-05-04 (VTID-AUTOPILOT-TOKENS): bumped 16k → 32k after the smoke
+// run on PR #1615 surfaced output truncation as the dominant first-attempt
+// failure mode. The new conventions+imports-surface context block adds
+// ~7-8k input tokens; combined with file content + plan, the model now
+// frequently runs out of output budget mid-emit and produces a half-
+// closed `<<<FILE …>>>` block. The bridge's depth-1 retry recovers
+// (PRs #1618, #1619 in smoke), but each retry costs another full Vertex
+// call. Gemini 3.1 Pro Preview supports 32k output; using it reduces
+// the truncation rate to near-zero for typical 1-5 file plans.
+const MESSAGES_MAX_TOKENS = 32000;
 // Safety cap — refuse to execute plans that cite more files than this. Protects
 // against a misbehaving plan trying to rewrite the world. The safety gate
 // already enforces allow_scope but this adds a quantitative limit.
