@@ -53,7 +53,19 @@ const AUTO_MERGE_ALLOWED_RISK = new Set(['low', 'medium']);
 const CI_TICK_MS = 60_000;          // 1 min — checks API rate limit budget
 const DEPLOY_TICK_MS = 60_000;      // 1 min
 const VERIFY_TICK_MS = 60_000;      // 1 min
-const VERIFICATION_WINDOW_MS = 30 * 60_000; // 30 minutes
+// VTID-02701: shortened from 30m → 5m. The original window was a defense-
+// in-depth backstop watching for production error spikes after deploy.
+// In practice that's already covered upstream by Cloud Run's Post-Deploy
+// Smoke Tests (5 health checks) and Playwright Visual Verification (UI
+// sanity), both of which fail the deploy before we ever reach
+// `verifying`. Once those pass, the marginal value of waiting another
+// 30m before declaring a ticket resolved is low — and the cost is high:
+// every autopilot ticket stays `in_progress` for half an hour after the
+// fix is already live in prod, which is a poor signal to supervisors
+// and slows the autonomous loop. 5m still catches anything that spikes
+// instantly post-deploy, with VTID-02699's blast-radius filter
+// preventing internal autopilot noise from false-failing the window.
+const VERIFICATION_WINDOW_MS = 5 * 60_000; // 5 minutes
 const DRY_RUN_SETTLE_MS = 90_000;   // dry-run: synthesize outcomes after 90s
 
 // =============================================================================
