@@ -101,10 +101,21 @@ export async function getPersonaVoice(key: string): Promise<string> {
 function extractLocale(langOrCtx: any): string {
   if (!langOrCtx) return 'en';
   
+  if (typeof langOrCtx === 'string' && langOrCtx.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(langOrCtx);
+      if (typeof parsed === 'object' && parsed !== null) {
+        langOrCtx = parsed;
+      }
+    } catch (e) {
+      // ignore, keep as string
+    }
+  }
+
   let val: any = 'en';
   if (typeof langOrCtx === 'string') {
     val = langOrCtx;
-  } else if (typeof langOrCtx === 'object') {
+  } else if (typeof langOrCtx === 'object' && langOrCtx !== null) {
     val = langOrCtx.user?.locale 
        || langOrCtx.user?.language 
        || langOrCtx.session?.locale 
