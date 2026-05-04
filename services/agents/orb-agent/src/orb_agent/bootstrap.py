@@ -63,11 +63,18 @@ class ContextBootstrap:
             "is_reconnect": is_reconnect,
             "last_n_turns": last_n_turns,
         }
+        # VTID-LIVEKIT-AGENT-JWT: prefer the per-session user JWT in the
+        # standard Authorization header (the gateway's optionalAuth checks
+        # only Bearer). Fall back to the service-token header pre-built in
+        # __init__ when no per-session JWT is available (anonymous sessions).
+        request_headers: dict[str, str] = dict(self._headers)
+        if user_jwt:
+            request_headers["Authorization"] = f"Bearer {user_jwt}"
         try:
             r = await self._client.get(
                 self._endpoint,
                 params=params,
-                headers={**self._headers, "X-User-JWT": user_jwt},
+                headers=request_headers,
             )
             r.raise_for_status()
             data: dict[str, Any] = r.json()
