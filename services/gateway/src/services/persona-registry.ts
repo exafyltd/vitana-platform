@@ -100,15 +100,24 @@ export async function getPersonaVoice(key: string): Promise<string> {
 
 function extractLocale(langOrCtx: any): string {
   if (!langOrCtx) return 'en';
-  let val = 'en';
+  
+  let val: any = 'en';
   if (typeof langOrCtx === 'string') {
     val = langOrCtx;
   } else if (typeof langOrCtx === 'object') {
-    val = langOrCtx.user?.locale || langOrCtx.session?.language || langOrCtx.locale || langOrCtx.language || 'en';
+    val = langOrCtx.user?.locale 
+       || langOrCtx.user?.language 
+       || langOrCtx.session?.locale 
+       || langOrCtx.session?.language 
+       || langOrCtx.locale 
+       || langOrCtx.language 
+       || 'en';
   }
+
   if (typeof val !== 'string' || val === '[object Object]') {
-    val = 'en';
+    return 'en';
   }
+
   return val.split('-')[0].toLowerCase() || 'en';
 }
 
