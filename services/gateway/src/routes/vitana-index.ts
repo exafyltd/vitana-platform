@@ -134,7 +134,7 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
   try {
     const { data, error } = await client
       .from('autopilot_recommendations')
-      .select('id, title, action_description, contribution_vector, priority, status')
+      .select('id, title, summary, contribution_vector, priority, status')
       .eq('user_id', userId)
       .in('status', ['pending', 'new', 'snoozed'])
       .not('contribution_vector', 'is', null)
@@ -148,7 +148,7 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
     }
 
     const ranked = (data || [])
-      .map((r: { id: string; title: string; action_description: string; contribution_vector: Record<string, number> | null; priority: number; status: string }) => {
+      .map((r: { id: string; title: string; summary: string; contribution_vector: Record<string, number> | null; priority: number; status: string }) => {
         const cv = r.contribution_vector;
         const lift = cv && typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
         return { ...r, _lift: lift };
@@ -173,7 +173,7 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
       suggestions: ranked.map((r) => ({
         id: r.id,
         title: r.title,
-        action: r.action_description,
+        action: r.summary,
         lift: r._lift,
         contribution_vector: r.contribution_vector,
       })),
