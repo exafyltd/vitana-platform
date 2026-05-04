@@ -248,6 +248,148 @@ export async function createPullRequest(
 }
 
 /**
+ * VTID-02702: Create a revert PR that undoes a specific merge commit.
+ *
+ * Used by the feedback rollback flow. Strategy:
+ *   1. Get the merge commit and identify its first parent (= main before merge).
+ *   2. Diff merge_sha vs first parent → list of files added/modified/deleted.
+ *   3. Build a new tree starting from current main HEAD, then for each
+ *      changed file restore the parent's version (or delete if it was added
+ *      by the merge).
+ *   4. Create a commit pointing at that tree with current HEAD as the parent.
+ *   5. Create a branch ref + open the PR.
+ *
+ * Caveats:
+ *   - If main has subsequent commits that modified the same files, the
+ *     revert may be technically correct but undo intervening work too.
+ *     Caller should ensure the rollback is requested promptly (the 3-day
+ *     window in the rollback endpoint enforces this).
+ *   - Binary files larger than ~1MB will fail the contents API path; v1
+ *     restricts rollback to text-only diffs (typical for autopilot PRs).
+ */
+export async function createRevertPullRequest(
+  repo: string,
+  mergeSha: string,
+  branchName: string,
+  prTitle: string,
+  prBody: string,
+): Promise<{ number: number; html_url: string }> {
+  // 1. Get merge commit (need its first parent = pre-merge main).
+  const mergeCommit = await githubRequest<{
+    sha: string;
+    parents: Array<{ sha: string }>;
+    message: string;
+  }>(`/repos/${repo}/git/commits/${mergeSha}`);
+  if (!mergeCommit.parents || mergeCommit.parents.length === 0) {
+    throw new Error(`merge commit ${mergeSha} has no parents — cannot revert`);
+  }
+  const parentSha = mergeCommit.parents[0].sha;
+
+  // 2. Current main HEAD.
+  const mainRef = await githubRequest<{ object: { sha: string } }>(
+    `/repos/${repo}/git/refs/heads/main`,
+  );
+  const headSha = mainRef.object.sha;
+
+  // 3. Diff to learn what the merge changed.
+  const compare = await githubRequest<{
+    files: Array<{ filename: string; status: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | 'changed' | 'unchanged'; previous_filename?: string }>;
+  }>(`/repos/${repo}/compare/${parentSha}...${mergeSha}`);
+  if (!compare.files || compare.files.length === 0) {
+    throw new Error(`merge ${mergeSha} touches zero files — nothing to revert`);
+  }
+
+  // 4. Build tree items: restore each changed file from parentSha (or null = delete).
+  const treeItems: Array<{
+    path: string;
+    mode: '100644' | '100755' | '040000' | '160000' | '120000';
+    type: 'blob' | 'tree' | 'commit';
+    sha: string | null;
+  }> = [];
+
+  for (const f of compare.files) {
+    if (f.status === 'added') {
+      // Added by the PR → remove in revert.
+      treeItems.push({ path: f.filename, mode: '100644', type: 'blob', sha: null });
+      continue;
+    }
+    // For modified / removed / renamed / changed: restore parent's version.
+    const lookupPath = f.status === 'renamed' && f.previous_filename
+      ? f.previous_filename
+      : f.filename;
+    try {
+      // Get file content at parentSha. The contents API returns base64-encoded.
+      const parentContent = await githubRequest<{ content: string; encoding: string }>(
+        `/repos/${repo}/contents/${encodeURIComponent(lookupPath)}?ref=${parentSha}`,
+      );
+      // Re-create as a blob in the repo.
+      const blob = await githubRequest<{ sha: string }>(
+        `/repos/${repo}/git/blobs`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            content: parentContent.content,
+            encoding: parentContent.encoding === 'base64' ? 'base64' : 'utf-8',
+          }),
+        },
+      );
+      treeItems.push({ path: f.filename, mode: '100644', type: 'blob', sha: blob.sha });
+      // For renames: also delete the new path.
+      if (f.status === 'renamed' && f.previous_filename && f.previous_filename !== f.filename) {
+        treeItems.push({ path: f.filename, mode: '100644', type: 'blob', sha: null });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // 404 on a removed-by-merge file probably means parent didn't have it
+      // either (rename + removal), which is a no-op for us. Skip.
+      if (msg.includes('404')) continue;
+      throw err;
+    }
+  }
+
+  // 5. Get current main's tree SHA to base our new tree on.
+  const headCommit = await githubRequest<{ tree: { sha: string } }>(
+    `/repos/${repo}/git/commits/${headSha}`,
+  );
+
+  const newTree = await githubRequest<{ sha: string }>(
+    `/repos/${repo}/git/trees`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        base_tree: headCommit.tree.sha,
+        tree: treeItems,
+      }),
+    },
+  );
+
+  // 6. Create a commit on top of current HEAD with the revert tree.
+  const revertCommit = await githubRequest<{ sha: string }>(
+    `/repos/${repo}/git/commits`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        message: prTitle,
+        tree: newTree.sha,
+        parents: [headSha],
+      }),
+    },
+  );
+
+  // 7. Branch ref.
+  await githubRequest(`/repos/${repo}/git/refs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ref: `refs/heads/${branchName}`,
+      sha: revertCommit.sha,
+    }),
+  });
+
+  // 8. Open the PR.
+  return createPullRequest(repo, prTitle, prBody, branchName, 'main');
+}
+
+/**
  * Merge a pull request using squash merge
  */
 export async function mergePullRequest(
@@ -572,6 +714,7 @@ export const githubService = {
   getCheckRuns,
   getPrStatus,
   createPullRequest,
+  createRevertPullRequest,
   mergePullRequest,
   evaluateGovernance,
   triggerWorkflow,
