@@ -108,15 +108,23 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     )
     if not user_jwt:
         logger.info("agent_entrypoint: no user_jwt in metadata — tool calls will be anonymous")
-    gw = GatewayClient(
-        base_url=cfg.gateway_url,
-        user_jwt=user_jwt,
-        service_token=cfg.gateway_service_token,
-    )
 
     identity = resolve_identity_from_room_metadata(metadata)
     agent_id = str(metadata.get("agent_id", "vitana"))
     orb_session_id = str(metadata.get("orb_session_id", ""))
+
+    # GatewayClient carries the user JWT (Bearer) PLUS X-User-ID /
+    # X-Tenant-ID / X-Vitana-Active-Role headers as defense-in-depth for
+    # routes whose auth middleware predates auth-supabase-jwt and reads
+    # those legacy headers instead of req.identity.
+    gw = GatewayClient(
+        base_url=cfg.gateway_url,
+        user_jwt=user_jwt,
+        service_token=cfg.gateway_service_token,
+        user_id=identity.user_id or None,
+        tenant_id=identity.tenant_id or None,
+        active_role=identity.role or None,
+    )
 
     # Fetch the merged context (memory + role + agent voice config).
     bootstrap = await ctx_fetcher.fetch(

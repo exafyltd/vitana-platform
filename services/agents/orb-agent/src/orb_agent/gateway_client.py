@@ -28,10 +28,16 @@ class GatewayClient:
         service_token: str | None = None,
         *,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+        active_role: str | None = None,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._user_jwt = user_jwt
         self._service_token = service_token
+        self._user_id = user_id
+        self._tenant_id = tenant_id
+        self._active_role = active_role
         self._client = httpx.AsyncClient(timeout=timeout_s)
 
     def _headers(self) -> dict[str, str]:
@@ -40,6 +46,17 @@ class GatewayClient:
             h["Authorization"] = f"Bearer {self._user_jwt}"
         elif self._service_token:
             h["Authorization"] = f"Bearer {self._service_token}"
+        # Defense-in-depth: some gateway routes still read X-User-ID /
+        # X-Vitana-Active-Role / X-Tenant-ID rather than the JWT identity
+        # (legacy middleware predates auth-supabase-jwt). Send them when we
+        # have the values from room metadata so those routes also resolve
+        # the right user.
+        if self._user_id:
+            h["X-User-ID"] = self._user_id
+        if self._tenant_id:
+            h["X-Tenant-ID"] = self._tenant_id
+        if self._active_role:
+            h["X-Vitana-Active-Role"] = self._active_role
         return h
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

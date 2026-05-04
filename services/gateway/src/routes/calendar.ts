@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   CreateCalendarEventSchema,
   UpdateCalendarEventSchema,
@@ -125,12 +126,24 @@ async function recomputeVitanaIndexForUser(
 const router = Router();
 const LOG_PREFIX = '[Calendar]';
 
+// VTID-LIVEKIT-TOOLS: apply optionalAuth so Bearer JWTs populate
+// req.identity. Mirrors the pattern in reminders.ts:60. Doesn't 401 when
+// absent — keeps X-User-ID + service-role paths working for older callers.
+router.use(optionalAuth);
+
 // =============================================================================
 // Helpers
 // =============================================================================
 
 function getUserId(req: Request): string | null {
-  // @ts-ignore
+  // VTID-LIVEKIT-TOOLS: prefer the canonical Supabase JWT identity attached
+  // by middleware/auth-supabase-jwt.ts (the LiveKit orb-agent's
+  // GatewayClient sends a Bearer JWT). Fall back to the legacy `req.user.id`
+  // set by older middleware, then the X-User-* headers, then a
+  // query-string user_id.
+  const ident = (req as AuthenticatedRequest).identity;
+  if (ident?.user_id) return ident.user_id;
+  // @ts-ignore - legacy middleware sets req.user
   if (req.user?.id) return req.user.id;
   // @ts-ignore
   if (req.user?.sub) return req.user.sub;
