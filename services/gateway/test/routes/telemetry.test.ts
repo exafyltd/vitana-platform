@@ -2,16 +2,18 @@ import request from 'supertest';
 import express from 'express';
 import { router } from '../../src/routes/telemetry';
 
-// Mock auth middleware to simulate authenticated and unauthenticated states
-jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
-  requireAuth: jest.fn((req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer valid-token')) {
-      req.identity = { user_id: 'test-user', email: 'test@example.com' };
-      return next();
+// Mock getSupabase to verify auth token using supabase.auth.getUser
+jest.mock('../../src/lib/supabase', () => ({
+  getSupabase: jest.fn(() => ({
+    auth: {
+      getUser: jest.fn((token: string) => {
+        if (token === 'valid-token') {
+          return Promise.resolve({ data: { user: { id: 'test-user', email: 'test@example.com' } }, error: null });
+        }
+        return Promise.resolve({ data: { user: null }, error: { message: 'Invalid token' } });
+      })
     }
-    return res.status(401).json({ error: 'Unauthorized' });
-  })
+  }))
 }));
 
 // Mock devhub SSE broadcast to prevent runtime require errors during tests
@@ -63,6 +65,17 @@ describe('Telemetry Routes Auth Enforcement', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it('should return 401 when an invalid authorization token is provided', async () => {
+      const response = await request(app)
+        .post('/api/v1/telemetry/event')
+        .set('Authorization', 'Bearer invalid-token')
+        .send(validEvent);
+      
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Unauthorized');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('should proceed and return 202 when a valid authorization token is provided', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -101,6 +114,17 @@ describe('Telemetry Routes Auth Enforcement', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it('should return 401 when an invalid authorization token is provided', async () => {
+      const response = await request(app)
+        .post('/api/v1/telemetry/batch')
+        .set('Authorization', 'Bearer invalid-token')
+        .send(validBatch);
+      
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Unauthorized');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('should proceed and return 202 when a valid authorization token is provided', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -122,6 +146,17 @@ describe('Telemetry Routes Auth Enforcement', () => {
     it('should return 401 when no authorization header is provided', async () => {
       const response = await request(app)
         .get('/api/v1/telemetry/snapshot')
+        .query({ limit: 5 });
+      
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Unauthorized');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 when an invalid authorization token is provided', async () => {
+      const response = await request(app)
+        .get('/api/v1/telemetry/snapshot')
+        .set('Authorization', 'Bearer invalid-token')
         .query({ limit: 5 });
       
       expect(response.status).toBe(401);
