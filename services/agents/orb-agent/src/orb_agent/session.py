@@ -93,12 +93,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     except (json.JSONDecodeError, TypeError):
         metadata = {}
 
-    # The user JWT isn't in the LiveKit token (we don't trust the agent
-    # with it). Tool calls authenticate via the gateway using the
-    # service token + user_id from metadata. Real per-user JWTs land
-    # via a follow-up: the gateway issues a short-lived service-on-behalf-of
-    # token that the agent uses for tool calls.
-    user_jwt = os.getenv("AGENT_USER_JWT_OVERRIDE")  # only set in dev
+    # VTID-LIVEKIT-AGENT-JWT: the gateway's /orb/livekit/token endpoint
+    # mints a short-lived Supabase JWT for this user and embeds it as
+    # `user_jwt` in the room metadata. Same secret + claim shape as the
+    # user's normal JWT, so existing optionalAuth/requireAuth middleware on
+    # every gateway tool endpoint validates it transparently. Anonymous
+    # sessions get null and most tool calls will return 401, which is
+    # acceptable (anonymous users don't have authoritative tools).
+    user_jwt = (
+        os.getenv("AGENT_USER_JWT_OVERRIDE")  # dev override beats metadata
+        or metadata.get("user_jwt")
+        or None
+    )
+    if not user_jwt:
+        logger.info("agent_entrypoint: no user_jwt in metadata — tool calls will be anonymous")
     gw = GatewayClient(
         base_url=cfg.gateway_url,
         user_jwt=user_jwt,

@@ -35,12 +35,14 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { AccessToken } from 'livekit-server-sdk';
+import * as jose from 'jose';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
 import {
   optionalAuth,
   requireAuthWithTenant,
   AuthenticatedRequest,
+  SupabaseIdentity,
 } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
@@ -49,6 +51,56 @@ const VTID = 'VTID-LIVEKIT-FOUNDATION';
 const ACTIVE_PROVIDER_KEY = 'voice.active_provider';
 const FLIP_COOLDOWN_SECONDS = 60 * 60; // 1 hour anti-flap
 const TEST_SESSION_TOKEN_TTL_SECONDS = 5 * 60;
+const AGENT_USER_JWT_TTL_SECONDS = 60 * 60; // 1 hour, matches LiveKit token TTL
+
+// ---------------------------------------------------------------------------
+// Per-session user JWT for the orb-agent (VTID-LIVEKIT-AGENT-JWT)
+//
+// The orb-agent calls gateway tool endpoints on behalf of the user, but it
+// does not hold the user's original JWT (we don't pass user JWTs into
+// LiveKit tokens — that would put long-lived auth into a third-party
+// provider's signaling layer). Instead, when minting a LiveKit room token
+// for an authenticated user, we also mint a short-lived Supabase JWT
+// derived from the same identity and embed it in the room metadata. The
+// agent reads `metadata.user_jwt` at session start and uses it as Bearer
+// for every tool call. Same secret as the user's normal JWTs (HS256 against
+// SUPABASE_JWT_SECRET) so existing optionalAuth/requireAuth middleware on
+// every tool endpoint validates it transparently — no new auth pattern.
+//
+// Anonymous sessions get null; their tools effectively no-op since most
+// gateway endpoints reject unauthenticated requests anyway.
+// ---------------------------------------------------------------------------
+async function mintAgentSessionJwt(identity: SupabaseIdentity): Promise<string | null> {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) {
+    console.error('[orb-livekit] cannot mint agent JWT — SUPABASE_JWT_SECRET unset');
+    return null;
+  }
+  if (!identity.user_id) {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const payload: Record<string, unknown> = {
+    sub: identity.user_id,
+    aud: identity.aud || 'authenticated',
+    role: identity.role || 'authenticated',
+    app_metadata: {
+      active_tenant_id: identity.tenant_id,
+      exafy_admin: identity.exafy_admin,
+      // Marker so the audit trail can distinguish agent-issued tokens from
+      // human sign-ins. Optional for downstream code but cheap to include.
+      issued_for: 'orb_livekit_agent',
+    },
+  };
+  if (identity.email) payload.email = identity.email;
+
+  const key = new TextEncoder().encode(secret);
+  return await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt(now)
+    .setExpirationTime(now + AGENT_USER_JWT_TTL_SECONDS)
+    .sign(key);
+}
 
 type ProviderName = 'vertex' | 'livekit';
 
@@ -276,6 +328,11 @@ router.post(
     const orbSessionId = `orb-${randomUUID()}`;
     const roomName = `orb-${userId}-${Date.now()}`;
 
+    // Mint a per-session user JWT for the orb-agent's tool calls. Anonymous
+    // sessions get null (most gateway tools require auth and would reject
+    // anonymous traffic anyway).
+    const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
+
     const at = new AccessToken(apiKey, apiSecret, {
       identity: userId,
       ttl: 60 * 60, // 1 hour session
@@ -289,6 +346,11 @@ router.post(
         agent_id: agentId,
         orb_session_id: orbSessionId,
         vitana_id: req.identity?.vitana_id ?? null,
+        // VTID-LIVEKIT-AGENT-JWT: the orb-agent extracts this and uses it as
+        // Bearer for every gateway tool call. Same secret/shape as the
+        // user's normal JWT — existing optionalAuth/requireAuth middleware
+        // validates it transparently.
+        user_jwt: agentUserJwt,
       }),
     });
     at.addGrant({
@@ -667,6 +729,8 @@ router.post(
     const proposed = req.body ?? {};
     const roomName = `orb-test-${id}-${Date.now()}`;
 
+    const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
+
     const at = new AccessToken(apiKey, apiSecret, {
       identity: userId,
       ttl: TEST_SESSION_TOKEN_TTL_SECONDS,
@@ -675,6 +739,7 @@ router.post(
         agent_id: id,
         is_test_session: true,
         proposed_voice_config: proposed,
+        user_jwt: agentUserJwt,
       }),
     });
     at.addGrant({
