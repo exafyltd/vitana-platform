@@ -3577,6 +3577,81 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02774 — Voice Tool Expansion P1l: Events / Live Rooms ───
+        {
+          name: 'rsvp_event',
+          description: [
+            "RSVP to a meetup. Status: 'rsvp' (going), 'attended' (post-event),",
+            "'no_show' (didn't make it).",
+            "",
+            "CALL THIS WHEN the user says: 'RSVP to that meetup', 'I'll be",
+            "there', 'Count me in'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              meetup_id: { type: 'string', description: 'UUID of the meetup.' },
+              status: { type: 'string', enum: ['rsvp', 'attended', 'no_show'] },
+            },
+            required: ['meetup_id', 'status'],
+          },
+        },
+        {
+          name: 'join_live_room',
+          description: [
+            "Join a live room (audio/video group session). Use after",
+            "search_community returns a live room the user wants to enter.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { room_id: { type: 'string', description: 'UUID of the live room.' } },
+            required: ['room_id'],
+          },
+        },
+        {
+          name: 'leave_live_room',
+          description: "Leave a live room the user is currently in.",
+          parameters: {
+            type: 'object',
+            properties: { room_id: { type: 'string', description: 'UUID of the live room.' } },
+            required: ['room_id'],
+          },
+        },
+        {
+          name: 'list_my_live_rooms',
+          description: [
+            "List live rooms the user owns (host) or has joined (participant).",
+            "",
+            "CALL THIS WHEN the user asks: 'What live rooms am I in?', 'Show",
+            "my rooms', 'Welche Live-Räume habe ich?'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { limit: { type: 'integer', description: 'Default 20. Max 50.' } },
+          },
+        },
+        {
+          name: 'create_meetup',
+          description: [
+            "Create a new community meetup. Optionally tied to a group.",
+            "",
+            "CALL THIS WHEN the user says: 'Create a meetup for tomorrow at",
+            "the park', 'Mach ein Treffen'.",
+            "",
+            "starts_at must be ISO 8601 UTC (compute from user's words + tz).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Meetup title.' },
+              starts_at: { type: 'string', description: 'ISO 8601 UTC start time.' },
+              group_id: { type: 'string', description: 'Optional group UUID.' },
+              location: { type: 'string', description: 'Optional location text.' },
+              description: { type: 'string', description: 'Optional details.' },
+            },
+            required: ['title', 'starts_at'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6239,54 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02774 — Voice Tool Expansion P1l: Events / Live Rooms ───
+      case 'rsvp_event':
+      case 'join_live_room':
+      case 'leave_live_room':
+      case 'list_my_live_rooms':
+      case 'create_meetup': {
+        try {
+          const ea = await import('../services/voice-tools/events-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'rsvp_event') {
+            r = await ea.rsvpEvent(sb, {
+              meetup_id: String(args.meetup_id || ''),
+              status: String(args.status || 'rsvp') as any,
+            });
+          } else if (toolName === 'join_live_room') {
+            r = await ea.joinLiveRoom(sb, lens.user_id, { room_id: String(args.room_id || '') });
+          } else if (toolName === 'leave_live_room') {
+            r = await ea.leaveLiveRoom(sb, lens.user_id, { room_id: String(args.room_id || '') });
+          } else if (toolName === 'list_my_live_rooms') {
+            r = await ea.listMyLiveRooms(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'create_meetup') {
+            r = await ea.createMeetup(sb, {
+              title: String(args.title || ''),
+              starts_at: String(args.starts_at || ''),
+              group_id: typeof args.group_id === 'string' ? args.group_id : undefined,
+              location: typeof args.location === 'string' ? args.location : undefined,
+              description: typeof args.description === 'string' ? args.description : undefined,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

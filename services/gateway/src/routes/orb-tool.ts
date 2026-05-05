@@ -620,6 +620,48 @@ async function tool_log_health(
   };
 }
 
+// VTID-02774 — Events / Live Rooms
+async function tool_events_actions(
+  toolName: 'rsvp_event' | 'join_live_room' | 'leave_live_room' | 'list_my_live_rooms' | 'create_meetup',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ea = await import('../services/voice-tools/events-actions');
+  let r: any;
+  if (toolName === 'rsvp_event') {
+    r = await ea.rsvpEvent(sb, {
+      meetup_id: String(args.meetup_id || ''),
+      status: String(args.status || 'rsvp') as any,
+    });
+  } else if (toolName === 'join_live_room') {
+    r = await ea.joinLiveRoom(sb, id.user_id, { room_id: String(args.room_id || '') });
+  } else if (toolName === 'leave_live_room') {
+    r = await ea.leaveLiveRoom(sb, id.user_id, { room_id: String(args.room_id || '') });
+  } else if (toolName === 'list_my_live_rooms') {
+    r = await ea.listMyLiveRooms(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'create_meetup') {
+    r = await ea.createMeetup(sb, {
+      title: String(args.title || ''),
+      starts_at: String(args.starts_at || ''),
+      group_id: typeof args.group_id === 'string' ? args.group_id : undefined,
+      location: typeof args.location === 'string' ? args.location : undefined,
+      description: typeof args.description === 'string' ? args.description : undefined,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  let text = '';
+  if (toolName === 'rsvp_event') text = `RSVP'd as ${args.status}.`;
+  else if (toolName === 'join_live_room') text = `Joined the room.`;
+  else if (toolName === 'leave_live_room') text = `Left the room.`;
+  else if (toolName === 'list_my_live_rooms') text = `${r.count ?? 0} room${r.count === 1 ? '' : 's'}.`;
+  else if (toolName === 'create_meetup') text = `Meetup created.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +809,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02774 — Events / Live Rooms
+      case 'rsvp_event':
+      case 'join_live_room':
+      case 'leave_live_room':
+      case 'list_my_live_rooms':
+      case 'create_meetup':
+        r = await tool_events_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
