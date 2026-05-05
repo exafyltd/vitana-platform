@@ -7,89 +7,121 @@
  *   GET  /api/v1/orb/agent-trace  — operator/diag panel reads the latest
  *                                    trace for the authenticated user.
  *
- * Stored in-memory in a per-user Map; capped + TTL'd. Sufficient for
- * the diag-loop use case (operator clicks Connect, then clicks Run
- * Diagnostics within ~30s and reads the trace). Persisted observability
- * goes through OASIS in a follow-up.
+ * Backed by `oasis_events` so traces are visible across all Cloud Run
+ * gateway instances (in-memory storage was instance-local; agent POST
+ * landed on instance A, diag GET hit instance B → 404).
  */
 
 import { Router, Request, Response } from 'express';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'VTID-LIVEKIT-AGENT-TRACE';
+const TRACE_TOPIC = 'livekit.agent.session.trace';
 
-interface TraceEntry {
-  ts: string;
-  user_id: string;
-  payload: Record<string, unknown>;
-}
-
-// Per-user latest trace. Map preserves insertion order for the few-user
-// staging environment; we only ever serve the latest entry per user.
-const TRACE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const traces = new Map<string, TraceEntry>();
-
-function cleanup(): void {
-  const now = Date.now();
-  for (const [k, v] of traces) {
-    if (now - new Date(v.ts).getTime() > TRACE_TTL_MS) {
-      traces.delete(k);
-    }
-  }
+// Service-role client — needed because the agent POSTs without a user JWT
+// and we still want to write the trace row.
+function getAdmin(): SupabaseClient | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
 /**
  * POST /api/v1/orb/agent-trace — agent → gateway write
  *
- * Service-token (or any valid Bearer JWT) auth. The agent calls this
- * with its own service token; user identity comes from the body's
- * user_id field, NOT req.identity, because the agent isn't acting as
- * the user. The body shape is open-ended; the diag panel renders
- * whatever fields are present.
- *
- * Expected payload from session.py at session start:
- *   {
- *     user_id, tenant_id, vitana_id, role, lang,
- *     orb_session_id, agent_id, is_reconnect, is_anonymous,
- *     user_jwt_present, user_jwt_sub, bootstrap_context_length,
- *     bootstrap_has_vitana_id, bootstrap_voice_config_llm,
- *     system_prompt_length, system_prompt_first_400_chars,
- *     tools_count, tools_first_5,
- *   }
+ * No auth middleware. The agent calls this with the per-session user JWT,
+ * but the trace endpoint only needs the body's user_id field — the trace
+ * is observability, not a user-scoped write. Stores into oasis_events
+ * with topic = 'livekit.agent.session.trace'.
  */
 router.post('/orb/agent-trace', async (req: Request, res: Response) => {
-  cleanup();
   const body = (req.body ?? {}) as Record<string, unknown>;
   const userId = String(body.user_id ?? '').trim();
   if (!userId) {
     return res.status(400).json({ ok: false, error: 'user_id required', vtid: VTID });
   }
-  traces.set(userId, {
-    ts: new Date().toISOString(),
-    user_id: userId,
-    payload: body,
-  });
-  return res.json({ ok: true, vtid: VTID });
+
+  const sb = getAdmin();
+  if (!sb) {
+    return res.status(503).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
+  }
+
+  try {
+    const { error } = await sb.from('oasis_events').insert({
+      topic: TRACE_TOPIC,
+      vtid: VTID,
+      source: 'orb-agent',
+      service: 'orb-agent',
+      status: 'info',
+      message: `LiveKit agent session trace for ${userId}`,
+      metadata: body,
+      created_at: new Date().toISOString(),
+    });
+    if (error) {
+      console.warn('[orb-agent-trace] insert failed:', error.message);
+      return res
+        .status(500)
+        .json({ ok: false, error: `insert failed: ${error.message}`, vtid: VTID });
+    }
+    return res.json({ ok: true, vtid: VTID });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    console.warn('[orb-agent-trace] insert exception:', msg);
+    return res.status(500).json({ ok: false, error: msg, vtid: VTID });
+  }
 });
 
 /**
  * GET /api/v1/orb/agent-trace — diag panel → gateway read
  *
  * Authenticated. Returns the latest trace for the calling user_id (from
- * req.identity.user_id). 404 if no trace within the TTL window.
+ * req.identity.user_id). 404 if no trace within the last 1 hour window.
  */
 router.get('/orb/agent-trace', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  cleanup();
   const userId = req.identity?.user_id;
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   }
-  const entry = traces.get(userId);
-  if (!entry) {
-    return res.status(404).json({ ok: false, error: 'no_recent_trace', vtid: VTID });
+  const sb = getAdmin();
+  if (!sb) {
+    return res.status(503).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
   }
-  return res.json({ ok: true, trace: entry, vtid: VTID });
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  try {
+    const { data, error } = await sb
+      .from('oasis_events')
+      .select('id, topic, metadata, created_at')
+      .eq('topic', TRACE_TOPIC)
+      .filter('metadata->>user_id', 'eq', userId)
+      .gte('created_at', oneHourAgo)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) {
+      return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
+    }
+    if (!data || data.length === 0) {
+      return res.status(404).json({ ok: false, error: 'no_recent_trace', vtid: VTID });
+    }
+    const row = data[0];
+    return res.json({
+      ok: true,
+      trace: {
+        ts: row.created_at,
+        user_id: userId,
+        payload: row.metadata as Record<string, unknown>,
+      },
+      vtid: VTID,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    return res.status(500).json({ ok: false, error: msg, vtid: VTID });
+  }
 });
 
 export default router;
