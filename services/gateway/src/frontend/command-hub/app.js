@@ -35307,6 +35307,46 @@ function renderLivekitTestView() {
         }
         diagRow('auth', 'token in localStorage', true, 'len=' + session.token.length);
 
+        // Phase 0 — latest agent-trace (only present if user clicked Connect within
+        // the last 10 minutes). Tells us EXACTLY what the running agent had at
+        // session start.
+        diagAppend('<br><strong style="color:#facc15;">Latest agent-trace (from your last Connect):</strong>');
+        var atr = await diagFetch('GET', '/api/v1/orb/agent-trace');
+        if (atr.status === 404) {
+            diagRow('agent-trace', 'available', false, 'no recent trace — click Connect first, then re-run diagnostics');
+        } else if (!atr.ok) {
+            diagRow('agent-trace', 'available', false, atr.status + '');
+        } else {
+            var t = (atr.body && atr.body.trace && atr.body.trace.payload) || {};
+            diagRow('agent-trace', 'session ts', true, atr.body.trace.ts);
+            diagRow('agent-trace', 'user_id', !!t.user_id, String(t.user_id || ''));
+            diagRow('agent-trace', 'vitana_id', !!t.vitana_id, String(t.vitana_id || ''));
+            diagRow('agent-trace', 'role', !!t.role, String(t.role || ''));
+            diagRow('agent-trace', 'is_anonymous=false', t.is_anonymous === false, String(t.is_anonymous));
+            diagRow('agent-trace', 'user_jwt_present', !!t.user_jwt_present, 'len=' + (t.user_jwt_len || 0));
+            diagRow('agent-trace', 'bootstrap_context_length > 200', (t.bootstrap_context_length || 0) > 200, 'chars=' + (t.bootstrap_context_length || 0));
+            diagRow('agent-trace', 'bootstrap_voice_config_llm', !!t.bootstrap_voice_config_llm, String(t.bootstrap_voice_config_llm || ''));
+            diagRow('agent-trace', 'system_prompt_length', (t.system_prompt_length || 0) > 200, 'chars=' + (t.system_prompt_length || 0));
+            diagRow(
+                'agent-trace',
+                'system_prompt has @' + (t.vitana_id || '?') + ' in first 600 chars',
+                !!t.tools_handle_in_first_chars,
+                t.tools_handle_in_first_chars ? 'YES' : 'NO — handle missing',
+            );
+            diagRow('agent-trace', 'tools_count registered', (t.tools_count || 0) >= 30, 'count=' + (t.tools_count || 0));
+            if (t.system_prompt_first_400_chars) {
+                var safe = String(t.system_prompt_first_400_chars).replace(/[<>&]/g, function (c) {
+                    return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;';
+                });
+                diagAppend(
+                    '<div style="margin-left:20px;margin-top:4px;padding:8px;background:#1e293b;border-left:2px solid #facc15;color:#cbd5e1;white-space:pre-wrap;font-size:11px;">' +
+                        safe +
+                        '…</div>',
+                );
+            }
+        }
+        diagAppend('<br>');
+
         // Phase 1: auth round-trip
         var me = await diagFetch('GET', '/api/v1/auth/me');
         diagRow(

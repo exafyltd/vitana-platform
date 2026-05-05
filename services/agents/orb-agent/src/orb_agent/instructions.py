@@ -51,22 +51,30 @@ def build_live_system_instruction(
     """
     parts: list[str] = []
 
-    # ── 1. WHO YOU ARE TALKING TO — top-of-prompt, ground truth ───────────
-    # Elevate the user's identity facts to position #1 so the LLM can't
-    # miss them. The bootstrap_context block (added below) carries the
-    # full memory_facts + Vitana Index + recent memory items.
-    identity_block: list[str] = ["## WHO YOU ARE TALKING TO (GROUND TRUTH — never contradict)"]
-    if vitana_id:
-        identity_block.append(f"- Their Vitana ID is **@{vitana_id}** — say it back as @{vitana_id} (with the @ symbol).")
-    if active_role:
-        identity_block.append(f"- Their active role: {active_role}.")
-    identity_block.append(
-        "- They are SIGNED IN. The auth chain is fully wired (Bearer JWT → "
-        "gateway → tools). You have working tool access RIGHT NOW for their "
-        "Vitana Index, calendar, reminders, intents, recommendations, memory, "
-        "diary, and 30+ other capabilities."
-    )
-    parts.append("\n".join(identity_block))
+    # ── 1. THE USER YOU ARE TALKING TO — first line of the prompt ────────
+    # Plain text, no markdown. Repeat the handle so any attention head
+    # has to see it. This is what the LLM should ALWAYS use to address
+    # the user. Avoid markdown bold (**...**) since some smaller LLMs
+    # treat it as decoration and skip the content.
+    handle = f"@{vitana_id}" if vitana_id else None
+    if handle:
+        parts.append(
+            f"You are talking to {handle}.\n"
+            f"- Their handle is {handle}.\n"
+            f"- Always use {handle} when greeting or addressing them. Never call them anything else.\n"
+            f"- Their active role is {active_role or 'community'}.\n"
+            f"- They are SIGNED IN. You have working tool access right now for "
+            f"their Vitana Index, calendar, reminders, intents, recommendations, "
+            f"memory, diary, and 30+ other capabilities. The auth chain is wired "
+            f"end-to-end."
+        )
+    else:
+        # Anonymous fallback — should be very rare since the gateway only
+        # mints a non-anonymous LiveKit token for signed-in users.
+        parts.append(
+            "You are talking to an unauthenticated visitor. Help them with "
+            "general questions and offer to sign in for personalized answers."
+        )
 
     # ── 2. CORE IDENTITY ─────────────────────────────────────────────────
     parts.append(

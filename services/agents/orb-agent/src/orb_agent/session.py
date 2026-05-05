@@ -180,17 +180,50 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # function in the module, exported via all_tools(). Each tool body is a
     # thin async call to a gateway endpoint via the GatewayClient carried on
     # RunContext.userdata (set on AgentSession below).
-    #
-    # VTID-LIVEKIT-TOOLS root cause: the earlier blocker was a wrong import
-    # path in tools.py (`from livekit.agents.llm import RunContext` no longer
-    # exists in livekit-agents 1.x; RunContext moved to `livekit.agents`). The
-    # try/except ImportError fallback was substituting a no-op decorator that
-    # returned the raw function, which AgentSession then rejected. Fix landed
-    # in tools.py's import block; tools list is now real.
+    tool_list = list(all_tools())
     agent = Agent(
         instructions=sys_prompt,
-        tools=list(all_tools()),
+        tools=tool_list,
     )
+
+    # VTID-LIVEKIT-AGENT-TRACE: post a structured trace to the gateway so
+    # the diagnostics panel can show what the agent ACTUALLY had at session
+    # start — proves whether the prompt rewrite is reaching the LLM and
+    # the bootstrap context is enriched.
+    try:
+        tool_names: list[str] = []
+        for t in tool_list:
+            try:
+                tool_names.append(getattr(getattr(t, "info", None), "name", None) or repr(t))
+            except Exception:
+                tool_names.append("<?>")
+        trace_payload = {
+            "user_id": identity.user_id,
+            "tenant_id": identity.tenant_id,
+            "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            "role": identity.role,
+            "lang": identity.lang,
+            "orb_session_id": orb_session_id,
+            "agent_id": agent_id,
+            "is_mobile": identity.is_mobile,
+            "is_anonymous": identity.is_anonymous,
+            "user_jwt_present": bool(user_jwt),
+            "user_jwt_len": len(user_jwt) if user_jwt else 0,
+            "bootstrap_context_length": len(bootstrap.bootstrap_context or ""),
+            "bootstrap_active_role": bootstrap.active_role,
+            "bootstrap_vitana_id": bootstrap.vitana_id,
+            "bootstrap_voice_config_llm": (bootstrap.voice_config or {}).get("llm_model"),
+            "bootstrap_voice_config_stt": (bootstrap.voice_config or {}).get("stt_model"),
+            "bootstrap_voice_config_tts": (bootstrap.voice_config or {}).get("tts_model"),
+            "system_prompt_length": len(sys_prompt),
+            "system_prompt_first_400_chars": sys_prompt[:400],
+            "tools_count": len(tool_list),
+            "tools_first_5": tool_names[:5],
+            "tools_handle_in_first_chars": "@" + (bootstrap.vitana_id or identity.vitana_id or "") in sys_prompt[:600],
+        }
+        await gw.post("/api/v1/orb/agent-trace", trace_payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent-trace post failed: %s", exc)
 
     # AgentSession glues together STT + LLM + TTS + the room. userdata
     # carries the per-session GatewayClient so each tool body can pull it off
