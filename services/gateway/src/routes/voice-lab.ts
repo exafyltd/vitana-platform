@@ -11,6 +11,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
 import {
@@ -28,6 +29,8 @@ import {
 } from '../services/voice-healing-summary';
 
 const router = Router();
+
+router.use(requireAuth);
 
 // =============================================================================
 // Types & Schemas
@@ -977,7 +980,7 @@ router.post('/healing/reports/:id/execute', async (req: Request, res: Response) 
             step_index: i,
             step_total: steps.length,
             step_text: step.slice(0, 500),
-          },
+            },
           outcome: 'pending',
           blast_radius: 'none',
           attempt_number: 1,
@@ -1237,6 +1240,7 @@ router.get('/healing/live-monitor', async (_req: Request, res: Response) => {
  *
  * Health check for Voice LAB API
  */
+// public-route
 router.get('/health', (_req: Request, res: Response) => {
   return res.json({
     ok: true,
