@@ -620,6 +620,50 @@ async function tool_log_health(
   };
 }
 
+// VTID-02775 — Autopilot recommendations
+async function tool_autopilot_actions(
+  toolName: 'snooze_recommendation' | 'reject_recommendation' | 'complete_recommendation' | 'explain_recommendation' | 'get_recommendation_history',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ap = await import('../services/voice-tools/autopilot-actions');
+  let r: any;
+  if (toolName === 'snooze_recommendation') {
+    r = await ap.snoozeRecommendation(sb, id.user_id, {
+      recommendation_id: String(args.recommendation_id || ''),
+      minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+    });
+  } else if (toolName === 'reject_recommendation') {
+    r = await ap.rejectRecommendation(sb, id.user_id, {
+      recommendation_id: String(args.recommendation_id || ''),
+      reason: typeof args.reason === 'string' ? args.reason : undefined,
+    });
+  } else if (toolName === 'complete_recommendation') {
+    r = await ap.completeRecommendation(sb, id.user_id, {
+      recommendation_id: String(args.recommendation_id || ''),
+      notes: typeof args.notes === 'string' ? args.notes : undefined,
+    });
+  } else if (toolName === 'explain_recommendation') {
+    r = await ap.explainRecommendation(sb, id.user_id, {
+      recommendation_id: String(args.recommendation_id || ''),
+    });
+  } else if (toolName === 'get_recommendation_history') {
+    r = await ap.getRecommendationHistory(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+      status: typeof args.status === 'string' ? args.status : undefined,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'snooze_recommendation') text = `Snoozed.`;
+  else if (toolName === 'reject_recommendation') text = `Rejected.`;
+  else if (toolName === 'complete_recommendation') text = `Marked complete.`;
+  else if (toolName === 'explain_recommendation') text = `${r.recommendation?.title ?? ''}: ${(r.recommendation?.rationale ?? '').slice(0, 200)}`;
+  else if (toolName === 'get_recommendation_history') text = `${r.count ?? 0} recommendation${r.count === 1 ? '' : 's'}.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +811,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02775 — Autopilot recommendations
+      case 'snooze_recommendation':
+      case 'reject_recommendation':
+      case 'complete_recommendation':
+      case 'explain_recommendation':
+      case 'get_recommendation_history':
+        r = await tool_autopilot_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

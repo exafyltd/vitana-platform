@@ -3577,6 +3577,65 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02775 — Voice Tool Expansion P1m: Autopilot recommendations ───
+        {
+          name: 'snooze_recommendation',
+          description: "Push a recommendation out by N minutes (default 1440 = 1 day, max 1 week). Use when the user says 'remind me later', 'not now', 'snooze that'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              recommendation_id: { type: 'string', description: 'UUID of the recommendation.' },
+              minutes: { type: 'integer', description: 'Minutes to snooze (15..10080). Default 1440.' },
+            },
+            required: ['recommendation_id'],
+          },
+        },
+        {
+          name: 'reject_recommendation',
+          description: "Reject a recommendation outright. Use when the user says 'not interested', 'never', 'dismiss this'. Captures optional reason for personalization tuning.",
+          parameters: {
+            type: 'object',
+            properties: {
+              recommendation_id: { type: 'string', description: 'UUID of the recommendation.' },
+              reason: { type: 'string', description: 'Optional why-not-interested reason.' },
+            },
+            required: ['recommendation_id'],
+          },
+        },
+        {
+          name: 'complete_recommendation',
+          description: "Mark a recommendation as DONE. Use when the user says 'I did that', 'done with that one'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              recommendation_id: { type: 'string', description: 'UUID of the recommendation.' },
+              notes: { type: 'string', description: 'Optional completion notes.' },
+            },
+            required: ['recommendation_id'],
+          },
+        },
+        {
+          name: 'explain_recommendation',
+          description: "Read a recommendation's title + rationale + targeted pillars. Use when the user asks 'why did you suggest that?', 'what's this for?'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              recommendation_id: { type: 'string', description: 'UUID of the recommendation.' },
+            },
+            required: ['recommendation_id'],
+          },
+        },
+        {
+          name: 'get_recommendation_history',
+          description: "List the user's recent recommendation history with status (active/completed/snoozed/rejected). Optional status filter.",
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 10. Max 50.' },
+              status: { type: 'string', description: 'Optional status filter.' },
+            },
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6223,57 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02775 — Voice Tool Expansion P1m: Autopilot recommendations ───
+      case 'snooze_recommendation':
+      case 'reject_recommendation':
+      case 'complete_recommendation':
+      case 'explain_recommendation':
+      case 'get_recommendation_history': {
+        try {
+          const ap = await import('../services/voice-tools/autopilot-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'snooze_recommendation') {
+            r = await ap.snoozeRecommendation(sb, lens.user_id, {
+              recommendation_id: String(args.recommendation_id || ''),
+              minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+            });
+          } else if (toolName === 'reject_recommendation') {
+            r = await ap.rejectRecommendation(sb, lens.user_id, {
+              recommendation_id: String(args.recommendation_id || ''),
+              reason: typeof args.reason === 'string' ? args.reason : undefined,
+            });
+          } else if (toolName === 'complete_recommendation') {
+            r = await ap.completeRecommendation(sb, lens.user_id, {
+              recommendation_id: String(args.recommendation_id || ''),
+              notes: typeof args.notes === 'string' ? args.notes : undefined,
+            });
+          } else if (toolName === 'explain_recommendation') {
+            r = await ap.explainRecommendation(sb, lens.user_id, {
+              recommendation_id: String(args.recommendation_id || ''),
+            });
+          } else if (toolName === 'get_recommendation_history') {
+            r = await ap.getRecommendationHistory(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+              status: typeof args.status === 'string' ? args.status : undefined,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
