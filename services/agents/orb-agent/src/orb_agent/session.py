@@ -253,18 +253,24 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # verified facts, so the LLM can reach into the prompt and pull the
     # right name without an extra tool call.
     if not identity.is_anonymous:
+        # Greeting must always include the user's @vitana_id handle. If a
+        # `user_name` memory_fact exists, also use the first name. The
+        # WHO YOU ARE TALKING TO block of the system prompt has the handle
+        # at position #1, so the LLM cannot truthfully claim it doesn't
+        # know.
+        vid = (bootstrap.vitana_id or "").strip()
         try:
             await session.generate_reply(
                 instructions=(
-                    "Greet the user warmly RIGHT NOW. Pull their first name from "
-                    "the verified-facts block of your context (look for "
-                    "`user_name` or the `Authoritative identity` line). Confirm "
-                    "you recognize them by mentioning their @vitana_id handle. "
-                    "Keep it ONE short sentence followed by a brief 'what can I "
-                    "help with?'. If — and ONLY if — neither a name nor a "
-                    f"@vitana_id is present, fall back to: 'Hi! I'm Vitana — "
-                    f"signed in as {identity.user_id[:8]}…, what can I help with "
-                    "today?'."
+                    "Greet the user warmly RIGHT NOW. **MUST** include their "
+                    f"@vitana_id handle (it is @{vid or 'their handle'}) in the "
+                    "greeting so they can hear you recognize them. If a "
+                    "`user_name` fact is in your YOUR USER'S CONTEXT block, "
+                    "use the first name (e.g. 'Hi Dragan!'). Otherwise just "
+                    f"use the handle: 'Hi @{vid or 'there'}!'. ONE short "
+                    "sentence + brief 'What can I help with today?'. NEVER "
+                    "say you don't know them — you do. NEVER apologize for "
+                    "anything in the greeting."
                 ),
             )
         except Exception as exc:  # noqa: BLE001
