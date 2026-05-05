@@ -12,7 +12,9 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
-    "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs"
+    "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
+    "nav:sync": "tsx scripts/sync-nav-catalog-from-manifest.ts",
+    "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
