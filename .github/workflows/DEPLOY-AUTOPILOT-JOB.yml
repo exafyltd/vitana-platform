@@ -55,8 +55,12 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure docker for Artifact Registry
-        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Login to Artifact Registry (oauth2accesstoken)
+        # WIF gives us a short-lived OAuth token; gcloud configure-docker
+        # only sets a credential helper that isn't honored here. Explicit
+        # docker login with the access token works.
+        run: |
+          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
       - name: Build container with Dockerfile.job (local docker)
         env:
