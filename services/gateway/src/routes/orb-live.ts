@@ -3577,6 +3577,66 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02777 — Voice Tool Expansion P1o: Find Partner extensions ───
+        {
+          name: 'update_intent',
+          description: "Edit an existing intent (description or structured fields). Use when the user says 'change my intent', 'update what I'm looking for'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_id: { type: 'string' },
+              description: { type: 'string', description: 'Updated description text.' },
+            },
+            required: ['intent_id'],
+          },
+        },
+        {
+          name: 'close_intent',
+          description: "Close an intent the user no longer wants active. Use when user says 'close my post', 'I found someone'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_id: { type: 'string' },
+              reason: { type: 'string', description: 'Optional reason (e.g. fulfilled).' },
+            },
+            required: ['intent_id'],
+          },
+        },
+        {
+          name: 'decline_match',
+          description: "Politely decline a match (different from dispute — no harm reported). Use when user says 'not interested in that match', 'pass on that one'.",
+          parameters: {
+            type: 'object',
+            properties: {
+              match_id: { type: 'string' },
+              reason: { type: 'string' },
+            },
+            required: ['match_id'],
+          },
+        },
+        {
+          name: 'dispute_match',
+          description: "Dispute a match (report inappropriate / spam / safety concern). Requires reason ≥5 chars. Opens an intent_match_dispute record for moderator review.",
+          parameters: {
+            type: 'object',
+            properties: {
+              match_id: { type: 'string' },
+              reason: { type: 'string', description: 'Why disputing (≥5 chars).' },
+            },
+            required: ['match_id', 'reason'],
+          },
+        },
+        {
+          name: 'update_partner_preferences',
+          description: "Update the user's partner-search preferences (what they're looking for in matches). Pass the full preferences object.",
+          parameters: {
+            type: 'object',
+            properties: {
+              preferences: { type: 'object', description: 'Full partner_preferences object to write.' },
+            },
+            required: ['preferences'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6224,57 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02777 — Voice Tool Expansion P1o: Find Partner extensions ───
+      case 'update_intent':
+      case 'close_intent':
+      case 'decline_match':
+      case 'dispute_match':
+      case 'update_partner_preferences': {
+        try {
+          const ia = await import('../services/voice-tools/intent-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'update_intent') {
+            r = await ia.updateIntent(sb, lens.user_id, {
+              intent_id: String(args.intent_id || ''),
+              description: typeof args.description === 'string' ? args.description : undefined,
+            });
+          } else if (toolName === 'close_intent') {
+            r = await ia.closeIntent(sb, lens.user_id, {
+              intent_id: String(args.intent_id || ''),
+              reason: typeof args.reason === 'string' ? args.reason : undefined,
+            });
+          } else if (toolName === 'decline_match') {
+            r = await ia.declineMatch(sb, lens.user_id, {
+              match_id: String(args.match_id || ''),
+              reason: typeof args.reason === 'string' ? args.reason : undefined,
+            });
+          } else if (toolName === 'dispute_match') {
+            r = await ia.disputeMatch(sb, lens.user_id, {
+              match_id: String(args.match_id || ''),
+              reason: String(args.reason || ''),
+            });
+          } else if (toolName === 'update_partner_preferences') {
+            r = await ia.updatePartnerPreferences(sb, lens.user_id, {
+              preferences: (args.preferences ?? {}) as Record<string, unknown>,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

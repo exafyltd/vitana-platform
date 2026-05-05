@@ -620,6 +620,50 @@ async function tool_log_health(
   };
 }
 
+// VTID-02777 — Find Partner extensions
+async function tool_intent_actions(
+  toolName: 'update_intent' | 'close_intent' | 'decline_match' | 'dispute_match' | 'update_partner_preferences',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ia = await import('../services/voice-tools/intent-actions');
+  let r: any;
+  if (toolName === 'update_intent') {
+    r = await ia.updateIntent(sb, id.user_id, {
+      intent_id: String(args.intent_id || ''),
+      description: typeof args.description === 'string' ? args.description : undefined,
+    });
+  } else if (toolName === 'close_intent') {
+    r = await ia.closeIntent(sb, id.user_id, {
+      intent_id: String(args.intent_id || ''),
+      reason: typeof args.reason === 'string' ? args.reason : undefined,
+    });
+  } else if (toolName === 'decline_match') {
+    r = await ia.declineMatch(sb, id.user_id, {
+      match_id: String(args.match_id || ''),
+      reason: typeof args.reason === 'string' ? args.reason : undefined,
+    });
+  } else if (toolName === 'dispute_match') {
+    r = await ia.disputeMatch(sb, id.user_id, {
+      match_id: String(args.match_id || ''),
+      reason: String(args.reason || ''),
+    });
+  } else if (toolName === 'update_partner_preferences') {
+    r = await ia.updatePartnerPreferences(sb, id.user_id, {
+      preferences: (args.preferences ?? {}) as Record<string, unknown>,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'update_intent') text = `Intent updated.`;
+  else if (toolName === 'close_intent') text = `Intent closed.`;
+  else if (toolName === 'decline_match') text = `Match declined.`;
+  else if (toolName === 'dispute_match') text = `Dispute filed.`;
+  else if (toolName === 'update_partner_preferences') text = `Preferences saved.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +811,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02777 — Find Partner extensions
+      case 'update_intent':
+      case 'close_intent':
+      case 'decline_match':
+      case 'dispute_match':
+      case 'update_partner_preferences':
+        r = await tool_intent_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
