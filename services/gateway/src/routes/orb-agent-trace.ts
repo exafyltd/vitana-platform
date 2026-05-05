@@ -57,6 +57,7 @@ router.post('/orb/agent-trace', async (req: Request, res: Response) => {
       vtid: VTID,
       source: 'orb-agent',
       service: 'orb-agent',
+      role: 'orb-agent',
       status: 'info',
       message: `LiveKit agent session trace for ${userId}`,
       metadata: body,
