@@ -620,6 +620,62 @@ async function tool_log_health(
   };
 }
 
+// VTID-02768 — Feedback / Specialist tickets
+async function tool_feedback_tickets(
+  toolName:
+    | 'submit_bug_report'
+    | 'submit_support_ticket'
+    | 'submit_marketplace_dispute'
+    | 'submit_account_issue'
+    | 'list_my_tickets',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ft = await import('../services/voice-tools/feedback-tickets');
+  let r: any;
+  if (toolName === 'submit_bug_report') {
+    r = await ft.submitTicket(sb, id.user_id, {
+      kind: 'bug',
+      raw_text: String(args.raw_text || ''),
+      screen_path: typeof args.screen_path === 'string' ? args.screen_path : undefined,
+    });
+  } else if (toolName === 'submit_support_ticket') {
+    const k = (args.kind === 'feedback' ? 'feedback' : 'support_question') as 'feedback' | 'support_question';
+    r = await ft.submitTicket(sb, id.user_id, {
+      kind: k,
+      raw_text: String(args.raw_text || ''),
+    });
+  } else if (toolName === 'submit_marketplace_dispute') {
+    r = await ft.submitTicket(sb, id.user_id, {
+      kind: 'marketplace_claim',
+      raw_text: String(args.raw_text || ''),
+      structured_fields: typeof args.order_id === 'string' ? { order_id: args.order_id } : undefined,
+    });
+  } else if (toolName === 'submit_account_issue') {
+    r = await ft.submitTicket(sb, id.user_id, {
+      kind: 'account_issue',
+      raw_text: String(args.raw_text || ''),
+    });
+  } else if (toolName === 'list_my_tickets') {
+    r = await ft.listMyTickets(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+      status: typeof args.status === 'string' ? args.status : undefined,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  let text = '';
+  if (toolName === 'list_my_tickets') {
+    const n = r.count ?? 0;
+    text = n === 0 ? 'No tickets yet.' : `${n} ticket${n === 1 ? '' : 's'} on file.`;
+  } else {
+    const tn = r.ticket?.ticket_number ?? r.ticket?.id ?? '';
+    text = `Ticket ${tn} filed (${r.ticket?.kind}).`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +823,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02768 — Feedback / Specialist tickets
+      case 'submit_bug_report':
+      case 'submit_support_ticket':
+      case 'submit_marketplace_dispute':
+      case 'submit_account_issue':
+      case 'list_my_tickets':
+        r = await tool_feedback_tickets(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

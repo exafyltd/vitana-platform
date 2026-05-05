@@ -3577,6 +3577,124 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02768 — Voice Tool Expansion P1h: Feedback / Specialist tickets ───
+        // Five tools that file structured tickets routed to specialist personas:
+        //   bug/ux/feature_request → Devon, support_question/feedback → Sage,
+        //   marketplace_claim → Atlas, account_issue → Mira. Plus list_my_tickets.
+        {
+          name: 'submit_bug_report',
+          description: [
+            "File a bug report on the user's behalf. Use when the user describes",
+            "something that isn't working, an error, an unexpected behavior, or",
+            "a layout/UX problem.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'There's a bug with...'",
+            "  - 'The button doesn't work'",
+            "  - 'X is broken'",
+            "  - 'Das funktioniert nicht'",
+            "",
+            "Pass the user's verbatim description as raw_text. The ticket is",
+            "routed to Devon (engineering specialist).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: { type: 'string', description: "User's verbatim description (≥ 5 chars)." },
+              screen_path: { type: 'string', description: 'Optional URL path where the bug was seen.' },
+            },
+            required: ['raw_text'],
+          },
+        },
+        {
+          name: 'submit_support_ticket',
+          description: [
+            "File a support question / general feedback ticket. Use when the user",
+            "needs help understanding something or wants to give product feedback",
+            "that isn't a bug.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'How do I do X?' (when explain_feature didn't satisfy)",
+            "  - 'I have a question about...'",
+            "  - 'I'd like to give feedback'",
+            "",
+            "Routed to Sage (support specialist).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: { type: 'string', description: "User's verbatim question or feedback." },
+              kind: {
+                type: 'string',
+                enum: ['support_question', 'feedback'],
+                description: 'Optional discriminator. Default: support_question.',
+              },
+            },
+            required: ['raw_text'],
+          },
+        },
+        {
+          name: 'submit_marketplace_dispute',
+          description: [
+            "File a marketplace claim or dispute (order issue, refund, seller).",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'My order didn't arrive'",
+            "  - 'I want to dispute that purchase'",
+            "  - 'The product is wrong'",
+            "  - 'Reklamation'",
+            "",
+            "Routed to Atlas (finance specialist).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: { type: 'string', description: "User's verbatim claim description." },
+              order_id: { type: 'string', description: 'Optional order/purchase reference.' },
+            },
+            required: ['raw_text'],
+          },
+        },
+        {
+          name: 'submit_account_issue',
+          description: [
+            "File an account-related issue: subscription, billing, login,",
+            "verification, deletion, privacy. Use when the user has a problem",
+            "with the account itself, not the product features.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'I can't log in'",
+            "  - 'Cancel my subscription'",
+            "  - 'Why was I charged?'",
+            "",
+            "Routed to Mira (account specialist).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              raw_text: { type: 'string', description: "User's verbatim description." },
+            },
+            required: ['raw_text'],
+          },
+        },
+        {
+          name: 'list_my_tickets',
+          description: [
+            "List the user's recent feedback tickets — bugs, support questions,",
+            "marketplace claims, account issues. Useful when the user asks 'what",
+            "have I reported?' or 'is my bug fixed yet?'.",
+            "",
+            "Returns ticket_number, kind, status (new/triaged/in-progress/",
+            "resolved/closed), and a 200-char preview.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 10. Max 50.' },
+              status: { type: 'string', description: 'Optional status filter.' },
+            },
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6282,61 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02768 — Voice Tool Expansion P1h: Feedback / Specialist tickets ───
+      case 'submit_bug_report':
+      case 'submit_support_ticket':
+      case 'submit_marketplace_dispute':
+      case 'submit_account_issue':
+      case 'list_my_tickets': {
+        try {
+          const ft = await import('../services/voice-tools/feedback-tickets');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'submit_bug_report') {
+            r = await ft.submitTicket(sb, lens.user_id, {
+              kind: 'bug',
+              raw_text: String(args.raw_text || ''),
+              screen_path: typeof args.screen_path === 'string' ? args.screen_path : undefined,
+            });
+          } else if (toolName === 'submit_support_ticket') {
+            const k = (args.kind === 'feedback' ? 'feedback' : 'support_question') as 'feedback' | 'support_question';
+            r = await ft.submitTicket(sb, lens.user_id, {
+              kind: k,
+              raw_text: String(args.raw_text || ''),
+            });
+          } else if (toolName === 'submit_marketplace_dispute') {
+            r = await ft.submitTicket(sb, lens.user_id, {
+              kind: 'marketplace_claim',
+              raw_text: String(args.raw_text || ''),
+              structured_fields: typeof args.order_id === 'string' ? { order_id: args.order_id } : undefined,
+            });
+          } else if (toolName === 'submit_account_issue') {
+            r = await ft.submitTicket(sb, lens.user_id, {
+              kind: 'account_issue',
+              raw_text: String(args.raw_text || ''),
+            });
+          } else if (toolName === 'list_my_tickets') {
+            r = await ft.listMyTickets(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+              status: typeof args.status === 'string' ? args.status : undefined,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
