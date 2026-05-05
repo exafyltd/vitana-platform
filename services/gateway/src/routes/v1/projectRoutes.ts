@@ -1,0 +1,18 @@
+import { Router, Request, Response } from 'express';
+import { limitPathParams } from '../middleware/paramLimit';
+
+const router = Router();
+
+// Apply ReDoS mitigation middleware to all routes in this router
+router.use(limitPathParams());
+
+router.get('/:projectId', async (req: Request, res: Response) => {
+  return res.json({
+    ok: true,
+    data: {
+      projectId: req.params.projectId
+    }
+  });
+});
+
+export default router;
