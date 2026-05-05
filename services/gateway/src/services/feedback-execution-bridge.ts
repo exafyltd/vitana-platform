@@ -146,28 +146,37 @@ interface SafetyConfigSummary {
 }
 
 async function loadSafetyConfig(s: SupaConfig): Promise<SafetyConfigSummary> {
-  const resp = await fetch(`${s.url}/rest/v1/dev_autopilot_config?id=eq.singleton&select=allow_scope,deny_scope&limit=1`, {
+  // VTID-02702: dev_autopilot_config.id is INTEGER (1), not text 'singleton'.
+  // The earlier query 400'd, falling through to a hardcoded scope set that
+  // never reflected runtime config updates — including the expansion that
+  // removed **/orb-live.ts from deny_scope.
+  const resp = await fetch(`${s.url}/rest/v1/dev_autopilot_config?id=eq.1&select=allow_scope,deny_scope&limit=1`, {
     headers: s.headers,
   });
-  if (!resp.ok) {
-    return {
-      allow_scope: [
-        'services/gateway/src/routes/**',
-        'services/gateway/src/services/**',
-        'services/gateway/src/frontend/command-hub/**',
-        'services/agents/**',
-      ],
-      deny_scope: [
-        'supabase/migrations/**',
-        '**/auth*',
-        '**/orb-live.ts',
-        '.github/workflows/**',
-        '**/.env*',
-      ],
-    };
+  if (resp.ok) {
+    const rows = (await resp.json().catch(() => [])) as Array<SafetyConfigSummary>;
+    if (rows[0] && Array.isArray(rows[0].allow_scope) && rows[0].allow_scope.length > 0) {
+      return rows[0];
+    }
   }
-  const rows = (await resp.json().catch(() => [])) as Array<SafetyConfigSummary>;
-  return rows[0] ?? { allow_scope: [], deny_scope: [] };
+  // Fallback only if the live config is unreachable or empty. Keep the
+  // ORIGINAL conservative defaults — the runtime expansion lives in the DB,
+  // and a degraded gateway shouldn't accidentally widen scope.
+  return {
+    allow_scope: [
+      'services/gateway/src/routes/**',
+      'services/gateway/src/services/**',
+      'services/gateway/src/frontend/command-hub/**',
+      'services/agents/**',
+    ],
+    deny_scope: [
+      'supabase/migrations/**',
+      '**/auth*',
+      '**/orb-live.ts',
+      '.github/workflows/**',
+      '**/.env*',
+    ],
+  };
 }
 
 function preflightFiles(files: string[], cfg: SafetyConfigSummary): {
