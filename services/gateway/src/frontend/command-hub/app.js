@@ -6148,6 +6148,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAdminAwarenessView());
     } else if (moduleKey === 'assistant' && tab === 'awareness-test') {
         container.appendChild(renderVitanaAwarenessTestView());
+    } else if (moduleKey === 'assistant' && tab === 'voice-tools') {
+        // VTID-02766: Voice Tools Catalog
+        container.appendChild(renderVoiceToolsCatalogView());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -44590,6 +44593,149 @@ function renderAdminAwarenessView() {
         container.appendChild(auditCard);
     }
 
+    return container;
+}
+
+// =============================================================================
+// VTID-02766 — Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+// =============================================================================
+function renderVoiceToolsCatalogView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Voice Tools Catalog</h2>' +
+        '<p class="section-subtitle">Every voice tool the ORB can call. Source-of-truth manifest at <code>services/gateway/src/services/tool-manifest.json</code>. Filter by surface, role, or status.</p>';
+
+    if (!state.voiceToolsCatalog) {
+        state.voiceToolsCatalog = { loading: false, loaded: false, error: null, tools: [], stats: null, filter: {} };
+    }
+    var s = state.voiceToolsCatalog;
+
+    // Stats strip
+    var stats = document.createElement('div');
+    stats.style.cssText = 'display:flex;gap:1rem;margin:1rem 0;padding:0.75rem;background:#f8fafc;border-radius:6px;font-size:0.875rem;';
+    stats.id = 'vt-stats-strip';
+    stats.textContent = 'Loading stats…';
+    container.appendChild(stats);
+
+    // Filters
+    var filters = document.createElement('div');
+    filters.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:1rem;';
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Search by name or description…';
+    search.style.cssText = 'flex:1;padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    var surfaceSel = document.createElement('select');
+    surfaceSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    surfaceSel.innerHTML = '<option value="">All surfaces</option>';
+    var roleSel = document.createElement('select');
+    roleSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    roleSel.innerHTML = '<option value="">All roles</option><option value="community">community</option><option value="user">user</option><option value="developer">developer</option><option value="admin">admin</option>';
+    filters.appendChild(search);
+    filters.appendChild(surfaceSel);
+    filters.appendChild(roleSel);
+    container.appendChild(filters);
+
+    var listWrap = document.createElement('div');
+    listWrap.id = 'vt-list-wrap';
+    listWrap.textContent = 'Loading tools…';
+    container.appendChild(listWrap);
+
+    function fetchAndRender() {
+        var qs = [];
+        if (search.value) qs.push('q=' + encodeURIComponent(search.value));
+        if (surfaceSel.value) qs.push('surface=' + encodeURIComponent(surfaceSel.value));
+        if (roleSel.value) qs.push('role=' + encodeURIComponent(roleSel.value));
+        qs.push('limit=200');
+        var url = '/api/v1/voice-tools/catalog' + (qs.length ? '?' + qs.join('&') : '');
+
+        Promise.all([
+            fetch(url, { credentials: 'include' }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-tools/catalog/stats', { credentials: 'include' }).then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            var catalog = results[0];
+            var statsResp = results[1];
+            renderStats(statsResp);
+            renderList(catalog);
+            // Populate surface dropdown once we have stats.
+            if (statsResp && statsResp.by_surface && surfaceSel.options.length === 1) {
+                Object.keys(statsResp.by_surface).sort().forEach(function (name) {
+                    var opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name + ' (' + statsResp.by_surface[name] + ')';
+                    surfaceSel.appendChild(opt);
+                });
+            }
+        }).catch(function (err) {
+            listWrap.innerHTML = '<div class="error-text">Failed to load: ' + (err && err.message ? err.message : err) + '</div>';
+        });
+    }
+
+    function renderStats(r) {
+        if (!r || !r.ok) { stats.textContent = 'Stats unavailable.'; return; }
+        var byStatus = r.by_status || {};
+        stats.innerHTML =
+            '<strong>' + (r.total || 0) + '</strong> tools total &nbsp;|&nbsp; ' +
+            'Live: <strong>' + (byStatus.live || 0) + '</strong> &nbsp;|&nbsp; ' +
+            'WIP: <strong>' + (byStatus.wip || 0) + '</strong> &nbsp;|&nbsp; ' +
+            'Planned: <strong>' + (byStatus.planned || 0) + '</strong> &nbsp;|&nbsp; ' +
+            '<span style="color:#6b7280;">manifest generated ' + (r.generated_at || '?') + '</span>';
+    }
+
+    function renderList(r) {
+        if (!r || !r.ok) { listWrap.innerHTML = '<div class="error-text">Catalog unavailable.</div>'; return; }
+        var tools = r.tools || [];
+        if (tools.length === 0) { listWrap.innerHTML = '<div class="placeholder-content">No tools match the filter.</div>'; return; }
+
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.875rem;';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr style="background:#f1f5f9;text-align:left;">' +
+            '<th style="padding:0.5rem;">Name</th>' +
+            '<th style="padding:0.5rem;">Surface</th>' +
+            '<th style="padding:0.5rem;">Role</th>' +
+            '<th style="padding:0.5rem;">Status</th>' +
+            '<th style="padding:0.5rem;">VTID</th>' +
+            '<th style="padding:0.5rem;">Description</th>' +
+            '</tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        tools.forEach(function (t) {
+            var tr = document.createElement('tr');
+            tr.style.borderTop = '1px solid #e5e7eb';
+            tr.innerHTML =
+                '<td style="padding:0.5rem;font-family:monospace;"><code>' + escapeHtml(t.name) + '</code></td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(t.surface || '') + '</td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;color:#6b7280;">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
+                '<td style="padding:0.5rem;"><span class="status-' + escapeHtml(t.status) + '" style="font-size:0.75rem;padding:2px 6px;border-radius:3px;background:' + (t.status === 'live' ? '#d1fae5' : t.status === 'wip' ? '#fef3c7' : '#e5e7eb') + ';">' + escapeHtml(t.status) + '</span></td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;font-family:monospace;color:#6b7280;">' + escapeHtml(t.vtid || '—') + '</td>' +
+                '<td style="padding:0.5rem;color:#4b5563;">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        listWrap.innerHTML = '';
+        listWrap.appendChild(table);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:0.75rem;font-size:0.75rem;color:#6b7280;';
+        footer.textContent = 'Showing ' + tools.length + ' of ' + (r.total || tools.length) + ' tools (filtered).';
+        listWrap.appendChild(footer);
+    }
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    var debounceTimer = null;
+    function debouncedFetch() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fetchAndRender, 250);
+    }
+    search.addEventListener('input', debouncedFetch);
+    surfaceSel.addEventListener('change', fetchAndRender);
+    roleSel.addEventListener('change', fetchAndRender);
+
+    fetchAndRender();
     return container;
 }
 

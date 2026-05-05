@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "prebuild": "rm -rf dist",
-    "build": "tsc && npm run copy-frontend",
+    "build": "tsc && npm run copy-frontend && npm run copy-data",
     "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/",
+    "copy-data": "mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json 2>/dev/null || true",
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
