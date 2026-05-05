@@ -59,7 +59,7 @@ def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
         logger.warning("build_cascade: no voice_config — falling back to hardcoded Google cascade")
         voice_config = {
             "stt_provider": "google_stt",  "stt_model": "latest_long", "stt_options": {},
-            "llm_provider": "google_llm",  "llm_model": "gemini-3.1-pro-preview", "llm_options": {},
+            "llm_provider": "google_llm",  "llm_model": "gemini-3.1-flash-lite-preview", "llm_options": {},
             "tts_provider": "google_tts",  "tts_model": "en-US-Chirp3-HD-Aoede", "tts_options": {},
         }
 
@@ -131,7 +131,7 @@ def _build_llm(provider: str | None, model: str | None, options: dict[str, Any],
             project = os.environ.get("GOOGLE_CLOUD_PROJECT", "lovable-vitana-vers1")
             location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
             return google.LLM(
-                model=model or "gemini-3.1-pro-preview",
+                model=model or "gemini-3.1-flash-lite-preview",
                 vertexai=True,
                 project=project,
                 location=location,

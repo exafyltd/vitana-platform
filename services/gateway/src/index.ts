@@ -90,6 +90,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLivekitRouter = require('./routes/orb-livekit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
   const orbToolRouter = require('./routes/orb-tool').default;
+  const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
   // VTID-01222: WebSocket server initialization for ORB Live API
   const { initializeOrbWebSocket } = require('./routes/orb-live');
@@ -670,6 +671,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // implementation is inline-only in orb-live.ts. Single POST /api/v1/orb/tool
   // route with per-tool handlers — see services/gateway/src/routes/orb-tool.ts.
   mountRouterSync(app, '/api/v1', orbToolRouter, { owner: 'orb-tool-dispatcher' });
+
+  // VTID-LIVEKIT-AGENT-TRACE: runtime telemetry — agent posts session-start
+  // trace; diag panel reads. See services/gateway/src/routes/orb-agent-trace.ts.
+  mountRouterSync(app, '/api/v1', orbAgentTraceRouter, { owner: 'orb-agent-trace' });
 
   // BOOTSTRAP-AWARENESS-REGISTRY: admin API for the Awareness Registry
   mountRouterSync(app, '/api/v1/awareness', awarenessConfigRouter, { owner: 'awareness-registry' });
