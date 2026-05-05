@@ -3577,6 +3577,139 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02761 — Voice Tool Expansion P1d: Calendar deep tools ───
+        // Six tools that go beyond the existing search/create primitives:
+        // reschedule, cancel, complete, find_free_slot, get_event_details,
+        // check_calendar_conflicts. Each scopes to the calling user_id.
+        {
+          name: 'reschedule_event',
+          description: [
+            "Move an existing calendar event to a new time. Use when the user",
+            "says 'move my 3pm to 4pm', 'reschedule the dentist to tomorrow",
+            "morning', 'verschiebe den Termin'.",
+            "",
+            "BEFORE calling: confirm with the user the new start time. Compute",
+            "the absolute UTC ISO 8601 timestamp from their words + their tz",
+            "(in your context as user_tz). Optionally pass end_time; if omitted,",
+            "the event's existing duration is preserved.",
+            "",
+            "If the user references the event vaguely ('that thing on Tuesday'),",
+            "call search_calendar first to get the event_id, then this tool.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'UUID of the event to reschedule.' },
+              start_time: { type: 'string', description: 'New start time, ISO 8601 UTC.' },
+              end_time: { type: 'string', description: 'Optional new end time, ISO 8601 UTC.' },
+            },
+            required: ['event_id', 'start_time'],
+          },
+        },
+        {
+          name: 'cancel_event',
+          description: [
+            "Cancel an event (soft delete — sets status=cancelled, recoverable",
+            "via UI). Use when the user says 'cancel my 3pm', 'I'm not going",
+            "to the meeting', 'lösche den Termin'.",
+            "",
+            "DESTRUCTIVE — confirm verbally before calling. Use search_calendar",
+            "first if the user references the event vaguely.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'UUID of the event to cancel.' },
+            },
+            required: ['event_id'],
+          },
+        },
+        {
+          name: 'complete_event',
+          description: [
+            "Mark a calendar event as completed / skipped / partial after the",
+            "fact. When marked 'completed', the user's Vitana Index is",
+            "recomputed if the event has wellness_tags (e.g. 'meditation',",
+            "'workout').",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'I finished my workout' → completed",
+            "  - 'I skipped meditation today' → skipped",
+            "  - 'I only did half my run' → partial",
+            "  - 'Habe das Meeting gemacht' → completed",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'UUID of the event.' },
+              completion_status: {
+                type: 'string',
+                enum: ['completed', 'skipped', 'partial'],
+                description: 'How the event ended.',
+              },
+              completion_notes: { type: 'string', description: 'Optional free-text note.' },
+            },
+            required: ['event_id', 'completion_status'],
+          },
+        },
+        {
+          name: 'find_free_slot',
+          description: [
+            "Find the next available calendar slot of a given duration. Looks",
+            "for gaps today first, then tomorrow morning if none fit.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'When am I free for a 30-minute walk?'",
+            "  - 'Find me a 1-hour gap for the meeting'",
+            "  - 'Wann hätte ich Zeit für 45 Minuten?'",
+            "",
+            "Returns the next slot's start_time (ISO UTC). Speak it naturally",
+            "in the user's local time.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              duration_minutes: {
+                type: 'integer',
+                description: 'Required slot length in minutes. Min 5, max 480.',
+              },
+            },
+            required: ['duration_minutes'],
+          },
+        },
+        {
+          name: 'get_event_details',
+          description: [
+            "Fetch full details for one calendar event by id. Use AFTER",
+            "search_calendar when the user wants more info ('tell me about",
+            "that 3pm', 'what's the description for the dentist?').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'UUID of the event.' },
+            },
+            required: ['event_id'],
+          },
+        },
+        {
+          name: 'check_calendar_conflicts',
+          description: [
+            "Find all confirmed events that overlap a proposed time window.",
+            "Use BEFORE create_calendar_event or reschedule_event when the",
+            "user proposes a time and you want to warn about clashes.",
+            "",
+            "Returns the list of overlapping events. Empty list = no conflict.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              start_time: { type: 'string', description: 'Proposed start, ISO 8601 UTC.' },
+              end_time: { type: 'string', description: 'Proposed end, ISO 8601 UTC.' },
+            },
+            required: ['start_time', 'end_time'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6297,60 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02761 — Voice Tool Expansion P1d: Calendar deep tools ───
+      case 'reschedule_event':
+      case 'cancel_event':
+      case 'complete_event':
+      case 'find_free_slot':
+      case 'get_event_details':
+      case 'check_calendar_conflicts': {
+        try {
+          const cd = await import('../services/voice-tools/calendar-deep');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const role = (session as any)?.active_role || 'community';
+
+          let r: any;
+          if (toolName === 'reschedule_event') {
+            r = await cd.rescheduleEvent(lens.user_id, {
+              event_id: String(args.event_id || ''),
+              start_time: String(args.start_time || ''),
+              end_time: typeof args.end_time === 'string' ? args.end_time : undefined,
+            });
+          } else if (toolName === 'cancel_event') {
+            r = await cd.cancelEvent(lens.user_id, { event_id: String(args.event_id || '') });
+          } else if (toolName === 'complete_event') {
+            r = await cd.completeEvent(lens.user_id, {
+              event_id: String(args.event_id || ''),
+              completion_status: String(args.completion_status || 'completed') as any,
+              completion_notes: typeof args.completion_notes === 'string' ? args.completion_notes : undefined,
+            });
+          } else if (toolName === 'find_free_slot') {
+            r = await cd.findFreeSlot(lens.user_id, role, {
+              duration_minutes: Number(args.duration_minutes || 0),
+            });
+          } else if (toolName === 'get_event_details') {
+            r = await cd.getEventDetails(sb, lens.user_id, { event_id: String(args.event_id || '') });
+          } else if (toolName === 'check_calendar_conflicts') {
+            r = await cd.checkCalendarConflicts(lens.user_id, role, {
+              start_time: String(args.start_time || ''),
+              end_time: String(args.end_time || ''),
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

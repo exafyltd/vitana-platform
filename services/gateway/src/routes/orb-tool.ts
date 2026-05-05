@@ -620,6 +620,68 @@ async function tool_log_health(
   };
 }
 
+// VTID-02761 — Calendar deep tools
+async function tool_calendar_deep(
+  toolName:
+    | 'reschedule_event'
+    | 'cancel_event'
+    | 'complete_event'
+    | 'find_free_slot'
+    | 'get_event_details'
+    | 'check_calendar_conflicts',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const cd = await import('../services/voice-tools/calendar-deep');
+  const role = id.role ?? 'community';
+  let r: any;
+  if (toolName === 'reschedule_event') {
+    r = await cd.rescheduleEvent(id.user_id, {
+      event_id: String(args.event_id || ''),
+      start_time: String(args.start_time || ''),
+      end_time: typeof args.end_time === 'string' ? args.end_time : undefined,
+    });
+  } else if (toolName === 'cancel_event') {
+    r = await cd.cancelEvent(id.user_id, { event_id: String(args.event_id || '') });
+  } else if (toolName === 'complete_event') {
+    r = await cd.completeEvent(id.user_id, {
+      event_id: String(args.event_id || ''),
+      completion_status: String(args.completion_status || 'completed') as any,
+      completion_notes: typeof args.completion_notes === 'string' ? args.completion_notes : undefined,
+    });
+  } else if (toolName === 'find_free_slot') {
+    r = await cd.findFreeSlot(id.user_id, role, {
+      duration_minutes: Number(args.duration_minutes || 0),
+    });
+  } else if (toolName === 'get_event_details') {
+    r = await cd.getEventDetails(sb, id.user_id, { event_id: String(args.event_id || '') });
+  } else if (toolName === 'check_calendar_conflicts') {
+    r = await cd.checkCalendarConflicts(id.user_id, role, {
+      start_time: String(args.start_time || ''),
+      end_time: String(args.end_time || ''),
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  let text = '';
+  if (toolName === 'reschedule_event') {
+    text = `Rescheduled "${r.event?.title ?? 'event'}".`;
+  } else if (toolName === 'cancel_event') {
+    text = `Cancelled "${r.event?.title ?? 'event'}".`;
+  } else if (toolName === 'complete_event') {
+    text = `Marked "${r.event?.title ?? 'event'}" as ${args.completion_status}.`;
+  } else if (toolName === 'find_free_slot') {
+    text = `Next free slot: ${r.start_time} (${r.duration_minutes} min).`;
+  } else if (toolName === 'get_event_details') {
+    text = `${r.event?.title ?? 'Event'} at ${r.event?.start_time ?? 'unknown'}.`;
+  } else if (toolName === 'check_calendar_conflicts') {
+    const n = r.conflicts?.length ?? 0;
+    text = n === 0 ? 'No conflicts.' : `${n} conflicting event${n === 1 ? '' : 's'}.`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +829,15 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02761 — Calendar deep tools
+      case 'reschedule_event':
+      case 'cancel_event':
+      case 'complete_event':
+      case 'find_free_slot':
+      case 'get_event_details':
+      case 'check_calendar_conflicts':
+        r = await tool_calendar_deep(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
