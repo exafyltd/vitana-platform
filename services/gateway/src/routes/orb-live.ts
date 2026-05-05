@@ -3577,6 +3577,143 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02754 — Voice Tool Expansion P1b: Community Superlatives ("who is...?") ───
+        // Six tools answering ranking/superlative questions about community members.
+        // Privacy-gated by global_community_profiles.is_visible — opted-out members
+        // never appear, even when objectively the answer.
+        {
+          name: 'get_highest_vitana_index',
+          description: [
+            "Return the community member with the highest Vitana Index total score.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Who has the highest Vitana Index?' / 'Wer hat den höchsten Vitana Index?'",
+            "  - \"Who's at the top of the leaderboard?\"",
+            "  - 'Show me the best Vitana score in the community'",
+            "",
+            "Returns a single profile (display_name, vitana_id, location, score) plus",
+            "the total_eligible count. Speak the result naturally — 'Anna has the highest",
+            "Vitana Index in the community at 712 points.' Use limit > 1 only if the user",
+            "explicitly asks for top-N ('top 5 scores').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 1. Max 10.' },
+            },
+          },
+        },
+        {
+          name: 'get_top_in_pillar',
+          description: [
+            "Return the community member with the highest score in a specific pillar.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Who has the best Sleep score?' / 'Wer hat die beste Schlaf-Säule?'",
+            "  - 'Best at Nutrition in the community'",
+            "  - 'Top exerciser' / 'Most hydrated person'",
+            "  - \"Who's strongest in mental health?\"",
+            "",
+            "Map English/German pillar synonyms to the canonical 5 pillars:",
+            "  - water/Wasser → hydration",
+            "  - fitness/workout/movement/Bewegung → exercise",
+            "  - mind/mood/Geist → mental",
+            "  - food/diet/Ernährung → nutrition",
+            "  - rest/Schlaf → sleep",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: {
+                type: 'string',
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
+              },
+              limit: { type: 'integer', description: 'Default 1. Max 10.' },
+            },
+            required: ['pillar'],
+          },
+        },
+        {
+          name: 'get_first_member',
+          description: [
+            "Return the FIRST member who registered for the community (lowest registration_seq).",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Who was the first member of the community?'",
+            "  - 'Who registered first?' / 'Wer war der erste?'",
+            "  - 'Who are the OG members?' (use limit > 1 for OGs)",
+            "  - 'The original member'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 1. Max 10 for OG list.' },
+            },
+          },
+        },
+        {
+          name: 'get_newest_member',
+          description: [
+            "Return the most-recently-joined community member.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Who is the newest member?' / 'Wer ist neu?'",
+            "  - 'Who just joined?'",
+            "  - 'Most recent signups' (use limit > 1)",
+            "  - 'Latest community member'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 1. Max 10.' },
+            },
+          },
+        },
+        {
+          name: 'get_most_followed',
+          description: [
+            "Return the community member with the most followers.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Who has the most followers?' / 'Wer hat die meisten Follower?'",
+            "  - 'Most popular member'",
+            "  - 'Top influencer in the community'",
+            "  - 'Who has the biggest fanbase?'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 1. Max 10.' },
+            },
+          },
+        },
+        {
+          name: 'ask_who_is',
+          description: [
+            "Free-form superlative question router — use this ONLY when the user asks a",
+            "'who is...?' style question that doesn't map cleanly to one of the more",
+            "specific superlative tools (get_highest_vitana_index, get_top_in_pillar,",
+            "get_first_member, get_newest_member, get_most_followed).",
+            "",
+            "WHEN THE QUESTION CLEARLY MAPS, prefer the specific tool — it's faster and",
+            "more accurate. Use ask_who_is only as a fallback for ambiguous or compound",
+            "questions like 'who is the most active in my city?'",
+            "",
+            "If the router can't categorize the question, it returns a clarifying",
+            "follow-up — read it back to the user verbatim and let them refine.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description: "The user's verbatim 'who is...?' question.",
+              },
+              limit: { type: 'integer', description: 'Default 1. Max 10 for ranked lists.' },
+            },
+            required: ['question'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6301,51 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02754 — Voice Tool Expansion P1b: Community Superlatives ("who is...?") ───
+      case 'get_highest_vitana_index':
+      case 'get_top_in_pillar':
+      case 'get_first_member':
+      case 'get_newest_member':
+      case 'get_most_followed':
+      case 'ask_who_is': {
+        try {
+          const sup = await import('../services/voice-tools/superlatives');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const limit = typeof args.limit === 'number' ? Math.max(1, Math.min(10, args.limit)) : 1;
+
+          let r: any;
+          if (toolName === 'get_highest_vitana_index') {
+            r = await sup.getHighestVitanaIndex(sb, limit);
+          } else if (toolName === 'get_top_in_pillar') {
+            const pillar = String(args.pillar || '').toLowerCase() as 'nutrition' | 'hydration' | 'exercise' | 'sleep' | 'mental';
+            r = await sup.getTopInPillar(sb, pillar, limit);
+          } else if (toolName === 'get_first_member') {
+            r = await sup.getMemberByRegistration(sb, 'first', limit);
+          } else if (toolName === 'get_newest_member') {
+            r = await sup.getMemberByRegistration(sb, 'newest', limit);
+          } else if (toolName === 'get_most_followed') {
+            r = await sup.getMostFollowed(sb, limit);
+          } else if (toolName === 'ask_who_is') {
+            r = await sup.askWhoIs(sb, { question: String(args.question || ''), limit });
+          }
+
+          if (r && r.ok === 'clarify') {
+            return { success: true, result: JSON.stringify({ clarify: true, question: r.question }) };
+          }
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || 'superlative_failed' };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

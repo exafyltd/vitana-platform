@@ -620,6 +620,64 @@ async function tool_log_health(
   };
 }
 
+// VTID-02754 — Community Superlatives ("who is...?")
+async function tool_superlative(
+  toolName:
+    | 'get_highest_vitana_index'
+    | 'get_top_in_pillar'
+    | 'get_first_member'
+    | 'get_newest_member'
+    | 'get_most_followed'
+    | 'ask_who_is',
+  args: ToolArgs,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const sup = await import('../services/voice-tools/superlatives');
+  const limit = typeof args.limit === 'number' ? Math.max(1, Math.min(10, args.limit)) : 1;
+
+  let r: any;
+  if (toolName === 'get_highest_vitana_index') {
+    r = await sup.getHighestVitanaIndex(sb, limit);
+  } else if (toolName === 'get_top_in_pillar') {
+    const pillar = String(args.pillar || '').toLowerCase() as 'nutrition' | 'hydration' | 'exercise' | 'sleep' | 'mental';
+    r = await sup.getTopInPillar(sb, pillar, limit);
+  } else if (toolName === 'get_first_member') {
+    r = await sup.getMemberByRegistration(sb, 'first', limit);
+  } else if (toolName === 'get_newest_member') {
+    r = await sup.getMemberByRegistration(sb, 'newest', limit);
+  } else if (toolName === 'get_most_followed') {
+    r = await sup.getMostFollowed(sb, limit);
+  } else if (toolName === 'ask_who_is') {
+    r = await sup.askWhoIs(sb, { question: String(args.question || ''), limit });
+  }
+
+  if (r && r.ok === 'clarify') {
+    return { ok: true, result: { clarify: true, question: r.question }, text: r.question };
+  }
+  if (!r || r.ok === false) {
+    return { ok: false, error: (r && r.error) || 'superlative_failed' };
+  }
+
+  // Friendly TTS line for the orb to speak.
+  const p = r.profile;
+  const name = p?.display_name ?? 'A community member';
+  let text = '';
+  if (toolName === 'get_highest_vitana_index') {
+    text = `${name} has the highest Vitana Index at ${r.metric_value} points.`;
+  } else if (toolName === 'get_top_in_pillar') {
+    text = `${name} leads ${args.pillar} at ${r.metric_value} points.`;
+  } else if (toolName === 'get_first_member') {
+    text = `${name} was the first member to join the community.`;
+  } else if (toolName === 'get_newest_member') {
+    text = `${name} just joined the community.`;
+  } else if (toolName === 'get_most_followed') {
+    text = `${name} has the most followers — ${r.metric_value} of them.`;
+  } else if (toolName === 'ask_who_is') {
+    text = `${name} — ${r.metric}: ${r.metric_value}.`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +825,15 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02754 — Community Superlatives ("who is...?")
+      case 'get_highest_vitana_index':
+      case 'get_top_in_pillar':
+      case 'get_first_member':
+      case 'get_newest_member':
+      case 'get_most_followed':
+      case 'ask_who_is':
+        r = await tool_superlative(name as any, args, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
