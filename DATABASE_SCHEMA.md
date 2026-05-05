@@ -1,5 +1,5 @@
 # Vitana Platform Database Schema
-**CANONICAL REFERENCE - Last Updated: 2025-11-11**
+**CANONICAL REFERENCE - Last Updated: 2026-05-10**
 
 ---
 
@@ -403,6 +403,7 @@ CREATE TABLE my_new_table (
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
+| 2026-05-10 | Added release_components, release_history, release_backlog_items tables for the release backlog & versioning system (R1+R3 of Phase 2 plan) | Claude | claude/backlog-versioning-structure-7frZn |
 
 ---
 
@@ -791,6 +792,139 @@ CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
 ```
 
 **Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
+
+---
+
+## Release Backlog & Versioning (R1+R3 of Phase 2 plan)
+
+### release_components
+**Purpose:** Catalog: one row per shippable thing we version. Covers BOTH platform components (`owner='platform'`, `tenant_id NULL`) and tenant-app surfaces (`owner='tenant'`, `tenant_id NOT NULL`). For tenant rows, `min_platform_version` and `target_platform_version` refer specifically to the `platform.sdk` version per design decision P2.
+**Used by:** `services/gateway/src/routes/releases.ts`, Command Hub `/dev/releases`, MAXINA `/admin/releases` (Overview tab).
+**Migration:** `supabase/migrations/20260510000000_release_backlog_v1.sql`
+
+**Schema:**
+```sql
+CREATE TABLE release_components (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug                     TEXT NOT NULL UNIQUE,                  -- e.g. 'platform.sdk', 'tenant.maxina.ios'
+  display_name             TEXT NOT NULL,
+  owner                    TEXT NOT NULL CHECK (owner IN ('platform','tenant')),
+  tenant_id                UUID,                                  -- NULL when owner='platform'
+  surface                  TEXT NOT NULL CHECK (surface IN
+                             ('command_hub','web','api','sdk','desktop','ios','android')),
+  repo                     TEXT,
+  current_version          TEXT,                                  -- semver
+  current_channel          TEXT CHECK (current_channel IN ('internal','beta','stable')),
+  current_released_at      TIMESTAMPTZ,
+  current_release_id       UUID REFERENCES release_history(id) ON DELETE SET NULL,
+  min_platform_version     TEXT,                                  -- pin against platform.sdk (P2)
+  target_platform_version  TEXT,                                  -- pin against platform.sdk (P2)
+  public_changelog         BOOLEAN NOT NULL DEFAULT FALSE,        -- P4: surface-derived defaults via seed
+  enabled                  BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT release_components_tenant_id_required_for_tenant_owner
+    CHECK ((owner='tenant' AND tenant_id IS NOT NULL) OR (owner='platform' AND tenant_id IS NULL))
+);
+CREATE INDEX idx_release_components_owner_tenant ON release_components(owner, tenant_id);
+CREATE INDEX idx_release_components_surface ON release_components(surface);
+```
+
+**Seed (in migration):** four platform components (`platform.command-hub`, `platform.api`, `platform.sdk`, `platform.web`) with `public_changelog` defaults per P4 (web=TRUE, others=FALSE). Tenant rows for MAXINA Desktop/iOS/Android added in a follow-up migration once the canonical `tenants.id` is confirmed.
+
+**API Endpoints:**
+- `GET /api/v1/releases/overview` - Role-aware matrix payload (Phase 2)
+- `GET /api/v1/releases/components` - List with filters (Phase 4 - R9)
+- `GET /api/v1/releases/components/:id` - Detail incl. last 10 history rows (Phase 4 - R9)
+- `POST /api/v1/releases/components` - Register new component (Phase 4 - R9)
+- `PATCH /api/v1/releases/components/:id` - Update fields except channel (Phase 4 - R9)
+- `POST /api/v1/releases/components/:id/promote` - Channel promotion per P3 (Phase 4 - R9)
+
+---
+
+### release_history
+**Purpose:** Append-only log of every release event for a component. The `changelog` column is what tenant_admin authors via `/admin/releases/changelog` and what `/api/v1/releases/changelog/public` serves to App Store / Play Store / in-app `/changelog` for stable releases (per P4 + P5).
+**Used by:** `services/gateway/src/routes/releases.ts`, the planned `services/release-publisher` worker (P5).
+**Migration:** `supabase/migrations/20260510000000_release_backlog_v1.sql`
+
+**Schema:**
+```sql
+CREATE TABLE release_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  component_id    UUID NOT NULL REFERENCES release_components(id) ON DELETE CASCADE,
+  version         TEXT NOT NULL,
+  channel         TEXT NOT NULL CHECK (channel IN ('internal','beta','stable')),
+  released_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  released_by     UUID,
+  changelog       TEXT,                  -- markdown; published when channel='stable' AND public_changelog=TRUE
+  internal_notes  TEXT,                  -- never exposed via /changelog/public
+  artifact_url    TEXT,
+  commit_sha      TEXT,
+  rollback_of     UUID REFERENCES release_history(id),
+  metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_release_history_component_released ON release_history(component_id, released_at DESC);
+CREATE INDEX idx_release_history_channel ON release_history(channel, released_at DESC);
+```
+
+**API Endpoints:**
+- `GET /api/v1/releases/history` - Filterable list (Phase 4 - R9)
+- `POST /api/v1/releases/history` - Record a release (Phase 4 - R9; atomic with release_components.current_*)
+- `GET /api/v1/releases/changelog/public` - Public stable-channel changelog, no auth (Phase 5 - R17)
+
+**OASIS Events** (Phase 6 - R19):
+- `release.published` - First publish on a channel
+- `release.promoted` - Channel transition (per P3)
+- `release.rolled_back` - With `rollback_of` reference
+- `release.changelog.published` - Tenant_admin promotes draft to stable (triggers publisher worker)
+- `release.publish.attempted` - Worker handler attempts external push
+- `release.publish.failed` - After retry exhaustion
+
+---
+
+### release_backlog_items
+**Purpose:** Pending work targeting a future release. Two backlog audiences: tenant_admin's release work (App Store screenshots, public changelog copy, version planning) and developer execution work. Per P1, the `vtid` column is OPTIONAL — when set, the API returns `vtid_ledger.status` as the effective status (read-through) and rejects writes to the local `status` field.
+**Used by:** `services/gateway/src/routes/releases.ts`, MAXINA `/admin/releases` (Backlog tab), Command Hub `/dev/releases` (drawer).
+**Migration:** `supabase/migrations/20260510000000_release_backlog_v1.sql`
+
+**Schema:**
+```sql
+CREATE TABLE release_backlog_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  component_id    UUID NOT NULL REFERENCES release_components(id) ON DELETE CASCADE,
+  title           TEXT NOT NULL,
+  summary         TEXT,
+  vtid            TEXT,                                  -- optional → vtid_ledger.vtid (P1)
+  status          TEXT NOT NULL CHECK (status IN
+                    ('proposed','planned','in_progress','blocked','done','dropped')),
+  target_version  TEXT,
+  target_channel  TEXT CHECK (target_channel IN ('internal','beta','stable')),
+  visibility      TEXT NOT NULL DEFAULT 'internal'
+                  CHECK (visibility IN ('internal','tenant','public')),
+  priority        INT NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_release_backlog_component_status ON release_backlog_items(component_id, status);
+CREATE INDEX idx_release_backlog_vtid ON release_backlog_items(vtid) WHERE vtid IS NOT NULL;
+```
+
+**API Endpoints:**
+- `GET /api/v1/releases/backlog` - List with role-aware visibility filtering (Phase 4 - R9)
+- `POST /api/v1/releases/backlog` - Create item (Phase 4 - R9)
+- `PATCH /api/v1/releases/backlog/:id` - Update; rejects status writes when vtid IS NOT NULL (P1, R12)
+- `DELETE /api/v1/releases/backlog/:id` - Drop item (Phase 4 - R9)
+
+**Read-through status (P1):**
+- When `vtid IS NULL` → API returns `local.status`
+- When `vtid IS NOT NULL` → API returns `vtid_ledger.status` as `effective_status` (joined server-side)
+- Writes to `status` for VTID-linked items return `409 Conflict`
+
+**OASIS Events** (Phase 6 - R19):
+- `release.backlog.item.created`
+- `release.backlog.item.updated`
+- `release.backlog.item.dropped`
 
 ---
 

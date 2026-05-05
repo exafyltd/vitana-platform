@@ -1,0 +1,140 @@
+name: RELEASE-BACKLOG-VERIFY
+# Runs the release-backlog & versioning verification suite (Sections 1 + 2)
+# from scripts/test-release-backlog.ts on every PR + push to main that touches
+# the release-backlog system.
+#
+# Section 3 (HTTP against a running gateway with real JWTs) is not run here —
+# it belongs in a post-deploy smoke job once the gateway routes are mounted
+# in services/gateway/src/index.ts and a JWT issuer is wired up. See
+# docs/release-backlog-verification-checklist.md for the manual + post-deploy
+# verification path.
+
+run-name: 'Release Backlog Verify [${{ github.head_ref || github.ref_name }}]'
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'scripts/test-release-backlog.ts'
+      - 'services/gateway/src/routes/releases.ts'
+      - 'services/gateway/src/routes/dev-docs.ts'
+      - 'services/release-publisher/**'
+      - 'supabase/migrations/20260510000000_release_backlog_v1.sql'
+      - 'DATABASE_SCHEMA.md'
+      - 'specs/release-backlog-overview.md'
+      - 'specs/release-backlog-spec-decisions.md'
+      - '.github/workflows/RELEASE-BACKLOG-VERIFY.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'scripts/test-release-backlog.ts'
+      - 'services/gateway/src/routes/releases.ts'
+      - 'services/gateway/src/routes/dev-docs.ts'
+      - 'services/release-publisher/**'
+      - 'supabase/migrations/20260510000000_release_backlog_v1.sql'
+      - 'DATABASE_SCHEMA.md'
+      - 'specs/release-backlog-overview.md'
+      - 'specs/release-backlog-spec-decisions.md'
+      - '.github/workflows/RELEASE-BACKLOG-VERIFY.yml'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20.x'
+  # Isolated dir for test-only deps (pg). Kept OUTSIDE the repo so it can't
+  # collide with the monorepo's pnpm-lock.yaml.
+  TEST_DEPS_DIR: /tmp/release-backlog-test-deps
+
+jobs:
+  unit-only:
+    # Section 1 (pure functions). Runs on every match. No infrastructure.
+    name: Unit tests (Section 1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install tsx
+        run: npm install -g tsx@latest
+
+      - name: Run release-backlog verification — Section 1 only
+        run: tsx scripts/test-release-backlog.ts
+
+  schema-and-unit:
+    # Sections 1 + 2. Spins up Postgres, applies the migration, runs the suite.
+    name: Schema + unit tests (Sections 1 + 2)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vitana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      - name: Install tsx (global)
+        run: npm install -g tsx@latest
+
+      - name: Install pg in isolated temp dir
+        # IMPORTANT: this monorepo uses pnpm with a lockfile at the repo root.
+        # Running `npm install pg` at the root collides with pnpm's resolution
+        # and exits non-zero. Install in /tmp instead, then resolve via NODE_PATH.
+        run: |
+          mkdir -p "${TEST_DEPS_DIR}"
+          cd "${TEST_DEPS_DIR}"
+          npm init -y > /dev/null
+          npm install --no-package-lock --silent pg@8
+
+      - name: Apply release-backlog migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          # gen_random_uuid() is built-in on PG 13+, but enable pgcrypto +
+          # uuid-ossp just in case earlier migrations or downstream tests
+          # rely on those extensions.
+          psql -h localhost -U postgres -d vitana_test \
+            -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+          psql -h localhost -U postgres -d vitana_test \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/migrations/20260510000000_release_backlog_v1.sql
+
+      - name: Run release-backlog verification — Sections 1 + 2
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vitana_test
+          # Resolve `pg` from the isolated temp install rather than the repo root.
+          NODE_PATH: /tmp/release-backlog-test-deps/node_modules
+        run: tsx scripts/test-release-backlog.ts
+
+      - name: Report
+        if: always()
+        run: |
+          echo "Verification suite completed."
+          echo "Section 3 (HTTP against a running gateway) is intentionally not run here —"
+          echo "see docs/release-backlog-verification-checklist.md for the post-deploy path."
