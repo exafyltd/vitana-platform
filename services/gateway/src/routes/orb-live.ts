@@ -3577,6 +3577,169 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02757 — Voice Tool Expansion P1c: Diary + Memory read-side ───
+        // Six tools that surface the user's own diary + memory (read-only).
+        // Distinct from save_diary_entry (which writes); these answer
+        // questions like "show my diary entries last week", "what's my
+        // streak?", "what do you remember about my knee injury?".
+        {
+          name: 'list_diary_entries',
+          description: [
+            "List the user's recent diary entries within an optional date window.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Show me my diary from last week'",
+            "  - 'What did I log this month?'",
+            "  - 'Read me my last 5 diary entries'",
+            "  - 'Was war im Tagebuch gestern?'",
+            "",
+            "Returns each entry's date, raw text excerpt (≤600 chars), and",
+            "any pillar deltas. Speak the entries naturally, oldest-to-newest.",
+            "Default window is the last 7 days when not specified.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              from: { type: 'string', description: 'Optional YYYY-MM-DD start (inclusive).' },
+              to: { type: 'string', description: 'Optional YYYY-MM-DD end (inclusive).' },
+              limit: { type: 'integer', description: 'Default 10. Max 50.' },
+            },
+          },
+        },
+        {
+          name: 'get_diary_streak',
+          description: [
+            "Return the user's current diary streak (consecutive days with at",
+            "least one entry) plus longest-ever streak and last entry date.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'What's my diary streak?' / 'Wie lang ist meine Serie?'",
+            "  - 'How many days in a row have I logged?'",
+            "  - 'When did I last write?'",
+            "",
+            "Use the answer to celebrate at 3/7/14/30-day milestones (per the",
+            "VTID-01983 reward ladder).",
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_memory_timeline',
+          description: [
+            "Walk the chronological memory timeline — facts, diary entries,",
+            "events. Useful for 'what was happening last month?' style queries",
+            "where the user wants a story arc, not a single fact.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Walk me through last month'",
+            "  - 'What's been going on in my life recently?'",
+            "  - 'Show my timeline for this week'",
+            "",
+            "Distinct from recall_conversation_at_time (which surfaces raw",
+            "conversation turns) — this returns structured timeline items",
+            "(facts, events, diary) for narrative reflection.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              from: { type: 'string', description: 'Optional YYYY-MM-DD start.' },
+              to: { type: 'string', description: 'Optional YYYY-MM-DD end.' },
+              type: {
+                type: 'string',
+                description: "Optional filter: 'fact' | 'diary' | 'event' | 'conversation'.",
+              },
+              limit: { type: 'integer', description: 'Default 20. Max 50.' },
+            },
+          },
+        },
+        {
+          name: 'recall_memory_about',
+          description: [
+            "Search the user's memory for entries matching a topic. Returns the",
+            "top-N most-relevant memory items with their category and timestamp.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'What do you remember about my knee injury?'",
+            "  - 'Did I ever mention my favorite restaurant?'",
+            "  - 'Find what we discussed about my career goals'",
+            "",
+            "Distinct from search_memory (existing tool, also keyword-based) —",
+            "use recall_memory_about when the user wants context-rich results",
+            "filtered by memory category (e.g. 'health_wellness',",
+            "'network_relationships'). Pass `categories` to scope the search.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: "What to search for. Free text, e.g. 'knee injury', 'magnesium'.",
+              },
+              categories: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  "Optional category filter. One or more of: personal_identity, health_wellness, lifestyle_routines, network_relationships, learning_knowledge, business_projects, finance_assets, location_environment, digital_footprint, values_aspirations, autopilot_context, future_plans, uncategorized.",
+              },
+              limit: { type: 'integer', description: 'Default 5. Max 20.' },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'get_memory_garden_summary',
+          description: [
+            "Return a compact summary of the user's memory garden: how many",
+            "items per category and the most recent entry per category. Lets",
+            "you answer 'what do you remember about me?' without dumping",
+            "individual rows.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'What do you remember about me?'",
+            "  - 'How much have I told you?'",
+            "  - 'Give me an overview of my memory'",
+            "  - 'Was hast du über mich gespeichert?'",
+            "",
+            "Speak the answer as a top-3 categorized list — 'Mostly Health (47",
+            "items), Relationships (22), Goals (15) — and the most recent entry",
+            "is from yesterday.'",
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'forget_memory',
+          description: [
+            "Forget (soft-delete) one specific memory item by id. Use only after",
+            "verbal confirmation — this is destructive.",
+            "",
+            "CALL THIS WHEN the user explicitly says:",
+            "  - 'Forget that last thing I said about my knee'",
+            "  - 'Delete the memory about [topic]'",
+            "  - 'Vergiss das'",
+            "",
+            "FLOW (mandatory):",
+            "  1. Call recall_memory_about first to get memory_id and content",
+            "  2. Read the content back: 'I'll forget the entry about your knee",
+            "     injury — yes or no?'",
+            "  3. ONLY call forget_memory once the user confirms (yes / ja /",
+            "     definitely). Vague answers ('maybe') are NOT confirmation.",
+            "",
+            "Returns a preview of what was forgotten so you can confirm verbally.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              memory_id: {
+                type: 'string',
+                description: "UUID of the memory_items row to forget.",
+              },
+              reason: {
+                type: 'string',
+                description: "Optional reason — defaults to 'user_forget'.",
+              },
+            },
+            required: ['memory_id'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6327,62 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02757 — Voice Tool Expansion P1c: Diary + Memory read-side ───
+      case 'list_diary_entries':
+      case 'get_diary_streak':
+      case 'get_memory_timeline':
+      case 'recall_memory_about':
+      case 'get_memory_garden_summary':
+      case 'forget_memory': {
+        try {
+          const dm = await import('../services/voice-tools/diary-memory');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'list_diary_entries') {
+            r = await dm.listDiaryEntries(sb, {
+              from: typeof args.from === 'string' ? args.from : undefined,
+              to: typeof args.to === 'string' ? args.to : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'get_diary_streak') {
+            r = await dm.getDiaryStreak(sb, lens.user_id);
+          } else if (toolName === 'get_memory_timeline') {
+            r = await dm.getMemoryTimeline(sb, {
+              from: typeof args.from === 'string' ? args.from : undefined,
+              to: typeof args.to === 'string' ? args.to : undefined,
+              type: typeof args.type === 'string' ? args.type : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'recall_memory_about') {
+            r = await dm.recallMemoryAbout(sb, lens.user_id, {
+              query: String(args.query || ''),
+              categories: Array.isArray(args.categories) ? (args.categories as string[]) : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'get_memory_garden_summary') {
+            r = await dm.getMemoryGardenSummary(sb, lens.user_id);
+          } else if (toolName === 'forget_memory') {
+            r = await dm.forgetMemory(sb, lens.user_id, {
+              memory_id: String(args.memory_id || ''),
+              reason: typeof args.reason === 'string' ? args.reason : undefined,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

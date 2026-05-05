@@ -620,6 +620,75 @@ async function tool_log_health(
   };
 }
 
+// VTID-02757 — Diary + Memory read-side
+async function tool_diary_memory(
+  toolName:
+    | 'list_diary_entries'
+    | 'get_diary_streak'
+    | 'get_memory_timeline'
+    | 'recall_memory_about'
+    | 'get_memory_garden_summary'
+    | 'forget_memory',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const dm = await import('../services/voice-tools/diary-memory');
+  let r: any;
+  if (toolName === 'list_diary_entries') {
+    r = await dm.listDiaryEntries(sb, {
+      from: typeof args.from === 'string' ? args.from : undefined,
+      to: typeof args.to === 'string' ? args.to : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'get_diary_streak') {
+    r = await dm.getDiaryStreak(sb, id.user_id);
+  } else if (toolName === 'get_memory_timeline') {
+    r = await dm.getMemoryTimeline(sb, {
+      from: typeof args.from === 'string' ? args.from : undefined,
+      to: typeof args.to === 'string' ? args.to : undefined,
+      type: typeof args.type === 'string' ? args.type : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'recall_memory_about') {
+    r = await dm.recallMemoryAbout(sb, id.user_id, {
+      query: String(args.query || ''),
+      categories: Array.isArray(args.categories) ? (args.categories as string[]) : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'get_memory_garden_summary') {
+    r = await dm.getMemoryGardenSummary(sb, id.user_id);
+  } else if (toolName === 'forget_memory') {
+    r = await dm.forgetMemory(sb, id.user_id, {
+      memory_id: String(args.memory_id || ''),
+      reason: typeof args.reason === 'string' ? args.reason : undefined,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  // Build voice-friendly text per tool.
+  let text = '';
+  if (toolName === 'list_diary_entries') {
+    const n = r.entries?.length ?? 0;
+    text = n === 0 ? 'No diary entries in that window.' : `Found ${n} diary entr${n === 1 ? 'y' : 'ies'}.`;
+  } else if (toolName === 'get_diary_streak') {
+    text = `${r.current_streak}-day streak. Longest ever: ${r.longest_streak}.`;
+  } else if (toolName === 'get_memory_timeline') {
+    const n = r.items?.length ?? 0;
+    text = n === 0 ? 'Nothing on the timeline for that window.' : `${n} timeline items.`;
+  } else if (toolName === 'recall_memory_about') {
+    const n = r.items?.length ?? 0;
+    text = n === 0 ? `Nothing in memory about that.` : `Found ${n} matching memor${n === 1 ? 'y' : 'ies'}.`;
+  } else if (toolName === 'get_memory_garden_summary') {
+    const top = (r.categories || []).slice(0, 3).map((c: any) => `${c.category_key} (${c.count})`).join(', ');
+    text = `${r.total} memories total. Top: ${top || 'none'}.`;
+  } else if (toolName === 'forget_memory') {
+    text = `Forgotten: "${(r.preview || '').slice(0, 100)}".`;
+  }
+
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +836,15 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02757 — Diary + Memory read-side
+      case 'list_diary_entries':
+      case 'get_diary_streak':
+      case 'get_memory_timeline':
+      case 'recall_memory_about':
+      case 'get_memory_garden_summary':
+      case 'forget_memory':
+        r = await tool_diary_memory(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
