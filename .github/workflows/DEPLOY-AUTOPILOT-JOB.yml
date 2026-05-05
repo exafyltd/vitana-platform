@@ -4,15 +4,14 @@
 #   The gateway service runs the executor's LLM call as a fire-and-forget
 #   background Promise. Cloud Run recycles service containers, killing
 #   in-flight Promises. Long calls (orb-live.ts ~80k input + 50k output
-#   tokens, ~3-5 min) statistically hit a recycle and silently die. The
-#   20-min running watchdog then reclaims the orphan.
+#   tokens, ~3-5 min) statistically hit a recycle and silently die.
 #
 #   Cloud Run JOBS run a single task to completion with a configurable
 #   timeout (up to 24h). They don't get scaled or recycled mid-run.
 #
 # Trigger:
 #   - Manual via workflow_dispatch (operator-initiated rebuild)
-#   - From the gateway via `gcloud run jobs execute` (per-execution dispatch)
+#   - From the gateway via Cloud Run Admin API (per-execution dispatch)
 #
 # This workflow only handles BUILD + DEPLOY (the Job container itself).
 # Per-execution dispatch is in the gateway's runExecutionSession path.
@@ -56,16 +55,16 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build container with Dockerfile.job
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build container with Dockerfile.job (local docker)
         env:
           PROJECT: lovable-vitana-vers1
           REGION: us-central1
           IMAGE_NAME: autopilot-executor
         run: |
           set -e
-          # Use Cloud Build with the dedicated Dockerfile.job (different entry
-          # point than the gateway service's Dockerfile). Tag with the commit
-          # SHA so we can roll back specific builds if needed.
           IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/$IMAGE_NAME:${{ github.sha }}"
           echo "Building $IMAGE_URI"
 
@@ -73,19 +72,11 @@ jobs:
           # BUILD_INFO is read at runtime; capture deploy SHA + time.
           echo "{\"sha\":\"${{ github.sha }}\",\"deployed_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"role\":\"autopilot-executor\"}" > BUILD_INFO
 
-          # Inline cloudbuild config so we can pick Dockerfile.job rather than
-          # the default Dockerfile (which is the gateway service entry).
-          # gcloud rejects --tag + --config together; --config is exclusive.
-          cat > /tmp/cloudbuild-job.yaml <<EOF
-          steps:
-            - name: 'gcr.io/cloud-builders/docker'
-              args: ['build', '-f', 'Dockerfile.job', '-t', '$IMAGE_URI', '.']
-            - name: 'gcr.io/cloud-builders/docker'
-              args: ['push', '$IMAGE_URI']
-          images:
-            - '$IMAGE_URI'
-          EOF
-          gcloud builds submit . --config=/tmp/cloudbuild-job.yaml
+          # Direct docker build + push. Simpler than gcloud builds submit
+          # (no remote build, no inline cloudbuild.yaml, no --tag/--config
+          # mutex problems). The runner already has docker available.
+          docker build -f Dockerfile.job -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
 
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
         id: build
@@ -99,10 +90,6 @@ jobs:
           set -e
           IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/autopilot-executor:${{ github.sha }}"
 
-          # gcloud's "jobs deploy" upserts: creates if missing, replaces if
-          # present. Same env + secret bindings as the gateway service so
-          # the executor reuses the same Vertex/AI-Studio + Supabase
-          # connection.
           gcloud run jobs deploy "$JOB_NAME" \
             --image="$IMAGE_URI" \
             --region="$REGION" \
@@ -128,12 +115,3 @@ jobs:
           echo "Job $JOB_NAME deployed."
           gcloud run jobs describe "$JOB_NAME" --region="$REGION" --project="$PROJECT" \
             --format='value(latestCreatedExecution.name,latestSucceededExecution.name)' || true
-
-      - name: Smoke test (no-op execution with empty EXEC_ID)
-        run: |
-          # We don't actually run a full execution here — that would charge
-          # tokens. Just confirm the Job is callable: invoking with no
-          # EXEC_ID exits 2 by design (see job-entry.ts). Cloud Run reports
-          # the exit code; the run itself is free apart from container
-          # startup time.
-          echo "Job is built + deployed. Per-execution dispatch happens from the gateway."
