@@ -159,6 +159,7 @@ import {
   suggestSimilar as suggestNavSimilar,
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
+  lookupByAlias as lookupNavByAlias,
 } from '../lib/navigation-catalog';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
@@ -3292,67 +3293,69 @@ function buildLiveApiTools(
             required: ['intent_id', 'recipient_vitana_ids'],
           },
         },
-        // VTID-DANCE-D14 — voice navigation. ORB returns a relative URL
-        // the frontend listens for and routes to. Use whenever the user
-        // says "show me my posts", "open the dance board", "where can I
-        // see this", "take me to the members list", etc.
+        // VTID-02770 — Voice navigation. The Navigator returns a relative URL
+        // the frontend ORB widget intercepts and routes to.
+        //
+        // The valid set of `screen_id` values is the Navigation Catalog
+        // (services/gateway/src/lib/navigation-catalog.ts) — the single source
+        // of truth, ~150 entries and growing. There is no enum here on purpose:
+        // an enum drifts the moment a new screen ships. Send any screen_id or
+        // alias slug; the gateway validates with exact match → alias match →
+        // fuzzy resolve, in that order.
         {
           name: 'navigate_to_screen',
           description: [
-            'Return a navigation target (relative URL) for the frontend to route to.',
-            'Use whenever the user asks to be shown a screen, list, or detail page —',
-            '"show me my posts", "open the dance board", "where can I see this", "take me to members".',
+            'Redirect the user to a screen, page, drawer, or overlay.',
             '',
-            'Available targets:',
-            "  find_partner             → /comm/find-partner (Find a Partner — unified dance + fitness destination, my matches by default)",
-            "  find_partner_matches     → /comm/find-partner?view=matches (only my matches)",
-            "  find_partner_board       → /comm/find-partner?view=board (community board, dance + fitness)",
-            "  find_partner_posts       → /comm/find-partner?view=posts (my dance/fitness wishes)",
-            "  my_intents               → /intents/mine (my own posts list)",
-            "  intent_board             → /intents/board (all community posts, kind tabs)",
-            "  intent_board_dance       → /intents/board?filter=dance (dance tab pre-selected)",
-            "  open_asks                → /comm/open-asks (community-wide unmatched posts)",
-            "  members                  → /comm/members (community members directory)",
-            "  intent_match_detail      → /intents/match/<match_id> (a specific match)",
-            "  intent_post_public       → /p/<intent_id> (public viewer for a specific post)",
-            "  edit_dance_preferences   → /profile/edit?drawer=dance",
-            "  edit_partner_preferences → /me/profile?drawer=partner (private-by-default partner-finding prefs)",
-            "  edit_service_offerings   → /me/profile?drawer=offerings (services I offer)",
-            "  privacy_settings         → /profile/me/privacy (per-section visibility toggles)",
-            "  connected_apps           → /settings/connected-apps (link/unlink Google, YouTube, Spotify, Apple Music etc — use whenever the user needs to connect or reconnect a music/calendar/email service)",
-            "  profile_with_match       → /u/<vitana_id>?match_intent=<intent_id> (matched user's profile with the matched post anchored)",
-            "  discover_marketplace     → /discover/marketplace (commercial intents)",
-            "  events_meetups           → /comm/events-meetups",
-            "  community_feed           → /comm/feed",
+            '── HARD-REDIRECT LEXICON — ALWAYS call this tool when the user uses any of these phrasings AND the requested item maps unambiguously to one screen ──',
+            '  Open       — "open …", "take me to …", "go to …", "launch …", "öffne …", "geh zu …", "bring mich zu …"',
+            '  Show       — "show me …", "let me see …", "display …", "zeig mir …", "lass mich … sehen"',
+            '  Guide      — "guide me to …", "navigate me to …", "lead me to …", "führe mich zu …"',
+            '  Locate     — "where can I find …", "where is …", "where do I see …", "wo finde ich …", "wo ist …"',
+            '  Action     — "where can I execute …", "where do I do …", "where can I log …", "wo kann ich …"',
+            '  Read       — "read me my …", "read this …", "read that …", "lies mir … vor"',
+            '  Not-found  — "I could not find …", "I can\'t find …", "I don\'t see …", "ich finde … nicht"',
             '',
-            'PREFER find_partner_* over my_intents / intent_board / members for any dance- or fitness-partner request.',
-            'find_partner is the single destination that pulls dance + fitness matches into one ranked list, with',
-            'sub-tabs for board, my posts, and members. Use it when the user says: "show me my matches",',
-            '"who did you find for me", "who wants to dance", "find me a fitness buddy", "open Find a Partner".',
+            'When any of these phrasings is used and the target is unambiguous, the redirect IS the answer. Do not narrate, do not ask permission, do not re-confirm. After calling, say a brief voice cue ("Opening your matches" / "Hier ist dein Index").',
             '',
-            'After calling, ORB should ALSO say a short voice cue ("Opening your matches") so',
-            'the user knows the screen change is intentional. The frontend handles the actual route push.',
+            '── DISAMBIGUATION ──',
+            'If the request could legitimately map to multiple screens (e.g. "show me my news" → inbox / AI feed / news; "where can I see my events" → events / calendar / reminders), DO NOT GUESS. Ask one short either/or question using the catalog titles, then call this tool with the user\'s pick. Example: "Do you mean your inbox news, or your AI feed?" / "Meinst du deinen Posteingang oder den KI-Feed?"',
+            '',
+            '── HOW TO PICK A screen_id ──',
+            'Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOVER.MARKETPLACE, OVERLAY.CALENDAR, MEMORY.DIARY, REMINDERS.OVERVIEW, INBOX.OVERVIEW, PROFILE.ME, PROFILE.PUBLIC, SETTINGS.CONNECTED_APPS, BUSINESS.OVERVIEW, COMM.OPEN_ASKS, COMM.MEMBERS, COMM.TALK_TO_VITANA, INTENTS.BOARD, INTENTS.MINE, INTENTS.MATCH_DETAIL, etc. If you only know a slug, send that — alias resolution handles "find-partner", "marketplace", "vitana-index", "calendar", "diary", "reminders", "members", "open-asks", "intent-board", "connected-apps", and the legacy snake_case forms (find_partner, events_meetups, …). Slugs work in EN or DE.',
+            '',
+            'Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.',
+            '',
+            '── PARAMETERIZED ROUTES ──',
+            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER.',
           ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
+              screen_id: {
+                type: 'string',
+                description: 'Catalog screen_id (e.g. "COMM.FIND_PARTNER") OR a known alias slug ("find-partner", "marketplace"). Validated server-side with exact → alias → fuzzy resolution; unknown ids are rejected with suggestions.',
+              },
               target: {
                 type: 'string',
-                enum: [
-                  'find_partner','find_partner_matches','find_partner_board','find_partner_posts',
-                  'my_intents','intent_board','intent_board_dance',
-                  'open_asks','members',
-                  'intent_match_detail','intent_post_public','profile_with_match',
-                  'edit_dance_preferences','edit_partner_preferences','edit_service_offerings',
-                  'privacy_settings','connected_apps','discover_marketplace',
-                  'events_meetups','community_feed',
-                ],
+                description: 'Legacy slug field — kept for backward compatibility with older clients. Equivalent to screen_id when both are absent.',
               },
-              intent_id: { type: 'string', description: 'For intent_post_public + profile_with_match (the matched intent_id).' },
-              match_id: { type: 'string', description: 'For intent_match_detail target.' },
-              vitana_id: { type: 'string', description: 'For profile_with_match — the counterparty\'s vitana_id (without leading @).' },
+              reason: {
+                type: 'string',
+                description: 'One-sentence reason in the user\'s language. Surfaced in OASIS telemetry for tuning.',
+              },
+              intent_id: { type: 'string', description: 'For PROFILE.WITH_MATCH (the matched intent_id).' },
+              match_id: { type: 'string', description: 'For INTENTS.MATCH_DETAIL.' },
+              vitana_id: { type: 'string', description: 'For PROFILE.PUBLIC / PROFILE.WITH_MATCH — counterparty vitana_id without leading @.' },
+              meetup_id: { type: 'string', description: 'For OVERLAY.MEETUP_DRAWER.' },
+              event_id: { type: 'string', description: 'For OVERLAY.EVENT_DRAWER.' },
+              user_id: { type: 'string', description: 'For OVERLAY.PROFILE_PREVIEW.' },
+              groupId: { type: 'string', description: 'For COMM.GROUP_DETAIL.' },
+              roomId: { type: 'string', description: 'For COMM.LIVE_ROOM_VIEWER.' },
+              id: { type: 'string', description: 'For DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL.' },
             },
-            required: ['target'],
+            // Either screen_id or target must be present — checked in the
+            // handler so legacy callers that send `target` continue to work.
           },
         },
         // VTID-DANCE-D11.B — pre-post candidate scan.
@@ -3790,20 +3793,29 @@ export async function handleNavigateToScreen(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
-  const screenId = String(args.screen_id || '').trim();
+  // VTID-02770: accept either `screen_id` (canonical) or legacy `target` slug.
+  // The handler resolves both via the catalog's three-tier lookup
+  // (exact id → alias → fuzzy).
+  const screenId = String(args.screen_id || args.target || '').trim();
   const reason = String(args.reason || '').trim();
   if (!screenId) {
-    return { success: false, result: '', error: 'navigate_to_screen requires screen_id.' };
+    return { success: false, result: '', error: 'navigate_to_screen requires screen_id (or legacy target).' };
   }
 
-  // VTID-NAV-FUZZY: Try exact match first. If that fails, auto-resolve via
-  // suggestSimilar — Gemini frequently guesses partial ids like "MEDIA_HUB"
-  // instead of "COMM.MEDIA_HUB" or "BUSINESS_HUB" instead of "BUSINESS.OVERVIEW".
-  // If the top suggestion is a strong match (score > 2nd by 2x or only one
-  // suggestion), navigate to it directly instead of returning an error that
-  // causes Gemini to stall. This eliminates the "frozen after asking for
-  // media hub / business hub" bug entirely.
+  // VTID-02770: Three-tier resolution.
+  //   1. Exact screen_id match (BY_ID)
+  //   2. Alias match (BY_ALIAS — includes legacy slugs like "find_partner",
+  //      user-canonical paths like "/community/events", and language variants)
+  //   3. Fuzzy fallback (suggestSimilar) — last-resort recovery for partial
+  //      guesses like "MEDIA_HUB" instead of "COMM.MEDIA_HUB".
   let entry = lookupNavScreen(screenId);
+  if (!entry) {
+    const aliased = lookupNavByAlias(screenId);
+    if (aliased) {
+      console.log(`[VTID-02770] Alias-resolved '${screenId}' → '${aliased.screen_id}' (${aliased.route})`);
+      entry = aliased;
+    }
+  }
   if (!entry) {
     const similar = suggestNavSimilar(screenId, 5);
     // Auto-resolve: if the top suggestion is unambiguous (strong lead or
@@ -3878,7 +3890,67 @@ export async function handleNavigateToScreen(
     };
   }
 
-  if (session.current_route && session.current_route === entry.route) {
+  // VTID-02770: Resolve the final URL the frontend will receive.
+  //   1. Substitute `:param` placeholders in entry.route with values from
+  //      args. Missing required params are reported as a typed error so
+  //      Gemini knows it must ask the user for the missing piece.
+  //   2. For overlay entries (entry_kind === 'overlay'), append
+  //      `?open=<query_marker>` so the frontend ORB widget intercepts and
+  //      dispatches the corresponding CustomEvent instead of routing.
+  //   3. For overlay entries that need a parameter (e.g. user_id for
+  //      OVERLAY.PROFILE_PREVIEW), append it as a query param too — the
+  //      frontend reads it from the URL on dispatch.
+  let resolvedRoute = entry.route;
+  const missingParams: string[] = [];
+  resolvedRoute = resolvedRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, name) => {
+    const v = args[name];
+    if (v === undefined || v === null || String(v).trim() === '') {
+      missingParams.push(String(name));
+      return ':' + String(name);
+    }
+    // Strip a leading `@` from vitana_id-style params before encoding.
+    const clean = String(v).trim().replace(/^@/, '');
+    return encodeURIComponent(clean);
+  });
+  if (missingParams.length > 0) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-live-ws',
+      status: 'warning',
+      message: `Missing route param(s) for ${entry.screen_id}: ${missingParams.join(', ')}`,
+      payload: {
+        session_id: session.sessionId,
+        attempted_screen_id: screenId,
+        error_kind: 'missing_param',
+        missing_params: missingParams,
+      },
+    }).catch(() => {});
+    return {
+      success: false,
+      result: '',
+      error: `Cannot navigate to ${entry.screen_id}: missing required parameter(s) ${missingParams.join(', ')}. Ask the user to provide them, then call navigate_to_screen again.`,
+    };
+  }
+
+  if (entry.entry_kind === 'overlay' && entry.overlay) {
+    const sep = resolvedRoute.includes('?') ? '&' : '?';
+    const params = new URLSearchParams();
+    params.set('open', entry.overlay.query_marker);
+    // If the overlay needs a specific param (user_id, meetup_id, etc.) and
+    // the caller provided it, pass it through so the frontend overlay can
+    // pick the right entity to render.
+    const needs = entry.overlay.needs_param;
+    if (needs) {
+      const v = args[needs];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        params.set(needs, String(v).trim().replace(/^@/, ''));
+      }
+    }
+    resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
+  }
+
+  if (session.current_route && session.current_route === entry.route && entry.entry_kind !== 'overlay') {
     emitOasisEvent({
       vtid: 'VTID-NAV-01',
       type: 'orb.navigator.blocked',
@@ -3904,7 +3976,7 @@ export async function handleNavigateToScreen(
   const content = getNavContent(entry, lang);
   session.pendingNavigation = {
     screen_id: entry.screen_id,
-    route: entry.route,
+    route: resolvedRoute,
     title: content.title,
     reason: reason || 'navigate_to_screen tool call',
     decision_source: 'direct',
@@ -3920,12 +3992,17 @@ export async function handleNavigateToScreen(
   // not the stale route the user was on when the session started. This
   // is what makes "which screen am I on?" answerable after Vitana has
   // just redirected the user via this tool.
-  const previousRoute = session.current_route;
-  session.current_route = entry.route;
-  if (previousRoute && previousRoute !== entry.route) {
-    const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
-    const deduped = trail.filter(r => r !== previousRoute);
-    session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+  //
+  // VTID-02770: For overlay entries we do NOT change current_route, since the
+  // user stays on their original page — only a popup opens.
+  if (entry.entry_kind !== 'overlay') {
+    const previousRoute = session.current_route;
+    session.current_route = entry.route;
+    if (previousRoute && previousRoute !== entry.route) {
+      const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+      const deduped = trail.filter(r => r !== previousRoute);
+      session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+    }
   }
 
   // Persist the navigation as a memory item (authenticated only).
@@ -3938,7 +4015,7 @@ export async function handleNavigateToScreen(
       },
       screen: {
         screen_id: entry.screen_id,
-        route: entry.route,
+        route: resolvedRoute,
         title: content.title,
       },
       reason: session.pendingNavigation.reason,
@@ -3954,11 +4031,12 @@ export async function handleNavigateToScreen(
     type: 'orb.navigator.requested',
     source: 'orb-live-ws',
     status: 'info',
-    message: `navigate_to_screen ${entry.screen_id} (${entry.route})`,
+    message: `navigate_to_screen ${entry.screen_id} (${resolvedRoute})`,
     payload: {
       session_id: session.sessionId,
       screen_id: entry.screen_id,
-      route: entry.route,
+      route: resolvedRoute,
+      entry_kind: entry.entry_kind || 'route',
       reason: session.pendingNavigation.reason,
       is_anonymous: isAnon,
     },
@@ -3966,7 +4044,9 @@ export async function handleNavigateToScreen(
 
   return {
     success: true,
-    result: `Navigation queued to ${content.title} (${entry.route}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
+    result: entry.entry_kind === 'overlay'
+      ? `Overlay opened: ${content.title}. The user stays on their current screen — the popup is now visible. Continue the conversation; do NOT navigate elsewhere unless the user asks.`
+      : `Navigation queued to ${content.title} (${resolvedRoute}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
   };
 }
 
@@ -4059,9 +4139,17 @@ async function executeLiveApiToolInner(
   if (toolName === 'navigate') {
     return await handleNavigate(session, args);
   }
-  // Legacy tool names — route to the unified handler for backward compatibility
-  // in case an in-flight session still has the old tool declarations cached.
-  if (toolName === 'navigator_consult' || toolName === 'navigate_to_screen') {
+  // VTID-02770: navigate_to_screen takes a catalog screen_id (or alias) and
+  // dispatches directly via the catalog-aware handler. This is the canonical
+  // path — preserves parameterized routes (intent_id, match_id, etc.) and
+  // overlay support that the free-text `navigate` tool does not.
+  if (toolName === 'navigate_to_screen') {
+    return await handleNavigateToScreen(session, args);
+  }
+  // Legacy: navigator_consult was the consult-then-narrate path before the
+  // unified `navigate` tool. Still routed to the unified handler for any
+  // in-flight session that has the old declarations cached.
+  if (toolName === 'navigator_consult') {
     return await handleNavigate(session, { question: args.question || args.screen_id || args.reason || '' });
   }
 
@@ -6991,81 +7079,13 @@ async function executeLiveApiToolInner(
         }
       }
 
-      // VTID-DANCE-D14 — frontend navigation tool. Returns a relative URL
-      // the client routes to. The frontend listens for navigate_to events
-      // emitted on the ORB session channel.
-      case 'navigate_to_screen': {
-        const target = String(args.target || '').trim();
-        const intentId = args.intent_id ? String(args.intent_id).trim() : null;
-        const matchId = args.match_id ? String(args.match_id).trim() : null;
-        const vitanaIdArg = args.vitana_id ? String(args.vitana_id).trim().replace(/^@/, '') : null;
-        if (!target) return { success: false, result: '', error: 'target is required' };
-
-        let url = '';
-        let title = '';
-        switch (target) {
-          case 'find_partner':             url = '/comm/find-partner'; title = 'Find a Partner'; break;
-          case 'find_partner_matches':     url = '/comm/find-partner?view=matches'; title = 'My matches'; break;
-          case 'find_partner_board':       url = '/comm/find-partner?view=board'; title = 'Find a Partner — board'; break;
-          case 'find_partner_posts':       url = '/comm/find-partner?view=posts'; title = 'My dance & fitness wishes'; break;
-          case 'my_intents':              url = '/intents/mine'; title = 'My posts'; break;
-          case 'intent_board':             url = '/intents/board'; title = 'Community board'; break;
-          case 'intent_board_dance':       url = '/intents/board?filter=dance'; title = 'Dance posts'; break;
-          case 'open_asks':                url = '/comm/open-asks'; title = 'Open asks'; break;
-          case 'members':                  url = '/comm/members'; title = 'Community members'; break;
-          case 'intent_match_detail':
-            if (!matchId) return { success: false, result: '', error: 'match_id is required for intent_match_detail' };
-            url = `/intents/match/${encodeURIComponent(matchId)}`; title = 'Match detail'; break;
-          case 'intent_post_public':
-            if (!intentId) return { success: false, result: '', error: 'intent_id is required for intent_post_public' };
-            url = `/p/${encodeURIComponent(intentId)}`; title = 'Post detail'; break;
-          // E3 — profile-first match presentation. Lands on the matched
-          // user's PublicProfilePage with the matched post anchored.
-          case 'profile_with_match': {
-            if (!vitanaIdArg) return { success: false, result: '', error: 'vitana_id is required for profile_with_match' };
-            const params = new URLSearchParams();
-            if (intentId) params.set('match_intent', intentId);
-            const qs = params.toString();
-            url = `/u/${encodeURIComponent(vitanaIdArg)}${qs ? '?' + qs : ''}`;
-            title = 'Profile';
-            break;
-          }
-          case 'edit_dance_preferences':   url = '/profile/edit?drawer=dance'; title = 'Dance preferences'; break;
-          case 'edit_partner_preferences': url = '/me/profile?drawer=partner'; title = 'Partner preferences'; break;
-          case 'edit_service_offerings':   url = '/me/profile?drawer=offerings'; title = 'Service offerings'; break;
-          case 'privacy_settings':         url = '/profile/me/privacy'; title = 'Privacy & Visibility'; break;
-          // VTID-02675: pairs with the play_music fallback at ~line 4801 which
-          // says "want me to take you to Connected Apps?". Without this case,
-          // the fuzzy resolver would land the user on a random Settings page.
-          case 'connected_apps':           url = '/settings/connected-apps'; title = 'Connected Apps'; break;
-          case 'discover_marketplace':     url = '/discover/marketplace'; title = 'Marketplace'; break;
-          case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
-          case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
-          default:
-            return { success: false, result: '', error: `Unknown target: ${target}` };
-        }
-
-        // Emit a session event so the frontend can listen + route.
-        try {
-          await emitOasisEvent({
-            vtid: 'VTID-DANCE-D14',
-            type: 'voice.message.sent',
-            source: 'orb-live',
-            status: 'info',
-            message: `Voice navigate_to_screen: ${target}`,
-            payload: { target, url, title, intent_id: intentId, match_id: matchId },
-            actor_id: session.identity?.user_id,
-            actor_role: 'user',
-            surface: 'orb',
-            vitana_id: session.identity?.vitana_id ?? undefined,
-          });
-        } catch { /* best-effort */ }
-
-        return {
-          success: true,
-          result: JSON.stringify({ ok: true, navigate_to: url, title }),
-        };
-      }
+      // VTID-02770: navigate_to_screen is routed at the top of handleToolCall
+      // (line ~4064) directly to handleNavigateToScreen, so this switch case
+      // is unreachable. The duplicated TARGET_ROUTES table that used to live
+      // here was deleted — the catalog (with aliases + entry_kind=overlay +
+      // param substitution) is the single source of truth. If you need to
+      // add a new target, add it as a catalog entry in navigation-catalog.ts,
+      // not here.
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
       case 'scan_existing_matches': {
