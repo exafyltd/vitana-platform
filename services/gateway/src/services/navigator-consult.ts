@@ -87,10 +87,33 @@ export type ConsultConfidence = 'high' | 'medium' | 'low';
 // "tenant forced a custom screen".
 export type ConsultDecisionSource = 'scoring' | 'override_trigger' | 'static_fallback';
 
+/**
+ * VTID-02781: The Navigator's call on what to do with this consult.
+ *
+ *   `confident`  — primary is a clear winner. Caller should auto-redirect.
+ *   `ambiguous`  — top-2 scores are too close, both viable. Ask either/or.
+ *   `unknown`    — no viable match. Ask the user to rephrase.
+ *
+ * Distinct from `confidence` (low/medium/high), which scores the absolute
+ * top match. `decision` is the action contract for the caller, derived
+ * from confidence + the gap between top and runner-up.
+ */
+export type ConsultDecision = 'confident' | 'ambiguous' | 'unknown';
+
 export interface NavigatorConsultResult {
   confidence: ConsultConfidence;
+  /** VTID-02781: action contract for the caller. */
+  decision: ConsultDecision;
   primary: NavigatorConsultPick | null;
+  /** Closest near-miss (if any). Kept for back-compat with older callers. */
   alternative?: NavigatorConsultPick;
+  /**
+   * VTID-02781: Up to 3 alternatives ranked by score. When `decision ===
+   * 'ambiguous'` this is what the caller renders in the either/or question.
+   * Always includes `primary` as `alternatives[0]` when ambiguous; empty
+   * for `unknown`; `[primary]` for `confident`.
+   */
+  alternatives: NavigatorConsultPick[];
   explanation: string;
   confirmation_needed: boolean;
   suggested_question?: string;
@@ -119,6 +142,13 @@ const CONSULT_CONFIG = {
   MEDIUM_CONFIDENCE_MIN: 12,
   // If 2nd-best is at least this fraction of the top score, treat as ambiguous
   AMBIGUITY_RATIO: 0.7,
+  // VTID-02781: Tighter normalized-gap threshold for the explicit `decision`
+  // field. Computed as 1 - score(top2)/score(top1). Below 0.20 = ambiguous,
+  // above = confident (when the top score also clears MEDIUM_CONFIDENCE_MIN).
+  // 0.20 means top must be 25%+ better than runner-up to skip the either/or.
+  AMBIGUITY_GAP: 0.20,
+  // Don't disambiguate if runner-up isn't even viable.
+  DISAMBIGUATE_RUNNER_UP_MIN: 12,
   // Absolute cosine-similarity floor for semantic-only matches (no keyword
   // hits at all). Without this, a query like "open the screen with the
   // connectors" picks an arbitrary community page that happens to share the
@@ -403,7 +433,9 @@ export async function consultNavigator(
     });
     return {
       confidence: 'high',
+      decision: 'confident',
       primary: pick,
+      alternatives: [pick],
       explanation,
       confirmation_needed: false,
       kb_excerpts: staticKbAnchors(overrideMatch as NavCatalogEntry),
@@ -452,7 +484,9 @@ export async function consultNavigator(
         if (entry && !entry.anonymous_safe) {
           return {
             confidence: 'low',
+            decision: 'unknown',
             primary: null,
+            alternatives: [],
             explanation: buildExplanation({ primary: null, confidence: 'low', blockedReason: 'requires_auth', hints: EMPTY_HINTS, lang: input.lang }),
             confirmation_needed: false,
             kb_excerpts: [],
@@ -478,7 +512,9 @@ export async function consultNavigator(
 
       return {
         confidence: 'high',
+        decision: 'confident',
         primary: pick,
+        alternatives: [pick],
         explanation,
         confirmation_needed: false,
         kb_excerpts: staticKbAnchors(fastTop.entry),
@@ -649,6 +685,59 @@ export async function consultNavigator(
     }
   }
 
+  // ── VTID-02781: Compute `decision` (the action contract for the caller).
+  //
+  // Three buckets:
+  //   `confident`  — top is a clear winner. Auto-redirect.
+  //   `ambiguous`  — top-2 are too close, both viable. Ask either/or.
+  //   `unknown`    — nothing viable. Ask user to rephrase.
+  //
+  // Logic:
+  //   - `low` confidence (or auth-blocked) → unknown
+  //   - top has runner-up within AMBIGUITY_GAP AND runner-up clears
+  //     DISAMBIGUATE_RUNNER_UP_MIN → ambiguous
+  //   - otherwise → confident
+  //
+  // Also build `alternatives[]` (up to 3) for the caller to surface in the
+  // clarifying question. Always includes primary as alternatives[0] when
+  // ambiguous; [primary] for confident; empty for unknown.
+  let decision: ConsultDecision;
+  let alternatives: NavigatorConsultPick[] = [];
+
+  if (!primary || confidence === 'low' || blockedReason) {
+    decision = 'unknown';
+  } else {
+    const topScore = top!.score;
+    const runnerUp = second && second.entry.screen_id !== primary.screen_id ? second : null;
+    const gap = runnerUp ? 1 - runnerUp.score / topScore : 1;
+    const isAmbiguous =
+      runnerUp !== null &&
+      runnerUp.score >= CONSULT_CONFIG.DISAMBIGUATE_RUNNER_UP_MIN &&
+      gap < CONSULT_CONFIG.AMBIGUITY_GAP;
+
+    if (isAmbiguous) {
+      decision = 'ambiguous';
+      // Surface top 3 viable picks as alternatives.
+      alternatives = scored
+        .filter(s => s.score >= CONSULT_CONFIG.DISAMBIGUATE_RUNNER_UP_MIN)
+        .slice(0, 3)
+        .map(s => entryToPick(s.entry, input.lang));
+      // The legacy `alternative` field tracks the closest near-miss.
+      if (!alternative && alternatives.length > 1) {
+        alternative = alternatives[1];
+      }
+      // Force `confirmation_needed` so the existing tool-result formatter
+      // also signals the caller (older Gemini turns may key off this field).
+      confirmationNeeded = true;
+      if (!suggestedQuestion && alternatives.length >= 2) {
+        suggestedQuestion = buildClarification(top!.entry, runnerUp!.entry, input.lang);
+      }
+    } else {
+      decision = 'confident';
+      alternatives = [entryToPick(top!.entry, input.lang)];
+    }
+  }
+
   // ── Compose KB excerpts: static anchors + runtime hits, deduped ────────
   const staticAnchors = staticKbAnchors(top?.entry || null);
   const kbExcerpts: string[] = [];
@@ -673,8 +762,10 @@ export async function consultNavigator(
 
   return {
     confidence,
+    decision,
     primary,
     alternative,
+    alternatives,
     explanation,
     confirmation_needed: confirmationNeeded,
     suggested_question: suggestedQuestion,
@@ -703,6 +794,10 @@ export async function consultNavigator(
 export function formatConsultResultForLLM(result: NavigatorConsultResult): string {
   const lines: string[] = [];
   lines.push(`RECOMMENDATION: ${result.confidence}`);
+  // VTID-02781: Surface the explicit decision so Gemini sees the action
+  // contract front-and-center: confident → redirect now; ambiguous → ask
+  // either/or; unknown → ask the user to rephrase.
+  lines.push(`DECISION: ${result.decision}`);
   if (result.blocked_reason) {
     lines.push(`BLOCKED_REASON: ${result.blocked_reason}`);
   }
@@ -711,7 +806,15 @@ export function formatConsultResultForLLM(result: NavigatorConsultResult): strin
   } else {
     lines.push('PRIMARY: none');
   }
-  if (result.alternative) {
+  if (result.decision === 'ambiguous' && result.alternatives.length > 1) {
+    // List up to 3 alternatives so the LLM can construct a clean either/or
+    // question. Always render alternatives[0] (the primary) too so the
+    // model sees the full picture.
+    for (let i = 0; i < Math.min(result.alternatives.length, 3); i++) {
+      const a = result.alternatives[i];
+      lines.push(`ALTERNATIVE_${i + 1}: ${a.screen_id} (${a.route}) — ${a.title}`);
+    }
+  } else if (result.alternative) {
     lines.push(`ALTERNATIVE: ${result.alternative.screen_id} (${result.alternative.route}) — ${result.alternative.title}`);
   }
   lines.push(`CONFIRMATION_NEEDED: ${result.confirmation_needed}`);

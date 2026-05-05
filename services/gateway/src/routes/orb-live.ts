@@ -3558,18 +3558,69 @@ async function handleNavigate(
     type: 'orb.navigator.consulted',
     source: 'orb-live-ws',
     status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigate: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
+    message: `navigate: confidence=${consultResult.confidence}, decision=${consultResult.decision}, primary=${consultResult.primary?.screen_id || 'none'}`,
     payload: {
       session_id: session.sessionId,
       question,
       primary_screen_id: consultResult.primary?.screen_id || null,
       confidence: consultResult.confidence,
+      // VTID-02781: surface decision in consulted-event payload
+      decision: consultResult.decision,
+      alternative_screen_ids: consultResult.alternatives.slice(0, 3).map(a => a.screen_id),
       kb_excerpt_count: consultResult.kb_excerpt_count,
       memory_hint_count: consultResult.memory_hint_count,
       ms_elapsed: consultResult.ms_elapsed,
       is_anonymous: consultInput.is_anonymous,
     },
   }).catch(() => {});
+
+  // VTID-02781: If the consult decided the request is ambiguous, return an
+  // either/or clarification BEFORE auto-navigating. Better to ask once than
+  // to redirect to the wrong screen.
+  if (
+    consultResult.decision === 'ambiguous' &&
+    consultResult.alternatives.length >= 2 &&
+    !consultResult.blocked_reason
+  ) {
+    const top = consultResult.alternatives[0];
+    const second = consultResult.alternatives[1];
+    const third = consultResult.alternatives[2] || null;
+    emitOasisEvent({
+      vtid: 'VTID-02781',
+      type: 'orb.navigator.disambiguated',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `disambiguating: ${top.screen_id} vs ${second.screen_id}${third ? ' vs ' + third.screen_id : ''}`,
+      payload: {
+        session_id: session.sessionId,
+        question,
+        candidates: consultResult.alternatives.slice(0, 3).map(a => ({
+          screen_id: a.screen_id, route: a.route, title: a.title,
+        })),
+        ms_elapsed: consultResult.ms_elapsed,
+        lang: consultInput.lang,
+      },
+    }).catch(() => {});
+
+    const lines: string[] = [];
+    lines.push('NAVIGATING_TO: null (waiting for user choice — DO NOT redirect)');
+    lines.push(`DECISION: ambiguous`);
+    lines.push(`CANDIDATES:`);
+    consultResult.alternatives.slice(0, 3).forEach((a, i) => {
+      lines.push(`  [${i + 1}] ${a.screen_id} — ${a.title} (${a.route})`);
+    });
+    const askLine =
+      consultResult.suggested_question ||
+      (consultInput.lang.startsWith('de')
+        ? `Meinst du ${top.title} oder ${second.title}${third ? ' — oder ' + third.title : ''}?`
+        : `Do you mean ${top.title} or ${second.title}${third ? ' — or ' + third.title : ''}?`);
+    lines.push(`ASK_USER: ${askLine}`);
+    lines.push('');
+    lines.push('Ask the either/or question naturally. WAIT for the user to pick.');
+    lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
+    lines.push('do not call navigate again unless the user rephrases their request.');
+    return { success: true, result: lines.join('\n') };
+  }
 
   // Step 2: If we found a match with sufficient confidence, auto-navigate
   if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {

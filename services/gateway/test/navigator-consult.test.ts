@@ -43,6 +43,7 @@ import {
   formatConsultResultForLLM,
   writeNavigatorActionMemory,
   NavigatorConsultInput,
+  NavigatorConsultResult,
 } from '../src/services/navigator-consult';
 import { writeMemoryItemWithIdentity } from '../src/services/orb-memory-bridge';
 
@@ -289,5 +290,89 @@ describe('writeNavigatorActionMemory', () => {
       orb_session_id: 's',
       lang: 'en',
     })).resolves.toBeUndefined();
+  });
+});
+
+// ─── VTID-02781: decision + alternatives ────────────────────────────────────
+
+describe('consultNavigator — decision field (VTID-02781)', () => {
+  test('confident: clear high-score winner returns decision="confident" with primary in alternatives[0]', async () => {
+    const result = await consultNavigator(authedInput({
+      question: 'how do I track my biology',
+    }));
+    expect(result.decision).toBe('confident');
+    expect(result.primary).not.toBeNull();
+    expect(result.alternatives.length).toBeGreaterThanOrEqual(1);
+    expect(result.alternatives[0].screen_id).toBe(result.primary?.screen_id);
+  });
+
+  test('unknown: no viable match returns decision="unknown" with empty alternatives', async () => {
+    const result = await consultNavigator(authedInput({
+      question: 'recite the periodic table',
+    }));
+    expect(result.decision).toBe('unknown');
+    expect(result.primary).toBeNull();
+    expect(result.alternatives).toEqual([]);
+  });
+
+  test('unknown: anonymous user blocked from authed screen returns decision="unknown"', async () => {
+    const result = await consultNavigator(anonymousInput({
+      question: 'open my wallet',
+    }));
+    expect(result.decision).toBe('unknown');
+    expect(result.primary).toBeNull();
+    expect(result.alternatives).toEqual([]);
+  });
+
+  test('decision is always one of the three documented values', async () => {
+    for (const q of [
+      'how do I track my biology',
+      'tell me a joke about gravity',
+      'open the events page',
+      'show me my matches',
+    ]) {
+      const result = await consultNavigator(authedInput({ question: q }));
+      expect(['confident', 'ambiguous', 'unknown']).toContain(result.decision);
+    }
+  });
+});
+
+describe('formatConsultResultForLLM — DECISION line (VTID-02781)', () => {
+  test('renders DECISION on every result', async () => {
+    const result = await consultNavigator(authedInput({
+      question: 'how do I track my biology',
+    }));
+    const formatted = formatConsultResultForLLM(result);
+    expect(formatted).toMatch(/^DECISION: (confident|ambiguous|unknown)$/m);
+  });
+
+  test('ambiguous result lists ALTERNATIVE_1, ALTERNATIVE_2, ALTERNATIVE_3', () => {
+    // Synthesize an ambiguous result manually since the live catalog rarely
+    // produces one with our test fixtures.
+    const result: NavigatorConsultResult = {
+      confidence: 'medium',
+      decision: 'ambiguous',
+      primary: { screen_id: 'A.X', route: '/a', title: 'A', description: 'a', when_to_visit: 'a' },
+      alternative: { screen_id: 'B.X', route: '/b', title: 'B', description: 'b', when_to_visit: 'b' },
+      alternatives: [
+        { screen_id: 'A.X', route: '/a', title: 'A', description: 'a', when_to_visit: 'a' },
+        { screen_id: 'B.X', route: '/b', title: 'B', description: 'b', when_to_visit: 'b' },
+        { screen_id: 'C.X', route: '/c', title: 'C', description: 'c', when_to_visit: 'c' },
+      ],
+      explanation: 'pick one',
+      confirmation_needed: true,
+      kb_excerpts: [],
+      top_picks: [],
+      decision_source: 'scoring',
+      ms_elapsed: 1,
+      catalog_match_count: 3,
+      memory_hint_count: 0,
+      kb_excerpt_count: 0,
+    };
+    const formatted = formatConsultResultForLLM(result);
+    expect(formatted).toContain('DECISION: ambiguous');
+    expect(formatted).toContain('ALTERNATIVE_1: A.X');
+    expect(formatted).toContain('ALTERNATIVE_2: B.X');
+    expect(formatted).toContain('ALTERNATIVE_3: C.X');
   });
 });
