@@ -3577,6 +3577,76 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // VTID-02779 — P1q Clock / Alarm / Timer voice tools
+        {
+          name: 'set_alarm',
+          description: 'Set a wake-up alarm at a specific HH:MM. If the time has already passed today, fires tomorrow. Use this for actual wake-up alarms; use set_reminder for scheduled prompts.',
+          parameters: {
+            type: 'object',
+            properties: {
+              hour: { type: 'integer', description: 'Hour 0-23' },
+              minute: { type: 'integer', description: 'Minute 0-59' },
+              label: { type: 'string', description: 'Optional alarm label, e.g. "Morning workout"' },
+              user_tz: { type: 'string', description: 'IANA tz, e.g. Europe/Berlin' },
+            },
+            required: ['hour', 'minute'],
+          },
+        },
+        {
+          name: 'list_alarms',
+          description: 'List all active alarms (the user\'s wake-up alarms, not reminders).',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+        {
+          name: 'delete_alarm',
+          description: 'Cancel an alarm by id (returned by list_alarms).',
+          parameters: {
+            type: 'object',
+            properties: { alarm_id: { type: 'string' } },
+            required: ['alarm_id'],
+          },
+        },
+        {
+          name: 'start_timer',
+          description: 'Start a countdown timer. The orb chimes and speaks when it ends.',
+          parameters: {
+            type: 'object',
+            properties: {
+              duration_seconds: { type: 'integer', description: '60-86400 seconds' },
+              label: { type: 'string', description: 'Optional, e.g. "Pasta", "Cold plunge"' },
+            },
+            required: ['duration_seconds'],
+          },
+        },
+        {
+          name: 'start_pomodoro',
+          description: 'Start a pomodoro work session (default 25 min). The orb pings when the work block ends.',
+          parameters: {
+            type: 'object',
+            properties: {
+              work_minutes: { type: 'integer', description: '5-90 (default 25)' },
+              label: { type: 'string' },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'list_active_timers',
+          description: 'List active countdown timers and pomodoros.',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+        {
+          name: 'get_world_time',
+          description: 'Return the current local time in a city or IANA timezone. Use for "what time is it in Tokyo?".',
+          parameters: {
+            type: 'object',
+            properties: {
+              city: { type: 'string', description: 'City name, e.g. "Tokyo", "New York"' },
+              tz: { type: 'string', description: 'IANA tz (overrides city), e.g. "Asia/Tokyo"' },
+            },
+            required: [],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6234,54 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02779 — P1q Clock / Alarm / Timer voice tools ───
+      case 'set_alarm':
+      case 'list_alarms':
+      case 'delete_alarm':
+      case 'start_timer':
+      case 'start_pomodoro':
+      case 'list_active_timers':
+      case 'get_world_time': {
+        try {
+          const clock = await import('../services/voice-tools/clock-actions');
+          if (name === 'get_world_time') {
+            const r = clock.getWorldTime({ city: args.city as string, tz: args.tz as string });
+            return { success: r.ok, result: JSON.stringify(r) };
+          }
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const identity = { user_id: lens.user_id, tenant_id: lens.tenant_id || lens.user_id };
+          let r: any;
+          switch (name) {
+            case 'set_alarm':
+              r = await clock.setAlarm(client, identity, args as any);
+              break;
+            case 'list_alarms':
+              r = await clock.listAlarms(client, identity);
+              break;
+            case 'delete_alarm':
+              r = await clock.deleteAlarm(client, identity, args as any);
+              break;
+            case 'start_timer':
+              r = await clock.startTimer(client, identity, args as any);
+              break;
+            case 'start_pomodoro':
+              r = await clock.startPomodoro(client, identity, args as any);
+              break;
+            case 'list_active_timers':
+              r = await clock.listActiveTimers(client, identity);
+              break;
+          }
+          return { success: r?.ok !== false, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${name}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

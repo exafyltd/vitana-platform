@@ -620,6 +620,47 @@ async function tool_log_health(
   };
 }
 
+// VTID-02779 — P1q Clock / Alarm / Timer voice tools
+async function tool_clock_actions(
+  toolName: string,
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const clock = await import('../services/voice-tools/clock-actions');
+  if (toolName === 'get_world_time') {
+    const r = clock.getWorldTime({ city: args.city as string, tz: args.tz as string });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, result: r, text: `${r.display} (${r.tz})` };
+  }
+  const identity = { user_id: id.user_id, tenant_id: id.tenant_id || id.user_id };
+  let r: any;
+  switch (toolName) {
+    case 'set_alarm':
+      r = await clock.setAlarm(sb, identity, args as any);
+      break;
+    case 'list_alarms':
+      r = await clock.listAlarms(sb, identity);
+      break;
+    case 'delete_alarm':
+      r = await clock.deleteAlarm(sb, identity, args as any);
+      break;
+    case 'start_timer':
+      r = await clock.startTimer(sb, identity, args as any);
+      break;
+    case 'start_pomodoro':
+      r = await clock.startPomodoro(sb, identity, args as any);
+      break;
+    case 'list_active_timers':
+      r = await clock.listActiveTimers(sb, identity);
+      break;
+    default:
+      return { ok: false, error: `unknown_clock_tool: ${toolName}` };
+  }
+  if (!r || r.ok === false) return { ok: false, error: r?.error || `${toolName}_failed` };
+  return { ok: true, result: r };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +808,16 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02779 — P1q Clock / Alarm / Timer voice tools
+      case 'set_alarm':
+      case 'list_alarms':
+      case 'delete_alarm':
+      case 'start_timer':
+      case 'start_pomodoro':
+      case 'list_active_timers':
+      case 'get_world_time':
+        r = await tool_clock_actions(name, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
