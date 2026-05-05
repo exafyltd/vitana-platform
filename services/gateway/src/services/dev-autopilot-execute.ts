@@ -453,6 +453,42 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
       outcome: 'escalated',
       attempt_number: 1,
     });
+    // VTID-AUTOPILOT-SAFETY-SPIN: when called from autoApproveTick (no
+    // approved_by), snooze the recommendation for 7 days so the picker
+    // doesn't re-evaluate it on every 30s tick. Without this, a blocked
+    // finding generates ~120 safety-gate-eval cycles per hour AND ~120
+    // self_healing_log escalation rows — 90k rows/day of pure noise per
+    // blocked finding. The 7d snooze gives the operator a week to either
+    // regenerate the plan or unsnooze; after that, autoApproveTick re-
+    // evaluates (in case the plan or scope policy changed in the
+    // meantime). Human-approved calls (approved_by present) skip this:
+    // the human sees the violations in the API response and decides.
+    // Feedback findings also skip — they get human triage attention.
+    const isAutoApprove = !input.approved_by;
+    if (isAutoApprove && !isFeedbackLane) {
+      const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      const violationSummary = (decision.violations || [])
+        .map((v: { rule?: string; message?: string }) => v.rule || v.message)
+        .filter(Boolean)
+        .slice(0, 3)
+        .join('; ');
+      await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'snoozed',
+            snoozed_until: snoozedUntil,
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      console.log(
+        `${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] safety gate blocked auto-approve — snoozed 7d (${violationSummary})`,
+      );
+    }
     return { ok: false, decision, error: 'safety gate blocked approval' };
   }
 
