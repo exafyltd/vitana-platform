@@ -587,6 +587,84 @@ async function tool_navigate_to_screen(args: ToolArgs): Promise<ToolResult> {
 }
 
 // ---------------------------------------------------------------------------
+// VTID-02753 — Voice Tool Expansion P1a: structured Health logging tools
+// ---------------------------------------------------------------------------
+
+async function tool_log_health(
+  toolName: 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation',
+  args: ToolArgs,
+  id: Identity,
+): Promise<ToolResult> {
+  const { logHealthSignal } = await import('../services/voice-tools/health-log');
+  const today = new Date().toISOString().slice(0, 10);
+  const date = typeof args.date === 'string' && args.date ? args.date : today;
+  const out = await logHealthSignal({
+    user_id: id.user_id,
+    tenant_id: id.tenant_id,
+    tool: toolName,
+    date,
+    amount_ml: typeof args.amount_ml === 'number' ? args.amount_ml : undefined,
+    minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+    activity_type: typeof args.activity_type === 'string' ? args.activity_type : undefined,
+  });
+  if (!out.ok) return { ok: false, error: out.error };
+  const s = out.summary;
+  const deltaText =
+    s.index_delta !== null && s.index_delta > 0
+      ? ` Vitana Index up ${s.index_delta}.`
+      : '';
+  return {
+    ok: true,
+    result: s,
+    text: `Logged ${s.value} ${s.unit} to ${s.pillar}.${deltaText}`,
+  };
+}
+
+async function tool_get_pillar_subscores(
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const pillar = String(args.pillar || '').toLowerCase();
+  const valid = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
+  if (!valid.includes(pillar)) {
+    return { ok: false, error: `pillar must be one of ${valid.join(', ')}` };
+  }
+  const snap = await fetchVitanaIndexForProfiler(sb, id.user_id);
+  if (!snap) {
+    return { ok: true, result: { pillar, available: false }, text: `No Vitana Index snapshot yet.` };
+  }
+  const sub = snap.subscores?.[pillar as keyof typeof snap.subscores];
+  const pillarScore = snap.pillars[pillar as keyof typeof snap.pillars] ?? 0;
+  if (!sub) {
+    return {
+      ok: true,
+      result: { pillar, pillar_score: pillarScore, subscores: null, reason: 'no_subscores_for_pillar' },
+      text: `${pillar} sits at ${pillarScore} but per-component breakdown isn't available on this Index row.`,
+    };
+  }
+  const dominant = Object.entries(sub).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+  const hint =
+    sub.data < 10 && sub.completions < 20
+      ? 'Mostly baseline — log entries or connect a tracker to climb.'
+      : sub.streak < 10
+        ? 'Streak is low — consistency for 3+ days will lift this pillar.'
+        : "Solid mix — keep doing what you're doing.";
+  return {
+    ok: true,
+    result: {
+      pillar,
+      pillar_score: pillarScore,
+      subscores: sub,
+      caps: { baseline: 40, completions: 80, data: 40, streak: 40 },
+      dominant,
+      hint,
+    },
+    text: `${pillar}: ${pillarScore}. ${hint}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -679,6 +757,16 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'navigate_to_screen':
         r = await tool_navigate_to_screen(args);
+        break;
+      // VTID-02753 — structured Health logging
+      case 'log_water':
+      case 'log_sleep':
+      case 'log_exercise':
+      case 'log_meditation':
+        r = await tool_log_health(name as 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation', args, identity);
+        break;
+      case 'get_pillar_subscores':
+        r = await tool_get_pillar_subscores(args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

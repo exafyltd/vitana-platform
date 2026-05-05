@@ -3409,6 +3409,174 @@ function buildLiveApiTools(
             required: ['intent_id'],
           },
         },
+        // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
+        // Five tools backed by POST /api/v1/integrations/manual/log. Distinct
+        // from save_diary_entry (which extracts from free text). Use when the
+        // user explicitly states a quantity ("log 500ml of water", "I slept 7
+        // hours", "30 minutes of running"). Each call writes a row to
+        // health_features_daily and triggers a Vitana Index recompute.
+        {
+          name: 'log_water',
+          description: [
+            "Log a hydration entry when the user explicitly states an amount of water/fluid drunk.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - 'log 500ml of water' / 'trag 500ml Wasser ein'",
+            "  - 'I drank a glass of water' (≈250ml)",
+            "  - 'two liters today' (2000ml)",
+            "  - 'log my water: 1.5L'",
+            "",
+            "Convert to ML before calling — the gateway expects amount_ml as a number.",
+            "Common conversions: 1 glass ≈ 250ml, 1 cup ≈ 240ml, 1 bottle ≈ 500ml, 1L = 1000ml.",
+            "If the amount is ambiguous ('some water'), ASK before calling — do not guess.",
+            "",
+            "After the tool returns, briefly acknowledge ('logged 500 ml — Hydration is up').",
+            "Use the index_delta to celebrate movement on the Hydration pillar.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              amount_ml: {
+                type: 'number',
+                description: 'Amount of fluid in milliliters. Min 50, max 5000.',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today (user local).',
+              },
+            },
+            required: ['amount_ml'],
+          },
+        },
+        {
+          name: 'log_sleep',
+          description: [
+            "Log a sleep duration when the user explicitly reports how long they slept.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - 'I slept 7 hours last night' / 'ich habe 7 Stunden geschlafen'",
+            "  - 'log my sleep: 8.5 hours'",
+            "  - 'got 6 hours' (assume sleep context)",
+            "  - 'slept from 11 to 7' — compute hours yourself",
+            "",
+            "Convert to MINUTES before calling. Examples: 7h → 420, 8.5h → 510, 6h30m → 390.",
+            "If the user gives a sleep range without confirming hours, ASK — don't guess.",
+            "",
+            "After the tool returns, acknowledge briefly. If hours were below 7, gently note",
+            "it without lecturing ('420 minutes logged — under your typical 7 hours').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Sleep duration in minutes. Min 60, max 960 (16h).',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD for the night logged. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'log_exercise',
+          description: [
+            "Log an exercise/workout session when the user explicitly reports duration.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - '30 minutes of running' / '30 Minuten Lauf'",
+            "  - 'just finished a 45-minute workout'",
+            "  - 'log a 1-hour walk'",
+            "  - 'I did yoga for 20 minutes'",
+            "",
+            "Convert duration to MINUTES. The activity_type is freeform — pass the user's",
+            "phrase verbatim ('running', 'cycling', 'yoga', 'crossfit', 'walk', 'swim').",
+            "If the user reports an activity without a duration ('I went for a run'), ASK",
+            "how long before calling. Don't guess.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Duration in minutes. Min 5, max 600.',
+              },
+              activity_type: {
+                type: 'string',
+                description: "Freeform activity name (e.g. 'running', 'yoga', 'crossfit'). Optional.",
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'log_meditation',
+          description: [
+            "Log a meditation / mindfulness session — boosts the Mental pillar.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - '10 minutes of meditation' / '10 Minuten Meditation'",
+            "  - 'just finished a 20 minute mindfulness session'",
+            "  - 'log my breathwork — 15 minutes'",
+            "  - 'did box breathing for 5 minutes'",
+            "",
+            "Pass duration in MINUTES. Don't conflate with exercise — meditation/mindfulness/",
+            "breathwork/yoga-nidra all go through this tool because they lift Mental, not",
+            "Exercise.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Meditation duration in minutes. Min 1, max 240.',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'get_pillar_subscores',
+          description: [
+            "Return the sub-score breakdown for a single Vitana Index pillar so you can",
+            "explain WHY the pillar is low. Each pillar has four caps:",
+            "  - baseline (0-40): from the baseline survey",
+            "  - completions (0-80): from calendar tag completions",
+            "  - data (0-40): from health_features_daily (this is what log_* tools lift)",
+            "  - streak (0-40): consecutive-day streak for the pillar",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'why is my Sleep score low?'",
+            "  - 'what's holding back my Nutrition?'",
+            "  - 'break down my Hydration score'",
+            "  - 'wieso ist meine Bewegung niedrig?'",
+            "",
+            "Speak the answer naturally — 'Your Sleep is mostly baseline because we don't",
+            "have any tracker data yet — connect a wearable or log sleep manually and the",
+            "data sub-score will start filling in.'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: {
+                type: 'string',
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
+                description: 'Which pillar to break down.',
+              },
+            },
+            required: ['pillar'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -5911,6 +6079,91 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[create_index_improvement_plan] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
+      // Five tools (log_water, log_sleep, log_exercise, log_meditation,
+      // get_pillar_subscores) all backed by services/voice-tools/health-log.ts
+      // which calls POST /api/v1/integrations/manual/log internally and reads
+      // the resulting Index snapshot for celebration text.
+      case 'log_water':
+      case 'log_sleep':
+      case 'log_exercise':
+      case 'log_meditation': {
+        try {
+          const { logHealthSignal } = await import('../services/voice-tools/health-log');
+          const today = new Date().toISOString().slice(0, 10);
+          const date = typeof args.date === 'string' && args.date ? args.date : today;
+          const out = await logHealthSignal({
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id,
+            tool: toolName as 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation',
+            date,
+            amount_ml: typeof args.amount_ml === 'number' ? args.amount_ml : undefined,
+            minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+            activity_type: typeof args.activity_type === 'string' ? args.activity_type : undefined,
+          });
+          if (!out.ok) return { success: false, result: '', error: out.error };
+          return { success: true, result: JSON.stringify(out.summary) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'get_pillar_subscores': {
+        try {
+          const pillar = String(args.pillar || '').toLowerCase();
+          const valid = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
+          if (!valid.includes(pillar)) {
+            return { success: false, result: '', error: `pillar must be one of ${valid.join(', ')}` };
+          }
+          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
+          if (!snap) {
+            return {
+              success: true,
+              result: JSON.stringify({ pillar, available: false, reason: 'no_index_snapshot' }),
+            };
+          }
+          const sub = snap.subscores?.[pillar as keyof typeof snap.subscores];
+          if (!sub) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                pillar,
+                pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
+                subscores: null,
+                reason: 'no_subscores_for_pillar',
+                hint: 'Subscores are populated from the v3 compute RPC; older Index rows may not have them.',
+              }),
+            };
+          }
+          return {
+            success: true,
+            result: JSON.stringify({
+              pillar,
+              pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
+              subscores: sub,
+              caps: { baseline: 40, completions: 80, data: 40, streak: 40 },
+              dominant: Object.entries(sub).reduce((a, b) => (b[1] > a[1] ? b : a))[0],
+              hint:
+                sub.data < 10 && sub.completions < 20
+                  ? 'Mostly baseline — log entries or connect a tracker to climb.'
+                  : sub.streak < 10
+                    ? 'Streak is low — consistency for 3+ days will lift this pillar.'
+                    : 'Solid mix — keep doing what you\'re doing.',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[get_pillar_subscores] error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
