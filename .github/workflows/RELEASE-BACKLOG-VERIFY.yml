@@ -40,6 +40,9 @@ on:
 
 env:
   NODE_VERSION: '20.x'
+  # Isolated dir for test-only deps (pg). Kept OUTSIDE the repo so it can't
+  # collide with the monorepo's pnpm-lock.yaml.
+  TEST_DEPS_DIR: /tmp/release-backlog-test-deps
 
 jobs:
   unit-only:
@@ -94,20 +97,26 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      - name: Install test deps (tsx + pg)
+      - name: Install tsx (global)
+        run: npm install -g tsx@latest
+
+      - name: Install pg in isolated temp dir
+        # IMPORTANT: this monorepo uses pnpm with a lockfile at the repo root.
+        # Running `npm install pg` at the root collides with pnpm's resolution
+        # and exits non-zero. Install in /tmp instead, then resolve via NODE_PATH.
         run: |
-          npm install -g tsx@latest
-          # pg is a runtime dep of the test script's Section 2.
-          npm install --no-save pg@8
+          mkdir -p "${TEST_DEPS_DIR}"
+          cd "${TEST_DEPS_DIR}"
+          npm init -y > /dev/null
+          npm install --no-package-lock --silent pg@8
 
       - name: Apply release-backlog migration
         env:
           PGPASSWORD: postgres
         run: |
-          # Some prerequisite extensions used by other migrations may already be
-          # available in the postgres:16 base image; this script only depends on
-          # gen_random_uuid() which is built into pgcrypto in PG 16+ (or pgcrypto
-          # extension). Add the extension just in case.
+          # gen_random_uuid() is built-in on PG 13+, but enable pgcrypto +
+          # uuid-ossp just in case earlier migrations or downstream tests
+          # rely on those extensions.
           psql -h localhost -U postgres -d vitana_test \
             -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;' \
             -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
@@ -119,7 +128,8 @@ jobs:
       - name: Run release-backlog verification — Sections 1 + 2
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vitana_test
-          NODE_PATH: ${{ github.workspace }}/node_modules
+          # Resolve `pg` from the isolated temp install rather than the repo root.
+          NODE_PATH: /tmp/release-backlog-test-deps/node_modules
         run: tsx scripts/test-release-backlog.ts
 
       - name: Report
