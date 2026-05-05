@@ -620,6 +620,41 @@ async function tool_log_health(
   };
 }
 
+// VTID-02772 — Settings / Account / Integrations
+async function tool_settings_actions(
+  toolName: 'set_preference' | 'get_my_preferences' | 'list_connected_apps' | 'connect_app' | 'disconnect_app',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const sa = await import('../services/voice-tools/settings-actions');
+  let r: any;
+  if (toolName === 'set_preference') {
+    r = await sa.setPreference(sb, {
+      category: String(args.category || ''),
+      key: String(args.key || ''),
+      value: String(args.value || ''),
+      priority: typeof args.priority === 'number' ? args.priority : undefined,
+    });
+  } else if (toolName === 'get_my_preferences') {
+    r = await sa.getMyPreferences(sb, { category: typeof args.category === 'string' ? args.category : undefined });
+  } else if (toolName === 'list_connected_apps') {
+    r = await sa.listConnectedApps(sb, id.user_id);
+  } else if (toolName === 'connect_app') {
+    r = await sa.connectApp(sb, id.user_id, { integration_id: String(args.integration_id || '') });
+  } else if (toolName === 'disconnect_app') {
+    r = await sa.disconnectApp(sb, id.user_id, { integration_id: String(args.integration_id || '') });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'set_preference') text = `Preference saved (${args.category}/${args.key}).`;
+  else if (toolName === 'get_my_preferences') text = `${r.count ?? 0} preferences.`;
+  else if (toolName === 'list_connected_apps') text = `${r.count ?? 0} connected app${r.count === 1 ? '' : 's'}.`;
+  else if (toolName === 'connect_app') text = `Open ${r.oauth_url} to finish.`;
+  else if (toolName === 'disconnect_app') text = `Disconnected ${args.integration_id}.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +802,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02772 — Settings / Account / Integrations
+      case 'set_preference':
+      case 'get_my_preferences':
+      case 'list_connected_apps':
+      case 'connect_app':
+      case 'disconnect_app':
+        r = await tool_settings_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

@@ -3577,6 +3577,75 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02772 — Voice Tool Expansion P1j: Settings / Account / Integrations ───
+        {
+          name: 'set_preference',
+          description: [
+            "Set a user preference (theme, language, voice, etc.).",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Switch to dark mode' → category=display, key=theme, value=dark",
+            "  - 'Change my language to German' → category=locale, key=language, value=de",
+            "  - 'Use a calmer voice' → category=voice, key=style, value=calm",
+            "",
+            "Always confirm verbally after the tool returns.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              category: { type: 'string' },
+              key: { type: 'string' },
+              value: { type: 'string' },
+              priority: { type: 'integer' },
+            },
+            required: ['category', 'key', 'value'],
+          },
+        },
+        {
+          name: 'get_my_preferences',
+          description: "List the user's saved preferences. Optional category filter.",
+          parameters: {
+            type: 'object',
+            properties: { category: { type: 'string' } },
+          },
+        },
+        {
+          name: 'list_connected_apps',
+          description: [
+            "List connected third-party integrations (Google, Spotify, Fitbit) with",
+            "connection status. Use when the user asks 'what apps are connected?'.",
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'connect_app',
+          description: [
+            "Mark an integration as 'pending' connection. Voice can't complete OAuth",
+            "alone, so this records intent and returns a deep link to finish in UI.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              integration_id: {
+                type: 'string',
+                description: "e.g. google-calendar, spotify, fitbit, oura, gmail.",
+              },
+            },
+            required: ['integration_id'],
+          },
+        },
+        {
+          name: 'disconnect_app',
+          description: [
+            "Disconnect a third-party integration. DESTRUCTIVE — confirm verbally",
+            "before calling.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { integration_id: { type: 'string' } },
+            required: ['integration_id'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6233,50 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02772 — Voice Tool Expansion P1j: Settings / Account / Integrations ───
+      case 'set_preference':
+      case 'get_my_preferences':
+      case 'list_connected_apps':
+      case 'connect_app':
+      case 'disconnect_app': {
+        try {
+          const sa = await import('../services/voice-tools/settings-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'set_preference') {
+            r = await sa.setPreference(sb, {
+              category: String(args.category || ''),
+              key: String(args.key || ''),
+              value: String(args.value || ''),
+              priority: typeof args.priority === 'number' ? args.priority : undefined,
+            });
+          } else if (toolName === 'get_my_preferences') {
+            r = await sa.getMyPreferences(sb, {
+              category: typeof args.category === 'string' ? args.category : undefined,
+            });
+          } else if (toolName === 'list_connected_apps') {
+            r = await sa.listConnectedApps(sb, lens.user_id);
+          } else if (toolName === 'connect_app') {
+            r = await sa.connectApp(sb, lens.user_id, { integration_id: String(args.integration_id || '') });
+          } else if (toolName === 'disconnect_app') {
+            r = await sa.disconnectApp(sb, lens.user_id, { integration_id: String(args.integration_id || '') });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
