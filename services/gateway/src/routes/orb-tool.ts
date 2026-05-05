@@ -620,6 +620,33 @@ async function tool_log_health(
   };
 }
 
+// VTID-02780 — P1r Find Perfect flagships
+async function tool_find_perfect(
+  toolName: 'find_perfect_product' | 'find_perfect_practitioner' | 'find_perfect_match' | 'ask_who_is',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const fp = await import('../services/voice-tools/find-perfect');
+  const identity = { user_id: id.user_id, tenant_id: id.tenant_id || id.user_id };
+  let r: any;
+  switch (toolName) {
+    case 'find_perfect_product':
+      r = await fp.findPerfectProduct(sb, identity, args as any);
+      break;
+    case 'find_perfect_practitioner':
+      r = await fp.findPerfectPractitioner(sb, identity, args as any);
+      break;
+    case 'find_perfect_match':
+      r = await fp.findPerfectMatch(sb, identity, args as any);
+      break;
+    case 'ask_who_is':
+      r = await fp.askWhoIs(sb, args as any);
+      break;
+  }
+  return { ok: true, result: r };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +794,13 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02780 — P1r Find Perfect flagships
+      case 'find_perfect_product':
+      case 'find_perfect_practitioner':
+      case 'find_perfect_match':
+      case 'ask_who_is':
+        r = await tool_find_perfect(name as 'find_perfect_product' | 'find_perfect_practitioner' | 'find_perfect_match' | 'ask_who_is', args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

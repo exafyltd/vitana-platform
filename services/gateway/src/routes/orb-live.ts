@@ -3577,6 +3577,67 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // VTID-02780 — P1r Find Perfect flagships (deep search across products / services / people / superlatives)
+        {
+          name: 'find_perfect_product',
+          description: 'Recommend the perfect product for the user. Fuses their weakest Vitana Index pillar, active Life Compass goal, and any free-form ask + filters. Returns top-3 with rationale.',
+          parameters: {
+            type: 'object',
+            properties: {
+              goal_text: { type: 'string', description: 'Free-form ask, e.g. "something for poor sleep on travel days"' },
+              pillar: { type: 'string', description: 'nutrition / hydration / exercise / sleep / mental (defaults to weakest)' },
+              max_price: { type: 'number' },
+              exclude_ingredients: { type: 'array', items: { type: 'string' } },
+              dietary_restrictions: { type: 'array', items: { type: 'string' } },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'find_perfect_practitioner',
+          description: 'Recommend the perfect practitioner / coach / doctor. Multi-criteria: specialty, language, telehealth, price.',
+          parameters: {
+            type: 'object',
+            properties: {
+              specialty: { type: 'string' },
+              goal_text: { type: 'string' },
+              language: { type: 'string' },
+              telehealth_ok: { type: 'boolean' },
+              max_price: { type: 'number' },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'find_perfect_match',
+          description: 'Find the perfect person match (workout partner, accountability buddy, mentor). Free-form ask + intent kind + filters; returns top-3 reciprocally compatible candidates.',
+          parameters: {
+            type: 'object',
+            properties: {
+              intent_kind: {
+                type: 'string',
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid'],
+              },
+              goal_text: { type: 'string' },
+              pillar_focus: { type: 'string' },
+              location_radius_km: { type: 'number' },
+              language: { type: 'string' },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'ask_who_is',
+          description: 'Answer free-form "who is..." superlative questions about the community ("who is the first member?", "who has the highest vitana index?"). Returns one profile or a short ranked list. Privacy-gated by account_visibility.',
+          parameters: {
+            type: 'object',
+            properties: {
+              question: { type: 'string' },
+              limit: { type: 'integer', description: 'Default 1; up to 10 for "top-N" queries' },
+            },
+            required: ['question'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6225,41 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02780 — P1r Find Perfect flagships ───
+      case 'find_perfect_product':
+      case 'find_perfect_practitioner':
+      case 'find_perfect_match':
+      case 'ask_who_is': {
+        try {
+          const fp = await import('../services/voice-tools/find-perfect');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const identity = { user_id: lens.user_id, tenant_id: lens.tenant_id || lens.user_id };
+          let r: any;
+          switch (name) {
+            case 'find_perfect_product':
+              r = await fp.findPerfectProduct(client, identity, args as any);
+              break;
+            case 'find_perfect_practitioner':
+              r = await fp.findPerfectPractitioner(client, identity, args as any);
+              break;
+            case 'find_perfect_match':
+              r = await fp.findPerfectMatch(client, identity, args as any);
+              break;
+            case 'ask_who_is':
+              r = await fp.askWhoIs(client, args as any);
+              break;
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${name}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
