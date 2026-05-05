@@ -8,6 +8,7 @@ const ALLOWED_ORIGINS = [
   "https://vitana-gateway-86804897789.us-central1.run.app",  // Canonical gateway
   "https://gateway-86804897789.us-central1.run.app",         // Short alias
   "https://gateway-q74ibpv6ia-uc.a.run.app",                 // Cloud Run generated
+  "https://gateway.vitanaland.com",                            // Cloudflare-fronted custom gateway domain (BOOTSTRAP-CLOUDFLARE-GATEWAY-DOMAIN)
   "https://vitana-dev-gateway-86804897789.us-central1.run.app", // Deprecated redirector
   "https://community-app-86804897789.us-central1.run.app",    // Community app on Cloud Run
   "https://community-app-q74ibpv6ia-uc.a.run.app",           // Community app Cloud Run alias
