@@ -2492,6 +2492,47 @@ export async function autoApproveTick(): Promise<void> {
     );
     if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
 
+    // VTID-AUTOPILOT-RETRY-CAP: per-finding aggregate retry circuit breaker.
+    // The bridge has per-chain max_auto_fix_depth=2, but autoApproveTick
+    // creates fresh chains every 30s for any finding still status='new'.
+    // Findings the model genuinely cannot solve (open `proposed_files=[]`
+    // scope, npm-audit, multi-file impact rules > 32k output) burn execs
+    // indefinitely. 2026-05-04 19:30 → 06:30 drain: 452 execs across 6
+    // findings, 2 merges; the rest were retry-loop noise on 4 unfixable
+    // findings. Mitigation at the time was manual snooze. This is the
+    // proper fix: count terminal-failure execs in the last 24 hours; if
+    // >= AUTO_RETRY_CAP, auto-snooze the recommendation 7 days. Operator
+    // can manually unsnooze if the spec/scope/plan changes.
+    const failureWindow = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const failuresR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
+      + `&status=in.(failed,reverted,failed_escalated)`
+      + `&updated_at=gte.${encodeURIComponent(failureWindow)}`
+      + `&select=id&limit=10`,
+    );
+    const AUTO_RETRY_CAP = 5;
+    if (failuresR.ok && failuresR.data && failuresR.data.length >= AUTO_RETRY_CAP) {
+      const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${f.id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'snoozed',
+            snoozed_until: snoozedUntil,
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      console.log(
+        `${LOG_PREFIX} auto-approve skipped ${f.id.slice(0, 8)}: ${failuresR.data.length} terminal failures in 24h ≥ cap (${AUTO_RETRY_CAP}) — snoozed 7d`,
+      );
+      continue;
+    }
+
     // Pass undefined so the INSERT writes approved_by=NULL.
     // Earlier code passed the string literal 'auto', but approved_by is a
     // UUID column — Postgres rejected every autonomous approval with
