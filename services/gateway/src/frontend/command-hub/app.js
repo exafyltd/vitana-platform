@@ -35470,6 +35470,141 @@ function renderLivekitTestView() {
         await diagDispatch('respond_to_match', { match_id: '00000000-0000-0000-0000-000000000000', response: 'interested' });
         await diagDispatch('navigate_to_screen', { target: 'diary' });
 
+        // Phase 5 — agent-JWT round-trip. The voice agent does NOT use the
+        // browser's bearer; it uses the agent_user_jwt minted by /orb/livekit/token
+        // and embedded in LiveKit room metadata. If the previous phases pass
+        // but voice tool calls still fail, the per-session mint is broken
+        // for THIS account. This phase calls /orb/livekit/token, decodes the
+        // LiveKit token, extracts metadata.user_jwt, then calls /auth/me +
+        // a tool with that user_jwt to verify it round-trips.
+        diagAppend('<br><strong style="color:#facc15;">Agent-JWT round-trip (the credential the voice agent actually uses):</strong>');
+        var lkr = await diagFetch('POST', '/api/v1/orb/livekit/token', { lang: 'en', agent_id: 'orb-agent' });
+        diagRow('agent-jwt', 'mint /orb/livekit/token', lkr.ok, lkr.status + ' room=' + (lkr.body && lkr.body.room));
+        if (!lkr.ok || !(lkr.body && lkr.body.token)) {
+            diagAppend('<br><strong style="color:#ef4444;">Cannot continue Phase 5 — token mint failed.</strong>');
+        } else {
+            // Decode the LiveKit access token's payload (it's a JWT).
+            var lkPayload = null;
+            var agentUserJwt = null;
+            try {
+                var parts = lkr.body.token.split('.');
+                lkPayload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                var md = JSON.parse(lkPayload.metadata || '{}');
+                agentUserJwt = md.user_jwt || null;
+                diagRow(
+                    'agent-jwt',
+                    'metadata.user_id',
+                    !!md.user_id,
+                    String(md.user_id || ''),
+                );
+                diagRow(
+                    'agent-jwt',
+                    'metadata.tenant_id',
+                    !!md.tenant_id,
+                    String(md.tenant_id || ''),
+                );
+                diagRow(
+                    'agent-jwt',
+                    'metadata.role',
+                    !!md.role,
+                    String(md.role || ''),
+                );
+                diagRow(
+                    'agent-jwt',
+                    'metadata.vitana_id',
+                    md.vitana_id !== undefined,
+                    String(md.vitana_id || '(null)'),
+                );
+                diagRow(
+                    'agent-jwt',
+                    'metadata.user_jwt embedded',
+                    !!agentUserJwt,
+                    agentUserJwt ? 'len=' + agentUserJwt.length : 'MISSING — this is the bug',
+                );
+            } catch (e) {
+                diagRow('agent-jwt', 'decode LiveKit token', false, String(e));
+            }
+
+            if (agentUserJwt) {
+                // Decode the agent_user_jwt's claims so we can SEE what the agent has.
+                try {
+                    var p2 = JSON.parse(atob(agentUserJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+                    diagRow(
+                        'agent-jwt',
+                        'agent_user_jwt sub',
+                        !!p2.sub,
+                        String(p2.sub || ''),
+                    );
+                    diagRow(
+                        'agent-jwt',
+                        'agent_user_jwt aud',
+                        !!p2.aud,
+                        String(p2.aud || ''),
+                    );
+                    diagRow(
+                        'agent-jwt',
+                        'agent_user_jwt role',
+                        !!p2.role,
+                        String(p2.role || ''),
+                    );
+                    diagRow(
+                        'agent-jwt',
+                        'agent_user_jwt active_tenant_id',
+                        !!(p2.app_metadata && p2.app_metadata.active_tenant_id),
+                        String((p2.app_metadata && p2.app_metadata.active_tenant_id) || ''),
+                    );
+                    diagRow(
+                        'agent-jwt',
+                        'agent_user_jwt exp (sec from now)',
+                        typeof p2.exp === 'number' && p2.exp * 1000 > Date.now(),
+                        typeof p2.exp === 'number' ? String(Math.round((p2.exp * 1000 - Date.now()) / 1000)) + 's' : 'no exp',
+                    );
+                } catch (e) {
+                    diagRow('agent-jwt', 'decode agent_user_jwt', false, String(e));
+                }
+
+                // Now call /auth/me + a tool USING THE agent_user_jwt to verify
+                // the gateway accepts it. If this fails, that's the root cause:
+                // the per-session mint produces a JWT the gateway rejects.
+                var ame = await fetch((window.GATEWAY_URL || '') + '/api/v1/auth/me', {
+                    headers: { Authorization: 'Bearer ' + agentUserJwt },
+                });
+                var ameBody = null;
+                try { ameBody = await ame.json(); } catch (e) {}
+                diagRow(
+                    'agent-jwt',
+                    '/auth/me with agent_user_jwt',
+                    ame.status === 200,
+                    ame.status + ' user_id=' + (ameBody && ameBody.identity && ameBody.identity.user_id),
+                );
+
+                var aidx = await fetch((window.GATEWAY_URL || '') + '/api/v1/vitana-index', {
+                    headers: { Authorization: 'Bearer ' + agentUserJwt },
+                });
+                diagRow(
+                    'agent-jwt',
+                    '/api/v1/vitana-index with agent_user_jwt',
+                    aidx.status === 200,
+                    aidx.status + '',
+                );
+
+                var atool = await fetch((window.GATEWAY_URL || '') + '/api/v1/orb/tool', {
+                    method: 'POST',
+                    headers: {
+                        Authorization: 'Bearer ' + agentUserJwt,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: 'find_contact', args: { query: 'test' } }),
+                });
+                diagRow(
+                    'agent-jwt',
+                    '/api/v1/orb/tool with agent_user_jwt',
+                    atool.status === 200,
+                    atool.status + '',
+                );
+            }
+        }
+
         diagAppend('<br><strong style="color:#22c55e;">Diagnostics complete.</strong> Scroll up to see results.');
     }
     diagnoseBtn.addEventListener('click', function () {
