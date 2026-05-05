@@ -1,0 +1,35 @@
+# VTID-02703: Cloud Run Job container for the autopilot executor.
+#
+# Same source as the gateway service, different entry point:
+#   service:  CMD ["node", "dist/index.js"]    (Express server)
+#   job:      CMD ["node", "dist/job-entry.js"] (single-shot exec)
+#
+# The Job runtime model survives container churn that kills long-running
+# fire-and-forget LLM calls inside the gateway service. Used for orb-live.ts
+# work and any other execution where the LLM call is expected to take
+# longer than ~3 minutes.
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+COPY tsconfig.json ./
+RUN npm install
+COPY BUILD_INFO ./
+COPY src ./src
+COPY config ./config
+COPY specs ./specs
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+# No ffmpeg here — the Job doesn't handle audio. Smaller image, faster cold start.
+RUN npm install --production
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/specs ./specs
+COPY BUILD_INFO ./
+ENV NODE_ENV=production
+# No PORT — Jobs don't listen for HTTP requests.
+# No HEALTHCHECK — Jobs run to completion and exit; Cloud Run tracks task state.
+CMD ["node", "dist/job-entry.js"]

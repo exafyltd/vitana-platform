@@ -83,6 +83,21 @@ const MAX_FILE_BYTES = 200_000;
 const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
 const BACKGROUND_TICK_MS = 30_000;
 
+// VTID-02703: Cloud Run Job runtime for the executor.
+//   USE_JOB_RUNTIME    — when true, the gateway dispatches each claimed
+//                        execution to the Cloud Run Job
+//                        (autopilot-executor) instead of running
+//                        runExecutionSession in-process. The Job survives
+//                        container churn that kills long-running fire-and-
+//                        forget Promises in the gateway service.
+//   JOB_NAME / JOB_REGION / JOB_PROJECT — addressing the Job for the
+//                        Cloud Run Admin API. Defaults match the deploy
+//                        workflow (.github/workflows/DEPLOY-AUTOPILOT-JOB.yml).
+const USE_JOB_RUNTIME = (process.env.DEV_AUTOPILOT_USE_JOB || 'false').toLowerCase() === 'true';
+const JOB_NAME = process.env.DEV_AUTOPILOT_JOB_NAME || 'autopilot-executor';
+const JOB_REGION = process.env.DEV_AUTOPILOT_JOB_REGION || 'us-central1';
+const JOB_PROJECT = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'lovable-vitana-vers1';
+
 const GITHUB_OWNER = process.env.DEV_AUTOPILOT_REPO_OWNER || 'exafyltd';
 const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
 const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
@@ -122,8 +137,10 @@ export interface ExecutionRow {
 // Supabase helpers
 // =============================================================================
 
-interface SupaConfig { url: string; key: string; }
-function getSupabase(): SupaConfig | null {
+export interface SupaConfig { url: string; key: string; }
+// VTID-02703: exported so the Cloud Run Job entry point reuses the same
+// SupaConfig + env-read logic without duplication.
+export function getSupabase(): SupaConfig | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) return null;
@@ -1187,7 +1204,11 @@ async function callMessagesApi(
   };
 }
 
-async function runExecutionSession(
+// VTID-02703: exported so the Cloud Run Job (services/gateway/src/job-entry.ts)
+// can invoke the same logic out-of-process. The Job runtime survives
+// container churn that kills long-running fire-and-forget LLM calls inside
+// the gateway service.
+export async function runExecutionSession(
   s: SupaConfig,
   executionId: string,
 ): Promise<{ ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string }> {
@@ -2172,67 +2193,169 @@ export async function backgroundExecutorTick(): Promise<void> {
       payload: { execution_id: exec.id, finding_id: exec.finding_id },
     });
 
-    // Fire-and-forget so one long-running session doesn't block sibling claims
-    runExecutionSession(s, exec.id).then(async (result) => {
-      if (result.ok && result.pr_url) {
-        await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            status: 'ci',
-            pr_url: result.pr_url,
-            pr_number: result.pr_number || null,
-            branch: result.branch || null,
-            execution_session_id: result.session_id || null,
-          }),
-        });
-        await emitOasisEvent({
-          vtid: EXEC_VTID,
-          type: 'dev_autopilot.execution.pr_opened',
-          source: 'dev-autopilot',
-          status: 'success',
-          message: `Execution ${exec.id.slice(0, 8)} opened ${result.pr_url}`,
-          payload: { execution_id: exec.id, pr_url: result.pr_url, branch: result.branch },
-        });
-      } else {
-        await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            status: 'failed',
-            execution_session_id: result.session_id || null,
-            metadata: { error: result.error || 'unknown execution failure' },
-            completed_at: new Date().toISOString(),
-          }),
-        });
-        await emitOasisEvent({
-          vtid: EXEC_VTID,
-          type: 'dev_autopilot.execution.failed',
-          source: 'dev-autopilot',
-          status: 'error',
-          message: `Execution ${exec.id.slice(0, 8)} failed: ${result.error || 'unknown'}`,
-          payload: { execution_id: exec.id, error: result.error },
-        });
-
-        // Bridge: route the failure through self-healing triage + auto-revert.
-        // Fire-and-forget so one slow triage doesn't block the executor tick.
-        // Loaded lazily to avoid a module-level circular import.
-        try {
-          const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
-          bridgeFailureToSelfHealing({
-            execution_id: exec.id,
-            failure_stage: 'ci',
-            error: result.error,
-          }).catch((err: unknown) => {
-            console.error(`${LOG_PREFIX} bridge error for ${exec.id}:`, err);
-          });
-        } catch (err) {
-          console.error(`${LOG_PREFIX} bridge load error for ${exec.id}:`, err);
+    // VTID-02703: dispatch path — Cloud Run Job (durable) or in-process (fast).
+    // The Job runtime survives container churn that kills long-running
+    // fire-and-forget Promises. Used for orb-live.ts and any execution
+    // expected to take >3 min. Falls back to in-process when the Job
+    // dispatch isn't configured or fails to enqueue.
+    if (USE_JOB_RUNTIME) {
+      try {
+        const dispatched = await dispatchExecutorJob(exec.id);
+        if (dispatched.ok) {
+          // The Job calls runExecutionSession + applyExecutionResult on its
+          // own. The gateway's job is done for this exec — return so we
+          // don't double-fire.
+          continue;
         }
+        console.warn(`${LOG_PREFIX} Job dispatch failed for ${exec.id}: ${dispatched.error}; falling back to in-process`);
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Job dispatch threw for ${exec.id}:`, err);
       }
+    }
+
+    // In-process fallback (existing behaviour). Fire-and-forget so one
+    // long-running session doesn't block sibling claims.
+    runExecutionSession(s, exec.id).then(async (result) => {
+      await applyExecutionResult(s, exec.id, result);
     }).catch((err) => {
       console.error(`${LOG_PREFIX} unhandled executor error for ${exec.id}:`, err);
     });
+  }
+}
+
+/**
+ * VTID-02703: dispatch a Cloud Run Job execution for the given exec_id.
+ *
+ * Uses the Cloud Run Admin REST API:
+ *   POST /v2/projects/{project}/locations/{region}/jobs/{job}:run
+ *   body: { overrides: { containerOverrides: [{ env: [{name:'EXEC_ID', value:execId}] }] } }
+ *
+ * Authentication: relies on the gateway's GCP service account (auto-mounted
+ * via google-github-actions/auth in CI; in production the Cloud Run service
+ * uses the workload identity bound to its runtime SA, which has
+ * roles/run.invoker on the Job).
+ *
+ * Returns immediately after triggering — the Job runs asynchronously and
+ * writes back to the DB itself via job-entry.ts → applyExecutionResult.
+ */
+async function dispatchExecutorJob(execId: string): Promise<{ ok: boolean; error?: string; operation?: string }> {
+  try {
+    // Get an OAuth token from the metadata server (works on Cloud Run / GKE).
+    // Falls back to gcloud-printed creds in dev (GOOGLE_APPLICATION_CREDENTIALS).
+    const token = await getGcpAccessToken();
+    if (!token) {
+      return { ok: false, error: 'no GCP access token (metadata server unreachable)' };
+    }
+    const url = `https://run.googleapis.com/v2/projects/${JOB_PROJECT}/locations/${JOB_REGION}/jobs/${JOB_NAME}:run`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        overrides: {
+          containerOverrides: [{
+            env: [{ name: 'EXEC_ID', value: execId }],
+          }],
+        },
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '?');
+      return { ok: false, error: `${res.status}: ${detail.slice(0, 300)}` };
+    }
+    const body = await res.json().catch(() => ({})) as { name?: string };
+    console.log(`${LOG_PREFIX} dispatched Job ${JOB_NAME} for exec=${execId.slice(0, 8)} op=${body.name || '?'}`);
+    return { ok: true, operation: body.name };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * VTID-02703: get an access token for the Cloud Run Admin API.
+ * On Cloud Run / GKE: read from the metadata server (default SA).
+ * On dev / local: rely on GOOGLE_APPLICATION_CREDENTIALS being set.
+ */
+async function getGcpAccessToken(): Promise<string | null> {
+  try {
+    // Cloud Run mounts the metadata server at this fixed address.
+    const res = await fetch(
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      { headers: { 'Metadata-Flavor': 'Google' } as any },
+    );
+    if (!res.ok) return null;
+    const body = await res.json() as { access_token?: string };
+    return body.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * VTID-02703: writes the outcome of a runExecutionSession invocation back
+ * to the DB and emits the appropriate OASIS event. Shared between the
+ * gateway's in-process executor tick and the Cloud Run Job entry point so
+ * both runtimes converge on identical post-execution state.
+ */
+export async function applyExecutionResult(
+  s: SupaConfig,
+  execId: string,
+  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string },
+): Promise<void> {
+  if (result.ok && result.pr_url) {
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'ci',
+        pr_url: result.pr_url,
+        pr_number: result.pr_number || null,
+        branch: result.branch || null,
+        execution_session_id: result.session_id || null,
+      }),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_opened',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Execution ${execId.slice(0, 8)} opened ${result.pr_url}`,
+      payload: { execution_id: execId, pr_url: result.pr_url, branch: result.branch },
+    });
+    return;
+  }
+
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: 'failed',
+      execution_session_id: result.session_id || null,
+      metadata: { error: result.error || 'unknown execution failure' },
+      completed_at: new Date().toISOString(),
+    }),
+  });
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Execution ${execId.slice(0, 8)} failed: ${result.error || 'unknown'}`,
+    payload: { execution_id: execId, error: result.error },
+  });
+  try {
+    const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+    bridgeFailureToSelfHealing({
+      execution_id: execId,
+      failure_stage: 'ci',
+      error: result.error,
+    }).catch((err: unknown) => {
+      console.error(`${LOG_PREFIX} bridge error for ${execId}:`, err);
+    });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} bridge load error for ${execId}:`, err);
   }
 }
 
