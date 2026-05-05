@@ -32,6 +32,13 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { getSupabase } from '../lib/supabase';
 import { fetchVitanaIndexForProfiler } from '../services/user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
+import {
+  lookupScreen,
+  lookupByAlias,
+  suggestSimilar,
+  getContent,
+  type NavCatalogEntry,
+} from '../lib/navigation-catalog';
 
 const router = Router();
 const VTID = 'VTID-LIVEKIT-TOOLS';
@@ -550,39 +557,75 @@ async function tool_respond_to_match(args: ToolArgs, id: Identity, sb: SupabaseC
   return { ok: true, result: { match_id: matchId, response }, text: `Marked match as ${response}.` };
 }
 
+/**
+ * VTID-02770: navigate_to_screen for the LiveKit orb-agent.
+ *
+ * Resolves the request through the unified Navigation Catalog instead of a
+ * duplicated hand-rolled TARGET_ROUTES map. Three-tier resolution mirrors
+ * the Vertex path in orb-live.ts:handleNavigateToScreen:
+ *   1. Exact screen_id (`COMM.FIND_PARTNER`) → lookupScreen
+ *   2. Alias slug (`find-partner`, `events_meetups`) → lookupByAlias
+ *   3. Fuzzy fallback → suggestSimilar(top 1)
+ *
+ * Also supports overlays (entry_kind === 'overlay') and `:param` substitution
+ * for parameterized routes — same code path as the Vertex handler.
+ */
 async function tool_navigate_to_screen(args: ToolArgs): Promise<ToolResult> {
-  const target = String(args.target ?? '').trim();
-  if (!target) return { ok: false, error: 'target is required' };
-  // Map common targets to canonical paths so the frontend dispatch can route.
-  // Mirrors orb-live.ts:6959 — same enum.
-  const TARGET_ROUTES: Record<string, string> = {
-    diary: '/diary',
-    'vitana-index': '/health/vitana-index',
-    autopilot: '/autopilot',
-    reminders: '/reminders',
-    calendar: '/calendar',
-    settings: '/settings',
-    profile: '/profile',
-    community: '/community',
-    'find-partner': '/community/find-partner',
-    'my-matches': '/community/find-partner/my-matches',
-    'intent-board': '/community/intent-board',
-    'my-intents': '/community/my-intents',
-    members: '/community/members',
-    'connected-apps': '/settings/connected-apps',
-    'privacy-settings': '/settings/privacy',
-    marketplace: '/discover/marketplace',
-    'events-meetups': '/community/events',
-    feed: '/community/feed',
-  };
-  const route = TARGET_ROUTES[target.toLowerCase().replace(/_/g, '-')] || null;
+  const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
+  if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
+
+  let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
+  if (!entry) {
+    const similar = suggestSimilar(screenIdArg, 1);
+    if (similar.length > 0) entry = similar[0];
+  }
+  if (!entry) {
+    return {
+      ok: true,
+      result: { screen_id: screenIdArg, route: null },
+      text: `I don't have a canonical screen for "${screenIdArg}" — tell me what you want to see and I'll match it.`,
+    };
+  }
+
+  // Substitute `:param` placeholders from args. If a param is missing, surface
+  // it so the LLM can ask the user.
+  const missing: string[] = [];
+  let route = entry.route.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_m, name) => {
+    const v = args[name];
+    if (v === undefined || v === null || String(v).trim() === '') {
+      missing.push(String(name));
+      return ':' + String(name);
+    }
+    return encodeURIComponent(String(v).trim().replace(/^@/, ''));
+  });
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: `Missing required param(s) for ${entry.screen_id}: ${missing.join(', ')}.`,
+    };
+  }
+
+  // Overlay branch — append `?open=<query_marker>` so the frontend dispatches
+  // the corresponding CustomEvent instead of routing.
+  if (entry.entry_kind === 'overlay' && entry.overlay) {
+    const sep = route.includes('?') ? '&' : '?';
+    const params = new URLSearchParams();
+    params.set('open', entry.overlay.query_marker);
+    const needs = entry.overlay.needs_param;
+    if (needs) {
+      const v = args[needs];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        params.set(needs, String(v).trim().replace(/^@/, ''));
+      }
+    }
+    route = `${route}${sep}${params.toString()}`;
+  }
+
+  const title = getContent(entry, 'en').title;
   return {
     ok: true,
-    result: { target, route },
-    text:
-      route
-        ? `Opening ${target}.`
-        : `I don't have a canonical route for "${target}" — tell me what screen you want and I'll match it.`,
+    result: { screen_id: entry.screen_id, route, title, entry_kind: entry.entry_kind || 'route' },
+    text: entry.entry_kind === 'overlay' ? `Opening ${title}.` : `Opening ${title}.`,
   };
 }
 
