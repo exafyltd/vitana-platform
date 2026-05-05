@@ -3577,6 +3577,44 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02776 — Voice Tool Expansion P1n: Consent / Permissions ───
+        {
+          name: 'list_pending_consents',
+          description: "List pending consent prompts the user needs to approve or deny. Use when ORB asks 'do you have anything to approve?' or user says 'check pending'.",
+          parameters: { type: 'object', properties: { limit: { type: 'integer' } } },
+        },
+        {
+          name: 'approve_consent',
+          description: "Approve a pending action. Use only after the user explicitly says 'yes', 'approve', 'go ahead'.",
+          parameters: {
+            type: 'object',
+            properties: { action_id: { type: 'string', description: 'UUID of the pending action.' } },
+            required: ['action_id'],
+          },
+        },
+        {
+          name: 'deny_consent',
+          description: "Deny a pending action. Use when the user says 'no', 'don't', 'cancel that'.",
+          parameters: {
+            type: 'object',
+            properties: { action_id: { type: 'string' } },
+            required: ['action_id'],
+          },
+        },
+        {
+          name: 'list_my_permissions',
+          description: "List all granted action permissions (auto-approve allowlist). Use when the user asks 'what can ORB do without asking?'.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'revoke_permission',
+          description: "Revoke a previously granted action permission. Future requests of this type will require explicit consent again.",
+          parameters: {
+            type: 'object',
+            properties: { action_type: { type: 'string', description: "e.g. 'send_message', 'create_event'." } },
+            required: ['action_type'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6202,43 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02776 — Voice Tool Expansion P1n: Consent / Permissions ───
+      case 'list_pending_consents':
+      case 'approve_consent':
+      case 'deny_consent':
+      case 'list_my_permissions':
+      case 'revoke_permission': {
+        try {
+          const cn = await import('../services/voice-tools/consent-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'list_pending_consents') {
+            r = await cn.listPendingConsents(sb, lens.user_id, { limit: typeof args.limit === 'number' ? args.limit : undefined });
+          } else if (toolName === 'approve_consent') {
+            r = await cn.approveConsent(sb, lens.user_id, { action_id: String(args.action_id || '') });
+          } else if (toolName === 'deny_consent') {
+            r = await cn.denyConsent(sb, lens.user_id, { action_id: String(args.action_id || '') });
+          } else if (toolName === 'list_my_permissions') {
+            r = await cn.listMyPermissions(sb, lens.user_id);
+          } else if (toolName === 'revoke_permission') {
+            r = await cn.revokePermission(sb, lens.user_id, { action_type: String(args.action_type || '') });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }

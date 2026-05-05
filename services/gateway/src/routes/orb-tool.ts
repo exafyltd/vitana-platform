@@ -620,6 +620,36 @@ async function tool_log_health(
   };
 }
 
+// VTID-02776 — Consent / Permissions
+async function tool_consent_actions(
+  toolName: 'list_pending_consents' | 'approve_consent' | 'deny_consent' | 'list_my_permissions' | 'revoke_permission',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const cn = await import('../services/voice-tools/consent-actions');
+  let r: any;
+  if (toolName === 'list_pending_consents') {
+    r = await cn.listPendingConsents(sb, id.user_id, { limit: typeof args.limit === 'number' ? args.limit : undefined });
+  } else if (toolName === 'approve_consent') {
+    r = await cn.approveConsent(sb, id.user_id, { action_id: String(args.action_id || '') });
+  } else if (toolName === 'deny_consent') {
+    r = await cn.denyConsent(sb, id.user_id, { action_id: String(args.action_id || '') });
+  } else if (toolName === 'list_my_permissions') {
+    r = await cn.listMyPermissions(sb, id.user_id);
+  } else if (toolName === 'revoke_permission') {
+    r = await cn.revokePermission(sb, id.user_id, { action_type: String(args.action_type || '') });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'list_pending_consents') text = `${r.count ?? 0} pending.`;
+  else if (toolName === 'approve_consent') text = `Approved.`;
+  else if (toolName === 'deny_consent') text = `Denied.`;
+  else if (toolName === 'list_my_permissions') text = `${r.count ?? 0} permissions.`;
+  else if (toolName === 'revoke_permission') text = `Revoked ${args.action_type}.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +797,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02776 — Consent / Permissions
+      case 'list_pending_consents':
+      case 'approve_consent':
+      case 'deny_consent':
+      case 'list_my_permissions':
+      case 'revoke_permission':
+        r = await tool_consent_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });
