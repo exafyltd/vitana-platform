@@ -620,6 +620,44 @@ async function tool_log_health(
   };
 }
 
+// VTID-02771 — Chat / DM read tools
+async function tool_chat_actions(
+  toolName: 'list_conversations' | 'open_conversation' | 'mark_conversation_read' | 'get_unread_count',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ca = await import('../services/voice-tools/chat-actions');
+  let r: any;
+  if (toolName === 'list_conversations') {
+    r = await ca.listConversations(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'open_conversation') {
+    r = await ca.openConversation(sb, id.user_id, {
+      peer_user_id: String(args.peer_user_id || ''),
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'mark_conversation_read') {
+    r = await ca.markConversationRead(sb, id.user_id, { peer_user_id: String(args.peer_user_id || '') });
+  } else if (toolName === 'get_unread_count') {
+    r = await ca.getUnreadCount(sb, id.user_id);
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'list_conversations') {
+    const n = r.count ?? 0;
+    text = n === 0 ? 'No conversations.' : `${n} conversation${n === 1 ? '' : 's'}.`;
+  } else if (toolName === 'open_conversation') {
+    text = `${r.count ?? 0} messages.`;
+  } else if (toolName === 'mark_conversation_read') {
+    text = `Marked ${r.updated ?? 0} message${r.updated === 1 ? '' : 's'} read.`;
+  } else if (toolName === 'get_unread_count') {
+    text = `${r.total_unread} unread.`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +805,13 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02771 — Chat / DM read tools
+      case 'list_conversations':
+      case 'open_conversation':
+      case 'mark_conversation_read':
+      case 'get_unread_count':
+        r = await tool_chat_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

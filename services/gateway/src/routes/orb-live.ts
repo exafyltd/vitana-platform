@@ -3577,6 +3577,65 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02771 — Voice Tool Expansion P1i: Chat / DM read tools ───
+        {
+          name: 'list_conversations',
+          description: [
+            "List the user's recent DM conversations with unread counts.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Show my messages'",
+            "  - 'Who messaged me?'",
+            "  - 'What's in my inbox?'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: { limit: { type: 'integer', description: 'Default 20. Max 50.' } },
+          },
+        },
+        {
+          name: 'open_conversation',
+          description: [
+            "Read recent messages with one specific peer (chronological).",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'Read my chat with Anna'",
+            "  - 'What did Anna say?'",
+            "",
+            "Use resolve_recipient first to get peer_user_id from a name.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              peer_user_id: { type: 'string', description: 'UUID of the chat peer.' },
+              limit: { type: 'integer', description: 'Default 30. Max 100.' },
+            },
+            required: ['peer_user_id'],
+          },
+        },
+        {
+          name: 'mark_conversation_read',
+          description: [
+            "Mark all unread messages from a specific peer as read. Use after",
+            "the user finishes reading a thread.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              peer_user_id: { type: 'string', description: 'UUID of the chat peer.' },
+            },
+            required: ['peer_user_id'],
+          },
+        },
+        {
+          name: 'get_unread_count',
+          description: [
+            "Return total unread message count across all conversations.",
+            "",
+            "CALL THIS WHEN the user asks: 'How many unread?', 'Any new messages?'.",
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6223,47 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02771 — Voice Tool Expansion P1i: Chat / DM read tools ───
+      case 'list_conversations':
+      case 'open_conversation':
+      case 'mark_conversation_read':
+      case 'get_unread_count': {
+        try {
+          const ca = await import('../services/voice-tools/chat-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'list_conversations') {
+            r = await ca.listConversations(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'open_conversation') {
+            r = await ca.openConversation(sb, lens.user_id, {
+              peer_user_id: String(args.peer_user_id || ''),
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'mark_conversation_read') {
+            r = await ca.markConversationRead(sb, lens.user_id, {
+              peer_user_id: String(args.peer_user_id || ''),
+            });
+          } else if (toolName === 'get_unread_count') {
+            r = await ca.getUnreadCount(sb, lens.user_id);
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
