@@ -620,6 +620,29 @@ async function tool_log_health(
   };
 }
 
+// VTID-02778 — Awareness engine queries
+async function tool_awareness_queries(
+  toolName: 'get_emotional_state' | 'get_situational_awareness' | 'get_availability' | 'get_environmental_context' | 'get_social_context' | 'get_life_stage_context',
+  _args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const aq = await import('../services/voice-tools/awareness-queries');
+  const map: Record<string, (s: any, u: string) => Promise<any>> = {
+    get_emotional_state: aq.getEmotionalState,
+    get_situational_awareness: aq.getSituationalAwareness,
+    get_availability: aq.getAvailability,
+    get_environmental_context: aq.getEnvironmentalContext,
+    get_social_context: aq.getSocialContext,
+    get_life_stage_context: aq.getLifeStageContext,
+  };
+  const fn = map[toolName];
+  if (!fn) return { ok: false, error: 'unknown_awareness_tool' };
+  const r = await fn(sb, id.user_id);
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  return { ok: true, result: r, text: `Awareness signals retrieved.` };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +790,15 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02778 — Awareness engine queries
+      case 'get_emotional_state':
+      case 'get_situational_awareness':
+      case 'get_availability':
+      case 'get_environmental_context':
+      case 'get_social_context':
+      case 'get_life_stage_context':
+        r = await tool_awareness_queries(name as 'get_emotional_state' | 'get_situational_awareness' | 'get_availability' | 'get_environmental_context' | 'get_social_context' | 'get_life_stage_context', args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

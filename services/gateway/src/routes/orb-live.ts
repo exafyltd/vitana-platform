@@ -3577,6 +3577,37 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02778 — Voice Tool Expansion P1p: Awareness engine queries ───
+        {
+          name: 'get_emotional_state',
+          description: "Read the user's current emotional/cognitive state signals (D28). Use when ORB needs context about mood/stress/focus to tune responses.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_situational_awareness',
+          description: "Read the user's situational awareness signals (D32) — current situation, intent, environment.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_availability',
+          description: "Read the user's availability/readiness signals (D33) — busy/free/do-not-disturb state.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_environmental_context',
+          description: "Read environmental/mobility signals (D34) — location class, weather, motion.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_social_context',
+          description: "Read social context signals (D35) — alone/with others, social load.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'get_life_stage_context',
+          description: "Read life-stage signals (D40) — age band, family status, life phase.",
+          parameters: { type: 'object', properties: {} },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6195,43 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02778 — Voice Tool Expansion P1p: Awareness engine queries ───
+      case 'get_emotional_state':
+      case 'get_situational_awareness':
+      case 'get_availability':
+      case 'get_environmental_context':
+      case 'get_social_context':
+      case 'get_life_stage_context': {
+        try {
+          const aq = await import('../services/voice-tools/awareness-queries');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          const map: Record<string, (s: any, u: string) => Promise<any>> = {
+            get_emotional_state: aq.getEmotionalState,
+            get_situational_awareness: aq.getSituationalAwareness,
+            get_availability: aq.getAvailability,
+            get_environmental_context: aq.getEnvironmentalContext,
+            get_social_context: aq.getSocialContext,
+            get_life_stage_context: aq.getLifeStageContext,
+          };
+          const fn = map[toolName];
+          if (!fn) return { success: false, result: '', error: 'unknown_awareness_tool' };
+          const r = await fn(sb, lens.user_id);
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
