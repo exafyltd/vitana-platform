@@ -620,6 +620,34 @@ async function tool_log_health(
   };
 }
 
+// VTID-02773 — News read tools
+async function tool_news_actions(
+  toolName: 'browse_news_feed' | 'list_news_sources' | 'list_news_tags',
+  args: ToolArgs,
+  _id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const na = await import('../services/voice-tools/news-actions');
+  let r: any;
+  if (toolName === 'browse_news_feed') {
+    r = await na.browseNewsFeed(sb, {
+      tag: typeof args.tag === 'string' ? args.tag : undefined,
+      language: typeof args.language === 'string' ? args.language : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'list_news_sources') {
+    r = await na.listNewsSources(sb);
+  } else if (toolName === 'list_news_tags') {
+    r = await na.listNewsTags(sb);
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+  let text = '';
+  if (toolName === 'browse_news_feed') text = `${r.count ?? 0} article${r.count === 1 ? '' : 's'}.`;
+  else if (toolName === 'list_news_sources') text = `${r.count ?? 0} sources.`;
+  else if (toolName === 'list_news_tags') text = `${r.count ?? 0} tags.`;
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +795,12 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02773 — News read tools
+      case 'browse_news_feed':
+      case 'list_news_sources':
+      case 'list_news_tags':
+        r = await tool_news_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

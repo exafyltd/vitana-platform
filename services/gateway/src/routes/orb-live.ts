@@ -3577,6 +3577,34 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02773 — Voice Tool Expansion P1k: News read tools ───
+        {
+          name: 'browse_news_feed',
+          description: [
+            "Browse the longevity news feed. Optional tag/language filter.",
+            "",
+            "CALL THIS WHEN the user asks: 'What's new in longevity?', 'Show",
+            "me the latest news', 'Was gibt's Neues?'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              tag: { type: 'string', description: "Filter by tag (e.g. 'sleep', 'nutrition')." },
+              language: { type: 'string', description: "Two-letter code (e.g. 'en', 'de')." },
+              limit: { type: 'integer', description: 'Default 10. Max 50.' },
+            },
+          },
+        },
+        {
+          name: 'list_news_sources',
+          description: "List news sources sorted by article count.",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'list_news_tags',
+          description: "List top news tags (categories) with article counts.",
+          parameters: { type: 'object', properties: {} },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6192,41 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02773 — Voice Tool Expansion P1k: News read tools ───
+      case 'browse_news_feed':
+      case 'list_news_sources':
+      case 'list_news_tags': {
+        try {
+          const na = await import('../services/voice-tools/news-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'browse_news_feed') {
+            r = await na.browseNewsFeed(sb, {
+              tag: typeof args.tag === 'string' ? args.tag : undefined,
+              language: typeof args.language === 'string' ? args.language : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'list_news_sources') {
+            r = await na.listNewsSources(sb);
+          } else if (toolName === 'list_news_tags') {
+            r = await na.listNewsTags(sb);
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
