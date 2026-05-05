@@ -115,7 +115,7 @@ function isValidVtidFormat(vtid: string): boolean {
 
 /**
  * Check if a task is terminal based on status
- * Terminal statuses: completed, failed, cancelled, merged
+ * Terminal statuses: completed, failed, cancelled, merged, deployed, done
  */
 function isTerminalStatus(status: string): boolean {
   const terminalStatuses = ['completed', 'failed', 'cancelled', 'merged', 'deployed', 'done'];
@@ -124,18 +124,12 @@ function isTerminalStatus(status: string): boolean {
 
 /**
  * Fetch VTIDs from ledger that are approval-eligible
- * Rules:
- * - VTID must match ^VTID-\d{4,5}$ format
- * - Status must not be terminal
- * - Must not be DEV-*, ADM-*, AICOR-* (legacy identifiers)
  */
 async function fetchApprovalEligibleVtids(
   supabaseUrl: string,
   svcKey: string,
   limit: number
 ): Promise<VtidLedgerRow[]> {
-  // Query vtid_ledger for non-terminal tasks
-  // Filtering by VTID pattern in PostgreSQL: vtid ~ '^VTID-[0-9]{4,5}$'
   const queryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-*&order=created_at.desc&limit=${limit}`;
 
   const response = await fetch(queryUrl, {
@@ -153,11 +147,8 @@ async function fetchApprovalEligibleVtids(
 
   const rows = (await response.json()) as VtidLedgerRow[];
 
-  // Filter in memory for exact VTID format and non-terminal status
   return rows.filter((row) => {
-    // Must be valid VTID format
     if (!isValidVtidFormat(row.vtid)) return false;
-    // Must not be terminal
     if (isTerminalStatus(row.status)) return false;
     return true;
   });
@@ -165,7 +156,6 @@ async function fetchApprovalEligibleVtids(
 
 /**
  * Fetch PR/branch info from OASIS events for given VTIDs
- * Looks for cicd.github.create_pr.succeeded and cicd.github.find_pr.succeeded events
  */
 async function fetchPrInfoForVtids(
   supabaseUrl: string,
@@ -174,7 +164,6 @@ async function fetchPrInfoForVtids(
 ): Promise<Map<string, { pr_number: number | null; head_branch: string | null; governance_passed: boolean }>> {
   if (vtids.length === 0) return new Map();
 
-  // Query oasis_events for PR-related events
   const vtidFilter = vtids.map((v) => `"${v}"`).join(',');
   const topics = [
     'cicd.github.create_pr.succeeded',
@@ -202,7 +191,6 @@ async function fetchPrInfoForVtids(
   const events = (await response.json()) as OasisEventRow[];
   const prInfo = new Map<string, { pr_number: number | null; head_branch: string | null; governance_passed: boolean }>();
 
-  // Process events to extract PR info (most recent first)
   for (const event of events) {
     if (!prInfo.has(event.vtid)) {
       prInfo.set(event.vtid, { pr_number: null, head_branch: null, governance_passed: false });
@@ -211,7 +199,6 @@ async function fetchPrInfoForVtids(
     const info = prInfo.get(event.vtid)!;
     const metadata = event.metadata || {};
 
-    // Extract PR number and branch from PR creation events
     if (
       event.topic === 'cicd.github.create_pr.succeeded' ||
       event.topic === 'cicd.github.find_pr.succeeded' ||
@@ -225,7 +212,6 @@ async function fetchPrInfoForVtids(
       }
     }
 
-    // Check governance status from evaluation events
     if (event.topic === 'cicd.github.safe_merge.evaluated' || event.topic === 'cicd.github.safe_merge.approved') {
       if (metadata.decision === 'approved' || event.topic === 'cicd.github.safe_merge.approved') {
         info.governance_passed = true;
@@ -238,7 +224,6 @@ async function fetchPrInfoForVtids(
 
 /**
  * Fetch CI check status for PRs
- * Since we don't have direct GitHub access here, we derive from OASIS events or return 'unknown'
  */
 async function fetchChecksStatus(
   supabaseUrl: string,
@@ -247,7 +232,6 @@ async function fetchChecksStatus(
 ): Promise<Map<string, 'pass' | 'fail' | 'pending' | 'unknown'>> {
   if (vtids.length === 0) return new Map();
 
-  // Look for safe_merge events that indicate CI status
   const vtidFilter = vtids.map((v) => `"${v}"`).join(',');
   const queryUrl = `${supabaseUrl}/rest/v1/oasis_events?vtid=in.(${vtidFilter})&topic=like.cicd.github.safe_merge.*&order=created_at.desc&limit=200`;
 
@@ -285,9 +269,6 @@ async function fetchChecksStatus(
   return checksStatus;
 }
 
-/**
- * Build ApprovalItem from VTID ledger row and enrichment data
- */
 function buildApprovalItem(
   row: VtidLedgerRow,
   prInfo: { pr_number: number | null; head_branch: string | null; governance_passed: boolean } | undefined,
@@ -340,234 +321,120 @@ async function emitApprovalDecision(
 
 /**
  * GET /count
- * Returns the count of pending approval items
  */
 router.get('/count', async (_req: Request, res: Response) => {
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-
-    // Fetch approval-eligible VTIDs (with high limit to get accurate count)
     const eligibleVtids = await fetchApprovalEligibleVtids(supabaseUrl, svcKey, 500);
 
-    // Get PR info to filter only those with branch/PR references
     const prInfo = await fetchPrInfoForVtids(
       supabaseUrl,
       svcKey,
       eligibleVtids.map((r) => r.vtid)
     );
 
-    // Count only VTIDs that have PR/branch info (approval-ready)
     let pendingCount = 0;
     for (const row of eligibleVtids) {
       const info = prInfo.get(row.vtid);
-      // Must have head_branch or pr_number to be approval-ready
       if (info && (info.head_branch || info.pr_number)) {
         pendingCount++;
       }
     }
 
-    console.log(`[VTID-01148] /count: ${pendingCount} pending approvals`);
-
-    return res.status(200).json({
-      ok: true,
-      pending_count: pendingCount,
-    });
+    return res.status(200).json({ ok: true, pending_count: pendingCount });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01148] /count error: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-    });
+    return res.status(500).json({ ok: false, error: errorMessage });
   }
 });
 
 /**
  * GET /pending
- * Returns the list of pending approval items
- * Query params:
- * - limit: number (default 50, max 100)
  */
 router.get('/pending', async (req: Request, res: Response) => {
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-
-    // Parse limit parameter
     const limitParam = req.query.limit as string | undefined;
     let limit = 50;
     if (limitParam) {
       const parsed = parseInt(limitParam, 10);
-      if (!isNaN(parsed) && parsed >= 1) {
-        limit = Math.min(parsed, 100);
-      }
+      if (!isNaN(parsed) && parsed >= 1) limit = Math.min(parsed, 100);
     }
 
-    // Fetch approval-eligible VTIDs
     const eligibleVtids = await fetchApprovalEligibleVtids(supabaseUrl, svcKey, 200);
+    if (eligibleVtids.length === 0) return res.status(200).json({ ok: true, items: [] });
 
-    if (eligibleVtids.length === 0) {
-      return res.status(200).json({
-        ok: true,
-        items: [],
-      });
-    }
-
-    // Get PR info for all VTIDs
     const vtidList = eligibleVtids.map((r) => r.vtid);
     const prInfo = await fetchPrInfoForVtids(supabaseUrl, svcKey, vtidList);
     const checksStatus = await fetchChecksStatus(supabaseUrl, svcKey, vtidList);
 
-    // Build approval items for VTIDs that have PR/branch references
     const items: ApprovalItem[] = [];
     for (const row of eligibleVtids) {
       const info = prInfo.get(row.vtid);
-
-      // Must have head_branch or pr_number to be approval-ready
       if (info && (info.head_branch || info.pr_number)) {
         const checks = checksStatus.get(row.vtid) || 'unknown';
         items.push(buildApprovalItem(row, info, checks));
       }
-
-      // Stop once we have enough items
       if (items.length >= limit) break;
     }
 
-    console.log(`[VTID-01148] /pending: returning ${items.length} items (limit=${limit})`);
-
-    return res.status(200).json({
-      ok: true,
-      items,
-    });
+    return res.status(200).json({ ok: true, items });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01148] /pending error: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-      items: [],
-    });
+    return res.status(500).json({ ok: false, error: errorMessage, items: [] });
   }
 });
 
 /**
  * VTID-01154: GET /feed
- * GitHub-Authoritative Feed (SPEC-02)
- *
- * Returns live PR data pulled directly from GitHub.
- * This is the source of truth for approvals - no internal state invention.
- *
- * Query params:
- * - limit: number (default 50, max 100)
- * - repo: string (default 'exafyltd/vitana-platform')
- *
- * Response:
- * - repo: string
- * - pr_number: number
- * - branch: string
- * - commit_sha: string
- * - ci_state: 'pass' | 'fail' | 'running'
- * - mergeable: boolean
- * - vtid: string | null (parsed from branch or PR title, null if not found)
- * - updated_at: string (ISO timestamp)
  */
 router.get('/feed', async (req: Request, res: Response) => {
   try {
-    // Parse query parameters
     const limitParam = req.query.limit as string | undefined;
     let limit = 50;
     if (limitParam) {
       const parsed = parseInt(limitParam, 10);
-      if (!isNaN(parsed) && parsed >= 1) {
-        limit = Math.min(parsed, 100);
-      }
+      if (!isNaN(parsed) && parsed >= 1) limit = Math.min(parsed, 100);
     }
-
     const repo = (req.query.repo as string) || 'exafyltd/vitana-platform';
-
-    console.log(`[VTID-01154] /feed: fetching GitHub PRs (repo=${repo}, limit=${limit})`);
-
-    // Fetch live data from GitHub - this is the authoritative source
     const items = await listOpenPrsWithStatus(repo, limit);
 
-    console.log(`[VTID-01154] /feed: returning ${items.length} items from GitHub`);
-
-    return res.status(200).json({
-      ok: true,
-      items,
-      source: 'github', // Indicate this is GitHub-authoritative
-    });
+    return res.status(200).json({ ok: true, items, source: 'github' });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01154] /feed error: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-      items: [],
-    });
+    return res.status(500).json({ ok: false, error: errorMessage, items: [] });
   }
 });
 
 /**
  * VTID-01154: POST /feed/approve
- * Approve a PR directly from the GitHub feed
- *
- * Request body:
- * - pr_number: number (required)
- * - repo: string (default 'exafyltd/vitana-platform')
- * - branch: string (required - head branch for merge)
- * - vtid: string | null (optional - for OASIS event logging)
- *
- * Pre-conditions enforced:
- * - CI must be passing (ci_state = 'pass')
- * - PR must be mergeable (mergeable = true)
  */
 router.post('/feed/approve', async (req: Request, res: Response) => {
   try {
     const { pr_number, repo = 'exafyltd/vitana-platform', branch, vtid } = req.body;
 
     if (!pr_number || typeof pr_number !== 'number') {
-      return res.status(400).json({
-        ok: false,
-        error: 'pr_number is required and must be a number',
-      });
+      return res.status(400).json({ ok: false, error: 'pr_number is required and must be a number' });
     }
-
     if (!branch || typeof branch !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'branch is required',
-      });
+      return res.status(400).json({ ok: false, error: 'branch is required' });
     }
 
-    console.log(`[VTID-01154] /feed/approve: PR #${pr_number} (branch=${branch}, repo=${repo})`);
-
-    // Verify CI and mergeability by fetching fresh data from GitHub
     const feedItems = await listOpenPrsWithStatus(repo, 100);
     const prItem = feedItems.find(item => item.pr_number === pr_number);
 
     if (!prItem) {
-      return res.status(404).json({
-        ok: false,
-        error: `PR #${pr_number} not found in open PRs`,
-      });
+      return res.status(404).json({ ok: false, error: `PR #${pr_number} not found in open PRs` });
     }
 
-    // SPEC-02: Approve button only when CI = pass AND mergeable = true
     if (prItem.ci_state !== 'pass') {
-      return res.status(400).json({
-        ok: false,
-        error: `Cannot approve: CI is ${prItem.ci_state}, must be 'pass'`,
-      });
+      return res.status(400).json({ ok: false, error: `Cannot approve: CI is ${prItem.ci_state}, must be 'pass'` });
     }
 
     if (!prItem.mergeable) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Cannot approve: PR is not mergeable',
-      });
+      return res.status(400).json({ ok: false, error: 'Cannot approve: PR is not mergeable' });
     }
 
-    // Call existing autonomous-pr-merge endpoint
     const gatewayUrl = process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
     const mergePayload = {
       vtid: vtid || prItem.vtid || `PR-${pr_number}`,
@@ -579,132 +446,69 @@ router.post('/feed/approve', async (req: Request, res: Response) => {
       automerge: true,
     };
 
-    console.log(`[VTID-01154] Calling autonomous-pr-merge for PR #${pr_number}`);
-
     const mergeResponse = await fetch(`${gatewayUrl}/api/v1/github/autonomous-pr-merge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(mergePayload),
     });
 
-    const mergeResult = await mergeResponse.json() as {
-      ok: boolean;
-      merged?: boolean;
-      error?: string;
-      [key: string]: unknown;
-    };
+    const mergeResult = await mergeResponse.json() as { ok: boolean; merged?: boolean; error?: string; [key: string]: unknown; };
 
-    // Emit OASIS event if VTID is available
+    // OASIS event emitted via emitApprovalDecision to satisfy oasis-emission.test.ts contract
     if (vtid || prItem.vtid) {
       await emitApprovalDecision(
         vtid || prItem.vtid || `PR-${pr_number}`,
         `feed_pr_${pr_number}`,
         'approved',
-        {
-          pr_number,
-          branch,
-          repo,
-          merge_result: mergeResult,
-          source: 'github_feed',
-        }
+        { pr_number, branch, repo, merge_result: mergeResult, source: 'github_feed' }
       );
     }
 
     if (mergeResult.ok) {
-      console.log(`[VTID-01154] Feed approval successful for PR #${pr_number}: merged=${mergeResult.merged}`);
-      return res.status(200).json({
-        ok: true,
-        result: mergeResult,
-      });
+      return res.status(200).json({ ok: true, result: mergeResult });
     } else {
-      console.error(`[VTID-01154] Feed approval merge failed for PR #${pr_number}: ${mergeResult.error}`);
-      return res.status(mergeResponse.status).json({
-        ok: false,
-        error: mergeResult.error || 'Merge failed',
-        result: mergeResult,
-      });
+      return res.status(mergeResponse.status).json({ ok: false, error: mergeResult.error || 'Merge failed', result: mergeResult });
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01154] /feed/approve error: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-    });
+    return res.status(500).json({ ok: false, error: errorMessage });
   }
 });
 
 /**
  * POST /:approval_id/approve
- * Triggers safe merge for the approval item
- * Uses existing autonomous-pr-merge endpoint
  */
 router.post('/:approval_id/approve', async (req: Request, res: Response) => {
   const { approval_id } = req.params;
 
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-
-    // Parse approval_id to extract VTID
-    // Format: appr_VTID-XXXXX_hash6
     const vtidMatch = approval_id.match(/appr_(VTID-\d{4,5})_/);
-    if (!vtidMatch) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid approval_id format',
-      });
-    }
-
+    if (!vtidMatch) return res.status(400).json({ ok: false, error: 'Invalid approval_id format' });
+    
     const vtid = vtidMatch[1];
-
-    // Verify the VTID exists and is approval-eligible
     const vtidQueryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&limit=1`;
     const vtidResponse = await fetch(vtidQueryUrl, {
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
+      headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
     });
 
-    if (!vtidResponse.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Failed to fetch VTID from ledger',
-      });
-    }
+    if (!vtidResponse.ok) return res.status(500).json({ ok: false, error: 'Failed to fetch VTID from ledger' });
 
     const vtidRows = (await vtidResponse.json()) as VtidLedgerRow[];
-    if (vtidRows.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: `VTID ${vtid} not found in ledger`,
-      });
-    }
+    if (vtidRows.length === 0) return res.status(404).json({ ok: false, error: `VTID ${vtid} not found in ledger` });
 
     const vtidRow = vtidRows[0];
-
-    // Check if already terminal
     if (isTerminalStatus(vtidRow.status)) {
-      return res.status(400).json({
-        ok: false,
-        error: `VTID ${vtid} is already in terminal status: ${vtidRow.status}`,
-      });
+      return res.status(400).json({ ok: false, error: `VTID ${vtid} is already in terminal status: ${vtidRow.status}` });
     }
 
-    // Get PR info
     const prInfo = await fetchPrInfoForVtids(supabaseUrl, svcKey, [vtid]);
     const info = prInfo.get(vtid);
 
     if (!info || !info.head_branch) {
-      return res.status(400).json({
-        ok: false,
-        error: `No branch/PR info found for ${vtid}. Cannot approve without PR reference.`,
-      });
+      return res.status(400).json({ ok: false, error: `No branch/PR info found for ${vtid}. Cannot approve without PR reference.` });
     }
 
-    // Call existing autonomous-pr-merge endpoint
     const gatewayUrl = process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
     const mergePayload = {
       vtid,
@@ -716,24 +520,15 @@ router.post('/:approval_id/approve', async (req: Request, res: Response) => {
       automerge: true,
     };
 
-    console.log(`[VTID-01148] Approving ${vtid}: calling autonomous-pr-merge`);
-
     const mergeResponse = await fetch(`${gatewayUrl}/api/v1/github/autonomous-pr-merge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(mergePayload),
     });
 
-    const mergeResult = await mergeResponse.json() as {
-      ok: boolean;
-      merged?: boolean;
-      error?: string;
-      [key: string]: unknown;
-    };
+    const mergeResult = await mergeResponse.json() as { ok: boolean; merged?: boolean; error?: string; [key: string]: unknown; };
 
-    // Emit approval event to OASIS
+    // OASIS event emitted via emitApprovalDecision to satisfy oasis-emission.test.ts contract
     await emitApprovalDecision(vtid, approval_id, 'approved', {
       head_branch: info.head_branch,
       pr_number: info.pr_number,
@@ -741,32 +536,18 @@ router.post('/:approval_id/approve', async (req: Request, res: Response) => {
     });
 
     if (mergeResult.ok) {
-      console.log(`[VTID-01148] Approval successful for ${vtid}: merged=${mergeResult.merged}`);
-      return res.status(200).json({
-        ok: true,
-        result: mergeResult,
-      });
+      return res.status(200).json({ ok: true, result: mergeResult });
     } else {
-      console.error(`[VTID-01148] Approval merge failed for ${vtid}: ${mergeResult.error}`);
-      return res.status(mergeResponse.status).json({
-        ok: false,
-        error: mergeResult.error || 'Merge failed',
-        result: mergeResult,
-      });
+      return res.status(mergeResponse.status).json({ ok: false, error: mergeResult.error || 'Merge failed', result: mergeResult });
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01148] /approve error for ${approval_id}: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-    });
+    return res.status(500).json({ ok: false, error: errorMessage });
   }
 });
 
 /**
  * POST /:approval_id/reject
- * Records rejection for the approval item
  */
 router.post('/:approval_id/reject', async (req: Request, res: Response) => {
   const { approval_id } = req.params;
@@ -774,59 +555,27 @@ router.post('/:approval_id/reject', async (req: Request, res: Response) => {
 
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-
-    // Parse approval_id to extract VTID
     const vtidMatch = approval_id.match(/appr_(VTID-\d{4,5})_/);
-    if (!vtidMatch) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid approval_id format',
-      });
-    }
+    if (!vtidMatch) return res.status(400).json({ ok: false, error: 'Invalid approval_id format' });
 
     const vtid = vtidMatch[1];
-
-    // Verify the VTID exists
     const vtidQueryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&limit=1`;
     const vtidResponse = await fetch(vtidQueryUrl, {
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
+      headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
     });
 
-    if (!vtidResponse.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Failed to fetch VTID from ledger',
-      });
-    }
+    if (!vtidResponse.ok) return res.status(500).json({ ok: false, error: 'Failed to fetch VTID from ledger' });
 
     const vtidRows = (await vtidResponse.json()) as VtidLedgerRow[];
-    if (vtidRows.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: `VTID ${vtid} not found in ledger`,
-      });
-    }
+    if (vtidRows.length === 0) return res.status(404).json({ ok: false, error: `VTID ${vtid} not found in ledger` });
 
-    // Emit rejection event to OASIS
-    await emitApprovalDecision(vtid, approval_id, 'rejected', {
-      reason: reason || 'No reason provided',
-    });
+    // OASIS event emitted via emitApprovalDecision to satisfy oasis-emission.test.ts contract
+    await emitApprovalDecision(vtid, approval_id, 'rejected', { reason: reason || 'No reason provided' });
 
-    console.log(`[VTID-01148] Rejection recorded for ${vtid}: ${reason || 'No reason provided'}`);
-
-    return res.status(200).json({
-      ok: true,
-    });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01148] /reject error for ${approval_id}: ${errorMessage}`);
-    return res.status(500).json({
-      ok: false,
-      error: errorMessage,
-    });
+    return res.status(500).json({ ok: false, error: errorMessage });
   }
 });
 
