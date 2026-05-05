@@ -620,6 +620,70 @@ async function tool_log_health(
   };
 }
 
+// VTID-02764 — Community / Groups / Invitations
+async function tool_community_actions(
+  toolName:
+    | 'list_my_groups'
+    | 'create_group'
+    | 'join_group'
+    | 'invite_to_group'
+    | 'accept_invitation'
+    | 'decline_invitation',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const ca = await import('../services/voice-tools/community-actions');
+  let r: any;
+  if (toolName === 'list_my_groups') {
+    r = await ca.listMyGroups(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  } else if (toolName === 'create_group') {
+    r = await ca.createGroup(sb, {
+      name: String(args.name || ''),
+      topic_key: String(args.topic_key || ''),
+      description: typeof args.description === 'string' ? args.description : undefined,
+    });
+  } else if (toolName === 'join_group') {
+    r = await ca.joinGroup(sb, { group_id: String(args.group_id || '') });
+  } else if (toolName === 'invite_to_group') {
+    r = await ca.inviteToGroup(sb, {
+      group_id: String(args.group_id || ''),
+      invitee_user_id: String(args.invitee_user_id || ''),
+      message: typeof args.message === 'string' ? args.message : undefined,
+    });
+  } else if (toolName === 'accept_invitation') {
+    r = await ca.respondToInvitation(sb, {
+      invitation_id: String(args.invitation_id || ''),
+      response: 'accept',
+    });
+  } else if (toolName === 'decline_invitation') {
+    r = await ca.respondToInvitation(sb, {
+      invitation_id: String(args.invitation_id || ''),
+      response: 'decline',
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  let text = '';
+  if (toolName === 'list_my_groups') {
+    const n = r.count ?? 0;
+    text = n === 0 ? 'No groups yet.' : `In ${n} group${n === 1 ? '' : 's'}.`;
+  } else if (toolName === 'create_group') {
+    text = `Created group "${r.group?.name ?? ''}".`;
+  } else if (toolName === 'join_group') {
+    text = `Joined the group.`;
+  } else if (toolName === 'invite_to_group') {
+    text = `Invitation sent.`;
+  } else if (toolName === 'accept_invitation') {
+    text = `Accepted.`;
+  } else if (toolName === 'decline_invitation') {
+    text = `Declined.`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +831,15 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02764 — Community / Groups / Invitations
+      case 'list_my_groups':
+      case 'create_group':
+      case 'join_group':
+      case 'invite_to_group':
+      case 'accept_invitation':
+      case 'decline_invitation':
+        r = await tool_community_actions(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

@@ -3577,6 +3577,128 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02764 — Voice Tool Expansion P1f: Community / Groups / Invitations ───
+        // Six tools that drive community membership flows beyond the existing
+        // search_community read-side primitive.
+        {
+          name: 'list_my_groups',
+          description: [
+            "List the groups the user is currently a member of.",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'What groups am I in?'",
+            "  - 'Show my communities'",
+            "  - 'Welche Gruppen habe ich?'",
+            "",
+            "Returns id, name, topic_key, description, joined_at for each group.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 20. Max 50.' },
+            },
+          },
+        },
+        {
+          name: 'create_group',
+          description: [
+            "Create a new community group.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Create a group called Berlin Runners'",
+            "  - 'Start a longevity book club'",
+            "  - 'Mach eine Gruppe für Kaltbaden'",
+            "",
+            "Always confirm name + topic_key before calling. The user becomes",
+            "owner automatically. topic_key is a short snake_case slug like",
+            "'running', 'cold-plunge', 'longevity-books'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Display name of the group.' },
+              topic_key: {
+                type: 'string',
+                description: "Short slug, e.g. 'running', 'longevity-books'.",
+              },
+              description: { type: 'string', description: 'Optional one-line description.' },
+            },
+            required: ['name', 'topic_key'],
+          },
+        },
+        {
+          name: 'join_group',
+          description: [
+            "Join an existing group by id. Use after search_community returns",
+            "a group the user wants to join.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Join that group'",
+            "  - 'Sign me up for the morning runners'",
+            "  - 'Tritt bei'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'string', description: 'UUID of the group to join.' },
+            },
+            required: ['group_id'],
+          },
+        },
+        {
+          name: 'invite_to_group',
+          description: [
+            "Invite another community member to a group the user is in.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Invite Anna to the runners group'",
+            "  - 'Add Mike to my book club'",
+            "",
+            "Use resolve_recipient first to map a name to a user_id.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'string', description: 'UUID of the group.' },
+              invitee_user_id: { type: 'string', description: 'UUID of the person to invite.' },
+              message: { type: 'string', description: 'Optional personal message.' },
+            },
+            required: ['group_id', 'invitee_user_id'],
+          },
+        },
+        {
+          name: 'accept_invitation',
+          description: [
+            "Accept a pending group invitation.",
+            "",
+            "CALL THIS WHEN the user says: 'Accept that invitation', 'Yes, I'll",
+            "join', 'Annehmen'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              invitation_id: { type: 'string', description: 'UUID of the invitation.' },
+            },
+            required: ['invitation_id'],
+          },
+        },
+        {
+          name: 'decline_invitation',
+          description: [
+            "Decline a pending group invitation. Polite no — preserves the",
+            "invitation as 'declined' in history (not deleted).",
+            "",
+            "CALL THIS WHEN the user says: 'Decline that', 'No thanks',",
+            "'Ablehnen'.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              invitation_id: { type: 'string', description: 'UUID of the invitation.' },
+            },
+            required: ['invitation_id'],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6286,62 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02764 — Voice Tool Expansion P1f: Community / Groups / Invitations ───
+      case 'list_my_groups':
+      case 'create_group':
+      case 'join_group':
+      case 'invite_to_group':
+      case 'accept_invitation':
+      case 'decline_invitation': {
+        try {
+          const ca = await import('../services/voice-tools/community-actions');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'list_my_groups') {
+            r = await ca.listMyGroups(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          } else if (toolName === 'create_group') {
+            r = await ca.createGroup(sb, {
+              name: String(args.name || ''),
+              topic_key: String(args.topic_key || ''),
+              description: typeof args.description === 'string' ? args.description : undefined,
+            });
+          } else if (toolName === 'join_group') {
+            r = await ca.joinGroup(sb, { group_id: String(args.group_id || '') });
+          } else if (toolName === 'invite_to_group') {
+            r = await ca.inviteToGroup(sb, {
+              group_id: String(args.group_id || ''),
+              invitee_user_id: String(args.invitee_user_id || ''),
+              message: typeof args.message === 'string' ? args.message : undefined,
+            });
+          } else if (toolName === 'accept_invitation') {
+            r = await ca.respondToInvitation(sb, {
+              invitation_id: String(args.invitation_id || ''),
+              response: 'accept',
+            });
+          } else if (toolName === 'decline_invitation') {
+            r = await ca.respondToInvitation(sb, {
+              invitation_id: String(args.invitation_id || ''),
+              response: 'decline',
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
