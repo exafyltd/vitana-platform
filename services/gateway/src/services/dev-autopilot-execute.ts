@@ -457,7 +457,24 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
       auto_fix_depth: 0,
     }),
   });
-  if (!ins.ok) return { ok: false, error: `execution insert failed: ${ins.error}` };
+  if (!ins.ok) {
+    // VTID-AUTOPILOT-RACE: the partial unique index
+    // `dev_autopilot_executions_finding_inflight_uniq` rejects a second
+    // concurrent INSERT for a finding that already has an inflight exec.
+    // PostgREST surfaces this as HTTP 409 + Postgres SQLSTATE 23505 in
+    // the body. Treat it as a benign skip — another gateway instance got
+    // there first; its exec is already cooling/running for this finding.
+    // Without this, every Cloud Run multi-instance race produces a "execution
+    // insert failed" autoApproveTick warning AND a stranded inflight row in
+    // the loser's view, even though the winner is already making progress.
+    if (ins.status === 409 && /23505|finding_inflight_uniq/.test(ins.error || '')) {
+      console.log(
+        `${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] inflight-unique violation — another instance picked first, skipping`,
+      );
+      return { ok: false, error: 'inflight_unique_skip' };
+    }
+    return { ok: false, error: `execution insert failed: ${ins.error}` };
+  }
 
   await emitOasisEvent({
     vtid: EXEC_VTID,
