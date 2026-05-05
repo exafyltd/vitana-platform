@@ -620,6 +620,66 @@ async function tool_log_health(
   };
 }
 
+// VTID-02763 — Reminders extension
+async function tool_reminders_extra(
+  toolName:
+    | 'snooze_reminder'
+    | 'update_reminder'
+    | 'acknowledge_reminder'
+    | 'complete_reminder'
+    | 'list_missed_reminders',
+  args: ToolArgs,
+  id: Identity,
+  sb: SupabaseClient,
+): Promise<ToolResult> {
+  const re = await import('../services/voice-tools/reminders-extra');
+  let r: any;
+  if (toolName === 'snooze_reminder') {
+    r = await re.snoozeReminder(sb, id.user_id, {
+      reminder_id: String(args.reminder_id || ''),
+      minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+    });
+  } else if (toolName === 'update_reminder') {
+    r = await re.updateReminder(sb, id.user_id, {
+      reminder_id: String(args.reminder_id || ''),
+      action_text: typeof args.action_text === 'string' ? args.action_text : undefined,
+      spoken_message: typeof args.spoken_message === 'string' ? args.spoken_message : undefined,
+      scheduled_for_iso: typeof args.scheduled_for_iso === 'string' ? args.scheduled_for_iso : undefined,
+      description: typeof args.description === 'string' ? args.description : undefined,
+    });
+  } else if (toolName === 'acknowledge_reminder') {
+    r = await re.acknowledgeReminder(sb, id.user_id, {
+      reminder_id: String(args.reminder_id || ''),
+      via: typeof args.via === 'string' ? args.via : 'manual',
+    });
+  } else if (toolName === 'complete_reminder') {
+    r = await re.completeReminder(sb, id.user_id, {
+      reminder_id: String(args.reminder_id || ''),
+    });
+  } else if (toolName === 'list_missed_reminders') {
+    r = await re.listMissedReminders(sb, id.user_id, {
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+  }
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || `${toolName}_failed` };
+
+  let text = '';
+  if (toolName === 'snooze_reminder') {
+    const m = Number(args.minutes ?? 10) || 10;
+    text = `Snoozed by ${m} minutes.`;
+  } else if (toolName === 'update_reminder') {
+    text = 'Reminder updated.';
+  } else if (toolName === 'acknowledge_reminder') {
+    text = `Reminder acknowledged.`;
+  } else if (toolName === 'complete_reminder') {
+    text = `Reminder marked complete.`;
+  } else if (toolName === 'list_missed_reminders') {
+    const n = r.count ?? 0;
+    text = n === 0 ? 'No missed reminders.' : `${n} missed reminder${n === 1 ? '' : 's'}.`;
+  }
+  return { ok: true, result: r, text };
+}
+
 async function tool_get_pillar_subscores(
   args: ToolArgs,
   id: Identity,
@@ -767,6 +827,14 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
         break;
       case 'get_pillar_subscores':
         r = await tool_get_pillar_subscores(args, identity, sb);
+        break;
+      // VTID-02763 — Reminders extension
+      case 'snooze_reminder':
+      case 'update_reminder':
+      case 'acknowledge_reminder':
+      case 'complete_reminder':
+      case 'list_missed_reminders':
+        r = await tool_reminders_extra(name as any, args, identity, sb);
         break;
       default:
         return res.status(404).json({ ok: false, error: `unknown tool: ${name}`, vtid: VTID });

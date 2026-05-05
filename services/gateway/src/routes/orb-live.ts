@@ -3577,6 +3577,113 @@ function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // ─── VTID-02763 — Voice Tool Expansion P1e: Reminders extension ───
+        // Five tools that complete the reminder lifecycle beyond the existing
+        // set_reminder / find_reminders / delete_reminder primitives.
+        {
+          name: 'snooze_reminder',
+          description: [
+            "Push a reminder out by N minutes (default 10, max 24 hours).",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Snooze that reminder for 15 minutes'",
+            "  - 'Remind me again in an hour'",
+            "  - 'Verschiebe die Erinnerung'",
+            "",
+            "Use after the reminder has fired. Use find_reminders first if",
+            "you need the reminder_id.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'UUID of the reminder.' },
+              minutes: { type: 'integer', description: 'How many minutes to push (default 10, max 1440).' },
+            },
+            required: ['reminder_id'],
+          },
+        },
+        {
+          name: 'update_reminder',
+          description: [
+            "Edit an existing reminder — change its text, spoken message, or",
+            "scheduled time. New time must be at least 60s in the future.",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'Move my magnesium reminder to 9pm'",
+            "  - 'Change that reminder to say take vitamin D'",
+            "  - 'Update the spoken message'",
+            "",
+            "Always confirm the change verbally after the tool returns.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'UUID of the reminder.' },
+              action_text: { type: 'string', description: 'New short label (max 60 chars).' },
+              spoken_message: { type: 'string', description: 'New friendly sentence to speak at fire time.' },
+              scheduled_for_iso: { type: 'string', description: 'New absolute UTC ISO time. Must be ≥60s in future.' },
+              description: { type: 'string', description: 'Optional extended details.' },
+            },
+            required: ['reminder_id'],
+          },
+        },
+        {
+          name: 'acknowledge_reminder',
+          description: [
+            "Record that a reminder was delivered. Use IMMEDIATELY after the",
+            "ORB has spoken a fired reminder so it doesn't repeat.",
+            "",
+            "via must be one of: 'sse' (live SSE delivery), 'fcm' (push), 'manual'",
+            "(user said 'I heard it' on a missed reminder), 'manual_replay'",
+            "(user replayed a missed one), 'none' (silenced without delivery).",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'UUID of the reminder.' },
+              via: {
+                type: 'string',
+                enum: ['sse', 'fcm', 'manual', 'manual_replay', 'none'],
+                description: 'How the reminder was delivered.',
+              },
+            },
+            required: ['reminder_id'],
+          },
+        },
+        {
+          name: 'complete_reminder',
+          description: [
+            "Mark a reminder as DONE — the user did the thing it was reminding",
+            "about. Distinct from acknowledge_reminder (which only records",
+            "delivery).",
+            "",
+            "CALL THIS WHEN the user says:",
+            "  - 'I took my magnesium'",
+            "  - 'Done with that reminder'",
+            "  - 'Erledigt'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'UUID of the reminder.' },
+            },
+            required: ['reminder_id'],
+          },
+        },
+        {
+          name: 'list_missed_reminders',
+          description: [
+            "List reminders that fired but the user never acknowledged (still",
+            "pending replay). Use when the user asks 'what did I miss?' or at",
+            "session start to surface things they should hear.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Default 5. Max 20.' },
+            },
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
@@ -6164,6 +6271,59 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      // ─── VTID-02763 — Voice Tool Expansion P1e: Reminders extension ───
+      case 'snooze_reminder':
+      case 'update_reminder':
+      case 'acknowledge_reminder':
+      case 'complete_reminder':
+      case 'list_missed_reminders': {
+        try {
+          const re = await import('../services/voice-tools/reminders-extra');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+          let r: any;
+          if (toolName === 'snooze_reminder') {
+            r = await re.snoozeReminder(sb, lens.user_id, {
+              reminder_id: String(args.reminder_id || ''),
+              minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+            });
+          } else if (toolName === 'update_reminder') {
+            r = await re.updateReminder(sb, lens.user_id, {
+              reminder_id: String(args.reminder_id || ''),
+              action_text: typeof args.action_text === 'string' ? args.action_text : undefined,
+              spoken_message: typeof args.spoken_message === 'string' ? args.spoken_message : undefined,
+              scheduled_for_iso: typeof args.scheduled_for_iso === 'string' ? args.scheduled_for_iso : undefined,
+              description: typeof args.description === 'string' ? args.description : undefined,
+            });
+          } else if (toolName === 'acknowledge_reminder') {
+            r = await re.acknowledgeReminder(sb, lens.user_id, {
+              reminder_id: String(args.reminder_id || ''),
+              via: typeof args.via === 'string' ? args.via : 'manual',
+            });
+          } else if (toolName === 'complete_reminder') {
+            r = await re.completeReminder(sb, lens.user_id, {
+              reminder_id: String(args.reminder_id || ''),
+            });
+          } else if (toolName === 'list_missed_reminders') {
+            r = await re.listMissedReminders(sb, lens.user_id, {
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+          }
+
+          if (!r || r.ok === false) {
+            return { success: false, result: '', error: (r && r.error) || `${toolName}_failed` };
+          }
+          return { success: true, result: JSON.stringify(r) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
