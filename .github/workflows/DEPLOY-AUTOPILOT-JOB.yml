@@ -73,10 +73,10 @@ jobs:
           # BUILD_INFO is read at runtime; capture deploy SHA + time.
           echo "{\"sha\":\"${{ github.sha }}\",\"deployed_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"role\":\"autopilot-executor\"}" > BUILD_INFO
 
-          gcloud builds submit \
-            --tag="$IMAGE_URI" \
-            --config=- \
-            . <<EOF
+          # Inline cloudbuild config so we can pick Dockerfile.job rather than
+          # the default Dockerfile (which is the gateway service entry).
+          # gcloud rejects --tag + --config together; --config is exclusive.
+          cat > /tmp/cloudbuild-job.yaml <<EOF
           steps:
             - name: 'gcr.io/cloud-builders/docker'
               args: ['build', '-f', 'Dockerfile.job', '-t', '$IMAGE_URI', '.']
@@ -85,6 +85,7 @@ jobs:
           images:
             - '$IMAGE_URI'
           EOF
+          gcloud builds submit . --config=/tmp/cloudbuild-job.yaml
 
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
         id: build
