@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-05-no-logout-fix"
+CODE_VERSION = "agent-2026-05-06-participant-metadata-fix"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -127,12 +127,42 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # publisher.
     await ctx.connect()
 
-    # Read room metadata: the gateway's /orb/livekit/token endpoint
-    # embeds resolved identity here.
-    metadata_str = ctx.room.metadata or ""
+    # ── Identity metadata lives on the USER PARTICIPANT, not the room. ──
+    # The gateway's /api/v1/orb/livekit/token mints a LiveKit AccessToken
+    # with `metadata: JSON.stringify({user_id, tenant_id, vitana_id,
+    # user_jwt, ...})`. AccessToken metadata becomes the *participant's*
+    # metadata at join time. `ctx.room.metadata` is room-level metadata
+    # (a separate, server-side field set via LiveKit Server API), which
+    # the gateway does NOT write — it has always been empty, which is why
+    # every session was resolving to user_id="anon" before this fix.
+    #
+    # Strategy: try participants already in the room first (the user
+    # typically joins before the agent dispatch), then fall back to
+    # waiting for the next participant join.
+    metadata_str = ""
+    user_participant = None
+    for p in ctx.room.remote_participants.values():
+        if p.metadata:
+            user_participant = p
+            metadata_str = p.metadata
+            logger.info("agent_entrypoint: read metadata from already-joined participant %s", p.identity)
+            break
+
+    if not metadata_str:
+        try:
+            user_participant = await asyncio.wait_for(ctx.wait_for_participant(), timeout=10.0)
+            metadata_str = user_participant.metadata or ""
+            logger.info("agent_entrypoint: waited for participant %s, metadata_len=%d",
+                        user_participant.identity, len(metadata_str))
+        except asyncio.TimeoutError:
+            logger.warning("agent_entrypoint: no participant joined within 10s — anonymous fallback")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_entrypoint: wait_for_participant failed: %s", exc)
+
     try:
         metadata = json.loads(metadata_str) if metadata_str else {}
     except (json.JSONDecodeError, TypeError):
+        logger.warning("agent_entrypoint: participant metadata is not valid JSON: %r", metadata_str[:200])
         metadata = {}
 
     # VTID-LIVEKIT-AGENT-JWT: the gateway's /orb/livekit/token endpoint
