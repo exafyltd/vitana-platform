@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
+// dashboard reflects live usage instead of fake startup status.
+import { recordAgentHeartbeat } from './agents-registry';
 // VTID-02651: persona registry — voice/greeting/handles_kinds all loaded
 // from agent_personas at runtime so any new specialist is a config insert.
 // VTID-02653 Phase 6: tenant-aware overlay variants. The runtime uses
@@ -14859,6 +14862,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   });
 
   console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
+
+  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
+  // shows orb-live as healthy whenever a voice session is established.
+  // Fire-and-forget: registry write must never block the SSE response.
+  recordAgentHeartbeat('orb-live').catch(() => {});
 
   return res.status(200).json({
     ok: true,
