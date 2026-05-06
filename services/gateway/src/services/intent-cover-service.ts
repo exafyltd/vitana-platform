@@ -1,6 +1,6 @@
 /**
- * BOOTSTRAP-INTENT-COVER-GEN — server-side cover-photo generation for
- * the Find-a-Match preview card.
+ * BOOTSTRAP-INTENT-COVER-GEN / BOOTSTRAP-MATCH-COVER-REALISM —
+ * server-side cover-photo generation for the Find-a-Match preview card.
  *
  * Two responsibilities:
  *
