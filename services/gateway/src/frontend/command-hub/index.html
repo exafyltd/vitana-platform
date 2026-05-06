@@ -4,6 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vitana Command Hub</title>
+  <!--
+    BOOTSTRAP-CLOUDFLARE-CMDHUB-REDIRECT: when the Command Hub is loaded
+    from the un-migrated *.a.run.app host, hop to the Cloudflare-fronted
+    domain. The *.run.app host is rate-limited at Google's edge (per-IP
+    GFE), so the Service Health monitor's 54 parallel probes drain the
+    bucket within a second and panels show red even when every backend
+    is healthy. Run synchronously in <head> before any JS/CSS so the user
+    lands on the right host before the panel-init storm starts.
+  -->
+  <script>
+    (function () {
+      try {
+        if (location.hostname === 'gateway-q74ibpv6ia-uc.a.run.app') {
+          location.replace('https://gateway.vitanaland.com' + location.pathname + location.search + location.hash);
+        }
+      } catch (e) { /* never block on a redirect failure */ }
+    })();
+  </script>
   <link rel="stylesheet" href="/command-hub/styles.css?v=20260424-dev-comhu-0411-docs-screens-num" />
 </head>
 <body>
