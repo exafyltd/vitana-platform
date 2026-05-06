@@ -2,12 +2,14 @@ import express from 'express';
 import request from 'supertest';
 import adminAutopilotRouter from './admin-autopilot';
 
+// Global mock state variables
 let mockData: any[] | null = [];
 let mockCount: number | null = null;
 let mockSingleData: any = null;
 let mockMaybeSingleData: any = null;
 let mockError: any = null;
 
+// Chainable mock definition for Supabase queries
 const chainable: any = {
   from: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
@@ -24,7 +26,7 @@ const chainable: any = {
   delete: jest.fn().mockReturnThis(),
   maybeSingle: jest.fn().mockImplementation(() => Promise.resolve({ data: mockMaybeSingleData, error: mockError })),
   single: jest.fn().mockImplementation(() => Promise.resolve({ data: mockSingleData, error: mockError })),
-  then: jest.fn().mockImplementation((resolve) => {
+  then: jest.fn().mockImplementation((resolve: (value: any) => void) => {
     resolve({ data: mockData, error: mockError, count: mockCount ?? (mockData ? mockData.length : 0) });
   }),
 };
@@ -39,6 +41,7 @@ jest.mock('../lib/supabase', () => ({
 
 jest.mock('../middleware/require-tenant-admin', () => ({
   requireTenantAdmin: jest.fn((req: any, res: any, next: any) => {
+    // Inject mock tenant ID to simulate authorized tenant admin
     req.targetTenantId = 'tenant-123';
     next();
   }),
@@ -85,6 +88,7 @@ describe('Admin Autopilot Routes', () => {
       it('should return 400 if body is empty', async () => {
         const res = await request(app).patch('/settings').send({});
         expect(res.status).toBe(400);
+        expect(res.body.ok).toBe(false);
       });
 
       it('should successfully update settings', async () => {
