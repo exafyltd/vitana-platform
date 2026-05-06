@@ -376,6 +376,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityAdminRouter = require('./routes/tenant-admin/community-admin').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
+  // BOOTSTRAP-CMDHUB-I18N-OPS: Localization operations — locale status + workflow dispatch
+  const adminI18nOpsRouter = require('./routes/admin-i18n-ops').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
   const adminAutopilotRouter = require('./routes/admin-autopilot').default;
   // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
@@ -764,6 +766,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
+  mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
