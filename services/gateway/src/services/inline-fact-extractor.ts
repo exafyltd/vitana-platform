@@ -19,6 +19,9 @@
 
 import { VertexAI } from '@google-cloud/vertexai';
 import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
+// BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
+// inline-fact-extractor activity (the cognee fallback path).
+import { recordAgentHeartbeat } from '../routes/agents-registry';
 
 // =============================================================================
 // Configuration (mirrors gemini-operator.ts)
@@ -334,6 +337,10 @@ export async function extractAndPersistFacts(input: {
   try {
     // Skip very short messages (unlikely to contain facts)
     if (input.conversationText.length < 30) return;
+
+    // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
+    // shows inline-fact-extractor as healthy whenever it's actually called.
+    recordAgentHeartbeat('inline-fact-extractor').catch(() => {});
 
     const facts = await callGeminiForExtraction(input.conversationText);
 

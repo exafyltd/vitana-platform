@@ -36,6 +36,8 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-VOICE-DEMO: real heartbeats from voice/text conversation paths.
+import { recordAgentHeartbeat } from './agents-registry';
 import {
   ConversationTurnRequestSchema,
   ConversationTurnRequest,
@@ -180,6 +182,10 @@ router.post('/turn', async (req: Request, res: Response) => {
   const startTime = Date.now();
 
   console.log(`[VTID-01216] Conversation turn ${requestId} started`);
+
+  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
+  // shows conversation-intelligence as healthy on every turn.
+  recordAgentHeartbeat('conversation-intelligence').catch(() => {});
 
   try {
     // Validate request

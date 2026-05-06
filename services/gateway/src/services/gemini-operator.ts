@@ -55,6 +55,9 @@ import { executeGetUserMatches as executeGetUserMatchesTool } from './match-tool
 import githubService from './github-service';
 import cicdLockManager from './cicd-lock-manager';
 import { runFullQualityCheck } from './spec-quality-agent';
+// BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard shows
+// gemini-operator as healthy whenever it's actually called.
+import { recordAgentHeartbeat } from '../routes/agents-registry';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -2379,6 +2382,63 @@ async function executeCommunityGetRecommendations(
   return { ok: true, data: { result: `Here are your personalized recommendations:\n${formatted}` } };
 }
 
+// ==================== BOOTSTRAP-VOICE-DEMO: Architecture Investigator ====================
+
+/**
+ * Execute the investigate_failure voice tool. Calls the Architecture
+ * Investigator agent (DeepSeek-reasoner), which pulls recent OASIS events
+ * into context, generates a structured root-cause hypothesis, persists it
+ * to architecture_reports, and emits architecture.investigation.completed.
+ *
+ * Returns a compact natural-language summary so ORB can read it back to
+ * the user. The full structured report is in the data payload.
+ */
+async function executeInvestigateFailure(
+  args: { incident_topic: string; vtid?: string; notes?: string; event_limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  console.log(`[BOOTSTRAP-ARCH-INV] investigate_failure: topic=${args.incident_topic} vtid=${args.vtid || '-'} thread=${threadId}`);
+
+  try {
+    // Lazy-load to avoid pulling DeepSeek deps unless the tool is invoked.
+    const { investigateIncident } = await import('./architecture-investigator');
+
+    const report = await investigateIncident({
+      incident_topic: args.incident_topic,
+      vtid: args.vtid,
+      notes: args.notes,
+      event_limit: args.event_limit,
+      trigger_reason: 'manual',
+    });
+
+    const altCount = report.alternative_hypotheses?.length || 0;
+    const summary = `Root cause (confidence ${(report.confidence * 100).toFixed(0)}%): ${report.root_cause} Suggested fix: ${report.suggested_fix} ${altCount > 0 ? `I considered ${altCount} alternative hypotheses; full report saved.` : 'Full report saved.'}`;
+
+    return {
+      ok: true,
+      data: {
+        result: summary,
+        report_id: report.id,
+        confidence: report.confidence,
+        root_cause: report.root_cause,
+        suggested_fix: report.suggested_fix,
+        alternative_hypotheses: report.alternative_hypotheses,
+        evidence_summary: report.evidence_summary,
+        provider: report.llm_provider,
+        model: report.llm_model,
+        latency_ms: report.latency_ms,
+      },
+    };
+  } catch (err: any) {
+    const msg = err?.message || 'Unknown error';
+    console.error(`[BOOTSTRAP-ARCH-INV] investigate_failure failed: ${msg}`);
+    return {
+      ok: false,
+      error: `Investigation failed: ${msg}`,
+    };
+  }
+}
+
 // ==================== Main Tool Router ====================
 
 /**
@@ -2674,6 +2734,19 @@ export async function executeTool(
         };
         break;
       }
+
+      // BOOTSTRAP-VOICE-DEMO: Architecture Investigator voice tool
+      case 'investigate_failure':
+        result = await executeInvestigateFailure(
+          args as {
+            incident_topic: string;
+            vtid?: string;
+            notes?: string;
+            event_limit?: number;
+          },
+          threadId
+        );
+        break;
 
       default:
         result = {
@@ -3065,6 +3138,10 @@ export async function processWithGemini(input: {
   userRole?: string;
 }): Promise<GeminiOperatorResponse> {
   const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole } = input;
+
+  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
+  // reflects live usage. Fire-and-forget; never block the LLM call.
+  recordAgentHeartbeat('gemini-operator').catch(() => {});
 
   console.log(`[VTID-01023] Processing message: "${text.substring(0, 50)}..."`);
   if (conversationHistory.length > 0) {
