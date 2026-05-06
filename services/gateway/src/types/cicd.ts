@@ -720,7 +720,11 @@ export type CicdEventType =
   // VTID-02632: Phase 8 — Nightly consolidator events
   | 'memory.consolidator.run.completed'
   | 'memory.consolidator.loop.failed'
-  | 'memory.index_delta.observed';
+  | 'memory.index_delta.observed'
+  // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
+  | 'architecture.investigation.started'
+  | 'architecture.investigation.completed'
+  | 'architecture.investigation.failed';
 
 export interface CicdOasisEvent {
   vtid: string;

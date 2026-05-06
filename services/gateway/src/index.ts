@@ -247,6 +247,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // Agents Registry — single source of truth for every LLM-powered workload
   const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
+  // BOOTSTRAP-ARCH-INV: System-wide architecture investigator (DeepSeek-reasoner)
+  const { architectureInvestigatorRouter } = require('./routes/architecture-investigator');
   // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
   const { routinesRouter } = require('./routes/routines');
   // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B routines
@@ -593,6 +595,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Agents Registry — replaces the hardcoded subagents array with a real, queryable registry
   mountRouterSync(app, '/', agentsRegistryRouter, { owner: 'agents-registry' });
+
+  // BOOTSTRAP-ARCH-INV: Architecture Investigator route
+  mountRouterSync(app, '/', architectureInvestigatorRouter, { owner: 'architecture-investigator' });
 
   // VTID-01981: Routines — catalog + run history for daily Claude Code remote agents
   mountRouterSync(app, '/', routinesRouter, { owner: 'routines' });
