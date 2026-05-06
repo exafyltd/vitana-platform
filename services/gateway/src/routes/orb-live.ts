@@ -912,6 +912,10 @@ interface GeminiLiveSession {
   // VTID-NAV: Last few routes the user visited (newest first), pushed by the
   // host React Router via VTOrb.updateContext before the session started.
   recent_routes?: string[];
+  // VTID-02789: Mobile viewport flag, set from the frontend's useIsMobile()
+  // hook in the session start payload + every updateContext. Drives the
+  // mobile_route override + viewport_only block in handleNavigateToScreen.
+  is_mobile?: boolean;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -3941,17 +3945,52 @@ export async function handleNavigateToScreen(
     };
   }
 
+  // VTID-02789: Viewport gate — refuse the redirect if the entry is
+  // viewport-locked to mobile-only or desktop-only and the session doesn't
+  // match. Lets us mark `/daily-diary` (mobile-only flow) so a desktop
+  // session never gets sent there.
+  if (entry.viewport_only) {
+    const sessionViewport: 'mobile' | 'desktop' = session.is_mobile === true ? 'mobile' : 'desktop';
+    if (entry.viewport_only !== sessionViewport) {
+      emitOasisEvent({
+        vtid: 'VTID-02789',
+        type: 'orb.navigator.blocked',
+        source: 'orb-live-ws',
+        status: 'warning',
+        message: `Screen '${entry.screen_id}' is ${entry.viewport_only}-only; session is ${sessionViewport}`,
+        payload: {
+          session_id: session.sessionId,
+          attempted_screen_id: screenId,
+          error_kind: 'wrong_viewport',
+          required_viewport: entry.viewport_only,
+          session_viewport: sessionViewport,
+        },
+      }).catch(() => {});
+      return {
+        success: false,
+        result: '',
+        error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
+      };
+    }
+  }
+
   // VTID-02770: Resolve the final URL the frontend will receive.
-  //   1. Substitute `:param` placeholders in entry.route with values from
-  //      args. Missing required params are reported as a typed error so
+  //   1. VTID-02789: Mobile-aware URL — when session.is_mobile=true AND the
+  //      entry has a mobile_route override, use that instead of route. Lets
+  //      pages that auto-redirect on mobile (e.g. /comm →
+  //      /comm/events-meetups?tab=hot) skip the redirect hop.
+  //   2. Substitute `:param` placeholders in the chosen base URL with values
+  //      from args. Missing required params are reported as a typed error so
   //      Gemini knows it must ask the user for the missing piece.
-  //   2. For overlay entries (entry_kind === 'overlay'), append
+  //   3. For overlay entries (entry_kind === 'overlay'), append
   //      `?open=<query_marker>` so the frontend ORB widget intercepts and
   //      dispatches the corresponding CustomEvent instead of routing.
-  //   3. For overlay entries that need a parameter (e.g. user_id for
+  //   4. For overlay entries that need a parameter (e.g. user_id for
   //      OVERLAY.PROFILE_PREVIEW), append it as a query param too — the
   //      frontend reads it from the URL on dispatch.
-  let resolvedRoute = entry.route;
+  const isMobileSession = session.is_mobile === true;
+  const baseRoute = (isMobileSession && entry.mobile_route) ? entry.mobile_route : entry.route;
+  let resolvedRoute = baseRoute;
   const missingParams: string[] = [];
   resolvedRoute = resolvedRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, name) => {
     const v = args[name];
@@ -4001,13 +4040,18 @@ export async function handleNavigateToScreen(
     resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
   }
 
-  if (session.current_route && session.current_route === entry.route && entry.entry_kind !== 'overlay') {
+  // VTID-02789: Compare current_route against the *resolved* base path
+  // (mobile_route on mobile, route otherwise) so a mobile user already on
+  // /comm/events-meetups (because /comm aliased there) doesn't get bounced
+  // when they ask for "the community page" again.
+  const baseRoutePath = baseRoute.split('?')[0];
+  if (session.current_route && session.current_route === baseRoutePath && entry.entry_kind !== 'overlay') {
     emitOasisEvent({
       vtid: 'VTID-NAV-01',
       type: 'orb.navigator.blocked',
       source: 'orb-live-ws',
       status: 'info',
-      message: `User is already on ${entry.route}`,
+      message: `User is already on ${baseRoutePath}`,
       payload: {
         session_id: session.sessionId,
         attempted_screen_id: screenId,
@@ -4046,10 +4090,13 @@ export async function handleNavigateToScreen(
   //
   // VTID-02770: For overlay entries we do NOT change current_route, since the
   // user stays on their original page — only a popup opens.
+  // VTID-02789: Use the resolved baseRoutePath (mobile_route on mobile, else
+  // route) so the eager update tracks the actual destination, not the
+  // generic desktop URL.
   if (entry.entry_kind !== 'overlay') {
     const previousRoute = session.current_route;
-    session.current_route = entry.route;
-    if (previousRoute && previousRoute !== entry.route) {
+    session.current_route = baseRoutePath;
+    if (previousRoute && previousRoute !== baseRoutePath) {
       const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
       const deduped = trail.filter(r => r !== previousRoute);
       session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
@@ -14750,6 +14797,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
           .filter((r): r is string => typeof r === 'string')
           .slice(0, 5)
       : undefined,
+    // VTID-02789: Frontend useOrbVoiceWidget reads useIsMobile() and
+    // includes is_mobile in the start payload so the Navigator picks
+    // mobile_route over route on mobile sessions.
+    is_mobile: typeof (body as any).is_mobile === 'boolean'
+      ? (body as any).is_mobile
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -16615,6 +16668,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       ? ((message as any).recent_routes as any[])
           .filter((r): r is string => typeof r === 'string')
           .slice(0, 5)
+      : undefined,
+    // VTID-02789: mobile viewport flag plumbed from useIsMobile() in the
+    // frontend; drives mobile_route override + viewport_only block in
+    // handleNavigateToScreen. WS path mirrors the SSE path above.
+    is_mobile: typeof (message as any).is_mobile === 'boolean'
+      ? (message as any).is_mobile
       : undefined,
   };
 

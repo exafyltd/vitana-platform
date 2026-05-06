@@ -89,6 +89,21 @@ export interface NavCatalogEntry {
    */
   entry_kind?: 'route' | 'overlay';
   overlay?: NavOverlayMeta;
+  /**
+   * VTID-02789: Mobile-aware URL override. When the ORB session is from a
+   * mobile viewport (`session.is_mobile === true`), the Navigator uses
+   * `mobile_route` instead of `route`. Use for pages that auto-redirect on
+   * mobile (e.g. /comm → /comm/events-meetups?tab=hot) so we skip the
+   * redirect hop. May contain `:param` placeholders just like `route`.
+   */
+  mobile_route?: string;
+  /**
+   * VTID-02789: Viewport gate. `'mobile'` = only mobile sessions can be
+   * redirected here (desktop callers get blocked with kind='wrong_viewport').
+   * `'desktop'` = mirror, mobile gets blocked. Omitted = no restriction.
+   * Use for entries like /daily-diary which are mobile-only flows.
+   */
+  viewport_only?: 'mobile' | 'desktop';
 }
 
 /**
@@ -501,6 +516,11 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'COMM.OVERVIEW',
     route: '/comm',
+    // VTID-02789: On mobile, /comm auto-redirects to /comm/events-meetups?tab=hot
+    // inside Community.tsx — so the Navigator emits the post-redirect URL
+    // directly to skip the redirect hop and let the user land on the right
+    // screen one navigation faster.
+    mobile_route: '/comm/events-meetups?tab=hot',
     category: 'community',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1711,6 +1731,9 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'MEMORY.DAILY_DIARY', route: '/daily-diary', category: 'memory',
     access: 'authenticated', anonymous_safe: false,
+    // VTID-02789: /daily-diary is implemented ONLY as MobileDailyDiary.tsx.
+    // No desktop layout exists, so block desktop sessions before redirect.
+    viewport_only: 'mobile',
     aliases: ['today-diary', 'today-journal', 'todays-diary'],
     i18n: {
       // Narrow keywords on purpose. The generic "open my diary" / "open daily
