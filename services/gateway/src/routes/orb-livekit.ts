@@ -580,13 +580,17 @@ router.get(
     // Authoritative identity header — pinned at top so the LLM treats it
     // as ground truth, mirrors the role/vitana-id headers Vertex pins.
     if (displayName) {
-      ctxParts.push(`Authoritative identity: the user's name is ${displayName}.`);
+      ctxParts.push(`The user's first name is ${displayName}. Greet them by this name.`);
     }
     if (vitanaId) {
-      ctxParts.push(`The user's Vitana ID (canonical handle) is @${vitanaId}.`);
+      ctxParts.push(
+        `The user's Vitana handle is @${vitanaId}. Address them as @${vitanaId}.`,
+      );
     }
-    if (userId) ctxParts.push(`Internal user UUID: ${userId}.`);
-    if (tenantId) ctxParts.push(`Tenant: ${tenantId}.`);
+    // Note: deliberately do NOT include the raw UUID — small models read
+    // "Internal user UUID" as off-limits debug info and refuse to use the
+    // identity. The handle (@${vitanaId}) and name above are the model-
+    // facing identifiers; the UUID stays in metadata for tool calls only.
     ctxParts.push(`Role: ${role}.`);
     ctxParts.push(`Language: ${lang}.`);
     if (registrationSeq !== null) {

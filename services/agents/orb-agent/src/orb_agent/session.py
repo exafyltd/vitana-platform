@@ -65,6 +65,28 @@ except ImportError:
     LK_AVAILABLE = False
 
 
+CODE_VERSION = "agent-2026-05-05-no-logout-fix"
+
+
+async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
+    """Best-effort beacon proving the agent's deployed code includes the
+    trace path. Uses bare httpx (no GatewayClient — that path failed
+    silently somewhere). Posts to /api/v1/orb/agent-trace with no auth
+    (the endpoint accepts anonymous traces). Wrapped so any failure
+    here NEVER kills the entrypoint.
+    """
+    import httpx as _httpx  # local import to keep top-level minimal
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                gateway_url.rstrip("/") + "/api/v1/orb/agent-trace",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def agent_entrypoint(ctx: "JobContext") -> None:
     """livekit-agents JobContext entrypoint.
 
@@ -76,6 +98,25 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         return
 
     cfg = AgentConfig.from_env()
+
+    # Earliest possible trace heartbeat — fires BEFORE bootstrap, BEFORE
+    # any LLM/tool wiring. Proves whether this code revision is even
+    # serving. We don't have user_id yet (metadata not read), so use the
+    # job/room id as the unique tag and let the gateway store the row
+    # under user_id="<unknown>". A second, full trace fires after we
+    # have identity (below).
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": "agent-heartbeat",
+                "code_version": CODE_VERSION,
+                "phase": "entry",
+                "ts": "early",
+            },
+        )
+    )
+
     oasis = OasisEmitter(gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token)
     ctx_fetcher = ContextBootstrap(
         gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token
