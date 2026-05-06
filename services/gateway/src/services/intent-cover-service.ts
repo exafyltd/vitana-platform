@@ -4,13 +4,13 @@
  *
  * Two responsibilities:
  *
- *   1. Generate a real, themed, content-safe cover image via the
- *      OpenAI Images API (gpt-image-1, conservative prompt template
- *      per dance / fitness / generic theme), upload the bytes to the
- *      `intent-covers` Supabase Storage bucket, and persist the
+ *   1. Generate a real, themed, content-safe cover image via
+ *      Vertex AI Imagen (the same GCP project the gateway already
+ *      runs on — no new vendor billing). Uploads bytes to the
+ *      `intent-covers` Supabase Storage bucket and persists the
  *      resulting public URL on user_intents.cover_url.
  *
- *   2. When generation is unavailable (no API key, provider error,
+ *   2. When generation is unavailable (no GCP creds, provider error,
  *      content-policy reject, storage failure), deterministically
  *      pick from a small curated server-shipped fallback library so
  *      every intent still ends up with a presentable cover.
@@ -26,7 +26,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { GoogleAuth } from 'google-auth-library';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -68,18 +68,29 @@ export class CoverGenError extends Error {
 const BUCKET = process.env.INTENT_COVERS_BUCKET ?? 'intent-covers';
 const RATE_LIMIT_PER_DAY = Number(process.env.INTENT_COVER_RATE_LIMIT_PER_DAY ?? '10');
 const DRY_RUN = (process.env.INTENT_COVER_DRY_RUN ?? '').toLowerCase() === 'true';
-const MODEL = process.env.OPENAI_IMAGES_MODEL ?? 'gpt-image-1';
-const IMAGE_SIZE = '1536x1024'; // 3:2 landscape — gpt-image-1 supported size closest to the 16:10 cover.
+
+// Vertex AI Imagen runs in the same GCP project as the gateway. Default
+// to the cheap fast variant; override via VERTEX_IMAGES_MODEL.
+//   imagen-3.0-fast-generate-001  ~ low cost, 1-2s latency
+//   imagen-3.0-generate-002       ~ higher quality, slower
+//   imagen-4.0-fast-generate-preview-* — newer when GA
+const IMAGEN_MODEL = process.env.VERTEX_IMAGES_MODEL ?? 'imagen-3.0-fast-generate-001';
+const VERTEX_PROJECT =
+  process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
 }
 
-let openaiClient: OpenAI | null = null;
-function getOpenAI(): OpenAI | null {
-  if (!process.env.OPENAI_API_KEY) return null;
-  if (!openaiClient) openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openaiClient;
+let googleAuth: GoogleAuth | null = null;
+function getGoogleAuth(): GoogleAuth {
+  if (!googleAuth) {
+    googleAuth = new GoogleAuth({
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+  }
+  return googleAuth;
 }
 
 const PROMPTS: Record<CoverTheme, string> = {
@@ -147,37 +158,76 @@ async function uploadFallbackCover(args: {
 }
 
 async function generateAiCover(theme: CoverTheme): Promise<Buffer> {
-  const openai = getOpenAI();
-  if (!openai) throw new CoverGenError('provider_failed', 'openai_key_missing');
-  let response;
+  if (!VERTEX_PROJECT) throw new CoverGenError('provider_failed', 'gcp_project_unset');
+
+  let token: string;
   try {
-    response = await openai.images.generate({
-      model: MODEL,
-      prompt: PROMPTS[theme],
-      size: IMAGE_SIZE as '1536x1024',
-      n: 1,
+    const client = await getGoogleAuth().getClient();
+    const tokenResponse = await client.getAccessToken();
+    if (!tokenResponse.token) throw new Error('no access token from GoogleAuth');
+    token = tokenResponse.token;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'gcp auth failed';
+    throw new CoverGenError('provider_failed', message);
+  }
+
+  const url =
+    `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}` +
+    `/locations/${VERTEX_LOCATION}/publishers/google/models/${IMAGEN_MODEL}:predict`;
+
+  // Imagen prediction request. `personGeneration: 'allow_adult'` lets us
+  // ship the smiling-individual composition; `safetyFilterLevel: 'block_some'`
+  // (default) keeps the existing content guardrails.
+  const body = {
+    instances: [{ prompt: PROMPTS[theme] }],
+    parameters: {
+      sampleCount: 1,
+      aspectRatio: '16:9',
+      personGeneration: 'allow_adult',
+      safetyFilterLevel: 'block_some',
+      addWatermark: false,
+    },
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
     });
   } catch (err: unknown) {
-    const e = err as { code?: string; message?: string };
-    if (e.code === 'content_policy_violation' || e.code === 'moderation_blocked') {
-      throw new CoverGenError('unsafe_prompt', e.message ?? 'content policy violation');
+    const message = err instanceof Error ? err.message : 'vertex request failed';
+    throw new CoverGenError('provider_failed', message);
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    // Vertex returns 400 with `RAI_*` codes for safety blocks.
+    if (response.status === 400 && /RAI|safety|blocked/i.test(text)) {
+      throw new CoverGenError('unsafe_prompt', text.slice(0, 240) || 'content policy violation');
     }
-    throw new CoverGenError('provider_failed', e.message ?? 'openai request failed');
+    throw new CoverGenError(
+      'provider_failed',
+      `vertex ${response.status}: ${text.slice(0, 240) || response.statusText}`,
+    );
   }
-  const item = response.data?.[0];
-  if (!item) throw new CoverGenError('provider_failed', 'no image returned');
-  // gpt-image-1 returns base64 by default.
-  if (item.b64_json) return Buffer.from(item.b64_json, 'base64');
-  if (item.url) {
-    const r = await fetch(item.url);
-    if (!r.ok) throw new CoverGenError('provider_failed', `download ${r.status}`);
-    return Buffer.from(await r.arrayBuffer());
-  }
-  throw new CoverGenError('provider_failed', 'image payload missing both b64_json and url');
+
+  const json = (await response.json()) as {
+    predictions?: { bytesBase64Encoded?: string; mimeType?: string }[];
+  };
+  const b64 = json.predictions?.[0]?.bytesBase64Encoded;
+  if (!b64) throw new CoverGenError('provider_failed', 'imagen returned no image');
+  return Buffer.from(b64, 'base64');
 }
 
 async function uploadAiCover(args: { intentId: string; bytes: Buffer }): Promise<string> {
   const supabase = getSupabase();
+  // Imagen returns PNG bytes by default; keep .png so the Content-Type
+  // header is correct on Supabase Storage.
   const remotePath = `ai/${args.intentId}.png`;
   const { error } = await supabase.storage
     .from(BUCKET)
@@ -260,8 +310,10 @@ export async function generateCoverForIntent(
 
   await checkRateLimit(args.userId);
 
-  // Try AI gen → upload → persist.
-  if (!DRY_RUN && process.env.OPENAI_API_KEY) {
+  // Try AI gen → upload → persist. Vertex auth runs off the Cloud
+  // Run service-account credentials by default; tests / local dev
+  // can disable the call by setting INTENT_COVER_DRY_RUN=true.
+  if (!DRY_RUN) {
     try {
       const bytes = await generateAiCover(args.theme);
       const url = await uploadAiCover({ intentId: args.intentId, bytes });

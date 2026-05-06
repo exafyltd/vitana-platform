@@ -1,13 +1,14 @@
 /**
  * BOOTSTRAP-INTENT-COVER-GEN — unit tests for intent-cover-service.
  *
- * Mocks both Supabase and the OpenAI SDK so the suite exercises:
+ * Mocks Supabase, GoogleAuth, and the global `fetch` so the suite
+ * exercises:
  *   - cache hit (existing cover_url short-circuits)
  *   - rate-limit (>= configured cap returns 'rate_limited')
  *   - ownership check
- *   - AI happy path (provider OK → upload OK → persist OK)
+ *   - AI happy path (Vertex Imagen OK → upload OK → persist OK)
  *   - AI failure → curated-fallback path (still resolves)
- *   - DRY_RUN env flag goes straight to fallback without touching OpenAI
+ *   - DRY_RUN env flag goes straight to fallback without touching Vertex
  */
 
 const supabaseMock = {
@@ -18,15 +19,19 @@ jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => supabaseMock),
 }));
 
-const openaiGenerate = jest.fn();
-jest.mock('openai', () => {
+jest.mock('google-auth-library', () => {
+  const getAccessToken = jest.fn(async () => ({ token: 'fake-access-token' }));
   return {
     __esModule: true,
-    default: jest.fn().mockImplementation(() => ({
-      images: { generate: openaiGenerate },
+    GoogleAuth: jest.fn().mockImplementation(() => ({
+      getClient: jest.fn(async () => ({ getAccessToken })),
     })),
   };
 });
+
+// Stand-in for the global fetch the service calls against Vertex.
+const vertexFetch = jest.fn();
+(global as { fetch: typeof fetch }).fetch = vertexFetch as unknown as typeof fetch;
 
 // Stub fs.readFile so the fallback path doesn't need real files on disk.
 jest.mock('node:fs', () => {
@@ -81,10 +86,11 @@ beforeEach(() => {
   jest.resetModules();
   supabaseMock.from.mockReset();
   supabaseMock.storage.from.mockReset();
-  openaiGenerate.mockReset();
+  vertexFetch.mockReset();
   process.env.SUPABASE_URL = 'http://supabase.local';
   process.env.SUPABASE_SERVICE_ROLE = 'service-role';
-  process.env.OPENAI_API_KEY = 'sk-test';
+  process.env.GOOGLE_CLOUD_PROJECT = 'test-project';
+  process.env.VERTEX_LOCATION = 'us-central1';
   process.env.INTENT_COVER_DRY_RUN = '';
   process.env.INTENT_COVER_RATE_LIMIT_PER_DAY = '10';
 });
@@ -98,7 +104,7 @@ describe('generateCoverForIntent', () => {
     const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
     expect(out).toEqual({ cover_url: 'https://x/y.png', source: 'ai_generated', cached: true });
-    expect(openaiGenerate).not.toHaveBeenCalled();
+    expect(vertexFetch).not.toHaveBeenCalled();
   });
 
   it('rejects when caller is not the intent owner', async () => {
@@ -142,7 +148,7 @@ describe('generateCoverForIntent', () => {
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'fitness' });
     expect(out.source).toBe('fallback_curated');
     expect(out.cached).toBe(false);
-    expect(openaiGenerate).not.toHaveBeenCalled();
+    expect(vertexFetch).not.toHaveBeenCalled();
   });
 
   it('AI happy path: provider returns image, uploads to storage, persists URL', async () => {
@@ -153,11 +159,19 @@ describe('generateCoverForIntent', () => {
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/ai.png' }),
     );
-    openaiGenerate.mockResolvedValueOnce({ data: [{ b64_json: Buffer.from('img').toString('base64') }] });
+    vertexFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        predictions: [{ bytesBase64Encoded: Buffer.from('img').toString('base64') }],
+      }),
+      text: async () => '',
+    } as unknown as Response);
     const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
     expect(out).toEqual({ cover_url: 'https://files.example/ai.png', source: 'ai_generated', cached: false });
-    expect(openaiGenerate).toHaveBeenCalledTimes(1);
+    expect(vertexFetch).toHaveBeenCalledTimes(1);
   });
 
   it('AI failure → curated fallback (still resolves with success)', async () => {
@@ -168,9 +182,12 @@ describe('generateCoverForIntent', () => {
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/fb.jpg' }),
     );
-    openaiGenerate.mockRejectedValueOnce(
-      Object.assign(new Error('boom'), { code: 'content_policy_violation' }),
-    );
+    vertexFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      text: async () => 'RAI safety filter blocked this prompt',
+    } as unknown as Response);
     const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
     expect(out.source).toBe('fallback_curated');
