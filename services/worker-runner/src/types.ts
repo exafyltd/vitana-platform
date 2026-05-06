@@ -95,6 +95,10 @@ export interface ExecutionResult {
   duration_ms?: number;
   model?: string;
   provider?: string;
+  // BOOTSTRAP-WORKER-DS: populated when DeepSeek fallback engages
+  fallback_used?: boolean;
+  fallback_from?: string;
+  fallback_reason?: string;
 }
 
 /**
