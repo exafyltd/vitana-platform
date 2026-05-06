@@ -83,18 +83,27 @@ function getOpenAI(): OpenAI | null {
 }
 
 const PROMPTS: Record<CoverTheme, string> = {
+  // Hero composition: a single smiling adult (man or woman) in
+  // sharp focus in the foreground, with a softly blurred group of
+  // dance / fitness participants behind them. Mirrors the look of
+  // the reference cover the user shared.
   dance:
-    'A photorealistic, vibrant landscape photograph of two adults practicing partner dance ' +
-    'in a sunlit modern dance studio with wooden floors and mirrors. Documentary photography ' +
-    'style, soft natural light, wide 16:9 composition. No text, no logos, no close-up faces.',
+    'A photorealistic, vibrant landscape photograph of one smiling adult — a man or a woman, ' +
+    'mid-twenties to late-thirties — facing the camera in the foreground in sharp focus, with ' +
+    'a softly blurred group of fellow dancers practising partner dance behind them in a sunlit ' +
+    'modern dance studio with wooden floors and mirrors. Warm natural light, documentary ' +
+    'photography style, wide 16:9 composition. Friendly, welcoming mood. No text, no logos.',
   fitness:
-    'A photorealistic, vibrant landscape photograph of two adults stretching together in a ' +
-    'bright modern gym with natural light through tall windows. Documentary photography style, ' +
-    'wide 16:9 composition. No text, no logos.',
+    'A photorealistic, vibrant landscape photograph of one smiling adult — a man or a woman, ' +
+    'mid-twenties to late-thirties — facing the camera in the foreground in sharp focus, with ' +
+    'a softly blurred group of fellow gym-goers stretching, training, or doing a class behind ' +
+    'them in a bright modern gym with natural light through tall windows. Documentary ' +
+    'photography style, wide 16:9 composition. Friendly, welcoming mood. No text, no logos.',
   generic:
-    'A photorealistic, warm landscape photograph of a friendly adult community gathering in a ' +
-    'sunlit cafe or park. Candid documentary photography style, wide 16:9 composition. ' +
-    'No text, no logos.',
+    'A photorealistic, warm landscape photograph of one smiling adult — a man or a woman, ' +
+    'mid-twenties to late-thirties — in sharp focus in the foreground, with a softly blurred ' +
+    'group of friendly community members behind them in a sunlit cafe, park, or studio. ' +
+    'Candid documentary photography style, wide 16:9 composition. No text, no logos.',
 };
 
 // Resolve the static fallback library directory at runtime.
