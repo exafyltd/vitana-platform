@@ -602,6 +602,35 @@ router.post('/:id/cover/generate', requireAuth, requireTenant, async (req: Reque
       theme: themeFromCategory((row as { category: string | null }).category),
       force: Boolean((req.body ?? {}).force),
     });
+
+    // OASIS: record the cover-photo state transition. Cached hits are
+    // silent (no real change); regenerations / first generations emit.
+    if (!result.cached) {
+      // Reuses the same generic event type other handlers in this
+      // router emit through; the discriminator lives in `message` +
+      // `payload.kind`. Non-fatal — never let telemetry block the
+      // user-facing response.
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-INTENT-COVER-GEN',
+        type: 'voice.message.sent',
+        source: 'intents-route',
+        status: 'info',
+        message: 'intent.cover.generated',
+        payload: {
+          kind: 'intent.cover.generated',
+          intent_id: (row as { intent_id: string }).intent_id,
+          theme: themeFromCategory((row as { category: string | null }).category),
+          cover_source: result.source,
+          forced: Boolean((req.body ?? {}).force),
+        },
+        actor_id: identity.user_id,
+        actor_role: 'user',
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'unknown';
+        console.warn(`[cover] oasis emit non-fatal: ${msg}`);
+      });
+    }
+
     return res.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof CoverGenError) {
