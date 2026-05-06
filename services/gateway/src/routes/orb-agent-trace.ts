@@ -125,4 +125,54 @@ router.get('/orb/agent-trace', requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
+/**
+ * GET /api/v1/orb/agent-trace/recent — debug-only firehose
+ *
+ * Returns the last N traces across ALL users. Public; no auth. Used to
+ * verify whether the agent is posting heartbeats at all (the per-user
+ * GET filters by req.identity.user_id and would 404 even if the agent
+ * is posting under a different user_id like "agent-heartbeat").
+ *
+ * Data exposed: timestamps, code_version, user_id (truncated), prompt
+ * length. No tokens, no facts. Safe for unauthenticated read.
+ */
+router.get('/orb/agent-trace/recent', async (_req: Request, res: Response) => {
+  const sb = getAdmin();
+  if (!sb) {
+    return res.status(503).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
+  }
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  try {
+    const { data, error } = await sb
+      .from('oasis_events')
+      .select('id, topic, metadata, created_at')
+      .eq('topic', TRACE_TOPIC)
+      .gte('created_at', oneHourAgo)
+      .order('created_at', { ascending: false })
+      .limit(15);
+    if (error) {
+      return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
+    }
+    const rows = (data || []).map((r) => {
+      const md = (r.metadata as Record<string, unknown>) || {};
+      const uid = String(md.user_id ?? '');
+      return {
+        ts: r.created_at,
+        user_id_short: uid.slice(0, 12),
+        code_version: md.code_version ?? null,
+        phase: md.phase ?? null,
+        vitana_id: md.vitana_id ?? null,
+        bootstrap_context_length: md.bootstrap_context_length ?? null,
+        system_prompt_length: md.system_prompt_length ?? null,
+        tools_count: md.tools_count ?? null,
+        tools_handle_in_first_chars: md.tools_handle_in_first_chars ?? null,
+      };
+    });
+    return res.json({ ok: true, count: rows.length, rows, vtid: VTID });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    return res.status(500).json({ ok: false, error: msg, vtid: VTID });
+  }
+});
+
 export default router;
