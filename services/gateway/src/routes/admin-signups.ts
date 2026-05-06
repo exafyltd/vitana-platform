@@ -18,50 +18,16 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { createUserSupabaseClient } from '../lib/supabase-user';
+import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { notifyUserAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 const VTID = 'ADMIN-SIGNUPS';
 
-// ── Auth Helper ─────────────────────────────────────────────
-
-function getBearerToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
-}
-
-async function verifyExafyAdmin(
-  req: Request
-): Promise<{ ok: true; user_id: string; email: string } | { ok: false; status: number; error: string }> {
-  const token = getBearerToken(req);
-  if (!token) return { ok: false, status: 401, error: 'UNAUTHENTICATED' };
-
-  try {
-    const userClient = createUserSupabaseClient(token);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData?.user) return { ok: false, status: 401, error: 'INVALID_TOKEN' };
-
-    const appMetadata = authData.user.app_metadata || {};
-    if (appMetadata.exafy_admin !== true) {
-      return { ok: false, status: 403, error: 'FORBIDDEN' };
-    }
-
-    return { ok: true, user_id: authData.user.id, email: authData.user.email || 'unknown' };
-  } catch (err: any) {
-    console.error(`[${VTID}] Auth error:`, err.message);
-    return { ok: false, status: 500, error: 'INTERNAL_ERROR' };
-  }
-}
-
 // ── GET / — Funnel dashboard ────────────────────────────────
 
-router.get('/', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -101,10 +67,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // ── GET /stats — Aggregate funnel statistics ────────────────
 
-router.get('/stats', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/stats', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -161,10 +124,7 @@ router.get('/stats', async (req: Request, res: Response) => {
 
 // ── GET /attempts — Raw signup attempt log ──────────────────
 
-router.get('/attempts', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/attempts', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -201,6 +161,7 @@ router.get('/attempts', async (req: Request, res: Response) => {
 
 // ── POST /log-attempt — Public: log registration attempt ────
 
+// public-route
 router.post('/log-attempt', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -238,6 +199,7 @@ router.post('/log-attempt', async (req: Request, res: Response) => {
 
 // ── POST /log-result — Public: log signup success/failure ───
 
+// public-route
 router.post('/log-result', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
@@ -310,10 +272,7 @@ router.post('/log-result', async (req: Request, res: Response) => {
 
 // ── POST /:id/invite — Send onboarding invitation ──────────
 
-router.post('/:id/invite', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.post('/:id/invite', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -340,7 +299,7 @@ router.post('/:id/invite', async (req: Request, res: Response) => {
         signup_attempt_id: id,
         target_user_id: attempt.auth_user_id || null,
         email: attempt.email,
-        invited_by: authResult.user_id,
+        invited_by: req.identity!.user_id,
         type: type || 'email',
         status: 'sent',
         message: message || 'We noticed you started signing up for Vitana. Would you like help completing your registration?',
@@ -368,7 +327,7 @@ router.post('/:id/invite', async (req: Request, res: Response) => {
       );
     }
 
-    console.log(`[${VTID}] Invitation sent to ${attempt.email} by ${authResult.email}`);
+    console.log(`[${VTID}] Invitation sent to ${attempt.email} by ${req.identity!.email || 'unknown'}`);
 
     return res.json({ ok: true, invitation_id: invitation?.id });
   } catch (err: any) {
@@ -379,10 +338,7 @@ router.post('/:id/invite', async (req: Request, res: Response) => {
 
 // ── POST /:id/repair — Re-run provisioning for stuck users ──
 
-router.post('/:id/repair', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
@@ -464,7 +420,7 @@ router.post('/:id/repair', async (req: Request, res: Response) => {
       .update({ status: 'onboarded', completed_at: new Date().toISOString() })
       .eq('id', id);
 
-    console.log(`[${VTID}] Repaired provisioning for ${attempt.email} by ${authResult.email}`);
+    console.log(`[${VTID}] Repaired provisioning for ${attempt.email} by ${req.identity!.email || 'unknown'}`);
 
     return res.json({ ok: true, message: 'User provisioning repaired', repaired: true });
   } catch (err: any) {
@@ -475,10 +431,7 @@ router.post('/:id/repair', async (req: Request, res: Response) => {
 
 // ── GET /invitations — List sent invitations ────────────────
 
-router.get('/invitations', async (req: Request, res: Response) => {
-  const authResult = await verifyExafyAdmin(req);
-  if (!authResult.ok) return res.status(authResult.status).json({ ok: false, error: authResult.error });
-
+router.get('/invitations', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
