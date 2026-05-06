@@ -31,7 +31,19 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 
-export type CoverTheme = 'dance' | 'fitness' | 'generic';
+export type CoverTheme =
+  | 'dance'
+  | 'fitness'
+  | 'walking'
+  | 'tennis'
+  | 'soccer'
+  | 'basketball'
+  | 'biking'
+  | 'cooking'
+  | 'panel'
+  | 'generic';
+
+export type Gender = 'male' | 'female' | null;
 
 export type CoverSource = 'user_upload' | 'ai_generated' | 'fallback_curated';
 
@@ -39,6 +51,11 @@ export interface GenerateCoverArgs {
   intentId: string;
   userId: string;
   theme: CoverTheme;
+  /**
+   * Foreground subject gender. When omitted we look it up from
+   * `profiles.gender` so the centered person matches the requesting user.
+   */
+  gender?: Gender;
   /** When true, bypass the cache and produce a fresh image. */
   force?: boolean;
 }
@@ -93,29 +110,113 @@ function getGoogleAuth(): GoogleAuth {
   return googleAuth;
 }
 
-const PROMPTS: Record<CoverTheme, string> = {
-  // Hero composition: a single smiling adult (man or woman) in
-  // sharp focus in the foreground, with a softly blurred group of
-  // dance / fitness participants behind them. Mirrors the look of
-  // the reference cover the user shared.
-  dance:
-    'A photorealistic, vibrant landscape photograph of one smiling adult — a man or a woman, ' +
-    'mid-twenties to late-thirties — facing the camera in the foreground in sharp focus, with ' +
-    'a softly blurred group of fellow dancers practising partner dance behind them in a sunlit ' +
-    'modern dance studio with wooden floors and mirrors. Warm natural light, documentary ' +
-    'photography style, wide 16:9 composition. Friendly, welcoming mood. No text, no logos.',
-  fitness:
-    'A photorealistic, vibrant landscape photograph of one smiling adult — a man or a woman, ' +
-    'mid-twenties to late-thirties — facing the camera in the foreground in sharp focus, with ' +
-    'a softly blurred group of fellow gym-goers stretching, training, or doing a class behind ' +
-    'them in a bright modern gym with natural light through tall windows. Documentary ' +
-    'photography style, wide 16:9 composition. Friendly, welcoming mood. No text, no logos.',
-  generic:
-    'A photorealistic, warm landscape photograph of one smiling adult — a man or a woman, ' +
-    'mid-twenties to late-thirties — in sharp focus in the foreground, with a softly blurred ' +
-    'group of friendly community members behind them in a sunlit cafe, park, or studio. ' +
-    'Candid documentary photography style, wide 16:9 composition. No text, no logos.',
+// Per-theme scene primitives. The full prompt is built at request time so
+// we can splice the requesting user's gender into the foreground subject.
+// Goal: realistic, location-appropriate photos with one smiling person of
+// the user's gender up front and a mixed group blurred behind them.
+const THEME_SCENES: Record<
+  CoverTheme,
+  { subject: string; location: string; group: string }
+> = {
+  dance: {
+    subject: 'mid-step in a confident social-dance pose',
+    location:
+      'a sunlit modern dance studio with wooden floors and tall mirrors',
+    group: 'practising partner-dance steps in pairs',
+  },
+  fitness: {
+    subject: 'standing relaxed in athletic wear after a workout',
+    location:
+      'a bright modern gym with natural daylight through tall windows',
+    group: 'stretching, lifting, or finishing a group class',
+  },
+  walking: {
+    subject: 'walking confidently along a tree-lined park path',
+    location: 'a leafy urban park on a clear morning',
+    group:
+      'walking and chatting in pairs along the same path, some with small day-packs',
+  },
+  tennis: {
+    subject:
+      'holding a tennis racket on the baseline in athletic kit',
+    location:
+      'an outdoor clay tennis court on a sunny afternoon',
+    group:
+      'rallying on the next court and chatting on a sideline bench',
+  },
+  soccer: {
+    subject: 'in a football kit, foot resting on a soccer ball',
+    location:
+      'a green grass football pitch at golden hour',
+    group: 'playing a friendly five-a-side match',
+  },
+  basketball: {
+    subject: 'holding a basketball at chest height in a relaxed stance',
+    location:
+      'an outdoor street basketball court in a sunlit city neighbourhood',
+    group: 'shooting hoops and high-fiving each other',
+  },
+  biking: {
+    subject:
+      'standing next to a road bike in cycling gear, helmet in hand',
+    location:
+      'a coastal cycle path with the sea behind and a clear sky',
+    group: 'riding road bikes in a relaxed group along the path',
+  },
+  cooking: {
+    subject:
+      'wearing a clean apron at a kitchen counter, smiling at the camera',
+    location:
+      'a bright communal cooking-school kitchen with natural wood, hanging pans, and big windows',
+    group: 'chopping vegetables and laughing around a long shared counter',
+  },
+  panel: {
+    subject:
+      'seated, microphone in hand, smiling warmly at the camera',
+    location:
+      'a warm panel-discussion lounge with soft lighting and a small audience',
+    group: 'seated at a long table mid-discussion',
+  },
+  generic: {
+    subject: 'smiling warmly at the camera in casual clothes',
+    location: 'a sunlit cafe or co-working lounge',
+    group: 'chatting in small clusters around the room',
+  },
 };
+
+function describeForegroundSubject(gender: Gender): string {
+  if (gender === 'male') {
+    return 'one smiling man, mid-twenties to late-thirties, of mixed ethnicity';
+  }
+  if (gender === 'female') {
+    return 'one smiling woman, mid-twenties to late-thirties, of mixed ethnicity';
+  }
+  return 'one smiling adult — either a man or a woman — mid-twenties to late-thirties, of mixed ethnicity';
+}
+
+/**
+ * Compose the full Imagen prompt for one (theme, gender) pair.
+ *
+ * The opening sentence is the strongest anti-stylisation guard we have:
+ * Imagen will sometimes drift into illustration / 3D-render territory if
+ * left to interpret a short prompt — listing every disallowed style up
+ * front keeps the output looking like a real photograph.
+ */
+export function buildCoverPrompt(theme: CoverTheme, gender: Gender): string {
+  const scene = THEME_SCENES[theme] ?? THEME_SCENES.generic;
+  const subject = describeForegroundSubject(gender);
+  return [
+    'A photorealistic, high-quality DSLR landscape photograph — documentary style,',
+    'natural light, shallow depth of field, real human skin and clothing detail.',
+    'Absolutely not a cartoon, anime, illustration, painting, 3D render, CGI,',
+    'stylised art, or AI-art look. Looks like an unedited modern stock photo.',
+    `Foreground: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
+    `Background (softly blurred): a mixed group of men and women of varied ethnicities, ${scene.group}.`,
+    `Setting: ${scene.location}.`,
+    'Wide 16:9 composition. Friendly, welcoming, optimistic mood.',
+    'No text, no captions, no logos, no watermarks.',
+  ].join(' ');
+}
 
 // Resolve the static fallback library directory at runtime.
 // Built JS lives at services/gateway/dist/services/intent-cover-service.js;
@@ -126,9 +227,21 @@ function fallbackDir(): string {
   return path.resolve(__dirname, '..', '..', 'static', 'intent-covers');
 }
 
+// Curated server-shipped fallback library. The dedicated dirs live under
+// services/gateway/static/intent-covers/. New activity themes route to
+// the closest existing dir until tailored JPGs are added — they're only
+// reached when the AI provider is unavailable, so freshness here is
+// secondary to never-empty.
 const FALLBACK_FILES: Record<CoverTheme, string[]> = {
   dance: ['dance/01.jpg', 'dance/02.jpg', 'dance/03.jpg'],
   fitness: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  walking: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  tennis: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  soccer: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  basketball: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  biking: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
+  cooking: ['generic/01.jpg', 'generic/02.jpg'],
+  panel: ['generic/01.jpg', 'generic/02.jpg'],
   generic: ['generic/01.jpg', 'generic/02.jpg'],
 };
 
@@ -157,7 +270,7 @@ async function uploadFallbackCover(args: {
   return data.publicUrl;
 }
 
-async function generateAiCover(theme: CoverTheme): Promise<Buffer> {
+async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffer> {
   if (!VERTEX_PROJECT) throw new CoverGenError('provider_failed', 'gcp_project_unset');
 
   let token: string;
@@ -179,7 +292,7 @@ async function generateAiCover(theme: CoverTheme): Promise<Buffer> {
   // ship the smiling-individual composition; `safetyFilterLevel: 'block_some'`
   // (default) keeps the existing content guardrails.
   const body = {
-    instances: [{ prompt: PROMPTS[theme] }],
+    instances: [{ prompt: buildCoverPrompt(theme, gender) }],
     parameters: {
       sampleCount: 1,
       aspectRatio: '16:9',
@@ -235,6 +348,27 @@ async function uploadAiCover(args: { intentId: string; bytes: Buffer }): Promise
   if (error) throw new CoverGenError('storage_failed', error.message);
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
   return data.publicUrl;
+}
+
+async function getUserGenderFromProfile(userId: string): Promise<Gender> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from('profiles')
+      .select('gender')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const raw = (data as { gender?: string | null } | null)?.gender;
+    if (typeof raw !== 'string') return null;
+    const v = raw.trim().toLowerCase();
+    if (v === 'male' || v === 'm') return 'male';
+    if (v === 'female' || v === 'f') return 'female';
+    return null;
+  } catch {
+    // Don't let a profile lookup failure block image generation —
+    // fall back to a gender-agnostic prompt.
+    return null;
+  }
 }
 
 async function checkRateLimit(userId: string): Promise<void> {
@@ -310,12 +444,19 @@ export async function generateCoverForIntent(
 
   await checkRateLimit(args.userId);
 
+  // Resolve the foreground subject's gender. Caller-provided wins;
+  // otherwise we look it up from the requester's profile so the centered
+  // person matches the user (men get a man, women get a woman). Unknown
+  // / private values fall back to a gender-agnostic prompt.
+  const gender: Gender =
+    args.gender !== undefined ? args.gender : await getUserGenderFromProfile(args.userId);
+
   // Try AI gen → upload → persist. Vertex auth runs off the Cloud
   // Run service-account credentials by default; tests / local dev
   // can disable the call by setting INTENT_COVER_DRY_RUN=true.
   if (!DRY_RUN) {
     try {
-      const bytes = await generateAiCover(args.theme);
+      const bytes = await generateAiCover(args.theme, gender);
       const url = await uploadAiCover({ intentId: args.intentId, bytes });
       await persistCover({
         intentId: args.intentId,
@@ -342,12 +483,51 @@ export async function generateCoverForIntent(
 }
 
 /**
- * Map an intent's `category` (e.g., "dance.salsa", "fitness.gym") to a cover theme.
- * Mirrors the frontend `themeFromCategory` so the picker and the gateway agree.
+ * Map an intent's `category` (e.g., "dance.salsa", "sport.tennis",
+ * "fitness.gym") to a cover theme. Categories come from
+ * `intent-extractor` (dance.*, sport.*, etc.) plus a small set of
+ * keyword fall-throughs for free-form values.
  */
 export function themeFromCategory(category: string | null | undefined): CoverTheme {
   if (!category) return 'generic';
-  if (category.startsWith('dance.')) return 'dance';
-  if (category.startsWith('fitness.')) return 'fitness';
+  const c = category.trim().toLowerCase();
+  if (!c) return 'generic';
+
+  if (c.startsWith('dance.')) return 'dance';
+  if (c.startsWith('fitness.')) return 'fitness';
+
+  // Sport sub-categories — order matters: more specific tokens first.
+  if (c === 'sport.tennis' || c.includes('tennis')) return 'tennis';
+  if (
+    c === 'sport.soccer' ||
+    c === 'sport.football' ||
+    c.includes('soccer') ||
+    /\bfootball\b/.test(c)
+  )
+    return 'soccer';
+  if (c === 'sport.basketball' || c.includes('basketball')) return 'basketball';
+  if (c === 'sport.cycling' || c.includes('cycling') || c.includes('biking') || c.includes('bike'))
+    return 'biking';
+  if (
+    c === 'sport.running' ||
+    c === 'sport.hiking' ||
+    c.includes('walking') ||
+    c.includes('hiking') ||
+    c.includes('running')
+  )
+    return 'walking';
+  // Anything else under sport.* (gym, yoga, swim, pilates, …) is
+  // visually closest to the gym / studio scene.
+  if (c.startsWith('sport.')) return 'fitness';
+
+  if (c.includes('cooking') || c.startsWith('food.') || c.includes('culinary')) return 'cooking';
+  if (
+    c === 'learning.book_club' ||
+    c.startsWith('panel.') ||
+    c.includes('discussion') ||
+    c.includes('talk')
+  )
+    return 'panel';
+
   return 'generic';
 }

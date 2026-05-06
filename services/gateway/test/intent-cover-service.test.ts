@@ -139,6 +139,8 @@ describe('generateCoverForIntent', () => {
     supabaseMock.from
       .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
       .mockReturnValueOnce(chain({ count: 0 }))
+      // profile gender lookup
+      .mockReturnValueOnce(chain({ data: { gender: 'female' } }))
       // persistCover update
       .mockReturnValueOnce(chain({ data: null, error: null }));
     supabaseMock.storage.from.mockReturnValue(
@@ -155,6 +157,7 @@ describe('generateCoverForIntent', () => {
     supabaseMock.from
       .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
       .mockReturnValueOnce(chain({ count: 0 }))
+      .mockReturnValueOnce(chain({ data: { gender: 'male' } }))
       .mockReturnValueOnce(chain({ data: null, error: null }));
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/ai.png' }),
@@ -172,12 +175,20 @@ describe('generateCoverForIntent', () => {
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
     expect(out).toEqual({ cover_url: 'https://files.example/ai.png', source: 'ai_generated', cached: false });
     expect(vertexFetch).toHaveBeenCalledTimes(1);
+
+    // The Imagen prompt must reflect the requester's gender.
+    const sentBody = JSON.parse(vertexFetch.mock.calls[0][1].body) as {
+      instances: { prompt: string }[];
+    };
+    expect(sentBody.instances[0].prompt).toMatch(/one smiling man/i);
+    expect(sentBody.instances[0].prompt).toMatch(/dance studio/i);
   });
 
   it('AI failure → curated fallback (still resolves with success)', async () => {
     supabaseMock.from
       .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
       .mockReturnValueOnce(chain({ count: 0 }))
+      .mockReturnValueOnce(chain({ data: { gender: null } }))
       .mockReturnValueOnce(chain({ data: null, error: null }));
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/fb.jpg' }),
@@ -192,6 +203,43 @@ describe('generateCoverForIntent', () => {
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
     expect(out.source).toBe('fallback_curated');
   });
+
+  it('skips the profile gender lookup when caller passes gender explicitly', async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
+      .mockReturnValueOnce(chain({ count: 0 }))
+      // No profile chain — caller passes gender, so the service must NOT look it up.
+      .mockReturnValueOnce(chain({ data: null, error: null }));
+    supabaseMock.storage.from.mockReturnValue(
+      storageStub({ publicUrl: 'https://files.example/ai.png' }),
+    );
+    vertexFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        predictions: [{ bytesBase64Encoded: Buffer.from('img').toString('base64') }],
+      }),
+      text: async () => '',
+    } as unknown as Response);
+    const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
+    await generateCoverForIntent({
+      intentId: 'i1',
+      userId: 'u1',
+      theme: 'tennis',
+      gender: 'female',
+    });
+    const sentBody = JSON.parse(vertexFetch.mock.calls[0][1].body) as {
+      instances: { prompt: string }[];
+    };
+    expect(sentBody.instances[0].prompt).toMatch(/one smiling woman/i);
+    expect(sentBody.instances[0].prompt).toMatch(/tennis/i);
+    // Caller passed gender — the test only mocked 3 supabase.from chains
+    // (intent, rate-limit, persist). If we erroneously called profiles
+    // lookup, persist would silently get the wrong stub; the upload
+    // assertion on vertexFetch above is what guarantees we got there.
+    expect(supabaseMock.from).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('themeFromCategory', () => {
@@ -201,5 +249,63 @@ describe('themeFromCategory', () => {
     expect(themeFromCategory('fitness.gym')).toBe('fitness');
     expect(themeFromCategory('commercial.buy')).toBe('generic');
     expect(themeFromCategory(null)).toBe('generic');
+  });
+
+  it('maps the expanded activity categories', async () => {
+    const { themeFromCategory } = await import('../src/services/intent-cover-service');
+    expect(themeFromCategory('sport.tennis')).toBe('tennis');
+    expect(themeFromCategory('sport.soccer')).toBe('soccer');
+    expect(themeFromCategory('sport.football')).toBe('soccer');
+    expect(themeFromCategory('sport.basketball')).toBe('basketball');
+    expect(themeFromCategory('sport.cycling')).toBe('biking');
+    expect(themeFromCategory('sport.hiking')).toBe('walking');
+    expect(themeFromCategory('sport.running')).toBe('walking');
+    expect(themeFromCategory('sport.gym')).toBe('fitness');
+    expect(themeFromCategory('sport.yoga')).toBe('fitness');
+    expect(themeFromCategory('food.cooking_class')).toBe('cooking');
+    expect(themeFromCategory('learning.book_club')).toBe('panel');
+  });
+});
+
+describe('buildCoverPrompt', () => {
+  it('produces a realism-anchored prompt and matches the gender of the requester', async () => {
+    const { buildCoverPrompt } = await import('../src/services/intent-cover-service');
+
+    const male = buildCoverPrompt('tennis', 'male');
+    expect(male).toMatch(/photorealistic/i);
+    expect(male).toMatch(/not a cartoon/i);
+    expect(male).toMatch(/one smiling man/i);
+    expect(male).toMatch(/tennis/i);
+    expect(male).toMatch(/mixed group of men and women/i);
+
+    const female = buildCoverPrompt('cooking', 'female');
+    expect(female).toMatch(/one smiling woman/i);
+    expect(female).toMatch(/kitchen/i);
+
+    const neutral = buildCoverPrompt('panel', null);
+    expect(neutral).toMatch(/either a man or a woman/i);
+  });
+
+  it('covers every theme without throwing', async () => {
+    const { buildCoverPrompt } = await import('../src/services/intent-cover-service');
+    const themes = [
+      'dance',
+      'fitness',
+      'walking',
+      'tennis',
+      'soccer',
+      'basketball',
+      'biking',
+      'cooking',
+      'panel',
+      'generic',
+    ] as const;
+    for (const t of themes) {
+      const p = buildCoverPrompt(t, null);
+      expect(p.length).toBeGreaterThan(120);
+      // Realism + no-cartoon guarantee shared across every theme.
+      expect(p).toMatch(/photorealistic/i);
+      expect(p).toMatch(/not a cartoon/i);
+    }
   });
 });
