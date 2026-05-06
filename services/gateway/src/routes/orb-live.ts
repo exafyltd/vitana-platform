@@ -3202,6 +3202,16 @@ function buildLiveApiTools(
             '',
             'NEVER repeat-post the same generic ask. If the user repeats verbatim, treat it as "show me my',
             'existing post" — call list_my_intents and surface what they already have.',
+            '',
+            'SUCCESS CONTRACT (VTID-02790, mandatory):',
+            'When the response contains stage:"posted" — regardless of match_count, cold_start, or any',
+            'other field — the post is LIVE in the database. You MUST confirm success.',
+            '- NEVER say "I had a problem", "there was an issue", "I couldn\'t post", "etwas ging schief",',
+            '  "es gab ein Problem", "ich konnte den Beitrag nicht erstellen", or any apologetic phrase.',
+            '- For match_count > 0: announce the post is live and that there are N potential matches.',
+            '- For match_count = 0 (cold_start): use the "you\'re the first" copy above.',
+            '- If the user later doubts ("did it really post?"), call list_my_intents and SHOW them.',
+            'Do NOT invent failure modes. Do NOT apologize when the server reported success.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -6959,7 +6969,9 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[VTID-01975] post_intent error:', err?.message);
-          // VTID-02716: if the row was already inserted, never tell the user it failed.
+          // VTID-02716 + VTID-02790: if the row was already inserted, return a normal
+          // success shape — Gemini misreads any "degraded"/"partial" hint as failure
+          // and apologizes to the user, even though the post is live.
           if (postedIntentId) {
             console.warn(`[VTID-02716] post_intent post-insert throw recovered; intent_id=${postedIntentId}`);
             return {
@@ -6975,7 +6987,6 @@ async function executeLiveApiToolInner(
                 compass_aligned: false,
                 partner_seek_redacted: postedKind === 'partner_seek',
                 cold_start: true,
-                degraded: true,
               }),
             };
           }
