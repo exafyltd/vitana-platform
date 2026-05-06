@@ -2752,7 +2752,8 @@ const NAVIGATION_CONFIG = [
             { "key": "task-queue", "path": "/command-hub/operator/task-queue/" },
             { "key": "event-stream", "path": "/command-hub/operator/event-stream/" },
             { "key": "deployments", "path": "/command-hub/operator/deployments/" },
-            { "key": "runbook", "path": "/command-hub/operator/runbook/" }
+            { "key": "runbook", "path": "/command-hub/operator/runbook/" },
+            { "key": "localization", "path": "/command-hub/operator/localization/" }
         ]
     },
     {
@@ -6242,6 +6243,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderOperatorDeploymentsView());
     } else if (moduleKey === 'operator' && tab === 'runbook') {
         container.appendChild(renderOperatorRunbookView());
+    } else if (moduleKey === 'operator' && tab === 'localization') {
+        // BOOTSTRAP-CMDHUB-I18N-OPS: Localization Operations
+        container.appendChild(renderOperatorLocalizationView());
 
     // ──── Command Hub: Live Console ────
     } else if (moduleKey === 'command-hub' && tab === 'live-console') {
@@ -46778,4 +46782,311 @@ function memoryOpsRenderInspector(container) {
         });
         contentWrap.appendChild(list);
     });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BOOTSTRAP-CMDHUB-I18N-OPS — Localization Operations view
+// ─────────────────────────────────────────────────────────────────────────
+// Read-only locales table + trigger buttons (translate / audit / runs).
+// Data: GET /api/v1/admin/i18n-ops/locales (60s server-side cache).
+// Triggers POST /api/v1/admin/i18n-ops/translate or /audit.
+// Lists recent runs from GET /api/v1/admin/i18n-ops/workflow-runs.
+//
+// CSP-safe: no inline event handlers. All listeners attached via JS.
+function renderOperatorLocalizationView() {
+    var container = document.createElement('div');
+    container.className = 'operator-localization-container';
+    container.style.padding = '24px';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;';
+    var titleBlock = document.createElement('div');
+    var h1 = document.createElement('h1');
+    h1.textContent = 'Localization Operations';
+    h1.style.cssText = 'margin:0 0 6px;font-size:22px;color:var(--color-text,#fff);';
+    titleBlock.appendChild(h1);
+    var sub = document.createElement('div');
+    sub.textContent = 'Locale catalog status, audit verdicts, and translate / audit workflow controls.';
+    sub.style.cssText = 'opacity:0.7;font-size:13px;';
+    titleBlock.appendChild(sub);
+    header.appendChild(titleBlock);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = '⟳ Refresh';
+    refreshBtn.style.cssText = 'padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#fff;cursor:pointer;font-size:13px;';
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    var statusEl = document.createElement('div');
+    statusEl.style.cssText = 'opacity:0.65;font-size:12px;margin-bottom:14px;font-family:monospace;';
+    container.appendChild(statusEl);
+
+    var tableWrap = document.createElement('div');
+    container.appendChild(tableWrap);
+
+    var runsHeader = document.createElement('h2');
+    runsHeader.textContent = 'Recent workflow runs';
+    runsHeader.style.cssText = 'margin:32px 0 10px;font-size:16px;color:var(--color-text,#fff);';
+    container.appendChild(runsHeader);
+
+    var runsTabs = document.createElement('div');
+    runsTabs.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
+    var activeRuns = 'i18n-translate.yml';
+    var workflows = [
+        { key: 'i18n-translate.yml', label: 'Translate' },
+        { key: 'i18n-audit-llm.yml', label: 'Audit (LLM)' },
+        { key: 'i18n-check.yml', label: 'CI lint check' },
+    ];
+    var runsBody = document.createElement('div');
+    function renderRunsTabs() {
+        runsTabs.innerHTML = '';
+        workflows.forEach(function (w) {
+            var btn = document.createElement('button');
+            btn.textContent = w.label;
+            var isActive = activeRuns === w.key;
+            btn.style.cssText = 'padding:6px 12px;background:' + (isActive ? 'rgba(86,168,255,0.2)' : 'rgba(255,255,255,0.04)') +
+                ';border:1px solid ' + (isActive ? 'rgba(86,168,255,0.6)' : 'rgba(255,255,255,0.12)') + ';border-radius:6px;color:#fff;cursor:pointer;font-size:12px;';
+            btn.addEventListener('click', function () {
+                activeRuns = w.key;
+                renderRunsTabs();
+                fetchRuns();
+            });
+            runsTabs.appendChild(btn);
+        });
+    }
+    container.appendChild(runsTabs);
+    container.appendChild(runsBody);
+
+    function setStatus(text) { statusEl.textContent = text || ''; }
+
+    function authHeader() {
+        var token = localStorage.getItem('vitana.authToken') || '';
+        return token ? { Authorization: 'Bearer ' + token } : {};
+    }
+
+    function fetchLocales() {
+        setStatus('Loading…');
+        tableWrap.innerHTML = '';
+        fetch('/api/v1/admin/i18n-ops/locales', { headers: authHeader() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.ok) {
+                    setStatus('Error: ' + (data && data.error || 'unknown'));
+                    return;
+                }
+                setStatus('Source EN keys: ' + (data.en_total || 0) + ' · Updated ' + new Date(data.generated_at).toLocaleTimeString());
+                renderTable(data.locales || []);
+            })
+            .catch(function (e) {
+                setStatus('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function renderTable(rows) {
+        tableWrap.innerHTML = '';
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;background:rgba(255,255,255,0.02);';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            ['Locale', 'Status', 'Catalog', 'Audit pass', 'Last audit', 'Actions']
+                .map(function (c) {
+                    return '<th style="text-align:left;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.1);font-weight:600;opacity:0.85;">' + c + '</th>';
+                }).join('') + '</tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+
+        rows.forEach(function (row) {
+            var tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+
+            // Locale
+            var tdLocale = document.createElement('td');
+            tdLocale.style.cssText = 'padding:10px 12px;font-family:monospace;font-weight:600;';
+            tdLocale.textContent = row.code;
+            tr.appendChild(tdLocale);
+
+            // Status pill
+            var tdStatus = document.createElement('td');
+            tdStatus.style.padding = '10px 12px';
+            var pill = document.createElement('span');
+            var statusColor = row.status === 'ga' ? '#3ddc84' : row.status === 'beta' ? '#f0b400' : '#888';
+            pill.style.cssText = 'padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '55;';
+            pill.textContent = (row.status || 'draft').toUpperCase();
+            tdStatus.appendChild(pill);
+            tr.appendChild(tdStatus);
+
+            // Catalog progress
+            var tdCat = document.createElement('td');
+            tdCat.style.padding = '10px 12px';
+            var pct = row.completeness_pct || 0;
+            var barWrap = document.createElement('div');
+            barWrap.style.cssText = 'width:120px;background:rgba(255,255,255,0.08);border-radius:3px;height:6px;position:relative;';
+            var bar = document.createElement('div');
+            bar.style.cssText = 'width:' + pct + '%;background:' + (pct >= 90 ? '#3ddc84' : pct >= 50 ? '#56a8ff' : '#888') + ';height:100%;border-radius:3px;';
+            barWrap.appendChild(bar);
+            var text = document.createElement('div');
+            text.style.cssText = 'font-size:11px;opacity:0.7;margin-top:3px;';
+            text.textContent = (row.locale_total || 0) + ' / ' + (row.en_total || 0) + ' (' + pct + '%)';
+            tdCat.appendChild(barWrap);
+            tdCat.appendChild(text);
+            tr.appendChild(tdCat);
+
+            // Audit pass rate
+            var tdAudit = document.createElement('td');
+            tdAudit.style.padding = '10px 12px';
+            if (row.audit_total > 0) {
+                var rate = row.audit_pass_rate_pct;
+                var auditColor = rate >= 90 ? '#3ddc84' : rate >= 70 ? '#f0b400' : '#ff8080';
+                tdAudit.innerHTML = '<span style="font-weight:600;color:' + auditColor + '">' + rate + '%</span> <span style="opacity:0.6;font-size:11px">(' + row.audit_flagged + ' flagged / ' + row.audit_total + ')</span>';
+            } else {
+                tdAudit.innerHTML = '<span style="opacity:0.5;font-size:11px">no audit yet</span>';
+            }
+            tr.appendChild(tdAudit);
+
+            // Last audit
+            var tdLast = document.createElement('td');
+            tdLast.style.cssText = 'padding:10px 12px;opacity:0.7;font-size:11px;';
+            tdLast.textContent = row.last_audit_at ? new Date(row.last_audit_at).toLocaleString() : '—';
+            tr.appendChild(tdLast);
+
+            // Actions
+            var tdActions = document.createElement('td');
+            tdActions.style.cssText = 'padding:10px 12px;display:flex;gap:6px;';
+            var translateBtn = makeActionBtn('Translate', '#56a8ff', function () {
+                if (!confirm('Translate ' + row.code + ' via DeepSeek? This dispatches the i18n-translate.yml workflow.')) return;
+                triggerTranslate(row.lang_code, 'deepseek', translateBtn);
+            });
+            var auditBtn = makeActionBtn('Audit', '#a87dff', function () {
+                if (!confirm('Audit ' + row.code + ' via Gemini? This dispatches the i18n-audit-llm.yml workflow.')) return;
+                triggerAudit(row.lang_code, 'gemini', auditBtn);
+            });
+            tdActions.appendChild(translateBtn);
+            tdActions.appendChild(auditBtn);
+            tr.appendChild(tdActions);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+    }
+
+    function makeActionBtn(label, color, onClick) {
+        var btn = document.createElement('button');
+        btn.textContent = label;
+        btn.style.cssText = 'padding:5px 10px;background:' + color + '22;border:1px solid ' + color + '66;border-radius:4px;color:' + color + ';cursor:pointer;font-size:11px;font-weight:600;';
+        btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    function triggerTranslate(locale, provider, btn) {
+        btn.textContent = '…';
+        btn.disabled = true;
+        fetch('/api/v1/admin/i18n-ops/translate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+            body: JSON.stringify({ locale: locale, provider: provider }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (data && data.ok) {
+                    btn.textContent = '✓ Dispatched';
+                    setTimeout(function () { btn.textContent = 'Translate'; }, 4000);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('Translate dispatched for ' + locale, 'success');
+                    }
+                    setTimeout(fetchRuns, 1500);
+                } else {
+                    btn.textContent = 'Translate';
+                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
+                }
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                btn.textContent = 'Translate';
+                alert('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function triggerAudit(locale, provider, btn) {
+        btn.textContent = '…';
+        btn.disabled = true;
+        fetch('/api/v1/admin/i18n-ops/audit', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+            body: JSON.stringify({ locale: locale, provider: provider }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (data && data.ok) {
+                    btn.textContent = '✓ Dispatched';
+                    setTimeout(function () { btn.textContent = 'Audit'; }, 4000);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('Audit dispatched for ' + locale, 'success');
+                    }
+                    setTimeout(fetchRuns, 1500);
+                } else {
+                    btn.textContent = 'Audit';
+                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
+                }
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                btn.textContent = 'Audit';
+                alert('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function fetchRuns() {
+        runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">Loading runs…</div>';
+        fetch('/api/v1/admin/i18n-ops/workflow-runs?workflow=' + encodeURIComponent(activeRuns) + '&limit=10', {
+            headers: authHeader(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.ok || !data.runs || !data.runs.length) {
+                    runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">No recent runs.</div>';
+                    return;
+                }
+                runsBody.innerHTML = '';
+                var list = document.createElement('div');
+                list.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+                data.runs.forEach(function (run) {
+                    var row = document.createElement('div');
+                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;font-size:12px;';
+                    var pillColor = run.conclusion === 'success' ? '#3ddc84' : run.conclusion === 'failure' ? '#ff8080' : run.status === 'in_progress' ? '#56a8ff' : '#888';
+                    var pillText = run.status === 'completed' ? (run.conclusion || '?') : run.status;
+                    row.innerHTML =
+                        '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + pillColor + '22;color:' + pillColor + ';border:1px solid ' + pillColor + '55;text-transform:uppercase">' + pillText + '</span>' +
+                        '<span style="font-family:monospace;opacity:0.85">#' + (run.run_number || '?') + '</span>' +
+                        '<span style="flex:1;opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (run.display_title || '').replace(/</g, '&lt;') + '</span>' +
+                        '<span style="opacity:0.6">' + (run.actor_login || '?') + '</span>' +
+                        '<span style="opacity:0.6">' + (run.created_at ? new Date(run.created_at).toLocaleString() : '') + '</span>';
+                    if (run.html_url) {
+                        var openBtn = document.createElement('a');
+                        openBtn.href = run.html_url;
+                        openBtn.target = '_blank';
+                        openBtn.rel = 'noopener noreferrer';
+                        openBtn.textContent = '↗';
+                        openBtn.style.cssText = 'color:#56a8ff;text-decoration:none;font-size:14px;padding:0 4px;';
+                        row.appendChild(openBtn);
+                    }
+                    list.appendChild(row);
+                });
+                runsBody.appendChild(list);
+            })
+            .catch(function (e) {
+                runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;color:#ff8080">Error: ' + (e && e.message || e) + '</div>';
+            });
+    }
+
+    refreshBtn.addEventListener('click', function () {
+        fetchLocales();
+        fetchRuns();
+    });
+
+    renderRunsTabs();
+    fetchLocales();
+    fetchRuns();
+    return container;
 }
