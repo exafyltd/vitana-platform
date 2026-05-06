@@ -14,7 +14,17 @@
 import fetch from 'node-fetch';
 
 export type AgentTier = 'service' | 'embedded' | 'scheduled';
-export type AgentProvider = 'claude' | 'gemini' | 'conductor' | 'none' | 'unknown';
+// BOOTSTRAP-WORKER-TRUTH: extended to match the DB constraint after
+// 20260510000200_BOOTSTRAP_agents_provider_check_extend.sql.
+export type AgentProvider =
+  | 'claude'
+  | 'gemini'
+  | 'conductor'
+  | 'deepseek'
+  | 'openai'
+  | 'embedded'
+  | 'none'
+  | 'unknown';
 export type AgentStatus = 'healthy' | 'degraded' | 'down' | 'unknown';
 
 export interface AgentRegistrationConfig {

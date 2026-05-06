@@ -195,19 +195,37 @@ async function main(): Promise<void> {
   console.log(`[${VTID}] Polling for tasks every ${process.env.POLL_INTERVAL_MS || '5000'}ms`);
 
   // Self-register with the agents registry (fire-and-forget, non-blocking)
+  // BOOTSTRAP-WORKER-TRUTH: report what execution-service.ts actually calls
+  // (Anthropic Claude, default claude-opus-4-6) rather than the legacy
+  // Gemini declaration. The hardcoded values were rolling the registry back
+  // to misleading defaults every heartbeat.
   try {
+    const workerLlmModel = process.env.WORKER_LLM_MODEL || 'claude-opus-4-6';
+    const workerLlmProvider: 'claude' | 'gemini' | 'deepseek' | 'unknown' =
+      workerLlmModel.startsWith('claude')
+        ? 'claude'
+        : workerLlmModel.startsWith('gemini')
+        ? 'gemini'
+        : workerLlmModel.startsWith('deepseek')
+        ? 'deepseek'
+        : 'unknown';
+
     stopAgentRegistration = startAgentRegistration({
       gatewayUrl: process.env.GATEWAY_URL || '',
       agentId: 'worker-runner',
       displayName: 'Worker Runner',
-      description: 'Autonomous VTID execution plane (VTID-01200). Polls, claims, executes via LLM, terminalizes.',
+      description: 'Autonomous VTID execution plane (VTID-01200). Polls, claims, executes via Anthropic SDK (default claude-opus-4-6, env-overridable via WORKER_LLM_MODEL). DeepSeek-reasoner fallback engages if primary fails.',
       tier: 'service',
       role: 'executor',
-      llmProvider: 'gemini',
-      llmModel: process.env.VERTEX_MODEL || 'gemini-3.1-pro-preview',
+      llmProvider: workerLlmProvider,
+      llmModel: workerLlmModel,
       sourcePath: 'services/worker-runner/',
       healthEndpoint: '/alive',
-      metadata: { vtid: VTID },
+      metadata: {
+        vtid: VTID,
+        fallback_model: process.env.WORKER_FALLBACK_MODEL || 'deepseek-reasoner',
+        fallback_enabled: process.env.WORKER_DEEPSEEK_FALLBACK !== 'false',
+      },
     });
   } catch (err) {
     console.warn(`[${VTID}] Agents registry self-registration failed (non-fatal):`, err);
