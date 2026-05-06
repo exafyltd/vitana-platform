@@ -76,6 +76,24 @@ spec:
             - name: VERTEX_LOCATION
               value: "us-central1"
 
+            # ─── DeepSeek-V3 swap (opt-in cost optimization) ─────────────────
+            # main.py detects LLM_PROVIDER=deepseek and routes through litellm's
+            # OpenAI-compatible adapter at https://api.deepseek.com. To flip:
+            #
+            #   - name: LLM_PROVIDER
+            #     value: "deepseek"
+            #   - name: LLM_MODEL
+            #     value: "deepseek-chat"        # V3 chat (fastest/cheapest)
+            #     # OR "deepseek-reasoner"      # R1 (deeper reasoning)
+            #   - name: DEEPSEEK_API_KEY
+            #     valueFrom:
+            #       secretKeyRef:
+            #         name: deepseek-api-key
+            #         key: latest
+            #
+            # Remove GOOGLE_CLOUD_PROJECT/VERTEX_LOCATION when on DeepSeek.
+            # ────────────────────────────────────────────────────────────────
+
             # Service configuration
             - name: ENV
               value: "production"
