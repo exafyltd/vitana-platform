@@ -124,6 +124,8 @@ class LLMRouter:
     def __init__(self, service_name: str = "conductor"):
         self.oasis_url = os.getenv("OASIS_GATEWAY_URL", "https://oasis-gateway.vitana.ai")
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        self.deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        self.deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
         self.project_id = os.getenv("GCP_PROJECT_ID", "lovable-vitana-vers1")
         self.service_name = service_name
 
@@ -233,6 +235,8 @@ class LLMRouter:
             return self._call_anthropic(model, prompt, max_tokens, temperature)
         elif provider == "vertex_ai":
             return self._call_vertex(model, prompt, max_tokens, temperature)
+        elif provider == "deepseek":
+            return self._call_deepseek(model, prompt, max_tokens, temperature)
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
@@ -290,6 +294,53 @@ class LLMRouter:
             "provider": "vertex_ai",
             "tokens": {"input": int(input_tokens), "output": int(output_tokens), "total": int(input_tokens + output_tokens)},
             "cost_usd": round(cost, 6)
+        }
+
+    def _call_deepseek(self, model: str, prompt: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
+        """Call DeepSeek via OpenAI-compatible API.
+
+        DeepSeek exposes an OpenAI-compatible chat completions endpoint at
+        https://api.deepseek.com. Models in scope: 'deepseek-chat' (V3) and
+        'deepseek-reasoner' (R1). Uses raw HTTP to avoid pulling in the
+        full OpenAI SDK as a hard dependency.
+        """
+        if not self.deepseek_key:
+            raise Exception("DEEPSEEK_API_KEY not set")
+
+        resp = requests.post(
+            f"{self.deepseek_base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.deepseek_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+
+        text = body["choices"][0]["message"]["content"]
+        usage = body.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+
+        # Published rates: deepseek-chat (V3) = $0.14/$0.28 per 1M, reasoner (R1) = $0.55/$2.19
+        if "reasoner" in model:
+            cost = (input_tokens * 0.55 / 1_000_000) + (output_tokens * 2.19 / 1_000_000)
+        else:
+            cost = (input_tokens * 0.14 / 1_000_000) + (output_tokens * 0.28 / 1_000_000)
+
+        return {
+            "text": text,
+            "model": model,
+            "provider": "deepseek",
+            "tokens": {"input": input_tokens, "output": output_tokens, "total": input_tokens + output_tokens},
+            "cost_usd": round(cost, 6),
         }
 
     def _log_to_oasis(self, event_type: str, data: Dict[str, Any]) -> str:
