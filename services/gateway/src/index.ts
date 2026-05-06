@@ -1050,6 +1050,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     }
   }));
 
+  // BOOTSTRAP-CLOUDFLARE-CMDHUB-REDIRECT: bare-host hit lands on the Hub.
+  // Operators type just `gateway.vitanaland.com` and get the Command Hub
+  // instead of `Cannot GET /`. Path-only redirect — no domain hardcoded.
+  app.get('/', (_req, res) => res.redirect(302, '/command-hub/'));
+
   // Command Hub router handles HTML routes and API (after static files)
   mountRouterSync(app, '/command-hub', commandHubRouter, { owner: 'command-hub-ui' });
 
