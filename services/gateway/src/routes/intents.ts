@@ -28,6 +28,11 @@ import { classifyIntentKind, type IntentKind } from '../services/intent-classifi
 import { extractIntent } from '../services/intent-extractor';
 import { enrichDancePayload } from '../services/intent-dance-helper';
 import { embedIntent } from '../services/intent-embedding';
+import {
+  CoverGenError,
+  generateCoverForIntent,
+  themeFromCategory,
+} from '../services/intent-cover-service';
 import { computeForIntent, surfaceTopMatches } from '../services/intent-matcher';
 // VTID-DANCE-D12 — Layer 2 over the SQL matcher.
 import { runMatchmakerAsync } from '../services/matchmaker-agent';
@@ -285,6 +290,36 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     return res.status(500).json({ ok: false, error: insErr?.message ?? 'insert_failed' });
   }
 
+  // BOOTSTRAP-INTENT-COVER-GEN — settle the cover photo for this new intent.
+  //   • If the form composer transited a `kind_payload.cover_url` (user
+  //     uploaded their own photo), promote it to the dedicated column and
+  //     stamp source = 'user_upload'.
+  //   • Otherwise fire-and-forget AI generation. Voice posts hit this branch.
+  //
+  // Both paths are non-blocking so the post response stays fast.
+  const userProvidedCover =
+    typeof (kindPayload as Record<string, unknown> | undefined)?.cover_url === 'string'
+      ? ((kindPayload as Record<string, unknown>).cover_url as string)
+      : null;
+  if (userProvidedCover) {
+    void supabase
+      .from('user_intents')
+      .update({ cover_url: userProvidedCover, cover_source: 'user_upload' })
+      .eq('intent_id', (inserted as any).intent_id)
+      .then(({ error }) => {
+        if (error) console.warn('[cover] user-provided promote failed:', error.message);
+      });
+  } else {
+    void generateCoverForIntent({
+      intentId: (inserted as any).intent_id,
+      userId: identity.user_id,
+      theme: themeFromCategory(category),
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      console.warn(`[cover] auto-gen failed for ${(inserted as any).intent_id}: ${msg}`);
+    });
+  }
+
   // VTID-01992: Embedding path is now flag-controlled.
   //   FEATURE_INTENT_EMBEDDING_ASYNC=true  → skip inline; the embedding
   //                                         worker (intent-embedding-worker.ts)
@@ -533,6 +568,53 @@ router.get('/:id/matches', requireAuth, requireTenant, async (req: Request, res:
   // Apply mutual-reveal redaction + counterparty profile enrichment (E6).
   const enriched = await enrichMatchesWithCounterpartyProfiles(matches, identity.user_id);
   return res.json({ ok: true, matches: enriched });
+});
+
+// ── POST /intents/:id/cover/generate ─────────────────────────
+//
+// Explicit user request to (re)generate the cover photo for an intent
+// the caller owns. Body: { force?: boolean }. Status codes:
+//   200  → { cover_url, source, cached }
+//   401  → unauthorized
+//   403  → not the owner
+//   404  → no such intent
+//   429  → daily regen quota exceeded
+
+router.post('/:id/cover/generate', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+  const { data: row } = await supabase
+    .from('user_intents')
+    .select('intent_id, requester_user_id, category')
+    .eq('intent_id', req.params.id)
+    .maybeSingle();
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  if ((row as { requester_user_id: string }).requester_user_id !== identity.user_id) {
+    return res.status(403).json({ ok: false, error: 'not_owner' });
+  }
+
+  try {
+    const result = await generateCoverForIntent({
+      intentId: (row as { intent_id: string }).intent_id,
+      userId: identity.user_id,
+      theme: themeFromCategory((row as { category: string | null }).category),
+      force: Boolean((req.body ?? {}).force),
+    });
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err instanceof CoverGenError) {
+      const status =
+        err.code === 'rate_limited' ? 429
+        : err.code === 'forbidden' ? 403
+        : err.code === 'not_found' ? 404
+        : 500;
+      return res.status(status).json({ ok: false, error: err.code, message: err.message });
+    }
+    const msg = err instanceof Error ? err.message : 'unknown';
+    return res.status(500).json({ ok: false, error: 'cover_gen_failed', message: msg });
+  }
 });
 
 export default router;
