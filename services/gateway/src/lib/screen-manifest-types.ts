@@ -68,6 +68,22 @@ export interface ScreenManifestEntry {
   /** 'route' (default) navigates; 'overlay' opens a popup via CustomEvent. */
   entry_kind?: 'route' | 'overlay';
   overlay?: ScreenOverlayMeta;
+  /**
+   * VTID-02789: Mobile-aware URL override. When the ORB session is from a
+   * mobile viewport (`is_mobile=true` in session context), the Navigator
+   * uses `mobile_route` instead of `path`. Use for pages that auto-redirect
+   * on mobile (e.g. /comm → /comm/events-meetups?tab=hot) so the Navigator
+   * skips the redirect hop. May contain `:param` placeholders just like
+   * `path`. Param substitution applies to whichever URL is selected.
+   */
+  mobile_route?: string;
+  /**
+   * VTID-02789: Viewport gate. `'mobile'` = only mobile sessions can be
+   * redirected here (desktop callers get blocked with kind='wrong_viewport').
+   * `'desktop'` = mirror, mobile gets blocked. Omitted = no restriction.
+   * Use for entries like /daily-diary which are mobile-only flows.
+   */
+  viewport_only?: 'mobile' | 'desktop';
   /** Localized content. EN required; DE strongly recommended. */
   i18n: Record<LangCode, ScreenManifestI18n>;
 }
