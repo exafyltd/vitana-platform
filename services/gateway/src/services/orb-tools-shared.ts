@@ -616,44 +616,164 @@ export async function tool_create_index_improvement_plan(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const targetPillar =
-    resolvePillarKey(String(args.target_pillar ?? '')) ||
-    (await fetchVitanaIndexForProfiler(sb, id.user_id))?.weakest_pillar?.name ||
-    null;
-  if (!targetPillar) {
+  // PR B-9: lifted from orb-live.ts:5800. Vertex's auth impl actually
+  // creates calendar events for the plan, falls back to PILLAR_ACTION_TEMPLATES
+  // when the autopilot queue is empty (R4 failure mode), and tags events
+  // with proper wellness_tags + source_ref_type. The previous shared stub
+  // just returned a list of recommendations and told the user to activate
+  // them manually — never wrote to the calendar. LiveKit users got an
+  // unactionable plan.
+  try {
+    const { PILLAR_TAGS, PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
+    const { createCalendarEvent } = await import('./calendar-service');
+
+    let pillar: string | undefined = resolvePillarKey(args.pillar as string | undefined);
+    if (!pillar) {
+      const snap = await fetchVitanaIndexForProfiler(sb, id.user_id);
+      pillar = snap?.weakest_pillar?.name;
+    }
+    if (!pillar) {
+      return {
+        ok: true,
+        result: { ok: false, reason: 'no_index_data' },
+        text:
+          "I don't see Index data for this user yet, so I can't build a plan. " +
+          "Complete the 5-question baseline survey first.",
+      };
+    }
+
+    const days = typeof args.days === 'number' ? Math.min(90, Math.max(7, args.days)) : 14;
+    const perWeek =
+      typeof args.actions_per_week === 'number'
+        ? Math.min(7, Math.max(1, args.actions_per_week))
+        : 3;
+
+    const { data } = await sb
+      .from('autopilot_recommendations')
+      .select('id, title, action_description, contribution_vector, priority')
+      .eq('user_id', id.user_id)
+      .in('status', ['pending', 'new', 'snoozed'])
+      .not('contribution_vector', 'is', null)
+      .order('priority', { ascending: false })
+      .limit(50);
+
+    const ranked = (data || [])
+      .map((r: Record<string, unknown>) => {
+        const cv = (r.contribution_vector as Record<string, number> | null) ?? {};
+        const lift = typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
+        return { ...r, _lift: lift };
+      })
+      .filter((r: { _lift: number }) => r._lift > 0)
+      .sort((a: { _lift: number }, b: { _lift: number }) => b._lift - a._lift);
+
+    type PlanItem = {
+      title: string;
+      description: string;
+      source: 'autopilot' | 'template';
+      source_ref_id: string | null;
+    };
+    const source: PlanItem[] =
+      ranked.length > 0
+        ? ranked.map((r): PlanItem => ({
+            title: String((r as Record<string, unknown>).title ?? ''),
+            description: String((r as Record<string, unknown>).action_description ?? ''),
+            source: 'autopilot',
+            source_ref_id: String((r as Record<string, unknown>).id ?? ''),
+          }))
+        : (
+            PILLAR_ACTION_TEMPLATES[pillar as keyof typeof PILLAR_ACTION_TEMPLATES] ?? []
+          ).map((t): PlanItem => ({
+            title: t.title,
+            description: t.description,
+            source: 'template',
+            source_ref_id: null,
+          }));
+
+    if (source.length === 0) {
+      return {
+        ok: true,
+        result: { ok: false, reason: 'no_actions' },
+        text: `I can't find any actions for the ${pillar} pillar right now — neither pending autopilot suggestions nor templates. This is unexpected; please report.`,
+      };
+    }
+
+    const weeks = Math.ceil(days / 7);
+    const totalEvents = weeks * perWeek;
+    const scheduled: { title: string; start_time: string; source: string }[] = [];
+    const startOfToday = new Date();
+    startOfToday.setHours(10, 0, 0, 0);
+    startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
+
+    const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
+    const wellnessTags: string[] = tags ? [...tags] : [pillar!];
+
+    for (let i = 0; i < totalEvents; i++) {
+      const item = source[i % source.length];
+      const eventDate = new Date(startOfToday);
+      eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
+      if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
+      const startIso = eventDate.toISOString();
+      const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
+
+      try {
+        const evt = await createCalendarEvent(id.user_id, {
+          title: item.title,
+          start_time: startIso,
+          end_time: endIso,
+          description: `${item.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          event_type: 'health' as any,
+          status: 'confirmed',
+          priority: 'medium',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          role_context: ((id.role || 'community') as any),
+          source_type: 'assistant',
+          source_ref_type:
+            item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
+          source_ref_id: item.source_ref_id ?? undefined,
+          priority_score: 60,
+          wellness_tags: wellnessTags,
+          metadata: {
+            created_via: 'orb_voice',
+            plan: 'index_improvement',
+            target_pillar: pillar,
+            plan_source: item.source,
+          },
+          is_recurring: false,
+        });
+        if (evt) {
+          scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
+        }
+      } catch {
+        /* per-event failures swallowed; reported as count-mismatch in result */
+      }
+    }
+
+    if (scheduled.length === 0) {
+      return { ok: false, error: 'No events could be scheduled (calendar write failed).' };
+    }
+
+    const payload = {
+      pillar,
+      days,
+      actions_per_week: perWeek,
+      scheduled_count: scheduled.length,
+      source_mix: {
+        autopilot: scheduled.filter((s) => s.source === 'autopilot').length,
+        template: scheduled.filter((s) => s.source === 'template').length,
+      },
+      first_event: scheduled[0],
+      last_event: scheduled[scheduled.length - 1],
+      all_titles: scheduled.map((s) => s.title),
+    };
     return {
       ok: true,
-      result: { events_scheduled: 0 },
-      text: `I don't see Index data yet — complete the baseline survey and I'll build a plan.`,
+      result: payload,
+      text: `Scheduled ${scheduled.length} ${pillar} actions on your calendar over the next ${days} days.`,
     };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'create_index_improvement_plan error' };
   }
-  const { data } = await sb
-    .from('autopilot_recommendations')
-    .select('id, title, summary, contribution_vector, impact_score')
-    .eq('user_id', id.user_id)
-    .in('status', ['pending', 'new', 'snoozed'])
-    .not('contribution_vector', 'is', null)
-    .order('impact_score', { ascending: false, nullsFirst: false })
-    .limit(20);
-  const ranked = (data || [])
-    .map((r) => {
-      const cv = (r.contribution_vector as Record<string, number> | null) || {};
-      const lift = typeof cv[targetPillar] === 'number' ? cv[targetPillar] : 0;
-      return { ...r, _lift: lift };
-    })
-    .filter((r) => r._lift > 0)
-    .slice(0, 3);
-  return {
-    ok: true,
-    result: {
-      pillar: targetPillar,
-      plan: ranked.map((r) => ({ id: r.id, title: r.title, action: r.summary, lift: r._lift })),
-    },
-    text:
-      ranked.length === 0
-        ? `No pending recommendations lift ${targetPillar} right now — completing any other recommendation will trigger fresh ones.`
-        : `Built a ${ranked.length}-step plan targeting ${targetPillar}. Activate them from Autopilot to get them on your calendar.`,
-  };
 }
 
 export async function tool_ask_pillar_agent(
