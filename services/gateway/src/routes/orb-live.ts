@@ -6029,80 +6029,54 @@ async function executeLiveApiToolInner(
       case 'log_sleep':
       case 'log_exercise':
       case 'log_meditation': {
-        try {
-          const { logHealthSignal } = await import('../services/voice-tools/health-log');
-          const today = new Date().toISOString().slice(0, 10);
-          const date = typeof args.date === 'string' && args.date ? args.date : today;
-          const out = await logHealthSignal({
-            user_id: lens.user_id,
-            tenant_id: lens.tenant_id,
-            tool: toolName as 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation',
-            date,
-            amount_ml: typeof args.amount_ml === 'number' ? args.amount_ml : undefined,
-            minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
-            activity_type: typeof args.activity_type === 'string' ? args.activity_type : undefined,
-          });
-          if (!out.ok) return { success: false, result: '', error: out.error };
-          return { success: true, result: JSON.stringify(out.summary) };
-        } catch (err: any) {
-          console.error(`[${toolName}] error:`, err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // VTID-LIFT-HEALTH-LOG: delegate to the canonical shared dispatcher
+        // (services/orb-tools-shared.ts → tool_log_health → logHealthSignal).
+        // Both pipelines now run identical health-log code; drift impossible.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'get_pillar_subscores': {
-        try {
-          const pillar = String(args.pillar || '').toLowerCase();
-          const valid = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
-          if (!valid.includes(pillar)) {
-            return { success: false, result: '', error: `pillar must be one of ${valid.join(', ')}` };
-          }
-          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-          const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
-          if (!snap) {
-            return {
-              success: true,
-              result: JSON.stringify({ pillar, available: false, reason: 'no_index_snapshot' }),
-            };
-          }
-          const sub = snap.subscores?.[pillar as keyof typeof snap.subscores];
-          if (!sub) {
-            return {
-              success: true,
-              result: JSON.stringify({
-                pillar,
-                pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
-                subscores: null,
-                reason: 'no_subscores_for_pillar',
-                hint: 'Subscores are populated from the v3 compute RPC; older Index rows may not have them.',
-              }),
-            };
-          }
-          return {
-            success: true,
-            result: JSON.stringify({
-              pillar,
-              pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
-              subscores: sub,
-              caps: { baseline: 40, completions: 80, data: 40, streak: 40 },
-              dominant: Object.entries(sub).reduce((a, b) => (b[1] > a[1] ? b : a))[0],
-              hint:
-                sub.data < 10 && sub.completions < 20
-                  ? 'Mostly baseline — log entries or connect a tracker to climb.'
-                  : sub.streak < 10
-                    ? 'Streak is low — consistency for 3+ days will lift this pillar.'
-                    : 'Solid mix — keep doing what you\'re doing.',
-            }),
-          };
-        } catch (err: any) {
-          console.error('[get_pillar_subscores] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // VTID-LIFT-PILLAR-SUBSCORES: delegate to the canonical shared
+        // dispatcher (services/orb-tools-shared.ts → tool_get_pillar_subscores).
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'get_pillar_subscores',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
