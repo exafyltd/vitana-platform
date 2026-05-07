@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-07-tts-isolation"
+CODE_VERSION = "agent-2026-05-07-tts-language-fix"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -228,8 +228,29 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             vitana_id=bootstrap.vitana_id or identity.vitana_id,
         )
 
-    # Cascade.
+    # Cascade. If any of stt/llm/tts is None it means the corresponding
+    # plugin failed to instantiate (wrong provider name, ImportError,
+    # config kwarg not accepted, ADC missing scopes, etc.). Trace the
+    # cascade.notes so we never have to guess again.
     cascade = build_cascade(bootstrap.voice_config)
+    cascade_summary = {
+        "stt_present": cascade.stt is not None,
+        "llm_present": cascade.llm is not None,
+        "tts_present": cascade.tts is not None,
+        "notes": list(cascade.notes),
+    }
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "cascade_built",
+                "orb_session_id": orb_session_id,
+                "cascade_summary": cascade_summary,
+            },
+        )
+    )
 
     # OASIS session start.
     await oasis.emit(
