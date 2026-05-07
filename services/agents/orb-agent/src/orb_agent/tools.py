@@ -746,6 +746,50 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
     return summarize(body)
 
 
+# VTID-NAV-UNIFIED (PR 1.B-4) — free-text navigation. The user just speaks
+# their natural-language request (e.g. "take me to my matches", "show me
+# events this weekend", "open my diary") and consultNavigator's 8-step
+# resolution picks the right screen + speaks the guidance + emits an
+# orb_directive over the data channel for the frontend to apply.
+@function_tool
+async def navigate(context: RunContext, question: str) -> str:
+    """Navigate the user to whatever screen best matches their natural-language
+    request. Use this whenever the user expresses a navigation intent in their
+    own words ("take me to my matches", "show me events this weekend", "where
+    are my reminders?", "open my diary"). The system picks the catalog screen,
+    redirects automatically, and you speak the guidance text it returns.
+
+    Prefer this over `navigate_to_screen` when the user speaks free-text. Use
+    `navigate_to_screen` ONLY when you already have an exact screen_id in hand
+    (typically as the resolution of a previous `navigate` ambiguous decision).
+
+    Args:
+        question: The user's exact words describing where they want to go.
+    """
+    gw = _gw(context)
+    body = await _dispatch_with_directive(
+        context,
+        "navigate",
+        {
+            "question": question,
+            "current_route": gw.current_route,
+            "recent_routes": list(gw.recent_routes or []),
+        },
+    )
+    # Eagerly update GatewayClient state so the next get_current_screen call
+    # (or the next gate-checked navigate_to_screen call) sees the fresh route.
+    res = body.get("result") if isinstance(body, dict) else None
+    if isinstance(res, dict):
+        new_route = res.get("route")
+        if isinstance(new_route, str) and new_route:
+            previous = gw.current_route
+            gw.current_route = new_route
+            if previous and previous != new_route:
+                trail = [r for r in (gw.recent_routes or []) if r != previous]
+                gw.recent_routes = ([previous] + trail)[:5]
+    return summarize(body)
+
+
 # VTID-NAV-TIMEJOURNEY (PR 1.B-3) — answer "where am I?" reliably by reading
 # the GatewayClient's tracked current_route + recent_routes (seeded from the
 # bootstrap response in session.py and eagerly updated by future
@@ -831,8 +875,8 @@ def all_tool_names() -> list[str]:
         "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
         "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches",
         "get_matchmaker_result",
-        # Navigation (2)
-        "navigate_to_screen", "get_current_screen",
+        # Navigation (3)
+        "navigate", "navigate_to_screen", "get_current_screen",
     ]
 
 
