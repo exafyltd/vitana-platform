@@ -128,15 +128,141 @@ describe('approveAutoExecute — VTID-02639 finding-completion guard', () => {
       spec_snapshot: {},
       status: 'new',
     }]));
+    // Open-PR check → empty (no stranded PR from a prior execution).
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
     // Plan-version lookup → empty (so we error with "plan version required",
-    // proving we got past the status check).
+    // proving we got past both early guards).
     fetchMock.mockResolvedValueOnce(mockResponse([]));
 
     const result = await approveAutoExecute({ finding_id: 'f-5' });
 
     expect(result.ok).toBe(false);
     expect(result.error).not.toMatch(/status is/);
+    expect(result.error).not.toMatch(/already has an unmerged PR/);
     expect(result.error).toMatch(/plan version required/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('approveAutoExecute — VTID-AUTOPILOT-PR-FLOOD open-PR guard', () => {
+  let fetchMock: FetchMock;
+
+  beforeAll(() => {
+    process.env.SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE = 'test_service_role_key';
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_SUPABASE_URL === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = ORIGINAL_SUPABASE_URL;
+    if (ORIGINAL_SUPABASE_SERVICE_ROLE === undefined) delete process.env.SUPABASE_SERVICE_ROLE;
+    else process.env.SUPABASE_SERVICE_ROLE = ORIGINAL_SUPABASE_SERVICE_ROLE;
+    global.fetch = ORIGINAL_FETCH;
+  });
+
+  beforeEach(() => {
+    fetchMock = jest.fn() as FetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  it('rejects a status="new" finding that has an unmerged PR from a failed prior execution', async () => {
+    // 1. Finding lookup → status='new', would normally pass the first guard.
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'f-flood-1',
+      risk_class: 'low',
+      source_type: 'dev_autopilot',
+      spec_snapshot: {},
+      status: 'new',
+    }]));
+    // 2. Open-PR check → returns a stranded execution row from a prior
+    //    failed run that opened PR #1234 and never closed it.
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'exec-prior-1',
+      pr_url: 'https://github.com/exafyltd/vitana-platform/pull/1234',
+      pr_number: 1234,
+      status: 'failed',
+    }]));
+
+    const result = await approveAutoExecute({ finding_id: 'f-flood-1' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/already has an unmerged PR/);
+    expect(result.error).toMatch(/pull\/1234/);
+    expect(result.error).toMatch(/status=failed/);
+    expect(result.error).toMatch(/close or merge it before re-approving/);
+    // Should short-circuit BEFORE loading the plan — exactly two fetches.
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects when a prior execution has reverted state and a stranded PR', async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'f-flood-2',
+      risk_class: 'medium',
+      source_type: 'dev_autopilot_impact',
+      spec_snapshot: {},
+      status: 'new',
+    }]));
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'exec-prior-2',
+      pr_url: 'https://github.com/exafyltd/vitana-platform/pull/9999',
+      pr_number: 9999,
+      status: 'reverted',
+    }]));
+
+    const result = await approveAutoExecute({ finding_id: 'f-flood-2' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/already has an unmerged PR/);
+    expect(result.error).toMatch(/status=reverted/);
+  });
+
+  it('does NOT block when prior executions all reached completed/self_healed/auto_archived', async () => {
+    // The PostgREST filter status=not.in.(completed,self_healed,auto_archived)
+    // returns an empty array because every prior execution is in a terminal
+    // "PR was handled" state. The guard must allow the new approval to
+    // proceed. We mock that filter result and assert we drop into the
+    // plan-version lookup (which we then short-circuit with empty).
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'f-flood-3',
+      risk_class: 'low',
+      source_type: 'dev_autopilot',
+      spec_snapshot: {},
+      status: 'new',
+    }]));
+    // Open-PR check → empty (filter excludes completed/self_healed/auto_archived).
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
+    // Plan-version lookup → empty so we error with "plan version required".
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
+
+    const result = await approveAutoExecute({ finding_id: 'f-flood-3' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toMatch(/already has an unmerged PR/);
+    expect(result.error).toMatch(/plan version required/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('issues the correct PostgREST filter for the open-PR check', async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse([{
+      id: 'f-flood-4',
+      risk_class: 'low',
+      source_type: 'dev_autopilot',
+      spec_snapshot: {},
+      status: 'new',
+    }]));
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
+
+    await approveAutoExecute({ finding_id: 'f-flood-4' });
+
+    // Assert the second fetch (the open-PR check) hit the right URL with
+    // the right filters. Without these we'd silently regress to the
+    // pre-fix behaviour where dev_autopilot_executions was never queried.
+    const openPrCall = fetchMock.mock.calls[1];
+    const url = String(openPrCall?.[0] ?? '');
+    expect(url).toMatch(/dev_autopilot_executions/);
+    expect(url).toMatch(/finding_id=eq\.f-flood-4/);
+    expect(url).toMatch(/pr_url=not\.is\.null/);
+    expect(url).toMatch(/status=not\.in\.\(completed,self_healed,auto_archived\)/);
   });
 });

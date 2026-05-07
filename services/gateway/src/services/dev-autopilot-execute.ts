@@ -353,6 +353,40 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     };
   }
 
+  // VTID-AUTOPILOT-PR-FLOOD: refuse to approve a finding that already has
+  // a PR opened by an earlier execution where the PR was never merged.
+  // The pre-existing in-flight check (autoApproveTick line ~2487) only
+  // skips findings whose execution status is in
+  // (cooling,running,ci,merging,deploying,verifying) — it does NOT cover
+  // failed/reverted executions. The executor never closes the GitHub PR
+  // on failure (see reconciler line ~1812 — it only OBSERVES PR state),
+  // so each failed execution leaves a stranded open PR. autoApproveTick
+  // then re-picks the still-status='new' finding, opens another PR, and
+  // the cycle repeats. The 2026-05-07 sweep had to close 530 PRs from
+  // a handful of findings (one had 290 stranded PRs alone) because the
+  // retry cap (5 failures / 24h) wasn't enough to outrun a 30s tick
+  // running for days. This guard makes "PR opened, not merged, prior
+  // execution didn't reach 'completed' or 'self_healed'" a hard block
+  // at approval time. Operator must close/merge the existing PR (which
+  // flips its execution to 'completed' or 'auto_archived') before any
+  // new attempt is approved.
+  const openPrR = await supa<Array<{ id: string; pr_url: string | null; pr_number: number | null; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${input.finding_id}`
+    + `&pr_url=not.is.null`
+    + `&status=not.in.(completed,self_healed,auto_archived)`
+    + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
+  );
+  if (openPrR.ok && openPrR.data && openPrR.data.length > 0) {
+    const stranded = openPrR.data[0];
+    return {
+      ok: false,
+      error: `finding ${input.finding_id.slice(0, 8)} already has an unmerged PR `
+        + `(${stranded.pr_url || `#${stranded.pr_number}`}) from a prior execution `
+        + `(status=${stranded.status}) — close or merge it before re-approving`,
+    };
+  }
+
   // 2. Load latest plan version
   const planR = await supa<Array<{ version: number; files_referenced: string[]; plan_markdown: string }>>(
     s,
@@ -2491,6 +2525,20 @@ export async function autoApproveTick(): Promise<void> {
       + `&select=id&limit=1`,
     );
     if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
+
+    // VTID-AUTOPILOT-PR-FLOOD: also skip findings whose prior execution
+    // opened a PR that was never merged. The status-based inflight check
+    // above misses failed/reverted executions whose GitHub PR is still
+    // open — the executor never closes a PR on failure. See the matching
+    // guard in approveAutoExecute() for the full root-cause writeup.
+    const strandedPrR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
+      + `&pr_url=not.is.null`
+      + `&status=not.in.(completed,self_healed,auto_archived)`
+      + `&select=id&limit=1`,
+    );
+    if (strandedPrR.ok && strandedPrR.data && strandedPrR.data.length > 0) continue;
 
     // VTID-AUTOPILOT-RETRY-CAP: per-finding aggregate retry circuit breaker.
     // The bridge has per-chain max_auto_fix_depth=2, but autoApproveTick
