@@ -352,6 +352,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # post-navigate so subsequent get_current_screen calls see fresh values.
     gw.current_route = bootstrap.current_route
     gw.recent_routes = list(bootstrap.recent_routes or [])
+    # PR 1.B-5 — identity facts the navigator gates need at dispatch.
+    gw.is_mobile = bool(identity.is_mobile)
+    gw.is_anonymous = bool(identity.is_anonymous)
 
     session = AgentSession(
         stt=cascade.stt,

@@ -4008,305 +4008,111 @@ export async function handleNavigateToScreen(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
-  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
-  // VTID-02770: accept either `screen_id` (canonical) or legacy `target` slug.
-  // The handler resolves both via the catalog's three-tier lookup
-  // (exact id → alias → fuzzy).
+  // PR 1.B-5: lifted to services/orb-tools-shared.ts:tool_navigate_to_screen.
+  // The shared module now enforces all 7 gates (anonymous, viewport,
+  // mobile_route override, already-there dedup, OASIS error_kind events,
+  // identity threading, fuzzy resolution). Vertex post-processes the
+  // result here for session-state mutations: pendingNavigation +
+  // navigationDispatched + eager current_route + writeNavigatorActionMemory.
   const screenId = String(args.screen_id || args.target || '').trim();
-  const reason = String(args.reason || '').trim();
   if (!screenId) {
     return { success: false, result: '', error: 'navigate_to_screen requires screen_id (or legacy target).' };
   }
-
-  // VTID-02770: Three-tier resolution.
-  //   1. Exact screen_id match (BY_ID)
-  //   2. Alias match (BY_ALIAS — includes legacy slugs like "find_partner",
-  //      user-canonical paths like "/community/events", and language variants)
-  //   3. Fuzzy fallback (suggestSimilar) — last-resort recovery for partial
-  //      guesses like "MEDIA_HUB" instead of "COMM.MEDIA_HUB".
-  let entry = lookupNavScreen(screenId);
-  if (!entry) {
-    const aliased = lookupNavByAlias(screenId);
-    if (aliased) {
-      console.log(`[VTID-02770] Alias-resolved '${screenId}' → '${aliased.screen_id}' (${aliased.route})`);
-      entry = aliased;
-    }
-  }
-  if (!entry) {
-    const similar = suggestNavSimilar(screenId, 5);
-    // Auto-resolve: if the top suggestion is unambiguous (strong lead or
-    // single match), use it directly as if Gemini had sent the right id.
-    if (similar.length > 0) {
-      const topEntry = similar[0];
-      const secondScore = similar.length > 1
-        ? suggestNavSimilar(screenId, 5).indexOf(similar[1]) >= 0
-          ? similar[1] // exists
-          : null
-        : null;
-      // "Unambiguous" = only one suggestion OR top score exists (suggestSimilar
-      // already sorts by score descending, and we can't access raw scores from
-      // the public API, so we use a simpler heuristic: if there's a match at all,
-      // take it — the worst case is navigating to the wrong screen, which is
-      // strictly better than freezing the orb completely).
-      console.log(`[VTID-NAV-FUZZY] Auto-resolving '${screenId}' → '${topEntry.screen_id}' (${topEntry.route})`);
-      entry = topEntry;
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.blocked',
-        source: 'orb-live-ws',
-        status: 'info',
-        message: `Fuzzy-resolved screen_id '${screenId}' → '${topEntry.screen_id}'`,
-        payload: {
-          session_id: session.sessionId,
-          attempted_screen_id: screenId,
-          resolved_screen_id: topEntry.screen_id,
-          error_kind: 'fuzzy_resolved',
-        },
-      }).catch(() => {});
-    } else {
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.blocked',
-        source: 'orb-live-ws',
-        status: 'warning',
-        message: `Unknown screen_id '${screenId}' — no suggestions`,
-        payload: {
-          session_id: session.sessionId,
-          attempted_screen_id: screenId,
-          error_kind: 'unknown',
-          suggestions: [],
-        },
-      }).catch(() => {});
-      return {
-        success: false,
-        result: '',
-        error: `Unknown screen_id '${screenId}'. No matching screens found in the catalog.`,
-      };
-    }
+  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
+  const sb = getSupabase();
+  if (!sb) {
+    return { success: false, result: '', error: 'supabase_not_configured' };
   }
 
-  const isAnon = !!session.isAnonymous || !hasIdentity;
-  if (isAnon && !entry.anonymous_safe) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-live-ws',
-      status: 'warning',
-      message: `Screen '${screenId}' requires authentication`,
-      payload: {
-        session_id: session.sessionId,
-        attempted_screen_id: screenId,
-        error_kind: 'auth_required',
-      },
-    }).catch(() => {});
-    return {
-      success: false,
-      result: '',
-      error: `Screen '${screenId}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
+  const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+  const r = await dispatchOrbTool(
+    'navigate_to_screen',
+    {
+      ...args,
+      current_route: session.current_route ?? null,
+    },
+    {
+      user_id: session.identity?.user_id ?? '',
+      tenant_id: session.identity?.tenant_id ?? null,
+      role: session.identity?.role ?? null,
+      vitana_id: session.identity?.vitana_id ?? null,
+      lang: session.lang ?? 'en',
+      session_id: session.sessionId,
+      is_anonymous: !!session.isAnonymous || !hasIdentity,
+      is_mobile: session.is_mobile === true,
+    },
+    sb,
+  );
+
+  if (r.ok === false) {
+    return { success: false, result: '', error: r.error };
+  }
+
+  const result = (r.result ?? {}) as {
+    screen_id?: string;
+    route?: string;
+    base_route?: string;
+    title?: string;
+    entry_kind?: string;
+    already_there?: boolean;
+    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string };
+  };
+
+  // Already-there short-circuit — the shared dispatcher returned ok:true
+  // with already_there:true and a friendly text. Pass through unchanged.
+  if (result.already_there) {
+    return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+  }
+
+  // Vertex-only: set pendingNavigation + eagerly update current_route so
+  // turn_complete + get_current_screen see the fresh destination.
+  if (result.directive && result.screen_id && result.route && result.title) {
+    const reason = String(args.reason || 'navigate_to_screen tool call');
+    session.pendingNavigation = {
+      screen_id: result.screen_id,
+      route: result.route,
+      title: result.title,
+      reason,
+      decision_source: 'direct',
+      requested_at: Date.now(),
     };
-  }
+    session.navigationDispatched = true;
 
-  // VTID-02789: Viewport gate — refuse the redirect if the entry is
-  // viewport-locked to mobile-only or desktop-only and the session doesn't
-  // match. Lets us mark `/daily-diary` (mobile-only flow) so a desktop
-  // session never gets sent there.
-  if (entry.viewport_only) {
-    const sessionViewport: 'mobile' | 'desktop' = session.is_mobile === true ? 'mobile' : 'desktop';
-    if (entry.viewport_only !== sessionViewport) {
-      emitOasisEvent({
-        vtid: 'VTID-02789',
-        type: 'orb.navigator.blocked',
-        source: 'orb-live-ws',
-        status: 'warning',
-        message: `Screen '${entry.screen_id}' is ${entry.viewport_only}-only; session is ${sessionViewport}`,
-        payload: {
-          session_id: session.sessionId,
-          attempted_screen_id: screenId,
-          error_kind: 'wrong_viewport',
-          required_viewport: entry.viewport_only,
-          session_viewport: sessionViewport,
-        },
-      }).catch(() => {});
-      return {
-        success: false,
-        result: '',
-        error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
-      };
-    }
-  }
-
-  // VTID-02770: Resolve the final URL the frontend will receive.
-  //   1. VTID-02789: Mobile-aware URL — when session.is_mobile=true AND the
-  //      entry has a mobile_route override, use that instead of route. Lets
-  //      pages that auto-redirect on mobile (e.g. /comm →
-  //      /comm/events-meetups?tab=hot) skip the redirect hop.
-  //   2. Substitute `:param` placeholders in the chosen base URL with values
-  //      from args. Missing required params are reported as a typed error so
-  //      Gemini knows it must ask the user for the missing piece.
-  //   3. For overlay entries (entry_kind === 'overlay'), append
-  //      `?open=<query_marker>` so the frontend ORB widget intercepts and
-  //      dispatches the corresponding CustomEvent instead of routing.
-  //   4. For overlay entries that need a parameter (e.g. user_id for
-  //      OVERLAY.PROFILE_PREVIEW), append it as a query param too — the
-  //      frontend reads it from the URL on dispatch.
-  const isMobileSession = session.is_mobile === true;
-  const baseRoute = (isMobileSession && entry.mobile_route) ? entry.mobile_route : entry.route;
-  let resolvedRoute = baseRoute;
-  const missingParams: string[] = [];
-  resolvedRoute = resolvedRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, name) => {
-    const v = args[name];
-    if (v === undefined || v === null || String(v).trim() === '') {
-      missingParams.push(String(name));
-      return ':' + String(name);
-    }
-    // Strip a leading `@` from vitana_id-style params before encoding.
-    const clean = String(v).trim().replace(/^@/, '');
-    return encodeURIComponent(clean);
-  });
-  if (missingParams.length > 0) {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-live-ws',
-      status: 'warning',
-      message: `Missing route param(s) for ${entry.screen_id}: ${missingParams.join(', ')}`,
-      payload: {
-        session_id: session.sessionId,
-        attempted_screen_id: screenId,
-        error_kind: 'missing_param',
-        missing_params: missingParams,
-      },
-    }).catch(() => {});
-    return {
-      success: false,
-      result: '',
-      error: `Cannot navigate to ${entry.screen_id}: missing required parameter(s) ${missingParams.join(', ')}. Ask the user to provide them, then call navigate_to_screen again.`,
-    };
-  }
-
-  if (entry.entry_kind === 'overlay' && entry.overlay) {
-    const sep = resolvedRoute.includes('?') ? '&' : '?';
-    const params = new URLSearchParams();
-    params.set('open', entry.overlay.query_marker);
-    // If the overlay needs a specific param (user_id, meetup_id, etc.) and
-    // the caller provided it, pass it through so the frontend overlay can
-    // pick the right entity to render.
-    const needs = entry.overlay.needs_param;
-    if (needs) {
-      const v = args[needs];
-      if (v !== undefined && v !== null && String(v).trim() !== '') {
-        params.set(needs, String(v).trim().replace(/^@/, ''));
+    const isOverlay = result.entry_kind === 'overlay';
+    if (!isOverlay) {
+      const baseRoutePath = result.base_route || result.route.split('?')[0];
+      const previousRoute = session.current_route;
+      session.current_route = baseRoutePath;
+      if (previousRoute && previousRoute !== baseRoutePath) {
+        const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+        const deduped = trail.filter((rt) => rt !== previousRoute);
+        session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
       }
     }
-    resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
-  }
 
-  // VTID-02789: Compare current_route against the *resolved* base path
-  // (mobile_route on mobile, route otherwise) so a mobile user already on
-  // /comm/events-meetups (because /comm aliased there) doesn't get bounced
-  // when they ask for "the community page" again.
-  const baseRoutePath = baseRoute.split('?')[0];
-  if (session.current_route && session.current_route === baseRoutePath && entry.entry_kind !== 'overlay') {
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.blocked',
-      source: 'orb-live-ws',
-      status: 'info',
-      message: `User is already on ${baseRoutePath}`,
-      payload: {
-        session_id: session.sessionId,
-        attempted_screen_id: screenId,
-        error_kind: 'already_there',
-      },
-    }).catch(() => {});
-    return {
-      success: false,
-      result: '',
-      error: `The user is already on ${entry.route}. Suggest a related screen or just answer in voice instead.`,
-    };
-  }
-
-  // Queue the navigation. The orb_directive dispatch in turn_complete
-  // will pick this up AFTER the existing memory flush completes.
-  const lang = session.lang || 'en';
-  const content = getNavContent(entry, lang);
-  session.pendingNavigation = {
-    screen_id: entry.screen_id,
-    route: resolvedRoute,
-    title: content.title,
-    reason: reason || 'navigate_to_screen tool call',
-    decision_source: 'direct',
-    requested_at: Date.now(),
-  };
-  // VTID-NAV: Set the gate that drops further input audio so Gemini does
-  // not start a new turn while the widget is closing.
-  session.navigationDispatched = true;
-
-  // VTID-NAV-TIMEJOURNEY (journey-awareness fix): Eagerly update the
-  // in-memory session route + journey trail so the next turn / any
-  // subsequent get_current_screen tool call sees the FRESH destination,
-  // not the stale route the user was on when the session started. This
-  // is what makes "which screen am I on?" answerable after Vitana has
-  // just redirected the user via this tool.
-  //
-  // VTID-02770: For overlay entries we do NOT change current_route, since the
-  // user stays on their original page — only a popup opens.
-  // VTID-02789: Use the resolved baseRoutePath (mobile_route on mobile, else
-  // route) so the eager update tracks the actual destination, not the
-  // generic desktop URL.
-  if (entry.entry_kind !== 'overlay') {
-    const previousRoute = session.current_route;
-    session.current_route = baseRoutePath;
-    if (previousRoute && previousRoute !== baseRoutePath) {
-      const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
-      const deduped = trail.filter(r => r !== previousRoute);
-      session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+    if (hasIdentity) {
+      const lang = session.lang || 'en';
+      writeNavigatorActionMemory({
+        identity: {
+          user_id: session.identity!.user_id,
+          tenant_id: session.identity!.tenant_id as string,
+          role: session.identity!.role || session.active_role || undefined,
+        },
+        screen: {
+          screen_id: result.screen_id,
+          route: result.route,
+          title: result.title,
+        },
+        reason,
+        decision_source: 'direct',
+        orb_session_id: session.sessionId,
+        conversation_id: session.conversation_id,
+        lang,
+      }).catch(() => {});
     }
   }
 
-  // Persist the navigation as a memory item (authenticated only).
-  if (hasIdentity) {
-    writeNavigatorActionMemory({
-      identity: {
-        user_id: session.identity!.user_id,
-        tenant_id: session.identity!.tenant_id as string,
-        role: session.identity!.role || session.active_role || undefined,
-      },
-      screen: {
-        screen_id: entry.screen_id,
-        route: resolvedRoute,
-        title: content.title,
-      },
-      reason: session.pendingNavigation.reason,
-      decision_source: session.pendingNavigation.decision_source,
-      orb_session_id: session.sessionId,
-      conversation_id: session.conversation_id,
-      lang,
-    }).catch(() => { /* fire-and-forget */ });
-  }
-
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.requested',
-    source: 'orb-live-ws',
-    status: 'info',
-    message: `navigate_to_screen ${entry.screen_id} (${resolvedRoute})`,
-    payload: {
-      session_id: session.sessionId,
-      screen_id: entry.screen_id,
-      route: resolvedRoute,
-      entry_kind: entry.entry_kind || 'route',
-      reason: session.pendingNavigation.reason,
-      is_anonymous: isAnon,
-    },
-  }).catch(() => {});
-
-  return {
-    success: true,
-    result: entry.entry_kind === 'overlay'
-      ? `Overlay opened: ${content.title}. The user stays on their current screen — the popup is now visible. Continue the conversation; do NOT navigate elsewhere unless the user asks.`
-      : `Navigation queued to ${content.title} (${resolvedRoute}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
-  };
+  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
 }
 
 /**
