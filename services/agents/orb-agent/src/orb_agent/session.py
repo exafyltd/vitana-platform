@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-07-tts-fix-llm-greeting"
+CODE_VERSION = "agent-2026-05-07-name-and-facts"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -226,6 +226,8 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             recent_routes=bootstrap.recent_routes,
             client_context=bootstrap.client_context,
             vitana_id=bootstrap.vitana_id or identity.vitana_id,
+            first_name=bootstrap.first_name,
+            display_name=bootstrap.display_name,
         )
 
     # Cascade. If any of stt/llm/tts is None it means the corresponding
@@ -302,16 +304,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             "user_jwt_present": bool(user_jwt),
             "user_jwt_len": len(user_jwt) if user_jwt else 0,
             "bootstrap_context_length": len(bootstrap.bootstrap_context or ""),
+            "bootstrap_first_1500_chars": (bootstrap.bootstrap_context or "")[:1500],
             "bootstrap_active_role": bootstrap.active_role,
             "bootstrap_vitana_id": bootstrap.vitana_id,
+            "bootstrap_display_name": bootstrap.display_name,
+            "bootstrap_first_name": bootstrap.first_name,
+            "bootstrap_identity_facts_count": len(bootstrap.identity_facts or []),
+            "bootstrap_identity_fact_keys": [
+                f.get("fact_key") for f in (bootstrap.identity_facts or [])
+            ],
             "bootstrap_voice_config_llm": (bootstrap.voice_config or {}).get("llm_model"),
             "bootstrap_voice_config_stt": (bootstrap.voice_config or {}).get("stt_model"),
             "bootstrap_voice_config_tts": (bootstrap.voice_config or {}).get("tts_model"),
             "system_prompt_length": len(sys_prompt),
-            "system_prompt_first_400_chars": sys_prompt[:400],
+            "system_prompt_first_600_chars": sys_prompt[:600],
             "tools_count": len(tool_list),
             "tools_first_5": tool_names[:5],
             "tools_handle_in_first_chars": "@" + (bootstrap.vitana_id or identity.vitana_id or "") in sys_prompt[:600],
+            "tools_first_name_in_first_chars": bool(
+                bootstrap.first_name and bootstrap.first_name.lower() in sys_prompt[:600].lower()
+            ),
         }
         await gw.post("/api/v1/orb/agent-trace", trace_payload)
     except Exception as exc:  # noqa: BLE001
@@ -443,20 +455,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # session is fixed in providers.py (language_code → language).
     if not identity.is_anonymous:
         vid = (bootstrap.vitana_id or "").strip()
-        try:
-            await session.generate_reply(
-                instructions=(
-                    "Greet the user warmly RIGHT NOW. **MUST** include their "
-                    f"@vitana_id handle (it is @{vid or 'their handle'}) in the "
-                    "greeting so they can hear you recognize them. If a "
-                    "`user_name` fact is in your YOUR USER'S CONTEXT block, "
-                    "use the first name (e.g. 'Hi Dragan!'). Otherwise just "
-                    f"use the handle: 'Hi @{vid or 'there'}!'. ONE short "
-                    "sentence + brief 'What can I help with today?'. NEVER "
-                    "say you don't know them — you do. NEVER apologize for "
-                    "anything in the greeting."
-                ),
+        first_name = (bootstrap.first_name or "").strip()
+        if first_name:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW by their first name: '{first_name}'. "
+                f"Examples: 'Hi {first_name}!' or 'Hey {first_name}, good to hear from you.' "
+                f"Their Vitana handle ({'@' + vid if vid else '<no handle>'}) is "
+                f"available as a fallback but DO NOT lead with it — '{first_name}' is "
+                f"the natural way a real person would address them. ONE short sentence "
+                f"+ brief 'What can I help with today?'. NEVER say you don't know them — "
+                f"you do. NEVER apologize for anything in the greeting."
             )
+        else:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW using their @vitana_id handle "
+                f"(it is @{vid or 'their handle'}). Example: 'Hi @{vid or 'there'}!'. "
+                f"ONE short sentence + brief 'What can I help with today?'. NEVER say "
+                f"you don't know them — you do. NEVER apologize for anything in the greeting."
+            )
+        try:
+            await session.generate_reply(instructions=greeting_instructions)
         except Exception as exc:  # noqa: BLE001
             logger.warning("initial greeting generate_reply failed: %s", exc)
             asyncio.create_task(
