@@ -270,6 +270,43 @@ async def search_community(context: RunContext, query: str) -> str:
 
 
 @function_tool
+async def find_community_member(
+    context: RunContext,
+    query: str,
+    excluded_vitana_ids: list[str] | None = None,
+) -> str:
+    """Find ONE community member matching a free-text query and auto-redirect.
+
+    Use this whenever the user asks 'who is...' / 'find someone who...' /
+    'who can teach me...' / 'who is the best at...'. The 4-tier ranker
+    (exact_fact → Vitana Index → 6 affinity lanes → ethics-reroute) plus
+    location/tenure modifiers always returns exactly ONE person.
+
+    The tool itself dispatches the redirect to the user's profile via the
+    LiveKit data channel — you only read the voice_summary aloud (1–2
+    sentences). Do NOT call navigate_to_screen separately and do NOT add
+    commentary; the widget is closing and the user is being taken to the
+    profile.
+
+    Args:
+        query: The user's question, verbatim (e.g. "good at half marathon",
+               "the funniest", "newest member").
+        excluded_vitana_ids: Optional list of vitana_ids to skip — used by
+                             the 'show me someone else' flow to walk past
+                             prior matches.
+    """
+    body = await _dispatch_with_directive(
+        context,
+        "find_community_member",
+        {
+            "query": query,
+            "excluded_vitana_ids": excluded_vitana_ids or [],
+        },
+    )
+    return summarize(body)
+
+
+@function_tool
 async def get_recommendations(context: RunContext) -> str:
     """Return current Autopilot recommendations for the user (VTID-01180)."""
     body = await _gw(context).get("/api/v1/autopilot/recommendations")
@@ -740,8 +777,8 @@ def all_tool_names() -> list[str]:
         "switch_persona", "report_to_specialist",
         # Calendar (4)
         "search_calendar", "create_calendar_event", "add_to_calendar", "get_schedule",
-        # Community / Events / Recommendations (3)
-        "search_events", "search_community", "get_recommendations",
+        # Community / Events / Recommendations (4) — find_community_member auto-redirects
+        "search_events", "search_community", "find_community_member", "get_recommendations",
         # Media / Capability prefs (2)
         "play_music", "set_capability_preference",
         # Email / Contacts (2)
