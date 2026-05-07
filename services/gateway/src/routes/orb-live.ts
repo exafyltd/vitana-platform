@@ -5649,6 +5649,11 @@ async function executeLiveApiToolInner(
       case 'get_schedule':
       case 'add_to_calendar':
       case 'find_contact': {
+        // PR B-1 (VTID-LIVEKIT-LIFT-CAPABILITIES): delegate to the shared
+        // dispatcher. The same case body that used to live inline here is
+        // now in services/orb-tools-shared.ts (_runCapabilityTool), so both
+        // Vertex and the LiveKit pipeline run identical capability-tool
+        // logic — no drift possible by construction.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5656,96 +5661,17 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-        const { executeCapability } = await import('../capabilities');
-
-        const toolCapabilityMap: Record<string, string> = {
-          read_email: 'email.read',
-          get_schedule: 'calendar.list',
-          add_to_calendar: 'calendar.create',
-          find_contact: 'contacts.read',
-        };
-        const capabilityId = toolCapabilityMap[toolName];
-
-        const disp = await executeCapability(
-          { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
-          capabilityId,
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
           args ?? {},
-        ) as any;
-
-        if (!disp.ok) {
-          const errText = String(disp.error ?? 'Capability failed');
-          const notConnected = /isn't connected|requires a connected provider|No active google/i.test(errText);
-          if (notConnected) {
-            return {
-              success: true,
-              result: `I can't check that yet — you haven't connected your Google account. Want me to take you to Connected Apps?`,
-            };
-          }
-          return { success: false, result: '', error: errText };
-        }
-
-        // Shape the voice response from the structured_list raw.
-        const raw = (disp.raw ?? {}) as any;
-
-        if (toolName === 'read_email') {
-          const messages: Array<{ from: string; subject: string; snippet?: string }> = raw.messages ?? [];
-          if (messages.length === 0) {
-            return { success: true, result: raw.summary ?? 'No unread emails.' };
-          }
-          const compact = messages.slice(0, 5).map((m) => {
-            const fromName = m.from.replace(/<[^>]+>/, '').trim() || m.from;
-            return `from ${fromName}, subject "${m.subject}"`;
-          }).join('; ');
-          return {
-            success: true,
-            result: `${raw.summary ?? ''} ${compact}. Want me to read any in detail?`.trim(),
-          };
-        }
-
-        if (toolName === 'get_schedule') {
-          const events: Array<{ summary: string; start: string; all_day?: boolean; location?: string }> = raw.events ?? [];
-          if (events.length === 0) {
-            return { success: true, result: raw.summary ?? 'Nothing on your calendar.' };
-          }
-          const lines = events.slice(0, 8).map((ev) => {
-            const when = ev.all_day
-              ? 'all day'
-              : (ev.start ? new Date(ev.start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '');
-            const loc = ev.location ? ` (${ev.location})` : '';
-            return `${when}: ${ev.summary}${loc}`;
-          }).join('; ');
-          return { success: true, result: `${raw.summary ?? ''} ${lines}.`.trim() };
-        }
-
-        if (toolName === 'add_to_calendar') {
-          const title = raw.summary ?? (args.title as string) ?? 'the event';
-          const start = raw.start ?? '';
-          const when = start ? new Date(start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
-          return { success: true, result: `Added — ${title}${when ? ' at ' + when : ''}.` };
-        }
-
-        if (toolName === 'find_contact') {
-          const contacts: Array<{ name: string; emails: string[]; phones: string[] }> = raw.contacts ?? [];
-          if (contacts.length === 0) {
-            return { success: true, result: raw.summary ?? 'No contacts matched.' };
-          }
-          if (contacts.length > 5) {
-            const names = contacts.slice(0, 5).map((c) => c.name).filter(Boolean).join(', ');
-            return {
-              success: true,
-              result: `Found ${contacts.length} matches: ${names}, and more. Which one?`,
-            };
-          }
-          const spoken = contacts.map((c) => {
-            const bits: string[] = [];
-            if (c.emails?.[0]) bits.push(`email ${c.emails[0]}`);
-            if (c.phones?.[0]) bits.push(`phone ${c.phones[0]}`);
-            return `${c.name || 'Unknown'}${bits.length ? ' — ' + bits.join(', ') : ''}`;
-          }).join('; ');
-          return { success: true, result: spoken };
-        }
-
-        return { success: true, result: raw.summary ?? 'Done.' };
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // =====================================================================

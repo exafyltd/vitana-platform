@@ -297,14 +297,225 @@ export async function tool_set_capability_preference(
   };
 }
 
-export async function tool_read_email(): Promise<OrbToolResult> {
-  return {
-    ok: true,
-    result: { messages: [] },
-    text:
-      `I don't have an email integration connected to your account yet. ` +
-      `Connect Gmail in Settings → Connected Apps so I can read recent messages.`,
+/**
+ * Unified runner for capability-based tools (Gmail, Google Calendar, Google
+ * Contacts). Mirrors Vertex's read_email|get_schedule|add_to_calendar|
+ * find_contact case at orb-live.ts:5648 — same executeCapability call,
+ * same not-connected nudge, same per-tool voice text shaping.
+ *
+ * Returning `text` (not just structured result) is critical: voice tools
+ * pipe `text` to the LLM as the function-response, and "Found 3 emails"
+ * with no titles produces effectively-silent voice. Per-tool shaping
+ * lives here so both pipelines share the exact same speakable output.
+ */
+async function _runCapabilityTool(
+  toolName: string,
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const capabilityMap: Record<string, string> = {
+    read_email: 'email.read',
+    get_schedule: 'calendar.list',
+    add_to_calendar: 'calendar.create',
+    find_contact: 'contacts.read',
   };
+  const capabilityId = capabilityMap[toolName];
+  if (!capabilityId) {
+    return { ok: false, error: `unknown capability tool: ${toolName}` };
+  }
+
+  // Lazy-imported so the shared module doesn't pull the capabilities graph
+  // when it's only being used for placeholder tools.
+  const { executeCapability } = await import('../capabilities');
+  const disp = (await executeCapability(
+    { supabase: sb, userId: id.user_id, tenantId: id.tenant_id || '' },
+    capabilityId,
+    args ?? {},
+  )) as Record<string, unknown> & { ok?: boolean; error?: string; raw?: Record<string, unknown> };
+
+  if (!disp.ok) {
+    const errText = String(disp.error ?? 'Capability failed');
+    const notConnected = /isn't connected|requires a connected provider|No active google/i.test(errText);
+    if (notConnected) {
+      return {
+        ok: true,
+        result: { connected: false },
+        text:
+          `I can't check that yet — you haven't connected your Google account. ` +
+          `Want me to take you to Connected Apps?`,
+      };
+    }
+    return { ok: false, error: errText };
+  }
+
+  const raw = (disp.raw ?? {}) as Record<string, unknown>;
+
+  if (toolName === 'read_email') {
+    const messages = (raw.messages as Array<{ from: string; subject: string; snippet?: string }>) ?? [];
+    if (messages.length === 0) {
+      return {
+        ok: true,
+        result: { messages: [] },
+        text: (raw.summary as string) ?? 'No unread emails.',
+      };
+    }
+    const compact = messages
+      .slice(0, 5)
+      .map((m) => {
+        const fromName = m.from.replace(/<[^>]+>/, '').trim() || m.from;
+        return `from ${fromName}, subject "${m.subject}"`;
+      })
+      .join('; ');
+    return {
+      ok: true,
+      result: { messages },
+      text: `${(raw.summary as string) ?? ''} ${compact}. Want me to read any in detail?`.trim(),
+    };
+  }
+
+  if (toolName === 'get_schedule') {
+    const events =
+      (raw.events as Array<{
+        summary: string;
+        start: string;
+        all_day?: boolean;
+        location?: string;
+      }>) ?? [];
+    if (events.length === 0) {
+      return {
+        ok: true,
+        result: { events: [] },
+        text: (raw.summary as string) ?? 'Nothing on your calendar.',
+      };
+    }
+    const lines = events
+      .slice(0, 8)
+      .map((ev) => {
+        const when = ev.all_day
+          ? 'all day'
+          : ev.start
+            ? new Date(ev.start).toLocaleString('en-US', {
+                weekday: 'short',
+                hour: 'numeric',
+                minute: '2-digit',
+                month: 'short',
+                day: 'numeric',
+              })
+            : '';
+        const loc = ev.location ? ` (${ev.location})` : '';
+        return `${when}: ${ev.summary}${loc}`;
+      })
+      .join('; ');
+    return {
+      ok: true,
+      result: { events },
+      text: `${(raw.summary as string) ?? ''} ${lines}.`.trim(),
+    };
+  }
+
+  if (toolName === 'add_to_calendar') {
+    const title = (raw.summary as string) ?? (args.title as string) ?? 'the event';
+    const start = (raw.start as string) ?? '';
+    const when = start
+      ? new Date(start).toLocaleString('en-US', {
+          weekday: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+          month: 'short',
+          day: 'numeric',
+        })
+      : '';
+    return {
+      ok: true,
+      result: { added: true, title, start },
+      text: `Added — ${title}${when ? ' at ' + when : ''}.`,
+    };
+  }
+
+  if (toolName === 'find_contact') {
+    const contacts = (raw.contacts as Array<{ name: string; emails: string[]; phones: string[] }>) ?? [];
+    if (contacts.length === 0) {
+      // VTID-LIVEKIT-FALLBACK: when Google Contacts has no match, fall back to
+      // memory_facts so users without an integration still get answers from
+      // their personal memory.
+      const query = String(args.query ?? '').trim();
+      if (query) {
+        const { data: facts } = await sb
+          .from('memory_facts')
+          .select('fact_key, fact_value, entity')
+          .eq('user_id', id.user_id)
+          .like('fact_key', '%_name')
+          .ilike('fact_value', `%${query}%`)
+          .is('superseded_by', null)
+          .limit(10);
+        const matches = (facts || []).map((f) => ({
+          name: f.fact_value,
+          relation: f.fact_key.replace(/_name$/, ''),
+          scope: f.entity,
+        }));
+        if (matches.length > 0) {
+          return {
+            ok: true,
+            result: { contacts: matches, source: 'memory_facts' },
+            text: `Found ${matches.length} match${matches.length === 1 ? '' : 'es'} in your memory.`,
+          };
+        }
+      }
+      return {
+        ok: true,
+        result: { contacts: [] },
+        text: (raw.summary as string) ?? 'No contacts matched.',
+      };
+    }
+    if (contacts.length > 5) {
+      const names = contacts
+        .slice(0, 5)
+        .map((c) => c.name)
+        .filter(Boolean)
+        .join(', ');
+      return {
+        ok: true,
+        result: { contacts },
+        text: `Found ${contacts.length} matches: ${names}, and more. Which one?`,
+      };
+    }
+    const spoken = contacts
+      .map((c) => {
+        const bits: string[] = [];
+        if (c.emails?.[0]) bits.push(`email ${c.emails[0]}`);
+        if (c.phones?.[0]) bits.push(`phone ${c.phones[0]}`);
+        return `${c.name || 'Unknown'}${bits.length ? ' — ' + bits.join(', ') : ''}`;
+      })
+      .join('; ');
+    return { ok: true, result: { contacts }, text: spoken };
+  }
+
+  return { ok: false, error: `unhandled capability tool: ${toolName}` };
+}
+
+export async function tool_read_email(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  return _runCapabilityTool('read_email', args, id, sb);
+}
+
+export async function tool_get_schedule(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  return _runCapabilityTool('get_schedule', args, id, sb);
+}
+
+export async function tool_add_to_calendar(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  return _runCapabilityTool('add_to_calendar', args, id, sb);
 }
 
 export async function tool_find_contact(
@@ -312,29 +523,7 @@ export async function tool_find_contact(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const query = String(args.query ?? '').trim();
-  if (!query) return { ok: true, result: { contacts: [] }, text: 'Please tell me who to look up.' };
-  const { data: facts } = await sb
-    .from('memory_facts')
-    .select('fact_key, fact_value, entity')
-    .eq('user_id', id.user_id)
-    .like('fact_key', '%_name')
-    .ilike('fact_value', `%${query}%`)
-    .is('superseded_by', null)
-    .limit(10);
-  const matches = (facts || []).map((f) => ({
-    name: f.fact_value,
-    relation: f.fact_key.replace(/_name$/, ''),
-    scope: f.entity,
-  }));
-  return {
-    ok: true,
-    result: { contacts: matches },
-    text:
-      matches.length === 0
-        ? `I don't have anyone named "${query}" in your memory yet. If you tell me about them once, I'll remember next time.`
-        : `Found ${matches.length} match${matches.length === 1 ? '' : 'es'}.`,
-  };
+  return _runCapabilityTool('find_contact', args, id, sb);
 }
 
 export async function tool_consult_external_ai(args: OrbToolArgs): Promise<OrbToolResult> {
@@ -650,7 +839,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   search_community: tool_search_community,
   play_music: (args) => tool_play_music(args),
   set_capability_preference: tool_set_capability_preference,
-  read_email: () => tool_read_email(),
+  read_email: tool_read_email,
+  get_schedule: tool_get_schedule,
+  add_to_calendar: tool_add_to_calendar,
   find_contact: tool_find_contact,
   consult_external_ai: (args) => tool_consult_external_ai(args),
   create_index_improvement_plan: tool_create_index_improvement_plan,
@@ -687,4 +878,74 @@ export async function dispatchOrbTool(
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'unknown error' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Vertex adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Vertex's tool-dispatch handler in orb-live.ts returns `{success, result, error}`
+ * (string `result`), not the `{ok, result, text}` shape the LiveKit dispatcher
+ * uses. This adapter calls dispatchOrbTool and translates the response so a
+ * Vertex case body can be replaced with a one-liner:
+ *
+ *   case 'play_music':
+ *     return await dispatchOrbToolForVertex('play_music', args, session, sb);
+ *
+ * The translation rules:
+ *   - ok: true    → success: true, result: text || JSON.stringify(result)
+ *   - ok: false   → success: false, error: error
+ *
+ * The LLM-visible content is the `text` field if present, otherwise the
+ * stringified `result`. This matches how Vertex callers downstream feed the
+ * `result` string into the function-response sent back to Gemini.
+ */
+export interface VertexLikeIdentity {
+  user_id: string;
+  tenant_id: string | null;
+  role?: string | null;
+  vitana_id?: string | null;
+}
+
+export interface VertexLikeToolResult {
+  success: boolean;
+  result: string;
+  error?: string;
+}
+
+export async function dispatchOrbToolForVertex(
+  name: string,
+  args: OrbToolArgs,
+  identity: VertexLikeIdentity,
+  sb: SupabaseClient,
+): Promise<VertexLikeToolResult> {
+  const r = await dispatchOrbTool(
+    name,
+    args,
+    {
+      user_id: identity.user_id,
+      tenant_id: identity.tenant_id,
+      role: identity.role ?? null,
+      vitana_id: identity.vitana_id ?? null,
+    },
+    sb,
+  );
+  if (r.ok === false) {
+    return { success: false, result: '', error: r.error };
+  }
+  // Prefer text (which is what the LLM speaks); fall back to JSON of result.
+  let resultStr: string;
+  if (typeof r.text === 'string' && r.text.length > 0) {
+    resultStr = r.text;
+  } else if (r.result !== undefined) {
+    try {
+      resultStr = JSON.stringify(r.result);
+    } catch {
+      resultStr = String(r.result);
+    }
+  } else {
+    resultStr = '';
+  }
+  return { success: true, result: resultStr };
 }
