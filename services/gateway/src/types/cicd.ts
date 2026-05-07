@@ -721,6 +721,8 @@ export type CicdEventType =
   | 'memory.consolidator.run.completed'
   | 'memory.consolidator.loop.failed'
   | 'memory.index_delta.observed'
+  // VTID-02754: find_community_member voice tool — search-to-profile redirect
+  | 'community.find_member.matched'
   // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
   | 'architecture.investigation.started'
   | 'architecture.investigation.completed'

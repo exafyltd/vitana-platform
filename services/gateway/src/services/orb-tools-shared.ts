@@ -1345,6 +1345,84 @@ export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToo
 }
 
 // ---------------------------------------------------------------------------
+// VTID-02753 — structured Health logging tools (LiveKit/text path).
+// Vertex path is wired in orb-live.ts directly. This shared handler keeps
+// the text-mode pipeline (POST /api/v1/orb/tool) in parity.
+// ---------------------------------------------------------------------------
+
+async function tool_log_health(
+  toolName: 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation',
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  const { logHealthSignal } = await import('./voice-tools/health-log');
+  const today = new Date().toISOString().slice(0, 10);
+  const date = typeof args.date === 'string' && args.date ? args.date : today;
+  const out = await logHealthSignal({
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    tool: toolName,
+    date,
+    amount_ml: typeof args.amount_ml === 'number' ? args.amount_ml : undefined,
+    minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+    activity_type: typeof args.activity_type === 'string' ? args.activity_type : undefined,
+  });
+  if (!out.ok) return { ok: false, error: out.error };
+  const s = out.summary;
+  const deltaText =
+    s.index_delta !== null && s.index_delta > 0 ? ` Vitana Index up ${s.index_delta}.` : '';
+  return {
+    ok: true,
+    result: s,
+    text: `Logged ${s.value} ${s.unit} to ${s.pillar}.${deltaText}`,
+  };
+}
+
+async function tool_get_pillar_subscores(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const pillar = String(args.pillar || '').toLowerCase();
+  const valid = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
+  if (!valid.includes(pillar)) {
+    return { ok: false, error: `pillar must be one of ${valid.join(', ')}` };
+  }
+  const snap = await fetchVitanaIndexForProfiler(sb, identity.user_id);
+  if (!snap) {
+    return { ok: true, result: { pillar, available: false }, text: 'No Vitana Index snapshot yet.' };
+  }
+  const sub = snap.subscores?.[pillar as keyof typeof snap.subscores];
+  const pillarScore = snap.pillars[pillar as keyof typeof snap.pillars] ?? 0;
+  if (!sub) {
+    return {
+      ok: true,
+      result: { pillar, pillar_score: pillarScore, subscores: null, reason: 'no_subscores_for_pillar' },
+      text: `${pillar} sits at ${pillarScore} but per-component breakdown isn't available on this Index row.`,
+    };
+  }
+  const dominant = Object.entries(sub).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+  const hint =
+    sub.data < 10 && sub.completions < 20
+      ? 'Mostly baseline — log entries or connect a tracker to climb.'
+      : sub.streak < 10
+        ? 'Streak is low — consistency for 3+ days will lift this pillar.'
+        : "Solid mix — keep doing what you're doing.";
+  return {
+    ok: true,
+    result: {
+      pillar,
+      pillar_score: pillarScore,
+      subscores: sub,
+      caps: { baseline: 40, completions: 80, data: 40, streak: 40 },
+      dominant,
+      hint,
+    },
+    text: `${pillar}: ${pillarScore}. ${hint}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
@@ -1362,6 +1440,12 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   report_to_specialist: (args) => tool_report_to_specialist(args),
   search_events: tool_search_events,
   search_community: tool_search_community,
+  // VTID-02753 — structured Health logging (LiveKit/text path)
+  log_water:        (args, id, sb) => tool_log_health('log_water', args, id),
+  log_sleep:        (args, id, sb) => tool_log_health('log_sleep', args, id),
+  log_exercise:     (args, id, sb) => tool_log_health('log_exercise', args, id),
+  log_meditation:   (args, id, sb) => tool_log_health('log_meditation', args, id),
+  get_pillar_subscores: tool_get_pillar_subscores,
   play_music: (args) => tool_play_music(args),
   set_capability_preference: tool_set_capability_preference,
   read_email: tool_read_email,

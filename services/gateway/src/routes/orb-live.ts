@@ -2175,6 +2175,64 @@ function buildLiveApiTools(
             required: ['query'],
           },
         },
+        // VTID-02754 — Find one specific community member matching a free-text
+        // query and redirect the user to that member's profile. Always returns
+        // exactly one person; never returns lists.
+        {
+          name: 'find_community_member',
+          description: [
+            'Find ONE specific community member matching a free-text question and',
+            'open their profile for the user. ALWAYS returns exactly one person —',
+            'never a list, never a summary. The tool itself dispatches the',
+            'navigation; you only need to read aloud the one-line voice_summary',
+            'that the tool returns. Then stop speaking.',
+            '',
+            'CALL THIS TOOL when the user asks any "who is..." question about the',
+            'community, including:',
+            '  - Skill / activity:   "who is good at half marathon?"',
+            '                        "who plays golf?"',
+            '                        "who teaches salsa?"',
+            '  - Vitana Index:       "who is the healthiest?"',
+            '                        "who has the best sleep?"',
+            '                        "who is the fittest?"',
+            '  - Soft qualities:     "who is the funniest?"',
+            '                        "who is the smartest?"',
+            '                        "who is the most inspiring?"',
+            '                        "who is the best teacher?"',
+            '  - Tenure:             "who is the newest member?"',
+            '                        "who is the longest-standing member?"',
+            '  - Location:           "who is closest to me?"',
+            '                        "who is in my city?"',
+            '                        "who is near me?"',
+            '  - Composed:           "newest salsa teacher in my city"',
+            '',
+            'After the tool runs:',
+            '  - Read voice_summary aloud (1-2 sentences).',
+            '  - DO NOT add any other commentary — the redirect is dispatched',
+            '    by the tool itself and the widget is closing.',
+            '  - DO NOT mention "I searched", "I looked at", "I found" — the',
+            '    voice_summary already says it.',
+            '',
+            'NEVER use this tool for community groups or events — those have',
+            'their own tools (search_community for groups, search_events for',
+            'meetups/live rooms).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'The user\'s "who is..." question, in natural language. Pass the question verbatim — the backend handles all interpretation, ranking, and edge cases.',
+              },
+              excluded_vitana_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'OPTIONAL — only include if the user explicitly says "show me someone else" / "another one" after a previous find_community_member result. Pass the previously-shown vitana_id(s) here so the ranker picks a different person.',
+              },
+            },
+            required: ['query'],
+          },
+        },
         {
           name: 'get_recommendations',
           description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
@@ -3427,6 +3485,174 @@ function buildLiveApiTools(
             type: 'object',
             properties: { intent_id: { type: 'string' } },
             required: ['intent_id'],
+          },
+        },
+        // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
+        // Five tools backed by POST /api/v1/integrations/manual/log. Distinct
+        // from save_diary_entry (which extracts from free text). Use when the
+        // user explicitly states a quantity ("log 500ml of water", "I slept 7
+        // hours", "30 minutes of running"). Each call writes a row to
+        // health_features_daily and triggers a Vitana Index recompute.
+        {
+          name: 'log_water',
+          description: [
+            "Log a hydration entry when the user explicitly states an amount of water/fluid drunk.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - 'log 500ml of water' / 'trag 500ml Wasser ein'",
+            "  - 'I drank a glass of water' (≈250ml)",
+            "  - 'two liters today' (2000ml)",
+            "  - 'log my water: 1.5L'",
+            "",
+            "Convert to ML before calling — the gateway expects amount_ml as a number.",
+            "Common conversions: 1 glass ≈ 250ml, 1 cup ≈ 240ml, 1 bottle ≈ 500ml, 1L = 1000ml.",
+            "If the amount is ambiguous ('some water'), ASK before calling — do not guess.",
+            "",
+            "After the tool returns, briefly acknowledge ('logged 500 ml — Hydration is up').",
+            "Use the index_delta to celebrate movement on the Hydration pillar.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              amount_ml: {
+                type: 'number',
+                description: 'Amount of fluid in milliliters. Min 50, max 5000.',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today (user local).',
+              },
+            },
+            required: ['amount_ml'],
+          },
+        },
+        {
+          name: 'log_sleep',
+          description: [
+            "Log a sleep duration when the user explicitly reports how long they slept.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - 'I slept 7 hours last night' / 'ich habe 7 Stunden geschlafen'",
+            "  - 'log my sleep: 8.5 hours'",
+            "  - 'got 6 hours' (assume sleep context)",
+            "  - 'slept from 11 to 7' — compute hours yourself",
+            "",
+            "Convert to MINUTES before calling. Examples: 7h → 420, 8.5h → 510, 6h30m → 390.",
+            "If the user gives a sleep range without confirming hours, ASK — don't guess.",
+            "",
+            "After the tool returns, acknowledge briefly. If hours were below 7, gently note",
+            "it without lecturing ('420 minutes logged — under your typical 7 hours').",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Sleep duration in minutes. Min 60, max 960 (16h).',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD for the night logged. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'log_exercise',
+          description: [
+            "Log an exercise/workout session when the user explicitly reports duration.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - '30 minutes of running' / '30 Minuten Lauf'",
+            "  - 'just finished a 45-minute workout'",
+            "  - 'log a 1-hour walk'",
+            "  - 'I did yoga for 20 minutes'",
+            "",
+            "Convert duration to MINUTES. The activity_type is freeform — pass the user's",
+            "phrase verbatim ('running', 'cycling', 'yoga', 'crossfit', 'walk', 'swim').",
+            "If the user reports an activity without a duration ('I went for a run'), ASK",
+            "how long before calling. Don't guess.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Duration in minutes. Min 5, max 600.',
+              },
+              activity_type: {
+                type: 'string',
+                description: "Freeform activity name (e.g. 'running', 'yoga', 'crossfit'). Optional.",
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'log_meditation',
+          description: [
+            "Log a meditation / mindfulness session — boosts the Mental pillar.",
+            "",
+            "CALL THIS WHEN the user says any of:",
+            "  - '10 minutes of meditation' / '10 Minuten Meditation'",
+            "  - 'just finished a 20 minute mindfulness session'",
+            "  - 'log my breathwork — 15 minutes'",
+            "  - 'did box breathing for 5 minutes'",
+            "",
+            "Pass duration in MINUTES. Don't conflate with exercise — meditation/mindfulness/",
+            "breathwork/yoga-nidra all go through this tool because they lift Mental, not",
+            "Exercise.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              minutes: {
+                type: 'integer',
+                description: 'Meditation duration in minutes. Min 1, max 240.',
+              },
+              date: {
+                type: 'string',
+                description: 'Optional YYYY-MM-DD. Defaults to today.',
+              },
+            },
+            required: ['minutes'],
+          },
+        },
+        {
+          name: 'get_pillar_subscores',
+          description: [
+            "Return the sub-score breakdown for a single Vitana Index pillar so you can",
+            "explain WHY the pillar is low. Each pillar has four caps:",
+            "  - baseline (0-40): from the baseline survey",
+            "  - completions (0-80): from calendar tag completions",
+            "  - data (0-40): from health_features_daily (this is what log_* tools lift)",
+            "  - streak (0-40): consecutive-day streak for the pillar",
+            "",
+            "CALL THIS WHEN the user asks:",
+            "  - 'why is my Sleep score low?'",
+            "  - 'what's holding back my Nutrition?'",
+            "  - 'break down my Hydration score'",
+            "  - 'wieso ist meine Bewegung niedrig?'",
+            "",
+            "Speak the answer naturally — 'Your Sleep is mostly baseline because we don't",
+            "have any tracker data yet — connect a wearable or log sleep manually and the",
+            "data sub-score will start filling in.'",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: {
+                type: 'string',
+                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
+                description: 'Which pillar to break down.',
+              },
+            },
+            required: ['pillar'],
           },
         },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
@@ -5311,6 +5537,105 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // VTID-02754 — Find ONE community member by free-text query and redirect
+      // to their profile. Reads the gateway's own /api/v1/community/find-member
+      // endpoint (which runs the 4-tier ranker, persists to
+      // community_search_history, and returns voice_summary + match_recipe).
+      // The handler itself queues the navigation directive so the widget
+      // redirects to /u/<vitana_id>?from=who_search&search_id=<id> on
+      // turn_complete.
+      case 'find_community_member': {
+        const query = String(args.query || '').trim();
+        if (!query) {
+          return { success: false, result: '', error: 'query is required' };
+        }
+        if (!session.identity?.user_id || !session.identity?.tenant_id) {
+          return {
+            success: false,
+            result: '',
+            error: 'Please sign in to search the community.',
+          };
+        }
+        const excluded = Array.isArray(args.excluded_vitana_ids)
+          ? (args.excluded_vitana_ids as unknown[]).filter((s) => typeof s === 'string')
+          : [];
+
+        try {
+          const baseUrl = process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080';
+          const url = `${baseUrl}/api/v1/community/find-member`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+            },
+            body: JSON.stringify({ query, excluded_vitana_ids: excluded }),
+          });
+          const data: any = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.ok) {
+            console.warn(`[VTID-02754] find_community_member upstream failed: ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
+            return {
+              success: false,
+              result: '',
+              error: data?.error || `find_member_failed_${res.status}`,
+            };
+          }
+
+          // Queue navigation. Mirrors the navigate_to_screen flow at line ~4073.
+          session.pendingNavigation = {
+            screen_id: 'profile_with_match',
+            route: data.redirect.route,
+            title: `Profile: ${data.display_name}`,
+            reason: 'find_community_member tool call',
+            decision_source: 'direct',
+            requested_at: Date.now(),
+          };
+          session.navigationDispatched = true;
+
+          // Update in-memory session route so subsequent get_current_screen
+          // calls reflect the navigation. Mirrors navigate_to_screen line 4091-4097.
+          const previousRoute = session.current_route;
+          session.current_route = data.redirect.route;
+          if (previousRoute && previousRoute !== data.redirect.route) {
+            const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+            const deduped = trail.filter(r => r !== previousRoute);
+            session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+          }
+
+          emitOasisEvent({
+            vtid: 'VTID-02754',
+            type: 'community.find_member.matched',
+            source: 'orb-live',
+            status: 'info',
+            message: `find_community_member matched "${query}" → ${data.vitana_id}`,
+            payload: {
+              session_id: session.sessionId,
+              query,
+              tier: data.match_recipe?.tier,
+              lane: data.match_recipe?.lane,
+              winner_vitana_id: data.vitana_id,
+              ethics_reroute: !!data.match_recipe?.ethics_reroute,
+              search_id: data.search_id,
+            },
+            actor_id: session.identity.user_id,
+            actor_role: 'user',
+            surface: 'orb',
+            vitana_id: session.identity?.vitana_id ?? undefined,
+          }).catch(() => {});
+
+          // Return ONLY the voice_summary so Gemini reads it aloud and stops.
+          // The widget is closing — no follow-up commentary required.
+          return {
+            success: true,
+            result: `${data.voice_summary} The user is now being taken to ${data.display_name}'s profile. The widget is closing — stop speaking immediately after this line.`,
+          };
+        } catch (err: any) {
+          console.error('[VTID-02754] find_community_member error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
       case 'get_recommendations': {
         const recType = (args.type as string) || 'all';
         const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -5820,6 +6145,91 @@ async function executeLiveApiToolInner(
           },
           supabase,
         );
+      }
+
+      // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
+      // Five tools (log_water, log_sleep, log_exercise, log_meditation,
+      // get_pillar_subscores) all backed by services/voice-tools/health-log.ts
+      // which calls POST /api/v1/integrations/manual/log internally and reads
+      // the resulting Index snapshot for celebration text.
+      case 'log_water':
+      case 'log_sleep':
+      case 'log_exercise':
+      case 'log_meditation': {
+        try {
+          const { logHealthSignal } = await import('../services/voice-tools/health-log');
+          const today = new Date().toISOString().slice(0, 10);
+          const date = typeof args.date === 'string' && args.date ? args.date : today;
+          const out = await logHealthSignal({
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id,
+            tool: toolName as 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation',
+            date,
+            amount_ml: typeof args.amount_ml === 'number' ? args.amount_ml : undefined,
+            minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+            activity_type: typeof args.activity_type === 'string' ? args.activity_type : undefined,
+          });
+          if (!out.ok) return { success: false, result: '', error: out.error };
+          return { success: true, result: JSON.stringify(out.summary) };
+        } catch (err: any) {
+          console.error(`[${toolName}] error:`, err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
+      }
+
+      case 'get_pillar_subscores': {
+        try {
+          const pillar = String(args.pillar || '').toLowerCase();
+          const valid = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
+          if (!valid.includes(pillar)) {
+            return { success: false, result: '', error: `pillar must be one of ${valid.join(', ')}` };
+          }
+          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
+          const { createClient } = await import('@supabase/supabase-js');
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
+          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+          const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
+          if (!snap) {
+            return {
+              success: true,
+              result: JSON.stringify({ pillar, available: false, reason: 'no_index_snapshot' }),
+            };
+          }
+          const sub = snap.subscores?.[pillar as keyof typeof snap.subscores];
+          if (!sub) {
+            return {
+              success: true,
+              result: JSON.stringify({
+                pillar,
+                pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
+                subscores: null,
+                reason: 'no_subscores_for_pillar',
+                hint: 'Subscores are populated from the v3 compute RPC; older Index rows may not have them.',
+              }),
+            };
+          }
+          return {
+            success: true,
+            result: JSON.stringify({
+              pillar,
+              pillar_score: snap.pillars[pillar as keyof typeof snap.pillars] ?? 0,
+              subscores: sub,
+              caps: { baseline: 40, completions: 80, data: 40, streak: 40 },
+              dominant: Object.entries(sub).reduce((a, b) => (b[1] > a[1] ? b : a))[0],
+              hint:
+                sub.data < 10 && sub.completions < 20
+                  ? 'Mostly baseline — log entries or connect a tracker to climb.'
+                  : sub.streak < 10
+                    ? 'Streak is low — consistency for 3+ days will lift this pillar.'
+                    : 'Solid mix — keep doing what you\'re doing.',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[get_pillar_subscores] error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
+        }
       }
 
       // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
