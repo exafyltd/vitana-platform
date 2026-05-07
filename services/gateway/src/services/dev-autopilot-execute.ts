@@ -1292,6 +1292,40 @@ export async function runExecutionSession(
   }
   const exec = execR.data[0];
 
+  // VTID-AUTOPILOT-PR-FLOOD: final defense — refuse to start an execution
+  // session if the same finding already has an OPEN GitHub PR from a prior
+  // (non-terminal) execution. The earlier guard in approveAutoExecute /
+  // autoApproveTick covers the auto-approve path, but the bridge's
+  // spawnChildExecution() inserts directly into dev_autopilot_executions
+  // for self-heal retries — bypassing both. Combined with the bridge's
+  // DRY_RUN default of 'true' (revertExecutionPR is a no-op stub when
+  // DEV_AUTOPILOT_DRY_RUN is unset), the parent's PR stays open while
+  // the child execution opens a fresh one. The 2026-05-07 live test
+  // reproduced this in 9 minutes (PRs #1964 + #1968 both open against
+  // finding 709356c3). This check catches all paths regardless of how
+  // the execution row got inserted, and it runs before any LLM/GitHub
+  // cost is spent.
+  const priorOpenR = await supa<Array<{ id: string; pr_url: string | null; pr_number: number | null; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${exec.finding_id}`
+    + `&id=neq.${executionId}`
+    + `&pr_url=not.is.null`
+    + `&status=not.in.(completed,self_healed,auto_archived)`
+    + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
+  );
+  if (priorOpenR.ok && priorOpenR.data && priorOpenR.data.length > 0) {
+    const prior = priorOpenR.data[0];
+    const reason = `finding ${exec.finding_id.slice(0, 8)} already has an unmerged PR `
+      + `${prior.pr_url || `#${prior.pr_number}`} from execution ${prior.id.slice(0, 8)} `
+      + `(status=${prior.status}); refusing to open a duplicate. `
+      + `Close or merge the prior PR before retrying.`;
+    return {
+      ok: false,
+      error: reason,
+      session_id: `pr-flood-block-${executionId.slice(0, 8)}`,
+    };
+  }
+
   const planR = await supa<Array<{ plan_markdown: string; files_referenced: string[] }>>(
     s,
     `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&limit=1`,
