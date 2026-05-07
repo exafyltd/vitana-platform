@@ -30,16 +30,17 @@ import {
 
 const router = Router();
 
-// VTID-VOICE-LAB-HEALTH-PUBLIC: register `/health` BEFORE `requireAuth` so
-// uptime probes (and the self-healing analyzer's synthetic monitor) can
-// hit it without a Bearer token. Without this, every probe came back 401,
-// the analyzer misclassified the 401 as `import_error`, and a fresh
-// VTID-027xx self-heal failure event was logged on every check —
-// ~20 false-positive VTIDs (02756 → 02801) accumulated over 2 days
-// before the cause was traced. The `// public-route` comment near
-// the duplicate `router.get('/health')` registration further down was a
-// hint that this was always intended to be public; gating it under
-// `router.use(requireAuth)` was the bug.
+// VTID-VOICE-LAB-HEALTH-PUBLIC: register the health endpoint BEFORE
+// `requireAuth` so uptime probes (and the self-healing analyzer's
+// synthetic monitor) can hit it without a Bearer token. Without this,
+// every probe came back 401, the analyzer misclassified the 401 as
+// `import_error`, and a fresh VTID-027xx self-heal failure event was
+// logged on every check — ~20 false-positive VTIDs (02756 → 02801)
+// accumulated over 2 days before the cause was traced. The duplicate
+// registration that used to live near the bottom of this file with a
+// `public-route` marker comment was always intended to be public;
+// gating it under `requireAuth` was the bug. That now-shadowed
+// duplicate has been removed.
 router.get('/health', (_req: Request, res: Response) => {
   return res.json({
     ok: true,
