@@ -610,28 +610,60 @@ export async function tool_ask_pillar_agent(
 }
 
 export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolResult> {
-  const feature = String(args.feature ?? '').trim();
-  const FEATURE_EXPLAIN: Record<string, string> = {
-    diary:
-      'The Vitana Diary lets the user dictate a paragraph about their day — water, food, exercise, sleep, mental state. The system extracts pillar contributions and updates the Vitana Index automatically.',
-    autopilot:
-      'Autopilot proposes one-tap recommendations across the user\'s 5 pillars. Each recommendation has an impact_score and a contribution_vector showing which pillar it lifts. Activating a recommendation schedules calendar events and grows the Index.',
-    'vitana index':
-      'The Vitana Index is a 0-999 longevity score across 5 pillars (Nutrition, Hydration, Exercise, Sleep, Mental). Tier ladder: Starting → Early → Building → Strong → Really good → Elite (≥800).',
-    reminders:
-      'Reminders are voice-set: "remind me at 8pm to take magnesium" → tick → bell + spoken interrupt + banner.',
-    intents:
-      'Intents express what you\'re looking for: a coffee buddy, a service, a partner. The matchmaker scans the community for matches.',
+  // Accept either `topic` (Vertex's canonical key) or legacy `feature`.
+  // Both pipelines must work — the LiveKit Python tool sends `feature`, the
+  // Vertex-side function-tool schema declares `topic`.
+  const topic = String(args.topic ?? args.feature ?? '').trim();
+  if (!topic) {
+    return { ok: false, error: 'topic is required' };
+  }
+  const mode = args.mode === 'teach_only' || args.mode === 'teach_then_nav'
+    ? (args.mode as 'teach_only' | 'teach_then_nav')
+    : 'teach_then_nav';
+
+  const { explainFeature } = await import('./explain-feature-service');
+  const result = explainFeature(topic);
+
+  if (!result.found) {
+    // Vertex's not-found path returns guidance text steering voice to
+    // search_knowledge with KB instructions. Mirror that exactly so both
+    // pipelines produce identical fallback behaviour.
+    const payload = {
+      found: false as const,
+      reason: result.reason ?? 'no_pattern_match',
+      guidance:
+        'Voice should fall back to search_knowledge. Search the Maxina ' +
+        'Instruction Manual (kb/instruction-manual/maxina/*) first — it covers ' +
+        'every concept and screen with fixed sections (What it is / Why it ' +
+        'matters / Where to find it / What you see / How to use it). The ' +
+        'kb/vitana-system/how-to/ corpus is supporting material.',
+    };
+    return {
+      ok: true,
+      result: payload,
+      // Vertex returned JSON.stringify(payload) as `result` (string). For voice
+      // it doesn't actually speak this — the LLM sees the structured fall-back
+      // signal and chooses the next tool. dispatchOrbToolForVertex will
+      // stringify the structured result for Vertex callers.
+      text: '',
+    };
+  }
+
+  const payload = {
+    found: true as const,
+    mode,
+    topic_canonical: result.topic_canonical,
+    pillar_lift: result.pillar_lift,
+    summary_voice_en: result.summary_voice_en,
+    summary_voice_de: result.summary_voice_de,
+    steps_voice_en: result.steps_voice_en,
+    steps_voice_de: result.steps_voice_de,
+    redirect_route: result.redirect_route,
+    redirect_offer_en: result.redirect_offer_en,
+    redirect_offer_de: result.redirect_offer_de,
+    citation: result.citation,
   };
-  const key = feature.toLowerCase().trim();
-  const summary = FEATURE_EXPLAIN[key] || null;
-  return {
-    ok: true,
-    result: { feature, summary },
-    text:
-      summary ||
-      `I don't have a canned explanation for "${feature}" — try search_knowledge instead, or ask me what you'd like to know about it.`,
-  };
+  return { ok: true, result: payload, text: '' };
 }
 
 export async function tool_resolve_recipient(
