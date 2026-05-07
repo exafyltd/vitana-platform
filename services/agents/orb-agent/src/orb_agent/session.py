@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-07-tts-language-fix"
+CODE_VERSION = "agent-2026-05-07-tts-fix-llm-greeting"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -417,14 +417,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         )
     )
 
-    # ── TTS-isolation diagnostic ─────────────────────────────────────
-    # Wire-level capture proved the agent publishes an audio track but every
-    # sample is zero (RMS=0.14). That means the AgentSession audio source is
-    # alive but the TTS plugin never emitted real bytes. To isolate whether
-    # the LLM-to-TTS pipeline is broken vs the TTS plugin itself is broken,
-    # we replace the LLM-driven greeting with a deterministic session.say()
-    # that goes straight to TTS. We also hook speech_created so we can see
-    # in the firehose whether TTS was even asked to speak.
+    # ── speech_created phase trace (kept post-fix for ongoing visibility) ──
+    # Surfaces every TTS turn in the firehose so future cascade regressions
+    # are visible in seconds, not weeks.
     try:
         @session.on("speech_created")  # type: ignore[misc]
         def _on_speech(ev: Any) -> None:  # noqa: ARG001
@@ -442,53 +437,52 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not hook speech_created: %s", exc)
 
-    vid = (bootstrap.vitana_id or "").strip()
-    if identity.is_anonymous:
-        greeting_text = "Hi! How can I help you today?"
-    elif vid:
-        greeting_text = f"Hi at {vid}! What can I help with today?"
+    # Initial greeting — uses the LLM (via generate_reply) so the agent reads
+    # the user's name and verified facts from the system-prompt's WHO YOU ARE
+    # TALKING TO block. The TTS bug that caused 25s of dead air on every
+    # session is fixed in providers.py (language_code → language).
+    if not identity.is_anonymous:
+        vid = (bootstrap.vitana_id or "").strip()
+        try:
+            await session.generate_reply(
+                instructions=(
+                    "Greet the user warmly RIGHT NOW. **MUST** include their "
+                    f"@vitana_id handle (it is @{vid or 'their handle'}) in the "
+                    "greeting so they can hear you recognize them. If a "
+                    "`user_name` fact is in your YOUR USER'S CONTEXT block, "
+                    "use the first name (e.g. 'Hi Dragan!'). Otherwise just "
+                    f"use the handle: 'Hi @{vid or 'there'}!'. ONE short "
+                    "sentence + brief 'What can I help with today?'. NEVER "
+                    "say you don't know them — you do. NEVER apologize for "
+                    "anything in the greeting."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("initial greeting generate_reply failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
     else:
-        greeting_text = "Hi there! What can I help with today?"
-
-    # session.say bypasses the LLM and goes straight to the TTS plugin.
-    # If audio bytes are non-silent after this, TTS works and the LLM
-    # (or generate_reply) was the broken layer. If still silent, the
-    # TTS plugin itself is broken.
-    try:
-        say_handle = session.say(greeting_text, add_to_chat_ctx=False)
-        # If session.say returns an awaitable, await it so we know when
-        # the speech finished. In livekit-agents 1.x it returns a SpeechHandle
-        # we can await.
-        if hasattr(say_handle, "wait_for_playout"):
-            await asyncio.wait_for(say_handle.wait_for_playout(), timeout=20)
-        elif asyncio.iscoroutine(say_handle):
-            await asyncio.wait_for(say_handle, timeout=20)
-        asyncio.create_task(
-            _early_trace_heartbeat(
-                cfg.gateway_url,
-                {
-                    "user_id": identity.user_id or "unknown",
-                    "code_version": CODE_VERSION,
-                    "phase": "say_ok",
-                    "orb_session_id": orb_session_id,
-                    "greeting_text": greeting_text,
-                },
+        try:
+            await session.generate_reply(
+                instructions=(
+                    "Greet the visitor briefly as Vitana. They are not signed "
+                    "in, so do not invent personal details. Offer to help with "
+                    "general questions or guide them to sign in for personalized "
+                    "answers. One short sentence."
+                ),
             )
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("session.say failed: %s", exc)
-        asyncio.create_task(
-            _early_trace_heartbeat(
-                cfg.gateway_url,
-                {
-                    "user_id": identity.user_id or "unknown",
-                    "code_version": CODE_VERSION,
-                    "phase": "say_failed",
-                    "orb_session_id": orb_session_id,
-                    "error": str(exc)[:500],
-                },
-            )
-        )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("anonymous greeting generate_reply failed: %s", exc)
 
     # Park here until the room disconnects. The AgentSession keeps running
     # autonomously via the tasks it spawned in start(); we just need to
