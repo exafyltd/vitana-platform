@@ -47,6 +47,14 @@ export interface OrbToolIdentity {
   tenant_id: string | null;
   role: string | null;
   vitana_id?: string | null;
+  /**
+   * Optional Bearer JWT for the user. Some tool handlers self-call the
+   * gateway's HTTP API for tier checks + authoritative business logic
+   * (e.g. /api/v1/intent-scan, /api/v1/intents/:id/share). Pipelines that
+   * have a user JWT in hand (Vertex's session.access_token,
+   * LiveKit's gateway-issued user_jwt) should populate this.
+   */
+  user_jwt?: string | null;
 }
 
 export type OrbToolResult =
@@ -839,61 +847,191 @@ export async function tool_share_link(
 }
 
 export async function tool_scan_existing_matches(
-  _args: OrbToolArgs,
+  args: OrbToolArgs,
   id: OrbToolIdentity,
-  sb: SupabaseClient,
+  _sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const { data: mine } = await sb
-    .from('intents')
-    .select('intent_id, intent_kind')
-    .eq('requester_user_id', id.user_id)
-    .eq('status', 'open');
-  return {
-    ok: true,
-    result: {
-      open_intents_count: (mine || []).length,
-      open_intents: (mine || []).map((m) => ({ id: m.intent_id, kind: m.intent_kind })),
-    },
-    text:
-      (mine || []).length === 0
-        ? `You have no open intents yet — post one and I'll scan for matches.`
-        : `You have ${(mine || []).length} open intent${(mine || []).length === 1 ? '' : 's'}.`,
-  };
+  // PR B-7: lifted from orb-live.ts:7004 (VTID-DANCE-D11.B). Vertex called
+  // the canonical /api/v1/intent-scan internal endpoint with the user's
+  // JWT — that endpoint enforces tier limits + matchmaker rate caps. The
+  // previous shared stub queried the `intents` table directly with no
+  // tier check, no scoring, just raw open-intent count.
+  const intentKind = String(args.intent_kind ?? '').trim();
+  if (!intentKind) {
+    return { ok: false, error: 'intent_kind is required' };
+  }
+  if (!id.user_jwt) {
+    return { ok: false, error: 'scan_existing_matches requires user_jwt; call from an authenticated session' };
+  }
+  const params = new URLSearchParams({ intent_kind: intentKind });
+  if (args.category_prefix) params.set('category_prefix', String(args.category_prefix));
+  if (args.variety) params.set('variety', String(args.variety));
+
+  try {
+    const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intent-scan?${params.toString()}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${id.user_jwt}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: (data as { error?: string }).error || 'scan_failed' };
+    }
+    return { ok: true, result: data, text: JSON.stringify(data) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'scan_existing_matches error' };
+  }
 }
 
 export async function tool_share_intent_post(
   args: OrbToolArgs,
   id: OrbToolIdentity,
-  sb: SupabaseClient,
+  _sb: SupabaseClient,
 ): Promise<OrbToolResult> {
+  // PR B-7: lifted from orb-live.ts:6940 (VTID-DANCE-D10). Vertex's auth
+  // impl is a 2-stage flow (read-back → confirm) that POSTs to the
+  // canonical /api/v1/intents/:id/share endpoint with the user's JWT.
+  // The previous shared stub just sent a chat message with the raw URL —
+  // no tier check, no notification handling, no recipient validation
+  // beyond regex.
   const intentId = String(args.intent_id ?? '').trim();
-  const recipient = String(args.with_recipient ?? '').trim();
-  if (!intentId || !recipient) return { ok: false, error: 'intent_id and with_recipient are required' };
-  return tool_send_chat_message(
-    { recipient_id: recipient, body_text: `I posted this intent — see if it's a match: /community/intent/${intentId}` },
-    id,
-    sb,
-  );
+  const recipients = Array.isArray(args.recipient_vitana_ids)
+    ? (args.recipient_vitana_ids as unknown[])
+        .map((r) => String(r ?? '').trim().replace(/^@/, '').toLowerCase())
+        .filter((r) => /^[a-z][a-z0-9]{3,15}$/.test(r))
+    : [];
+  const note = typeof args.note === 'string' ? (args.note as string).slice(0, 280) : null;
+  const confirmed = Boolean(args.confirmed);
+
+  if (!intentId) return { ok: false, error: 'intent_id is required' };
+  if (recipients.length === 0) {
+    return { ok: false, error: 'recipient_vitana_ids must include at least one valid id' };
+  }
+
+  // Stage 1 — read-back without dispatching.
+  if (!confirmed) {
+    const payload = {
+      ok: true,
+      stage: 'confirmation' as const,
+      intent_id: intentId,
+      recipients,
+      note,
+      instructions: `Read back the recipients (@${recipients.join(', @')}) and ask the user to confirm. Then call share_intent_post again with confirmed=true.`,
+    };
+    return { ok: true, result: payload, text: JSON.stringify(payload) };
+  }
+
+  if (!id.user_jwt) {
+    return { ok: false, error: 'share_intent_post requires user_jwt; call from an authenticated session' };
+  }
+
+  try {
+    const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${encodeURIComponent(intentId)}/share`;
+    const fetchRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${id.user_jwt}`,
+      },
+      body: JSON.stringify({
+        recipient_vitana_ids: recipients,
+        note: note || undefined,
+        channel: 'in_app',
+      }),
+    });
+    const data = await fetchRes.json().catch(() => ({}));
+    if (!fetchRes.ok) {
+      return { ok: false, error: (data as { error?: string }).error || 'share_failed' };
+    }
+    return { ok: true, result: data, text: JSON.stringify(data) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'share_intent_post error' };
+  }
 }
 
 export async function tool_respond_to_match(
   args: OrbToolArgs,
-  _id: OrbToolIdentity,
+  id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
+  // PR B-7: lifted from orb-live.ts:6855 (VTID-01975). Vertex's auth impl:
+  //   - 2-stage confirmation
+  //   - Resolves intent A vs B owner so the right state field is set
+  //   - Computes mutual_interest unlock when both parties have responded
+  //   - Calls tryUnlockReveal + notifyMutualInterest on mutual interest
+  // The previous shared stub naively wrote `state = response` with no owner
+  // resolution and no notification — every voice response that should have
+  // unlocked mutual_interest stayed stuck in *_responded_by_X state.
   const matchId = String(args.match_id ?? '').trim();
-  const response = String(args.response ?? '').trim();
-  if (!matchId || !response) return { ok: false, error: 'match_id and response are required' };
-  const allowed = new Set(['interested', 'declined', 'pending', 'accepted']);
-  if (!allowed.has(response)) {
-    return { ok: false, error: `response must be one of ${Array.from(allowed).join(', ')}` };
+  const response = String(args.response ?? '').trim() as 'express_interest' | 'decline';
+  const confirmed = args.confirmed === true;
+
+  if (!matchId || !['express_interest', 'decline'].includes(response)) {
+    return {
+      ok: false,
+      error: 'match_id and response (express_interest|decline) required',
+    };
   }
-  const { error } = await sb
-    .from('intent_matches')
-    .update({ state: response, updated_at: new Date().toISOString() })
-    .eq('match_id', matchId);
-  if (error) return { ok: false, error: `respond failed: ${error.message}` };
-  return { ok: true, result: { match_id: matchId, response }, text: `Marked match as ${response}.` };
+  if (!confirmed) {
+    const payload = {
+      ok: true,
+      stage: 'awaiting_confirmation',
+      instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
+    };
+    return { ok: true, result: payload, text: JSON.stringify(payload) };
+  }
+
+  try {
+    const { data: m } = await sb
+      .from('intent_matches')
+      .select('match_id, intent_a_id, intent_b_id, state, kind_pairing')
+      .eq('match_id', matchId)
+      .maybeSingle();
+    if (!m) return { ok: false, error: 'match_not_found' };
+
+    const { data: aOwner } = await sb
+      .from('user_intents')
+      .select('requester_user_id')
+      .eq('intent_id', (m as { intent_a_id: string }).intent_a_id)
+      .maybeSingle();
+    const isA =
+      aOwner && (aOwner as { requester_user_id: string }).requester_user_id === id.user_id;
+    const stateField =
+      response === 'express_interest'
+        ? isA
+          ? 'responded_by_a'
+          : 'responded_by_b'
+        : 'declined';
+
+    let nextState: string = stateField;
+    if (response === 'express_interest') {
+      const curState = (m as { state: string }).state;
+      if (curState === 'responded_by_b' && stateField === 'responded_by_a') nextState = 'mutual_interest';
+      if (curState === 'responded_by_a' && stateField === 'responded_by_b') nextState = 'mutual_interest';
+    }
+
+    await sb.from('intent_matches').update({ state: nextState }).eq('match_id', matchId);
+
+    if (nextState === 'mutual_interest') {
+      const { tryUnlockReveal } = await import('./intent-mutual-reveal');
+      const { notifyMutualInterest } = await import('./intent-notifier');
+      await tryUnlockReveal(matchId);
+      await notifyMutualInterest(matchId);
+    }
+
+    const payload = {
+      ok: true,
+      stage: 'updated',
+      state: nextState,
+      mutual_interest_unlocked: nextState === 'mutual_interest',
+    };
+    return {
+      ok: true,
+      result: payload,
+      text: JSON.stringify(payload),
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'respond_to_match error' };
+  }
 }
 
 export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToolResult> {
@@ -1038,6 +1176,7 @@ export interface VertexLikeIdentity {
   tenant_id: string | null;
   role?: string | null;
   vitana_id?: string | null;
+  user_jwt?: string | null;
 }
 
 export interface VertexLikeToolResult {
@@ -1060,6 +1199,7 @@ export async function dispatchOrbToolForVertex(
       tenant_id: identity.tenant_id,
       role: identity.role ?? null,
       vitana_id: identity.vitana_id ?? null,
+      user_jwt: identity.user_jwt ?? null,
     },
     sb,
   );
