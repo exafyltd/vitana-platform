@@ -47,6 +47,16 @@ class GatewayClient:
         # here so unit tests on machines without livekit installed don't
         # need to import rtc just to construct a stub.
         self.room: Any = None
+        # PR 1.B-3 (VTID-NAV-TIMEJOURNEY): the user's LIVE current screen +
+        # recent-routes ring buffer. session.py seeds these from the
+        # /orb/context-bootstrap response at session start; later PRs (1.B-4
+        # navigate, 1.B-5 navigator gates) eagerly mutate them after every
+        # navigate*-tool call so the next get_current_screen call sees fresh
+        # values without an extra round-trip to the gateway. Mirrors how
+        # Vertex's session.current_route + session.recent_routes track state
+        # between turns.
+        self.current_route: str | None = None
+        self.recent_routes: list[str] = []
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}

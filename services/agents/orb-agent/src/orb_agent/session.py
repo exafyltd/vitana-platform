@@ -339,6 +339,16 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # the same way the SSE/WS branch does on Vertex.
     gw.room = ctx.room
 
+    # PR 1.B-3 (VTID-NAV-TIMEJOURNEY): seed the agent's view of the user's
+    # current screen + recent-routes trail from the bootstrap response. The
+    # get_current_screen tool wrapper reads these and the gateway's shared
+    # tool_get_current_screen resolves them through the navigation catalog
+    # for a friendly answer to "where am I?". Future PRs in this phase
+    # (1.B-4 free-text navigate, 1.B-5 navigator gates) eagerly update them
+    # post-navigate so subsequent get_current_screen calls see fresh values.
+    gw.current_route = bootstrap.current_route
+    gw.recent_routes = list(bootstrap.recent_routes or [])
+
     session = AgentSession(
         stt=cascade.stt,
         llm=cascade.llm,

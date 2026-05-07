@@ -746,6 +746,31 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
     return summarize(body)
 
 
+# VTID-NAV-TIMEJOURNEY (PR 1.B-3) — answer "where am I?" reliably by reading
+# the GatewayClient's tracked current_route + recent_routes (seeded from the
+# bootstrap response in session.py and eagerly updated by future
+# navigate-tool wrappers in PRs 1.B-4 / 1.B-5). Forwards both fields in the
+# args payload so the shared tool_get_current_screen handler resolves them
+# through the navigation catalog the same way it does for Vertex.
+@function_tool
+async def get_current_screen(context: RunContext) -> str:
+    """Return the user's LIVE current screen — title, description, and the trail
+    of screens they were on recently. Use this whenever the user asks "where am
+    I?" / "what page am I on?" / "where was I just now?". Self-contained — does
+    NOT need any user-supplied arguments.
+    """
+    gw = _gw(context)
+    body = await _dispatch(
+        context,
+        "get_current_screen",
+        {
+            "current_route": gw.current_route,
+            "recent_routes": list(gw.recent_routes or []),
+        },
+    )
+    return summarize(body)
+
+
 # ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
@@ -806,8 +831,8 @@ def all_tool_names() -> list[str]:
         "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
         "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches",
         "get_matchmaker_result",
-        # Navigation (1)
-        "navigate_to_screen",
+        # Navigation (2)
+        "navigate_to_screen", "get_current_screen",
     ]
 
 
