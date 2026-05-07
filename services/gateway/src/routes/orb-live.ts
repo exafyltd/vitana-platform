@@ -3822,253 +3822,118 @@ async function handleNavigate(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
-  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
+  // PR 1.B-4: lifted to services/orb-tools-shared.ts:tool_navigate. Both
+  // pipelines now run the same consultNavigator + decision logic + directive
+  // payload construction + OASIS emit chain. Vertex post-processes the
+  // result to: emit the directive immediately on its SSE/WS transport,
+  // mutate session.pendingNavigation + session.current_route +
+  // session.recent_routes, and persist the navigator-action memory row.
+  // LiveKit's wrapper publishes the same directive over the room data
+  // channel via _dispatch_with_directive (PR 1.B-0).
   const question = String(args.question || '').trim();
   if (!question) {
     return { success: false, result: '', error: 'navigate requires a non-empty question.' };
   }
+  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
 
-  // Surface-scoped role: the ORB's navigator must stay inside the surface the
-  // user is actually in. The DB's active_role is not authoritative here — a
-  // developer on vitanaland.com is a community user for navigation purposes.
-  const surfaceRole = deriveSurfaceRole(session.current_route);
-
-  // Step 1: Run the consult service (catalog + KB + memory)
-  const consultInput: NavigatorConsultInput = {
-    question,
-    lang: session.lang || 'en',
-    identity: hasIdentity
-      ? {
-          user_id: session.identity!.user_id,
-          tenant_id: session.identity!.tenant_id as string,
-          role: surfaceRole,
-        }
-      : null,
-    is_anonymous: !!session.isAnonymous || !hasIdentity,
-    current_route: session.current_route,
-    recent_routes: session.recent_routes,
-    transcript_excerpt: session.inputTranscriptBuffer,
-    session_id: session.sessionId,
-    turn_number: session.turn_count,
-    conversation_start: session.createdAt.toISOString(),
-  };
-
-  const consultResult = await consultNavigator(consultInput);
-
-  // Telemetry
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.consulted',
-    source: 'orb-live-ws',
-    status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigate: confidence=${consultResult.confidence}, decision=${consultResult.decision}, primary=${consultResult.primary?.screen_id || 'none'}`,
-    payload: {
-      session_id: session.sessionId,
+  const sb = getSupabase();
+  if (!sb) {
+    return { success: false, result: '', error: 'supabase_not_configured' };
+  }
+  const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+  const r = await dispatchOrbTool(
+    'navigate',
+    {
       question,
-      primary_screen_id: consultResult.primary?.screen_id || null,
-      confidence: consultResult.confidence,
-      // VTID-02781: surface decision in consulted-event payload
-      decision: consultResult.decision,
-      alternative_screen_ids: consultResult.alternatives.slice(0, 3).map(a => a.screen_id),
-      kb_excerpt_count: consultResult.kb_excerpt_count,
-      memory_hint_count: consultResult.memory_hint_count,
-      ms_elapsed: consultResult.ms_elapsed,
-      is_anonymous: consultInput.is_anonymous,
+      current_route: session.current_route ?? null,
+      recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
+      transcript_excerpt: session.inputTranscriptBuffer || '',
     },
-  }).catch(() => {});
+    {
+      user_id: session.identity?.user_id ?? '',
+      tenant_id: session.identity?.tenant_id ?? null,
+      role: session.identity?.role ?? null,
+      vitana_id: session.identity?.vitana_id ?? null,
+      lang: session.lang ?? 'en',
+      session_id: session.sessionId,
+      session_started_iso: session.createdAt.toISOString(),
+      turn_number: session.turn_count,
+    },
+    sb,
+  );
 
-  // VTID-02781: If the consult decided the request is ambiguous, return an
-  // either/or clarification BEFORE auto-navigating. Better to ask once than
-  // to redirect to the wrong screen.
-  if (
-    consultResult.decision === 'ambiguous' &&
-    consultResult.alternatives.length >= 2 &&
-    !consultResult.blocked_reason
-  ) {
-    const top = consultResult.alternatives[0];
-    const second = consultResult.alternatives[1];
-    const third = consultResult.alternatives[2] || null;
-    emitOasisEvent({
-      vtid: 'VTID-02781',
-      type: 'orb.navigator.disambiguated',
-      source: 'orb-live-ws',
-      status: 'info',
-      message: `disambiguating: ${top.screen_id} vs ${second.screen_id}${third ? ' vs ' + third.screen_id : ''}`,
-      payload: {
-        session_id: session.sessionId,
-        question,
-        candidates: consultResult.alternatives.slice(0, 3).map(a => ({
-          screen_id: a.screen_id, route: a.route, title: a.title,
-        })),
-        ms_elapsed: consultResult.ms_elapsed,
-        lang: consultInput.lang,
-      },
-    }).catch(() => {});
-
-    const lines: string[] = [];
-    lines.push('NAVIGATING_TO: null (waiting for user choice — DO NOT redirect)');
-    lines.push(`DECISION: ambiguous`);
-    lines.push(`CANDIDATES:`);
-    consultResult.alternatives.slice(0, 3).forEach((a, i) => {
-      lines.push(`  [${i + 1}] ${a.screen_id} — ${a.title} (${a.route})`);
-    });
-    const askLine =
-      consultResult.suggested_question ||
-      (consultInput.lang.startsWith('de')
-        ? `Meinst du ${top.title} oder ${second.title}${third ? ' — oder ' + third.title : ''}?`
-        : `Do you mean ${top.title} or ${second.title}${third ? ' — or ' + third.title : ''}?`);
-    lines.push(`ASK_USER: ${askLine}`);
-    lines.push('');
-    lines.push('Ask the either/or question naturally. WAIT for the user to pick.');
-    lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
-    lines.push('do not call navigate again unless the user rephrases their request.');
-    return { success: true, result: lines.join('\n') };
+  if (r.ok === false) {
+    return { success: false, result: '', error: r.error };
   }
 
-  // Step 2: If we found a match with sufficient confidence, auto-navigate
-  if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
-    const entry = lookupNavScreen(consultResult.primary.screen_id);
-    if (entry) {
-      const lang = session.lang || 'en';
-      const content = getNavContent(entry, lang);
+  const result = (r.result ?? {}) as {
+    decision?: string;
+    confidence?: string;
+    screen_id?: string;
+    route?: string;
+    title?: string;
+    reason?: string;
+    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; vtid: string };
+  };
 
-      // Queue the navigation
-      session.pendingNavigation = {
-        screen_id: entry.screen_id,
-        route: entry.route,
-        title: content.title,
+  // Vertex-only: when the shared dispatcher returned a directive, emit it
+  // immediately on the SSE/WS transport (VTID-NAV-FAST), set
+  // session.pendingNavigation (cleared right away so turn_complete won't
+  // double-dispatch), eagerly update session.current_route +
+  // session.recent_routes, and persist the navigator-action memory row.
+  if (result.directive && result.screen_id && result.route && result.title) {
+    const directive = result.directive;
+    const directiveJson = JSON.stringify(directive);
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+    }
+    if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
+      try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+    }
+    console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${result.screen_id} (${result.route})`);
+
+    session.pendingNavigation = {
+      screen_id: result.screen_id,
+      route: result.route,
+      title: result.title,
+      reason: question,
+      decision_source: 'direct',
+      requested_at: Date.now(),
+    };
+    session.navigationDispatched = true;
+    session.pendingNavigation = undefined;
+
+    const previousRoute = session.current_route;
+    session.current_route = result.route;
+    if (previousRoute && previousRoute !== result.route) {
+      const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+      const deduped = trail.filter((rt) => rt !== previousRoute);
+      session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+    }
+
+    if (hasIdentity) {
+      const lang = session.lang || 'en';
+      writeNavigatorActionMemory({
+        identity: {
+          user_id: session.identity!.user_id,
+          tenant_id: session.identity!.tenant_id as string,
+          role: session.active_role || session.identity!.role || undefined,
+        },
+        screen: {
+          screen_id: result.screen_id,
+          route: result.route,
+          title: result.title,
+        },
         reason: question,
         decision_source: 'direct',
-        requested_at: Date.now(),
-      };
-      session.navigationDispatched = true;
-
-      // VTID-NAV-FAST: Dispatch orb_directive IMMEDIATELY — don't wait for
-      // turn_complete. The widget starts its audio-drain-and-close loop in
-      // parallel while Gemini is still generating the guidance speech. By
-      // the time the user hears the full guidance, the drain is already
-      // complete and navigation fires instantly. The turn_complete handler
-      // will see pendingNavigation=undefined (cleared below) and skip its
-      // own dispatch, avoiding double-send.
-      const directive = {
-        type: 'orb_directive',
-        directive: 'navigate',
-        screen_id: entry.screen_id,
-        route: entry.route,
-        title: content.title,
-        reason: question,
-        vtid: 'VTID-NAV-01',
-      };
-      const directiveJson = JSON.stringify(directive);
-      if (session.sseResponse) {
-        try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
-      }
-      if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
-        try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-      }
-      console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${entry.screen_id} (${entry.route})`);
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.dispatched',
-        source: 'orb-live-ws',
-        status: 'info',
-        message: `immediate dispatch to ${entry.screen_id}`,
-        payload: {
-          session_id: session.sessionId,
-          screen_id: entry.screen_id,
-          route: entry.route,
-          drain_wait_ms: 0,
-        },
+        orb_session_id: session.sessionId,
+        conversation_id: session.conversation_id,
+        lang,
       }).catch(() => {});
-      // Clear pending so turn_complete won't re-dispatch.
-      session.pendingNavigation = undefined;
-
-      // Eagerly update route for get_current_screen
-      const previousRoute = session.current_route;
-      session.current_route = entry.route;
-      if (previousRoute && previousRoute !== entry.route) {
-        const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
-        const deduped = trail.filter(r => r !== previousRoute);
-        session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
-      }
-
-      // Persist navigator action memory (authenticated only)
-      if (hasIdentity) {
-        writeNavigatorActionMemory({
-          identity: {
-            user_id: session.identity!.user_id,
-            tenant_id: session.identity!.tenant_id as string,
-            role: session.active_role || session.identity!.role || undefined,
-          },
-          screen: {
-            screen_id: entry.screen_id,
-            route: entry.route,
-            title: content.title,
-          },
-          reason: question,
-          decision_source: 'direct',
-          orb_session_id: session.sessionId,
-          conversation_id: session.conversation_id,
-          lang,
-        }).catch(() => {});
-      }
-
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.requested',
-        source: 'orb-live-ws',
-        status: 'info',
-        message: `navigate auto-redirect to ${entry.screen_id} (${entry.route})`,
-        payload: {
-          session_id: session.sessionId,
-          screen_id: entry.screen_id,
-          route: entry.route,
-          reason: question,
-          is_anonymous: consultInput.is_anonymous,
-        },
-      }).catch(() => {});
-
-      // Build the guidance response for Gemini to speak
-      const lines: string[] = [];
-      lines.push(`NAVIGATING_TO: ${content.title}`);
-      lines.push(`GUIDANCE: ${consultResult.explanation}`);
-      if (consultResult.kb_excerpts.length > 0) {
-        lines.push('ADDITIONAL_CONTEXT:');
-        consultResult.kb_excerpts.forEach((x, i) => lines.push(`  [${i + 1}] ${x}`));
-      }
-      lines.push('');
-      lines.push('Speak the GUIDANCE naturally to the user. Be helpful and warm —');
-      lines.push('explain the feature, tell them what they can do on that screen,');
-      lines.push('and let them know you are taking them there. The redirect happens');
-      lines.push('automatically when you finish speaking.');
-
-      return { success: true, result: lines.join('\n') };
     }
   }
 
-  // Step 3: No confident match or blocked — ask the user to clarify
-  if (consultResult.blocked_reason === 'requires_auth') {
-    return {
-      success: true,
-      result: 'NAVIGATING_TO: null\nGUIDANCE: ' + consultResult.explanation +
-        '\nTell the user this feature requires joining the community and offer to take them to registration.',
-    };
-  }
-
-  if (consultResult.confirmation_needed && consultResult.primary && consultResult.alternative) {
-    return {
-      success: true,
-      result: `NAVIGATING_TO: null (waiting for user choice)\nGUIDANCE: ${consultResult.explanation}\n` +
-        `ASK_USER: ${consultResult.suggested_question || `Would you like to go to ${consultResult.primary.title} or ${consultResult.alternative.title}?`}\n` +
-        'Ask the user to choose, then call navigate again with their answer.',
-    };
-  }
-
-  return {
-    success: true,
-    result: 'NAVIGATING_TO: null\nGUIDANCE: ' + consultResult.explanation +
-      '\nAsk the user to clarify what they are looking for so you can help them find it.',
-  };
+  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
 }
 
 // Legacy handler — kept for test imports but no longer called by the tool path

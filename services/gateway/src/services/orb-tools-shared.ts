@@ -1818,6 +1818,297 @@ export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToo
 }
 
 // ---------------------------------------------------------------------------
+// VTID-NAV-UNIFIED — free-text `navigate` tool (PR 1.B-4)
+//
+// Lifts orb-live.ts:handleNavigate into the shared dispatcher: runs the
+// 8-step consultNavigator resolution (override-trigger → keyword fast path
+// → semantic + KB + memory parallel → 70/30 hybrid scoring → confidence
+// bucketing → confident/ambiguous/unknown decision → anonymous gate → KB
+// excerpts), then constructs the redirect directive payload + builds the
+// LLM-facing guidance text.
+//
+// Vertex pipeline: consumes `result.directive` to emit immediately on its
+// SSE/WS transport, sets session.pendingNavigation, eagerly updates
+// session.current_route, writes navigator-action memory.
+//
+// LiveKit pipeline: the Python wrapper publishes `result.directive` over
+// the room data channel via _dispatch_with_directive (PR 1.B-0), and
+// updates GatewayClient.current_route from result.route so the next
+// get_current_screen call sees the fresh value.
+//
+// The tool is anonymous-safe — anonymous users hit the same consult engine
+// but the navigator's anonymous-safe gating prevents leaking authenticated
+// screens, returning blocked_reason='requires_auth' instead.
+// ---------------------------------------------------------------------------
+
+/**
+ * Surface-scoped role derivation. Mirrors orb-live.ts:deriveSurfaceRole —
+ * vitanaland.com routes → community, /admin/* → admin, /command-hub/* →
+ * developer. The DB role is deliberately ignored: a developer browsing
+ * vitanaland.com still sees only community routes from the Navigator.
+ */
+function deriveNavigatorSurfaceRole(currentRoute: string | undefined | null): string {
+  const route = (currentRoute || '').toLowerCase();
+  if (route.startsWith('/command-hub')) return 'developer';
+  if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
+  return 'community';
+}
+
+export async function tool_navigate(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  const question = String(args.question ?? '').trim();
+  if (!question) {
+    return { ok: false, error: 'navigate requires a non-empty question.' };
+  }
+
+  const lang = (id.lang || 'en') as string;
+  const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
+    ? args.current_route
+    : null;
+  const recentRoutes: string[] = Array.isArray(args.recent_routes)
+    ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
+    : [];
+  const transcriptExcerpt = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+
+  // VTID-NAVIGATOR-SCOPING + VTID-MOBILE-COMMUNITY-ONLY: surface-scoped role
+  // is derived from the current route, never the DB role. Anonymous when
+  // either user_id or tenant_id is missing.
+  const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
+  const isAnonymous = !id.user_id || !id.tenant_id;
+
+  const { consultNavigator } = await import('./navigator-consult');
+  const { emitOasisEvent } = await import('./oasis-event-service');
+
+  const consultInput = {
+    question,
+    lang,
+    identity: !isAnonymous
+      ? {
+          user_id: id.user_id,
+          tenant_id: id.tenant_id as string,
+          role: surfaceRole,
+        }
+      : null,
+    is_anonymous: isAnonymous,
+    current_route: currentRoute || undefined,
+    recent_routes: recentRoutes,
+    transcript_excerpt: transcriptExcerpt || undefined,
+    session_id: id.session_id || undefined,
+    turn_number: id.turn_number || undefined,
+    conversation_start: id.session_started_iso || new Date().toISOString(),
+  };
+
+  const consultResult = await consultNavigator(consultInput);
+
+  // OASIS consulted event — same payload shape Vertex emits today.
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.consulted',
+    source: 'orb-tools-shared',
+    status: consultResult.confidence === 'low' ? 'warning' : 'info',
+    message: `navigate: confidence=${consultResult.confidence}, decision=${consultResult.decision}, primary=${consultResult.primary?.screen_id || 'none'}`,
+    payload: {
+      session_id: id.session_id || null,
+      question,
+      primary_screen_id: consultResult.primary?.screen_id || null,
+      confidence: consultResult.confidence,
+      decision: consultResult.decision,
+      alternative_screen_ids: consultResult.alternatives.slice(0, 3).map((a) => a.screen_id),
+      kb_excerpt_count: consultResult.kb_excerpt_count,
+      memory_hint_count: consultResult.memory_hint_count,
+      ms_elapsed: consultResult.ms_elapsed,
+      is_anonymous: isAnonymous,
+    },
+  }).catch(() => {});
+
+  // VTID-02781: ambiguous → return either/or clarification text. No directive.
+  if (
+    consultResult.decision === 'ambiguous' &&
+    consultResult.alternatives.length >= 2 &&
+    !consultResult.blocked_reason
+  ) {
+    const top = consultResult.alternatives[0];
+    const second = consultResult.alternatives[1];
+    const third = consultResult.alternatives[2] || null;
+    emitOasisEvent({
+      vtid: 'VTID-02781',
+      type: 'orb.navigator.disambiguated',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: `disambiguating: ${top.screen_id} vs ${second.screen_id}${third ? ' vs ' + third.screen_id : ''}`,
+      payload: {
+        session_id: id.session_id || null,
+        question,
+        candidates: consultResult.alternatives.slice(0, 3).map((a) => ({
+          screen_id: a.screen_id,
+          route: a.route,
+          title: a.title,
+        })),
+        ms_elapsed: consultResult.ms_elapsed,
+        lang,
+      },
+    }).catch(() => {});
+
+    const lines: string[] = [];
+    lines.push('NAVIGATING_TO: null (waiting for user choice — DO NOT redirect)');
+    lines.push(`DECISION: ambiguous`);
+    lines.push(`CANDIDATES:`);
+    consultResult.alternatives.slice(0, 3).forEach((a, i) => {
+      lines.push(`  [${i + 1}] ${a.screen_id} — ${a.title} (${a.route})`);
+    });
+    const askLine =
+      consultResult.suggested_question ||
+      (lang.startsWith('de')
+        ? `Meinst du ${top.title} oder ${second.title}${third ? ' — oder ' + third.title : ''}?`
+        : `Do you mean ${top.title} or ${second.title}${third ? ' — or ' + third.title : ''}?`);
+    lines.push(`ASK_USER: ${askLine}`);
+    lines.push('');
+    lines.push('Ask the either/or question naturally. WAIT for the user to pick.');
+    lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
+    lines.push('do not call navigate again unless the user rephrases their request.');
+
+    return {
+      ok: true,
+      result: {
+        decision: 'ambiguous',
+        alternatives: consultResult.alternatives.slice(0, 3).map((a) => ({
+          screen_id: a.screen_id,
+          route: a.route,
+          title: a.title,
+        })),
+        suggested_question: askLine,
+      },
+      text: lines.join('\n'),
+    };
+  }
+
+  // Primary match with sufficient confidence → auto-navigate. Build directive.
+  if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
+    const entry = lookupScreen(consultResult.primary.screen_id);
+    if (entry) {
+      const content = getContent(entry, lang);
+      const directive = {
+        type: 'orb_directive',
+        directive: 'navigate',
+        screen_id: entry.screen_id,
+        route: entry.route,
+        title: content.title,
+        reason: question,
+        vtid: 'VTID-NAV-01',
+      };
+
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.dispatched',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `immediate dispatch to ${entry.screen_id}`,
+        payload: {
+          session_id: id.session_id || null,
+          screen_id: entry.screen_id,
+          route: entry.route,
+          drain_wait_ms: 0,
+        },
+      }).catch(() => {});
+
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.requested',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `navigate auto-redirect to ${entry.screen_id} (${entry.route})`,
+        payload: {
+          session_id: id.session_id || null,
+          screen_id: entry.screen_id,
+          route: entry.route,
+          reason: question,
+          is_anonymous: isAnonymous,
+        },
+      }).catch(() => {});
+
+      const lines: string[] = [];
+      lines.push(`NAVIGATING_TO: ${content.title}`);
+      lines.push(`GUIDANCE: ${consultResult.explanation}`);
+      if (consultResult.kb_excerpts.length > 0) {
+        lines.push('ADDITIONAL_CONTEXT:');
+        consultResult.kb_excerpts.forEach((x, i) => lines.push(`  [${i + 1}] ${x}`));
+      }
+      lines.push('');
+      lines.push('Speak the GUIDANCE naturally to the user. Be helpful and warm —');
+      lines.push('explain the feature, tell them what they can do on that screen,');
+      lines.push('and let them know you are taking them there. The redirect happens');
+      lines.push('automatically when you finish speaking.');
+
+      return {
+        ok: true,
+        result: {
+          decision: 'confident',
+          confidence: consultResult.confidence,
+          screen_id: entry.screen_id,
+          route: entry.route,
+          title: content.title,
+          reason: question,
+          directive,
+        },
+        text: lines.join('\n'),
+      };
+    }
+  }
+
+  // Blocked / confirmation / low-confidence — no directive, return clarification text.
+  if (consultResult.blocked_reason === 'requires_auth') {
+    return {
+      ok: true,
+      result: { decision: 'unknown', blocked_reason: 'requires_auth' },
+      text:
+        'NAVIGATING_TO: null\nGUIDANCE: ' +
+        consultResult.explanation +
+        '\nTell the user this feature requires joining the community and offer to take them to registration.',
+    };
+  }
+
+  if (consultResult.confirmation_needed && consultResult.primary && consultResult.alternative) {
+    const ask =
+      consultResult.suggested_question ||
+      `Would you like to go to ${consultResult.primary.title} or ${consultResult.alternative.title}?`;
+    return {
+      ok: true,
+      result: {
+        decision: 'ambiguous',
+        suggested_question: ask,
+        alternatives: [
+          {
+            screen_id: consultResult.primary.screen_id,
+            route: consultResult.primary.route,
+            title: consultResult.primary.title,
+          },
+          {
+            screen_id: consultResult.alternative.screen_id,
+            route: consultResult.alternative.route,
+            title: consultResult.alternative.title,
+          },
+        ],
+      },
+      text:
+        `NAVIGATING_TO: null (waiting for user choice)\nGUIDANCE: ${consultResult.explanation}\n` +
+        `ASK_USER: ${ask}\n` +
+        'Ask the user to choose, then call navigate again with their answer.',
+    };
+  }
+
+  return {
+    ok: true,
+    result: { decision: 'unknown' },
+    text:
+      'NAVIGATING_TO: null\nGUIDANCE: ' +
+      consultResult.explanation +
+      '\nAsk the user to clarify what they are looking for so you can help them find it.',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3)
 //
 // Mirrors orb-live.ts:handleGetCurrentScreen byte-for-byte: resolves the
@@ -2314,6 +2605,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
   navigate_to_screen: (args) => tool_navigate_to_screen(args),
+  // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
+  // 8-step resolution and constructs the redirect directive.
+  navigate: tool_navigate,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
   // LIVE current screen via the nav catalog. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via
