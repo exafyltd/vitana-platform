@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-05-05T00:00:00.000Z",
+  "generated_at": "2026-05-07T00:00:00.000Z",
   "source": "manual",
-  "total": 74,
+  "total": 135,
   "tools": [
     { "name": "search_knowledge", "surface": "Knowledge", "category": "knowledge", "role": ["community", "user", "operator", "admin", "developer"], "status": "live", "description": "Search the Vitana knowledge base." },
     { "name": "search_calendar", "surface": "Calendar", "category": "calendar", "role": ["community", "user", "operator"], "status": "live", "description": "Search calendar events." },
@@ -83,6 +83,79 @@
     { "name": "join_group", "surface": "Community", "category": "community", "role": ["community"], "status": "live", "vtid": "VTID-02764", "added_in_pr": 1862, "description": "Join an existing group by id." },
     { "name": "invite_to_group", "surface": "Community", "category": "community", "role": ["community"], "status": "live", "vtid": "VTID-02764", "added_in_pr": 1862, "description": "Invite a member to a group." },
     { "name": "accept_invitation", "surface": "Community", "category": "community", "role": ["community"], "status": "live", "vtid": "VTID-02764", "added_in_pr": 1862, "description": "Accept a pending group invitation." },
-    { "name": "decline_invitation", "surface": "Community", "category": "community", "role": ["community"], "status": "live", "vtid": "VTID-02764", "added_in_pr": 1862, "description": "Decline a pending group invitation." }
+    { "name": "decline_invitation", "surface": "Community", "category": "community", "role": ["community"], "status": "live", "vtid": "VTID-02764", "added_in_pr": 1862, "description": "Decline a pending group invitation." },
+
+    { "name": "submit_bug_report", "surface": "Feedback", "category": "feedback", "role": ["community"], "status": "live", "vtid": "VTID-02768", "added_in_pr": 1865, "description": "Hand off to Devon (bug-report specialist)." },
+    { "name": "submit_support_ticket", "surface": "Feedback", "category": "feedback", "role": ["community"], "status": "live", "vtid": "VTID-02768", "added_in_pr": 1865, "description": "Hand off to Sage (support specialist)." },
+    { "name": "submit_marketplace_dispute", "surface": "Feedback", "category": "feedback", "role": ["community"], "status": "live", "vtid": "VTID-02768", "added_in_pr": 1865, "description": "Hand off to Atlas (marketplace dispute)." },
+    { "name": "submit_account_issue", "surface": "Feedback", "category": "feedback", "role": ["community"], "status": "live", "vtid": "VTID-02768", "added_in_pr": 1865, "description": "Hand off to Mira (account specialist)." },
+    { "name": "list_my_tickets", "surface": "Feedback", "category": "feedback", "role": ["community"], "status": "live", "vtid": "VTID-02768", "added_in_pr": 1865, "description": "List the user's open tickets." },
+
+    { "name": "start_conversation", "surface": "Chat", "category": "chat", "role": ["community"], "status": "live", "vtid": "VTID-02771", "added_in_pr": 1866, "description": "Start a new DM conversation." },
+    { "name": "list_conversations", "surface": "Chat", "category": "chat", "role": ["community"], "status": "live", "vtid": "VTID-02771", "added_in_pr": 1866, "description": "List recent conversations." },
+    { "name": "mark_conversation_read", "surface": "Chat", "category": "chat", "role": ["community"], "status": "live", "vtid": "VTID-02771", "added_in_pr": 1866, "description": "Mark a conversation read." },
+    { "name": "mute_conversation", "surface": "Chat", "category": "chat", "role": ["community"], "status": "live", "vtid": "VTID-02771", "added_in_pr": 1866, "description": "Mute a conversation." },
+    { "name": "archive_conversation", "surface": "Chat", "category": "chat", "role": ["community"], "status": "live", "vtid": "VTID-02771", "added_in_pr": 1866, "description": "Archive a conversation." },
+
+    { "name": "set_language", "surface": "Settings", "category": "settings", "role": ["community"], "status": "live", "vtid": "VTID-02772", "added_in_pr": 1869, "description": "Set the UI / voice language." },
+    { "name": "set_theme", "surface": "Settings", "category": "settings", "role": ["community"], "status": "live", "vtid": "VTID-02772", "added_in_pr": 1869, "description": "Set the visual theme." },
+    { "name": "set_voice_preferences", "surface": "Settings", "category": "settings", "role": ["community"], "status": "live", "vtid": "VTID-02772", "added_in_pr": 1869, "description": "Tune voice tone / pace / persona." },
+    { "name": "list_connected_apps", "surface": "Settings", "category": "settings", "role": ["community"], "status": "live", "vtid": "VTID-02772", "added_in_pr": 1869, "description": "List connected integrations." },
+    { "name": "disconnect_app", "surface": "Settings", "category": "settings", "role": ["community"], "status": "live", "vtid": "VTID-02772", "added_in_pr": 1869, "description": "Disconnect an integration." },
+
+    { "name": "global_search", "surface": "Search", "category": "search", "role": ["community"], "status": "live", "vtid": "VTID-02773", "added_in_pr": 1871, "description": "Unified search across people / posts / products / events." },
+    { "name": "browse_news_feed", "surface": "News", "category": "news", "role": ["community"], "status": "live", "vtid": "VTID-02773", "added_in_pr": 1871, "description": "Browse the community news feed." },
+
+    { "name": "rsvp_event", "surface": "Events", "category": "events", "role": ["community"], "status": "live", "vtid": "VTID-02774", "added_in_pr": 1873, "description": "RSVP to an event." },
+    { "name": "cancel_rsvp", "surface": "Events", "category": "events", "role": ["community"], "status": "live", "vtid": "VTID-02774", "added_in_pr": 1873, "description": "Cancel an RSVP." },
+    { "name": "list_upcoming_meetups", "surface": "Events", "category": "events", "role": ["community"], "status": "live", "vtid": "VTID-02774", "added_in_pr": 1873, "description": "List upcoming meetups near the user." },
+    { "name": "join_live_room", "surface": "Events", "category": "events", "role": ["community"], "status": "live", "vtid": "VTID-02774", "added_in_pr": 1873, "description": "Join a live room." },
+
+    { "name": "snooze_recommendation", "surface": "Autopilot", "category": "autopilot", "role": ["community"], "status": "live", "vtid": "VTID-02775", "added_in_pr": 1874, "description": "Push an Autopilot recommendation later." },
+    { "name": "dismiss_recommendation", "surface": "Autopilot", "category": "autopilot", "role": ["community"], "status": "live", "vtid": "VTID-02775", "added_in_pr": 1874, "description": "Dismiss an Autopilot recommendation." },
+    { "name": "explain_recommendation", "surface": "Autopilot", "category": "autopilot", "role": ["community"], "status": "live", "vtid": "VTID-02775", "added_in_pr": 1874, "description": "Get a natural-language reason for a recommendation." },
+
+    { "name": "update_account_visibility", "surface": "Privacy", "category": "privacy", "role": ["community"], "status": "live", "vtid": "VTID-02776", "added_in_pr": 1875, "description": "Toggle account visibility (public / followers-only / private)." },
+    { "name": "update_privacy_field", "surface": "Privacy", "category": "privacy", "role": ["community"], "status": "live", "vtid": "VTID-02776", "added_in_pr": 1875, "description": "Set per-field visibility (e.g. age, location)." },
+    { "name": "block_user", "surface": "Privacy", "category": "privacy", "role": ["community"], "status": "live", "vtid": "VTID-02776", "added_in_pr": 1875, "description": "Block another community member." },
+    { "name": "unblock_user", "surface": "Privacy", "category": "privacy", "role": ["community"], "status": "live", "vtid": "VTID-02776", "added_in_pr": 1875, "description": "Unblock a previously-blocked member." },
+
+    { "name": "update_intent", "surface": "Intents", "category": "intents", "role": ["community"], "status": "live", "vtid": "VTID-02777", "added_in_pr": 1877, "description": "Edit an existing intent post." },
+    { "name": "delete_intent", "surface": "Intents", "category": "intents", "role": ["community"], "status": "live", "vtid": "VTID-02777", "added_in_pr": 1877, "description": "Delete an intent post." },
+    { "name": "browse_intent_board", "surface": "Intents", "category": "intents", "role": ["community"], "status": "live", "vtid": "VTID-02777", "added_in_pr": 1877, "description": "Browse the cross-tenant intent board." },
+    { "name": "dispute_match", "surface": "Intents", "category": "intents", "role": ["community"], "status": "live", "vtid": "VTID-02777", "added_in_pr": 1877, "description": "Open a dispute on a match." },
+
+    { "name": "get_emotional_state", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D28 emotional / cognitive signals." },
+    { "name": "get_situational_awareness", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D32 situational awareness signals." },
+    { "name": "get_availability", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D33 availability / readiness signals." },
+    { "name": "get_environmental_context", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D34 environmental / mobility signals." },
+    { "name": "get_social_context", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D35 social context signals." },
+    { "name": "get_life_stage_context", "surface": "Awareness", "category": "awareness", "role": ["community"], "status": "live", "vtid": "VTID-02778", "added_in_pr": 1879, "description": "D40 life stage signals." },
+
+    { "name": "set_alarm", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "Set a wake-up alarm at HH:MM." },
+    { "name": "list_alarms", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "List active alarms." },
+    { "name": "delete_alarm", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "Cancel an alarm." },
+    { "name": "start_timer", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "Start a countdown timer (60s-24h)." },
+    { "name": "start_pomodoro", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "Start a pomodoro work block (5-90min)." },
+    { "name": "list_active_timers", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "List active timers and pomodoros." },
+    { "name": "get_world_time", "surface": "Clock", "category": "clock", "role": ["community"], "status": "live", "vtid": "VTID-02779", "added_in_pr": 1881, "description": "Current local time in a city or IANA timezone." },
+
+    { "name": "find_perfect_product", "surface": "Marketplace", "category": "marketplace", "role": ["community"], "status": "live", "vtid": "VTID-02780", "added_in_pr": 1883, "description": "Flagship deep search — fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale." },
+    { "name": "find_perfect_practitioner", "surface": "Marketplace", "category": "marketplace", "role": ["community"], "status": "live", "vtid": "VTID-02780", "added_in_pr": 1883, "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering." },
+    { "name": "find_perfect_match", "surface": "Match", "category": "match", "role": ["community"], "status": "live", "vtid": "VTID-02780", "added_in_pr": 1883, "description": "Flagship people-match search (workout partner, accountability buddy, mentor)." },
+    { "name": "ask_who_is", "surface": "Superlatives", "category": "superlatives", "role": ["community"], "status": "live", "vtid": "VTID-02780", "added_in_pr": 1883, "description": "Free-form 'who is...' superlative questions about the community." },
+
+    { "name": "dev_list_vtids", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Recent VTIDs from the ledger; filter by status." },
+    { "name": "dev_get_vtid_status", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Lookup a single VTID by id." },
+    { "name": "dev_list_pending_approvals", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "PRs / actions waiting on approval." },
+    { "name": "dev_count_approvals", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Pending approval count — for 'how many PRs are waiting?'." },
+    { "name": "dev_approve_pr", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies)." },
+    { "name": "dev_reject_pr", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Reject a queued PR / action with reason." },
+    { "name": "dev_list_voice_sessions", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Recent ORB voice sessions for Voice Lab." },
+    { "name": "dev_list_routines", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Daily routines + last run status." },
+    { "name": "dev_get_routine_detail", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Routine detail + last N runs." },
+    { "name": "dev_list_active_healing", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Self-healing runs in flight." },
+    { "name": "dev_get_autonomy_pulse", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs)." },
+    { "name": "dev_list_agents", "surface": "Developer", "category": "developer", "role": ["developer", "admin", "exafy_admin"], "status": "live", "vtid": "VTID-02782", "added_in_pr": 1926, "description": "21-agent registry with heartbeat status." }
   ]
 }
