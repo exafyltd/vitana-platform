@@ -6370,32 +6370,87 @@ async function executeLiveApiToolInner(
       }
 
       case 'view_intent_matches': {
-        const intentId = String(args.intent_id || '').trim();
-        const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 10);
-        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
-        try {
-          const { surfaceTopMatches } = await import('../services/intent-matcher');
-          const { redactMatchForReader } = await import('../services/intent-mutual-reveal');
-          const matches = await surfaceTopMatches(intentId, limit);
-          const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, session.identity!.user_id)));
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              matches: redacted.map((m) => ({
-                match_id: m.match_id,
-                vitana_id_b: m.vitana_id_b,
-                score: m.score,
-                kind_pairing: m.kind_pairing,
-                state: m.state,
-                redacted: m.redacted,
-              })),
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01975] view_intent_matches error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR 1.B-6: lifted to services/orb-tools-shared.ts. Both pipelines run
+        // the same surfaceTopMatches + redactMatchForReader path. Auto-nav
+        // to INTENTS.MATCH_DETAIL when the top score dominates the runner-up
+        // (gap >= 0.15); otherwise list-only and let the LLM disambiguate.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'supabase_not_configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+        const r = await dispatchOrbTool(
+          'view_intent_matches',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+          },
+          supabase,
+        );
+        if (r.ok === false) {
+          return { success: false, result: '', error: r.error };
+        }
+        const result = (r.result ?? {}) as {
+          matches?: unknown[];
+          decision?: string;
+          directive?: {
+            type: string;
+            directive: string;
+            screen_id: string;
+            route: string;
+            title: string;
+            reason: string;
+            vtid: string;
+          };
+        };
+        // Auto-nav: emit directive via SSE/WS + set session.pendingNavigation
+        // + eagerly update current_route so the next get_current_screen sees
+        // the fresh route.
+        if (result.decision === 'auto_nav' && result.directive) {
+          const directive = result.directive;
+          const directiveJson = JSON.stringify(directive);
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+          }
+          if ((session as unknown as { clientWs?: { readyState: number } }).clientWs &&
+              (session as unknown as { clientWs?: { readyState: number } }).clientWs!.readyState === 1) {
+            try { sendWsMessage((session as unknown as { clientWs: unknown }).clientWs as Parameters<typeof sendWsMessage>[0], directive); } catch (_e) { /* WS closed */ }
+          }
+          session.pendingNavigation = {
+            screen_id: directive.screen_id,
+            route: directive.route,
+            title: directive.title,
+            reason: directive.reason,
+            decision_source: 'direct',
+            requested_at: Date.now(),
+          };
+          session.navigationDispatched = true;
+          session.pendingNavigation = undefined;
+          const previousRoute = session.current_route;
+          session.current_route = directive.route;
+          if (previousRoute && previousRoute !== directive.route) {
+            const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+            const deduped = trail.filter((rt) => rt !== previousRoute);
+            session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+          }
+        }
+        // Vertex's prior contract: result is JSON-stringified body. Preserve.
+        const responseBody = { ok: true, matches: result.matches ?? [] };
+        return {
+          success: true,
+          result: typeof r.text === 'string' && r.text.length > 0 && result.decision === 'auto_nav'
+            ? r.text
+            : JSON.stringify(responseBody),
+        };
       }
 
       case 'list_my_intents': {

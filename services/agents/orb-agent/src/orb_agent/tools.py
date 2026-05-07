@@ -669,11 +669,36 @@ async def post_intent(context: RunContext, kind: str, body_text: str) -> str:
 
 
 @function_tool
-async def view_intent_matches(context: RunContext) -> str:
-    """View match candidates for the user's open intents (VTID-01976)."""
-    # Mounted at /api/v1/intent-matches/{outgoing,incoming}; surface incoming
-    # matches (the ones the LLM cares about — what came back to the user).
-    body = await _gw(context).get("/api/v1/intent-matches/incoming")
+async def view_intent_matches(context: RunContext, intent_id: str, limit: int = 3) -> str:
+    """View the top match candidates for ONE of the user's intents.
+
+    PR 1.B-6: when the top match's score clearly dominates the runner-up
+    (gap >= 0.15), auto-redirects the user to that match's detail screen
+    via the data-channel directive. When matches are comparable, returns
+    the list and lets you ask the user which one they want.
+
+    Args:
+        intent_id: The user's intent to look up matches for.
+        limit: Max number of matches to return (1..10). Default 3.
+    """
+    body = await _dispatch_with_directive(
+        context,
+        "view_intent_matches",
+        {"intent_id": intent_id, "limit": max(1, min(10, int(limit)))},
+    )
+    # Eagerly update gw.current_route on auto_nav so the next
+    # get_current_screen call sees the fresh route.
+    res = body.get("result") if isinstance(body, dict) else None
+    if isinstance(res, dict) and res.get("decision") == "auto_nav":
+        directive = res.get("directive") or {}
+        new_route = directive.get("route") if isinstance(directive, dict) else None
+        if isinstance(new_route, str) and new_route:
+            gw = _gw(context)
+            previous = gw.current_route
+            gw.current_route = new_route
+            if previous and previous != new_route:
+                trail = [r for r in (gw.recent_routes or []) if r != previous]
+                gw.recent_routes = ([previous] + trail)[:5]
     return summarize(body)
 
 

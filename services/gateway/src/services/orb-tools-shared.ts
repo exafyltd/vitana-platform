@@ -2314,6 +2314,108 @@ export async function tool_navigate(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-01975 — view_intent_matches (PR 1.B-6)
+//
+// Lists the user's top-N intent matches for a given intent and auto-redirects
+// to INTENTS.MATCH_DETAIL when the result is unambiguous (single match OR
+// the top score dominates the runner-up by ≥ AMBIG_GAP). Otherwise returns
+// the list-only payload so the LLM can read it and ask the user which to
+// open. Same business logic Vertex's inline case at orb-live.ts:6372 ran;
+// the auto-nav directive is the new behaviour both pipelines pick up.
+// ---------------------------------------------------------------------------
+
+const INTENT_MATCH_AUTONAV_GAP = 0.15;
+
+export async function tool_view_intent_matches(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  const intentId = String(args.intent_id ?? '').trim();
+  if (!intentId) return { ok: false, error: 'intent_id is required' };
+  if (!id.user_id) return { ok: false, error: 'authentication required' };
+
+  const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 10);
+  try {
+    const { surfaceTopMatches } = await import('./intent-matcher');
+    const { redactMatchForReader } = await import('./intent-mutual-reveal');
+    const matches = await surfaceTopMatches(intentId, limit);
+    const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, id.user_id)));
+    const slim = redacted.map((m) => ({
+      match_id: m.match_id,
+      vitana_id_b: m.vitana_id_b,
+      score: m.score,
+      kind_pairing: m.kind_pairing,
+      state: m.state,
+      redacted: m.redacted,
+    }));
+
+    // Unambiguity: 1 match OR top score - second score >= AMBIG_GAP. Ambiguous
+    // results stay list-only and the LLM disambiguates verbally.
+    const top = slim[0];
+    const second = slim[1];
+    const dominant =
+      !!top &&
+      (slim.length === 1 ||
+        (typeof top.score === 'number' &&
+          typeof second?.score === 'number' &&
+          top.score - second.score >= INTENT_MATCH_AUTONAV_GAP));
+
+    if (dominant && top) {
+      const route = `/intents/match/${encodeURIComponent(top.match_id)}`;
+      const directive = {
+        type: 'orb_directive',
+        directive: 'navigate',
+        screen_id: 'INTENTS.MATCH_DETAIL',
+        route,
+        title: 'Match Detail',
+        reason: 'view_intent_matches dominant pick',
+        vtid: 'VTID-01975',
+      };
+      const { emitOasisEvent } = await import('./oasis-event-service');
+      emitOasisEvent({
+        vtid: 'VTID-01975',
+        type: 'orb.intent_matches.auto_nav',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `view_intent_matches auto-redirect → match=${top.match_id}`,
+        payload: {
+          session_id: id.session_id || null,
+          intent_id: intentId,
+          match_id: top.match_id,
+          score: top.score,
+          runner_up_score: second?.score ?? null,
+        },
+        actor_id: id.user_id,
+        actor_role: 'user',
+        surface: 'orb',
+      }).catch(() => {});
+
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          matches: slim,
+          decision: 'auto_nav',
+          directive,
+          redirect: { route },
+        },
+        text: `Opening your top match. Score ${top.score.toFixed(2)} — clearly the best fit.`,
+      };
+    }
+
+    return {
+      ok: true,
+      result: { ok: true, matches: slim, decision: 'list_only' },
+      text: JSON.stringify({ ok: true, matches: slim }),
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    console.error('[VTID-01975] view_intent_matches error:', msg);
+    return { ok: false, error: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3)
 //
 // Mirrors orb-live.ts:handleGetCurrentScreen byte-for-byte: resolves the
@@ -2813,6 +2915,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
   navigate: tool_navigate,
+  // VTID-01975 — view_intent_matches (PR 1.B-6). Auto-redirects to
+  // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
+  // otherwise lists matches and lets the LLM disambiguate verbally.
+  view_intent_matches: tool_view_intent_matches,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
   // LIVE current screen via the nav catalog. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via
