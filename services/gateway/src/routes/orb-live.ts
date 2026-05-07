@@ -68,6 +68,7 @@ import {
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
+import { DEV_TOOL_HANDLERS, DEV_TOOL_NAMES, DEV_TOOL_SCHEMAS } from '../services/dev-voice-tools';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -3581,7 +3582,7 @@ function buildLiveApiTools(
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
         ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
-          ? ADMIN_TOOL_SCHEMAS
+          ? [...ADMIN_TOOL_SCHEMAS, ...DEV_TOOL_SCHEMAS]
           : []),
       ],
     },
@@ -7375,6 +7376,18 @@ async function executeLiveApiToolInner(
         // somehow names an admin tool will be denied with admin_role_required.
         if (ADMIN_TOOL_NAMES.includes(toolName)) {
           const handler = ADMIN_TOOL_HANDLERS[toolName];
+          return await handler(
+            {
+              tenantId: session.identity!.tenant_id || '',
+              userId: session.identity!.user_id,
+              activeRole: session.active_role || session.identity?.role || 'community',
+            },
+            args,
+          );
+        }
+        // VTID-02782 — developer / operator voice tools (same role gate)
+        if (DEV_TOOL_NAMES.includes(toolName)) {
+          const handler = DEV_TOOL_HANDLERS[toolName];
           return await handler(
             {
               tenantId: session.identity!.tenant_id || '',
