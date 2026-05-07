@@ -754,17 +754,88 @@ export async function tool_share_link(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const url = String(args.url ?? '').trim();
-  const recipient = String(args.with_recipient ?? '').trim();
-  if (!url) return { ok: false, error: 'url is required' };
-  if (!recipient) {
-    return { ok: true, result: { url, shared: false }, text: 'Tell me who to share this with.' };
+  // PR B-5: lifted from orb-live.ts:6536 (VTID-01967). Both pipelines now
+  // share rate-limited link sharing through chat_messages with the same
+  // self-share guard, voice-send quota check, and metadata shape.
+  // Accepts the legacy LiveKit args (url, with_recipient) AND Vertex args
+  // (target_url, recipient_user_id, recipient_label, target_kind).
+  const recipientUserId = String(args.recipient_user_id ?? args.with_recipient ?? '').trim();
+  const recipientLabel = String(args.recipient_label ?? '').trim();
+  const targetUrl = String(args.target_url ?? args.url ?? '').trim();
+  const targetKind = String(args.target_kind ?? 'page').trim();
+
+  if (!recipientUserId || !targetUrl) {
+    return { ok: false, error: 'recipient_user_id and target_url are required' };
   }
-  return tool_send_chat_message(
-    { recipient_id: recipient, body_text: `Sharing: ${url}` },
-    id,
-    sb,
-  );
+  if (recipientUserId === id.user_id) {
+    return { ok: false, error: 'cannot share with yourself' };
+  }
+
+  try {
+    const { checkVoiceSendQuota } = await import('./voice-message-guard');
+    const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+
+    const recipientVitanaId = await resolveVitanaId(recipientUserId);
+
+    const quota = await checkVoiceSendQuota({
+      // session_id is Vertex-specific; pass user_id so the quota guard can
+      // still scope per-user when called from LiveKit (which has no
+      // long-lived WebSocket sessionId).
+      session_id: `${id.user_id}:share_link`,
+      actor_id: id.user_id,
+      vitana_id: id.vitana_id ?? null,
+      recipient_user_id: recipientUserId,
+      recipient_vitana_id: recipientVitanaId,
+      kind: 'share_link',
+      target_url: targetUrl,
+    });
+    if (!quota.allowed) {
+      return {
+        ok: true,
+        result: { rate_limited: true, reason: quota.reason },
+        text: `I can't send that right now (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
+      };
+    }
+
+    const senderVitanaId =
+      id.vitana_id ?? (await resolveVitanaId(id.user_id));
+    const previewBody = `🔗 ${targetUrl}`;
+
+    const { error: insErr } = await sb.from('chat_messages').insert({
+      tenant_id: id.tenant_id,
+      sender_id: id.user_id,
+      receiver_id: recipientUserId,
+      content: previewBody,
+      message_type: 'link_share',
+      ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+      ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+      metadata: {
+        source: 'voice',
+        session_id: `${id.user_id}:share_link`,
+        kind: 'shared_link',
+        target_url: targetUrl,
+        target_kind: targetKind,
+        recipient_label: recipientLabel || recipientVitanaId,
+      },
+    });
+    if (insErr) {
+      return { ok: false, error: insErr.message };
+    }
+
+    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+    return {
+      ok: true,
+      result: {
+        recipient_label: recipDisplay,
+        target_kind: targetKind,
+        remaining: quota.remaining,
+      },
+      text: `Sent the link to ${recipDisplay}.`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'share_link error';
+    return { ok: false, error: msg };
+  }
 }
 
 export async function tool_scan_existing_matches(
