@@ -838,6 +838,24 @@ export function hashQuery(query: string, viewerId: string): string {
   return crypto.createHash('sha256').update(`${viewerId}::${query}`).digest('hex').slice(0, 32);
 }
 
+/**
+ * Deterministic-but-varied pick from a candidate pool keyed by the user's
+ * query. When no signal in the data matches the query, we still need to
+ * return *one* community member — but always returning `pool[0]` means
+ * every "floor" or "no-data" path picks the same person regardless of
+ * what was asked. This rotates the choice so different queries land on
+ * different members while the same query stays stable.
+ */
+function pickByQueryHash(pool: Candidate[], query: string): Candidate {
+  if (pool.length === 0) {
+    throw new Error('pickByQueryHash: empty pool');
+  }
+  if (pool.length === 1) return pool[0];
+  const h = crypto.createHash('sha1').update(query.toLowerCase()).digest();
+  const idx = h.readUInt32BE(0) % pool.length;
+  return pool[idx];
+}
+
 export async function findCommunityMember(
   sb: SupabaseClient,
   args: FindMemberArgs,
@@ -971,10 +989,11 @@ export async function findCommunityMember(
   // ---- Tier 4 short-circuit: send sensitive-comparative queries to generic immediately
   if (ethicsReroute) {
     const generic = await tier3Generic(sb, pool, parsed.exactKeyword);
-    const winnerCand = generic ? pool.find(c => c.user_id === generic.user_id) ?? pool[0] : pool[0];
+    const fallback = pickByQueryHash(pool, args.query);
+    const winnerCand = generic ? pool.find(c => c.user_id === generic.user_id) ?? fallback : fallback;
     return helpers.finalize(winnerCand, 4, 'generic', undefined, undefined, generic) || {
-      tier: 4 as Tier, lane: 'generic' as Lane, winnerUserId: pool[0].user_id,
-      result: makeSoftFloor(parsed, pool[0], ethicsReroute, signals),
+      tier: 4 as Tier, lane: 'generic' as Lane, winnerUserId: winnerCand.user_id,
+      result: makeSoftFloor(parsed, winnerCand, ethicsReroute, signals),
     };
   }
 
@@ -996,7 +1015,7 @@ export async function findCommunityMember(
     }
   }
   if (noCoreIntent && parsed.locationFilter) {
-    const winnerCand = pool[0];
+    const winnerCand = pickByQueryHash(pool, args.query);
     return helpers.finalize(winnerCand, 1, 'location_only') || {
       tier: 1 as Tier, lane: 'location_only' as Lane, winnerUserId: winnerCand.user_id,
       result: makeSoftFloor(parsed, winnerCand, false, signals),
@@ -1070,8 +1089,10 @@ export async function findCommunityMember(
     }
   }
 
-  // ---- Floor: most-recently-added visible candidate
-  const floorCand = pool[0];
+  // ---- Floor: rotate by query hash so different queries land on different
+  // members. Same query stays stable across calls; just don't always
+  // return pool[0] when there's no specific signal.
+  const floorCand = pickByQueryHash(pool, args.query);
   return helpers.finalize(floorCand, 3, 'floor') || {
     tier: 3 as Tier, lane: 'floor' as Lane, winnerUserId: floorCand.user_id,
     result: makeSoftFloor(parsed, floorCand, false, signals),
