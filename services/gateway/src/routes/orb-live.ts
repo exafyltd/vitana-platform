@@ -5567,19 +5567,9 @@ async function executeLiveApiToolInner(
         return { success: true, result: `${baseAck}${tail}` };
       }
 
-      // VTID-01942 PR 3: voice "make X my default for music" tool. Writes
-      // (or clears) user_capability_preferences row. Confirms back.
+      // PR B-4: lifted to services/orb-tools-shared.ts. Both pipelines now
+      // write to user_capability_preferences through the same wrapper.
       case 'set_capability_preference': {
-        const capability = String(args.capability ?? '').trim();
-        const connectorId = String(args.connector_id ?? '').trim();
-        const clear = Boolean(args.clear);
-        if (!capability) {
-          return { success: false, result: '', error: 'capability is required' };
-        }
-        if (!clear && !connectorId) {
-          return { success: false, result: '', error: 'connector_id is required unless clear=true' };
-        }
-
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5587,47 +5577,17 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-
-        if (clear) {
-          const { error } = await supabase
-            .from('user_capability_preferences')
-            .delete()
-            .eq('user_id', lens.user_id)
-            .eq('capability_id', capability);
-          if (error) {
-            return { success: false, result: '', error: `Couldn't clear preference: ${error.message}` };
-          }
-          console.log(`[VTID-01942] preference cleared: user=${lens.user_id.slice(0,8)} cap=${capability}`);
-          return { success: true, result: `Okay — cleared your default for ${capability}. I'll ask again next time.` };
-        }
-
-        const { error } = await supabase
-          .from('user_capability_preferences')
-          .upsert({
-            tenant_id: lens.tenant_id,
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'set_capability_preference',
+          args ?? {},
+          {
             user_id: lens.user_id,
-            capability_id: capability,
-            preferred_connector_id: connectorId,
-            set_method: 'explicit',
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'tenant_id,user_id,capability_id' });
-
-        if (error) {
-          return { success: false, result: '', error: `Couldn't save preference: ${error.message}` };
-        }
-
-        const displayName =
-          connectorId === 'google' ? 'YouTube Music' :
-          connectorId === 'spotify' ? 'Spotify' :
-          connectorId === 'apple_music' ? 'Apple Music' :
-          connectorId === 'vitana_hub' ? 'the Vitana Media Hub' :
-          connectorId;
-
-        console.log(`[VTID-01942] preference set: user=${lens.user_id.slice(0,8)} cap=${capability} → ${connectorId}`);
-        return {
-          success: true,
-          result: `Got it — ${displayName} is your default for ${capability} now.`,
-        };
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-01943: the Gmail + Calendar + Contacts voice tools all share

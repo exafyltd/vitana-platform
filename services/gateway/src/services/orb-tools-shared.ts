@@ -263,31 +263,66 @@ export async function tool_set_capability_preference(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
+  // PR B-4: lifted from orb-live.ts:5572 (VTID-01942).
+  // Vertex's authoritative impl: writes/clears user_capability_preferences
+  // (the schema the rest of the platform reads from), not the LiveKit-only
+  // user_preferences table. Both pipelines now persist preferences to the
+  // same row.
   const capability = String(args.capability ?? '').trim();
-  const provider = String(args.provider ?? '').trim();
-  if (!capability) return { ok: false, error: 'capability is required' };
-  try {
-    await sb
-      .from('user_preferences')
-      .upsert(
-        {
-          user_id: id.user_id,
-          key: `capability.${capability}.provider`,
-          value: provider || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,key' },
-      );
-  } catch {
-    /* table layout varies; preference still acknowledged */
+  // Accept both 'connector_id' (Vertex's canonical) and 'provider' (legacy
+  // LiveKit Python tool key) so call sites continue to work unchanged.
+  const connectorId = String(args.connector_id ?? args.provider ?? '').trim();
+  const clear = Boolean(args.clear);
+
+  if (!capability) {
+    return { ok: false, error: 'capability is required' };
   }
+  if (!clear && !connectorId) {
+    return { ok: false, error: 'connector_id is required unless clear=true' };
+  }
+
+  if (clear) {
+    const { error } = await sb
+      .from('user_capability_preferences')
+      .delete()
+      .eq('user_id', id.user_id)
+      .eq('capability_id', capability);
+    if (error) {
+      return { ok: false, error: `Couldn't clear preference: ${error.message}` };
+    }
+    return {
+      ok: true,
+      result: { capability, cleared: true },
+      text: `Okay — cleared your default for ${capability}. I'll ask again next time.`,
+    };
+  }
+
+  const { error } = await sb.from('user_capability_preferences').upsert(
+    {
+      tenant_id: id.tenant_id,
+      user_id: id.user_id,
+      capability_id: capability,
+      preferred_connector_id: connectorId,
+      set_method: 'explicit',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'tenant_id,user_id,capability_id' },
+  );
+  if (error) {
+    return { ok: false, error: `Couldn't save preference: ${error.message}` };
+  }
+
+  const displayName =
+    connectorId === 'google' ? 'YouTube Music'
+      : connectorId === 'spotify' ? 'Spotify'
+      : connectorId === 'apple_music' ? 'Apple Music'
+      : connectorId === 'vitana_hub' ? 'the Vitana Media Hub'
+      : connectorId;
+
   return {
     ok: true,
-    result: { capability, provider, saved: true },
-    text:
-      provider
-        ? `Got it — ${capability} will route to ${provider} from now on.`
-        : `Cleared default for ${capability}; I'll ask each time going forward.`,
+    result: { capability, connector_id: connectorId, saved: true },
+    text: `Got it — ${displayName} is your default for ${capability} now.`,
   };
 }
 
