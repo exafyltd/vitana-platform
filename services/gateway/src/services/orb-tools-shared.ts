@@ -2066,6 +2066,132 @@ export async function tool_find_perfect_practitioner(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-02754 — find_community_member (PR 1.B-1)
+//
+// Lifts Vertex's inline find_community_member case from orb-live.ts:5430 into
+// the shared dispatcher. Both pipelines now run identical ranker + history
+// persistence + redirect-route construction. The shared module returns a
+// `directive` payload nested in `result` so the caller can emit it on
+// whichever transport it has — Vertex emits via SSE/WS in
+// session.pendingNavigation; LiveKit publishes on the data channel from
+// _dispatch_with_directive in tools.py.
+// ---------------------------------------------------------------------------
+
+export async function tool_find_community_member(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim();
+  if (!query || query.length < 2) {
+    return { ok: false, error: 'query_too_short' };
+  }
+  if (!id.user_id || !id.tenant_id) {
+    return { ok: false, error: 'auth_required' };
+  }
+  const excluded = Array.isArray(args.excluded_vitana_ids)
+    ? (args.excluded_vitana_ids as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 25)
+    : [];
+
+  try {
+    const { findCommunityMember, hashQuery } = await import('./voice-tools/community-member-ranker');
+
+    const outcome = await findCommunityMember(sb, {
+      viewer_user_id: id.user_id,
+      viewer_tenant_id: id.tenant_id,
+      query,
+      excluded_vitana_ids: excluded,
+    });
+
+    // Persist to community_search_history (frontend reads by search_id to
+    // render WhyThisMatchCard). Failure here doesn't block the redirect —
+    // the card just gracefully no-ops.
+    let searchId: string | undefined;
+    try {
+      const { data: inserted } = await sb
+        .from('community_search_history')
+        .insert({
+          viewer_user_id: id.user_id,
+          viewer_vitana_id: id.vitana_id ?? null,
+          tenant_id: id.tenant_id,
+          query,
+          query_hash: hashQuery(query, id.user_id),
+          tier: outcome.tier,
+          lane: outcome.lane,
+          winner_user_id: outcome.winnerUserId,
+          winner_vitana_id: outcome.result.vitana_id,
+          recipe_json: outcome.result.match_recipe,
+          excluded_vitana_ids: excluded,
+        })
+        .select('search_id')
+        .maybeSingle();
+      searchId = (inserted as { search_id?: string } | null)?.search_id;
+    } catch (persistErr: unknown) {
+      const msg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+      console.warn(`[VTID-02754] community_search_history insert failed: ${msg}`);
+    }
+
+    // Bake search_id into the redirect route so WhyThisMatchCard can fetch
+    // the recipe by id. Same behaviour as Vertex's inline case.
+    const baseRoute = outcome.result.redirect.route;
+    const route = searchId && !baseRoute.includes('search_id=')
+      ? `${baseRoute}${baseRoute.includes('?') ? '&' : '?'}search_id=${searchId}`
+      : baseRoute;
+
+    const directive = {
+      type: 'orb_directive',
+      directive: 'navigate',
+      screen_id: 'profile_with_match',
+      route,
+      title: `Profile: ${outcome.result.display_name}`,
+      vtid: 'VTID-02754',
+    };
+
+    // Telemetry — same payload shape Vertex emits today.
+    try {
+      const { emitOasisEvent } = await import('./oasis-event-service');
+      emitOasisEvent({
+        vtid: 'VTID-02754',
+        type: 'community.find_member.matched',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `find_community_member matched "${query}" → ${outcome.result.vitana_id}`,
+        payload: {
+          query,
+          tier: outcome.tier,
+          lane: outcome.lane,
+          winner_vitana_id: outcome.result.vitana_id,
+          ethics_reroute: !!outcome.result.match_recipe?.ethics_reroute,
+          search_id: searchId,
+        },
+        actor_id: id.user_id,
+        actor_role: 'user',
+        surface: 'orb',
+        vitana_id: id.vitana_id ?? undefined,
+      }).catch(() => {});
+    } catch {
+      /* telemetry never blocks the user flow */
+    }
+
+    return {
+      ok: true,
+      result: {
+        vitana_id: outcome.result.vitana_id,
+        display_name: outcome.result.display_name,
+        search_id: searchId,
+        match_recipe: outcome.result.match_recipe,
+        directive,
+      },
+      text: outcome.result.voice_summary,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    console.error('[VTID-02754] find_community_member error:', msg);
+    return { ok: false, error: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
@@ -2083,6 +2209,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   report_to_specialist: (args) => tool_report_to_specialist(args),
   search_events: tool_search_events,
   search_community: tool_search_community,
+  // VTID-02754 — auto-redirecting community member search (PR 1.B-1)
+  find_community_member: tool_find_community_member,
   // VTID-02753 — structured Health logging (LiveKit/text path)
   log_water:        (args, id, sb) => tool_log_health('log_water', args, id),
   log_sleep:        (args, id, sb) => tool_log_health('log_sleep', args, id),

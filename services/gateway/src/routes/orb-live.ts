@@ -5428,127 +5428,88 @@ async function executeLiveApiToolInner(
       // Persists to community_search_history with the admin client and queues
       // the navigation directive so the widget redirects on turn_complete.
       case 'find_community_member': {
-        const query = String(args.query || '').trim();
-        if (!query) {
-          return { success: false, result: '', error: 'query is required' };
+        // PR 1.B-1: lifted to services/orb-tools-shared.ts. Both pipelines
+        // run identical ranker + history persistence + redirect-route
+        // construction. Vertex still emits the redirect via
+        // session.pendingNavigation + updates session.current_route +
+        // session.recent_routes (transport-specific session-state mutation
+        // that doesn't generalise to LiveKit). LiveKit's tool wrapper picks
+        // up the same `directive` payload from result.directive and
+        // publishes it on the room data channel via _dispatch_with_directive.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'supabase_not_configured' };
         }
-        if (!session.identity?.user_id || !session.identity?.tenant_id) {
-          return {
-            success: false,
-            result: '',
-            error: 'Please sign in to search the community.',
-          };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+
+        const r = await dispatchOrbTool(
+          'find_community_member',
+          args ?? {},
+          {
+            user_id: session.identity?.user_id ?? '',
+            tenant_id: session.identity?.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+
+        if (r.ok === false) {
+          if (r.error === 'auth_required') {
+            return { success: false, result: '', error: 'Please sign in to search the community.' };
+          }
+          if (r.error === 'query_too_short') {
+            return { success: false, result: '', error: 'query is required' };
+          }
+          return { success: false, result: '', error: r.error };
         }
-        const excluded = Array.isArray(args.excluded_vitana_ids)
-          ? (args.excluded_vitana_ids as unknown[]).filter((s): s is string => typeof s === 'string')
-          : [];
 
-        try {
-          const { findCommunityMember, hashQuery } = await import(
-            '../services/voice-tools/community-member-ranker'
-          );
-          const { createClient } = await import('@supabase/supabase-js');
-          const supaUrl = process.env.SUPABASE_URL;
-          const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!supaUrl || !supaKey) {
-            return { success: false, result: '', error: 'supabase_not_configured' };
-          }
-          const adminSb = createClient(supaUrl, supaKey, {
-            auth: { autoRefreshToken: false, persistSession: false },
-          });
+        const result = (r.result ?? {}) as {
+          vitana_id?: string;
+          display_name?: string;
+          search_id?: string;
+          directive?: { route?: string; title?: string };
+        };
+        const directive = result.directive;
+        const route = directive?.route || '';
+        const displayName = result.display_name || 'their profile';
 
-          const outcome = await findCommunityMember(adminSb, {
-            viewer_user_id: session.identity.user_id,
-            viewer_tenant_id: session.identity.tenant_id as string,
-            query,
-            excluded_vitana_ids: excluded,
-          });
-
-          // Persist a row to community_search_history; the frontend reads it by
-          // search_id to render the WhyThisMatchCard.
-          let searchId: string | undefined;
-          try {
-            const { data: inserted } = await adminSb
-              .from('community_search_history')
-              .insert({
-                viewer_user_id: session.identity.user_id,
-                viewer_vitana_id: session.identity?.vitana_id ?? null,
-                tenant_id: session.identity.tenant_id as string,
-                query,
-                query_hash: hashQuery(query, session.identity.user_id),
-                tier: outcome.tier,
-                lane: outcome.lane,
-                winner_user_id: outcome.winnerUserId,
-                winner_vitana_id: outcome.result.vitana_id,
-                recipe_json: outcome.result.match_recipe,
-                excluded_vitana_ids: excluded,
-              })
-              .select('search_id')
-              .maybeSingle();
-            searchId = (inserted as any)?.search_id;
-          } catch (persistErr: any) {
-            console.warn(`[VTID-02754] community_search_history insert failed: ${persistErr?.message}`);
-          }
-
-          // Bake search_id into the redirect route so WhyThisMatchCard can fetch it.
-          const route = searchId
-            ? (outcome.result.redirect.route.includes('search_id=')
-                ? outcome.result.redirect.route
-                : `${outcome.result.redirect.route}${outcome.result.redirect.route.includes('?') ? '&' : '?'}search_id=${searchId}`)
-            : outcome.result.redirect.route;
-
-          // Queue navigation. Mirrors the navigate_to_screen flow at line ~4073.
+        // Vertex-side WebSocket session-state mutation (Vertex-specific). This
+        // is what pendingNavigation hands to the SSE/WS dispatcher and what
+        // future get_current_screen calls read from.
+        if (route) {
           session.pendingNavigation = {
             screen_id: 'profile_with_match',
             route,
-            title: `Profile: ${outcome.result.display_name}`,
+            title: directive?.title || `Profile: ${displayName}`,
             reason: 'find_community_member tool call',
             decision_source: 'direct',
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
 
-          // Update in-memory session route so subsequent get_current_screen
-          // calls reflect the navigation. Mirrors navigate_to_screen line 4091-4097.
           const previousRoute = session.current_route;
           session.current_route = route;
           if (previousRoute && previousRoute !== route) {
             const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
-            const deduped = trail.filter(r => r !== previousRoute);
+            const deduped = trail.filter((rt) => rt !== previousRoute);
             session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
           }
-
-          emitOasisEvent({
-            vtid: 'VTID-02754',
-            type: 'community.find_member.matched',
-            source: 'orb-live',
-            status: 'info',
-            message: `find_community_member matched "${query}" → ${outcome.result.vitana_id}`,
-            payload: {
-              session_id: session.sessionId,
-              query,
-              tier: outcome.tier,
-              lane: outcome.lane,
-              winner_vitana_id: outcome.result.vitana_id,
-              ethics_reroute: !!outcome.result.match_recipe?.ethics_reroute,
-              search_id: searchId,
-            },
-            actor_id: session.identity.user_id,
-            actor_role: 'user',
-            surface: 'orb',
-            vitana_id: session.identity?.vitana_id ?? undefined,
-          }).catch(() => {});
-
-          // Return the voice_summary so Gemini reads it aloud and stops.
-          // The widget is closing — no follow-up commentary required.
-          return {
-            success: true,
-            result: `${outcome.result.voice_summary} The user is now being taken to ${outcome.result.display_name}'s profile. The widget is closing — stop speaking immediately after this line.`,
-          };
-        } catch (err: any) {
-          console.error('[VTID-02754] find_community_member error:', err?.message, err?.stack);
-          return { success: false, result: '', error: err?.message || 'unknown' };
         }
+
+        // Voice cue. The "stop speaking" tail is Vertex-specific (the
+        // WebSocket widget is about to close); the underlying voice_summary
+        // lives in r.text and is what LiveKit speaks.
+        const voiceSummary = typeof r.text === 'string' && r.text.length > 0 ? r.text : `Bringing up ${displayName}'s profile.`;
+        return {
+          success: true,
+          result: `${voiceSummary} The user is now being taken to ${displayName}'s profile. The widget is closing — stop speaking immediately after this line.`,
+        };
       }
 
       case 'get_recommendations': {
