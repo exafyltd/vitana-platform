@@ -1,0 +1,75 @@
+# VTID-02703: One-shot workflow to flip the gateway into Job-runtime mode.
+# Sets DEV_AUTOPILOT_USE_JOB=true and grants the gateway runtime SA
+# permission to invoke the autopilot-executor Job. Run once after the Job
+# is deployed.
+
+name: Enable Autopilot Job Runtime (VTID-02703)
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable:
+        description: 'true to enable the Job runtime; false to revert'
+        required: true
+        default: 'true'
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Grant gateway SA roles/run.invoker on the autopilot-executor Job
+        env:
+          PROJECT: lovable-vitana-vers1
+          REGION: us-central1
+          JOB_NAME: autopilot-executor
+        run: |
+          set -e
+          # Resolve the gateway's runtime service account (whatever it
+          # was created with — usually the project's compute default).
+          GW_SA=$(gcloud run services describe gateway \
+            --region="$REGION" --project="$PROJECT" \
+            --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || echo "")
+          if [ -z "$GW_SA" ]; then
+            GW_SA="$(gcloud projects describe $PROJECT --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
+            echo "Gateway has no explicit SA — using project compute default: $GW_SA"
+          else
+            echo "Gateway runtime SA: $GW_SA"
+          fi
+
+          gcloud run jobs add-iam-policy-binding "$JOB_NAME" \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --member="serviceAccount:$GW_SA" \
+            --role="roles/run.invoker" \
+            --quiet
+          echo "Granted roles/run.invoker on $JOB_NAME to $GW_SA"
+
+      - name: Update gateway DEV_AUTOPILOT_USE_JOB env var
+        env:
+          PROJECT: lovable-vitana-vers1
+          REGION: us-central1
+        run: |
+          set -e
+          if [ "${{ github.event.inputs.enable }}" = "true" ]; then
+            VALUE="true"
+          else
+            VALUE="false"
+          fi
+          echo "Setting DEV_AUTOPILOT_USE_JOB=$VALUE on gateway"
+          gcloud run services update gateway \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --update-env-vars="DEV_AUTOPILOT_USE_JOB=$VALUE" \
+            --quiet
+          echo "Done. New revision active."

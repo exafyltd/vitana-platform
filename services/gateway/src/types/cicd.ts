@@ -538,6 +538,11 @@ export type CicdEventType =
   | 'orb.navigator.requested'
   | 'orb.navigator.blocked'
   | 'orb.navigator.dispatched'
+  // VTID-02781: emitted whenever the Navigator returns `decision: 'ambiguous'`
+  // and the ORB asks the user an either/or clarification. Pairs with a
+  // subsequent orb.navigator.dispatched (or .blocked) on the user's reply —
+  // lets us measure clarification → resolution rate.
+  | 'orb.navigator.disambiguated'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
@@ -717,7 +722,11 @@ export type CicdEventType =
   | 'memory.consolidator.loop.failed'
   | 'memory.index_delta.observed'
   // VTID-02754: find_community_member voice tool — search-to-profile redirect
-  | 'community.find_member.matched';
+  | 'community.find_member.matched'
+  // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
+  | 'architecture.investigation.started'
+  | 'architecture.investigation.completed'
+  | 'architecture.investigation.failed';
 
 export interface CicdOasisEvent {
   vtid: string;

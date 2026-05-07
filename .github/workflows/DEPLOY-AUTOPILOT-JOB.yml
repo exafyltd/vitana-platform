@@ -1,0 +1,121 @@
+# VTID-02703: Build + deploy the autopilot executor as a Cloud Run JOB.
+#
+# Why a Job (not a service):
+#   The gateway service runs the executor's LLM call as a fire-and-forget
+#   background Promise. Cloud Run recycles service containers, killing
+#   in-flight Promises. Long calls (orb-live.ts ~80k input + 50k output
+#   tokens, ~3-5 min) statistically hit a recycle and silently die.
+#
+#   Cloud Run JOBS run a single task to completion with a configurable
+#   timeout (up to 24h). They don't get scaled or recycled mid-run.
+#
+# Trigger:
+#   - Manual via workflow_dispatch (operator-initiated rebuild)
+#   - From the gateway via Cloud Run Admin API (per-execution dispatch)
+#
+# This workflow only handles BUILD + DEPLOY (the Job container itself).
+# Per-execution dispatch is in the gateway's runExecutionSession path.
+
+name: Deploy Autopilot Job (VTID-02703)
+
+on:
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID for this deploy'
+        required: true
+        default: 'VTID-02703'
+      timeout_seconds:
+        description: 'Max task duration (Cloud Run Jobs: up to 86400 = 24h)'
+        required: false
+        default: '3600'
+      memory:
+        description: 'Memory per task (e.g. 1Gi, 2Gi)'
+        required: false
+        default: '2Gi'
+      cpu:
+        description: 'CPU per task (1, 2, 4, 8)'
+        required: false
+        default: '2'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Login to Artifact Registry (oauth2accesstoken)
+        # WIF gives us a short-lived OAuth token; gcloud configure-docker
+        # only sets a credential helper that isn't honored here. Explicit
+        # docker login with the access token works.
+        run: |
+          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+
+      - name: Build container with Dockerfile.job (local docker)
+        env:
+          PROJECT: lovable-vitana-vers1
+          REGION: us-central1
+          IMAGE_NAME: autopilot-executor
+        run: |
+          set -e
+          IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/$IMAGE_NAME:${{ github.sha }}"
+          echo "Building $IMAGE_URI"
+
+          cd services/gateway
+          # BUILD_INFO is read at runtime; capture deploy SHA + time.
+          echo "{\"sha\":\"${{ github.sha }}\",\"deployed_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"role\":\"autopilot-executor\"}" > BUILD_INFO
+
+          # Direct docker build + push. Simpler than gcloud builds submit
+          # (no remote build, no inline cloudbuild.yaml, no --tag/--config
+          # mutex problems). The runner already has docker available.
+          docker build -f Dockerfile.job -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+        id: build
+
+      - name: Deploy as Cloud Run Job
+        env:
+          PROJECT: lovable-vitana-vers1
+          REGION: us-central1
+          JOB_NAME: autopilot-executor
+        run: |
+          set -e
+          IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/autopilot-executor:${{ github.sha }}"
+
+          gcloud run jobs deploy "$JOB_NAME" \
+            --image="$IMAGE_URI" \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --task-timeout="${{ github.event.inputs.timeout_seconds }}s" \
+            --memory="${{ github.event.inputs.memory }}" \
+            --cpu="${{ github.event.inputs.cpu }}" \
+            --max-retries=0 \
+            --parallelism=1 \
+            --tasks=1 \
+            --update-env-vars="ENVIRONMENT=dev-sandbox" \
+            --update-env-vars="GCP_PROJECT_ID=$PROJECT" \
+            --update-env-vars="GOOGLE_CLOUD_PROJECT=$PROJECT" \
+            --update-env-vars="DEV_AUTOPILOT_GITHUB_REPO=exafyltd/vitana-platform" \
+            --update-env-vars="GITHUB_SAFE_MERGE_TOKEN=${{ secrets.SAFE_MERGE_TOKEN }}" \
+            --update-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --update-env-vars="ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" \
+            --update-secrets="SUPABASE_URL=SUPABASE_URL:latest" \
+            --update-secrets="SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
+            --update-secrets="GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
+            --quiet
+
+          echo "Job $JOB_NAME deployed."
+          gcloud run jobs describe "$JOB_NAME" --region="$REGION" --project="$PROJECT" \
+            --format='value(latestCreatedExecution.name,latestSucceededExecution.name)' || true

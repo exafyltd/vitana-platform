@@ -979,6 +979,47 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
       vtid: 'VTID-01221',
     },
   ],
+
+  // ===== BOOTSTRAP-VOICE-DEMO: Architecture Investigator voice tool =====
+  [
+    'investigate_failure',
+    {
+      name: 'investigate_failure',
+      description: `Trigger a root-cause investigation of a recent system failure or error.
+Calls the Architecture Investigator agent (DeepSeek-reasoner), which pulls recent OASIS
+events into context, generates a structured root-cause hypothesis with a suggested fix
+and at least two alternative hypotheses, persists the report to architecture_reports,
+and returns the hypothesis. Use when the user says things like "investigate the last
+failure", "what went wrong with X", "why did the deploy break", or asks for root-cause
+analysis. The result is advisory — humans decide whether to act on it.`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          incident_topic: {
+            type: 'string',
+            description: 'OASIS event topic to investigate (e.g. "vtid.error.failed", "deploy.gateway.failed", "orb.live.connection_failed"). If user says "the last failure", default to "vtid.error.failed".',
+          },
+          vtid: {
+            type: 'string',
+            description: 'Optional VTID to scope the investigation (e.g. "VTID-02715").',
+          },
+          notes: {
+            type: 'string',
+            description: 'Optional human-supplied context about the symptom (e.g. "iPhone users hear no audio").',
+          },
+          event_limit: {
+            type: 'integer',
+            description: 'How many recent OASIS events to pull as evidence. Default 50, max 200.',
+          },
+        },
+        required: ['incident_topic'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer', 'system', 'community'],
+      enabled: true,
+      category: 'system',
+      vtid: 'BOOTSTRAP-ARCH-INV',
+    },
+  ],
 ]);
 
 // =============================================================================

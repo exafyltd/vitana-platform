@@ -40,6 +40,16 @@ export interface RedactedMatch extends Omit<MatchRow, 'vitana_id_a' | 'vitana_id
   partner_display_name?: string | null;
   partner_avatar_url?: string | null;
   partner_gender?: 'male' | 'female' | null;
+  // BOOTSTRAP-INTENT-COVER-GEN — landscape cover photo for the
+  // counterparty's intent. User-uploaded or auto-generated.
+  partner_match_cover_url?: string | null;
+  // Counterparty intent fields surfaced for the Find-a-Match card body
+  // (kind pill / title / scope mirror My Posts). All optional and
+  // null-on-redaction; the frontend has defensive fallbacks.
+  partner_intent_title?: string | null;
+  partner_intent_scope?: string | null;
+  partner_intent_kind?: string | null;
+  partner_intent_status?: string | null;
 }
 
 /**

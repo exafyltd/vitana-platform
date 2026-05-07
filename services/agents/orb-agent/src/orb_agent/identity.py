@@ -33,12 +33,15 @@ def resolve_identity_from_room_metadata(
     *,
     user_jwt: str | None = None,
 ) -> Identity:
-    """Resolve identity from LiveKit room metadata + optional decoded JWT.
+    """Resolve identity from LiveKit user-participant metadata + optional decoded JWT.
 
-    Room metadata is set by the gateway's /api/v1/orb/livekit/token endpoint,
-    which already coerces role for mobile/WebView clients. The agent never
-    re-decodes the JWT for auth (gateway is the auth source of truth) — but
-    we DO re-check the mobile coercion here as defense-in-depth.
+    The metadata dict is parsed from the user's *participant* metadata (set
+    via the LiveKit AccessToken's `metadata` field by the gateway's
+    /api/v1/orb/livekit/token endpoint). The function name still says
+    "room_metadata" for backwards-compat with callers — the schema is
+    identical (user_id/tenant_id/role/lang/vitana_id/is_mobile/is_anonymous).
+    The gateway already coerces role for mobile/WebView clients; we re-check
+    the mobile coercion here as defense-in-depth.
     """
     user_id = str(metadata.get("user_id", "anon"))
     tenant_id = str(metadata.get("tenant_id", ""))

@@ -2,9 +2,13 @@
  * VTID-01200: Worker Runner - Execution Service
  * VTID-01229: Added execution timeout to prevent hanging tasks
  * VTID-01231: Contract validation on LLM outputs before action execution
+ * BOOTSTRAP-WORKER-DS: env-configurable model + DeepSeek-reasoner fallback
  *
- * Executes work via Claude Opus 4.6 (Anthropic API).
- * Replaced Gemini/Vertex AI which was returning 404 errors on Cloud Run.
+ * Executes work via Anthropic Claude (default: claude-opus-4-6). Operators
+ * can swap the primary model via WORKER_LLM_MODEL env without code change.
+ * If Claude API fails (5xx, rate-limit, network), execution falls back to
+ * DeepSeek-reasoner via the OpenAI-compatible endpoint at api.deepseek.com.
+ * Fallback is logged loudly and reported in the ExecutionResult.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -20,7 +24,11 @@ const EXECUTION_TIMEOUT_MS = parseInt(process.env.WORKER_EXECUTION_TIMEOUT_MS ||
 // VTID-01231: Max contract validation retries
 const MAX_CONTRACT_RETRIES = parseInt(process.env.WORKER_CONTRACT_RETRIES || '2', 10);
 
-const CLAUDE_MODEL = 'claude-opus-4-6';
+// BOOTSTRAP-WORKER-DS: model is now env-configurable, defaults preserved
+const CLAUDE_MODEL = process.env.WORKER_LLM_MODEL || 'claude-opus-4-6';
+const DEEPSEEK_FALLBACK_MODEL = process.env.WORKER_FALLBACK_MODEL || 'deepseek-reasoner';
+const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+const DEEPSEEK_FALLBACK_ENABLED = process.env.WORKER_DEEPSEEK_FALLBACK !== 'false';
 
 // Anthropic client (initialized lazily)
 let anthropic: Anthropic | null = null;
@@ -157,6 +165,52 @@ IMPORTANT: Only describe changes within your domain boundaries. If changes are n
 }
 
 /**
+ * BOOTSTRAP-WORKER-DS: Direct DeepSeek fallback call.
+ * Uses DeepSeek's OpenAI-compatible /chat/completions endpoint via raw fetch.
+ * Only invoked when the primary Claude path fails — never silently.
+ */
+async function callDeepSeekFallback(
+  systemPrompt: string,
+  taskPrompt: string,
+  vtid: string
+): Promise<{ responseText: string; model: string }> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY not set — cannot fall back');
+  }
+
+  console.warn(`[${VTID}] DeepSeek fallback engaged for ${vtid} (model: ${DEEPSEEK_FALLBACK_MODEL})`);
+
+  const resp = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_FALLBACK_MODEL,
+      max_tokens: 8192,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: taskPrompt },
+      ],
+    }),
+  });
+
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '<no body>');
+    throw new Error(`DeepSeek fallback HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
+  }
+
+  const body = await resp.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const responseText = body.choices?.[0]?.message?.content || '';
+
+  return { responseText, model: DEEPSEEK_FALLBACK_MODEL };
+}
+
+/**
  * VTID-01231: Call Claude and validate response against contract.
  * Retries with violation feedback if contract check fails.
  */
@@ -284,15 +338,52 @@ export async function executeTask(
     const systemPrompt = buildSystemPrompt(domain);
     const taskPrompt = buildTaskPrompt(task, routing, domain);
 
-    const { responseText, attempt } = await callAndValidate(
-      systemPrompt,
-      taskPrompt,
-      task.vtid
-    );
+    try {
+      const { responseText, attempt } = await callAndValidate(
+        systemPrompt,
+        taskPrompt,
+        task.vtid
+      );
 
-    console.log(`[${VTID}] Received response for ${task.vtid} (${responseText.length} chars, attempt ${attempt})`);
+      console.log(`[${VTID}] Received response for ${task.vtid} (${responseText.length} chars, attempt ${attempt})`);
 
-    return parseExecutionResult(responseText, Date.now() - startTime, modelName, provider, attempt);
+      return parseExecutionResult(responseText, Date.now() - startTime, modelName, provider, attempt);
+    } catch (primaryError) {
+      // BOOTSTRAP-WORKER-DS: Engage DeepSeek fallback on primary failure.
+      // Never silent — always logged and reported in the result.
+      const primaryMsg = primaryError instanceof Error ? primaryError.message : 'Unknown error';
+
+      if (!DEEPSEEK_FALLBACK_ENABLED) {
+        throw primaryError;
+      }
+
+      console.error(`[${VTID}] Primary (${modelName}) failed for ${task.vtid}: ${primaryMsg}. Attempting DeepSeek fallback.`);
+
+      try {
+        const { responseText: fbText, model: fbModel } = await callDeepSeekFallback(
+          systemPrompt,
+          taskPrompt,
+          task.vtid
+        );
+        console.log(`[${VTID}] DeepSeek fallback succeeded for ${task.vtid} (${fbText.length} chars)`);
+
+        const result = parseExecutionResult(fbText, Date.now() - startTime, fbModel, 'deepseek', 1);
+        result.fallback_used = true;
+        result.fallback_from = `${provider}/${modelName}`;
+        result.fallback_reason = primaryMsg;
+        return result;
+      } catch (fallbackError) {
+        const fbMsg = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+        console.error(`[${VTID}] DeepSeek fallback also failed for ${task.vtid}: ${fbMsg}`);
+        return {
+          ok: false,
+          error: `Primary failed: ${primaryMsg}; fallback failed: ${fbMsg}`,
+          duration_ms: Date.now() - startTime,
+          model: modelName,
+          provider,
+        };
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[${VTID}] Execution error for ${task.vtid}: ${errorMessage}`);

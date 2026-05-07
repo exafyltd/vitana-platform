@@ -580,13 +580,17 @@ router.get(
     // Authoritative identity header — pinned at top so the LLM treats it
     // as ground truth, mirrors the role/vitana-id headers Vertex pins.
     if (displayName) {
-      ctxParts.push(`Authoritative identity: the user's name is ${displayName}.`);
+      ctxParts.push(`The user's first name is ${displayName}. Greet them by this name.`);
     }
     if (vitanaId) {
-      ctxParts.push(`The user's Vitana ID (canonical handle) is @${vitanaId}.`);
+      ctxParts.push(
+        `The user's Vitana handle is @${vitanaId}. Address them as @${vitanaId}.`,
+      );
     }
-    if (userId) ctxParts.push(`Internal user UUID: ${userId}.`);
-    if (tenantId) ctxParts.push(`Tenant: ${tenantId}.`);
+    // Note: deliberately do NOT include the raw UUID — small models read
+    // "Internal user UUID" as off-limits debug info and refuse to use the
+    // identity. The handle (@${vitanaId}) and name above are the model-
+    // facing identifiers; the UUID stays in metadata for tool calls only.
     ctxParts.push(`Role: ${role}.`);
     ctxParts.push(`Language: ${lang}.`);
     if (registrationSeq !== null) {
@@ -624,6 +628,13 @@ router.get(
       );
     }
 
+    // Extract first name from display_name OR memory_facts.user_name fact.
+    // app_users.display_name commonly stores the full name ("Dragan Alexander"),
+    // but the agent should address the user by their first name only.
+    const userNameFact = identityFacts.find((f) => f.fact_key === 'user_name');
+    const fullName = (userNameFact?.fact_value || displayName || '').trim();
+    const firstName = fullName ? fullName.split(/\s+/)[0] : null;
+
     res.json({
       ok: true,
       vtid: VTID,
@@ -639,6 +650,13 @@ router.get(
       recent_routes: [],
       client_context: { user_agent: req.headers['user-agent'] ?? null },
       vitana_id: req.identity?.vitana_id ?? null,
+      // VTID-LIVEKIT-IDENTITY-NAME: surface the user's name + verified facts as
+      // structured fields so the agent's instructions.py can address them by
+      // first name rather than only by @handle.
+      display_name: displayName,
+      first_name: firstName,
+      identity_facts: identityFacts,
+      identity_facts_count: identityFacts.length,
       voice_config: voiceConfig,
       memory_items: memoryItems,
     });

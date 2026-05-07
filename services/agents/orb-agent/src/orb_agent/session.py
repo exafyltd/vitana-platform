@@ -65,6 +65,28 @@ except ImportError:
     LK_AVAILABLE = False
 
 
+CODE_VERSION = "agent-2026-05-07-name-and-facts"
+
+
+async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
+    """Best-effort beacon proving the agent's deployed code includes the
+    trace path. Uses bare httpx (no GatewayClient — that path failed
+    silently somewhere). Posts to /api/v1/orb/agent-trace with no auth
+    (the endpoint accepts anonymous traces). Wrapped so any failure
+    here NEVER kills the entrypoint.
+    """
+    import httpx as _httpx  # local import to keep top-level minimal
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                gateway_url.rstrip("/") + "/api/v1/orb/agent-trace",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def agent_entrypoint(ctx: "JobContext") -> None:
     """livekit-agents JobContext entrypoint.
 
@@ -76,6 +98,25 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         return
 
     cfg = AgentConfig.from_env()
+
+    # Earliest possible trace heartbeat — fires BEFORE bootstrap, BEFORE
+    # any LLM/tool wiring. Proves whether this code revision is even
+    # serving. We don't have user_id yet (metadata not read), so use the
+    # job/room id as the unique tag and let the gateway store the row
+    # under user_id="<unknown>". A second, full trace fires after we
+    # have identity (below).
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": "agent-heartbeat",
+                "code_version": CODE_VERSION,
+                "phase": "entry",
+                "ts": "early",
+            },
+        )
+    )
+
     oasis = OasisEmitter(gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token)
     ctx_fetcher = ContextBootstrap(
         gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token
@@ -86,12 +127,42 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # publisher.
     await ctx.connect()
 
-    # Read room metadata: the gateway's /orb/livekit/token endpoint
-    # embeds resolved identity here.
-    metadata_str = ctx.room.metadata or ""
+    # ── Identity metadata lives on the USER PARTICIPANT, not the room. ──
+    # The gateway's /api/v1/orb/livekit/token mints a LiveKit AccessToken
+    # with `metadata: JSON.stringify({user_id, tenant_id, vitana_id,
+    # user_jwt, ...})`. AccessToken metadata becomes the *participant's*
+    # metadata at join time. `ctx.room.metadata` is room-level metadata
+    # (a separate, server-side field set via LiveKit Server API), which
+    # the gateway does NOT write — it has always been empty, which is why
+    # every session was resolving to user_id="anon" before this fix.
+    #
+    # Strategy: try participants already in the room first (the user
+    # typically joins before the agent dispatch), then fall back to
+    # waiting for the next participant join.
+    metadata_str = ""
+    user_participant = None
+    for p in ctx.room.remote_participants.values():
+        if p.metadata:
+            user_participant = p
+            metadata_str = p.metadata
+            logger.info("agent_entrypoint: read metadata from already-joined participant %s", p.identity)
+            break
+
+    if not metadata_str:
+        try:
+            user_participant = await asyncio.wait_for(ctx.wait_for_participant(), timeout=10.0)
+            metadata_str = user_participant.metadata or ""
+            logger.info("agent_entrypoint: waited for participant %s, metadata_len=%d",
+                        user_participant.identity, len(metadata_str))
+        except asyncio.TimeoutError:
+            logger.warning("agent_entrypoint: no participant joined within 10s — anonymous fallback")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_entrypoint: wait_for_participant failed: %s", exc)
+
     try:
         metadata = json.loads(metadata_str) if metadata_str else {}
     except (json.JSONDecodeError, TypeError):
+        logger.warning("agent_entrypoint: participant metadata is not valid JSON: %r", metadata_str[:200])
         metadata = {}
 
     # VTID-LIVEKIT-AGENT-JWT: the gateway's /orb/livekit/token endpoint
@@ -155,10 +226,33 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             recent_routes=bootstrap.recent_routes,
             client_context=bootstrap.client_context,
             vitana_id=bootstrap.vitana_id or identity.vitana_id,
+            first_name=bootstrap.first_name,
+            display_name=bootstrap.display_name,
         )
 
-    # Cascade.
+    # Cascade. If any of stt/llm/tts is None it means the corresponding
+    # plugin failed to instantiate (wrong provider name, ImportError,
+    # config kwarg not accepted, ADC missing scopes, etc.). Trace the
+    # cascade.notes so we never have to guess again.
     cascade = build_cascade(bootstrap.voice_config)
+    cascade_summary = {
+        "stt_present": cascade.stt is not None,
+        "llm_present": cascade.llm is not None,
+        "tts_present": cascade.tts is not None,
+        "notes": list(cascade.notes),
+    }
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "cascade_built",
+                "orb_session_id": orb_session_id,
+                "cascade_summary": cascade_summary,
+            },
+        )
+    )
 
     # OASIS session start.
     await oasis.emit(
@@ -180,17 +274,60 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # function in the module, exported via all_tools(). Each tool body is a
     # thin async call to a gateway endpoint via the GatewayClient carried on
     # RunContext.userdata (set on AgentSession below).
-    #
-    # VTID-LIVEKIT-TOOLS root cause: the earlier blocker was a wrong import
-    # path in tools.py (`from livekit.agents.llm import RunContext` no longer
-    # exists in livekit-agents 1.x; RunContext moved to `livekit.agents`). The
-    # try/except ImportError fallback was substituting a no-op decorator that
-    # returned the raw function, which AgentSession then rejected. Fix landed
-    # in tools.py's import block; tools list is now real.
+    tool_list = list(all_tools())
     agent = Agent(
         instructions=sys_prompt,
-        tools=list(all_tools()),
+        tools=tool_list,
     )
+
+    # VTID-LIVEKIT-AGENT-TRACE: post a structured trace to the gateway so
+    # the diagnostics panel can show what the agent ACTUALLY had at session
+    # start — proves whether the prompt rewrite is reaching the LLM and
+    # the bootstrap context is enriched.
+    try:
+        tool_names: list[str] = []
+        for t in tool_list:
+            try:
+                tool_names.append(getattr(getattr(t, "info", None), "name", None) or repr(t))
+            except Exception:
+                tool_names.append("<?>")
+        trace_payload = {
+            "user_id": identity.user_id,
+            "tenant_id": identity.tenant_id,
+            "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            "role": identity.role,
+            "lang": identity.lang,
+            "orb_session_id": orb_session_id,
+            "agent_id": agent_id,
+            "is_mobile": identity.is_mobile,
+            "is_anonymous": identity.is_anonymous,
+            "user_jwt_present": bool(user_jwt),
+            "user_jwt_len": len(user_jwt) if user_jwt else 0,
+            "bootstrap_context_length": len(bootstrap.bootstrap_context or ""),
+            "bootstrap_first_1500_chars": (bootstrap.bootstrap_context or "")[:1500],
+            "bootstrap_active_role": bootstrap.active_role,
+            "bootstrap_vitana_id": bootstrap.vitana_id,
+            "bootstrap_display_name": bootstrap.display_name,
+            "bootstrap_first_name": bootstrap.first_name,
+            "bootstrap_identity_facts_count": len(bootstrap.identity_facts or []),
+            "bootstrap_identity_fact_keys": [
+                f.get("fact_key") for f in (bootstrap.identity_facts or [])
+            ],
+            "bootstrap_voice_config_llm": (bootstrap.voice_config or {}).get("llm_model"),
+            "bootstrap_voice_config_stt": (bootstrap.voice_config or {}).get("stt_model"),
+            "bootstrap_voice_config_tts": (bootstrap.voice_config or {}).get("tts_model"),
+            "system_prompt_length": len(sys_prompt),
+            "system_prompt_first_600_chars": sys_prompt[:600],
+            "tools_count": len(tool_list),
+            "tools_first_5": tool_names[:5],
+            "tools_handle_in_first_chars": "@" + (bootstrap.vitana_id or identity.vitana_id or "") in sys_prompt[:600],
+            "tools_first_name_in_first_chars": bool(
+                bootstrap.first_name and bootstrap.first_name.lower() in sys_prompt[:600].lower()
+            ),
+        }
+        await gw.post("/api/v1/orb/agent-trace", trace_payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent-trace post failed: %s", exc)
 
     # AgentSession glues together STT + LLM + TTS + the room. userdata
     # carries the per-session GatewayClient so each tool body can pull it off
@@ -240,35 +377,118 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     ctx.add_shutdown_callback(_teardown)
 
+    # Phase trace: about to call session.start. If we never see a
+    # post_start trace for the same orb_session_id, session.start crashed.
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "pre_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
     try:
         await session.start(agent=agent, room=ctx.room)
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentSession.start crashed: %s", exc)
+        try:
+            await _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "start_crashed",
+                    "orb_session_id": orb_session_id,
+                    "agent_id": agent_id,
+                    "error": str(exc)[:500],
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return
 
-    # Initial greeting — fire as soon as the session is ready so the user
-    # hears their personalized hello on connect. Mirrors the Vertex pipeline
-    # behaviour (orb-live.ts opens with a generated greeting). The
-    # bootstrap_context already has the user's display_name / vitana_id /
-    # verified facts, so the LLM can reach into the prompt and pull the
-    # right name without an extra tool call.
-    if not identity.is_anonymous:
-        try:
-            await session.generate_reply(
-                instructions=(
-                    "Greet the user warmly RIGHT NOW. Pull their first name from "
-                    "the verified-facts block of your context (look for "
-                    "`user_name` or the `Authoritative identity` line). Confirm "
-                    "you recognize them by mentioning their @vitana_id handle. "
-                    "Keep it ONE short sentence followed by a brief 'what can I "
-                    "help with?'. If — and ONLY if — neither a name nor a "
-                    f"@vitana_id is present, fall back to: 'Hi! I'm Vitana — "
-                    f"signed in as {identity.user_id[:8]}…, what can I help with "
-                    "today?'."
-                ),
+    # session.start returned cleanly — emit a phase trace so we can
+    # distinguish "no audio because start() crashed" from "no audio
+    # because greeting/TTS crashed".
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "post_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
+
+    # ── speech_created phase trace (kept post-fix for ongoing visibility) ──
+    # Surfaces every TTS turn in the firehose so future cascade regressions
+    # are visible in seconds, not weeks.
+    try:
+        @session.on("speech_created")  # type: ignore[misc]
+        def _on_speech(ev: Any) -> None:  # noqa: ARG001
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "speech_created",
+                        "orb_session_id": orb_session_id,
+                    },
+                )
             )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not hook speech_created: %s", exc)
+
+    # Initial greeting — uses the LLM (via generate_reply) so the agent reads
+    # the user's name and verified facts from the system-prompt's WHO YOU ARE
+    # TALKING TO block. The TTS bug that caused 25s of dead air on every
+    # session is fixed in providers.py (language_code → language).
+    if not identity.is_anonymous:
+        vid = (bootstrap.vitana_id or "").strip()
+        first_name = (bootstrap.first_name or "").strip()
+        if first_name:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW by their first name: '{first_name}'. "
+                f"Examples: 'Hi {first_name}!' or 'Hey {first_name}, good to hear from you.' "
+                f"Their Vitana handle ({'@' + vid if vid else '<no handle>'}) is "
+                f"available as a fallback but DO NOT lead with it — '{first_name}' is "
+                f"the natural way a real person would address them. ONE short sentence "
+                f"+ brief 'What can I help with today?'. NEVER say you don't know them — "
+                f"you do. NEVER apologize for anything in the greeting."
+            )
+        else:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW using their @vitana_id handle "
+                f"(it is @{vid or 'their handle'}). Example: 'Hi @{vid or 'there'}!'. "
+                f"ONE short sentence + brief 'What can I help with today?'. NEVER say "
+                f"you don't know them — you do. NEVER apologize for anything in the greeting."
+            )
+        try:
+            await session.generate_reply(instructions=greeting_instructions)
         except Exception as exc:  # noqa: BLE001
             logger.warning("initial greeting generate_reply failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
     else:
         try:
             await session.generate_reply(

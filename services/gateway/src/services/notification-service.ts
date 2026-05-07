@@ -525,28 +525,23 @@ export async function notifyUser(
   // FCM covers desktop Chrome + mobile Chrome; Appilix covers Maxina app
   // users who have no FCM tokens registered.
   //
-  // Exception: chat-category notifications go Appilix-only on users who
-  // have the mobile app installed. The reason is deep-linking — when the
-  // user taps a chat push, they should land directly in the conversation
-  // inside the Maxina app (where they're already signed in). FCM web push
-  // opens the link in the user's browser, which is a different session
-  // from the app and forces the user through `/maxina` sign-in. iOS
-  // Universal Links + Android App Links can only fire when the OS
-  // delivers the URL to the app, which Appilix push does and FCM web push
-  // doesn't. Trade-off: a desktop-browser-only user with no Appilix app
-  // installed will not see a chat browser pop-up; they'll still see the
-  // in-app red dot + bell when they next open the app.
-  const isChatCategory = meta.category === 'chat';
+  // Appilix native push honors open_link_url (deep-links into the app).
+  // FCM in the Appilix WebView does NOT support deep-links (no service
+  // worker / Notification API). So when the payload has a URL, prefer
+  // Appilix for mobile users, with FCM as fallback for desktop browsers.
+  // For desktop-only users, Appilix fails silently → FCM delivers.
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
-    if (isChatCategory) {
+    if (payload.data?.url) {
+      // Notification with deep-link URL → Appilix first
       appilixSent = await sendAppilixPush(userId, payload);
+      if (!appilixSent) {
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+      }
     } else {
-      // Try FCM first (delivers to all registered device tokens)
+      // Notification without URL → FCM first, Appilix fallback
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-
-      // Appilix native push only if no FCM tokens delivered
       if (pushed === 0) {
         appilixSent = await sendAppilixPush(userId, payload);
       }

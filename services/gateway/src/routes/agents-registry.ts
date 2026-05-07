@@ -376,18 +376,30 @@ const GATEWAY_HOSTED_AGENTS = [
   'daily-recompute',
 ] as const;
 
+/**
+ * Bootstrap on gateway startup.
+ *
+ * Previously this stamped status='healthy' + last_heartbeat_at=now for all
+ * gateway-hosted agents at startup, which was a fake heartbeat: an embedded
+ * agent could have last failed 24h ago and still display green. The dashboard
+ * "16 healthy" overstated reality.
+ *
+ * Truthful behavior: on startup, mark gateway-hosted agents 'unknown' (we
+ * don't know yet whether their last invocation succeeded). Each agent's call
+ * site emits a real heartbeat via recordAgentHeartbeat() after a successful
+ * run. If no call comes in, the dashboard correctly shows 'unknown' rather
+ * than fake-healthy.
+ */
 export async function bootstrapEmbeddedAgents(): Promise<void> {
-  const now = new Date().toISOString();
   for (const agentId of GATEWAY_HOSTED_AGENTS) {
     const result = await supabaseRequest(
       `/rest/v1/agents_registry?agent_id=eq.${encodeURIComponent(agentId)}`,
       {
         method: 'PATCH',
         body: {
-          status: 'healthy',
-          last_heartbeat_at: now,
+          status: 'unknown',
           last_error: null,
-          updated_at: now,
+          updated_at: new Date().toISOString(),
         },
       }
     );
@@ -395,7 +407,36 @@ export async function bootstrapEmbeddedAgents(): Promise<void> {
       console.warn(`${LOG_PREFIX} bootstrap failed for ${agentId}: ${result.error}`);
     }
   }
-  console.log(`${LOG_PREFIX} bootstrapped ${GATEWAY_HOSTED_AGENTS.length} gateway-hosted agents`);
+  console.log(`${LOG_PREFIX} registered ${GATEWAY_HOSTED_AGENTS.length} gateway-hosted agents (status=unknown until first heartbeat)`);
+}
+
+/**
+ * Record a real heartbeat for an embedded/scheduled agent after a successful
+ * invocation. Call sites should invoke this in their post-success path so
+ * status reflects actual usage rather than gateway-uptime.
+ *
+ * Errors are logged but never thrown — heartbeat must never break the call.
+ */
+export async function recordAgentHeartbeat(
+  agentId: string,
+  opts: { error?: string | null } = {}
+): Promise<void> {
+  const now = new Date().toISOString();
+  const result = await supabaseRequest(
+    `/rest/v1/agents_registry?agent_id=eq.${encodeURIComponent(agentId)}`,
+    {
+      method: 'PATCH',
+      body: {
+        status: opts.error ? 'degraded' : 'healthy',
+        last_heartbeat_at: now,
+        last_error: opts.error ?? null,
+        updated_at: now,
+      },
+    }
+  );
+  if (!result.ok) {
+    console.warn(`${LOG_PREFIX} heartbeat record failed for ${agentId}: ${result.error}`);
+  }
 }
 
 // =============================================================================

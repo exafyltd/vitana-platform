@@ -247,3 +247,67 @@ describe('orb_directive dispatch simulation', () => {
     expect(parsed.route).toBe('/comm/events-meetups');
   });
 });
+
+// ─── VTID-02789: mobile_route override + viewport_only ──────────────────────
+
+describe('handleNavigateToScreen — mobile-awareness (VTID-02789)', () => {
+  test('mobile session redirected to mobile_route override (COMM.OVERVIEW)', async () => {
+    // COMM.OVERVIEW.route = '/comm', mobile_route = '/comm/events-meetups?tab=hot'
+    const session = buildAuthenticatedSession({ is_mobile: true, current_route: '/home' });
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'COMM.OVERVIEW',
+      reason: 'mobile user opens community',
+    });
+    expect(result.success).toBe(true);
+    expect(session.pendingNavigation.route).toBe('/comm/events-meetups?tab=hot');
+    // Eager session-route update strips the query string and tracks the path.
+    expect(session.current_route).toBe('/comm/events-meetups');
+  });
+
+  test('desktop session falls back to entry.route (no mobile_route hop)', async () => {
+    const session = buildAuthenticatedSession({ is_mobile: false, current_route: '/home' });
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'COMM.OVERVIEW',
+      reason: 'desktop user opens community',
+    });
+    expect(result.success).toBe(true);
+    expect(session.pendingNavigation.route).toBe('/comm');
+    expect(session.current_route).toBe('/comm');
+  });
+
+  test('viewport_only=mobile blocks desktop sessions (MEMORY.DAILY_DIARY)', async () => {
+    const session = buildAuthenticatedSession({ is_mobile: false, current_route: '/home' });
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'MEMORY.DAILY_DIARY',
+      reason: 'desktop user asks for daily diary capture',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/only available on mobile/i);
+    // No pending navigation queued
+    expect(session.pendingNavigation).toBeUndefined();
+  });
+
+  test('viewport_only=mobile allows mobile sessions (MEMORY.DAILY_DIARY)', async () => {
+    const session = buildAuthenticatedSession({ is_mobile: true, current_route: '/home' });
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'MEMORY.DAILY_DIARY',
+      reason: 'mobile user asks for daily diary capture',
+    });
+    expect(result.success).toBe(true);
+    expect(session.pendingNavigation.route).toBe('/daily-diary');
+  });
+
+  test('mobile session already on mobile_route is blocked with already_there', async () => {
+    // User is already on the mobile destination of COMM.OVERVIEW.
+    const session = buildAuthenticatedSession({
+      is_mobile: true,
+      current_route: '/comm/events-meetups',
+    });
+    const result = await handleNavigateToScreen(session, {
+      screen_id: 'COMM.OVERVIEW',
+      reason: 'mobile user re-asks',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/already on/i);
+  });
+});

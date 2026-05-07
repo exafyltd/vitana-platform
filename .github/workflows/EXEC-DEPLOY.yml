@@ -85,11 +85,21 @@ jobs:
 
           echo "Checking if VTID $VTID exists in OASIS ledger..."
 
-          # Resolve gateway URL (current deployed instance)
-          GATEWAY_URL=$(gcloud run services describe gateway \
-            --region=us-central1 \
-            --project=lovable-vitana-vers1 \
-            --format="value(status.url)" 2>/dev/null || echo "")
+          # BOOTSTRAP-CLOUDFLARE-GATEWAY-DOMAIN: Prefer the Cloudflare-fronted
+          # custom domain over the raw *.run.app URL. The raw URL is throttled
+          # at Google's edge (per-IP GFE rate limit) — VTID lookup calls fail
+          # with "Rate exceeded." when the runner's bucket is empty. The
+          # custom domain routes via Cloudflare → Cloud Run domain mapping
+          # with no per-IP ceiling. Fallback to gcloud lookup only if the
+          # custom domain is unreachable.
+          GATEWAY_URL="https://gateway.vitanaland.com"
+          if ! curl -sS -o /dev/null --max-time 5 "$GATEWAY_URL/alive"; then
+            echo "Custom domain unreachable, falling back to gcloud lookup..."
+            GATEWAY_URL=$(gcloud run services describe gateway \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --format="value(status.url)" 2>/dev/null || echo "")
+          fi
 
           if [ -z "$GATEWAY_URL" ]; then
             echo "::error::VTID-0542: HARD FAIL - Could not resolve gateway URL"

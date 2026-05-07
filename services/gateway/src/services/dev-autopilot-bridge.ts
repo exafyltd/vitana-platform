@@ -321,7 +321,24 @@ export async function spawnChildExecution(
       },
     }),
   });
-  if (!ins.ok) return { ok: false, error: `child insert failed: ${ins.error}` };
+  if (!ins.ok) {
+    // VTID-AUTOPILOT-RACE: the partial unique index
+    // `dev_autopilot_executions_finding_inflight_uniq` rejects this child
+    // INSERT if the parent's terminal-state transition just raced an
+    // autoApproveTick that approved a fresh fix=0 exec for the same
+    // finding (or another bridge call already spawned a child for the
+    // same parent). The other inflight exec will carry the retry; this
+    // bridge call cleanly skips. Returning ok=true with a sentinel
+    // execution_id lets the caller log the outcome rather than treat the
+    // skip as a hard failure.
+    if (ins.status === 409 && /23505|finding_inflight_uniq/.test(ins.error || '')) {
+      console.log(
+        `${LOG_PREFIX} child insert skipped for parent ${parent.id.slice(0, 8)}: another inflight exec already covers finding ${parent.finding_id.slice(0, 8)}`,
+      );
+      return { ok: false, error: 'inflight_unique_skip' };
+    }
+    return { ok: false, error: `child insert failed: ${ins.error}` };
+  }
   return { ok: true, execution_id: childId };
 }
 

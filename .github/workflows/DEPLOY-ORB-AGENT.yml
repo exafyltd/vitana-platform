@@ -93,6 +93,37 @@ jobs:
             --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest \
             --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=global
 
+      - name: Delete prior revisions (force only-latest worker connects to LiveKit)
+        run: |
+          set -euxo pipefail
+          # CRITICAL FIX: the orb-agent's livekit-agents worker connects
+          # OUTBOUND to LiveKit Cloud. With --min-instances=1, every Cloud
+          # Run revision keeps a warm container alive — and every warm
+          # container's worker subprocess registers with LiveKit Cloud.
+          # LiveKit then dispatches jobs to ANY connected worker, not just
+          # the latest revision. Result: rooms randomly get OLD code while
+          # we keep deploying fixes. Delete every non-latest revision so
+          # only the just-deployed code receives dispatches.
+          LATEST=$(gcloud run services describe "$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --format='value(status.latestReadyRevisionName)')
+          echo "Latest revision: $LATEST"
+          ALL=$(gcloud run revisions list \
+            --service="$SERVICE_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --format='value(metadata.name)')
+          for REV in $ALL; do
+            if [ "$REV" = "$LATEST" ]; then
+              echo "  keep $REV (latest)"
+            else
+              echo "  delete $REV"
+              gcloud run revisions delete "$REV" \
+                --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+                --quiet || echo "    (already gone or in use)"
+            fi
+          done
+          echo "✓ Only $LATEST is now serving worker dispatches."
+
       - name: Smoke test — health endpoint
         run: |
           set -euxo pipefail

@@ -34,6 +34,7 @@ import { renderPlanHtml } from './dev-autopilot-html';
 import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
 import { writeAutopilotFailure, isWorkerBinaryMissing } from './dev-autopilot-self-heal-log';
 import { loadAutopilotContext } from './dev-autopilot/context-loader';
+import { isTestFile } from './dev-autopilot-safety';
 import {
   extractTableNames,
   loadSchemaSnippets,
@@ -865,18 +866,22 @@ export async function generatePlanVersion(
   }
 
   // 4. Run the planning session
-  const session = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope, supa);
-  if (!session.ok || !session.plan_markdown) {
+  const initialSession = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope, supa);
+  if (!initialSession.ok || !initialSession.plan_markdown) {
     await emitOasisEvent({
       vtid: PLAN_VTID,
       type: 'dev_autopilot.plan.failed',
       source: 'dev-autopilot',
       status: 'error',
-      message: `Plan generation failed for ${findingId}: ${session.error}`,
-      payload: { finding_id: findingId, error: session.error, session_id: session.session_id },
+      message: `Plan generation failed for ${findingId}: ${initialSession.error}`,
+      payload: { finding_id: findingId, error: initialSession.error, session_id: initialSession.session_id },
     });
-    return { ok: false, error: session.error || 'planning failed' };
+    return { ok: false, error: initialSession.error || 'planning failed' };
   }
+  // Bind to non-undefined locals so the retry branch below can update them
+  // without losing TypeScript's narrowing across reassignment.
+  let plan_markdown: string = initialSession.plan_markdown;
+  let session_id: string | undefined = initialSession.session_id;
 
   // VTID-02680: for feedback-bridged findings, the bridge has already
   // pre-validated `proposed_files` against allow_scope/deny_scope. Trust
@@ -887,13 +892,53 @@ export async function generatePlanVersion(
   // For non-feedback findings, fall back to the markdown extractor.
   const proposedFiles = (finding.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
   const isFeedbackLane = (finding.spec_snapshot as { signal_type?: string })?.signal_type === 'feedback_ticket';
-  const files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
+  let files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
     ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
-    : extractFilePaths(session.plan_markdown);
+    : extractFilePaths(plan_markdown);
+
+  // VTID-AUTOPILOT-PLAN-TESTS: auto-retry-once if the plan lacks test files.
+  // The safety gate at approval time rejects any non-deletion-only plan
+  // missing a test file. The planner prompt mentions "Include test files"
+  // but the model often drops it. Catching this at plan-generation time
+  // and re-running once with explicit feedback raises first-time-pass
+  // rate substantially without burning the executor's LLM call. Skip
+  // when:
+  //   - This is already a continue-planning call (opts.feedback_note set).
+  //     A second forced retry on top of a human-driven retry would silently
+  //     overwrite the human's feedback intent.
+  //   - All listed files are tests (e.g., "missing tests" findings whose
+  //     scope IS test files only).
+  //   - All listed files are deletions only (no isDeletion check yet — use
+  //     a markdown heuristic on "## Files to delete" presence as a proxy).
+  const looksDeletionsOnly = /##\s*Files\s+to\s+(?:delete|remove)/i.test(plan_markdown)
+    && !/##\s*Files\s+to\s+(?:modify|touch|change|edit|create|add)/i.test(plan_markdown);
+  const hasTestFile = files_referenced.some(p => isTestFile(p));
+  if (!hasTestFile && !looksDeletionsOnly && !opts.feedback_note && files_referenced.length > 0) {
+    console.log(
+      `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} lacks test files — auto-retrying once with explicit feedback`,
+    );
+    const testFeedback = `Your previous plan listed ${files_referenced.length} file(s) but no test file. The safety gate REQUIRES at least one test file when the plan makes any non-deletion edits. Test files end in \`.test.ts\` / \`.test.tsx\` / \`.spec.ts\`. Regenerate the plan adding the matching co-located test file (or a new one under \`services/gateway/test/\` or \`services/gateway/tests/\`) and include it in the "Files to modify" section.`;
+    const retrySession = await runPlanningSession(finding, plan_markdown, testFeedback, scope, supa);
+    if (retrySession.ok && retrySession.plan_markdown) {
+      plan_markdown = retrySession.plan_markdown;
+      session_id = retrySession.session_id;
+      files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
+        ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
+        : extractFilePaths(plan_markdown);
+      const retryHasTest = files_referenced.some(p => isTestFile(p));
+      console.log(
+        `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} retry result: ${files_referenced.length} files, hasTest=${retryHasTest}`,
+      );
+    } else {
+      console.warn(
+        `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} retry failed: ${retrySession.error} — proceeding with original plan (safety gate may block)`,
+      );
+    }
+  }
   if (isFeedbackLane && Array.isArray(proposedFiles)) {
     console.log(`${LOG_PREFIX} feedback finding ${findingId}: using bridge-validated files (${files_referenced.length}) instead of planner extraction`);
   }
-  const plan_html = renderPlanHtml(session.plan_markdown);
+  const plan_html = renderPlanHtml(plan_markdown);
 
   // 4. Persist plan version
   const insertR = await supaRequest(supa, '/rest/v1/dev_autopilot_plan_versions', {
@@ -902,9 +947,9 @@ export async function generatePlanVersion(
     body: JSON.stringify({
       finding_id: findingId,
       version: nextVersion,
-      plan_markdown: session.plan_markdown,
+      plan_markdown,
       plan_html,
-      planning_session_id: session.session_id,
+      planning_session_id: session_id,
       feedback_note: opts.feedback_note || null,
       files_referenced,
     }),
@@ -919,7 +964,7 @@ export async function generatePlanVersion(
     source: 'dev-autopilot',
     status: 'success',
     message: `Plan v${nextVersion} generated for ${findingId} (${files_referenced.length} files cited)`,
-    payload: { finding_id: findingId, version: nextVersion, session_id: session.session_id, files: files_referenced },
+    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced },
   });
 
   return {
@@ -927,9 +972,9 @@ export async function generatePlanVersion(
     plan: {
       finding_id: findingId,
       version: nextVersion,
-      plan_markdown: session.plan_markdown,
+      plan_markdown,
       plan_html,
-      planning_session_id: session.session_id,
+      planning_session_id: session_id,
       feedback_note: opts.feedback_note,
       files_referenced,
     },

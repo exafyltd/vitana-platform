@@ -11,6 +11,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
 import {
@@ -28,6 +29,28 @@ import {
 } from '../services/voice-healing-summary';
 
 const router = Router();
+
+// VTID-VOICE-LAB-HEALTH-PUBLIC: register the health endpoint BEFORE
+// `requireAuth` so uptime probes (and the self-healing analyzer's
+// synthetic monitor) can hit it without a Bearer token. Without this,
+// every probe came back 401, the analyzer misclassified the 401 as
+// `import_error`, and a fresh VTID-027xx self-heal failure event was
+// logged on every check — ~20 false-positive VTIDs (02756 → 02801)
+// accumulated over 2 days before the cause was traced. The duplicate
+// registration that used to live near the bottom of this file with a
+// `public-route` marker comment was always intended to be public;
+// gating it under `requireAuth` was the bug. That now-shadowed
+// duplicate has been removed.
+router.get('/health', (_req: Request, res: Response) => {
+  return res.json({
+    ok: true,
+    service: 'voice-lab',
+    vtid: 'VTID-01218A',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.use(requireAuth);
 
 // =============================================================================
 // Types & Schemas
@@ -977,7 +1000,7 @@ router.post('/healing/reports/:id/execute', async (req: Request, res: Response) 
             step_index: i,
             step_total: steps.length,
             step_text: step.slice(0, 500),
-          },
+            },
           outcome: 'pending',
           blast_radius: 'none',
           attempt_number: 1,
@@ -1232,19 +1255,10 @@ router.get('/healing/live-monitor', async (_req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/v1/voice-lab/health
- *
- * Health check for Voice LAB API
- */
-router.get('/health', (_req: Request, res: Response) => {
-  return res.json({
-    ok: true,
-    service: 'voice-lab',
-    vtid: 'VTID-01218A',
-    timestamp: new Date().toISOString(),
-  });
-});
+// `/health` is registered above `router.use(requireAuth)` near the top of
+// this file (VTID-VOICE-LAB-HEALTH-PUBLIC) so uptime monitors hit it
+// without auth. The duplicate registration that used to live here was
+// shadowed by the earlier one and is removed.
 
 /**
  * GET /api/v1/voice-lab/debug/events

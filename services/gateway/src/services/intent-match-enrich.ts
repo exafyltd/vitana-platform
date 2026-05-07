@@ -37,6 +37,21 @@ function pickCounterpartyVid(
   return readerOwnsA ? match.vitana_id_b : match.vitana_id_a;
 }
 
+function pickCounterpartyIntentId(
+  match: RedactedMatch,
+  readerOwnsA: boolean,
+): string | null {
+  return readerOwnsA ? match.intent_b_id : match.intent_a_id;
+}
+
+const EMPTY_COUNTERPARTY_INTENT_FIELDS = {
+  partner_match_cover_url: null,
+  partner_intent_title: null,
+  partner_intent_scope: null,
+  partner_intent_kind: null,
+  partner_intent_status: null,
+} as const;
+
 export async function enrichMatchesWithCounterpartyProfiles(
   matches: MatchRow[],
   readerUserId: string,
@@ -76,6 +91,34 @@ export async function enrichMatchesWithCounterpartyProfiles(
     if (cpVid) counterpartyVids.add(cpVid);
   }
 
+  // 3b. Collect counterparty intent_ids for non-redacted matches and
+  //     batch-load the intent fields the Find-a-Match card body renders.
+  const counterpartyIntentIds = new Set<string>();
+  for (const m of redactedAll) {
+    if (m.redacted) continue;
+    const readerOwnsA = ownerByIntent.get(m.intent_a_id) === readerUserId;
+    const cpIntent = pickCounterpartyIntentId(m, readerOwnsA);
+    if (cpIntent) counterpartyIntentIds.add(cpIntent);
+  }
+  type CpIntentRow = {
+    intent_id: string;
+    title: string | null;
+    scope: string | null;
+    intent_kind: string | null;
+    status: string | null;
+    cover_url: string | null;
+  };
+  const cpIntentByIntentId = new Map<string, CpIntentRow>();
+  if (counterpartyIntentIds.size > 0) {
+    const { data: cpIntents } = await supabase
+      .from('user_intents')
+      .select('intent_id, title, scope, intent_kind, status, cover_url')
+      .in('intent_id', Array.from(counterpartyIntentIds));
+    for (const row of (cpIntents ?? []) as CpIntentRow[]) {
+      cpIntentByIntentId.set(row.intent_id, row);
+    }
+  }
+
   // 4. Batch-load profile rows for all counterparties.
   type ProfileRow = {
     user_id: string;
@@ -113,27 +156,66 @@ export async function enrichMatchesWithCounterpartyProfiles(
   // 6. Assemble enriched results.
   return redactedAll.map((m) => {
     if (m.redacted) {
-      return { ...m, partner_display_name: null, partner_avatar_url: null, partner_gender: null };
+      // Redacted (partner_seek pre-reveal) — leak nothing about the counterparty.
+      return {
+        ...m,
+        partner_display_name: null,
+        partner_avatar_url: null,
+        partner_gender: null,
+        ...EMPTY_COUNTERPARTY_INTENT_FIELDS,
+      };
     }
     const readerOwnsA = ownerByIntent.get(m.intent_a_id) === readerUserId;
     const cpVid = pickCounterpartyVid(m, readerOwnsA);
+    const cpIntentId = pickCounterpartyIntentId(m, readerOwnsA);
+    const cpIntent = cpIntentId ? cpIntentByIntentId.get(cpIntentId) : undefined;
+    const intentFields = cpIntent
+      ? {
+          partner_match_cover_url: cpIntent.cover_url,
+          partner_intent_title: cpIntent.title,
+          partner_intent_scope: cpIntent.scope,
+          partner_intent_kind: cpIntent.intent_kind,
+          partner_intent_status: cpIntent.status,
+        }
+      : EMPTY_COUNTERPARTY_INTENT_FIELDS;
+
     if (!cpVid) {
-      return { ...m, partner_display_name: null, partner_avatar_url: null, partner_gender: null };
+      return {
+        ...m,
+        partner_display_name: null,
+        partner_avatar_url: null,
+        partner_gender: null,
+        ...intentFields,
+      };
     }
     const profile = profileByVid.get(cpVid);
     if (!profile) {
-      return { ...m, partner_display_name: null, partner_avatar_url: null, partner_gender: null };
+      return {
+        ...m,
+        partner_display_name: null,
+        partner_avatar_url: null,
+        partner_gender: null,
+        ...intentFields,
+      };
     }
     const visible = visibleByUserId.get(profile.user_id);
     if (visible === false) {
-      // Hidden user → no leak.
-      return { ...m, partner_display_name: null, partner_avatar_url: null, partner_gender: null };
+      // Hidden user → suppress profile fields, but the counterparty intent's
+      // public-ish title / scope / cover stay visible (they're board content).
+      return {
+        ...m,
+        partner_display_name: null,
+        partner_avatar_url: null,
+        partner_gender: null,
+        ...intentFields,
+      };
     }
     return {
       ...m,
       partner_display_name: profile.display_name ?? profile.full_name ?? null,
       partner_avatar_url: profile.avatar_url ?? null,
       partner_gender: normalizeGender(profile.gender),
+      ...intentFields,
     };
   });
 }

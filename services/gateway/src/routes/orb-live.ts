@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
+// dashboard reflects live usage instead of fake startup status.
+import { recordAgentHeartbeat } from './agents-registry';
 // VTID-02651: persona registry — voice/greeting/handles_kinds all loaded
 // from agent_personas at runtime so any new specialist is a config insert.
 // VTID-02653 Phase 6: tenant-aware overlay variants. The runtime uses
@@ -159,6 +162,7 @@ import {
   suggestSimilar as suggestNavSimilar,
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
+  lookupByAlias as lookupNavByAlias,
 } from '../lib/navigation-catalog';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
@@ -911,6 +915,10 @@ interface GeminiLiveSession {
   // VTID-NAV: Last few routes the user visited (newest first), pushed by the
   // host React Router via VTOrb.updateContext before the session started.
   recent_routes?: string[];
+  // VTID-02789: Mobile viewport flag, set from the frontend's useIsMobile()
+  // hook in the session start payload + every updateContext. Drives the
+  // mobile_route override + viewport_only block in handleNavigateToScreen.
+  is_mobile?: boolean;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -3255,6 +3263,16 @@ function buildLiveApiTools(
             '',
             'NEVER repeat-post the same generic ask. If the user repeats verbatim, treat it as "show me my',
             'existing post" — call list_my_intents and surface what they already have.',
+            '',
+            'SUCCESS CONTRACT (VTID-02790, mandatory):',
+            'When the response contains stage:"posted" — regardless of match_count, cold_start, or any',
+            'other field — the post is LIVE in the database. You MUST confirm success.',
+            '- NEVER say "I had a problem", "there was an issue", "I couldn\'t post", "etwas ging schief",',
+            '  "es gab ein Problem", "ich konnte den Beitrag nicht erstellen", or any apologetic phrase.',
+            '- For match_count > 0: announce the post is live and that there are N potential matches.',
+            '- For match_count = 0 (cold_start): use the "you\'re the first" copy above.',
+            '- If the user later doubts ("did it really post?"), call list_my_intents and SHOW them.',
+            'Do NOT invent failure modes. Do NOT apologize when the server reported success.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -3350,67 +3368,69 @@ function buildLiveApiTools(
             required: ['intent_id', 'recipient_vitana_ids'],
           },
         },
-        // VTID-DANCE-D14 — voice navigation. ORB returns a relative URL
-        // the frontend listens for and routes to. Use whenever the user
-        // says "show me my posts", "open the dance board", "where can I
-        // see this", "take me to the members list", etc.
+        // VTID-02770 — Voice navigation. The Navigator returns a relative URL
+        // the frontend ORB widget intercepts and routes to.
+        //
+        // The valid set of `screen_id` values is the Navigation Catalog
+        // (services/gateway/src/lib/navigation-catalog.ts) — the single source
+        // of truth, ~150 entries and growing. There is no enum here on purpose:
+        // an enum drifts the moment a new screen ships. Send any screen_id or
+        // alias slug; the gateway validates with exact match → alias match →
+        // fuzzy resolve, in that order.
         {
           name: 'navigate_to_screen',
           description: [
-            'Return a navigation target (relative URL) for the frontend to route to.',
-            'Use whenever the user asks to be shown a screen, list, or detail page —',
-            '"show me my posts", "open the dance board", "where can I see this", "take me to members".',
+            'Redirect the user to a screen, page, drawer, or overlay.',
             '',
-            'Available targets:',
-            "  find_partner             → /comm/find-partner (Find a Partner — unified dance + fitness destination, my matches by default)",
-            "  find_partner_matches     → /comm/find-partner?view=matches (only my matches)",
-            "  find_partner_board       → /comm/find-partner?view=board (community board, dance + fitness)",
-            "  find_partner_posts       → /comm/find-partner?view=posts (my dance/fitness wishes)",
-            "  my_intents               → /intents/mine (my own posts list)",
-            "  intent_board             → /intents/board (all community posts, kind tabs)",
-            "  intent_board_dance       → /intents/board?filter=dance (dance tab pre-selected)",
-            "  open_asks                → /comm/open-asks (community-wide unmatched posts)",
-            "  members                  → /comm/members (community members directory)",
-            "  intent_match_detail      → /intents/match/<match_id> (a specific match)",
-            "  intent_post_public       → /p/<intent_id> (public viewer for a specific post)",
-            "  edit_dance_preferences   → /profile/edit?drawer=dance",
-            "  edit_partner_preferences → /me/profile?drawer=partner (private-by-default partner-finding prefs)",
-            "  edit_service_offerings   → /me/profile?drawer=offerings (services I offer)",
-            "  privacy_settings         → /profile/me/privacy (per-section visibility toggles)",
-            "  connected_apps           → /settings/connected-apps (link/unlink Google, YouTube, Spotify, Apple Music etc — use whenever the user needs to connect or reconnect a music/calendar/email service)",
-            "  profile_with_match       → /u/<vitana_id>?match_intent=<intent_id> (matched user's profile with the matched post anchored)",
-            "  discover_marketplace     → /discover/marketplace (commercial intents)",
-            "  events_meetups           → /comm/events-meetups",
-            "  community_feed           → /comm/feed",
+            '── HARD-REDIRECT LEXICON — ALWAYS call this tool when the user uses any of these phrasings AND the requested item maps unambiguously to one screen ──',
+            '  Open       — "open …", "take me to …", "go to …", "launch …", "öffne …", "geh zu …", "bring mich zu …"',
+            '  Show       — "show me …", "let me see …", "display …", "zeig mir …", "lass mich … sehen"',
+            '  Guide      — "guide me to …", "navigate me to …", "lead me to …", "führe mich zu …"',
+            '  Locate     — "where can I find …", "where is …", "where do I see …", "wo finde ich …", "wo ist …"',
+            '  Action     — "where can I execute …", "where do I do …", "where can I log …", "wo kann ich …"',
+            '  Read       — "read me my …", "read this …", "read that …", "lies mir … vor"',
+            '  Not-found  — "I could not find …", "I can\'t find …", "I don\'t see …", "ich finde … nicht"',
             '',
-            'PREFER find_partner_* over my_intents / intent_board / members for any dance- or fitness-partner request.',
-            'find_partner is the single destination that pulls dance + fitness matches into one ranked list, with',
-            'sub-tabs for board, my posts, and members. Use it when the user says: "show me my matches",',
-            '"who did you find for me", "who wants to dance", "find me a fitness buddy", "open Find a Partner".',
+            'When any of these phrasings is used and the target is unambiguous, the redirect IS the answer. Do not narrate, do not ask permission, do not re-confirm. After calling, say a brief voice cue ("Opening your matches" / "Hier ist dein Index").',
             '',
-            'After calling, ORB should ALSO say a short voice cue ("Opening your matches") so',
-            'the user knows the screen change is intentional. The frontend handles the actual route push.',
+            '── DISAMBIGUATION ──',
+            'If the request could legitimately map to multiple screens (e.g. "show me my news" → inbox / AI feed / news; "where can I see my events" → events / calendar / reminders), DO NOT GUESS. Ask one short either/or question using the catalog titles, then call this tool with the user\'s pick. Example: "Do you mean your inbox news, or your AI feed?" / "Meinst du deinen Posteingang oder den KI-Feed?"',
+            '',
+            '── HOW TO PICK A screen_id ──',
+            'Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOVER.MARKETPLACE, OVERLAY.CALENDAR, MEMORY.DIARY, REMINDERS.OVERVIEW, INBOX.OVERVIEW, PROFILE.ME, PROFILE.PUBLIC, SETTINGS.CONNECTED_APPS, BUSINESS.OVERVIEW, COMM.OPEN_ASKS, COMM.MEMBERS, COMM.TALK_TO_VITANA, INTENTS.BOARD, INTENTS.MINE, INTENTS.MATCH_DETAIL, etc. If you only know a slug, send that — alias resolution handles "find-partner", "marketplace", "vitana-index", "calendar", "diary", "reminders", "members", "open-asks", "intent-board", "connected-apps", and the legacy snake_case forms (find_partner, events_meetups, …). Slugs work in EN or DE.',
+            '',
+            'Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.',
+            '',
+            '── PARAMETERIZED ROUTES ──',
+            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER.',
           ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
+              screen_id: {
+                type: 'string',
+                description: 'Catalog screen_id (e.g. "COMM.FIND_PARTNER") OR a known alias slug ("find-partner", "marketplace"). Validated server-side with exact → alias → fuzzy resolution; unknown ids are rejected with suggestions.',
+              },
               target: {
                 type: 'string',
-                enum: [
-                  'find_partner','find_partner_matches','find_partner_board','find_partner_posts',
-                  'my_intents','intent_board','intent_board_dance',
-                  'open_asks','members',
-                  'intent_match_detail','intent_post_public','profile_with_match',
-                  'edit_dance_preferences','edit_partner_preferences','edit_service_offerings',
-                  'privacy_settings','connected_apps','discover_marketplace',
-                  'events_meetups','community_feed',
-                ],
+                description: 'Legacy slug field — kept for backward compatibility with older clients. Equivalent to screen_id when both are absent.',
               },
-              intent_id: { type: 'string', description: 'For intent_post_public + profile_with_match (the matched intent_id).' },
-              match_id: { type: 'string', description: 'For intent_match_detail target.' },
-              vitana_id: { type: 'string', description: 'For profile_with_match — the counterparty\'s vitana_id (without leading @).' },
+              reason: {
+                type: 'string',
+                description: 'One-sentence reason in the user\'s language. Surfaced in OASIS telemetry for tuning.',
+              },
+              intent_id: { type: 'string', description: 'For PROFILE.WITH_MATCH (the matched intent_id).' },
+              match_id: { type: 'string', description: 'For INTENTS.MATCH_DETAIL.' },
+              vitana_id: { type: 'string', description: 'For PROFILE.PUBLIC / PROFILE.WITH_MATCH — counterparty vitana_id without leading @.' },
+              meetup_id: { type: 'string', description: 'For OVERLAY.MEETUP_DRAWER.' },
+              event_id: { type: 'string', description: 'For OVERLAY.EVENT_DRAWER.' },
+              user_id: { type: 'string', description: 'For OVERLAY.PROFILE_PREVIEW.' },
+              groupId: { type: 'string', description: 'For COMM.GROUP_DETAIL.' },
+              roomId: { type: 'string', description: 'For COMM.LIVE_ROOM_VIEWER.' },
+              id: { type: 'string', description: 'For DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL.' },
             },
-            required: ['target'],
+            // Either screen_id or target must be present — checked in the
+            // handler so legacy callers that send `target` continue to work.
           },
         },
         // VTID-DANCE-D11.B — pre-post candidate scan.
@@ -3784,18 +3804,69 @@ async function handleNavigate(
     type: 'orb.navigator.consulted',
     source: 'orb-live-ws',
     status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigate: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
+    message: `navigate: confidence=${consultResult.confidence}, decision=${consultResult.decision}, primary=${consultResult.primary?.screen_id || 'none'}`,
     payload: {
       session_id: session.sessionId,
       question,
       primary_screen_id: consultResult.primary?.screen_id || null,
       confidence: consultResult.confidence,
+      // VTID-02781: surface decision in consulted-event payload
+      decision: consultResult.decision,
+      alternative_screen_ids: consultResult.alternatives.slice(0, 3).map(a => a.screen_id),
       kb_excerpt_count: consultResult.kb_excerpt_count,
       memory_hint_count: consultResult.memory_hint_count,
       ms_elapsed: consultResult.ms_elapsed,
       is_anonymous: consultInput.is_anonymous,
     },
   }).catch(() => {});
+
+  // VTID-02781: If the consult decided the request is ambiguous, return an
+  // either/or clarification BEFORE auto-navigating. Better to ask once than
+  // to redirect to the wrong screen.
+  if (
+    consultResult.decision === 'ambiguous' &&
+    consultResult.alternatives.length >= 2 &&
+    !consultResult.blocked_reason
+  ) {
+    const top = consultResult.alternatives[0];
+    const second = consultResult.alternatives[1];
+    const third = consultResult.alternatives[2] || null;
+    emitOasisEvent({
+      vtid: 'VTID-02781',
+      type: 'orb.navigator.disambiguated',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `disambiguating: ${top.screen_id} vs ${second.screen_id}${third ? ' vs ' + third.screen_id : ''}`,
+      payload: {
+        session_id: session.sessionId,
+        question,
+        candidates: consultResult.alternatives.slice(0, 3).map(a => ({
+          screen_id: a.screen_id, route: a.route, title: a.title,
+        })),
+        ms_elapsed: consultResult.ms_elapsed,
+        lang: consultInput.lang,
+      },
+    }).catch(() => {});
+
+    const lines: string[] = [];
+    lines.push('NAVIGATING_TO: null (waiting for user choice — DO NOT redirect)');
+    lines.push(`DECISION: ambiguous`);
+    lines.push(`CANDIDATES:`);
+    consultResult.alternatives.slice(0, 3).forEach((a, i) => {
+      lines.push(`  [${i + 1}] ${a.screen_id} — ${a.title} (${a.route})`);
+    });
+    const askLine =
+      consultResult.suggested_question ||
+      (consultInput.lang.startsWith('de')
+        ? `Meinst du ${top.title} oder ${second.title}${third ? ' — oder ' + third.title : ''}?`
+        : `Do you mean ${top.title} or ${second.title}${third ? ' — or ' + third.title : ''}?`);
+    lines.push(`ASK_USER: ${askLine}`);
+    lines.push('');
+    lines.push('Ask the either/or question naturally. WAIT for the user to pick.');
+    lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
+    lines.push('do not call navigate again unless the user rephrases their request.');
+    return { success: true, result: lines.join('\n') };
+  }
 
   // Step 2: If we found a match with sufficient confidence, auto-navigate
   if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
@@ -4016,20 +4087,29 @@ export async function handleNavigateToScreen(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
-  const screenId = String(args.screen_id || '').trim();
+  // VTID-02770: accept either `screen_id` (canonical) or legacy `target` slug.
+  // The handler resolves both via the catalog's three-tier lookup
+  // (exact id → alias → fuzzy).
+  const screenId = String(args.screen_id || args.target || '').trim();
   const reason = String(args.reason || '').trim();
   if (!screenId) {
-    return { success: false, result: '', error: 'navigate_to_screen requires screen_id.' };
+    return { success: false, result: '', error: 'navigate_to_screen requires screen_id (or legacy target).' };
   }
 
-  // VTID-NAV-FUZZY: Try exact match first. If that fails, auto-resolve via
-  // suggestSimilar — Gemini frequently guesses partial ids like "MEDIA_HUB"
-  // instead of "COMM.MEDIA_HUB" or "BUSINESS_HUB" instead of "BUSINESS.OVERVIEW".
-  // If the top suggestion is a strong match (score > 2nd by 2x or only one
-  // suggestion), navigate to it directly instead of returning an error that
-  // causes Gemini to stall. This eliminates the "frozen after asking for
-  // media hub / business hub" bug entirely.
+  // VTID-02770: Three-tier resolution.
+  //   1. Exact screen_id match (BY_ID)
+  //   2. Alias match (BY_ALIAS — includes legacy slugs like "find_partner",
+  //      user-canonical paths like "/community/events", and language variants)
+  //   3. Fuzzy fallback (suggestSimilar) — last-resort recovery for partial
+  //      guesses like "MEDIA_HUB" instead of "COMM.MEDIA_HUB".
   let entry = lookupNavScreen(screenId);
+  if (!entry) {
+    const aliased = lookupNavByAlias(screenId);
+    if (aliased) {
+      console.log(`[VTID-02770] Alias-resolved '${screenId}' → '${aliased.screen_id}' (${aliased.route})`);
+      entry = aliased;
+    }
+  }
   if (!entry) {
     const similar = suggestNavSimilar(screenId, 5);
     // Auto-resolve: if the top suggestion is unambiguous (strong lead or
@@ -4104,13 +4184,113 @@ export async function handleNavigateToScreen(
     };
   }
 
-  if (session.current_route && session.current_route === entry.route) {
+  // VTID-02789: Viewport gate — refuse the redirect if the entry is
+  // viewport-locked to mobile-only or desktop-only and the session doesn't
+  // match. Lets us mark `/daily-diary` (mobile-only flow) so a desktop
+  // session never gets sent there.
+  if (entry.viewport_only) {
+    const sessionViewport: 'mobile' | 'desktop' = session.is_mobile === true ? 'mobile' : 'desktop';
+    if (entry.viewport_only !== sessionViewport) {
+      emitOasisEvent({
+        vtid: 'VTID-02789',
+        type: 'orb.navigator.blocked',
+        source: 'orb-live-ws',
+        status: 'warning',
+        message: `Screen '${entry.screen_id}' is ${entry.viewport_only}-only; session is ${sessionViewport}`,
+        payload: {
+          session_id: session.sessionId,
+          attempted_screen_id: screenId,
+          error_kind: 'wrong_viewport',
+          required_viewport: entry.viewport_only,
+          session_viewport: sessionViewport,
+        },
+      }).catch(() => {});
+      return {
+        success: false,
+        result: '',
+        error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
+      };
+    }
+  }
+
+  // VTID-02770: Resolve the final URL the frontend will receive.
+  //   1. VTID-02789: Mobile-aware URL — when session.is_mobile=true AND the
+  //      entry has a mobile_route override, use that instead of route. Lets
+  //      pages that auto-redirect on mobile (e.g. /comm →
+  //      /comm/events-meetups?tab=hot) skip the redirect hop.
+  //   2. Substitute `:param` placeholders in the chosen base URL with values
+  //      from args. Missing required params are reported as a typed error so
+  //      Gemini knows it must ask the user for the missing piece.
+  //   3. For overlay entries (entry_kind === 'overlay'), append
+  //      `?open=<query_marker>` so the frontend ORB widget intercepts and
+  //      dispatches the corresponding CustomEvent instead of routing.
+  //   4. For overlay entries that need a parameter (e.g. user_id for
+  //      OVERLAY.PROFILE_PREVIEW), append it as a query param too — the
+  //      frontend reads it from the URL on dispatch.
+  const isMobileSession = session.is_mobile === true;
+  const baseRoute = (isMobileSession && entry.mobile_route) ? entry.mobile_route : entry.route;
+  let resolvedRoute = baseRoute;
+  const missingParams: string[] = [];
+  resolvedRoute = resolvedRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, name) => {
+    const v = args[name];
+    if (v === undefined || v === null || String(v).trim() === '') {
+      missingParams.push(String(name));
+      return ':' + String(name);
+    }
+    // Strip a leading `@` from vitana_id-style params before encoding.
+    const clean = String(v).trim().replace(/^@/, '');
+    return encodeURIComponent(clean);
+  });
+  if (missingParams.length > 0) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-live-ws',
+      status: 'warning',
+      message: `Missing route param(s) for ${entry.screen_id}: ${missingParams.join(', ')}`,
+      payload: {
+        session_id: session.sessionId,
+        attempted_screen_id: screenId,
+        error_kind: 'missing_param',
+        missing_params: missingParams,
+      },
+    }).catch(() => {});
+    return {
+      success: false,
+      result: '',
+      error: `Cannot navigate to ${entry.screen_id}: missing required parameter(s) ${missingParams.join(', ')}. Ask the user to provide them, then call navigate_to_screen again.`,
+    };
+  }
+
+  if (entry.entry_kind === 'overlay' && entry.overlay) {
+    const sep = resolvedRoute.includes('?') ? '&' : '?';
+    const params = new URLSearchParams();
+    params.set('open', entry.overlay.query_marker);
+    // If the overlay needs a specific param (user_id, meetup_id, etc.) and
+    // the caller provided it, pass it through so the frontend overlay can
+    // pick the right entity to render.
+    const needs = entry.overlay.needs_param;
+    if (needs) {
+      const v = args[needs];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        params.set(needs, String(v).trim().replace(/^@/, ''));
+      }
+    }
+    resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
+  }
+
+  // VTID-02789: Compare current_route against the *resolved* base path
+  // (mobile_route on mobile, route otherwise) so a mobile user already on
+  // /comm/events-meetups (because /comm aliased there) doesn't get bounced
+  // when they ask for "the community page" again.
+  const baseRoutePath = baseRoute.split('?')[0];
+  if (session.current_route && session.current_route === baseRoutePath && entry.entry_kind !== 'overlay') {
     emitOasisEvent({
       vtid: 'VTID-NAV-01',
       type: 'orb.navigator.blocked',
       source: 'orb-live-ws',
       status: 'info',
-      message: `User is already on ${entry.route}`,
+      message: `User is already on ${baseRoutePath}`,
       payload: {
         session_id: session.sessionId,
         attempted_screen_id: screenId,
@@ -4130,7 +4310,7 @@ export async function handleNavigateToScreen(
   const content = getNavContent(entry, lang);
   session.pendingNavigation = {
     screen_id: entry.screen_id,
-    route: entry.route,
+    route: resolvedRoute,
     title: content.title,
     reason: reason || 'navigate_to_screen tool call',
     decision_source: 'direct',
@@ -4146,12 +4326,20 @@ export async function handleNavigateToScreen(
   // not the stale route the user was on when the session started. This
   // is what makes "which screen am I on?" answerable after Vitana has
   // just redirected the user via this tool.
-  const previousRoute = session.current_route;
-  session.current_route = entry.route;
-  if (previousRoute && previousRoute !== entry.route) {
-    const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
-    const deduped = trail.filter(r => r !== previousRoute);
-    session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+  //
+  // VTID-02770: For overlay entries we do NOT change current_route, since the
+  // user stays on their original page — only a popup opens.
+  // VTID-02789: Use the resolved baseRoutePath (mobile_route on mobile, else
+  // route) so the eager update tracks the actual destination, not the
+  // generic desktop URL.
+  if (entry.entry_kind !== 'overlay') {
+    const previousRoute = session.current_route;
+    session.current_route = baseRoutePath;
+    if (previousRoute && previousRoute !== baseRoutePath) {
+      const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+      const deduped = trail.filter(r => r !== previousRoute);
+      session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+    }
   }
 
   // Persist the navigation as a memory item (authenticated only).
@@ -4164,7 +4352,7 @@ export async function handleNavigateToScreen(
       },
       screen: {
         screen_id: entry.screen_id,
-        route: entry.route,
+        route: resolvedRoute,
         title: content.title,
       },
       reason: session.pendingNavigation.reason,
@@ -4180,11 +4368,12 @@ export async function handleNavigateToScreen(
     type: 'orb.navigator.requested',
     source: 'orb-live-ws',
     status: 'info',
-    message: `navigate_to_screen ${entry.screen_id} (${entry.route})`,
+    message: `navigate_to_screen ${entry.screen_id} (${resolvedRoute})`,
     payload: {
       session_id: session.sessionId,
       screen_id: entry.screen_id,
-      route: entry.route,
+      route: resolvedRoute,
+      entry_kind: entry.entry_kind || 'route',
       reason: session.pendingNavigation.reason,
       is_anonymous: isAnon,
     },
@@ -4192,7 +4381,9 @@ export async function handleNavigateToScreen(
 
   return {
     success: true,
-    result: `Navigation queued to ${content.title} (${entry.route}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
+    result: entry.entry_kind === 'overlay'
+      ? `Overlay opened: ${content.title}. The user stays on their current screen — the popup is now visible. Continue the conversation; do NOT navigate elsewhere unless the user asks.`
+      : `Navigation queued to ${content.title} (${resolvedRoute}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
   };
 }
 
@@ -4285,9 +4476,17 @@ async function executeLiveApiToolInner(
   if (toolName === 'navigate') {
     return await handleNavigate(session, args);
   }
-  // Legacy tool names — route to the unified handler for backward compatibility
-  // in case an in-flight session still has the old tool declarations cached.
-  if (toolName === 'navigator_consult' || toolName === 'navigate_to_screen') {
+  // VTID-02770: navigate_to_screen takes a catalog screen_id (or alias) and
+  // dispatches directly via the catalog-aware handler. This is the canonical
+  // path — preserves parameterized routes (intent_id, match_id, etc.) and
+  // overlay support that the free-text `navigate` tool does not.
+  if (toolName === 'navigate_to_screen') {
+    return await handleNavigateToScreen(session, args);
+  }
+  // Legacy: navigator_consult was the consult-then-narrate path before the
+  // unified `navigate` tool. Still routed to the unified handler for any
+  // in-flight session that has the old declarations cached.
+  if (toolName === 'navigator_consult') {
     return await handleNavigate(session, { question: args.question || args.screen_id || args.reason || '' });
   }
 
@@ -4312,40 +4511,28 @@ async function executeLiveApiToolInner(
   try {
     switch (toolName) {
       case 'recall_conversation_at_time': {
-        // VTID-02052: voice/Live-API path for the recall tool. Without this case,
-        // an iPhone user asking "when did we talk about X" hits the default
-        // "Unknown tool" branch and the upstream Live API WS closes — the
-        // user sees "internet issues" on the device.
-        try {
-          const { executeRecallConversationAtTime } = await import(
-            '../services/tool-recall-conversation'
-          );
-          const recall = await executeRecallConversationAtTime(
-            args as { time_hint: string; topic_hint?: string },
-            {
-              user_id: session.identity.user_id,
-              user_timezone:
-                (session as any)?.clientContext?.timezone || undefined,
-            },
-          );
-          // The Live API expects a JSON string; cap to keep the function
-          // response payload safely under the 4 KB stall threshold.
-          const payload = JSON.stringify(recall);
-          const MAX = 4000;
-          const result = payload.length > MAX ? payload.slice(0, MAX) + '...(truncated)' : payload;
-          return {
-            success: !!recall.ok,
-            result: recall.ok ? result : '',
-            error: recall.ok ? undefined : recall.error || 'recall_failed',
-          };
-        } catch (err: any) {
-          console.error('[VTID-02052] recall_conversation_at_time failed:', err?.message);
-          return {
-            success: false,
-            result: '',
-            error: err?.message || 'recall_exception',
-          };
+        // PR B-3: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // call executeRecallConversationAtTime through the shared dispatcher.
+        // Pass user_timezone via args so the lifted handler can use it.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        const tz = (session as any)?.clientContext?.timezone;
+        return await dispatchOrbToolForVertex(
+          'recall_conversation_at_time',
+          { ...(args ?? {}), user_timezone: tz },
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'search_memory': {
@@ -5328,57 +5515,26 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_community': {
-        const query = (args.query as string) || '';
+        // PR B-8: lifted to services/orb-tools-shared.ts.
         const SUPABASE_URL = process.env.SUPABASE_URL;
-        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
-
-        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
           return { success: true, result: 'Community search is temporarily unavailable.' };
         }
-
-        const headers = {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        };
-
-        const tenantId = lens.tenant_id;
-        let groupsUrl = `${SUPABASE_URL}/rest/v1/community_groups?select=id,name,topic_key,description,is_public&tenant_id=eq.${tenantId}&is_public=eq.true&order=created_at.desc&limit=8`;
-        if (query) {
-          groupsUrl += `&or=(name.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*,topic_key.ilike.*${encodeURIComponent(query)}*)`;
-        }
-
-        try {
-          const resp = await fetch(groupsUrl, { method: 'GET', headers });
-          if (!resp.ok) {
-            console.warn(`[VTID-01270A] community_groups query failed: ${resp.status}`);
-            return { success: true, result: 'Could not search community groups at this time.' };
-          }
-
-          const groups = await resp.json() as Array<{
-            id: string; name: string; topic_key: string;
-            description: string; is_public: boolean;
-          }>;
-
-          if (groups.length === 0) {
-            console.log(`[VTID-01270A] search_community: 0 hits for "${query}", ${Date.now() - startTime}ms`);
-            return { success: true, result: 'No community groups found matching your query.' };
-          }
-
-          const MAX_TOOL_RESPONSE_CHARS = 2000;
-          let formatted = groups
-            .map(g => `${g.name} — ${(g.description || '').substring(0, 120)} | Topic: ${g.topic_key}`)
-            .join('\n');
-          if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
-            formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
-          }
-
-          console.log(`[VTID-01270A] search_community: ${groups.length} hits for "${query}", ${formatted.length} chars, ${Date.now() - startTime}ms`);
-          return { success: true, result: `Found ${groups.length} community groups:\n${formatted}` };
-        } catch (e: any) {
-          console.warn(`[VTID-01270A] search_community error: ${e.message}`);
-          return { success: true, result: 'Community search encountered an error. Please try again.' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'search_community',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-02754 — Find ONE community member by free-text query and redirect
@@ -5705,19 +5861,9 @@ async function executeLiveApiToolInner(
         return { success: true, result: `${baseAck}${tail}` };
       }
 
-      // VTID-01942 PR 3: voice "make X my default for music" tool. Writes
-      // (or clears) user_capability_preferences row. Confirms back.
+      // PR B-4: lifted to services/orb-tools-shared.ts. Both pipelines now
+      // write to user_capability_preferences through the same wrapper.
       case 'set_capability_preference': {
-        const capability = String(args.capability ?? '').trim();
-        const connectorId = String(args.connector_id ?? '').trim();
-        const clear = Boolean(args.clear);
-        if (!capability) {
-          return { success: false, result: '', error: 'capability is required' };
-        }
-        if (!clear && !connectorId) {
-          return { success: false, result: '', error: 'connector_id is required unless clear=true' };
-        }
-
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5725,47 +5871,17 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-
-        if (clear) {
-          const { error } = await supabase
-            .from('user_capability_preferences')
-            .delete()
-            .eq('user_id', lens.user_id)
-            .eq('capability_id', capability);
-          if (error) {
-            return { success: false, result: '', error: `Couldn't clear preference: ${error.message}` };
-          }
-          console.log(`[VTID-01942] preference cleared: user=${lens.user_id.slice(0,8)} cap=${capability}`);
-          return { success: true, result: `Okay — cleared your default for ${capability}. I'll ask again next time.` };
-        }
-
-        const { error } = await supabase
-          .from('user_capability_preferences')
-          .upsert({
-            tenant_id: lens.tenant_id,
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'set_capability_preference',
+          args ?? {},
+          {
             user_id: lens.user_id,
-            capability_id: capability,
-            preferred_connector_id: connectorId,
-            set_method: 'explicit',
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'tenant_id,user_id,capability_id' });
-
-        if (error) {
-          return { success: false, result: '', error: `Couldn't save preference: ${error.message}` };
-        }
-
-        const displayName =
-          connectorId === 'google' ? 'YouTube Music' :
-          connectorId === 'spotify' ? 'Spotify' :
-          connectorId === 'apple_music' ? 'Apple Music' :
-          connectorId === 'vitana_hub' ? 'the Vitana Media Hub' :
-          connectorId;
-
-        console.log(`[VTID-01942] preference set: user=${lens.user_id.slice(0,8)} cap=${capability} → ${connectorId}`);
-        return {
-          success: true,
-          result: `Got it — ${displayName} is your default for ${capability} now.`,
-        };
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-01943: the Gmail + Calendar + Contacts voice tools all share
@@ -5775,6 +5891,11 @@ async function executeLiveApiToolInner(
       case 'get_schedule':
       case 'add_to_calendar':
       case 'find_contact': {
+        // PR B-1 (VTID-LIVEKIT-LIFT-CAPABILITIES): delegate to the shared
+        // dispatcher. The same case body that used to live inline here is
+        // now in services/orb-tools-shared.ts (_runCapabilityTool), so both
+        // Vertex and the LiveKit pipeline run identical capability-tool
+        // logic — no drift possible by construction.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5782,96 +5903,17 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-        const { executeCapability } = await import('../capabilities');
-
-        const toolCapabilityMap: Record<string, string> = {
-          read_email: 'email.read',
-          get_schedule: 'calendar.list',
-          add_to_calendar: 'calendar.create',
-          find_contact: 'contacts.read',
-        };
-        const capabilityId = toolCapabilityMap[toolName];
-
-        const disp = await executeCapability(
-          { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
-          capabilityId,
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
           args ?? {},
-        ) as any;
-
-        if (!disp.ok) {
-          const errText = String(disp.error ?? 'Capability failed');
-          const notConnected = /isn't connected|requires a connected provider|No active google/i.test(errText);
-          if (notConnected) {
-            return {
-              success: true,
-              result: `I can't check that yet — you haven't connected your Google account. Want me to take you to Connected Apps?`,
-            };
-          }
-          return { success: false, result: '', error: errText };
-        }
-
-        // Shape the voice response from the structured_list raw.
-        const raw = (disp.raw ?? {}) as any;
-
-        if (toolName === 'read_email') {
-          const messages: Array<{ from: string; subject: string; snippet?: string }> = raw.messages ?? [];
-          if (messages.length === 0) {
-            return { success: true, result: raw.summary ?? 'No unread emails.' };
-          }
-          const compact = messages.slice(0, 5).map((m) => {
-            const fromName = m.from.replace(/<[^>]+>/, '').trim() || m.from;
-            return `from ${fromName}, subject "${m.subject}"`;
-          }).join('; ');
-          return {
-            success: true,
-            result: `${raw.summary ?? ''} ${compact}. Want me to read any in detail?`.trim(),
-          };
-        }
-
-        if (toolName === 'get_schedule') {
-          const events: Array<{ summary: string; start: string; all_day?: boolean; location?: string }> = raw.events ?? [];
-          if (events.length === 0) {
-            return { success: true, result: raw.summary ?? 'Nothing on your calendar.' };
-          }
-          const lines = events.slice(0, 8).map((ev) => {
-            const when = ev.all_day
-              ? 'all day'
-              : (ev.start ? new Date(ev.start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '');
-            const loc = ev.location ? ` (${ev.location})` : '';
-            return `${when}: ${ev.summary}${loc}`;
-          }).join('; ');
-          return { success: true, result: `${raw.summary ?? ''} ${lines}.`.trim() };
-        }
-
-        if (toolName === 'add_to_calendar') {
-          const title = raw.summary ?? (args.title as string) ?? 'the event';
-          const start = raw.start ?? '';
-          const when = start ? new Date(start).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
-          return { success: true, result: `Added — ${title}${when ? ' at ' + when : ''}.` };
-        }
-
-        if (toolName === 'find_contact') {
-          const contacts: Array<{ name: string; emails: string[]; phones: string[] }> = raw.contacts ?? [];
-          if (contacts.length === 0) {
-            return { success: true, result: raw.summary ?? 'No contacts matched.' };
-          }
-          if (contacts.length > 5) {
-            const names = contacts.slice(0, 5).map((c) => c.name).filter(Boolean).join(', ');
-            return {
-              success: true,
-              result: `Found ${contacts.length} matches: ${names}, and more. Which one?`,
-            };
-          }
-          const spoken = contacts.map((c) => {
-            const bits: string[] = [];
-            if (c.emails?.[0]) bits.push(`email ${c.emails[0]}`);
-            if (c.phones?.[0]) bits.push(`phone ${c.phones[0]}`);
-            return `${c.name || 'Unknown'}${bits.length ? ' — ' + bits.join(', ') : ''}`;
-          }).join('; ');
-          return { success: true, result: spoken };
-        }
-
-        return { success: true, result: raw.summary ?? 'Done.' };
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // =====================================================================
@@ -6081,163 +6123,28 @@ async function executeLiveApiToolInner(
       }
 
       case 'create_index_improvement_plan': {
-        try {
-          const { fetchVitanaIndexForProfiler } = await import('../services/user-context-profiler');
-          const { resolvePillarKey, PILLAR_TAGS, PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
-          const { createCalendarEvent } = await import('../services/calendar-service');
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-
-          // resolvePillarKey silently maps retired 6-pillar names (Physical
-          // → Exercise, Prosperity → Mental, etc.) so voice never says the
-          // retired name back to the user.
-          let pillar: string | undefined = resolvePillarKey(args.pillar);
-          if (!pillar) {
-            const snap = await fetchVitanaIndexForProfiler(client, lens.user_id);
-            pillar = snap?.weakest_pillar.name;
-          }
-          if (!pillar) {
-            return {
-              success: true,
-              result: 'I don\'t see Index data for this user yet, so I can\'t build a plan. Complete the 5-question baseline survey first.',
-            };
-          }
-
-          const days = typeof args.days === 'number' ? Math.min(90, Math.max(7, args.days)) : 14;
-          const perWeek = typeof args.actions_per_week === 'number' ? Math.min(7, Math.max(1, args.actions_per_week)) : 3;
-
-          // Pull existing autopilot recommendations targeting this pillar.
-          // These are the first-choice source — personalised to the user.
-          const { data } = await client
-            .from('autopilot_recommendations')
-            .select('id, title, action_description, contribution_vector, priority')
-            .eq('user_id', lens.user_id)
-            .in('status', ['pending', 'new', 'snoozed'])
-            .not('contribution_vector', 'is', null)
-            .order('priority', { ascending: false })
-            .limit(50);
-
-          const ranked = (data || [])
-            .map((r: any) => {
-              const cv = r.contribution_vector as Record<string, number> | null;
-              const lift = cv && typeof cv[pillar!] === 'number' ? cv[pillar!] : 0;
-              return { ...r, _lift: lift };
-            })
-            .filter((r: any) => r._lift > 0)
-            .sort((a: any, b: any) => b._lift - a._lift);
-
-          // Source pool for the plan: prefer matched autopilot recs, else
-          // fall back to the pillar's canonical template library. This
-          // fixes the R4 failure mode where the tool returned "no plan
-          // possible" whenever the autopilot queue was empty for a
-          // pillar — which is common on new accounts.
-          type PlanItem = {
-            title: string;
-            description: string;
-            source: 'autopilot' | 'template';
-            source_ref_id: string | null;
-          };
-          const source: PlanItem[] = ranked.length > 0
-            ? ranked.map((r: any): PlanItem => ({
-                title: r.title,
-                description: r.action_description || '',
-                source: 'autopilot',
-                source_ref_id: r.id,
-              }))
-            : (PILLAR_ACTION_TEMPLATES[pillar as keyof typeof PILLAR_ACTION_TEMPLATES] ?? []).map((t): PlanItem => ({
-                title: t.title,
-                description: t.description,
-                source: 'template',
-                source_ref_id: null,
-              }));
-
-          if (source.length === 0) {
-            return {
-              success: true,
-              result: `I can't find any actions for the ${pillar} pillar right now — neither pending autopilot suggestions nor templates. This is unexpected; please report.`,
-            };
-          }
-
-          const weeks = Math.ceil(days / 7);
-          const totalEvents = weeks * perWeek;
-          const scheduled: { title: string; start_time: string; source: string }[] = [];
-          const startOfToday = new Date();
-          startOfToday.setHours(10, 0, 0, 0);
-          startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
-
-          // Pre-resolve the wellness tag bucket once (was previously re-
-          // imported inside the loop, which also caused extra overhead).
-          const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
-          const wellnessTags: string[] = tags ? [...tags] : [pillar!];
-
-          for (let i = 0; i < totalEvents; i++) {
-            const item = source[i % source.length];
-            const eventDate = new Date(startOfToday);
-            eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
-            if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
-            const startIso = eventDate.toISOString();
-            const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
-
-            try {
-              const evt = await createCalendarEvent(lens.user_id, {
-                title: item.title,
-                start_time: startIso,
-                end_time: endIso,
-                description: `${item.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
-                event_type: 'health' as any,
-                status: 'confirmed',
-                priority: 'medium',
-                role_context: (session.active_role || 'community') as any,
-                source_type: 'assistant',
-                source_ref_type: item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
-                source_ref_id: item.source_ref_id ?? undefined,
-                priority_score: 60,
-                wellness_tags: wellnessTags,
-                metadata: {
-                  created_via: 'orb_voice',
-                  plan: 'index_improvement',
-                  target_pillar: pillar,
-                  plan_source: item.source,
-                },
-                is_recurring: false,
-              });
-              if (evt) scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
-            } catch (evErr: any) {
-              console.warn(`[create_index_improvement_plan] event create failed: ${evErr?.message}`);
-            }
-          }
-
-          if (scheduled.length === 0) {
-            return {
-              success: false,
-              result: '',
-              error: 'No events could be scheduled (calendar write failed).',
-            };
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              pillar,
-              days,
-              actions_per_week: perWeek,
-              scheduled_count: scheduled.length,
-              source_mix: {
-                autopilot: scheduled.filter(s => s.source === 'autopilot').length,
-                template: scheduled.filter(s => s.source === 'template').length,
-              },
-              first_event: scheduled[0],
-              last_event: scheduled[scheduled.length - 1],
-              all_titles: scheduled.map(s => s.title),
-            }),
-          };
-        } catch (err: any) {
-          console.error('[create_index_improvement_plan] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-9: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'create_index_improvement_plan',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? session.active_role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
@@ -6591,214 +6498,99 @@ async function executeLiveApiToolInner(
 
       // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
       case 'ask_pillar_agent': {
-        try {
-          const { askPillarAgent } = await import('../services/pillar-agents/router');
-          const { resolvePillarKey } = await import('../lib/vitana-pillars');
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-
-          const question = typeof args.question === 'string' ? args.question.trim() : '';
-          if (!question) {
-            return { success: false, result: '', error: 'question is required' };
-          }
-          // resolvePillarKey silently translates retired aliases; undefined
-          // = no explicit pillar passed, let the router auto-detect.
-          const explicit = resolvePillarKey(args.pillar);
-
-          const answer = await askPillarAgent(client, lens.user_id, question, explicit);
-          if (!answer) {
-            return {
-              success: true,
-              result: JSON.stringify({
-                routed: false,
-                reason: 'no_pillar_detected_or_agent_unavailable',
-                guidance: 'Voice should fall back to search_knowledge against the Book of the Vitana Index.',
-              }),
-            };
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              routed: true,
-              pillar: answer.pillar,
-              text: answer.text,
-              citations: answer.citations,
-              data: answer.data,
-              agent_version: answer.agent_version,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[ask_pillar_agent] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-8: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'ask_pillar_agent',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
       case 'explain_feature': {
-        try {
-          const { explainFeature } = await import('../services/explain-feature-service');
-          const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
-          if (!topic) {
-            return { success: false, result: '', error: 'topic is required' };
-          }
-          const mode = args.mode === 'teach_only' || args.mode === 'teach_then_nav'
-            ? args.mode
-            : 'teach_then_nav';
-
-          const result = explainFeature(topic);
-          if (!result.found) {
-            return {
-              success: true,
-              result: JSON.stringify({
-                found: false,
-                reason: result.reason ?? 'no_pattern_match',
-                guidance: 'Voice should fall back to search_knowledge. Search the Maxina Instruction Manual (kb/instruction-manual/maxina/*) first — it covers every concept and screen with fixed sections (What it is / Why it matters / Where to find it / What you see / How to use it). The kb/vitana-system/how-to/ corpus is supporting material.',
-              }),
-            };
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              found: true,
-              mode,
-              topic_canonical: result.topic_canonical,
-              pillar_lift: result.pillar_lift,
-              summary_voice_en: result.summary_voice_en,
-              summary_voice_de: result.summary_voice_de,
-              steps_voice_en: result.steps_voice_en,
-              steps_voice_de: result.steps_voice_de,
-              redirect_route: result.redirect_route,
-              redirect_offer_en: result.redirect_offer_en,
-              redirect_offer_de: result.redirect_offer_de,
-              citation: result.citation,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[explain_feature] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-2: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // call the same explainFeature service through the same wrapper.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'explain_feature',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-01967 — Vitana ID voice messaging ───
       case 'resolve_recipient': {
-        const spoken = String(args.spoken_name || '').trim();
-        const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
-        if (!spoken) {
-          return { success: false, result: '', error: 'spoken_name is required' };
+        // PR B-6: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const { data, error } = await supabase.rpc('resolve_recipient_candidates', {
-            p_actor: session.identity.user_id,
-            p_token: spoken,
-            p_limit: limit,
-            p_global: false,
-          });
-          if (error) {
-            console.error('[VTID-01967] resolve_recipient RPC error:', error.message);
-            return { success: false, result: '', error: error.message };
-          }
-          const candidates = (data || []) as Array<{
-            user_id: string;
-            vitana_id: string | null;
-            display_name: string | null;
-            score: number;
-            reason: string;
-          }>;
-          const top_confidence = candidates.length > 0 ? Number(candidates[0].score) : 0;
-          const ambiguous =
-            candidates.length === 0 ||
-            top_confidence < 0.85 ||
-            (candidates.length > 1 && Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
-          return {
-            success: true,
-            result: JSON.stringify({
-              candidates,
-              top_confidence,
-              ambiguous,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] resolve_recipient error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'resolve_recipient',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'send_chat_message': {
-        const recipientUserId = String(args.recipient_user_id || '').trim();
-        const recipientLabel = String(args.recipient_label || '').trim();
-        const body = String(args.body || '').trim();
-        if (!recipientUserId || !body) {
-          return { success: false, result: '', error: 'recipient_user_id and body are required' };
+        // PR B-6: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (recipientUserId === session.identity.user_id) {
-          return { success: false, result: '', error: 'cannot message yourself' };
-        }
-        try {
-          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
-          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-          const recipientVitanaId = await resolveVitanaId(recipientUserId);
-          const quota = await checkVoiceSendQuota({
-            session_id: session.sessionId,
-            actor_id: session.identity.user_id,
-            vitana_id: session.identity.vitana_id,
-            recipient_user_id: recipientUserId,
-            recipient_vitana_id: recipientVitanaId,
-            kind: 'message',
-            body_length: body.length,
-          });
-          if (!quota.allowed) {
-            return {
-              success: true,
-              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
-            };
-          }
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
-          const { error: insErr } = await supabase
-            .from('chat_messages')
-            .insert({
-              tenant_id: session.identity.tenant_id,
-              sender_id: session.identity.user_id,
-              receiver_id: recipientUserId,
-              content: body,
-              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-              metadata: {
-                source: 'voice',
-                session_id: session.sessionId,
-                recipient_label: recipientLabel || recipientVitanaId,
-              },
-            });
-          if (insErr) {
-            console.error('[VTID-01967] send_chat_message insert error:', insErr.message);
-            return { success: false, result: '', error: insErr.message };
-          }
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
-              remaining: quota.remaining,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] send_chat_message error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'send_chat_message',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // V2 — Proactive Initiative Engine: activate an Autopilot recommendation.
@@ -6882,78 +6674,28 @@ async function executeLiveApiToolInner(
       }
 
       case 'share_link': {
-        const recipientUserId = String(args.recipient_user_id || '').trim();
-        const recipientLabel = String(args.recipient_label || '').trim();
-        const targetUrl = String(args.target_url || '').trim();
-        const targetKind = String(args.target_kind || 'page').trim();
-        if (!recipientUserId || !targetUrl) {
-          return { success: false, result: '', error: 'recipient_user_id and target_url are required' };
+        // PR B-5: lifted to services/orb-tools-shared.ts. Same quota guard,
+        // same chat_messages insert, same metadata shape — both pipelines
+        // share the canonical impl.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (recipientUserId === session.identity.user_id) {
-          return { success: false, result: '', error: 'cannot share with yourself' };
-        }
-        try {
-          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
-          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-          const recipientVitanaId = await resolveVitanaId(recipientUserId);
-          const quota = await checkVoiceSendQuota({
-            session_id: session.sessionId,
-            actor_id: session.identity.user_id,
-            vitana_id: session.identity.vitana_id,
-            recipient_user_id: recipientUserId,
-            recipient_vitana_id: recipientVitanaId,
-            kind: 'share_link',
-            target_url: targetUrl,
-          });
-          if (!quota.allowed) {
-            return {
-              success: true,
-              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
-            };
-          }
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
-          const previewBody = `🔗 ${targetUrl}`;
-          const { error: insErr } = await supabase
-            .from('chat_messages')
-            .insert({
-              tenant_id: session.identity.tenant_id,
-              sender_id: session.identity.user_id,
-              receiver_id: recipientUserId,
-              content: previewBody,
-              message_type: 'link_share',
-              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-              metadata: {
-                source: 'voice',
-                session_id: session.sessionId,
-                kind: 'shared_link',
-                target_url: targetUrl,
-                target_kind: targetKind,
-                recipient_label: recipientLabel || recipientVitanaId,
-              },
-            });
-          if (insErr) {
-            console.error('[VTID-01967] share_link insert error:', insErr.message);
-            return { success: false, result: '', error: insErr.message };
-          }
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
-              target_kind: targetKind,
-              remaining: quota.remaining,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] share_link error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'share_link',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
@@ -7183,7 +6925,9 @@ async function executeLiveApiToolInner(
           };
         } catch (err: any) {
           console.error('[VTID-01975] post_intent error:', err?.message);
-          // VTID-02716: if the row was already inserted, never tell the user it failed.
+          // VTID-02716 + VTID-02790: if the row was already inserted, return a normal
+          // success shape — Gemini misreads any "degraded"/"partial" hint as failure
+          // and apologizes to the user, even though the post is live.
           if (postedIntentId) {
             console.warn(`[VTID-02716] post_intent post-insert throw recovered; intent_id=${postedIntentId}`);
             return {
@@ -7199,7 +6943,6 @@ async function executeLiveApiToolInner(
                 compass_aligned: false,
                 partner_seek_redacted: postedKind === 'partner_seek',
                 cold_start: true,
-                degraded: true,
               }),
             };
           }
@@ -7262,68 +7005,27 @@ async function executeLiveApiToolInner(
       }
 
       case 'respond_to_match': {
-        const matchId = String(args.match_id || '').trim();
-        const response = String(args.response || '').trim() as 'express_interest' | 'decline';
-        const confirmed = args.confirmed === true;
-        if (!matchId || !['express_interest', 'decline'].includes(response)) {
-          return { success: false, result: '', error: 'match_id and response (express_interest|decline) required' };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (!confirmed) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'awaiting_confirmation',
-              instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
-            }),
-          };
-        }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
-
-          const { data: m } = await supabase
-            .from('intent_matches')
-            .select('match_id, intent_a_id, intent_b_id, state, kind_pairing')
-            .eq('match_id', matchId)
-            .maybeSingle();
-          if (!m) return { success: false, result: '', error: 'match_not_found' };
-
-          const { data: aOwner } = await supabase
-            .from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_a_id).maybeSingle();
-          const isA = aOwner && (aOwner as any).requester_user_id === session.identity!.user_id;
-          const stateField = response === 'express_interest'
-            ? (isA ? 'responded_by_a' : 'responded_by_b')
-            : 'declined';
-
-          let nextState: string = stateField;
-          if (response === 'express_interest') {
-            if ((m as any).state === 'responded_by_b' && stateField === 'responded_by_a') nextState = 'mutual_interest';
-            if ((m as any).state === 'responded_by_a' && stateField === 'responded_by_b') nextState = 'mutual_interest';
-          }
-
-          await supabase.from('intent_matches').update({ state: nextState }).eq('match_id', matchId);
-
-          if (nextState === 'mutual_interest') {
-            const { tryUnlockReveal } = await import('../services/intent-mutual-reveal');
-            const { notifyMutualInterest } = await import('../services/intent-notifier');
-            await tryUnlockReveal(matchId);
-            await notifyMutualInterest(matchId);
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'updated',
-              state: nextState,
-              mutual_interest_unlocked: nextState === 'mutual_interest',
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01975] respond_to_match error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'respond_to_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'mark_intent_fulfilled': {
@@ -7347,160 +7049,60 @@ async function executeLiveApiToolInner(
 
       // VTID-DANCE-D10: voice-driven direct invite.
       case 'share_intent_post': {
-        const intentId = String(args.intent_id || '').trim();
-        const recipients = Array.isArray(args.recipient_vitana_ids)
-          ? args.recipient_vitana_ids
-              .map((r: any) => String(r ?? '').trim().replace(/^@/, '').toLowerCase())
-              .filter((r: string) => /^[a-z][a-z0-9]{3,15}$/.test(r))
-          : [];
-        const note = typeof args.note === 'string' ? args.note.slice(0, 280) : null;
-        const confirmed = Boolean(args.confirmed);
-
-        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
-        if (recipients.length === 0) return { success: false, result: '', error: 'recipient_vitana_ids must include at least one valid id' };
-
-        // Stage 1: read-back without dispatching.
-        if (!confirmed) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'confirmation',
-              intent_id: intentId,
-              recipients,
-              note,
-              instructions: `Read back the recipients (@${recipients.join(', @')}) and ask the user to confirm. Then call share_intent_post again with confirmed=true.`,
-            }),
-          };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${intentId}/share`;
-          // Forward the user's JWT so route auth + tier checks apply.
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const fetchRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
-            },
-            body: JSON.stringify({
-              recipient_vitana_ids: recipients,
-              note: note || undefined,
-              channel: 'in_app',
-            }),
-          });
-          const data = await fetchRes.json();
-          if (!fetchRes.ok) {
-            return { success: false, result: '', error: (data as any)?.error || 'share_failed' };
-          }
-          return { success: true, result: JSON.stringify(data) };
-        } catch (err: any) {
-          console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'share_intent_post',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
-      // VTID-DANCE-D14 — frontend navigation tool. Returns a relative URL
-      // the client routes to. The frontend listens for navigate_to events
-      // emitted on the ORB session channel.
-      case 'navigate_to_screen': {
-        const target = String(args.target || '').trim();
-        const intentId = args.intent_id ? String(args.intent_id).trim() : null;
-        const matchId = args.match_id ? String(args.match_id).trim() : null;
-        const vitanaIdArg = args.vitana_id ? String(args.vitana_id).trim().replace(/^@/, '') : null;
-        if (!target) return { success: false, result: '', error: 'target is required' };
-
-        let url = '';
-        let title = '';
-        switch (target) {
-          case 'find_partner':             url = '/comm/find-partner'; title = 'Find a Partner'; break;
-          case 'find_partner_matches':     url = '/comm/find-partner?view=matches'; title = 'My matches'; break;
-          case 'find_partner_board':       url = '/comm/find-partner?view=board'; title = 'Find a Partner — board'; break;
-          case 'find_partner_posts':       url = '/comm/find-partner?view=posts'; title = 'My dance & fitness wishes'; break;
-          case 'my_intents':              url = '/intents/mine'; title = 'My posts'; break;
-          case 'intent_board':             url = '/intents/board'; title = 'Community board'; break;
-          case 'intent_board_dance':       url = '/intents/board?filter=dance'; title = 'Dance posts'; break;
-          case 'open_asks':                url = '/comm/open-asks'; title = 'Open asks'; break;
-          case 'members':                  url = '/comm/members'; title = 'Community members'; break;
-          case 'intent_match_detail':
-            if (!matchId) return { success: false, result: '', error: 'match_id is required for intent_match_detail' };
-            url = `/intents/match/${encodeURIComponent(matchId)}`; title = 'Match detail'; break;
-          case 'intent_post_public':
-            if (!intentId) return { success: false, result: '', error: 'intent_id is required for intent_post_public' };
-            url = `/p/${encodeURIComponent(intentId)}`; title = 'Post detail'; break;
-          // E3 — profile-first match presentation. Lands on the matched
-          // user's PublicProfilePage with the matched post anchored.
-          case 'profile_with_match': {
-            if (!vitanaIdArg) return { success: false, result: '', error: 'vitana_id is required for profile_with_match' };
-            const params = new URLSearchParams();
-            if (intentId) params.set('match_intent', intentId);
-            const qs = params.toString();
-            url = `/u/${encodeURIComponent(vitanaIdArg)}${qs ? '?' + qs : ''}`;
-            title = 'Profile';
-            break;
-          }
-          case 'edit_dance_preferences':   url = '/profile/edit?drawer=dance'; title = 'Dance preferences'; break;
-          case 'edit_partner_preferences': url = '/me/profile?drawer=partner'; title = 'Partner preferences'; break;
-          case 'edit_service_offerings':   url = '/me/profile?drawer=offerings'; title = 'Service offerings'; break;
-          case 'privacy_settings':         url = '/profile/me/privacy'; title = 'Privacy & Visibility'; break;
-          // VTID-02675: pairs with the play_music fallback at ~line 4801 which
-          // says "want me to take you to Connected Apps?". Without this case,
-          // the fuzzy resolver would land the user on a random Settings page.
-          case 'connected_apps':           url = '/settings/connected-apps'; title = 'Connected Apps'; break;
-          case 'discover_marketplace':     url = '/discover/marketplace'; title = 'Marketplace'; break;
-          case 'events_meetups':           url = '/comm/events-meetups'; title = 'Events & meetups'; break;
-          case 'community_feed':           url = '/comm/feed'; title = 'Community feed'; break;
-          default:
-            return { success: false, result: '', error: `Unknown target: ${target}` };
-        }
-
-        // Emit a session event so the frontend can listen + route.
-        try {
-          await emitOasisEvent({
-            vtid: 'VTID-DANCE-D14',
-            type: 'voice.message.sent',
-            source: 'orb-live',
-            status: 'info',
-            message: `Voice navigate_to_screen: ${target}`,
-            payload: { target, url, title, intent_id: intentId, match_id: matchId },
-            actor_id: session.identity?.user_id,
-            actor_role: 'user',
-            surface: 'orb',
-            vitana_id: session.identity?.vitana_id ?? undefined,
-          });
-        } catch { /* best-effort */ }
-
-        return {
-          success: true,
-          result: JSON.stringify({ ok: true, navigate_to: url, title }),
-        };
-      }
+      // VTID-02770: navigate_to_screen is routed at the top of handleToolCall
+      // (line ~4064) directly to handleNavigateToScreen, so this switch case
+      // is unreachable. The duplicated TARGET_ROUTES table that used to live
+      // here was deleted — the catalog (with aliases + entry_kind=overlay +
+      // param substitution) is the single source of truth. If you need to
+      // add a new target, add it as a catalog entry in navigation-catalog.ts,
+      // not here.
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
       case 'scan_existing_matches': {
-        const intentKind = String(args.intent_kind || '').trim();
-        if (!intentKind) return { success: false, result: '', error: 'intent_kind is required' };
-        const params = new URLSearchParams({ intent_kind: intentKind });
-        if (args.category_prefix) params.set('category_prefix', String(args.category_prefix));
-        if (args.variety) params.set('variety', String(args.variety));
-
-        try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intent-scan?${params.toString()}`;
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const res = await fetch(url, {
-            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-          });
-          const data = await res.json();
-          return {
-            success: res.ok,
-            result: JSON.stringify(data),
-            error: res.ok ? undefined : (data as any)?.error || 'scan_failed',
-          };
-        } catch (err: any) {
-          console.error('[VTID-DANCE-D11.B] scan_existing_matches error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'scan_existing_matches',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
@@ -15089,6 +14691,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
           .filter((r): r is string => typeof r === 'string')
           .slice(0, 5)
       : undefined,
+    // VTID-02789: Frontend useOrbVoiceWidget reads useIsMobile() and
+    // includes is_mobile in the start payload so the Navigator picks
+    // mobile_route over route on mobile sessions.
+    is_mobile: typeof (body as any).is_mobile === 'boolean'
+      ? (body as any).is_mobile
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -15134,6 +14742,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   });
 
   console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
+
+  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
+  // shows orb-live as healthy whenever a voice session is established.
+  // Fire-and-forget: registry write must never block the SSE response.
+  recordAgentHeartbeat('orb-live').catch(() => {});
 
   return res.status(200).json({
     ok: true,
@@ -16954,6 +16567,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       ? ((message as any).recent_routes as any[])
           .filter((r): r is string => typeof r === 'string')
           .slice(0, 5)
+      : undefined,
+    // VTID-02789: mobile viewport flag plumbed from useIsMobile() in the
+    // frontend; drives mobile_route override + viewport_only block in
+    // handleNavigateToScreen. WS path mirrors the SSE path above.
+    is_mobile: typeof (message as any).is_mobile === 'boolean'
+      ? (message as any).is_mobile
       : undefined,
   };
 

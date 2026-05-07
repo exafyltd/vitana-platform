@@ -2729,7 +2729,8 @@ const NAVIGATION_CONFIG = [
             { "key": "experiments",         "path": "/command-hub/assistant/experiments/" },
             { "key": "metrics",             "path": "/command-hub/assistant/metrics/" },
             { "key": "awareness-registry",  "path": "/command-hub/assistant/awareness-registry/" },
-            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" }
+            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" },
+            { "key": "voice-tools",         "path": "/command-hub/assistant/voice-tools/" }
         ]
     },
     {
@@ -2752,7 +2753,8 @@ const NAVIGATION_CONFIG = [
             { "key": "task-queue", "path": "/command-hub/operator/task-queue/" },
             { "key": "event-stream", "path": "/command-hub/operator/event-stream/" },
             { "key": "deployments", "path": "/command-hub/operator/deployments/" },
-            { "key": "runbook", "path": "/command-hub/operator/runbook/" }
+            { "key": "runbook", "path": "/command-hub/operator/runbook/" },
+            { "key": "localization", "path": "/command-hub/operator/localization/" }
         ]
     },
     {
@@ -6148,6 +6150,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAdminAwarenessView());
     } else if (moduleKey === 'assistant' && tab === 'awareness-test') {
         container.appendChild(renderVitanaAwarenessTestView());
+    } else if (moduleKey === 'assistant' && tab === 'voice-tools') {
+        // VTID-02766: Voice Tools Catalog
+        container.appendChild(renderVoiceToolsCatalogView());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -6242,6 +6247,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderOperatorDeploymentsView());
     } else if (moduleKey === 'operator' && tab === 'runbook') {
         container.appendChild(renderOperatorRunbookView());
+    } else if (moduleKey === 'operator' && tab === 'localization') {
+        // BOOTSTRAP-CMDHUB-I18N-OPS: Localization Operations
+        container.appendChild(renderOperatorLocalizationView());
 
     // ──── Command Hub: Live Console ────
     } else if (moduleKey === 'command-hub' && tab === 'live-console') {
@@ -35307,6 +35315,46 @@ function renderLivekitTestView() {
         }
         diagRow('auth', 'token in localStorage', true, 'len=' + session.token.length);
 
+        // Phase 0 — latest agent-trace (only present if user clicked Connect within
+        // the last 10 minutes). Tells us EXACTLY what the running agent had at
+        // session start.
+        diagAppend('<br><strong style="color:#facc15;">Latest agent-trace (from your last Connect):</strong>');
+        var atr = await diagFetch('GET', '/api/v1/orb/agent-trace');
+        if (atr.status === 404) {
+            diagRow('agent-trace', 'available', false, 'no recent trace — click Connect first, then re-run diagnostics');
+        } else if (!atr.ok) {
+            diagRow('agent-trace', 'available', false, atr.status + '');
+        } else {
+            var t = (atr.body && atr.body.trace && atr.body.trace.payload) || {};
+            diagRow('agent-trace', 'session ts', true, atr.body.trace.ts);
+            diagRow('agent-trace', 'user_id', !!t.user_id, String(t.user_id || ''));
+            diagRow('agent-trace', 'vitana_id', !!t.vitana_id, String(t.vitana_id || ''));
+            diagRow('agent-trace', 'role', !!t.role, String(t.role || ''));
+            diagRow('agent-trace', 'is_anonymous=false', t.is_anonymous === false, String(t.is_anonymous));
+            diagRow('agent-trace', 'user_jwt_present', !!t.user_jwt_present, 'len=' + (t.user_jwt_len || 0));
+            diagRow('agent-trace', 'bootstrap_context_length > 200', (t.bootstrap_context_length || 0) > 200, 'chars=' + (t.bootstrap_context_length || 0));
+            diagRow('agent-trace', 'bootstrap_voice_config_llm', !!t.bootstrap_voice_config_llm, String(t.bootstrap_voice_config_llm || ''));
+            diagRow('agent-trace', 'system_prompt_length', (t.system_prompt_length || 0) > 200, 'chars=' + (t.system_prompt_length || 0));
+            diagRow(
+                'agent-trace',
+                'system_prompt has @' + (t.vitana_id || '?') + ' in first 600 chars',
+                !!t.tools_handle_in_first_chars,
+                t.tools_handle_in_first_chars ? 'YES' : 'NO — handle missing',
+            );
+            diagRow('agent-trace', 'tools_count registered', (t.tools_count || 0) >= 30, 'count=' + (t.tools_count || 0));
+            if (t.system_prompt_first_400_chars) {
+                var safe = String(t.system_prompt_first_400_chars).replace(/[<>&]/g, function (c) {
+                    return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;';
+                });
+                diagAppend(
+                    '<div style="margin-left:20px;margin-top:4px;padding:8px;background:#1e293b;border-left:2px solid #facc15;color:#cbd5e1;white-space:pre-wrap;font-size:11px;">' +
+                        safe +
+                        '…</div>',
+                );
+            }
+        }
+        diagAppend('<br>');
+
         // Phase 1: auth round-trip
         var me = await diagFetch('GET', '/api/v1/auth/me');
         diagRow(
@@ -44594,6 +44642,145 @@ function renderAdminAwarenessView() {
 }
 
 // =============================================================================
+// VTID-02766 — Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+// =============================================================================
+function renderVoiceToolsCatalogView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Voice Tools Catalog</h2>' +
+        '<p class="section-subtitle">Every voice tool the ORB can call. Source-of-truth manifest at <code>services/gateway/src/services/tool-manifest.json</code>. Filter by surface, role, or status.</p>';
+
+    if (!state.voiceToolsCatalog) {
+        state.voiceToolsCatalog = { loading: false, loaded: false, error: null, tools: [], stats: null, filter: {} };
+    }
+
+    var stats = document.createElement('div');
+    stats.style.cssText = 'display:flex;gap:1rem;margin:1rem 0;padding:0.75rem;background:#f8fafc;border-radius:6px;font-size:0.875rem;';
+    stats.id = 'vt-stats-strip';
+    stats.textContent = 'Loading stats…';
+    container.appendChild(stats);
+
+    var filters = document.createElement('div');
+    filters.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:1rem;';
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Search by name or description…';
+    search.style.cssText = 'flex:1;padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    var surfaceSel = document.createElement('select');
+    surfaceSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    surfaceSel.innerHTML = '<option value="">All surfaces</option>';
+    var roleSel = document.createElement('select');
+    roleSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    roleSel.innerHTML = '<option value="">All roles</option><option value="community">community</option><option value="user">user</option><option value="developer">developer</option><option value="admin">admin</option>';
+    filters.appendChild(search);
+    filters.appendChild(surfaceSel);
+    filters.appendChild(roleSel);
+    container.appendChild(filters);
+
+    var listWrap = document.createElement('div');
+    listWrap.id = 'vt-list-wrap';
+    listWrap.textContent = 'Loading tools…';
+    container.appendChild(listWrap);
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderStats(r) {
+        if (!r || !r.ok) { stats.textContent = 'Stats unavailable.'; return; }
+        var byStatus = r.by_status || {};
+        stats.innerHTML =
+            '<strong>' + (r.total || 0) + '</strong> tools total &nbsp;|&nbsp; ' +
+            'Live: <strong>' + (byStatus.live || 0) + '</strong> &nbsp;|&nbsp; ' +
+            'WIP: <strong>' + (byStatus.wip || 0) + '</strong> &nbsp;|&nbsp; ' +
+            'Planned: <strong>' + (byStatus.planned || 0) + '</strong> &nbsp;|&nbsp; ' +
+            '<span style="color:#6b7280;">manifest generated ' + (r.generated_at || '?') + '</span>';
+    }
+
+    function renderList(r) {
+        if (!r || !r.ok) { listWrap.innerHTML = '<div class="error-text">Catalog unavailable.</div>'; return; }
+        var tools = r.tools || [];
+        if (tools.length === 0) { listWrap.innerHTML = '<div class="placeholder-content">No tools match the filter.</div>'; return; }
+
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.875rem;';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr style="background:#f1f5f9;text-align:left;">' +
+            '<th style="padding:0.5rem;">Name</th>' +
+            '<th style="padding:0.5rem;">Surface</th>' +
+            '<th style="padding:0.5rem;">Role</th>' +
+            '<th style="padding:0.5rem;">Status</th>' +
+            '<th style="padding:0.5rem;">VTID</th>' +
+            '<th style="padding:0.5rem;">Description</th>' +
+            '</tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        tools.forEach(function (t) {
+            var tr = document.createElement('tr');
+            tr.style.borderTop = '1px solid #e5e7eb';
+            tr.innerHTML =
+                '<td style="padding:0.5rem;font-family:monospace;"><code>' + escapeHtml(t.name) + '</code></td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(t.surface || '') + '</td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;color:#6b7280;">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
+                '<td style="padding:0.5rem;"><span class="status-' + escapeHtml(t.status) + '" style="font-size:0.75rem;padding:2px 6px;border-radius:3px;background:' + (t.status === 'live' ? '#d1fae5' : t.status === 'wip' ? '#fef3c7' : '#e5e7eb') + ';">' + escapeHtml(t.status) + '</span></td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;font-family:monospace;color:#6b7280;">' + escapeHtml(t.vtid || '—') + '</td>' +
+                '<td style="padding:0.5rem;color:#4b5563;">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        listWrap.innerHTML = '';
+        listWrap.appendChild(table);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:0.75rem;font-size:0.75rem;color:#6b7280;';
+        footer.textContent = 'Showing ' + tools.length + ' of ' + (r.total || tools.length) + ' tools (filtered).';
+        listWrap.appendChild(footer);
+    }
+
+    function fetchAndRender() {
+        var qs = [];
+        if (search.value) qs.push('q=' + encodeURIComponent(search.value));
+        if (surfaceSel.value) qs.push('surface=' + encodeURIComponent(surfaceSel.value));
+        if (roleSel.value) qs.push('role=' + encodeURIComponent(roleSel.value));
+        qs.push('limit=200');
+        var url = '/api/v1/voice-tools/catalog' + (qs.length ? '?' + qs.join('&') : '');
+
+        Promise.all([
+            fetch(url, { credentials: 'include' }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-tools/catalog/stats', { credentials: 'include' }).then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            var catalog = results[0];
+            var statsResp = results[1];
+            renderStats(statsResp);
+            renderList(catalog);
+            if (statsResp && statsResp.by_surface && surfaceSel.options.length === 1) {
+                Object.keys(statsResp.by_surface).sort().forEach(function (name) {
+                    var opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name + ' (' + statsResp.by_surface[name] + ')';
+                    surfaceSel.appendChild(opt);
+                });
+            }
+        }).catch(function (err) {
+            listWrap.innerHTML = '<div class="error-text">Failed to load: ' + (err && err.message ? err.message : err) + '</div>';
+        });
+    }
+
+    var debounceTimer = null;
+    function debouncedFetch() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fetchAndRender, 250);
+    }
+    search.addEventListener('input', debouncedFetch);
+    surfaceSel.addEventListener('change', fetchAndRender);
+    roleSel.addEventListener('change', fetchAndRender);
+
+    fetchAndRender();
+    return container;
+}
+
+// =============================================================================
 // BOOTSTRAP-AUTONOMY-SECTION-NAV — Autopilot by role (placeholders)
 // =============================================================================
 // Autopilot is built for community users today; developer and admin variants
@@ -46738,4 +46925,311 @@ function memoryOpsRenderInspector(container) {
         });
         contentWrap.appendChild(list);
     });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BOOTSTRAP-CMDHUB-I18N-OPS — Localization Operations view
+// ─────────────────────────────────────────────────────────────────────────
+// Read-only locales table + trigger buttons (translate / audit / runs).
+// Data: GET /api/v1/admin/i18n-ops/locales (60s server-side cache).
+// Triggers POST /api/v1/admin/i18n-ops/translate or /audit.
+// Lists recent runs from GET /api/v1/admin/i18n-ops/workflow-runs.
+//
+// CSP-safe: no inline event handlers. All listeners attached via JS.
+function renderOperatorLocalizationView() {
+    var container = document.createElement('div');
+    container.className = 'operator-localization-container';
+    container.style.padding = '24px';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;';
+    var titleBlock = document.createElement('div');
+    var h1 = document.createElement('h1');
+    h1.textContent = 'Localization Operations';
+    h1.style.cssText = 'margin:0 0 6px;font-size:22px;color:var(--color-text,#fff);';
+    titleBlock.appendChild(h1);
+    var sub = document.createElement('div');
+    sub.textContent = 'Locale catalog status, audit verdicts, and translate / audit workflow controls.';
+    sub.style.cssText = 'opacity:0.7;font-size:13px;';
+    titleBlock.appendChild(sub);
+    header.appendChild(titleBlock);
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = '⟳ Refresh';
+    refreshBtn.style.cssText = 'padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#fff;cursor:pointer;font-size:13px;';
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    var statusEl = document.createElement('div');
+    statusEl.style.cssText = 'opacity:0.65;font-size:12px;margin-bottom:14px;font-family:monospace;';
+    container.appendChild(statusEl);
+
+    var tableWrap = document.createElement('div');
+    container.appendChild(tableWrap);
+
+    var runsHeader = document.createElement('h2');
+    runsHeader.textContent = 'Recent workflow runs';
+    runsHeader.style.cssText = 'margin:32px 0 10px;font-size:16px;color:var(--color-text,#fff);';
+    container.appendChild(runsHeader);
+
+    var runsTabs = document.createElement('div');
+    runsTabs.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
+    var activeRuns = 'i18n-translate.yml';
+    var workflows = [
+        { key: 'i18n-translate.yml', label: 'Translate' },
+        { key: 'i18n-audit-llm.yml', label: 'Audit (LLM)' },
+        { key: 'i18n-check.yml', label: 'CI lint check' },
+    ];
+    var runsBody = document.createElement('div');
+    function renderRunsTabs() {
+        runsTabs.innerHTML = '';
+        workflows.forEach(function (w) {
+            var btn = document.createElement('button');
+            btn.textContent = w.label;
+            var isActive = activeRuns === w.key;
+            btn.style.cssText = 'padding:6px 12px;background:' + (isActive ? 'rgba(86,168,255,0.2)' : 'rgba(255,255,255,0.04)') +
+                ';border:1px solid ' + (isActive ? 'rgba(86,168,255,0.6)' : 'rgba(255,255,255,0.12)') + ';border-radius:6px;color:#fff;cursor:pointer;font-size:12px;';
+            btn.addEventListener('click', function () {
+                activeRuns = w.key;
+                renderRunsTabs();
+                fetchRuns();
+            });
+            runsTabs.appendChild(btn);
+        });
+    }
+    container.appendChild(runsTabs);
+    container.appendChild(runsBody);
+
+    function setStatus(text) { statusEl.textContent = text || ''; }
+
+    function authHeader() {
+        var token = localStorage.getItem('vitana.authToken') || '';
+        return token ? { Authorization: 'Bearer ' + token } : {};
+    }
+
+    function fetchLocales() {
+        setStatus('Loading…');
+        tableWrap.innerHTML = '';
+        fetch('/api/v1/admin/i18n-ops/locales', { headers: authHeader() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.ok) {
+                    setStatus('Error: ' + (data && data.error || 'unknown'));
+                    return;
+                }
+                setStatus('Source EN keys: ' + (data.en_total || 0) + ' · Updated ' + new Date(data.generated_at).toLocaleTimeString());
+                renderTable(data.locales || []);
+            })
+            .catch(function (e) {
+                setStatus('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function renderTable(rows) {
+        tableWrap.innerHTML = '';
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;background:rgba(255,255,255,0.02);';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            ['Locale', 'Status', 'Catalog', 'Audit pass', 'Last audit', 'Actions']
+                .map(function (c) {
+                    return '<th style="text-align:left;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.1);font-weight:600;opacity:0.85;">' + c + '</th>';
+                }).join('') + '</tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+
+        rows.forEach(function (row) {
+            var tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+
+            // Locale
+            var tdLocale = document.createElement('td');
+            tdLocale.style.cssText = 'padding:10px 12px;font-family:monospace;font-weight:600;';
+            tdLocale.textContent = row.code;
+            tr.appendChild(tdLocale);
+
+            // Status pill
+            var tdStatus = document.createElement('td');
+            tdStatus.style.padding = '10px 12px';
+            var pill = document.createElement('span');
+            var statusColor = row.status === 'ga' ? '#3ddc84' : row.status === 'beta' ? '#f0b400' : '#888';
+            pill.style.cssText = 'padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '55;';
+            pill.textContent = (row.status || 'draft').toUpperCase();
+            tdStatus.appendChild(pill);
+            tr.appendChild(tdStatus);
+
+            // Catalog progress
+            var tdCat = document.createElement('td');
+            tdCat.style.padding = '10px 12px';
+            var pct = row.completeness_pct || 0;
+            var barWrap = document.createElement('div');
+            barWrap.style.cssText = 'width:120px;background:rgba(255,255,255,0.08);border-radius:3px;height:6px;position:relative;';
+            var bar = document.createElement('div');
+            bar.style.cssText = 'width:' + pct + '%;background:' + (pct >= 90 ? '#3ddc84' : pct >= 50 ? '#56a8ff' : '#888') + ';height:100%;border-radius:3px;';
+            barWrap.appendChild(bar);
+            var text = document.createElement('div');
+            text.style.cssText = 'font-size:11px;opacity:0.7;margin-top:3px;';
+            text.textContent = (row.locale_total || 0) + ' / ' + (row.en_total || 0) + ' (' + pct + '%)';
+            tdCat.appendChild(barWrap);
+            tdCat.appendChild(text);
+            tr.appendChild(tdCat);
+
+            // Audit pass rate
+            var tdAudit = document.createElement('td');
+            tdAudit.style.padding = '10px 12px';
+            if (row.audit_total > 0) {
+                var rate = row.audit_pass_rate_pct;
+                var auditColor = rate >= 90 ? '#3ddc84' : rate >= 70 ? '#f0b400' : '#ff8080';
+                tdAudit.innerHTML = '<span style="font-weight:600;color:' + auditColor + '">' + rate + '%</span> <span style="opacity:0.6;font-size:11px">(' + row.audit_flagged + ' flagged / ' + row.audit_total + ')</span>';
+            } else {
+                tdAudit.innerHTML = '<span style="opacity:0.5;font-size:11px">no audit yet</span>';
+            }
+            tr.appendChild(tdAudit);
+
+            // Last audit
+            var tdLast = document.createElement('td');
+            tdLast.style.cssText = 'padding:10px 12px;opacity:0.7;font-size:11px;';
+            tdLast.textContent = row.last_audit_at ? new Date(row.last_audit_at).toLocaleString() : '—';
+            tr.appendChild(tdLast);
+
+            // Actions
+            var tdActions = document.createElement('td');
+            tdActions.style.cssText = 'padding:10px 12px;display:flex;gap:6px;';
+            var translateBtn = makeActionBtn('Translate', '#56a8ff', function () {
+                if (!confirm('Translate ' + row.code + ' via DeepSeek? This dispatches the i18n-translate.yml workflow.')) return;
+                triggerTranslate(row.lang_code, 'deepseek', translateBtn);
+            });
+            var auditBtn = makeActionBtn('Audit', '#a87dff', function () {
+                if (!confirm('Audit ' + row.code + ' via Gemini? This dispatches the i18n-audit-llm.yml workflow.')) return;
+                triggerAudit(row.lang_code, 'gemini', auditBtn);
+            });
+            tdActions.appendChild(translateBtn);
+            tdActions.appendChild(auditBtn);
+            tr.appendChild(tdActions);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+    }
+
+    function makeActionBtn(label, color, onClick) {
+        var btn = document.createElement('button');
+        btn.textContent = label;
+        btn.style.cssText = 'padding:5px 10px;background:' + color + '22;border:1px solid ' + color + '66;border-radius:4px;color:' + color + ';cursor:pointer;font-size:11px;font-weight:600;';
+        btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    function triggerTranslate(locale, provider, btn) {
+        btn.textContent = '…';
+        btn.disabled = true;
+        fetch('/api/v1/admin/i18n-ops/translate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+            body: JSON.stringify({ locale: locale, provider: provider }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (data && data.ok) {
+                    btn.textContent = '✓ Dispatched';
+                    setTimeout(function () { btn.textContent = 'Translate'; }, 4000);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('Translate dispatched for ' + locale, 'success');
+                    }
+                    setTimeout(fetchRuns, 1500);
+                } else {
+                    btn.textContent = 'Translate';
+                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
+                }
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                btn.textContent = 'Translate';
+                alert('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function triggerAudit(locale, provider, btn) {
+        btn.textContent = '…';
+        btn.disabled = true;
+        fetch('/api/v1/admin/i18n-ops/audit', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+            body: JSON.stringify({ locale: locale, provider: provider }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (data && data.ok) {
+                    btn.textContent = '✓ Dispatched';
+                    setTimeout(function () { btn.textContent = 'Audit'; }, 4000);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('Audit dispatched for ' + locale, 'success');
+                    }
+                    setTimeout(fetchRuns, 1500);
+                } else {
+                    btn.textContent = 'Audit';
+                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
+                }
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                btn.textContent = 'Audit';
+                alert('Network error: ' + (e && e.message || e));
+            });
+    }
+
+    function fetchRuns() {
+        runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">Loading runs…</div>';
+        fetch('/api/v1/admin/i18n-ops/workflow-runs?workflow=' + encodeURIComponent(activeRuns) + '&limit=10', {
+            headers: authHeader(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.ok || !data.runs || !data.runs.length) {
+                    runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">No recent runs.</div>';
+                    return;
+                }
+                runsBody.innerHTML = '';
+                var list = document.createElement('div');
+                list.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+                data.runs.forEach(function (run) {
+                    var row = document.createElement('div');
+                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;font-size:12px;';
+                    var pillColor = run.conclusion === 'success' ? '#3ddc84' : run.conclusion === 'failure' ? '#ff8080' : run.status === 'in_progress' ? '#56a8ff' : '#888';
+                    var pillText = run.status === 'completed' ? (run.conclusion || '?') : run.status;
+                    row.innerHTML =
+                        '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + pillColor + '22;color:' + pillColor + ';border:1px solid ' + pillColor + '55;text-transform:uppercase">' + pillText + '</span>' +
+                        '<span style="font-family:monospace;opacity:0.85">#' + (run.run_number || '?') + '</span>' +
+                        '<span style="flex:1;opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (run.display_title || '').replace(/</g, '&lt;') + '</span>' +
+                        '<span style="opacity:0.6">' + (run.actor_login || '?') + '</span>' +
+                        '<span style="opacity:0.6">' + (run.created_at ? new Date(run.created_at).toLocaleString() : '') + '</span>';
+                    if (run.html_url) {
+                        var openBtn = document.createElement('a');
+                        openBtn.href = run.html_url;
+                        openBtn.target = '_blank';
+                        openBtn.rel = 'noopener noreferrer';
+                        openBtn.textContent = '↗';
+                        openBtn.style.cssText = 'color:#56a8ff;text-decoration:none;font-size:14px;padding:0 4px;';
+                        row.appendChild(openBtn);
+                    }
+                    list.appendChild(row);
+                });
+                runsBody.appendChild(list);
+            })
+            .catch(function (e) {
+                runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;color:#ff8080">Error: ' + (e && e.message || e) + '</div>';
+            });
+    }
+
+    refreshBtn.addEventListener('click', function () {
+        fetchLocales();
+        fetchRuns();
+    });
+
+    renderRunsTabs();
+    fetchLocales();
+    fetchRuns();
+    return container;
 }

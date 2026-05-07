@@ -41,29 +41,119 @@ function formatPrice(cents, currency) {
 
 /**
  * Walk a list of candidate image URLs and return the first one that
- * responds 2xx with an image/* content-type. Falls through to the
- * supplied default on any miss. Used to shield WhatsApp/Facebook et al.
- * from legacy / broken rows in `profiles.avatar_url` — some pre-existing
- * rows point at the no-longer-public `default-images` bucket, at expired
- * signed URLs, or at third-party picture URLs that return non-image
- * content to crawlers. Returns the detected content-type too so the
- * caller can emit an accurate `og:image:type`.
+ * actually serves image bytes. Falls through to the supplied default
+ * on any miss.
+ *
+ * Some legacy / third-party avatar hosts (Supabase signed URLs, certain
+ * object-storage CDNs) answer HEAD with `application/octet-stream` or
+ * an empty Content-Type while serving correct image bytes on GET. To
+ * avoid silently downgrading those avatars to the branded default —
+ * which then gets cached for 7d by WhatsApp et al. — we fall back to a
+ * tiny `Range: bytes=0-0` GET when HEAD looks ambiguous.
+ *
+ * Returns the detected content-type so the caller can emit an accurate
+ * `og:image:type`.
  */
 async function pickUsableImage(candidates, defaultImage) {
+  const probe = async (url, method) => {
+    try {
+      const init = {
+        method,
+        redirect: 'follow',
+        cf: { cacheTtl: 300, cacheEverything: true },
+      };
+      if (method === 'GET') init.headers = { range: 'bytes=0-0' };
+      const r = await fetch(url, init);
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      return { ok: r.ok, ct };
+    } catch {
+      return null;
+    }
+  };
+
   for (const url of candidates) {
     if (!url || typeof url !== 'string') continue;
     if (!/^https?:\/\//i.test(url)) continue;
-    try {
-      const r = await fetch(url, {
-        method: 'HEAD',
-        redirect: 'follow',
-        cf: { cacheTtl: 300, cacheEverything: true },
-      });
-      const ct = (r.headers.get('content-type') || '').toLowerCase();
-      if (r.ok && ct.startsWith('image/')) return { url, contentType: ct };
-    } catch { /* try next */ }
+
+    let r = await probe(url, 'HEAD');
+    const ambiguous =
+      !r || !r.ok || r.ct === '' || r.ct.startsWith('application/octet-stream');
+    if (ambiguous) {
+      const g = await probe(url, 'GET');
+      if (g) r = g;
+    }
+
+    if (r && r.ok && r.ct.startsWith('image/')) {
+      return { url, contentType: r.ct };
+    }
   }
   return { url: defaultImage, contentType: 'image/jpeg' };
+}
+
+// Branded asset used whenever we can't show a real avatar. This bucket
+// (`covers/`) is genuinely public; the older `default-images/` bucket
+// 403'd to crawlers, which is what produced the "no image" cached
+// previews still floating around in WhatsApp.
+const PROFILE_DEFAULT_IMAGE =
+  'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/covers/vitana-og-default.jpg';
+
+/**
+ * Build a minimal-but-valid OG response for cases where the gateway
+ * lookup failed (404, 5xx, network blip, or empty body). Returning a
+ * bare 404 with no OG meta would let WhatsApp/Facebook/Telegram cache
+ * "no preview" for this URL for ~7 days — which is exactly how the
+ * current "some profiles share without an image" bug got created. Emit
+ * a branded card with a short cache so a transient gateway issue
+ * doesn't lock the URL out of rich previews.
+ */
+function renderProfileFallback(canonicalUrl, destinationUrl) {
+  const title = 'MAXINA member · MAXINA';
+  const description = 'Tap to view this profile on MAXINA.';
+  const image = PROFILE_DEFAULT_IMAGE;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+
+  <meta property="og:type" content="profile">
+  <meta property="og:site_name" content="MAXINA">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  <meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:secure_url" content="${escapeHtml(image)}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${escapeHtml(image)}">
+
+  <meta http-equiv="refresh" content="0;url=${escapeHtml(destinationUrl)}">
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <p>${escapeHtml(description)}</p>
+  <p><img src="${escapeHtml(image)}" alt="MAXINA" style="max-width:100%"></p>
+  <p><a href="${escapeHtml(destinationUrl)}">Open on MAXINA</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // Short cache so a recovering profile shows up within a minute,
+      // and so any per-URL crawler cache that picked this fallback up
+      // gets a fresh chance soon.
+      'Cache-Control': 'public, max-age=60, s-maxage=60',
+    },
+  });
 }
 
 /**
@@ -71,21 +161,25 @@ async function pickUsableImage(candidates, defaultImage) {
  * Queries the gateway's public profile endpoint — no auth required.
  */
 async function renderProfileOg(id, canonicalUrl, destinationUrl) {
-  // Known-good public asset — same one og-match ships to WhatsApp today.
-  // The `default-images` bucket was 403'ing (not actually public), which
-  // is why profiles without an avatar rendered no image at all.
-  const DEFAULT_IMAGE =
-    'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/covers/vitana-og-default.jpg';
+  const DEFAULT_IMAGE = PROFILE_DEFAULT_IMAGE;
 
-  const resp = await fetch(
-    `${GATEWAY_URL}/api/v1/public/profile/${encodeURIComponent(id)}`,
-  );
-  if (!resp.ok) {
-    return new Response('Profile not found', { status: 404 });
+  let p = null;
+  try {
+    const resp = await fetch(
+      `${GATEWAY_URL}/api/v1/public/profile/${encodeURIComponent(id)}`,
+    );
+    if (resp.ok) {
+      const body = await resp.json().catch(() => null);
+      p = body && body.profile;
+    }
+  } catch { /* fall through to branded fallback */ }
+
+  // Gateway lookup failed (404, 5xx, network, or empty body) — emit a
+  // branded card instead of a bare 404 so crawlers don't cache "no
+  // preview" for this URL.
+  if (!p) {
+    return renderProfileFallback(canonicalUrl, destinationUrl);
   }
-  const body = await resp.json();
-  const p = body && body.profile;
-  if (!p) return new Response('Profile not found', { status: 404 });
 
   const composedName =
     [p.first_name, p.last_name].filter(Boolean).join(' ').trim() ||

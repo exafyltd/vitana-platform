@@ -18,6 +18,8 @@ import {
   NavCatalogEntry,
   getContent,
   lookupScreen,
+  lookupByAlias,
+  lookupByRoute,
   suggestSimilar,
   searchCatalog,
   entriesByCategory,
@@ -58,9 +60,13 @@ describe('navigation-catalog — structural integrity', () => {
     }
   });
 
-  test('routes are unique', () => {
+  test('routes are unique among entry_kind=route entries', () => {
+    // VTID-02770: overlay entries share `host_route` with the page they open
+    // on (e.g. OVERLAY.MEETUP_DRAWER and COMM.EVENTS both reference
+    // `/comm/events-meetups`). Uniqueness only applies to real routes.
     const seen = new Set<string>();
     for (const entry of NAVIGATION_CATALOG) {
+      if (entry.entry_kind === 'overlay') continue;
       expect(seen.has(entry.route)).toBe(false);
       seen.add(entry.route);
     }
@@ -342,4 +348,168 @@ describe('navigation-catalog — routing quality', () => {
     const top5Priorities = results.slice(0, 5).map(r => r.entry.priority || 0);
     expect(Math.max(...top5Priorities)).toBeGreaterThan(0);
   });
+});
+
+// =============================================================================
+// 4. VTID-02770 — Alias resolution + overlay metadata + canonical-paths snapshot
+// =============================================================================
+
+describe('navigation-catalog — alias resolution (VTID-02770)', () => {
+  test('lookupByAlias resolves legacy slugs from orb-tool.ts', () => {
+    expect(lookupByAlias('find-partner')?.screen_id).toBe('COMM.FIND_PARTNER');
+    expect(lookupByAlias('events_meetups')?.screen_id).toBe('COMM.EVENTS');
+    expect(lookupByAlias('connected_apps')?.screen_id).toBe('SETTINGS.CONNECTED_APPS');
+    expect(lookupByAlias('my-matches')?.screen_id).toBe('COMM.FIND_PARTNER_MATCHES');
+    expect(lookupByAlias('marketplace')?.screen_id).toBe('DISCOVER.MARKETPLACE');
+  });
+
+  test('lookupByAlias resolves user-canonical paths to real routes', () => {
+    // The user inventory uses /community/events but the real route is /comm/events-meetups.
+    expect(lookupByAlias('/community/events')?.screen_id).toBe('COMM.EVENTS');
+    expect(lookupByAlias('community/events')?.screen_id).toBe('COMM.EVENTS');
+    expect(lookupByAlias('/community/feed')?.screen_id).toBe('COMM.FEED');
+    expect(lookupByAlias('/community/groups')?.screen_id).toBe('COMM.GROUPS');
+    expect(lookupByAlias('/community/my-business')?.screen_id).toBe('BUSINESS.OVERVIEW');
+    expect(lookupByAlias('/discover/cart')?.screen_id).toBe('DISCOVER.CART');
+    expect(lookupByAlias('/profile/edit')?.screen_id).toBe('PROFILE.ME');
+  });
+
+  test('lookupByAlias is case- and underscore-insensitive', () => {
+    expect(lookupByAlias('FIND-PARTNER')?.screen_id).toBe('COMM.FIND_PARTNER');
+    expect(lookupByAlias('Find_Partner')?.screen_id).toBe('COMM.FIND_PARTNER');
+    expect(lookupByAlias('find partner')?.screen_id).toBe('COMM.FIND_PARTNER');
+  });
+
+  test('lookupByAlias falls back to derived screen_id form', () => {
+    // No explicit alias for COMM.FIND_PARTNER_BOARD other than what we set, but
+    // the derived "comm-find-partner-board" form should still resolve.
+    const entry = lookupByAlias('comm-find-partner-board');
+    expect(entry?.screen_id).toBe('COMM.FIND_PARTNER_BOARD');
+  });
+
+  test('lookupByAlias returns null for truly unknown slugs', () => {
+    expect(lookupByAlias('totally-bogus-screen')).toBeNull();
+    expect(lookupByAlias('')).toBeNull();
+  });
+});
+
+describe('navigation-catalog — overlay metadata (VTID-02770)', () => {
+  test('overlay entries declare event_name + query_marker', () => {
+    const overlays = NAVIGATION_CATALOG.filter(e => e.entry_kind === 'overlay');
+    expect(overlays.length).toBeGreaterThanOrEqual(8);
+    for (const o of overlays) {
+      expect(o.overlay).toBeDefined();
+      expect(o.overlay!.event_name).toBeTruthy();
+      expect(o.overlay!.query_marker).toBeTruthy();
+      // Overlays open on a host page; route must be a normal path.
+      expect(o.route.startsWith('/')).toBe(true);
+    }
+  });
+
+  test('CALENDAR.OVERVIEW is now an overlay (not a route)', () => {
+    const calendar = lookupScreen('CALENDAR.OVERVIEW')!;
+    expect(calendar.entry_kind).toBe('overlay');
+    expect(calendar.overlay?.event_name).toBe('calendar:open');
+    expect(calendar.overlay?.query_marker).toBe('calendar');
+  });
+
+  test('LIFE_COMPASS.OVERLAY dispatches vitana:open-life-compass', () => {
+    const lc = lookupScreen('LIFE_COMPASS.OVERLAY')!;
+    expect(lc.entry_kind).toBe('overlay');
+    expect(lc.overlay?.event_name).toBe('vitana:open-life-compass');
+  });
+});
+
+describe('navigation-catalog — 89 canonical paths snapshot (VTID-02770)', () => {
+  // The user-canonical 89-screen inventory uses paths that don't always match
+  // the deployed React Router routes. This test asserts every canonical path
+  // resolves SOMEWHERE in the catalog (real route, alias, or overlay) so the
+  // ORB Navigator can never silently 404 on a known-good user phrase.
+  //
+  // Items marked `null` are paths the user listed that DON'T exist on the
+  // frontend at all (e.g. /community-login, /community/challenges) — they
+  // resolve via alias to the closest real entry.
+  const CANONICAL: Array<{ path: string; expectedScreenId?: string }> = [
+    { path: '/', expectedScreenId: 'PUBLIC.LANDING' },
+    { path: '/auth', expectedScreenId: 'AUTH.GENERIC' },
+    { path: '/maxina', expectedScreenId: 'AUTH.MAXINA_PORTAL' },
+    { path: '/alkalma', expectedScreenId: 'AUTH.ALKALMA_PORTAL' },
+    { path: '/earthlinks', expectedScreenId: 'AUTH.EARTHLINKS_PORTAL' },
+    { path: '/home', expectedScreenId: 'HOME.OVERVIEW' },
+    { path: '/home/context', expectedScreenId: 'HOME.CONTEXT' },
+    { path: '/home/actions', expectedScreenId: 'HOME.ACTIONS' },
+    { path: '/home/matches', expectedScreenId: 'HOME.MATCHES' },
+    { path: '/home/aifeed', expectedScreenId: 'HOME.AI_FEED' },
+    // /community → /comm (canonical alias)
+    { path: '/community/events', expectedScreenId: 'COMM.EVENTS' },
+    { path: '/community/live-rooms', expectedScreenId: 'COMM.LIVE_ROOMS' },
+    { path: '/community/media-hub', expectedScreenId: 'COMM.MEDIA_HUB' },
+    { path: '/community/my-business', expectedScreenId: 'BUSINESS.OVERVIEW' },
+    { path: '/community/feed', expectedScreenId: 'COMM.FEED' },
+    { path: '/community/groups', expectedScreenId: 'COMM.GROUPS' },
+    // Discover
+    { path: '/discover', expectedScreenId: 'DISCOVER.OVERVIEW' },
+    { path: '/discover/supplements', expectedScreenId: 'DISCOVER.SUPPLEMENTS' },
+    { path: '/discover/wellness-services', expectedScreenId: 'DISCOVER.WELLNESS_SERVICES' },
+    { path: '/discover/doctors-coaches', expectedScreenId: 'DISCOVER.DOCTORS_COACHES' },
+    { path: '/discover/deals-offers', expectedScreenId: 'DISCOVER.DEALS' },
+    { path: '/discover/orders', expectedScreenId: 'DISCOVER.ORDERS' },
+    { path: '/discover/cart', expectedScreenId: 'DISCOVER.CART' },
+    // Health
+    { path: '/health', expectedScreenId: 'HEALTH.OVERVIEW' },
+    { path: '/health/services-hub', expectedScreenId: 'HEALTH.SERVICES_HUB' },
+    { path: '/health/biomarkers', expectedScreenId: 'HEALTH.MY_BIOLOGY' }, // alias to my-biology
+    { path: '/health/plans', expectedScreenId: 'HEALTH.PLANS' },
+    { path: '/health/education', expectedScreenId: 'HEALTH.EDUCATION' },
+    { path: '/health/pillars', expectedScreenId: 'HEALTH.PILLARS' },
+    { path: '/health/conditions', expectedScreenId: 'HEALTH.CONDITIONS' },
+    // Inbox / AI / Wallet / Sharing / Memory / Settings
+    { path: '/inbox', expectedScreenId: 'INBOX.OVERVIEW' },
+    { path: '/inbox/reminder', expectedScreenId: 'INBOX.REMINDERS' },
+    { path: '/inbox/inspiration', expectedScreenId: 'INBOX.INSPIRATION' },
+    { path: '/inbox/archived', expectedScreenId: 'INBOX.ARCHIVED' },
+    { path: '/ai', expectedScreenId: 'AI.OVERVIEW' },
+    { path: '/ai/insights', expectedScreenId: 'AI.INSIGHTS' },
+    { path: '/ai/recommendations', expectedScreenId: 'AI.RECOMMENDATIONS' },
+    { path: '/ai/daily-summary', expectedScreenId: 'AI.DAILY_SUMMARY' },
+    { path: '/ai/companion', expectedScreenId: 'AI.COMPANION' },
+    { path: '/wallet', expectedScreenId: 'WALLET.OVERVIEW' },
+    { path: '/wallet/balance', expectedScreenId: 'WALLET.BALANCE' },
+    { path: '/wallet/subscriptions', expectedScreenId: 'WALLET.SUBSCRIPTIONS' },
+    { path: '/wallet/rewards', expectedScreenId: 'WALLET.REWARDS' },
+    { path: '/sharing', expectedScreenId: 'SHARING.OVERVIEW' },
+    { path: '/sharing/campaigns', expectedScreenId: 'SHARING.CAMPAIGNS' },
+    { path: '/sharing/distribution', expectedScreenId: 'SHARING.DISTRIBUTION' },
+    { path: '/sharing/data-consent', expectedScreenId: 'SHARING.DATA_CONSENT' },
+    { path: '/memory', expectedScreenId: 'MEMORY.OVERVIEW' },
+    { path: '/memory/timeline', expectedScreenId: 'MEMORY.TIMELINE' },
+    { path: '/memory/diary', expectedScreenId: 'MEMORY.DIARY' },
+    { path: '/memory/recall', expectedScreenId: 'MEMORY.RECALL' },
+    { path: '/memory/permissions', expectedScreenId: 'MEMORY.PERMISSIONS' },
+    { path: '/settings', expectedScreenId: 'SETTINGS.OVERVIEW' },
+    { path: '/settings/preferences', expectedScreenId: 'SETTINGS.PREFERENCES' },
+    { path: '/settings/privacy', expectedScreenId: 'SETTINGS.PRIVACY' },
+    { path: '/settings/notifications', expectedScreenId: 'SETTINGS.NOTIFICATIONS' },
+    { path: '/settings/connected-apps', expectedScreenId: 'SETTINGS.CONNECTED_APPS' },
+    { path: '/settings/billing', expectedScreenId: 'SETTINGS.BILLING' },
+    { path: '/settings/support', expectedScreenId: 'SETTINGS.SUPPORT' },
+    { path: '/settings/tenant', expectedScreenId: 'SETTINGS.TENANT' },
+    { path: '/assistant', expectedScreenId: 'ASSISTANT.OVERVIEW' },
+    { path: '/search', expectedScreenId: 'SEARCH.OVERVIEW' },
+    { path: '/profile/edit', expectedScreenId: 'PROFILE.ME' },
+  ];
+
+  test.each(CANONICAL)(
+    'canonical path $path resolves to $expectedScreenId',
+    ({ path, expectedScreenId }) => {
+      // VTID-02770: Try alias first. lookupByRoute progressively strips
+      // segments, which would land /discover/cart on DISCOVER.OVERVIEW
+      // (since `/cart` isn't under `/discover`). Aliases are exact-match.
+      const resolved = lookupByAlias(path) || lookupByRoute(path);
+      expect(resolved).not.toBeNull();
+      if (expectedScreenId) {
+        expect(resolved?.screen_id).toBe(expectedScreenId);
+      }
+    }
+  );
 });

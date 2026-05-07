@@ -35,6 +35,26 @@ export type NavCategory =
   | 'sharing'
   | 'developer';
 
+/**
+ * VTID-02770: Overlay metadata. Used when `entry_kind === 'overlay'`.
+ *
+ * Overlays are NOT React Router routes — they are popups/drawers/sheets
+ * dispatched via CustomEvent on the active page. The Navigator emits
+ * `${host_route}?open=${query_marker}` and the frontend ORB widget
+ * intercepts the `?open=` param and dispatches `event_name` instead of
+ * navigating. See useOrbVoiceWidget.ts:127-143.
+ */
+export interface NavOverlayMeta {
+  /** Page where the overlay opens. If empty, opens on the user's current route. */
+  host_route?: string;
+  /** CustomEvent name the frontend dispatches when the overlay should open. */
+  event_name: string;
+  /** ?open=<marker> URL signal the gateway emits and the frontend reads. */
+  query_marker: string;
+  /** Optional named param the overlay needs (e.g. 'user_id', 'meetup_id'). */
+  needs_param?: string;
+}
+
 export interface NavCatalogEntry {
   screen_id: string;
   route: string;
@@ -49,6 +69,41 @@ export interface NavCatalogEntry {
   embedding?: number[];
   /** VITANA-BRAIN: Roles that can see this entry. If omitted/empty, surface is inferred from route/category — see resolveEffectiveRoles. */
   allowed_roles?: string[];
+  /**
+   * VTID-02770: Alternative slug-style identifiers Gemini, LiveKit, or legacy
+   * email/marketing links may emit. Looked up via `lookupByAlias()`. Lets the
+   * canonical screen_id evolve while older clients keep working.
+   *
+   * Examples for `COMM.EVENTS`: `['events', 'events_meetups', 'events-meetups',
+   * 'community/events', '/community/events']` — both the legacy slug forms
+   * baked into `orb-tool.ts:553` and the user-canonical paths from the
+   * 89-screen inventory.
+   */
+  aliases?: string[];
+  /**
+   * VTID-02770: Entry kind. `'route'` = real React Router route (default).
+   * `'overlay'` = popup/drawer dispatched via CustomEvent on the host_route.
+   * The handler in `handleNavigateToScreen()` branches on this to emit either
+   * a plain navigation URL or a `${host_route}?open=${query_marker}` overlay
+   * trigger.
+   */
+  entry_kind?: 'route' | 'overlay';
+  overlay?: NavOverlayMeta;
+  /**
+   * VTID-02789: Mobile-aware URL override. When the ORB session is from a
+   * mobile viewport (`session.is_mobile === true`), the Navigator uses
+   * `mobile_route` instead of `route`. Use for pages that auto-redirect on
+   * mobile (e.g. /comm → /comm/events-meetups?tab=hot) so we skip the
+   * redirect hop. May contain `:param` placeholders just like `route`.
+   */
+  mobile_route?: string;
+  /**
+   * VTID-02789: Viewport gate. `'mobile'` = only mobile sessions can be
+   * redirected here (desktop callers get blocked with kind='wrong_viewport').
+   * `'desktop'` = mirror, mobile gets blocked. Omitted = no restriction.
+   * Use for entries like /daily-diary which are mobile-only flows.
+   */
+  viewport_only?: 'mobile' | 'desktop';
 }
 
 /**
@@ -335,6 +390,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'auth',
     access: 'public',
     anonymous_safe: true,
+    aliases: ['auth', 'login', 'sign-in', 'signin', 'community-login', 'anmelden'],
     i18n: {
       en: {
         title: 'Sign In',
@@ -376,6 +432,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     screen_id: 'HOME.OVERVIEW',
     route: '/home',
     category: 'home',
+    aliases: ['home', 'news', 'longevity-news', 'startseite', 'home-overview'],
     access: 'authenticated',
     anonymous_safe: false,
     i18n: {
@@ -459,9 +516,15 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'COMM.OVERVIEW',
     route: '/comm',
+    // VTID-02789: On mobile, /comm auto-redirects to /comm/events-meetups?tab=hot
+    // inside Community.tsx — so the Navigator emits the post-redirect URL
+    // directly to skip the redirect hop and let the user land on the right
+    // screen one navigation faster.
+    mobile_route: '/comm/events-meetups?tab=hot',
     category: 'community',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['community', '/community', 'comm', 'community-overview'],
     i18n: {
       en: {
         title: 'Community',
@@ -482,6 +545,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     access: 'authenticated',
     anonymous_safe: false,
     priority: 2,
+    aliases: [
+      'events', 'meetups', 'events-meetups', 'events_meetups',
+      'community/events', '/community/events', 'community-events',
+    ],
     i18n: {
       en: {
         title: 'Events & Meetups',
@@ -501,6 +568,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'community',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['live-rooms', 'live_rooms', 'community/live-rooms', '/community/live-rooms'],
     i18n: {
       en: {
         title: 'Live Rooms',
@@ -520,6 +588,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'community',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['media-hub', 'media_hub', 'community/media-hub', '/community/media-hub'],
     i18n: {
       en: {
         title: 'Media Hub',
@@ -542,6 +611,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     access: 'authenticated',
     anonymous_safe: false,
     priority: 1,
+    aliases: ['my-business', 'community/my-business', '/community/my-business', 'business-hub'],
     i18n: {
       en: {
         title: 'Business Hub',
@@ -740,6 +810,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'health',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['my-biology', 'biology', 'biomarkers', '/health/biomarkers', 'health/biomarkers', 'biologie'],
     i18n: {
       en: {
         title: 'My Biology',
@@ -818,6 +889,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'discover',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['discover', 'shop', 'marketplace-overview', 'entdecken'],
     i18n: {
       en: {
         title: 'Discover',
@@ -934,6 +1006,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['diary', 'daily-diary', '/diary', '/daily-diary', 'tagebuch'],
     i18n: {
       en: {
         title: 'Daily Diary',
@@ -949,11 +1022,19 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'CALENDAR.OVERVIEW',
-    route: '/home?open=calendar',
+    // Overlay: opens on the user's current screen. Frontend intercepts
+    // `?open=calendar` and dispatches `calendar:open` instead of routing.
+    route: '/calendar',
+    entry_kind: 'overlay',
+    overlay: {
+      event_name: 'calendar:open',
+      query_marker: 'calendar',
+    },
     category: 'home',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 3,
+    aliases: ['calendar', 'my-calendar', 'kalender', 'open-calendar'],
     i18n: {
       en: {
         title: 'My Calendar',
@@ -975,11 +1056,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     // open-life-compass event instead of routing — so the user never loses
     // context when they say "open my goals" mid-conversation.
     screen_id: 'LIFE_COMPASS.OVERLAY',
-    route: '/?open=life_compass',
+    route: '/',
+    entry_kind: 'overlay',
+    overlay: {
+      event_name: 'vitana:open-life-compass',
+      query_marker: 'life_compass',
+    },
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 2,
+    aliases: ['life-compass', 'life_compass', 'goals', 'my-goals', 'compass', 'lebenskompass'],
     i18n: {
       en: {
         title: 'Life Compass',
@@ -1042,6 +1129,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'inbox',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['inbox', 'messages', 'chat', 'chats', 'posteingang', 'nachrichten'],
     i18n: {
       en: {
         title: 'Inbox',
@@ -1061,6 +1149,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'inbox',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['reminders', 'reminder', 'inbox-reminder', 'erinnerungen'],
     i18n: {
       en: {
         title: 'Reminders',
@@ -1101,6 +1190,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'settings',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['privacy', 'privacy-settings', 'datenschutz'],
     i18n: {
       en: {
         title: 'Privacy Settings',
@@ -1289,6 +1379,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'SETTINGS.CONNECTED_APPS', route: '/settings/connected-apps', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['connected-apps', 'connected_apps', 'connectors', 'integrations', 'verbundene-apps', 'connect-spotify', 'connect-youtube', 'connect-google'],
     i18n: {
       en: { title: 'Connectors & Connected Apps', description: 'Connectors to third-party apps and integrations linked to your account.', when_to_visit: 'When the user asks about connectors, a connector, connected apps, app integrations, third-party connections, linked services, or how to connect an external app.' },
       de: { title: 'Konnektoren & Verbundene Apps', description: 'Konnektoren zu Drittanbieter-Apps und Integrationen, die mit deinem Konto verknüpft sind.', when_to_visit: 'Wenn der Nutzer nach Konnektoren, einem Konnektor, verbundenen Apps, App-Integrationen, Drittanbieter-Verbindungen, verknüpften Diensten oder dem Verbinden einer externen App fragt.' },
@@ -1341,6 +1432,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'PROFILE.ME', route: '/me/profile', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['profile', 'my-profile', 'edit-profile', 'profile/edit', '/profile/edit', '/profile', 'me', 'me/profile'],
     i18n: {
       en: { title: 'My Profile', description: 'Your personal profile — name, photo, bio, and account details.', when_to_visit: 'When the user asks to open their profile, see their profile, edit their profile, view their account, personal information, about me, or user profile.' },
       de: { title: 'Mein Profil', description: 'Dein persönliches Profil — Name, Foto, Bio und Kontodetails.', when_to_visit: 'Wenn der Nutzer sein Profil öffnen, sein Profil sehen, sein Profil bearbeiten, sein Konto ansehen, persönliche Informationen, über mich oder Nutzerprofil fragt.' },
@@ -1356,6 +1448,480 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: { title: 'Nutzungsbedingungen', description: 'Nutzungsbedingungen und rechtliche Informationen.', when_to_visit: 'Wenn der Nutzer nach Nutzungsbedingungen, AGB, rechtlichen Bedingungen oder der Nutzervereinbarung fragt.' },
     },
   },
+
+  // ===========================================================================
+  // VTID-02770 — Navigator Rework (PR-1): missing community screens + overlays.
+  // Sourced from vitana-v1/src/App.tsx route registrations as of 2026-05-05.
+  // ===========================================================================
+
+  // ── INTENTS (Find a Partner / Match engine) ─────────────────────────────
+  {
+    screen_id: 'INTENTS.BOARD', route: '/intents/board', category: 'community',
+    access: 'authenticated', anonymous_safe: false, priority: 2,
+    aliases: ['intent-board', 'intent_board', 'community/intent-board', 'intents-board', 'all-intents'],
+    i18n: {
+      en: { title: 'Intent Board', description: 'Browse all open community intents and asks across categories.', when_to_visit: 'When the user asks for the intent board, all community posts, what people are asking for, the dance board, or the open community board.' },
+      de: { title: 'Intent-Board', description: 'Durchstöbere alle offenen Community-Anliegen und Anfragen über alle Kategorien hinweg.', when_to_visit: 'Wenn der Nutzer nach dem Intent-Board, allen Community-Posts, was die Leute suchen, dem Tanz-Board oder dem offenen Community-Board fragt.' },
+    },
+  },
+  {
+    screen_id: 'INTENTS.MINE', route: '/intents/mine', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['my-intents', 'my_intents', 'community/my-intents', 'my-posts'],
+    i18n: {
+      en: { title: 'My Intents', description: 'Your own posts and asks in the community.', when_to_visit: 'When the user asks for "my intents", "my posts", "my asks", "what I posted", or wants to see and manage their own community posts.' },
+      de: { title: 'Meine Intents', description: 'Deine eigenen Posts und Anfragen in der Community.', when_to_visit: 'Wenn der Nutzer nach "meinen Intents", "meinen Posts", "meinen Anfragen", "was ich gepostet habe" fragt oder seine eigenen Community-Posts ansehen oder verwalten möchte.' },
+    },
+  },
+  {
+    screen_id: 'INTENTS.MATCH_DETAIL', route: '/intents/match/:match_id', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['intent-match-detail', 'intent_match_detail', 'match-detail'],
+    i18n: {
+      en: { title: 'Match Detail', description: 'A specific match between two community members based on overlapping intents.', when_to_visit: 'When the user asks to see a specific match, the details of one of their matches, or wants to open a match by id.' },
+      de: { title: 'Match-Detail', description: 'Ein bestimmtes Match zwischen zwei Community-Mitgliedern basierend auf überlappenden Anliegen.', when_to_visit: 'Wenn der Nutzer ein bestimmtes Match sehen möchte, die Details eines seiner Matches anfragt oder ein Match per ID öffnen will.' },
+    },
+  },
+
+  // ── COMMUNITY (newly-shipped destinations) ──────────────────────────────
+  {
+    screen_id: 'COMM.FIND_PARTNER', route: '/comm/find-partner', category: 'community',
+    access: 'authenticated', anonymous_safe: false, priority: 2,
+    aliases: ['find-partner', 'find_partner', 'partner', 'find-a-partner', 'community/find-partner', 'find-match', 'find-a-match', 'partnersuche', 'tanzpartner-finden'],
+    i18n: {
+      en: { title: 'Find a Partner', description: 'Unified dance + fitness partner discovery — ranked matches.', when_to_visit: 'When the user wants a dance partner, fitness buddy, partner match, or asks to open Find a Partner. Use for all dance- and fitness-partner discovery.' },
+      de: { title: 'Partner finden', description: 'Einheitliche Tanz- und Fitness-Partnersuche — geordnete Matches.', when_to_visit: 'Wenn der Nutzer einen Tanzpartner, Fitness-Buddy oder Partner-Match möchte oder die Partnersuche öffnen will.' },
+    },
+  },
+  {
+    screen_id: 'COMM.FIND_PARTNER_MATCHES', route: '/comm/find-partner?view=matches', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['my-matches', 'matches', 'find-partner-matches', 'community/find-partner/my-matches'],
+    i18n: {
+      en: { title: 'My Matches', description: 'Your current dance and fitness partner matches.', when_to_visit: 'When the user asks for "my matches", "show my matches", "who matches with me", or "who Vitana found for me".' },
+      de: { title: 'Meine Matches', description: 'Deine aktuellen Tanz- und Fitness-Partner-Matches.', when_to_visit: 'Wenn der Nutzer nach "meinen Matches", "zeig meine Matches", "wer matcht mit mir" oder "wen hat Vitana für mich gefunden" fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.FIND_PARTNER_BOARD', route: '/comm/find-partner?view=board', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['find-partner-board', 'partner-board'],
+    i18n: {
+      en: { title: 'Partner Board', description: 'The community board view of dance and fitness partner posts.', when_to_visit: 'When the user asks for the partner board, dance board, the community board for partner posts, or wants to see who is looking.' },
+      de: { title: 'Partner-Board', description: 'Die Community-Board-Ansicht der Tanz- und Fitness-Partner-Posts.', when_to_visit: 'Wenn der Nutzer nach dem Partner-Board, Tanz-Board, dem Community-Board für Partner-Posts fragt oder sehen möchte, wer sucht.' },
+    },
+  },
+  {
+    screen_id: 'COMM.FIND_PARTNER_POSTS', route: '/comm/find-partner?view=posts', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['find-partner-posts', 'my-partner-posts'],
+    i18n: {
+      en: { title: 'My Partner Posts', description: 'Your own dance and fitness partner posts.', when_to_visit: 'When the user asks for "my partner posts", "my dance posts", "my fitness posts", or "what I posted to find a partner".' },
+      de: { title: 'Meine Partner-Posts', description: 'Deine eigenen Tanz- und Fitness-Partner-Posts.', when_to_visit: 'Wenn der Nutzer nach "meinen Partner-Posts", "meinen Tanz-Posts", "meinen Fitness-Posts" oder "was ich gepostet habe um einen Partner zu finden" fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.OPEN_ASKS', route: '/comm/open-asks', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['open-asks', 'open_asks', 'community/open-asks', 'asks', 'unmatched-posts'],
+    i18n: {
+      en: { title: 'Open Asks', description: 'Community-wide unmatched posts looking for a partner or helper.', when_to_visit: 'When the user asks for "open asks", "what is the community looking for", "unmatched posts", or "who needs help".' },
+      de: { title: 'Offene Anfragen', description: 'Community-weite Posts ohne Match, die einen Partner oder Helfer suchen.', when_to_visit: 'Wenn der Nutzer nach "offenen Anfragen", "was sucht die Community", "Posts ohne Match" oder "wer braucht Hilfe" fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.MEMBERS', route: '/comm/members', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['members', 'community-members', 'community/members', 'mitglieder'],
+    i18n: {
+      en: { title: 'Community Members', description: 'Browse the directory of Maxina community members.', when_to_visit: 'When the user asks for the members directory, community members, who is in the community, or wants to browse member profiles.' },
+      de: { title: 'Community-Mitglieder', description: 'Durchstöbere das Verzeichnis der Maxina Community-Mitglieder.', when_to_visit: 'Wenn der Nutzer nach dem Mitgliederverzeichnis, Community-Mitgliedern, wer in der Community ist fragt oder Mitgliederprofile durchstöbern möchte.' },
+    },
+  },
+  {
+    screen_id: 'COMM.TALK_TO_VITANA', route: '/comm/talk-to-vitana', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['talk-to-vitana', 'talk_to_vitana', 'feedback', 'report-issue', 'support-vitana'],
+    i18n: {
+      en: { title: 'Talk to Vitana', description: 'Capture feedback, report issues, or send a message to the Vitana team.', when_to_visit: 'When the user wants to give feedback, report a bug, send a message to Vitana, or talk to the team.' },
+      de: { title: 'Mit Vitana sprechen', description: 'Feedback geben, Probleme melden oder eine Nachricht an das Vitana-Team senden.', when_to_visit: 'Wenn der Nutzer Feedback geben, einen Bug melden, eine Nachricht an Vitana senden oder mit dem Team sprechen möchte.' },
+    },
+  },
+  {
+    screen_id: 'COMM.GROUPS', route: '/comm/groups', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['groups', 'community-groups', 'community/groups', '/community/groups', 'gruppen'],
+    i18n: {
+      en: { title: 'Groups', description: 'Browse and join Maxina community groups.', when_to_visit: 'When the user asks about community groups, joining a group, what groups are available, or wants to see their groups.' },
+      de: { title: 'Gruppen', description: 'Durchstöbere und tritt Maxina Community-Gruppen bei.', when_to_visit: 'Wenn der Nutzer nach Community-Gruppen, einer Gruppe beitreten, welche Gruppen verfügbar sind fragt oder seine Gruppen sehen möchte.' },
+    },
+  },
+  {
+    screen_id: 'COMM.GROUP_DETAIL', route: '/comm/groups/:groupId', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['group-detail', 'group_detail', 'community/groups/detail'],
+    i18n: {
+      en: { title: 'Group Detail', description: 'A specific community group — its members, posts, and events.', when_to_visit: 'When the user asks to open a specific group by id or name, see a group, or view group details.' },
+      de: { title: 'Gruppen-Detail', description: 'Eine bestimmte Community-Gruppe — ihre Mitglieder, Posts und Events.', when_to_visit: 'Wenn der Nutzer eine bestimmte Gruppe per ID oder Name öffnen, eine Gruppe sehen oder Gruppendetails ansehen möchte.' },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOM_VIEWER', route: '/comm/live-rooms/:roomId/view', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['live-room-viewer', 'live_room_viewer'],
+    i18n: {
+      // Narrow keywords. The generic "live rooms" request belongs on COMM.LIVE_ROOMS.
+      en: { title: 'Specific Live Room Viewer', description: 'Viewer page for a specific live audio or video room by roomId.', when_to_visit: 'When the caller has a specific roomId and needs to open that one viewer page.' },
+      de: { title: 'Spezifischer Live-Raum Viewer', description: 'Viewer-Seite für einen bestimmten Live-Audio- oder Live-Video-Raum per roomId.', when_to_visit: 'Wenn der Aufrufer eine spezifische roomId hat und diese eine Viewer-Seite öffnen muss.' },
+    },
+  },
+  {
+    screen_id: 'COMM.FEED', route: '/comm/events-meetups?tab=following', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed'],
+    i18n: {
+      en: { title: 'Community Feed', description: 'Your community feed — posts and updates from members and groups you follow.', when_to_visit: 'When the user asks to open the community feed, see community posts, scroll the feed, or check what is new in the community.' },
+      de: { title: 'Community-Feed', description: 'Dein Community-Feed — Posts und Updates von Mitgliedern und Gruppen, denen du folgst.', when_to_visit: 'Wenn der Nutzer den Community-Feed öffnen, Community-Posts sehen, durch den Feed scrollen oder prüfen möchte, was es Neues in der Community gibt.' },
+    },
+  },
+
+  // ── DISCOVER (newly-shipped) ────────────────────────────────────────────
+  {
+    screen_id: 'DISCOVER.MARKETPLACE', route: '/discover/marketplace', category: 'discover',
+    access: 'authenticated', anonymous_safe: false, priority: 2,
+    aliases: ['marketplace', 'discover-marketplace', 'commercial-intents', 'marktplatz'],
+    i18n: {
+      en: { title: 'Marketplace', description: 'The Maxina marketplace — buy and sell commercial intents from the community.', when_to_visit: 'When the user asks to open the marketplace, browse commercial intents, buy or sell something, or see what the community is selling.' },
+      de: { title: 'Marktplatz', description: 'Der Maxina Marktplatz — kaufe und verkaufe kommerzielle Intents aus der Community.', when_to_visit: 'Wenn der Nutzer den Marktplatz öffnen, kommerzielle Intents durchstöbern, etwas kaufen oder verkaufen oder sehen möchte, was die Community verkauft.' },
+    },
+  },
+  {
+    screen_id: 'DISCOVER.PRODUCT_DETAIL', route: '/discover/product/:id', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['product-detail', 'product_detail', 'product'],
+    i18n: {
+      en: { title: 'Product Detail', description: 'Detail page for a specific product.', when_to_visit: 'When the user wants to open a specific product by id, see product details, or read about a particular item.' },
+      de: { title: 'Produkt-Detail', description: 'Detailseite für ein bestimmtes Produkt.', when_to_visit: 'Wenn der Nutzer ein bestimmtes Produkt per ID öffnen, Produktdetails sehen oder über einen bestimmten Artikel lesen möchte.' },
+    },
+  },
+  {
+    screen_id: 'DISCOVER.PROVIDER_PROFILE', route: '/discover/provider/:id', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['provider-profile', 'provider_profile', 'provider'],
+    i18n: {
+      en: { title: 'Provider Profile', description: 'Profile page for a specific service provider.', when_to_visit: 'When the user wants to open a specific provider profile, see a coach or doctor profile, or look up a service provider by id.' },
+      de: { title: 'Anbieterprofil', description: 'Profilseite für einen bestimmten Dienstleister.', when_to_visit: 'Wenn der Nutzer ein bestimmtes Anbieterprofil öffnen, ein Coach- oder Arztprofil sehen oder einen Dienstleister per ID nachschlagen möchte.' },
+    },
+  },
+  {
+    screen_id: 'DISCOVER.CART', route: '/cart', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['cart', '/discover/cart', 'discover/cart', 'shopping-cart', 'warenkorb'],
+    i18n: {
+      en: { title: 'Shopping Cart', description: 'Items in your shopping cart, ready to check out.', when_to_visit: 'When the user asks to open the cart, see what is in their cart, check out, or review their basket.' },
+      de: { title: 'Warenkorb', description: 'Artikel in deinem Warenkorb, bereit zur Kasse.', when_to_visit: 'Wenn der Nutzer den Warenkorb öffnen, sehen was im Warenkorb ist, zur Kasse gehen oder seinen Korb prüfen möchte.' },
+    },
+  },
+
+  // ── HEALTH (newly-shipped) ──────────────────────────────────────────────
+  {
+    screen_id: 'HEALTH.VITANA_INDEX', route: '/health/vitana-index', category: 'health',
+    access: 'authenticated', anonymous_safe: false, priority: 2,
+    aliases: ['vitana-index', 'vitana_index', 'health-score', 'index', 'longevity-index'],
+    i18n: {
+      en: { title: 'Vitana Index', description: 'Your Vitana Index score — the 5-pillar longevity metric (Nutrition, Hydration, Exercise, Sleep, Mental).', when_to_visit: 'When the user asks about their Vitana Index, their longevity score, their health score, the 5 pillars, or how their health is trending.' },
+      de: { title: 'Vitana Index', description: 'Dein Vitana-Index-Score — die 5-Säulen-Longevity-Kennzahl (Ernährung, Hydration, Bewegung, Schlaf, Mentale).', when_to_visit: 'Wenn der Nutzer nach seinem Vitana Index, seinem Longevity-Score, seinem Gesundheitsscore, den 5 Säulen oder dem Gesundheitstrend fragt.' },
+    },
+  },
+  {
+    screen_id: 'HEALTH.BIOMARKER_RESULTS', route: '/health/biomarker-results', category: 'health',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['biomarker-results', 'lab-results', 'blood-results'],
+    i18n: {
+      // Specific to the latest-results detail view; the generic "show my
+      // biomarkers" request belongs on HEALTH.MY_BIOLOGY (which has the
+      // trends + chart). Keep keywords narrow — title avoids the
+      // standalone word "Biomarker".
+      en: { title: 'Latest Test Result Detail', description: 'Detail panel for the most recent single test result.', when_to_visit: 'When the user wants the detail panel for ONE SPECIFIC most-recent test (not the trends view).' },
+      de: { title: 'Detail des letzten Testergebnisses', description: 'Detailpanel für das aktuellste einzelne Testergebnis.', when_to_visit: 'Wenn der Nutzer das Detailpanel für EIN SPEZIFISCHES aktuellstes Testergebnis möchte (nicht die Trendsansicht).' },
+    },
+  },
+  {
+    screen_id: 'HEALTH.TRACKER', route: '/health-tracker', category: 'health',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['health-tracker', 'tracker', 'my-health-tracker', '/health/my-health-tracker'],
+    i18n: {
+      en: { title: 'Health Tracker', description: 'Track your daily health behaviors and Vitana Index movements.', when_to_visit: 'When the user asks to open the health tracker, log a health behavior, track water/sleep/exercise, or see today\'s tracker.' },
+      de: { title: 'Gesundheits-Tracker', description: 'Verfolge dein tägliches Gesundheitsverhalten und Vitana-Index-Bewegungen.', when_to_visit: 'Wenn der Nutzer den Gesundheits-Tracker öffnen, ein Gesundheitsverhalten loggen, Wasser/Schlaf/Bewegung verfolgen oder den heutigen Tracker sehen möchte.' },
+    },
+  },
+
+  // ── BUSINESS (newly-shipped tabs) ───────────────────────────────────────
+  {
+    screen_id: 'BUSINESS.LISTINGS', route: '/business/listings', category: 'business',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['business-listings', 'listings', 'my-listings', 'business-inserate'],
+    i18n: {
+      en: { title: 'My Business Listings', description: 'Your active business listings on Maxina.', when_to_visit: 'When the user asks about their business listings, posted services, what they have published commercially, or wants to manage their public business posts.' },
+      // German title intentionally avoids "Anzeigen" (which is also the verb
+      // "to display") so generic queries like "X anzeigen" don't hijack here.
+      de: { title: 'Meine Inserate', description: 'Deine aktiven Geschäftsinserate auf Maxina.', when_to_visit: 'Wenn der Nutzer nach seinen Inseraten, Geschäftsinseraten, geposteten Services, was er kommerziell veröffentlicht hat fragt oder seine öffentlichen Business-Posts verwalten möchte.' },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.OPPORTUNITIES', route: '/business/opportunities', category: 'business',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['business-opportunities', 'opportunities', 'business-leads'],
+    i18n: {
+      en: { title: 'Business Opportunities', description: 'New business opportunities and leads matched to your services.', when_to_visit: 'When the user asks about business opportunities, leads, new clients, or what business has come in.' },
+      de: { title: 'Business-Chancen', description: 'Neue Business-Chancen und Leads, die zu deinen Services passen.', when_to_visit: 'Wenn der Nutzer nach Business-Chancen, Leads, neuen Kunden oder welches Business reingekommen ist fragt.' },
+    },
+  },
+
+  // ── PROFILE (newly-shipped + cross-user) ────────────────────────────────
+  {
+    screen_id: 'PROFILE.PRIVACY', route: '/profile/me/privacy', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['profile-privacy', 'profile/me/privacy', 'visibility-settings', 'profile-visibility'],
+    i18n: {
+      // Title intentionally avoids the word "Datenschutz" to keep the
+      // generic "datenschutz einstellungen" query landing on SETTINGS.PRIVACY.
+      en: { title: 'Profile Visibility', description: 'Per-section visibility toggles for your profile — control who sees what.', when_to_visit: 'When the user asks about profile visibility, who can see their profile, what is shown publicly, or wants to hide a profile section.' },
+      de: { title: 'Profil-Sichtbarkeit', description: 'Sichtbarkeits-Schalter pro Bereich für dein Profil — steuere, wer was sieht.', when_to_visit: 'Wenn der Nutzer nach Profil-Sichtbarkeit, wer sein Profil sehen kann, was öffentlich gezeigt wird fragt oder einen Profil-Bereich verbergen möchte.' },
+    },
+  },
+  {
+    screen_id: 'PROFILE.PUBLIC', route: '/u/:identifier', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['public-profile', 'user-profile', '/u', 'u', '/profile/:id'],
+    i18n: {
+      en: { title: 'Public Profile', description: 'A community member\'s public profile.', when_to_visit: 'When the user wants to open another member\'s profile, see a community member\'s public page, look someone up by their @vitana_id, or view a username.' },
+      de: { title: 'Öffentliches Profil', description: 'Das öffentliche Profil eines Community-Mitglieds.', when_to_visit: 'Wenn der Nutzer das Profil eines anderen Mitglieds öffnen, die öffentliche Seite eines Community-Mitglieds sehen, jemanden per @vitana_id nachschlagen oder einen Benutzernamen ansehen möchte.' },
+    },
+  },
+  {
+    screen_id: 'PROFILE.WITH_MATCH', route: '/u/:identifier?match_intent=:intent_id', category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['profile-with-match', 'profile_with_match', 'matched-profile'],
+    i18n: {
+      en: { title: 'Profile with Match Anchor', description: 'A community member\'s public profile, anchored to a specific matched intent.', when_to_visit: 'When the user wants to open the profile of someone they matched with, see a profile with the matched post highlighted, or jump from a match notification to the counterparty profile.' },
+      de: { title: 'Profil mit Match-Anker', description: 'Das öffentliche Profil eines Community-Mitglieds, verankert an einem spezifischen gematchten Intent.', when_to_visit: 'Wenn der Nutzer das Profil von jemandem öffnen möchte, mit dem er gematcht hat, ein Profil mit hervorgehobenem Match-Post sehen oder von einer Match-Benachrichtigung zum Profil der Gegenseite springen möchte.' },
+    },
+  },
+
+  // ── REMINDERS / MESSAGES / DAILY DIARY ──────────────────────────────────
+  {
+    screen_id: 'REMINDERS.OVERVIEW', route: '/reminders', category: 'inbox',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['reminders', 'reminder-list', 'all-reminders', 'meine-erinnerungen'],
+    i18n: {
+      en: { title: 'Reminders', description: 'Your scheduled reminders — the full list, with controls to add, edit, and dismiss.', when_to_visit: 'When the user asks for the reminders list, all reminders, "show me my reminders", or wants to manage scheduled reminders.' },
+      de: { title: 'Erinnerungen', description: 'Deine geplanten Erinnerungen — die vollständige Liste, mit Steuerung zum Hinzufügen, Bearbeiten und Verwerfen.', when_to_visit: 'Wenn der Nutzer nach der Erinnerungsliste, allen Erinnerungen, "zeig mir meine Erinnerungen" fragt oder geplante Erinnerungen verwalten möchte.' },
+    },
+  },
+  {
+    screen_id: 'MESSAGES.OVERVIEW', route: '/messages', category: 'inbox',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['messages', 'direct-messages', 'dms', 'chats', 'conversations'],
+    i18n: {
+      en: { title: 'Messages', description: 'Your direct messages and conversations with community members.', when_to_visit: 'When the user asks to open messages, direct messages, conversations, or wants to write to another member directly.' },
+      de: { title: 'Nachrichten', description: 'Deine Direktnachrichten und Konversationen mit Community-Mitgliedern.', when_to_visit: 'Wenn der Nutzer Nachrichten, Direktnachrichten, Konversationen öffnen oder einem anderen Mitglied direkt schreiben möchte.' },
+    },
+  },
+  {
+    screen_id: 'MEMORY.DAILY_DIARY', route: '/daily-diary', category: 'memory',
+    access: 'authenticated', anonymous_safe: false,
+    // VTID-02789: /daily-diary is implemented ONLY as MobileDailyDiary.tsx.
+    // No desktop layout exists, so block desktop sessions before redirect.
+    viewport_only: 'mobile',
+    aliases: ['today-diary', 'today-journal', 'todays-diary'],
+    i18n: {
+      // Narrow keywords on purpose. The generic "open my diary" / "open daily
+      // diary" should land on MEMORY.DIARY (the diary list); this entry is the
+      // dedicated TODAY-only capture flow.
+      en: { title: 'Single-Day Capture Flow', description: 'A focused single-day capture flow for one specific day.', when_to_visit: 'When the user explicitly wants the dedicated single-day capture step (not the general diary view).' },
+      de: { title: 'Eintags-Erfassungsfluss', description: 'Ein fokussierter Erfassungsfluss für einen bestimmten einzelnen Tag.', when_to_visit: 'Wenn der Nutzer ausdrücklich den dedizierten Eintags-Erfassungsschritt möchte (nicht die allgemeine Tagebuchansicht).' },
+    },
+  },
+
+  // ── SETTINGS (newly-shipped tabs) ───────────────────────────────────────
+  {
+    screen_id: 'SETTINGS.VOICE_AI', route: '/settings/voice-ai', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['voice-ai', 'voice-settings', 'orb-settings'],
+    i18n: {
+      en: { title: 'Voice & AI Preferences', description: 'Voice and AI preferences for the Vitana ORB.', when_to_visit: 'When the user asks about ORB voice preferences or how to customize Vitana\'s voice (NOT generic privacy/notification settings).' },
+      de: { title: 'Sprach- & KI-Präferenzen', description: 'Sprach- und KI-Präferenzen für den Vitana ORB.', when_to_visit: 'Wenn der Nutzer nach ORB-Sprachpräferenzen fragt oder Vitanas Stimme anpassen möchte (NICHT allgemeine Datenschutz-/Benachrichtigungseinstellungen).' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.AUTOPILOT', route: '/settings/autopilot', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['autopilot-settings', 'autopilot-preferences'],
+    i18n: {
+      en: { title: 'Autopilot Settings', description: 'Configure Autopilot — recommendation cadence, what categories to surface, and quiet hours.', when_to_visit: 'When the user asks about autopilot settings, autopilot preferences, how to configure recommendations, or wants to change autopilot behavior.' },
+      de: { title: 'Autopilot-Einstellungen', description: 'Konfiguriere Autopilot — Empfehlungs-Frequenz, welche Kategorien angezeigt werden und Ruhezeiten.', when_to_visit: 'Wenn der Nutzer nach Autopilot-Einstellungen, Autopilot-Präferenzen fragt, wie man Empfehlungen konfiguriert oder das Autopilot-Verhalten ändern möchte.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.LIMITATIONS', route: '/settings/limitations', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['limitations', 'health-limitations', 'restrictions'],
+    i18n: {
+      en: { title: 'Health Limitations', description: 'Record health limitations or constraints (allergies, injuries, conditions) so recommendations stay safe.', when_to_visit: 'When the user wants to record health limitations, register allergies, mark an injury, or note conditions that affect recommendations.' },
+      de: { title: 'Gesundheitliche Einschränkungen', description: 'Erfasse gesundheitliche Einschränkungen (Allergien, Verletzungen, Erkrankungen), damit Empfehlungen sicher bleiben.', when_to_visit: 'Wenn der Nutzer gesundheitliche Einschränkungen festhalten, Allergien hinterlegen, eine Verletzung markieren oder Bedingungen erfassen möchte, die Empfehlungen beeinflussen.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.TENANT', route: '/settings/tenant', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['tenant', 'tenant-settings', 'organization', 'workspace'],
+    i18n: {
+      en: { title: 'Tenant', description: 'The tenant or workspace your account belongs to.', when_to_visit: 'When the user asks about their tenant, organization, workspace, or which Maxina portal they belong to.' },
+      de: { title: 'Tenant', description: 'Der Tenant oder Workspace, zu dem dein Konto gehört.', when_to_visit: 'Wenn der Nutzer nach seinem Tenant, seiner Organisation, seinem Workspace oder zu welchem Maxina-Portal er gehört fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.TENANT_ROLE', route: '/settings/tenant-role', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['tenant-role', 'role-settings', 'switch-role'],
+    i18n: {
+      en: { title: 'Tenant & Role', description: 'Switch your active role within the current tenant — community, professional, staff, admin.', when_to_visit: 'When the user wants to switch role, change role, become admin/professional/staff, or asks about their tenant role.' },
+      de: { title: 'Tenant & Rolle', description: 'Wechsle deine aktive Rolle im aktuellen Tenant — Community, Professional, Staff, Admin.', when_to_visit: 'Wenn der Nutzer die Rolle wechseln, Admin/Professional/Staff werden möchte oder nach seiner Tenant-Rolle fragt.' },
+    },
+  },
+
+  // ── NEWS / ASSISTANT / SEARCH ───────────────────────────────────────────
+  {
+    screen_id: 'NEWS.DETAIL', route: '/news/:id', category: 'home',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['news-detail', 'news-article', 'article'],
+    i18n: {
+      en: { title: 'News Article', description: 'Detail view of a longevity news article.', when_to_visit: 'When the user wants to read a specific news article by id, open a news story, or see the full article they were reading.' },
+      de: { title: 'News-Artikel', description: 'Detailansicht eines Longevity-News-Artikels.', when_to_visit: 'Wenn der Nutzer einen bestimmten News-Artikel per ID lesen, eine News-Story öffnen oder den vollständigen Artikel sehen möchte, den er gelesen hat.' },
+    },
+  },
+  {
+    screen_id: 'ASSISTANT.OVERVIEW', route: '/assistant', category: 'ai',
+    access: 'authenticated', anonymous_safe: false,
+    // Title is intentionally distinct from AI.OVERVIEW ("AI Assistant") so
+    // generic "open the AI assistant" still lands on AI.OVERVIEW. This
+    // entry is the dedicated chat-window route, not the assistant landing.
+    aliases: ['assistant-chat', 'vitana-chat', 'chat-with-vitana', 'text-chat'],
+    i18n: {
+      en: { title: 'Vitana Chat', description: 'The dedicated chat surface — a focused conversation window with Vitana, outside the orb.', when_to_visit: 'When the user explicitly wants to chat with Vitana in a text window, open the chat view, or have an extended typed conversation. Prefer AI.OVERVIEW for the generic "AI Assistant" request.' },
+      de: { title: 'Vitana Chat', description: 'Die dedizierte Chat-Oberfläche — ein fokussiertes Konversationsfenster mit Vitana, außerhalb des Orbs.', when_to_visit: 'Wenn der Nutzer ausdrücklich mit Vitana in einem Textfenster chatten, die Chat-Ansicht öffnen oder eine längere getippte Konversation führen möchte. Bevorzuge AI.OVERVIEW für die allgemeine "KI-Assistent"-Anfrage.' },
+    },
+  },
+  {
+    screen_id: 'SEARCH.OVERVIEW', route: '/search', category: 'home',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['search', 'global-search', 'suchen'],
+    i18n: {
+      en: { title: 'Search', description: 'Global search across the entire Maxina app — members, content, services, products.', when_to_visit: 'When the user wants to search the app, find something specific, look up a member, find content, or open a global search.' },
+      de: { title: 'Suchen', description: 'Globale Suche durch die gesamte Maxina-App — Mitglieder, Inhalte, Services, Produkte.', when_to_visit: 'Wenn der Nutzer die App durchsuchen, etwas Bestimmtes finden, ein Mitglied nachschlagen, Inhalt finden oder eine globale Suche öffnen möchte.' },
+    },
+  },
+
+  // ──────────────────────────────────────────────────────────────────────
+  // VTID-02770 — OVERLAY entries (entry_kind='overlay').
+  // These do NOT navigate to a route; they emit `?open=<query_marker>` and
+  // the frontend ORB widget intercepts that and dispatches `event_name` as
+  // a CustomEvent. See useOrbVoiceWidget.ts:127-143 for the dispatcher.
+  // ──────────────────────────────────────────────────────────────────────
+  {
+    screen_id: 'OVERLAY.VITANA_INDEX', route: '/health',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'vitana:open-index', query_marker: 'index' },
+    category: 'health',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['index-overlay', 'vitana-index-sheet', 'health-score-overlay'],
+    i18n: {
+      en: { title: 'Vitana Index Sheet', description: 'A quick overlay showing your current Vitana Index score with the 5 pillar breakdown.', when_to_visit: 'When the user asks for a quick view of their Vitana Index without leaving the current screen, or says "open the index" / "show my score" mid-conversation.' },
+      de: { title: 'Vitana-Index-Sheet', description: 'Ein schnelles Overlay, das deinen aktuellen Vitana-Index-Score mit der 5-Säulen-Aufschlüsselung zeigt.', when_to_visit: 'Wenn der Nutzer eine schnelle Ansicht seines Vitana Index möchte, ohne den aktuellen Bildschirm zu verlassen, oder mitten im Gespräch "öffne den Index" / "zeig mir meinen Score" sagt.' },
+    },
+  },
+  {
+    screen_id: 'OVERLAY.PROFILE_PREVIEW', route: '/comm/members',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'profile:open', query_marker: 'profile_preview', needs_param: 'user_id' },
+    category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['profile-preview', 'preview-profile'],
+    i18n: {
+      en: { title: 'Profile Preview', description: 'A quick preview of a community member\'s profile as a dialog.', when_to_visit: 'When the user wants to peek at a member\'s profile without fully navigating, or says "preview their profile".' },
+      de: { title: 'Profil-Vorschau', description: 'Eine schnelle Vorschau des Profils eines Community-Mitglieds als Dialog.', when_to_visit: 'Wenn der Nutzer einen Blick auf das Profil eines Mitglieds werfen möchte, ohne komplett zu navigieren, oder "Profil-Vorschau" sagt.' },
+    },
+  },
+  {
+    screen_id: 'OVERLAY.MEETUP_DRAWER', route: '/comm/events-meetups',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'meetup:open', query_marker: 'meetup', needs_param: 'meetup_id' },
+    category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['meetup-drawer', 'meetup-details'],
+    i18n: {
+      // Narrow keywords: this is the entity-specific overlay, not the
+      // generic "show me events" request (which → COMM.EVENTS).
+      en: { title: 'Single Meetup Drawer', description: 'Drawer view for a specific meetup by id.', when_to_visit: 'When the caller has a specific meetup_id and wants to drill into that one record as a drawer overlay.' },
+      de: { title: 'Einzelnes Meetup-Drawer', description: 'Drawer-Ansicht für ein bestimmtes Meetup per ID.', when_to_visit: 'Wenn der Aufrufer eine spezifische meetup_id hat und in diesen einzelnen Datensatz als Drawer-Overlay reinzoomen möchte.' },
+    },
+  },
+  {
+    screen_id: 'OVERLAY.EVENT_DRAWER', route: '/comm/events-meetups',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'event:open', query_marker: 'event', needs_param: 'event_id' },
+    category: 'community',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['event-drawer', 'event-details'],
+    i18n: {
+      en: { title: 'Single Event Drawer', description: 'Drawer view for a specific event by id.', when_to_visit: 'When the caller has a specific event_id and wants to drill into that one record as a drawer overlay.' },
+      de: { title: 'Einzelnes Event-Drawer', description: 'Drawer-Ansicht für ein bestimmtes Event per ID.', when_to_visit: 'Wenn der Aufrufer eine spezifische event_id hat und in diesen einzelnen Datensatz als Drawer-Overlay reinzoomen möchte.' },
+    },
+  },
+  {
+    screen_id: 'OVERLAY.MASTER_ACTION', route: '/home',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'master_action:open', query_marker: 'master_action' },
+    category: 'home',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['master-action', 'action-popup', 'quick-actions'],
+    i18n: {
+      en: { title: 'Quick Actions', description: 'A page-aware quick-action popup with the most relevant actions for the current screen.', when_to_visit: 'When the user asks for "quick actions", "page actions", or wants to see the most relevant actions for what they are currently viewing.' },
+      de: { title: 'Schnellaktionen', description: 'Ein seitenbezogenes Schnellaktions-Popup mit den relevantesten Aktionen für den aktuellen Bildschirm.', when_to_visit: 'Wenn der Nutzer nach "Schnellaktionen", "Seitenaktionen" fragt oder die relevantesten Aktionen für das, was er gerade ansieht, sehen möchte.' },
+    },
+  },
+  {
+    screen_id: 'OVERLAY.WALLET_POPUP', route: '/wallet',
+    entry_kind: 'overlay',
+    overlay: { event_name: 'wallet:open', query_marker: 'wallet' },
+    category: 'wallet',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['wallet-popup', 'wallet-overlay', 'wallet-sheet', 'quick-wallet'],
+    i18n: {
+      // Narrow keywords. The generic "open my wallet" request belongs to
+      // WALLET.OVERVIEW. This overlay is only the quick-peek popup.
+      en: { title: 'Quick Wallet Popup', description: 'Bottom-sheet peek of balance + recent rewards.', when_to_visit: 'When the user explicitly says "quick peek" or "sheet" — wants a momentary popup without navigation.' },
+      de: { title: 'Schnelles Wallet-Popup', description: 'Unten eingeblendeter Sheet-Peek mit Guthaben + letzten Belohnungen.', when_to_visit: 'Wenn der Nutzer ausdrücklich "schneller Peek" oder "Sheet" sagt — ein kurzes Popup ohne Navigation.' },
+    },
+  },
+
+  // ===========================================================================
+  // VTID-02783 — Auto-managed manifest block.
+  //
+  // Everything between <auto:nav-catalog-start> and <auto:nav-catalog-end>
+  // is regenerated by `npm run nav:sync` from
+  // `vitana-v1/src/navigation/screens.manifest.ts`. DO NOT EDIT BY HAND —
+  // edit the manifest, run `npm run nav:sync`, commit both files.
+  //
+  // CI gate (`npm run nav:check`) fails the PR if this block is stale.
+  //
+  // <auto:nav-catalog-start VTID-02783>
+    // ⚠️  DO NOT EDIT — regenerated by services/gateway/scripts/sync-nav-catalog-from-manifest.ts
+    //     from vitana-v1/src/navigation/screens.manifest.ts.
+    //     Run `npm run nav:sync` after changing the manifest.
+    // (no manifest entries yet — append to vitana-v1/src/navigation/screens.manifest.ts)
+    // <auto:nav-catalog-end>
 
   // ===========================================================================
   // VITANA-BRAIN: Command Hub Developer Screens (role-gated: developer, admin)
@@ -1551,6 +2117,29 @@ const BY_ROUTE: Map<string, NavCatalogEntry> = (() => {
   return map;
 })();
 
+/**
+ * VTID-02770: Alias lookup map. Populated from each entry's `aliases` field
+ * plus a small set of derived keys (lowercased screen_id with dots → hyphens,
+ * normalized route). First write wins on collision so the canonical entry
+ * stays canonical.
+ */
+const BY_ALIAS: Map<string, NavCatalogEntry> = (() => {
+  const map = new Map<string, NavCatalogEntry>();
+  for (const entry of NAVIGATION_CATALOG) {
+    // Explicit aliases declared on the entry.
+    if (entry.aliases) {
+      for (const a of entry.aliases) {
+        const k = normalizeAlias(a);
+        if (k && !map.has(k)) map.set(k, entry);
+      }
+    }
+    // Derived: lowercased screen_id with dots/underscores → hyphens.
+    const idKey = normalizeAlias(entry.screen_id.replace(/\./g, '-'));
+    if (idKey && !map.has(idKey)) map.set(idKey, entry);
+  }
+  return map;
+})();
+
 function normalizeRoute(route: string | undefined | null): string {
   if (!route) return '';
   // Strip query/hash, trailing slash, lowercase.
@@ -1559,6 +2148,23 @@ function normalizeRoute(route: string | undefined | null): string {
     ? cleaned.slice(0, -1)
     : cleaned;
   return trimmed.toLowerCase();
+}
+
+/**
+ * VTID-02770: Normalize an alias slug for lookup. Lowercases, replaces
+ * underscores/spaces with hyphens, strips a leading slash, and trims a
+ * trailing slash. Lets `find_partner`, `find-partner`, `Find Partner`,
+ * `/find-partner`, and `find-partner/` all resolve to the same key.
+ */
+function normalizeAlias(slug: string | undefined | null): string {
+  if (!slug) return '';
+  let s = String(slug).trim().toLowerCase();
+  if (s.startsWith('/')) s = s.slice(1);
+  if (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1);
+  // Treat `_` and spaces as `-` for matching, but keep `.` (catalog screen_ids
+  // use dots: `comm.events`).
+  s = s.replace(/[\s_]+/g, '-');
+  return s;
 }
 
 /**
@@ -1575,6 +2181,37 @@ export function getContent(entry: NavCatalogEntry, lang: LangCode): NavCatalogCo
 export function lookupScreen(id: string): NavCatalogEntry | null {
   if (!id) return null;
   return BY_ID.get(id) || null;
+}
+
+/**
+ * VTID-02770: Look up a catalog entry by alias slug.
+ *
+ * Aliases let Gemini, LiveKit, and legacy email/marketing links emit a
+ * shorthand identifier ("find-partner", "events_meetups", "community/events")
+ * that resolves to the canonical screen_id without a direct enum match.
+ *
+ * Three lookup attempts, in order:
+ *   1. Exact normalized match against the alias map.
+ *   2. Match against the entry's normalized screen_id (so `comm.events` wins).
+ *   3. Match against the entry's normalized route (so `/comm/events-meetups`
+ *      and `comm/events-meetups` both resolve).
+ */
+export function lookupByAlias(slug: string | undefined | null): NavCatalogEntry | null {
+  if (!slug) return null;
+  const key = normalizeAlias(slug);
+  if (!key) return null;
+
+  const direct = BY_ALIAS.get(key);
+  if (direct) return direct;
+
+  // Fallback: treat the slug as a screen_id form (lowercase, dots).
+  const byIdKey = key.replace(/-/g, '.');
+  const byId = BY_ID.get(byIdKey.toUpperCase());
+  if (byId) return byId;
+
+  // Fallback: treat the slug as a route fragment.
+  const candidate = key.startsWith('/') ? key : '/' + key;
+  return lookupByRoute(candidate);
 }
 
 /**
@@ -1759,6 +2396,16 @@ export function searchCatalog(
     // never single-handedly overrides clear keyword matches.
     if (entry.priority && entry.priority > 0 && score > 0) {
       score += entry.priority * 3;
+    }
+
+    // VTID-02770: Overlay entries are entity-specific popups (e.g.
+    // "open this single meetup as a drawer"). They should NEVER beat the
+    // generic destination route (e.g. COMM.EVENTS) for a generic query
+    // like "show me events / meetups". Apply a flat down-rank so overlays
+    // only surface when the user's phrasing is uniquely overlay-shaped
+    // (which the alias map handles), or when no real-route match exists.
+    if (entry.entry_kind === 'overlay' && score > 0) {
+      score = Math.max(1, score - 12);
     }
 
     if (score > 0) results.push({ entry, score });

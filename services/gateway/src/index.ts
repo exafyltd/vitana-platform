@@ -90,11 +90,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLivekitRouter = require('./routes/orb-livekit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
   const orbToolRouter = require('./routes/orb-tool').default;
+  const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
   // VTID-01222: WebSocket server initialization for ORB Live API
   const { initializeOrbWebSocket } = require('./routes/orb-live');
   // VTID-01218A: Voice LAB - ORB Live Observability API
   const voiceLabRouter = require('./routes/voice-lab').default;
+  // VTID-02766: Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+  const voiceToolsCatalogRouter = require('./routes/voice-tools-catalog').default;
   // AI Personality Configuration API
   const aiPersonalityRouter = require('./routes/ai-personality').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
@@ -246,6 +249,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // Agents Registry — single source of truth for every LLM-powered workload
   const { agentsRegistryRouter, bootstrapEmbeddedAgents } = require('./routes/agents-registry');
+  // BOOTSTRAP-ARCH-INV: System-wide architecture investigator (DeepSeek-reasoner)
+  const { architectureInvestigatorRouter } = require('./routes/architecture-investigator');
   // VTID-01981: Routines — daily Claude Code remote agents (catalog + run history)
   const { routinesRouter } = require('./routes/routines');
   // VTID-02006: Routine audit endpoints — server-side aggregations for Tier B routines
@@ -375,6 +380,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityAdminRouter = require('./routes/tenant-admin/community-admin').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
+  // BOOTSTRAP-CMDHUB-I18N-OPS: Localization operations — locale status + workflow dispatch
+  const adminI18nOpsRouter = require('./routes/admin-i18n-ops').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
   const adminAutopilotRouter = require('./routes/admin-autopilot').default;
   // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
@@ -595,6 +602,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Agents Registry — replaces the hardcoded subagents array with a real, queryable registry
   mountRouterSync(app, '/', agentsRegistryRouter, { owner: 'agents-registry' });
 
+  // BOOTSTRAP-ARCH-INV: Architecture Investigator route
+  mountRouterSync(app, '/', architectureInvestigatorRouter, { owner: 'architecture-investigator' });
+
   // VTID-01981: Routines — catalog + run history for daily Claude Code remote agents
   mountRouterSync(app, '/', routinesRouter, { owner: 'routines' });
 
@@ -673,11 +683,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // route with per-tool handlers — see services/gateway/src/routes/orb-tool.ts.
   mountRouterSync(app, '/api/v1', orbToolRouter, { owner: 'orb-tool-dispatcher' });
 
+  // VTID-LIVEKIT-AGENT-TRACE: runtime telemetry — agent posts session-start
+  // trace; diag panel reads. See services/gateway/src/routes/orb-agent-trace.ts.
+  mountRouterSync(app, '/api/v1', orbAgentTraceRouter, { owner: 'orb-agent-trace' });
+
   // BOOTSTRAP-AWARENESS-REGISTRY: admin API for the Awareness Registry
   mountRouterSync(app, '/api/v1/awareness', awarenessConfigRouter, { owner: 'awareness-registry' });
 
   // VTID-01218A: Voice LAB - ORB Live Observability API
   mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
+
+  // VTID-02766: Voice Tools Catalog (developer-tier)
+  mountRouterSync(app, '/api/v1/voice-tools', voiceToolsCatalogRouter, { owner: 'voice-tools-catalog' });
 
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
@@ -756,6 +773,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
+  mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
@@ -1047,6 +1066,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     }
   }));
+
+  // BOOTSTRAP-CLOUDFLARE-CMDHUB-REDIRECT: bare-host hit lands on the Hub.
+  // Operators type just `gateway.vitanaland.com` and get the Command Hub
+  // instead of `Cannot GET /`. Path-only redirect — no domain hardcoded.
+  app.get('/', (_req, res) => res.redirect(302, '/command-hub/'));
 
   // Command Hub router handles HTML routes and API (after static files)
   mountRouterSync(app, '/command-hub', commandHubRouter, { owner: 'command-hub-ui' });

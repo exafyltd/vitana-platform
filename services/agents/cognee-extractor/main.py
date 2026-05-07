@@ -54,12 +54,34 @@ logger = logging.getLogger('cognee-extractor')
 # Configuration
 # =============================================================================
 
-# LLM Configuration - Uses Gemini API (same key as ORB)
-# Cognee requires API key authentication for Gemini
+# LLM Configuration
+#
+# Default: Gemini (legacy). Operators can flip to DeepSeek-V3 for cost savings
+# (~50x cheaper per token for entity extraction) by setting Cloud Run env vars:
+#   LLM_PROVIDER=deepseek
+#   LLM_MODEL=deepseek-chat        # V3, cheap; or deepseek-reasoner for R1
+#   DEEPSEEK_API_KEY=<key>
+# When LLM_PROVIDER=deepseek, the lifespan handler maps these to litellm's
+# OpenAI-compatible adapter targeting https://api.deepseek.com.
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
 LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-3.1-pro-preview')
 LLM_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY') or os.getenv('LLM_API_KEY')
 LLM_ENDPOINT = os.getenv('LLM_ENDPOINT', 'https://generativelanguage.googleapis.com/')
+
+# DeepSeek mode: when LLM_PROVIDER=deepseek, override LLM_API_KEY/LLM_ENDPOINT
+# to point at the DeepSeek OpenAI-compatible API. This lets the operator flip
+# providers via env vars alone — no code redeploy.
+if LLM_PROVIDER.lower() == 'deepseek':
+    _deepseek_key = os.getenv('DEEPSEEK_API_KEY')
+    if _deepseek_key:
+        LLM_API_KEY = _deepseek_key
+        LLM_ENDPOINT = os.getenv('LLM_ENDPOINT', 'https://api.deepseek.com')
+        # litellm understands openai/<model> with a custom base_url for OpenAI-
+        # compatible providers like DeepSeek. Default to deepseek-chat (V3).
+        if not LLM_MODEL.startswith('openai/') and not LLM_MODEL.startswith('deepseek/'):
+            LLM_MODEL = f'openai/{LLM_MODEL}' if LLM_MODEL else 'openai/deepseek-chat'
+        # Tell litellm to treat this as openai-compatible
+        LLM_PROVIDER = 'openai'
 
 # Google Cloud project (for reference)
 GCP_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT') or os.getenv('GCP_PROJECT') or 'lovable-vitana-vers1'
