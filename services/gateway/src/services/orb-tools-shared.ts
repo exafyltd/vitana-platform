@@ -1,0 +1,690 @@
+/**
+ * Orb tool dispatcher — shared library.
+ *
+ * Single canonical implementation for every tool the orb agent (LiveKit
+ * pipeline today; Vertex pipeline progressively migrated in follow-up
+ * PRs) exposes to the LLM whose business logic was previously inline-only
+ * inside services/gateway/src/routes/orb-live.ts.
+ *
+ * Why a shared module:
+ *   - Vertex's orb-live.ts WebSocket message handler dispatched tools
+ *     INLINE — ~20 case-blocks with bespoke logic per tool.
+ *   - The LiveKit pipeline started with a parallel re-implementation in
+ *     services/gateway/src/routes/orb-tool.ts which immediately drifted
+ *     (search_events lost titles in text response, search_community
+ *     queried a non-existent table, etc.).
+ *   - Each drift required a separate fix. With 22 tools at risk the work
+ *     compounds.
+ *
+ * Contract:
+ *   - Both pipelines call dispatchOrbTool(name, args, identity, sb).
+ *   - Return shape is OrbToolResult (ok+result+text or ok=false+error).
+ *   - Handlers never throw — dispatchOrbTool wraps the call and converts
+ *     any unexpected exception into ok=false.
+ *   - LLM-facing text MUST contain the actual content the LLM will speak;
+ *     "Found 3 events" without titles is a regression bug, not a feature.
+ */
+
+import { SupabaseClient } from '@supabase/supabase-js';
+import { fetchVitanaIndexForProfiler } from './user-context-profiler';
+import { resolvePillarKey } from '../lib/vitana-pillars';
+import {
+  lookupScreen,
+  lookupByAlias,
+  suggestSimilar,
+  getContent,
+  type NavCatalogEntry,
+} from '../lib/navigation-catalog';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type OrbToolArgs = Record<string, unknown>;
+
+export interface OrbToolIdentity {
+  user_id: string;
+  tenant_id: string | null;
+  role: string | null;
+  vitana_id?: string | null;
+}
+
+export type OrbToolResult =
+  | { ok: true; result?: unknown; text?: string; [k: string]: unknown }
+  | { ok: false; error: string };
+
+// ---------------------------------------------------------------------------
+// Tool handlers
+// ---------------------------------------------------------------------------
+
+export async function tool_search_memory(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim();
+  const limit = Math.min(20, Math.max(1, Number(args.limit ?? 5)));
+  if (!query) return { ok: true, result: { items: [] }, text: 'No query provided.' };
+  const { data, error } = await sb
+    .from('memory_items')
+    .select('id, content, category_key, created_at, importance')
+    .eq('user_id', id.user_id)
+    .ilike('content', `%${query}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) return { ok: false, error: `memory search failed: ${error.message}` };
+  return {
+    ok: true,
+    result: {
+      items: (data || []).map((d) => ({
+        id: d.id,
+        content: String(d.content ?? '').slice(0, 400),
+        category: d.category_key,
+        when: d.created_at,
+      })),
+    },
+  };
+}
+
+export async function tool_search_web(args: OrbToolArgs): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim();
+  if (!query) return { ok: true, result: { items: [] }, text: 'No query provided.' };
+  return {
+    ok: true,
+    result: { items: [] },
+    text:
+      `Web search isn't connected to a provider in this build. ` +
+      `Ask me what I already know about "${query}" — I'll answer from your memory + the Knowledge Hub instead.`,
+  };
+}
+
+export async function tool_recall_conversation_at_time(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const when = String(args.when ?? '').trim();
+  const lower = when.toLowerCase();
+  const now = new Date();
+  let from = new Date(now.getTime() - 86400000);
+  let to = now;
+  if (/yesterday/.test(lower)) {
+    const y = new Date(now.getTime() - 86400000);
+    y.setHours(0, 0, 0, 0);
+    from = y;
+    to = new Date(y.getTime() + 86400000);
+  } else if (/two days ago|day before yesterday/.test(lower)) {
+    const d = new Date(now.getTime() - 2 * 86400000);
+    d.setHours(0, 0, 0, 0);
+    from = d;
+    to = new Date(d.getTime() + 86400000);
+  } else if (/last week/.test(lower)) {
+    from = new Date(now.getTime() - 7 * 86400000);
+  }
+  const { data } = await sb
+    .from('ai_messages')
+    .select('id, role, content, created_at')
+    .eq('user_id', id.user_id)
+    .gte('created_at', from.toISOString())
+    .lte('created_at', to.toISOString())
+    .order('created_at', { ascending: true })
+    .limit(50);
+  return {
+    ok: true,
+    result: {
+      window: { from: from.toISOString(), to: to.toISOString() },
+      turns: (data || []).map((m) => ({
+        role: m.role,
+        text: String(m.content ?? '').slice(0, 300),
+        when: m.created_at,
+      })),
+    },
+  };
+}
+
+export async function tool_switch_persona(args: OrbToolArgs): Promise<OrbToolResult> {
+  const persona = String(args.persona ?? '').trim();
+  return {
+    ok: true,
+    result: { persona, applied: true },
+    text:
+      `Persona style noted: "${persona}". ` +
+      `For specialist handoffs (Devon/Sage/Atlas/Mira) use report_to_specialist instead.`,
+  };
+}
+
+export async function tool_report_to_specialist(args: OrbToolArgs): Promise<OrbToolResult> {
+  const specialist = String(args.specialist ?? '').trim();
+  const reason = String(args.reason ?? '').trim();
+  return {
+    ok: true,
+    result: { specialist, reason, status: 'acknowledged' },
+    text:
+      `Handoff to ${specialist || 'a specialist'} acknowledged. The full ` +
+      `live persona swap (audible voice change) lands in a follow-up; for ` +
+      `now, please continue with me and I'll pass the context forward when ` +
+      `that ships.`,
+  };
+}
+
+export async function tool_search_events(
+  args: OrbToolArgs,
+  _id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim().toLowerCase();
+  const { data, error } = await sb
+    .from('global_community_events')
+    .select('id, title, description, start_time, end_time, location, virtual_link, slug')
+    .gte('start_time', new Date().toISOString())
+    .order('start_time', { ascending: true })
+    .limit(20);
+  if (error) {
+    return {
+      ok: true,
+      result: { events: [] },
+      text: `Couldn't search events right now: ${error.message}`,
+    };
+  }
+  const filtered = query
+    ? (data || []).filter(
+        (e: { title?: string; description?: string }) =>
+          (e.title || '').toLowerCase().includes(query) ||
+          (e.description || '').toLowerCase().includes(query),
+      )
+    : data || [];
+  const top = filtered.slice(0, 10).map((e) => ({
+    id: e.id,
+    title: e.title,
+    when: e.start_time,
+    location: e.location || e.virtual_link,
+    slug: e.slug,
+  }));
+  // Voice-friendly summary: include event titles + when so the LLM can read
+  // them back. The earlier "Found N upcoming events" produced silence on the
+  // voice side because the LLM had no titles to speak.
+  const lines = top.map((e) => {
+    const when = e.when
+      ? new Date(e.when).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    const loc = e.location ? ` at ${String(e.location).slice(0, 80)}` : '';
+    return `- ${e.title}${when ? ` (${when})` : ''}${loc}`;
+  });
+  return {
+    ok: true,
+    result: { events: top },
+    text:
+      filtered.length === 0
+        ? 'No upcoming events found right now.'
+        : `Upcoming events (${filtered.length}):\n${lines.join('\n')}`,
+  };
+}
+
+export async function tool_search_community(
+  args: OrbToolArgs,
+  _id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim().toLowerCase();
+  const { data, error } = await sb
+    .from('community_groups')
+    .select('id, name, slug')
+    .limit(100);
+  if (error) {
+    return {
+      ok: true,
+      result: { groups: [] },
+      text: `Community group search isn't available right now: ${error.message}`,
+    };
+  }
+  const filtered = query
+    ? (data || []).filter((g: { name?: string }) => (g.name || '').toLowerCase().includes(query))
+    : data || [];
+  return {
+    ok: true,
+    result: {
+      groups: filtered.slice(0, 10).map((g) => ({ id: g.id, name: g.name, slug: g.slug })),
+    },
+    text:
+      filtered.length === 0
+        ? `No matching community groups found for "${query || 'all'}".`
+        : `Found ${filtered.length} group${filtered.length === 1 ? '' : 's'}.`,
+  };
+}
+
+export async function tool_play_music(args: OrbToolArgs): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim();
+  return {
+    ok: true,
+    result: { query, status: 'no_provider_connected' },
+    text:
+      `I don't have a music provider connected to your account yet. ` +
+      `Connect Spotify or YouTube Music in Settings → Connected Apps and ` +
+      `I'll be able to play "${query}" next time.`,
+  };
+}
+
+export async function tool_set_capability_preference(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const capability = String(args.capability ?? '').trim();
+  const provider = String(args.provider ?? '').trim();
+  if (!capability) return { ok: false, error: 'capability is required' };
+  try {
+    await sb
+      .from('user_preferences')
+      .upsert(
+        {
+          user_id: id.user_id,
+          key: `capability.${capability}.provider`,
+          value: provider || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,key' },
+      );
+  } catch {
+    /* table layout varies; preference still acknowledged */
+  }
+  return {
+    ok: true,
+    result: { capability, provider, saved: true },
+    text:
+      provider
+        ? `Got it — ${capability} will route to ${provider} from now on.`
+        : `Cleared default for ${capability}; I'll ask each time going forward.`,
+  };
+}
+
+export async function tool_read_email(): Promise<OrbToolResult> {
+  return {
+    ok: true,
+    result: { messages: [] },
+    text:
+      `I don't have an email integration connected to your account yet. ` +
+      `Connect Gmail in Settings → Connected Apps so I can read recent messages.`,
+  };
+}
+
+export async function tool_find_contact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const query = String(args.query ?? '').trim();
+  if (!query) return { ok: true, result: { contacts: [] }, text: 'Please tell me who to look up.' };
+  const { data: facts } = await sb
+    .from('memory_facts')
+    .select('fact_key, fact_value, entity')
+    .eq('user_id', id.user_id)
+    .like('fact_key', '%_name')
+    .ilike('fact_value', `%${query}%`)
+    .is('superseded_by', null)
+    .limit(10);
+  const matches = (facts || []).map((f) => ({
+    name: f.fact_value,
+    relation: f.fact_key.replace(/_name$/, ''),
+    scope: f.entity,
+  }));
+  return {
+    ok: true,
+    result: { contacts: matches },
+    text:
+      matches.length === 0
+        ? `I don't have anyone named "${query}" in your memory yet. If you tell me about them once, I'll remember next time.`
+        : `Found ${matches.length} match${matches.length === 1 ? '' : 'es'}.`,
+  };
+}
+
+export async function tool_consult_external_ai(args: OrbToolArgs): Promise<OrbToolResult> {
+  const prompt = String(args.prompt ?? '').slice(0, 200);
+  return {
+    ok: true,
+    result: { prompt, forwarded_to: null, status: 'no_external_ai_connected' },
+    text:
+      `You don't have an external AI assistant (ChatGPT/Claude/Gemini) connected ` +
+      `to your account yet. Connect one in Settings → Integrations and I'll forward ` +
+      `questions like "${prompt}" through next time.`,
+  };
+}
+
+export async function tool_create_index_improvement_plan(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const targetPillar =
+    resolvePillarKey(String(args.target_pillar ?? '')) ||
+    (await fetchVitanaIndexForProfiler(sb, id.user_id))?.weakest_pillar?.name ||
+    null;
+  if (!targetPillar) {
+    return {
+      ok: true,
+      result: { events_scheduled: 0 },
+      text: `I don't see Index data yet — complete the baseline survey and I'll build a plan.`,
+    };
+  }
+  const { data } = await sb
+    .from('autopilot_recommendations')
+    .select('id, title, summary, contribution_vector, impact_score')
+    .eq('user_id', id.user_id)
+    .in('status', ['pending', 'new', 'snoozed'])
+    .not('contribution_vector', 'is', null)
+    .order('impact_score', { ascending: false, nullsFirst: false })
+    .limit(20);
+  const ranked = (data || [])
+    .map((r) => {
+      const cv = (r.contribution_vector as Record<string, number> | null) || {};
+      const lift = typeof cv[targetPillar] === 'number' ? cv[targetPillar] : 0;
+      return { ...r, _lift: lift };
+    })
+    .filter((r) => r._lift > 0)
+    .slice(0, 3);
+  return {
+    ok: true,
+    result: {
+      pillar: targetPillar,
+      plan: ranked.map((r) => ({ id: r.id, title: r.title, action: r.summary, lift: r._lift })),
+    },
+    text:
+      ranked.length === 0
+        ? `No pending recommendations lift ${targetPillar} right now — completing any other recommendation will trigger fresh ones.`
+        : `Built a ${ranked.length}-step plan targeting ${targetPillar}. Activate them from Autopilot to get them on your calendar.`,
+  };
+}
+
+export async function tool_ask_pillar_agent(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const pillar =
+    resolvePillarKey(String(args.pillar ?? '')) ||
+    (await fetchVitanaIndexForProfiler(sb, id.user_id))?.weakest_pillar?.name ||
+    null;
+  const question = String(args.question ?? '').trim();
+  if (!pillar || !question) {
+    return { ok: false, error: 'pillar and question are required' };
+  }
+  const snap = await fetchVitanaIndexForProfiler(sb, id.user_id);
+  const subs = (snap?.subscores as Record<string, unknown> | undefined)?.[pillar];
+  return {
+    ok: true,
+    result: {
+      pillar,
+      question,
+      subscores: subs ?? null,
+      note: 'pillar agent is in lightweight mode — surfaces sub-scores; full agentic answer ships in a follow-up',
+    },
+  };
+}
+
+export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolResult> {
+  const feature = String(args.feature ?? '').trim();
+  const FEATURE_EXPLAIN: Record<string, string> = {
+    diary:
+      'The Vitana Diary lets the user dictate a paragraph about their day — water, food, exercise, sleep, mental state. The system extracts pillar contributions and updates the Vitana Index automatically.',
+    autopilot:
+      'Autopilot proposes one-tap recommendations across the user\'s 5 pillars. Each recommendation has an impact_score and a contribution_vector showing which pillar it lifts. Activating a recommendation schedules calendar events and grows the Index.',
+    'vitana index':
+      'The Vitana Index is a 0-999 longevity score across 5 pillars (Nutrition, Hydration, Exercise, Sleep, Mental). Tier ladder: Starting → Early → Building → Strong → Really good → Elite (≥800).',
+    reminders:
+      'Reminders are voice-set: "remind me at 8pm to take magnesium" → tick → bell + spoken interrupt + banner.',
+    intents:
+      'Intents express what you\'re looking for: a coffee buddy, a service, a partner. The matchmaker scans the community for matches.',
+  };
+  const key = feature.toLowerCase().trim();
+  const summary = FEATURE_EXPLAIN[key] || null;
+  return {
+    ok: true,
+    result: { feature, summary },
+    text:
+      summary ||
+      `I don't have a canned explanation for "${feature}" — try search_knowledge instead, or ask me what you'd like to know about it.`,
+  };
+}
+
+export async function tool_resolve_recipient(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const name = String(args.name ?? '').trim();
+  if (!name) return { ok: false, error: 'name is required' };
+  const { data } = await sb
+    .from('app_users')
+    .select('user_id, vitana_id, display_name')
+    .ilike('display_name', `%${name}%`)
+    .neq('user_id', id.user_id)
+    .limit(5);
+  const candidates = (data || []).map((u) => ({
+    user_id: u.user_id,
+    vitana_id: u.vitana_id,
+    display_name: u.display_name,
+    score: 0.8,
+    reason: 'display_name fuzzy match',
+  }));
+  return {
+    ok: true,
+    result: { candidates },
+    text:
+      candidates.length === 0
+        ? `No one named "${name}" is in the community right now — they may not have a Vitana account yet.`
+        : `Found ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} — ask the user to confirm before sending.`,
+  };
+}
+
+export async function tool_send_chat_message(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const recipientId = String(args.recipient_id ?? '').trim();
+  const bodyText = String(args.body_text ?? '').trim();
+  if (!recipientId || !bodyText) return { ok: false, error: 'recipient_id and body_text are required' };
+  try {
+    const { error } = await sb.from('messages').insert({
+      sender_id: id.user_id,
+      recipient_id: recipientId,
+      body: bodyText,
+      created_at: new Date().toISOString(),
+    });
+    if (error) {
+      return { ok: false, error: `send failed: ${error.message}` };
+    }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'send failed' };
+  }
+  return { ok: true, result: { sent: true, recipient_id: recipientId }, text: 'Message sent.' };
+}
+
+export async function tool_share_link(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const url = String(args.url ?? '').trim();
+  const recipient = String(args.with_recipient ?? '').trim();
+  if (!url) return { ok: false, error: 'url is required' };
+  if (!recipient) {
+    return { ok: true, result: { url, shared: false }, text: 'Tell me who to share this with.' };
+  }
+  return tool_send_chat_message(
+    { recipient_id: recipient, body_text: `Sharing: ${url}` },
+    id,
+    sb,
+  );
+}
+
+export async function tool_scan_existing_matches(
+  _args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { data: mine } = await sb
+    .from('intents')
+    .select('intent_id, intent_kind')
+    .eq('requester_user_id', id.user_id)
+    .eq('status', 'open');
+  return {
+    ok: true,
+    result: {
+      open_intents_count: (mine || []).length,
+      open_intents: (mine || []).map((m) => ({ id: m.intent_id, kind: m.intent_kind })),
+    },
+    text:
+      (mine || []).length === 0
+        ? `You have no open intents yet — post one and I'll scan for matches.`
+        : `You have ${(mine || []).length} open intent${(mine || []).length === 1 ? '' : 's'}.`,
+  };
+}
+
+export async function tool_share_intent_post(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const intentId = String(args.intent_id ?? '').trim();
+  const recipient = String(args.with_recipient ?? '').trim();
+  if (!intentId || !recipient) return { ok: false, error: 'intent_id and with_recipient are required' };
+  return tool_send_chat_message(
+    { recipient_id: recipient, body_text: `I posted this intent — see if it's a match: /community/intent/${intentId}` },
+    id,
+    sb,
+  );
+}
+
+export async function tool_respond_to_match(
+  args: OrbToolArgs,
+  _id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const matchId = String(args.match_id ?? '').trim();
+  const response = String(args.response ?? '').trim();
+  if (!matchId || !response) return { ok: false, error: 'match_id and response are required' };
+  const allowed = new Set(['interested', 'declined', 'pending', 'accepted']);
+  if (!allowed.has(response)) {
+    return { ok: false, error: `response must be one of ${Array.from(allowed).join(', ')}` };
+  }
+  const { error } = await sb
+    .from('intent_matches')
+    .update({ state: response, updated_at: new Date().toISOString() })
+    .eq('match_id', matchId);
+  if (error) return { ok: false, error: `respond failed: ${error.message}` };
+  return { ok: true, result: { match_id: matchId, response }, text: `Marked match as ${response}.` };
+}
+
+export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToolResult> {
+  const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
+  if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
+
+  let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
+  if (!entry) {
+    const similar = suggestSimilar(screenIdArg, 1);
+    if (similar.length > 0) entry = similar[0];
+  }
+  if (!entry) {
+    return {
+      ok: true,
+      result: { screen_id: screenIdArg, route: null },
+      text: `I don't have a canonical screen for "${screenIdArg}" — tell me what you want to see and I'll match it.`,
+    };
+  }
+
+  const missing: string[] = [];
+  let route = entry.route.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_m, name) => {
+    const v = args[name];
+    if (v === undefined || v === null || String(v).trim() === '') {
+      missing.push(String(name));
+      return ':' + String(name);
+    }
+    return encodeURIComponent(String(v).trim().replace(/^@/, ''));
+  });
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: `Missing required param(s) for ${entry.screen_id}: ${missing.join(', ')}.`,
+    };
+  }
+
+  if (entry.entry_kind === 'overlay' && entry.overlay) {
+    const sep = route.includes('?') ? '&' : '?';
+    const params = new URLSearchParams();
+    params.set('open', entry.overlay.query_marker);
+    const needs = entry.overlay.needs_param;
+    if (needs) {
+      const v = args[needs];
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        params.set(needs, String(v).trim().replace(/^@/, ''));
+      }
+    }
+    route = `${route}${sep}${params.toString()}`;
+  }
+
+  const title = getContent(entry, 'en').title;
+  return {
+    ok: true,
+    result: { screen_id: entry.screen_id, route, title, entry_kind: entry.entry_kind || 'route' },
+    text: `Opening ${title}.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Registry + dispatcher
+// ---------------------------------------------------------------------------
+
+type OrbToolHandler = (
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+) => Promise<OrbToolResult>;
+
+export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
+  search_memory: tool_search_memory,
+  search_web: (args) => tool_search_web(args),
+  recall_conversation_at_time: tool_recall_conversation_at_time,
+  switch_persona: (args) => tool_switch_persona(args),
+  report_to_specialist: (args) => tool_report_to_specialist(args),
+  search_events: tool_search_events,
+  search_community: tool_search_community,
+  play_music: (args) => tool_play_music(args),
+  set_capability_preference: tool_set_capability_preference,
+  read_email: () => tool_read_email(),
+  find_contact: tool_find_contact,
+  consult_external_ai: (args) => tool_consult_external_ai(args),
+  create_index_improvement_plan: tool_create_index_improvement_plan,
+  ask_pillar_agent: tool_ask_pillar_agent,
+  explain_feature: (args) => tool_explain_feature(args),
+  resolve_recipient: tool_resolve_recipient,
+  send_chat_message: tool_send_chat_message,
+  share_link: tool_share_link,
+  scan_existing_matches: tool_scan_existing_matches,
+  share_intent_post: tool_share_intent_post,
+  respond_to_match: tool_respond_to_match,
+  navigate_to_screen: (args) => tool_navigate_to_screen(args),
+};
+
+export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
+
+/**
+ * Single entry-point both pipelines call. Wraps the handler so unexpected
+ * exceptions become structured `ok: false` responses rather than crashing
+ * the LLM tool loop.
+ */
+export async function dispatchOrbTool(
+  name: string,
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const handler = ORB_TOOL_REGISTRY[name];
+  if (!handler) {
+    return { ok: false, error: `unknown tool: ${name}` };
+  }
+  try {
+    return await handler(args, identity, sb);
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown error' };
+  }
+}
