@@ -57,6 +57,13 @@ class GatewayClient:
         # between turns.
         self.current_route: str | None = None
         self.recent_routes: list[str] = []
+        # PR 1.B-5 — identity facts the navigator gates need at dispatch
+        # time. session.py seeds is_mobile + is_anonymous from the resolved
+        # Identity. tool_navigate_to_screen reads them through the args
+        # payload to enforce the viewport gate (VTID-02789), the anonymous
+        # gate, and the mobile_route override.
+        self.is_mobile: bool = False
+        self.is_anonymous: bool = False
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}

@@ -742,7 +742,33 @@ async def navigate_to_screen(context: RunContext, target: str) -> str:
     Args:
         target: Named screen identifier from the spec's navigation registry.
     """
-    body = await _dispatch(context, "navigate_to_screen", {"target": target})
+    # PR 1.B-5: thread the gate inputs the shared dispatcher reads —
+    # current_route (already-there dedup), is_mobile (viewport gate +
+    # mobile_route override), is_anonymous (anonymous gate). Auto-publish
+    # any directive on the data channel; eagerly update gw.current_route
+    # so the next get_current_screen / navigate_to_screen sees fresh state.
+    gw = _gw(context)
+    body = await _dispatch_with_directive(
+        context,
+        "navigate_to_screen",
+        {
+            "target": target,
+            "current_route": gw.current_route,
+            "is_mobile": gw.is_mobile,
+            "is_anonymous": gw.is_anonymous,
+        },
+    )
+    res = body.get("result") if isinstance(body, dict) else None
+    if isinstance(res, dict) and not res.get("already_there"):
+        new_base = res.get("base_route") or (
+            res["route"].split("?", 1)[0] if isinstance(res.get("route"), str) else None
+        )
+        if isinstance(new_base, str) and new_base:
+            previous = gw.current_route
+            gw.current_route = new_base
+            if previous and previous != new_base:
+                trail = [r for r in (gw.recent_routes or []) if r != previous]
+                gw.recent_routes = ([previous] + trail)[:5]
     return summarize(body)
 
 

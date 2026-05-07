@@ -70,6 +70,16 @@ export interface OrbToolIdentity {
   turn_number?: number | null;
   session_started_iso?: string | null;
   lang?: string | null;
+  /**
+   * PR 1.B-5 — navigator-gate identity facts. Populated from session
+   * state (Vertex: session.isAnonymous + session.is_mobile; LiveKit:
+   * Identity.is_anonymous + Identity.is_mobile) so the shared
+   * tool_navigate_to_screen handler can enforce the same gates Vertex's
+   * handleNavigateToScreen has today: anonymous-safe screens, viewport
+   * lock (VTID-02789), mobile_route override.
+   */
+  is_anonymous?: boolean | null;
+  is_mobile?: boolean | null;
 }
 
 export type OrbToolResult =
@@ -1762,25 +1772,141 @@ export async function tool_respond_to_match(
   }
 }
 
-export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToolResult> {
+/**
+ * PR 1.B-5: lifts orb-live.ts:handleNavigateToScreen's 7 gates into the
+ * shared dispatcher so LiveKit's tool_navigate_to_screen enforces the
+ * same robustness Vertex has today.
+ *
+ * Gates:
+ *   1. Anonymous gate — refuses non-anonymous_safe screens for anonymous
+ *      sessions. error_kind='auth_required'.
+ *   2. Viewport gate (VTID-02789) — refuses mobile-only screens on
+ *      desktop and desktop-only on mobile. error_kind='wrong_viewport'.
+ *   3. Mobile_route override — when session is mobile AND the entry has
+ *      a mobile_route, use it instead of route.
+ *   4. Already-there dedup — skips when current_route already matches
+ *      the resolved base path (overlay entries always pass).
+ *   5. OASIS error_kind events — every rejection emits orb.navigator.blocked
+ *      with a typed error_kind so admins can debug specific failure modes.
+ *   6. Identity threading — is_anonymous + is_mobile read from
+ *      OrbToolIdentity; current_route + recent_routes from args (consistent
+ *      with the get_current_screen / navigate convention).
+ *   7. Returns the directive payload — Vertex post-processes it for SSE/WS
+ *      session-state mutations; LiveKit's wrapper publishes via the data
+ *      channel.
+ */
+export async function tool_navigate_to_screen(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
 
+  // Identity facts (with args fallback for the LiveKit Python wrapper that
+  // sends them in the body alongside current_route).
+  const isAnon = (typeof args.is_anonymous === 'boolean' ? args.is_anonymous : id.is_anonymous)
+    ?? !id.user_id;
+  const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
+  const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
+    ? args.current_route
+    : null;
+  const lang = (id.lang || 'en') as string;
+  const sessionId = id.session_id || null;
+
+  const { emitOasisEvent } = await import('./oasis-event-service');
+
+  // Three-tier resolution: exact → alias → fuzzy.
   let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
   if (!entry) {
     const similar = suggestSimilar(screenIdArg, 1);
-    if (similar.length > 0) entry = similar[0];
+    if (similar.length > 0) {
+      entry = similar[0];
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}'`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          resolved_screen_id: entry.screen_id,
+          error_kind: 'fuzzy_resolved',
+        },
+      }).catch(() => {});
+    }
   }
   if (!entry) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `Unknown screen_id '${screenIdArg}' — no suggestions`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        error_kind: 'unknown',
+        suggestions: [],
+      },
+    }).catch(() => {});
     return {
-      ok: true,
-      result: { screen_id: screenIdArg, route: null },
-      text: `I don't have a canonical screen for "${screenIdArg}" — tell me what you want to see and I'll match it.`,
+      ok: false,
+      error: `Unknown screen_id '${screenIdArg}'. No matching screens found in the catalog.`,
     };
   }
 
+  // GATE 1: anonymous_safe.
+  if (isAnon && !entry.anonymous_safe) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `Screen '${screenIdArg}' requires authentication`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        error_kind: 'auth_required',
+      },
+    }).catch(() => {});
+    return {
+      ok: false,
+      error: `Screen '${screenIdArg}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
+    };
+  }
+
+  // GATE 2: viewport (VTID-02789).
+  if (entry.viewport_only) {
+    const sessionViewport: 'mobile' | 'desktop' = isMobile ? 'mobile' : 'desktop';
+    if (entry.viewport_only !== sessionViewport) {
+      emitOasisEvent({
+        vtid: 'VTID-02789',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'warning',
+        message: `Screen '${entry.screen_id}' is ${entry.viewport_only}-only; session is ${sessionViewport}`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          error_kind: 'wrong_viewport',
+          required_viewport: entry.viewport_only,
+          session_viewport: sessionViewport,
+        },
+      }).catch(() => {});
+      return {
+        ok: false,
+        error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
+      };
+    }
+  }
+
+  // GATE 3: mobile_route override (VTID-02789).
+  const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
+
+  // Param substitution.
   const missing: string[] = [];
-  let route = entry.route.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_m, name) => {
+  let resolvedRoute = baseRoute.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_m, name) => {
     const v = args[name];
     if (v === undefined || v === null || String(v).trim() === '') {
       missing.push(String(name));
@@ -1789,14 +1915,28 @@ export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToo
     return encodeURIComponent(String(v).trim().replace(/^@/, ''));
   });
   if (missing.length > 0) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `Missing route param(s) for ${entry.screen_id}: ${missing.join(', ')}`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        error_kind: 'missing_param',
+        missing_params: missing,
+      },
+    }).catch(() => {});
     return {
       ok: false,
-      error: `Missing required param(s) for ${entry.screen_id}: ${missing.join(', ')}.`,
+      error: `Cannot navigate to ${entry.screen_id}: missing required parameter(s) ${missing.join(', ')}. Ask the user to provide them, then call navigate_to_screen again.`,
     };
   }
 
+  // Overlay query-marker append.
   if (entry.entry_kind === 'overlay' && entry.overlay) {
-    const sep = route.includes('?') ? '&' : '?';
+    const sep = resolvedRoute.includes('?') ? '&' : '?';
     const params = new URLSearchParams();
     params.set('open', entry.overlay.query_marker);
     const needs = entry.overlay.needs_param;
@@ -1806,14 +1946,79 @@ export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToo
         params.set(needs, String(v).trim().replace(/^@/, ''));
       }
     }
-    route = `${route}${sep}${params.toString()}`;
+    resolvedRoute = `${resolvedRoute}${sep}${params.toString()}`;
   }
 
-  const title = getContent(entry, 'en').title;
+  // GATE 4: already-there dedup. Compare to the resolved BASE path
+  // (mobile_route or route, no querystring) — same as Vertex line 4208.
+  const baseRoutePath = baseRoute.split('?')[0];
+  if (currentRoute && currentRoute === baseRoutePath && entry.entry_kind !== 'overlay') {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: `User is already on ${baseRoutePath}`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        error_kind: 'already_there',
+      },
+    }).catch(() => {});
+    return {
+      ok: true,
+      result: {
+        screen_id: entry.screen_id,
+        route: entry.route,
+        already_there: true,
+        entry_kind: entry.entry_kind || 'route',
+      },
+      text: `The user is already on ${entry.route}. Suggest a related screen or just answer in voice instead.`,
+    };
+  }
+
+  // Success → directive payload.
+  const content = getContent(entry, lang);
+  const directive = {
+    type: 'orb_directive',
+    directive: 'navigate',
+    screen_id: entry.screen_id,
+    route: resolvedRoute,
+    title: content.title,
+    reason: String(args.reason || 'navigate_to_screen tool call'),
+    entry_kind: entry.entry_kind || 'route',
+    vtid: 'VTID-NAV-01',
+  };
+
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.requested',
+    source: 'orb-tools-shared',
+    status: 'info',
+    message: `navigate_to_screen ${entry.screen_id} (${resolvedRoute})`,
+    payload: {
+      session_id: sessionId,
+      screen_id: entry.screen_id,
+      route: resolvedRoute,
+      entry_kind: entry.entry_kind || 'route',
+      reason: directive.reason,
+      is_anonymous: isAnon,
+    },
+  }).catch(() => {});
+
   return {
     ok: true,
-    result: { screen_id: entry.screen_id, route, title, entry_kind: entry.entry_kind || 'route' },
-    text: `Opening ${title}.`,
+    result: {
+      screen_id: entry.screen_id,
+      route: resolvedRoute,
+      base_route: baseRoutePath,
+      title: content.title,
+      entry_kind: entry.entry_kind || 'route',
+      directive,
+    },
+    text: entry.entry_kind === 'overlay'
+      ? `Overlay opened: ${content.title}. The user stays on their current screen — the popup is now visible. Continue the conversation; do NOT navigate elsewhere unless the user asks.`
+      : `Navigation queued to ${content.title} (${resolvedRoute}). The user is now being taken to the "${content.title}" screen. The widget is closing now. DO NOT generate any more audio or text for this turn. Your turn is complete — stop speaking immediately. If the user later asks which screen they are on, they are on "${content.title}".`,
   };
 }
 
@@ -2604,7 +2809,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
-  navigate_to_screen: (args) => tool_navigate_to_screen(args),
+  navigate_to_screen: (args, id) => tool_navigate_to_screen(args, id),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
   navigate: tool_navigate,
@@ -2674,6 +2879,8 @@ export interface VertexLikeIdentity {
   turn_number?: number | null;
   session_started_iso?: string | null;
   lang?: string | null;
+  is_anonymous?: boolean | null;
+  is_mobile?: boolean | null;
 }
 
 export interface VertexLikeToolResult {
@@ -2702,6 +2909,8 @@ export async function dispatchOrbToolForVertex(
       turn_number: identity.turn_number ?? null,
       session_started_iso: identity.session_started_iso ?? null,
       lang: identity.lang ?? null,
+      is_anonymous: identity.is_anonymous ?? null,
+      is_mobile: identity.is_mobile ?? null,
     },
     sb,
   );
