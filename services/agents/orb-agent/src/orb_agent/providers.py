@@ -166,8 +166,32 @@ def _build_tts(provider: str | None, model: str | None, options: dict[str, Any],
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
             voice = model or "en-US-Chirp3-HD-Aoede"
+            # tts_options from the agent_voice_configs row may carry legacy
+            # keys like `language_code` (the seed migration uses Google's
+            # API-side spelling). The livekit-plugins-google TTS class only
+            # accepts `language=`, so an un-renamed `language_code` would
+            # surface as an unexpected-kwarg TypeError → caught silently
+            # below → cascade.tts=None → AgentSession runs but produces
+            # silent audio. Normalise here.
+            opts = dict(options or {})
+            language = opts.pop("language", None) or opts.pop("language_code", None) or "en-US"
+            # Drop any other keys the Google plugin doesn't accept rather
+            # than crash. Whitelist only the kwargs we know are safe; future
+            # additions need to be added explicitly.
+            allowed = {
+                "gender", "voice_cloning_key", "model_name", "prompt",
+                "sample_rate", "pitch", "effects_profile_id", "speaking_rate",
+                "volume_gain_db", "location", "audio_encoding",
+                "credentials_info", "credentials_file", "tokenizer",
+                "custom_pronunciations", "use_streaming", "enable_ssml",
+                "use_markup",
+            }
+            forwarded = {k: v for k, v in opts.items() if k in allowed}
+            dropped = sorted(set(opts.keys()) - allowed)
+            if dropped:
+                notes.append(f"google_tts: dropped unsupported tts_options keys: {dropped}")
             # Google Cloud Text-to-Speech via ADC (no API key needed).
-            return google.TTS(voice_name=voice, language="en-US", **options)
+            return google.TTS(voice_name=voice, language=language, **forwarded)
         except ImportError:
             notes.append("TTS provider 'google_tts' requested but livekit-plugins-google not installed")
             return None
