@@ -432,6 +432,126 @@ async def explain_feature(context: RunContext, feature: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Structured Health Logging (VTID-02753)
+#
+# Five tools backed by services/voice-tools/health-log.ts via the shared
+# dispatcher (PR D-1 lifted them to orb-tools-shared.ts so both pipelines
+# write to health_features_daily through the same logHealthSignal()
+# service). PR 1.B-2 adds the LiveKit Python wrappers so the LiveKit LLM
+# can actually call them; until now they were dispatcher-only and the
+# LiveKit Gemini cascade had no schema for them.
+# ---------------------------------------------------------------------------
+
+
+@function_tool
+async def log_water(
+    context: RunContext,
+    amount_ml: int,
+    date: str | None = None,
+) -> str:
+    """Log water intake (in millilitres) to the user's Hydration pillar.
+
+    Use this when the user explicitly states an amount — "I drank 500ml of
+    water", "I just had a litre", "log half a litre". For natural-language
+    diary entries ("I had a glass of water with breakfast"), prefer
+    save_diary_entry which extracts pillar contributions from the
+    paragraph.
+
+    Args:
+        amount_ml: Volume in millilitres (e.g. 250 = one glass, 500 = half-litre).
+        date: ISO YYYY-MM-DD; defaults to today.
+    """
+    body = await _dispatch(
+        context,
+        "log_water",
+        {"amount_ml": int(amount_ml), "date": date},
+    )
+    return summarize(body)
+
+
+@function_tool
+async def log_sleep(
+    context: RunContext,
+    minutes: int,
+    date: str | None = None,
+) -> str:
+    """Log sleep duration (in minutes) to the user's Sleep pillar.
+
+    Args:
+        minutes: Total minutes slept (e.g. 480 = 8 hours).
+        date: ISO YYYY-MM-DD; defaults to today.
+    """
+    body = await _dispatch(
+        context,
+        "log_sleep",
+        {"minutes": int(minutes), "date": date},
+    )
+    return summarize(body)
+
+
+@function_tool
+async def log_exercise(
+    context: RunContext,
+    minutes: int,
+    activity_type: str | None = None,
+    date: str | None = None,
+) -> str:
+    """Log a workout or movement session to the user's Exercise pillar.
+
+    Args:
+        minutes: Duration in minutes.
+        activity_type: Optional descriptor (e.g. "running", "yoga", "cycling").
+        date: ISO YYYY-MM-DD; defaults to today.
+    """
+    body = await _dispatch(
+        context,
+        "log_exercise",
+        {
+            "minutes": int(minutes),
+            "activity_type": activity_type,
+            "date": date,
+        },
+    )
+    return summarize(body)
+
+
+@function_tool
+async def log_meditation(
+    context: RunContext,
+    minutes: int,
+    date: str | None = None,
+) -> str:
+    """Log a meditation or mindfulness session (in minutes) to the Mental pillar.
+
+    Args:
+        minutes: Duration in minutes.
+        date: ISO YYYY-MM-DD; defaults to today.
+    """
+    body = await _dispatch(
+        context,
+        "log_meditation",
+        {"minutes": int(minutes), "date": date},
+    )
+    return summarize(body)
+
+
+@function_tool
+async def get_pillar_subscores(context: RunContext, pillar: str) -> str:
+    """Return the breakdown that produced the given pillar's score.
+
+    Each pillar score is the sum of four caps (baseline / completions / data /
+    streak). When the user asks "why is my Sleep score X?" or "what's
+    holding my Hydration back?", call this to surface which cap is the
+    bottleneck so the agent can suggest the right next action.
+
+    Args:
+        pillar: One of nutrition | hydration | exercise | sleep | mental.
+    """
+    body = await _dispatch(context, "get_pillar_subscores", {"pillar": pillar})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Messaging (3-step send_message flow)
 # ---------------------------------------------------------------------------
 
@@ -636,6 +756,9 @@ def all_tool_names() -> list[str]:
         "set_reminder", "find_reminders", "delete_reminder",
         # Pillar agents / Feature explanations (2)
         "ask_pillar_agent", "explain_feature",
+        # Structured Health logging — VTID-02753 (5)
+        "log_water", "log_sleep", "log_exercise", "log_meditation",
+        "get_pillar_subscores",
         # Messaging (2)
         "resolve_recipient", "send_chat_message",
         # Autopilot activation (1)
