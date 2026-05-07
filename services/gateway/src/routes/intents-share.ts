@@ -18,8 +18,8 @@
  *     public posts render for everyone (auth or not); tenant posts require
  *     login + same tenant; private/mutual_reveal soft-403.
  *
- * Rate limits + tier-aware caps come from getEffectiveLimits()
- * (vitana-business-model.md Feature 1). Operator override is unconditional.
+ * VTID-02831 (2026-05-07): per-batch and per-post share caps lifted for the
+ * pre-1k-user growth phase. Operator override remains unconditional.
  */
 
 import { Router, Request, Response } from 'express';
@@ -29,9 +29,8 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 
-// MVP caps. Once entitlements.ts lands these become tier-driven.
-const MAX_RECIPIENTS_PER_BATCH_FREE = 20;
-const MAX_SHARES_PER_POST_FREE = 50;
+// VTID-02831 (2026-05-07): per-batch + per-post share caps lifted for the
+// pre-1k-user growth phase. Re-introduce when abuse signal demands it.
 
 // ── POST /api/v1/intents/:intent_id/share ──────────────────────
 // Absolute path so we can keep this router mounted at '/' and serve the
@@ -56,14 +55,6 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
   }
   if (recipientIds.length === 0) {
     return res.status(400).json({ ok: false, error: 'RECIPIENTS_REQUIRED', message: 'recipient_vitana_ids must be a non-empty array of valid vitana_ids.' });
-  }
-  if (recipientIds.length > MAX_RECIPIENTS_PER_BATCH_FREE) {
-    return res.status(429).json({
-      ok: false,
-      error: 'BATCH_TOO_LARGE',
-      message: `Free tier allows up to ${MAX_RECIPIENTS_PER_BATCH_FREE} recipients per share. Upgrade to Pro for 50.`,
-      limit: MAX_RECIPIENTS_PER_BATCH_FREE,
-    });
   }
 
   const supabase = getSupabase();
@@ -95,22 +86,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
     return res.status(403).json({ ok: false, error: 'PRIVATE_POST', message: 'Private posts cannot be shared.' });
   }
 
-  // 2. Per-post lifetime cap check.
-  const { count: existingShares } = await supabase
-    .from('intent_matches')
-    .select('match_id', { count: 'exact', head: true })
-    .eq('intent_a_id', intentId)
-    .eq('kind_pairing', 'direct_share');
-  if (typeof existingShares === 'number' && existingShares >= MAX_SHARES_PER_POST_FREE) {
-    return res.status(429).json({
-      ok: false,
-      error: 'SHARE_QUOTA_EXCEEDED',
-      message: `This post has reached its free-tier share limit (${MAX_SHARES_PER_POST_FREE}). Upgrade to Pro for 200 or Biz for unlimited.`,
-      limit: MAX_SHARES_PER_POST_FREE,
-    });
-  }
-
-  // 3. Resolve recipient vitana_ids → user_ids. Only matches inside the
+  // 2. Resolve recipient vitana_ids → user_ids. Only matches inside the
   // sharer's tenant (when the intent is tenant-scoped). For public posts we
   // allow cross-tenant resolution.
   const tenantScope = visibility === 'public' ? null : (srcIntent as any).tenant_id;
