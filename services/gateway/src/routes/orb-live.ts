@@ -6522,78 +6522,28 @@ async function executeLiveApiToolInner(
       }
 
       case 'share_link': {
-        const recipientUserId = String(args.recipient_user_id || '').trim();
-        const recipientLabel = String(args.recipient_label || '').trim();
-        const targetUrl = String(args.target_url || '').trim();
-        const targetKind = String(args.target_kind || 'page').trim();
-        if (!recipientUserId || !targetUrl) {
-          return { success: false, result: '', error: 'recipient_user_id and target_url are required' };
+        // PR B-5: lifted to services/orb-tools-shared.ts. Same quota guard,
+        // same chat_messages insert, same metadata shape — both pipelines
+        // share the canonical impl.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (recipientUserId === session.identity.user_id) {
-          return { success: false, result: '', error: 'cannot share with yourself' };
-        }
-        try {
-          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
-          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-          const recipientVitanaId = await resolveVitanaId(recipientUserId);
-          const quota = await checkVoiceSendQuota({
-            session_id: session.sessionId,
-            actor_id: session.identity.user_id,
-            vitana_id: session.identity.vitana_id,
-            recipient_user_id: recipientUserId,
-            recipient_vitana_id: recipientVitanaId,
-            kind: 'share_link',
-            target_url: targetUrl,
-          });
-          if (!quota.allowed) {
-            return {
-              success: true,
-              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
-            };
-          }
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
-          const previewBody = `🔗 ${targetUrl}`;
-          const { error: insErr } = await supabase
-            .from('chat_messages')
-            .insert({
-              tenant_id: session.identity.tenant_id,
-              sender_id: session.identity.user_id,
-              receiver_id: recipientUserId,
-              content: previewBody,
-              message_type: 'link_share',
-              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-              metadata: {
-                source: 'voice',
-                session_id: session.sessionId,
-                kind: 'shared_link',
-                target_url: targetUrl,
-                target_kind: targetKind,
-                recipient_label: recipientLabel || recipientVitanaId,
-              },
-            });
-          if (insErr) {
-            console.error('[VTID-01967] share_link insert error:', insErr.message);
-            return { success: false, result: '', error: insErr.message };
-          }
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
-              target_kind: targetKind,
-              remaining: quota.remaining,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] share_link error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'share_link',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
