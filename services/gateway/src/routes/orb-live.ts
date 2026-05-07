@@ -5603,135 +5603,52 @@ async function executeLiveApiToolInner(
       // arg from the model (e.g. user said "on Spotify") is passed through
       // to the capability resolver.
       case 'play_music': {
-        const query = String(args.query ?? '').trim();
-        const requestedSource = typeof args.source === 'string' ? args.source.trim() : undefined;
-        if (!query) {
-          return { success: false, result: '', error: 'play_music requires a "query" argument' };
-        }
-
+        // PR D-4: lifted to services/orb-tools-shared.ts. The shared module
+        // does executeCapability + voice-text + timeline writeback. Vertex
+        // also emits the SSE/WS directive (the orb widget uses it to open
+        // the URL in the native music app on iOS/Android). LiveKit doesn't
+        // have SSE/WS so it just gets the URL in result.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
           return { success: false, result: '', error: 'Music capability unavailable — Supabase creds not configured' };
         }
-
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-        const { executeCapability } = await import('../capabilities');
-        const disp = await executeCapability(
-          { supabase, userId: lens.user_id, tenantId: lens.tenant_id },
-          'music.play',
-          { query, ...(requestedSource ? { source: requestedSource } : {}) },
-        ) as any;
+        const { dispatchOrbTool } = await import('../services/orb-tools-shared');
 
-        if (!disp.ok || !disp.url) {
-          // VTID-01942 PR 3: first-timer-friendly failures. If the hub
-          // didn't have the track and the user has no external music
-          // connector, offer to take them to Connected Apps instead of
-          // returning a raw error.
-          const errText = String(disp.error ?? '');
-          const isHubMiss = /no (music|podcast|shorts) found in the vitana media hub/i.test(errText);
-          const isNotConnected = /isn't connected|requires a connected provider/i.test(errText);
-          if (isHubMiss || isNotConnected) {
-            // Nudge the widget: we don't auto-navigate (that would interrupt
-            // the conversation) — the user confirms verbally and Gemini
-            // then calls the `navigate` tool.
-            return {
-              success: true,
-              result: isHubMiss
-                ? `I couldn't find "${query}" in the Vitana Media Hub. To play the real track, you'll need to link a music service like YouTube Music, Spotify, or Apple Music — want me to take you to Connected Apps?`
-                : `You haven't connected that music service yet. Want me to take you to Connected Apps so you can link it?`,
-            };
-          }
-          return {
-            success: false,
-            result: '',
-            error: errText || 'music.play returned no URL',
-          };
-        }
-
-        const raw = (disp.raw ?? {}) as { title?: string; channel?: string; source?: string };
-        const title = raw.title ?? query;
-        const channel = raw.channel ?? '';
-        const source = raw.source ?? 'unknown';
-        const routingReason: string | undefined = disp.routing_reason;
-        const suggestDefault: boolean = Boolean(disp.suggest_default);
-        const preferenceSetMethod: string | undefined = disp.preference_set_method;
-
-        // VTID-01942: pass through per-platform URL variants so the widget
-        // can hand off to the native app on iOS/Android instead of loading
-        // the web player inside the WebView (which covers Vitana and shows
-        // ads). See orb-widget.js handling of directive='open_url'.
-        const rawRec = (disp.raw ?? {}) as Record<string, unknown>;
-        const androidIntent = typeof rawRec.android_intent === 'string' ? rawRec.android_intent : undefined;
-        const iosScheme = typeof rawRec.ios_scheme === 'string' ? rawRec.ios_scheme : undefined;
-
-        const directive = {
-          type: 'orb_directive',
-          directive: 'open_url',
-          url: disp.url,
-          android_intent: androidIntent,
-          ios_scheme: iosScheme,
-          title,
-          channel,
-          source,
-          query,
-          routing_reason: routingReason,
-          suggest_default: suggestDefault,
-          vtid: 'VTID-01942',
-        };
-        try { session.sseResponse?.write(`data: ${JSON.stringify(directive)}\n\n`); } catch (_e) { /* SSE closed */ }
-        const ws = (session as any).clientWs;
-        if (ws && ws.readyState === 1) {
-          try { sendWsMessage(ws, directive); } catch (_e) { /* WS closed */ }
-        }
-
-        const providerDisplay =
-          source === 'youtube_music' ? 'YouTube Music' :
-          source === 'spotify' ? 'Spotify' :
-          source === 'apple_music' ? 'Apple Music' :
-          source === 'vitana_hub' ? 'the Vitana Media Hub' :
-          source;
-
-        const baseAck = channel
-          ? `Now playing "${title}" by ${channel} on ${providerDisplay}.`
-          : `Now playing "${title}" on ${providerDisplay}.`;
-
-        // VTID-01942 PR 2: shape the ack based on routing reason + preference
-        // state so the voice feels aware of why it picked this provider.
-        let tail = '';
-        if (routingReason === 'hub_fallback') {
-          tail = ' Want me to link your Spotify or YouTube Music so I can play the real track next time?';
-        } else if (suggestDefault) {
-          tail = ` That\'s three plays in a row on ${providerDisplay} — want me to make it your default for music?`;
-        } else if (routingReason === 'preference' && preferenceSetMethod === 'explicit') {
-          // Silent — user already set this as their default, don't chatter.
-          tail = '';
-        }
-
-        console.log(`[VTID-01942] play_music: "${query}" → ${title}${channel ? ' — ' + channel : ''} via ${source} (${routingReason ?? 'n/a'}${suggestDefault ? ', suggest_default' : ''})`);
-
-        // BOOTSTRAP-HISTORY-AWARE-TIMELINE: record the play on the user
-        // timeline so the profiler picks it up in [RECENT] + [ACTIVITY_14D].
-        // Without this, the voice ORB has no memory of the songs the user
-        // just asked it to play — the whole point of the content-awareness ask.
-        writeTimelineRow({
-          user_id: lens.user_id,
-          activity_type: 'media.music.play',
-          activity_data: {
-            query,
-            title,
-            channel,
-            source,
-            routing_reason: routingReason,
-            url: disp.url,
+        const r = await dispatchOrbTool(
+          'play_music',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
           },
-          context_data: { surface: 'orb' },
-          dedupe_key: `media:music:${source}:${title}:${Math.floor(Date.now() / 60_000)}`,
-          source: 'projector:orb',
-        }).catch(() => {});
+          supabase,
+        );
 
-        return { success: true, result: `${baseAck}${tail}` };
+        if (r.ok === false) {
+          return { success: false, result: '', error: r.error };
+        }
+
+        // Pick the directive out of the structured result and emit via
+        // SSE/WS so the orb widget can open the URL natively.
+        const result = (r.result ?? {}) as { directive?: Record<string, unknown> };
+        const directive = result.directive;
+        if (directive) {
+          try { session.sseResponse?.write(`data: ${JSON.stringify(directive)}\n\n`); } catch (_e) { /* SSE closed */ }
+          const ws = (session as unknown as { clientWs?: { readyState: number } }).clientWs;
+          if (ws && ws.readyState === 1) {
+            try {
+              sendWsMessage(ws as unknown as Parameters<typeof sendWsMessage>[0], directive);
+            } catch (_e) { /* WS closed */ }
+          }
+        }
+
+        const text = typeof r.text === 'string' && r.text.length > 0 ? r.text : JSON.stringify(r.result ?? {});
+        return { success: true, result: text };
       }
 
       // PR B-4: lifted to services/orb-tools-shared.ts. Both pipelines now
