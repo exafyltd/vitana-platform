@@ -93,32 +93,54 @@ router.get('/orb/agent-trace', requireAuth, async (req: AuthenticatedRequest, re
     return res.status(503).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
   }
 
+  // Optional ?phase=say_failed to fetch the latest trace matching that
+  // phase (instead of the absolute latest). Useful when there are
+  // multiple traces written for the same session and the latest by
+  // timestamp isn't the one you want to inspect.
+  const phaseFilter = typeof req.query.phase === 'string' ? req.query.phase : null;
+  // Optional ?limit= to return up to N most-recent traces (capped at 20)
+  // so the caller can see a phase trail in one round-trip.
+  const limitRaw = parseInt(String(req.query.limit ?? ''), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 1;
+
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   try {
-    const { data, error } = await sb
+    let query = sb
       .from('oasis_events')
       .select('id, topic, metadata, created_at')
       .eq('topic', TRACE_TOPIC)
       .filter('metadata->>user_id', 'eq', userId)
       .gte('created_at', oneHourAgo)
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(limit);
+    if (phaseFilter) {
+      query = query.filter('metadata->>phase', 'eq', phaseFilter);
+    }
+    const { data, error } = await query;
     if (error) {
       return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
     }
     if (!data || data.length === 0) {
       return res.status(404).json({ ok: false, error: 'no_recent_trace', vtid: VTID });
     }
-    const row = data[0];
-    return res.json({
-      ok: true,
-      trace: {
-        ts: row.created_at,
-        user_id: userId,
-        payload: row.metadata as Record<string, unknown>,
-      },
-      vtid: VTID,
-    });
+    if (limit === 1) {
+      const row = data[0];
+      return res.json({
+        ok: true,
+        trace: {
+          ts: row.created_at,
+          user_id: userId,
+          payload: row.metadata as Record<string, unknown>,
+        },
+        vtid: VTID,
+      });
+    }
+    const traces = data.map((row) => ({
+      ts: row.created_at,
+      user_id: userId,
+      payload: row.metadata as Record<string, unknown>,
+    }));
+    return res.json({ ok: true, traces, count: traces.length, vtid: VTID });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'unknown';
     return res.status(500).json({ ok: false, error: msg, vtid: VTID });
@@ -168,6 +190,7 @@ router.get('/orb/agent-trace/recent', async (_req: Request, res: Response) => {
         system_prompt_length: md.system_prompt_length ?? null,
         tools_count: md.tools_count ?? null,
         tools_handle_in_first_chars: md.tools_handle_in_first_chars ?? null,
+        raw_md: md,
       };
     });
     return res.json({ ok: true, count: rows.length, rows, vtid: VTID });
