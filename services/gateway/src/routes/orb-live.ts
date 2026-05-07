@@ -4285,40 +4285,28 @@ async function executeLiveApiToolInner(
   try {
     switch (toolName) {
       case 'recall_conversation_at_time': {
-        // VTID-02052: voice/Live-API path for the recall tool. Without this case,
-        // an iPhone user asking "when did we talk about X" hits the default
-        // "Unknown tool" branch and the upstream Live API WS closes — the
-        // user sees "internet issues" on the device.
-        try {
-          const { executeRecallConversationAtTime } = await import(
-            '../services/tool-recall-conversation'
-          );
-          const recall = await executeRecallConversationAtTime(
-            args as { time_hint: string; topic_hint?: string },
-            {
-              user_id: session.identity.user_id,
-              user_timezone:
-                (session as any)?.clientContext?.timezone || undefined,
-            },
-          );
-          // The Live API expects a JSON string; cap to keep the function
-          // response payload safely under the 4 KB stall threshold.
-          const payload = JSON.stringify(recall);
-          const MAX = 4000;
-          const result = payload.length > MAX ? payload.slice(0, MAX) + '...(truncated)' : payload;
-          return {
-            success: !!recall.ok,
-            result: recall.ok ? result : '',
-            error: recall.ok ? undefined : recall.error || 'recall_failed',
-          };
-        } catch (err: any) {
-          console.error('[VTID-02052] recall_conversation_at_time failed:', err?.message);
-          return {
-            success: false,
-            result: '',
-            error: err?.message || 'recall_exception',
-          };
+        // PR B-3: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // call executeRecallConversationAtTime through the shared dispatcher.
+        // Pass user_timezone via args so the lifted handler can use it.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        const tz = (session as any)?.clientContext?.timezone;
+        return await dispatchOrbToolForVertex(
+          'recall_conversation_at_time',
+          { ...(args ?? {}), user_timezone: tz },
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'search_memory': {
