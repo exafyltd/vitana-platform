@@ -117,17 +117,30 @@ function extractVertexCases(src) {
       i++;
       continue;
     }
-    const name = m[1];
-    if (PROTOCOL.has(name)) {
-      i++;
-      continue;
+    // Collect all consecutive fall-through case labels (case 'a': case 'b':
+    // { body }). The body belongs to ALL of them, so each name shares the
+    // same delegated status.
+    const fallThroughNames = [];
+    const fallThroughLines = [];
+    let cursor = i;
+    while (cursor < lines.length) {
+      const cur = lines[cursor];
+      const cm = cur.match(/^\s*case '([a-z_][a-z0-9_]*)':\s*\{?\s*$/);
+      if (!cm) break;
+      fallThroughNames.push(cm[1]);
+      fallThroughLines.push(cursor + 1);
+      // If this case line has the opening brace, the body starts here.
+      if (/\{\s*$/.test(cur)) {
+        break;
+      }
+      cursor++;
     }
-    // Find the case body — accumulate lines until matching closing brace
-    // or until we hit the next `case '...':`. Use a brace counter.
+    // The line we just stopped on is the case-with-body (or we ran out of
+    // case lines). Walk forward to find the closing brace of the body.
     let depth = 0;
     let openSeen = false;
     let body = '';
-    let j = i;
+    let j = cursor;
     for (; j < lines.length; j++) {
       const lj = lines[j];
       for (const ch of lj) {
@@ -138,12 +151,14 @@ function extractVertexCases(src) {
       }
       body += lj + '\n';
       if (openSeen && depth === 0) break;
-      // Fallback: stop if we hit a new `case '...':` (some cases share a body)
-      if (j > i && /^\s*case '[a-z_][a-z0-9_]*':/.test(lj) && !openSeen) break;
     }
     const delegated = /dispatchOrbToolForVertex\b/.test(body);
-    if (!cases.has(name)) {
-      cases.set(name, { delegated, lineNumber: i + 1 });
+    for (let k = 0; k < fallThroughNames.length; k++) {
+      const n = fallThroughNames[k];
+      if (PROTOCOL.has(n)) continue;
+      if (!cases.has(n)) {
+        cases.set(n, { delegated, lineNumber: fallThroughLines[k] });
+      }
     }
     i = j + 1;
   }
