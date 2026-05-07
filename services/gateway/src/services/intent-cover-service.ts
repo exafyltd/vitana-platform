@@ -45,12 +45,21 @@ export type CoverTheme =
 
 export type Gender = 'male' | 'female' | null;
 
-export type CoverSource = 'user_upload' | 'ai_generated' | 'fallback_curated';
+export type CoverSource =
+  | 'user_upload'
+  | 'user_library'
+  | 'user_universal'
+  | 'ai_generated'
+  | 'fallback_curated';
 
 export interface GenerateCoverArgs {
   intentId: string;
   userId: string;
-  theme: CoverTheme;
+  /**
+   * Theme to use for the AI prompt. Optional — when omitted the service
+   * derives it from the intent's category via `themeFromCategory`.
+   */
+  theme?: CoverTheme;
   /**
    * Foreground subject gender. When omitted we look it up from
    * `profiles.gender` so the centered person matches the requesting user.
@@ -371,6 +380,56 @@ async function getUserGenderFromProfile(userId: string): Promise<Gender> {
   }
 }
 
+/**
+ * Look up the user's universal cover photo — a single image they
+ * uploaded once in their profile, used as the second-line fallback
+ * before AI generation. Lets users avoid AI-generated covers entirely.
+ */
+async function getUserUniversalCover(userId: string): Promise<string | null> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from('profiles')
+      .select('universal_intent_cover_url')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const raw = (data as { universal_intent_cover_url?: string | null } | null)
+      ?.universal_intent_cover_url;
+    return typeof raw === 'string' && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pick a cover URL from the user's category-tagged library. We look
+ * for an exact-match category (no fuzzy / parent-bucket fallback —
+ * a tennis photo is never substituted for a jogging post). When
+ * several rows match, the choice is deterministic per intent so the
+ * same intent always renders the same image.
+ */
+async function getUserLibraryCoverForCategory(
+  userId: string,
+  category: string | null,
+  intentId: string,
+): Promise<string | null> {
+  if (!category) return null;
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from('user_intent_cover_library')
+      .select('cover_url')
+      .eq('user_id', userId)
+      .eq('category', category);
+    const rows = (data ?? []) as { cover_url: string }[];
+    if (rows.length === 0) return null;
+    const idx = createHash('sha256').update(intentId).digest()[0] % rows.length;
+    return rows[idx].cover_url;
+  } catch {
+    return null;
+  }
+}
+
 async function checkRateLimit(userId: string): Promise<void> {
   if (RATE_LIMIT_PER_DAY <= 0) return; // disabled.
   const supabase = getSupabase();
@@ -412,10 +471,12 @@ async function persistCover(args: {
 /**
  * Idempotent cover-photo generator.
  *
- * Resolution order:
+ * Resolution order (top wins, never substitutes across categories):
  *   1. cache hit (cover_url already set) and !force → return it.
- *   2. AI generation via OpenAI Images, uploaded to Supabase Storage.
- *   3. Curated fallback library (server-shipped JPGs).
+ *   2. user library: an exact-category-tagged photo the user uploaded.
+ *   3. user universal: a single fallback photo on the user's profile.
+ *   4. AI generation (gender-aware Vertex Imagen).
+ *   5. Curated server-shipped fallback library (JPG).
  *
  * Throws CoverGenError for the route layer to map to HTTP statuses.
  * Never throws for "fallback used" — that's a successful result with
@@ -428,7 +489,7 @@ export async function generateCoverForIntent(
 
   const { data: intent, error } = await supabase
     .from('user_intents')
-    .select('intent_id, requester_user_id, cover_url')
+    .select('intent_id, requester_user_id, cover_url, cover_source, category')
     .eq('intent_id', args.intentId)
     .maybeSingle();
   if (error) throw new CoverGenError('storage_failed', error.message);
@@ -437,11 +498,56 @@ export async function generateCoverForIntent(
     throw new CoverGenError('forbidden', 'intent_not_owned_by_caller');
   }
 
-  const existing = (intent as { cover_url: string | null }).cover_url;
+  const intentRow = intent as {
+    cover_url: string | null;
+    cover_source: CoverSource | null;
+    category: string | null;
+  };
+
+  const existing = intentRow.cover_url;
   if (existing && !args.force) {
-    return { cover_url: existing, source: 'ai_generated', cached: true };
+    return {
+      cover_url: existing,
+      source: intentRow.cover_source ?? 'ai_generated',
+      cached: true,
+    };
   }
 
+  const category = intentRow.category;
+  const theme: CoverTheme = args.theme ?? themeFromCategory(category);
+
+  // 2. User library — exact-category match wins. No rate-limit; this
+  //    path doesn't generate, it reuses bytes the user already uploaded.
+  const libraryUrl = await getUserLibraryCoverForCategory(
+    args.userId,
+    category,
+    args.intentId,
+  );
+  if (libraryUrl) {
+    await persistCover({
+      intentId: args.intentId,
+      userId: args.userId,
+      url: libraryUrl,
+      source: 'user_library',
+    });
+    return { cover_url: libraryUrl, source: 'user_library', cached: false };
+  }
+
+  // 3. User universal — single fallback on the profile. Same story:
+  //    no generation, just reuse, so no rate-limit.
+  const universalUrl = await getUserUniversalCover(args.userId);
+  if (universalUrl) {
+    await persistCover({
+      intentId: args.intentId,
+      userId: args.userId,
+      url: universalUrl,
+      source: 'user_universal',
+    });
+    return { cover_url: universalUrl, source: 'user_universal', cached: false };
+  }
+
+  // 4. AI generation. The rate-limit only gates this path — library +
+  //    universal hits above are free to repeat.
   await checkRateLimit(args.userId);
 
   // Resolve the foreground subject's gender. Caller-provided wins;
@@ -456,7 +562,7 @@ export async function generateCoverForIntent(
   // can disable the call by setting INTENT_COVER_DRY_RUN=true.
   if (!DRY_RUN) {
     try {
-      const bytes = await generateAiCover(args.theme, gender);
+      const bytes = await generateAiCover(theme, gender);
       const url = await uploadAiCover({ intentId: args.intentId, bytes });
       await persistCover({
         intentId: args.intentId,
@@ -471,8 +577,8 @@ export async function generateCoverForIntent(
     }
   }
 
-  // Fallback path.
-  const url = await uploadFallbackCover({ intentId: args.intentId, theme: args.theme });
+  // 5. Curated fallback.
+  const url = await uploadFallbackCover({ intentId: args.intentId, theme });
   await persistCover({
     intentId: args.intentId,
     userId: args.userId,
