@@ -5057,7 +5057,11 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_community': {
-        // PR B-8: lifted to services/orb-tools-shared.ts.
+        // PR B-8 lifted the search; PR 1.B-7 added auto-nav to COMM.GROUP_DETAIL
+        // when the result is unambiguous. Switch from dispatchOrbToolForVertex
+        // to dispatchOrbTool so the structured `result.directive` is readable
+        // and Vertex can emit it via SSE/WS + set session.pendingNavigation
+        // + eagerly update session.current_route.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5065,8 +5069,8 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
-        return await dispatchOrbToolForVertex(
+        const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+        const r = await dispatchOrbTool(
           'search_community',
           args ?? {},
           {
@@ -5074,9 +5078,58 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
           },
           supabase,
         );
+        if (r.ok === false) {
+          return { success: false, result: '', error: r.error };
+        }
+        const result = (r.result ?? {}) as {
+          groups?: unknown[];
+          decision?: string;
+          directive?: {
+            type: string;
+            directive: string;
+            screen_id: string;
+            route: string;
+            title: string;
+            reason: string;
+            vtid: string;
+          };
+        };
+        if (result.decision === 'auto_nav' && result.directive) {
+          const directive = result.directive;
+          const directiveJson = JSON.stringify(directive);
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+          }
+          if ((session as unknown as { clientWs?: { readyState: number } }).clientWs &&
+              (session as unknown as { clientWs?: { readyState: number } }).clientWs!.readyState === 1) {
+            try { sendWsMessage((session as unknown as { clientWs: unknown }).clientWs as Parameters<typeof sendWsMessage>[0], directive); } catch (_e) { /* WS closed */ }
+          }
+          session.pendingNavigation = {
+            screen_id: directive.screen_id,
+            route: directive.route,
+            title: directive.title,
+            reason: directive.reason,
+            decision_source: 'direct',
+            requested_at: Date.now(),
+          };
+          session.navigationDispatched = true;
+          session.pendingNavigation = undefined;
+          const previousRoute = session.current_route;
+          session.current_route = directive.route;
+          if (previousRoute && previousRoute !== directive.route) {
+            const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+            const deduped = trail.filter((rt) => rt !== previousRoute);
+            session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+          }
+        }
+        return {
+          success: true,
+          result: typeof r.text === 'string' ? r.text : '',
+        };
       }
 
       // VTID-02754 — Find ONE community member by free-text query and redirect
