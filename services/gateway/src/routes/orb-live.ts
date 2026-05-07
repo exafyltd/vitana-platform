@@ -2167,6 +2167,64 @@ function buildLiveApiTools(
             required: ['query'],
           },
         },
+        // VTID-02754 — Find one specific community member matching a free-text
+        // query and redirect the user to that member's profile. Always returns
+        // exactly one person; never returns lists.
+        {
+          name: 'find_community_member',
+          description: [
+            'Find ONE specific community member matching a free-text question and',
+            'open their profile for the user. ALWAYS returns exactly one person —',
+            'never a list, never a summary. The tool itself dispatches the',
+            'navigation; you only need to read aloud the one-line voice_summary',
+            'that the tool returns. Then stop speaking.',
+            '',
+            'CALL THIS TOOL when the user asks any "who is..." question about the',
+            'community, including:',
+            '  - Skill / activity:   "who is good at half marathon?"',
+            '                        "who plays golf?"',
+            '                        "who teaches salsa?"',
+            '  - Vitana Index:       "who is the healthiest?"',
+            '                        "who has the best sleep?"',
+            '                        "who is the fittest?"',
+            '  - Soft qualities:     "who is the funniest?"',
+            '                        "who is the smartest?"',
+            '                        "who is the most inspiring?"',
+            '                        "who is the best teacher?"',
+            '  - Tenure:             "who is the newest member?"',
+            '                        "who is the longest-standing member?"',
+            '  - Location:           "who is closest to me?"',
+            '                        "who is in my city?"',
+            '                        "who is near me?"',
+            '  - Composed:           "newest salsa teacher in my city"',
+            '',
+            'After the tool runs:',
+            '  - Read voice_summary aloud (1-2 sentences).',
+            '  - DO NOT add any other commentary — the redirect is dispatched',
+            '    by the tool itself and the widget is closing.',
+            '  - DO NOT mention "I searched", "I looked at", "I found" — the',
+            '    voice_summary already says it.',
+            '',
+            'NEVER use this tool for community groups or events — those have',
+            'their own tools (search_community for groups, search_events for',
+            'meetups/live rooms).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'The user\'s "who is..." question, in natural language. Pass the question verbatim — the backend handles all interpretation, ranking, and edge cases.',
+              },
+              excluded_vitana_ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'OPTIONAL — only include if the user explicitly says "show me someone else" / "another one" after a previous find_community_member result. Pass the previously-shown vitana_id(s) here so the ranker picks a different person.',
+              },
+            },
+            required: ['query'],
+          },
+        },
         {
           name: 'get_recommendations',
           description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
@@ -5320,6 +5378,105 @@ async function executeLiveApiToolInner(
         } catch (e: any) {
           console.warn(`[VTID-01270A] search_community error: ${e.message}`);
           return { success: true, result: 'Community search encountered an error. Please try again.' };
+        }
+      }
+
+      // VTID-02754 — Find ONE community member by free-text query and redirect
+      // to their profile. Reads the gateway's own /api/v1/community/find-member
+      // endpoint (which runs the 4-tier ranker, persists to
+      // community_search_history, and returns voice_summary + match_recipe).
+      // The handler itself queues the navigation directive so the widget
+      // redirects to /u/<vitana_id>?from=who_search&search_id=<id> on
+      // turn_complete.
+      case 'find_community_member': {
+        const query = String(args.query || '').trim();
+        if (!query) {
+          return { success: false, result: '', error: 'query is required' };
+        }
+        if (!session.identity?.user_id || !session.identity?.tenant_id) {
+          return {
+            success: false,
+            result: '',
+            error: 'Please sign in to search the community.',
+          };
+        }
+        const excluded = Array.isArray(args.excluded_vitana_ids)
+          ? (args.excluded_vitana_ids as unknown[]).filter((s) => typeof s === 'string')
+          : [];
+
+        try {
+          const baseUrl = process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080';
+          const url = `${baseUrl}/api/v1/community/find-member`;
+          const jwt = (session as any).access_token || (session as any).jwt;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+            },
+            body: JSON.stringify({ query, excluded_vitana_ids: excluded }),
+          });
+          const data: any = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.ok) {
+            console.warn(`[VTID-02754] find_community_member upstream failed: ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
+            return {
+              success: false,
+              result: '',
+              error: data?.error || `find_member_failed_${res.status}`,
+            };
+          }
+
+          // Queue navigation. Mirrors the navigate_to_screen flow at line ~4073.
+          session.pendingNavigation = {
+            screen_id: 'profile_with_match',
+            route: data.redirect.route,
+            title: `Profile: ${data.display_name}`,
+            reason: 'find_community_member tool call',
+            decision_source: 'direct',
+            requested_at: Date.now(),
+          };
+          session.navigationDispatched = true;
+
+          // Update in-memory session route so subsequent get_current_screen
+          // calls reflect the navigation. Mirrors navigate_to_screen line 4091-4097.
+          const previousRoute = session.current_route;
+          session.current_route = data.redirect.route;
+          if (previousRoute && previousRoute !== data.redirect.route) {
+            const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
+            const deduped = trail.filter(r => r !== previousRoute);
+            session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
+          }
+
+          emitOasisEvent({
+            vtid: 'VTID-02754',
+            type: 'community.find_member.matched',
+            source: 'orb-live',
+            status: 'info',
+            message: `find_community_member matched "${query}" → ${data.vitana_id}`,
+            payload: {
+              session_id: session.sessionId,
+              query,
+              tier: data.match_recipe?.tier,
+              lane: data.match_recipe?.lane,
+              winner_vitana_id: data.vitana_id,
+              ethics_reroute: !!data.match_recipe?.ethics_reroute,
+              search_id: data.search_id,
+            },
+            actor_id: session.identity.user_id,
+            actor_role: 'user',
+            surface: 'orb',
+            vitana_id: session.identity?.vitana_id ?? undefined,
+          }).catch(() => {});
+
+          // Return ONLY the voice_summary so Gemini reads it aloud and stops.
+          // The widget is closing — no follow-up commentary required.
+          return {
+            success: true,
+            result: `${data.voice_summary} The user is now being taken to ${data.display_name}'s profile. The widget is closing — stop speaking immediately after this line.`,
+          };
+        } catch (err: any) {
+          console.error('[VTID-02754] find_community_member error:', err?.message);
+          return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
 

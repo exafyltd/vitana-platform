@@ -715,7 +715,9 @@ export type CicdEventType =
   // VTID-02632: Phase 8 — Nightly consolidator events
   | 'memory.consolidator.run.completed'
   | 'memory.consolidator.loop.failed'
-  | 'memory.index_delta.observed';
+  | 'memory.index_delta.observed'
+  // VTID-02754: find_community_member voice tool — search-to-profile redirect
+  | 'community.find_member.matched';
 
 export interface CicdOasisEvent {
   vtid: string;
