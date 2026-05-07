@@ -35689,6 +35689,33 @@ function renderLivekitTestView() {
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
     }
 
+    /**
+     * PR 1.B-0 — handle an orb_directive received on the LiveKit data channel.
+     * Parallel to Vertex's SSE/WS orb_directive handler in orb-widget.js.
+     *
+     * Supported directives:
+     *   - open_url      → window.open(url, '_blank') (e.g. play_music opens the native music app)
+     *   - navigate      → window.location.href = route (e.g. find_community_member redirects to /u/:vitana_id)
+     *
+     * Logged to the on-screen events panel so testers can see exactly what fired.
+     */
+    function handleOrbDirective(msg) {
+        if (!msg || typeof msg !== 'object') return;
+        var kind = msg.directive || msg.kind;
+        if (kind === 'open_url' && msg.url) {
+            log('info', 'orb_directive open_url', { url: msg.url, title: msg.title || '' });
+            try { window.open(String(msg.url), '_blank', 'noopener,noreferrer'); } catch (e) { log('warn', 'open_url failed', { error: String(e) }); }
+            return;
+        }
+        if (kind === 'navigate' && msg.route) {
+            log('info', 'orb_directive navigate', { route: msg.route, screen_id: msg.screen_id || '' });
+            // Use a brief delay so the agent's voice cue plays before the page transitions.
+            setTimeout(function () { window.location.href = String(msg.route); }, 250);
+            return;
+        }
+        log('event', 'orb_directive (unhandled kind)', msg);
+    }
+
     // Load active provider on mount.
     fetch((window.GATEWAY_URL || '') + '/api/v1/orb/active-provider')
         .then(function (r) { return r.json(); })
@@ -35797,12 +35824,24 @@ function renderLivekitTestView() {
                 }
             });
 
-            room.on(LivekitClient.RoomEvent.DataReceived, function (payload) {
+            room.on(LivekitClient.RoomEvent.DataReceived, function (payload, _participant, _kind, topic) {
                 try {
                     var msg = JSON.parse(new TextDecoder().decode(payload));
                     log('event', 'DataReceived', msg);
                     if (msg.type === 'transcript') appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
                     if (msg.type === 'tool_call') log('event', 'tool_call', msg);
+                    // PR 1.B-0 — orb_directive: the agent publishes structured payloads on
+                    // the data channel (topic='orb_directive') so the page can react out-of-band
+                    // the same way the SSE/WS branch does on Vertex. Currently 2 directive
+                    // types: 'open_url' (e.g. play_music URL → opens in new tab native app
+                    // intent if present) and 'navigate' (e.g. find_community_member redirect
+                    // → window.location.href).
+                    var isDirective = topic === 'orb_directive' || msg.type === 'orb_directive';
+                    if (isDirective) {
+                        try {
+                            handleOrbDirective(msg);
+                        } catch (dErr) { log('warn', 'orb_directive handler error', { error: String(dErr) }); }
+                    }
                 } catch (e) { log('event', 'DataReceived (non-json)', { len: payload && payload.byteLength }); }
             });
 

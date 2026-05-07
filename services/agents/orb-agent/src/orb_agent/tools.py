@@ -78,6 +78,35 @@ async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = No
     return await _gw(ctx).post("/api/v1/orb/tool", {"name": name, "args": args or {}})
 
 
+async def _dispatch_with_directive(
+    ctx: RunContext,
+    name: str,
+    args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """`_dispatch` plus auto-publish any `directive` payload via the data channel.
+
+    Tools whose gateway response includes a structured `result.directive`
+    (find_community_member, play_music, navigate, view_intent_matches, etc.)
+    use this wrapper instead of `_dispatch`. The directive flows out on the
+    LiveKit data channel — the frontend listener applies it (open URL,
+    navigate to profile, autoplay track) the same way the Vertex SSE/WS
+    branch does today.
+
+    Returns the raw gateway body so the caller can still build the LLM-facing
+    voice text via `summarize(body)`.
+    """
+    from .directives import extract_directive, publish_orb_directive  # local import
+
+    gw = _gw(ctx)
+    body = await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+    directive = extract_directive(body)
+    if directive is not None:
+        published = await publish_orb_directive(gw.room, directive)
+        if not published:
+            logger.warning("tool %s: directive present but data-channel publish failed", name)
+    return body
+
+
 # ---------------------------------------------------------------------------
 # Memory / Knowledge / Recall
 # ---------------------------------------------------------------------------
