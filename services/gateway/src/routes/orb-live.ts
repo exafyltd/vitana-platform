@@ -6484,6 +6484,7 @@ async function executeLiveApiToolInner(
           const { notifyMatchSurfaced } = await import('../services/intent-notifier');
           const { writeIntentFacts } = await import('../services/intent-memory-hooks');
           const { getActiveCompassGoal } = await import('../services/intent-compass-lens');
+          const { runMatchmakerAsync } = await import('../services/matchmaker-agent');
           const { createClient } = await import('@supabase/supabase-js');
 
           // Classify (or use kind_hint).
@@ -6610,6 +6611,19 @@ async function executeLiveApiToolInner(
             }
           } catch (err: any) {
             console.warn(`[VTID-02716] post_intent embedding non-fatal: ${err?.message}`);
+          }
+
+          // VTID-02832: kick the async matchmaker agent so the row exists in
+          // intent_match_recommendations by the time Gemini polls
+          // get_matchmaker_result (~3s later). Without this kick the poll
+          // returns status='not_started' — a status the tool description
+          // doesn't enumerate, so Gemini freelances and apologizes ("I had a
+          // problem making the post") even though the post is live. Mirrors
+          // intents.ts:370 (REST POST path).
+          try {
+            runMatchmakerAsync(intentId);
+          } catch (err: any) {
+            console.warn(`[VTID-02832] matchmaker async kick failed (non-fatal): ${err?.message}`);
           }
 
           writeIntentFacts({
