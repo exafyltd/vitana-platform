@@ -5032,9 +5032,12 @@ async function executeLiveApiToolInner(
       // =====================================================================
 
       case 'search_events': {
-        // PR B-10: lifted to services/orb-tools-shared.ts. Both pipelines now
-        // run scoreAndRankEvents through the shared dispatcher — same scoring,
-        // same home-city proximity boost, same parallel live_rooms fetch.
+        // PR B-10 lifted the scoring engine; PR 1.B-8 added auto-nav to
+        // OVERLAY.EVENT_DRAWER when the top event dominates the runner-up
+        // and there are no live-rooms competing. Switch from
+        // dispatchOrbToolForVertex to dispatchOrbTool so we can read the
+        // structured directive and emit it via SSE/WS just like
+        // search_community + view_intent_matches do.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -5042,8 +5045,8 @@ async function executeLiveApiToolInner(
         }
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
-        return await dispatchOrbToolForVertex(
+        const { dispatchOrbTool } = await import('../services/orb-tools-shared');
+        const r = await dispatchOrbTool(
           'search_events',
           args ?? {},
           {
@@ -5051,9 +5054,53 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
           },
           supabase,
         );
+        if (r.ok === false) {
+          return { success: false, result: '', error: r.error };
+        }
+        const result = (r.result ?? {}) as {
+          decision?: string;
+          directive?: {
+            type: string;
+            directive: string;
+            screen_id: string;
+            route: string;
+            title: string;
+            reason: string;
+            vtid: string;
+          };
+        };
+        if (result.decision === 'auto_nav' && result.directive) {
+          const directive = result.directive;
+          const directiveJson = JSON.stringify(directive);
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+          }
+          if ((session as unknown as { clientWs?: { readyState: number } }).clientWs &&
+              (session as unknown as { clientWs?: { readyState: number } }).clientWs!.readyState === 1) {
+            try { sendWsMessage((session as unknown as { clientWs: unknown }).clientWs as Parameters<typeof sendWsMessage>[0], directive); } catch (_e) { /* WS closed */ }
+          }
+          // Event drawer is overlay-kind — DO NOT mutate session.current_route
+          // (the user stays on the underlying page; only a drawer opens).
+          // Set pendingNavigation so the turn_complete handler is informed.
+          session.pendingNavigation = {
+            screen_id: directive.screen_id,
+            route: directive.route,
+            title: directive.title,
+            reason: directive.reason,
+            decision_source: 'direct',
+            requested_at: Date.now(),
+          };
+          session.navigationDispatched = true;
+          session.pendingNavigation = undefined;
+        }
+        return {
+          success: true,
+          result: typeof r.text === 'string' ? r.text : '',
+        };
       }
 
       case 'search_community': {

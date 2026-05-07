@@ -497,12 +497,80 @@ export async function tool_search_events(
     formatted += liveRoomResults.join('\n');
   }
 
+  // PR 1.B-8: auto-redirect to the event-drawer overlay when the result
+  // is unambiguous. Vertex/LiveKit both call into the existing
+  // OVERLAY.EVENT_DRAWER catalog entry (route /comm/events-meetups?open=event&event_id=…),
+  // which the frontend orb widget already knows how to open as a drawer.
+  // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
+  // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  const EVENT_AUTONAV_GAP = 0.15;
+  const top = sr?.best?.[0];
+  const second = sr?.best?.[1];
+  const dominant =
+    !!top &&
+    !hasRooms &&
+    (
+      (sr!.best.length === 1 && sr!.alternatives.length === 0) ||
+      (typeof top.score === 'number' &&
+        typeof second?.score === 'number' &&
+        top.score - second.score >= EVENT_AUTONAV_GAP)
+    );
+
+  if (dominant && top) {
+    const eventId = top.event.id;
+    const eventTitle = top.event.title || 'Event';
+    const route = `/comm/events-meetups?open=event&event_id=${encodeURIComponent(eventId)}`;
+    const directive = {
+      type: 'orb_directive',
+      directive: 'navigate',
+      screen_id: 'OVERLAY.EVENT_DRAWER',
+      route,
+      title: eventTitle,
+      reason: 'search_events dominant pick',
+      vtid: 'VTID-01270A',
+    };
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    emitOasisEvent({
+      vtid: 'VTID-01270A',
+      type: 'orb.search_events.auto_nav',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: `search_events auto-redirect → ${eventTitle}`,
+      payload: {
+        session_id: id.session_id || null,
+        query,
+        event_id: eventId,
+        event_title: eventTitle,
+        score: top.score,
+        runner_up_score: second?.score ?? null,
+        result_count: sr!.best.length + sr!.alternatives.length,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+    }).catch(() => {});
+
+    return {
+      ok: true,
+      result: {
+        best: sr?.best ?? [],
+        alternatives: sr?.alternatives ?? [],
+        live_rooms: liveRoomResults,
+        decision: 'auto_nav',
+        directive,
+        redirect: { route },
+      },
+      text: `Opening "${eventTitle}".`,
+    };
+  }
+
   return {
     ok: true,
     result: {
       best: sr?.best ?? [],
       alternatives: sr?.alternatives ?? [],
       live_rooms: liveRoomResults,
+      decision: 'list_only',
     },
     text: formatted,
   };
