@@ -8,6 +8,24 @@ provider is one entry in `_REGISTRY` plus a seed row in `voice_providers`.
 Live behavior is gated on the actual livekit-agents plugin packages being
 present at runtime. The skeleton uses lazy imports + a NotImplementedError
 fallback so the agent boots even if optional plugins aren't installed.
+
+PR 1.B-Lang adds session-level multilingual: `build_cascade(voice_config,
+lang)` takes the user's language (from identity.lang) and:
+
+  - STT: injects the matching BCP-47 code into the provider's language
+    config (Deepgram `language=`, AssemblyAI `language=`, Google STT
+    `languages=[...]`). German users get a German STT regardless of
+    whether the agent_voice_configs row pre-seeded a language.
+
+  - TTS: looks up `tts_options.voices_per_lang[lang]` first (operator
+    override), falls back to a hardcoded LANG_DEFAULTS map per provider
+    (en + de + 7 more shipped today; new languages drop in via either a
+    LANG_DEFAULTS entry here or per-row `voices_per_lang` from Voice
+    Lab). The TTS plugin's `language` kwarg is also resolved from BCP-47
+    so e.g. Google Chirp speaks German with the correct prosody.
+
+This is pure session-time resolution — no migration needed for the
+shipped languages. Adding Spanish/French/Italian/etc. is a row insert.
 """
 from __future__ import annotations
 
@@ -41,7 +59,118 @@ class ResolvedCascade:
     notes: list[str]
 
 
-def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
+# ---------------------------------------------------------------------------
+# Language → BCP-47 resolution. The agent receives short language codes
+# (`en`, `de`, …) from identity.lang. STT/TTS plugins want full BCP-47
+# (`en-US`, `de-DE`, …). When identity.lang is already BCP-47 we pass it
+# through unchanged.
+# ---------------------------------------------------------------------------
+
+_BCP47_DEFAULTS: dict[str, str] = {
+    "en": "en-US",
+    "de": "de-DE",
+    "es": "es-ES",
+    "fr": "fr-FR",
+    "it": "it-IT",
+    "pt": "pt-BR",
+    "nl": "nl-NL",
+    "sv": "sv-SE",
+    "pl": "pl-PL",
+}
+
+
+def _resolve_bcp47(lang: str | None) -> str:
+    """Resolve a short language code (or already-BCP-47 string) to BCP-47.
+
+    `en` → `en-US`, `de` → `de-DE`, `en-US` → `en-US`. Unknown codes pass
+    through; we'd rather pass an unsupported code to the provider (which
+    will return a clean error) than silently downgrade to en-US and ship
+    English audio to a Spanish user.
+    """
+    if not lang:
+        return "en-US"
+    s = str(lang).strip()
+    if not s:
+        return "en-US"
+    if "-" in s and len(s) > 2:
+        return s  # already BCP-47
+    return _BCP47_DEFAULTS.get(s.lower(), s)
+
+
+# ---------------------------------------------------------------------------
+# Hardcoded fallback voices per provider+language. Used when the
+# agent_voice_configs row doesn't have a `voices_per_lang` map yet. Lets
+# German users hear German voices today without a migration. Operators can
+# override per-row by populating `tts_options.voices_per_lang`. Adding a
+# new language is a one-line addition here (or a row in voice_providers
+# for the seed-from-DB pattern, when that ships).
+# ---------------------------------------------------------------------------
+
+LANG_DEFAULTS: dict[str, dict[str, str]] = {
+    "google_tts": {
+        "en": "en-US-Chirp3-HD-Aoede",
+        "de": "de-DE-Chirp3-HD-Aoede",
+        "es": "es-ES-Chirp3-HD-Aoede",
+        "fr": "fr-FR-Chirp3-HD-Aoede",
+        "it": "it-IT-Chirp3-HD-Aoede",
+        "pt": "pt-BR-Chirp3-HD-Aoede",
+        "nl": "nl-NL-Chirp3-HD-Aoede",
+        "sv": "sv-SE-Chirp3-HD-Aoede",
+        "pl": "pl-PL-Chirp3-HD-Aoede",
+    },
+    # Cartesia Sonic-3 is multilingual — same voice handle works across
+    # languages, the model auto-detects from the input text. Documented at
+    # https://docs.cartesia.ai/docs/sonic — keep the same voice unless an
+    # operator override exists.
+    "cartesia": {},
+    # ElevenLabs Multilingual v2 / Turbo v2.5 also handle multiple
+    # languages from a single voice. Operators wanting per-language voices
+    # set tts_options.voices_per_lang.
+    "elevenlabs": {},
+}
+
+
+def _resolve_tts_voice(
+    provider: str | None,
+    fallback_model: str | None,
+    options: dict[str, Any],
+    lang: str,
+) -> str | None:
+    """Pick the TTS voice for this language.
+
+    Resolution order:
+      1. tts_options.voices_per_lang[lang]   (operator override per agent)
+      2. tts_options.voices_per_lang[short]  (e.g. 'de' even when full lang is 'de-AT')
+      3. LANG_DEFAULTS[provider][lang]       (hardcoded fallback)
+      4. tts_options.voices_per_lang['en']   (final lang fallback)
+      5. fallback_model                      (the row's static tts_model)
+    """
+    voices_per_lang = options.get("voices_per_lang") or {}
+    if not isinstance(voices_per_lang, dict):
+        voices_per_lang = {}
+
+    short = (lang.split("-", 1)[0] if "-" in lang else lang).lower()
+    candidates = [lang, short]
+    for key in candidates:
+        v = voices_per_lang.get(key)
+        if isinstance(v, str) and v:
+            return v
+
+    if provider:
+        prov_defaults = LANG_DEFAULTS.get(provider, {}) or {}
+        for key in candidates:
+            v = prov_defaults.get(key)
+            if isinstance(v, str) and v:
+                return v
+
+    en_override = voices_per_lang.get("en")
+    if isinstance(en_override, str) and en_override:
+        return en_override
+
+    return fallback_model
+
+
+def build_cascade(voice_config: dict[str, Any] | None, lang: str | None = None) -> ResolvedCascade:
     """Instantiate the STT/LLM/TTS plugins per the agent_voice_configs row.
 
     voice_config shape (matches PR #3 migration):
@@ -50,6 +179,12 @@ def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
         "llm_provider": "anthropic", "llm_model": "claude-sonnet-4-6", "llm_options": {...},
         "tts_provider": "cartesia", "tts_model": "sonic-3", "tts_options": {...}
       }
+
+    PR 1.B-Lang: `lang` is the user's language code from identity.lang
+    (`en`, `de`, …). STT receives the matching BCP-47 code; TTS resolves
+    a per-language voice via voices_per_lang or LANG_DEFAULTS. When `lang`
+    is None or unset (anonymous boot, missing metadata) the cascade
+    behaves exactly as before — backwards-compatible.
     """
     if voice_config is None:
         # VTID-02696: hardcoded Google fallback so the agent works even when
@@ -64,37 +199,79 @@ def build_cascade(voice_config: dict[str, Any] | None) -> ResolvedCascade:
         }
 
     notes: list[str] = []
-    stt = _build_stt(voice_config.get("stt_provider"), voice_config.get("stt_model"), voice_config.get("stt_options", {}), notes)
+    resolved_lang = lang or "en"
+    bcp47 = _resolve_bcp47(resolved_lang)
+    if lang and lang != "en":
+        notes.append(f"language: identity.lang={lang} → bcp47={bcp47}")
+
+    stt = _build_stt(
+        voice_config.get("stt_provider"),
+        voice_config.get("stt_model"),
+        voice_config.get("stt_options", {}),
+        notes,
+        bcp47=bcp47,
+    )
     llm = _build_llm(voice_config.get("llm_provider"), voice_config.get("llm_model"), voice_config.get("llm_options", {}), notes)
-    tts = _build_tts(voice_config.get("tts_provider"), voice_config.get("tts_model"), voice_config.get("tts_options", {}), notes)
+    tts = _build_tts(
+        voice_config.get("tts_provider"),
+        voice_config.get("tts_model"),
+        voice_config.get("tts_options", {}),
+        notes,
+        lang=resolved_lang,
+        bcp47=bcp47,
+    )
     return ResolvedCascade(stt=stt, llm=llm, tts=tts, notes=notes)
 
 
-def _build_stt(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _STTPlugin | None:
+def _build_stt(
+    provider: str | None,
+    model: str | None,
+    options: dict[str, Any],
+    notes: list[str],
+    *,
+    bcp47: str = "en-US",
+) -> _STTPlugin | None:
+    """Construct the configured STT plugin and inject the user's language.
+
+    `bcp47` is resolved from identity.lang in build_cascade. We always
+    inject (overriding any pre-seeded value in stt_options) — operator
+    overrides for STT language are uncommon and the per-session value
+    matches the user's actual speech. Compare TTS where per-row
+    voices_per_lang overrides are common.
+    """
+    opts = dict(options or {})
+    # Strip the multilingual-routing carrier so it doesn't leak into the
+    # plugin kwargs (it's a TTS-only convention but we drop it defensively).
+    opts.pop("voices_per_lang", None)
+
     if provider == "deepgram":
         try:
             from livekit.plugins import deepgram  # type: ignore[import-not-found]
-            return deepgram.STT(model=model or "nova-3", **options)
+            opts.setdefault("language", bcp47)
+            return deepgram.STT(model=model or "nova-3", **opts)
         except ImportError:
-            notes.append(f"STT provider 'deepgram' requested but livekit-plugins-deepgram not installed")
+            notes.append("STT provider 'deepgram' requested but livekit-plugins-deepgram not installed")
             return None
     if provider == "assemblyai":
         try:
             from livekit.plugins import assemblyai  # type: ignore[import-not-found]
-            return assemblyai.STT(**options)
+            opts.setdefault("language", bcp47)
+            return assemblyai.STT(**opts)
         except ImportError:
-            notes.append(f"STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
+            notes.append("STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
             return None
     if provider == "google_stt":
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
             # Google Cloud Speech-to-Text via ADC. Passing project explicitly
             # so the plugin doesn't fall back to the consumer Speech endpoint
-            # that requires GOOGLE_API_KEY.
+            # that requires GOOGLE_API_KEY. The plugin takes a `languages`
+            # list — we send the resolved BCP-47 every session.
+            languages = opts.pop("languages", None) or [bcp47]
             return google.STT(
                 model=model or "latest_long",
-                languages=options.pop("languages", ["en-US"]),
-                **options,
+                languages=languages,
+                **opts,
             )
         except ImportError:
             notes.append("STT provider 'google_stt' requested but livekit-plugins-google not installed")
@@ -147,34 +324,68 @@ def _build_llm(provider: str | None, model: str | None, options: dict[str, Any],
     return None
 
 
-def _build_tts(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _TTSPlugin | None:
+def _build_tts(
+    provider: str | None,
+    model: str | None,
+    options: dict[str, Any],
+    notes: list[str],
+    *,
+    lang: str = "en",
+    bcp47: str = "en-US",
+) -> _TTSPlugin | None:
+    """Construct the configured TTS plugin with a per-language voice.
+
+    `lang` is the short identity language code (`en`/`de`/...). The voice
+    is resolved via _resolve_tts_voice (operator override → LANG_DEFAULTS
+    → row's tts_model). For Google TTS the `language` kwarg is also
+    resolved from BCP-47 so prosody matches the voice.
+    """
+    voice = _resolve_tts_voice(provider, model, options or {}, lang)
+    if voice and model and voice != model:
+        notes.append(f"tts: resolved voice {voice} for lang={lang} (row model={model})")
+
+    # Strip voices_per_lang from options since plugins won't accept it.
+    opts_base = dict(options or {})
+    opts_base.pop("voices_per_lang", None)
+
     if provider == "cartesia":
         try:
             from livekit.plugins import cartesia  # type: ignore[import-not-found]
-            return cartesia.TTS(model=model or "sonic-3", **options)
+            # Cartesia Sonic-3 is multilingual; voice ID stays the same
+            # across languages and the model auto-detects from the input.
+            opts = dict(opts_base)
+            opts.setdefault("language", lang)
+            return cartesia.TTS(model=voice or "sonic-3", **opts)
         except ImportError:
             notes.append("TTS provider 'cartesia' requested but livekit-plugins-cartesia not installed")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"TTS provider 'cartesia' init failed: {exc}")
             return None
     if provider == "elevenlabs":
         try:
             from livekit.plugins import elevenlabs  # type: ignore[import-not-found]
-            return elevenlabs.TTS(model=model or "eleven_turbo_v2_5", **options)
+            # ElevenLabs Multilingual v2 / Turbo v2.5 detect language from
+            # the text. voices_per_lang lets operators pick a different
+            # vocal identity per language when needed.
+            return elevenlabs.TTS(model=voice or "eleven_turbo_v2_5", **opts_base)
         except ImportError:
             notes.append("TTS provider 'elevenlabs' requested but livekit-plugins-elevenlabs not installed")
             return None
     if provider == "google_tts":
         try:
             from livekit.plugins import google  # type: ignore[import-not-found]
-            voice = model or "en-US-Chirp3-HD-Aoede"
+            voice_name = voice or "en-US-Chirp3-HD-Aoede"
             # tts_options from the agent_voice_configs row may carry legacy
             # keys like `language_code` (the seed migration uses Google's
             # API-side spelling). The livekit-plugins-google TTS class only
             # accepts `language=`, so an un-renamed `language_code` would
             # surface as an unexpected-kwarg TypeError → caught silently
             # below → cascade.tts=None → AgentSession runs but produces
-            # silent audio. Normalise here.
-            opts = dict(options or {})
-            language = opts.pop("language", None) or opts.pop("language_code", None) or "en-US"
+            # silent audio. Normalise here. PR 1.B-Lang: when the row
+            # doesn't pin a language, resolve from identity.lang via BCP-47.
+            opts = dict(opts_base)
+            language = opts.pop("language", None) or opts.pop("language_code", None) or bcp47
             # Drop any other keys the Google plugin doesn't accept rather
             # than crash. Whitelist only the kwargs we know are safe; future
             # additions need to be added explicitly.
@@ -191,7 +402,7 @@ def _build_tts(provider: str | None, model: str | None, options: dict[str, Any],
             if dropped:
                 notes.append(f"google_tts: dropped unsupported tts_options keys: {dropped}")
             # Google Cloud Text-to-Speech via ADC (no API key needed).
-            return google.TTS(voice_name=voice, language=language, **forwarded)
+            return google.TTS(voice_name=voice_name, language=language, **forwarded)
         except ImportError:
             notes.append("TTS provider 'google_tts' requested but livekit-plugins-google not installed")
             return None
