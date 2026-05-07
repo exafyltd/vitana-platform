@@ -161,6 +161,8 @@ router.get('/orb/agent-trace/recent', async (_req: Request, res: Response) => {
         user_id_short: uid.slice(0, 12),
         code_version: md.code_version ?? null,
         phase: md.phase ?? null,
+        error: md.error ?? null,
+        greeting_text: md.greeting_text ?? null,
         vitana_id: md.vitana_id ?? null,
         bootstrap_context_length: md.bootstrap_context_length ?? null,
         system_prompt_length: md.system_prompt_length ?? null,
