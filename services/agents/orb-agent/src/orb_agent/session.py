@@ -234,7 +234,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # plugin failed to instantiate (wrong provider name, ImportError,
     # config kwarg not accepted, ADC missing scopes, etc.). Trace the
     # cascade.notes so we never have to guess again.
-    cascade = build_cascade(bootstrap.voice_config)
+    # PR 1.B-Lang: thread identity.lang into the cascade so STT receives
+    # the matching BCP-47 code and TTS picks a per-language voice via
+    # voices_per_lang / LANG_DEFAULTS. Without this, German users get
+    # English STT models + an English Chirp speaking German text.
+    cascade = build_cascade(bootstrap.voice_config, lang=identity.lang)
     cascade_summary = {
         "stt_present": cascade.stt is not None,
         "llm_present": cascade.llm is not None,
@@ -545,8 +549,14 @@ async def perform_handoff(
     to_agent_id: str,
     reason: str,
     context_summary: str,
+    lang: str = "en",
 ) -> None:
-    """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap."""
+    """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap.
+
+    PR 1.B-Lang: `lang` propagates the user's identity.lang into the new
+    cascade so the specialist's TTS picks a voice in the user's language.
+    Defaults to English so callers that haven't been updated keep working.
+    """
     await oasis.emit(
         topic=TOPIC_HANDOFF_START,
         payload={
@@ -573,7 +583,7 @@ async def perform_handoff(
     new_bootstrap = await ctx_fetcher.fetch(
         user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10
     )
-    new_cascade = build_cascade(new_bootstrap.voice_config)
+    new_cascade = build_cascade(new_bootstrap.voice_config, lang=lang)
 
     # Swap LLM + TTS instances. STT untouched.
     if new_cascade.llm is not None:
