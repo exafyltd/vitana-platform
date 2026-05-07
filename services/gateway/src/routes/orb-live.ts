@@ -6354,49 +6354,26 @@ async function executeLiveApiToolInner(
 
       // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
       case 'explain_feature': {
-        try {
-          const { explainFeature } = await import('../services/explain-feature-service');
-          const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
-          if (!topic) {
-            return { success: false, result: '', error: 'topic is required' };
-          }
-          const mode = args.mode === 'teach_only' || args.mode === 'teach_then_nav'
-            ? args.mode
-            : 'teach_then_nav';
-
-          const result = explainFeature(topic);
-          if (!result.found) {
-            return {
-              success: true,
-              result: JSON.stringify({
-                found: false,
-                reason: result.reason ?? 'no_pattern_match',
-                guidance: 'Voice should fall back to search_knowledge. Search the Maxina Instruction Manual (kb/instruction-manual/maxina/*) first — it covers every concept and screen with fixed sections (What it is / Why it matters / Where to find it / What you see / How to use it). The kb/vitana-system/how-to/ corpus is supporting material.',
-              }),
-            };
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              found: true,
-              mode,
-              topic_canonical: result.topic_canonical,
-              pillar_lift: result.pillar_lift,
-              summary_voice_en: result.summary_voice_en,
-              summary_voice_de: result.summary_voice_de,
-              steps_voice_en: result.steps_voice_en,
-              steps_voice_de: result.steps_voice_de,
-              redirect_route: result.redirect_route,
-              redirect_offer_en: result.redirect_offer_en,
-              redirect_offer_de: result.redirect_offer_de,
-              citation: result.citation,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[explain_feature] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-2: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // call the same explainFeature service through the same wrapper.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'explain_feature',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-01967 — Vitana ID voice messaging ───
