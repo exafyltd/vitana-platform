@@ -44714,9 +44714,20 @@ function renderVoiceToolsCatalogView() {
     var roleSel = document.createElement('select');
     roleSel.className = 'filter-select';
     roleSel.innerHTML = '<option value="">All roles</option><option value="community">community</option><option value="user">user</option><option value="developer">developer</option><option value="admin">admin</option>';
+    // PR 1.B-9: Wired-in filter so operators can quickly answer
+    // "which tools work on LiveKit but not Vertex?" / "which planned
+    // phantoms haven't been wired yet?".
+    var wiredSel = document.createElement('select');
+    wiredSel.className = 'filter-select';
+    wiredSel.innerHTML = '<option value="">All pipelines</option>' +
+        '<option value="both">Both (live)</option>' +
+        '<option value="vertex_only">Vertex only</option>' +
+        '<option value="livekit_only">LiveKit only</option>' +
+        '<option value="none">Planned (neither)</option>';
     filters.appendChild(search);
     filters.appendChild(surfaceSel);
     filters.appendChild(roleSel);
+    filters.appendChild(wiredSel);
     container.appendChild(filters);
 
     var listWrap = document.createElement('div');
@@ -44742,17 +44753,48 @@ function renderVoiceToolsCatalogView() {
     function renderStats(r) {
         if (!r || !r.ok) { stats.textContent = 'Stats unavailable.'; return; }
         var bs = r.by_status || {};
+        var bw = r.by_wired_in || {};
         stats.innerHTML =
             '<span><strong style="color:var(--color-text-primary);">' + (r.total || 0) + '</strong> total</span>' +
             '<span>Live: <strong style="color:var(--color-text-primary);">' + (bs.live || 0) + '</strong></span>' +
             '<span>WIP: <strong style="color:var(--color-text-primary);">' + (bs.wip || 0) + '</strong></span>' +
             '<span>Planned: <strong style="color:var(--color-text-primary);">' + (bs.planned || 0) + '</strong></span>' +
+            '<span style="border-left:1px solid var(--color-border);padding-left:1rem;">Both: <strong style="color:var(--color-text-primary);">' + (bw.both || 0) + '</strong></span>' +
+            '<span>Vertex-only: <strong style="color:var(--color-text-primary);">' + (bw.vertex_only || 0) + '</strong></span>' +
+            '<span>LiveKit-only: <strong style="color:var(--color-text-primary);">' + (bw.livekit_only || 0) + '</strong></span>' +
             '<span style="margin-left:auto;font-size:.7rem;opacity:.7;">manifest ' + escapeHtml(r.generated_at || '?') + '</span>';
+    }
+
+    function wiredPill(wiredIn) {
+        var w = Array.isArray(wiredIn) ? wiredIn : [];
+        var hasV = w.indexOf('vertex') >= 0;
+        var hasL = w.indexOf('livekit') >= 0;
+        var label, color;
+        if (hasV && hasL) { label = 'BOTH';        color = '#22c55e'; }
+        else if (hasV)    { label = 'VERTEX';      color = '#3b82f6'; }
+        else if (hasL)    { label = 'LIVEKIT';     color = '#8b5cf6'; }
+        else              { label = 'NONE';        color = 'var(--color-text-secondary)'; }
+        return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid ' + color + ';color:' + color + ';">' + label + '</span>';
     }
 
     function renderList(r) {
         if (!r || !r.ok) { listWrap.innerHTML = '<div class="error-text">Catalog unavailable.</div>'; return; }
         var tools = r.tools || [];
+        // PR 1.B-9: client-side wired_in filter (server doesn't support it
+        // as a query param yet — the catalog endpoint returns the full list,
+        // we slice locally by the dropdown selection).
+        if (wiredSel.value) {
+            tools = tools.filter(function (t) {
+                var w = Array.isArray(t.wired_in) ? t.wired_in : [];
+                var hasV = w.indexOf('vertex') >= 0;
+                var hasL = w.indexOf('livekit') >= 0;
+                if (wiredSel.value === 'both') return hasV && hasL;
+                if (wiredSel.value === 'vertex_only') return hasV && !hasL;
+                if (wiredSel.value === 'livekit_only') return hasL && !hasV;
+                if (wiredSel.value === 'none') return !hasV && !hasL;
+                return true;
+            });
+        }
         if (tools.length === 0) { listWrap.innerHTML = '<div class="placeholder-content">No tools match the filter.</div>'; return; }
 
         var wrap = document.createElement('div');
@@ -44766,6 +44808,7 @@ function renderVoiceToolsCatalogView() {
             '<th>Surface</th>' +
             '<th>Role</th>' +
             '<th>Status</th>' +
+            '<th>Wired in</th>' +
             '<th>VTID</th>' +
             '<th>Description</th>' +
             '</tr>';
@@ -44778,6 +44821,7 @@ function renderVoiceToolsCatalogView() {
                 '<td>' + escapeHtml(t.surface || '') + '</td>' +
                 '<td style="font-size:.7rem;color:var(--color-text-secondary);">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
                 '<td>' + statusPill(t.status) + '</td>' +
+                '<td>' + wiredPill(t.wired_in) + '</td>' +
                 '<td style="font-size:.7rem;font-family:monospace;color:var(--color-text-secondary);">' + escapeHtml(t.vtid || '—') + '</td>' +
                 '<td style="color:var(--color-text-secondary);">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
             tbody.appendChild(tr);
@@ -44830,6 +44874,7 @@ function renderVoiceToolsCatalogView() {
     search.addEventListener('input', debouncedFetch);
     surfaceSel.addEventListener('change', fetchAndRender);
     roleSel.addEventListener('change', fetchAndRender);
+    wiredSel.addEventListener('change', fetchAndRender);
 
     fetchAndRender();
     return container;

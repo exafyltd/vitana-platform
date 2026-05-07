@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-07T16:30:00.000Z",
-  "source": "manual",
+  "generated_at": "2026-05-07T23:43:18.327Z",
+  "source": "reconciled",
   "total": 147,
   "tools": [
     {
@@ -15,7 +15,11 @@
         "developer"
       ],
       "status": "live",
-      "description": "Search the Vitana knowledge base."
+      "description": "Search the Vitana knowledge base.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "search_calendar",
@@ -27,7 +31,11 @@
         "operator"
       ],
       "status": "live",
-      "description": "Search calendar events."
+      "description": "Search calendar events.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_schedule",
@@ -38,7 +46,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Read the user's calendar via connected provider."
+      "description": "Read the user's calendar via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "create_calendar_event",
@@ -49,7 +61,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Create a calendar event."
+      "description": "Create a calendar event.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "add_to_calendar",
@@ -60,7 +76,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Add an event via connected provider."
+      "description": "Add an event via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_recommendations",
@@ -71,7 +91,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Fetch Autopilot recommendations."
+      "description": "Fetch Autopilot recommendations.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "activate_recommendation",
@@ -82,7 +106,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Activate a recommendation."
+      "description": "Activate a recommendation.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_vitana_index",
@@ -93,7 +121,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Return the user's current Vitana Index."
+      "description": "Return the user's current Vitana Index.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_index_improvement_suggestions",
@@ -104,7 +136,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Suggest concrete actions to lift the Index."
+      "description": "Suggest concrete actions to lift the Index.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "save_diary_entry",
@@ -116,7 +152,11 @@
       ],
       "status": "live",
       "vtid": "VTID-01983",
-      "description": "Save a diary entry from voice."
+      "description": "Save a diary entry from voice.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_reminder",
@@ -128,7 +168,11 @@
       ],
       "status": "live",
       "vtid": "VTID-02601",
-      "description": "Create a one-shot reminder."
+      "description": "Create a one-shot reminder.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "find_reminders",
@@ -140,7 +184,11 @@
       ],
       "status": "live",
       "vtid": "VTID-02601",
-      "description": "Search active reminders."
+      "description": "Search active reminders.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "delete_reminder",
@@ -152,7 +200,11 @@
       ],
       "status": "live",
       "vtid": "VTID-02601",
-      "description": "Delete one or all reminders (after confirm)."
+      "description": "Delete one or all reminders (after confirm).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "post_intent",
@@ -163,7 +215,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Post a new intent (find-a-partner, etc.)."
+      "description": "Post a new intent (find-a-partner, etc.).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_my_intents",
@@ -174,7 +230,11 @@
         "user"
       ],
       "status": "live",
-      "description": "List the user's posted intents."
+      "description": "List the user's posted intents.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "view_intent_matches",
@@ -185,7 +245,11 @@
         "user"
       ],
       "status": "live",
-      "description": "View matches on a specific intent."
+      "description": "View matches on a specific intent.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_matchmaker_result",
@@ -196,7 +260,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Poll for matchmaker agent's polished result."
+      "description": "Poll for matchmaker agent's polished result.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "mark_intent_fulfilled",
@@ -207,7 +275,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Mark an intent as fulfilled."
+      "description": "Mark an intent as fulfilled.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "search_memory",
@@ -219,7 +291,11 @@
         "developer"
       ],
       "status": "live",
-      "description": "Keyword-search memory items."
+      "description": "Keyword-search memory items.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "search_web",
@@ -230,7 +306,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Web search (provider-gated)."
+      "description": "Web search (provider-gated).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "recall_conversation_at_time",
@@ -242,7 +322,11 @@
       ],
       "status": "live",
       "vtid": "VTID-02052",
-      "description": "Recall a past conversation by time reference."
+      "description": "Recall a past conversation by time reference.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "switch_persona",
@@ -253,7 +337,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Switch ORB persona style."
+      "description": "Switch ORB persona style.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "report_to_specialist",
@@ -264,7 +352,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Hand off to a specialist persona (Devon/Sage/Atlas/Mira)."
+      "description": "Hand off to a specialist persona (Devon/Sage/Atlas/Mira).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "search_events",
@@ -275,7 +367,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Search community events."
+      "description": "Search community events.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "search_community",
@@ -286,7 +382,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Search community groups."
+      "description": "Search community groups.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "play_music",
@@ -297,7 +397,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Play music via connected provider."
+      "description": "Play music via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_capability_preference",
@@ -308,7 +412,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Choose default provider for a capability."
+      "description": "Choose default provider for a capability.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "read_email",
@@ -319,7 +427,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Read email via connected Gmail account."
+      "description": "Read email via connected Gmail account.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "find_contact",
@@ -330,7 +442,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Find a contact by name."
+      "description": "Find a contact by name.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "consult_external_ai",
@@ -341,7 +457,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Delegate a question to a connected external AI."
+      "description": "Delegate a question to a connected external AI.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "create_index_improvement_plan",
@@ -352,7 +472,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Schedule a calendar plan to lift a pillar."
+      "description": "Schedule a calendar plan to lift a pillar.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "ask_pillar_agent",
@@ -363,7 +487,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Ask a pillar-specific agent a question."
+      "description": "Ask a pillar-specific agent a question.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "explain_feature",
@@ -374,7 +502,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Explain a Vitana feature."
+      "description": "Explain a Vitana feature.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "resolve_recipient",
@@ -385,7 +517,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Map a name to a community member user_id."
+      "description": "Map a name to a community member user_id.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "send_chat_message",
@@ -396,7 +532,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Send a DM to another member."
+      "description": "Send a DM to another member.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "share_link",
@@ -407,7 +547,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Share a deep link with another member."
+      "description": "Share a deep link with another member.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "share_intent_post",
@@ -418,7 +562,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Share an intent post with someone."
+      "description": "Share an intent post with someone.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "scan_existing_matches",
@@ -429,7 +577,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Scan for new matches on existing intents."
+      "description": "Scan for new matches on existing intents.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "respond_to_match",
@@ -440,7 +592,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Mark interested/not-interested on a match."
+      "description": "Mark interested/not-interested on a match.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "navigate_to_screen",
@@ -451,7 +607,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Navigate to a canonical app screen."
+      "description": "Navigate to a canonical app screen.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "log_water",
@@ -464,7 +624,11 @@
       "vtid": "VTID-02753",
       "added_in_pr": 1837,
       "description": "Log a hydration entry (ml).",
-      "backing_endpoint": "POST /api/v1/integrations/manual/log"
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "log_sleep",
@@ -477,7 +641,11 @@
       "vtid": "VTID-02753",
       "added_in_pr": 1837,
       "description": "Log a sleep duration (minutes).",
-      "backing_endpoint": "POST /api/v1/integrations/manual/log"
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "log_exercise",
@@ -490,7 +658,11 @@
       "vtid": "VTID-02753",
       "added_in_pr": 1837,
       "description": "Log an exercise session (minutes + activity type).",
-      "backing_endpoint": "POST /api/v1/integrations/manual/log"
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "log_meditation",
@@ -503,7 +675,11 @@
       "vtid": "VTID-02753",
       "added_in_pr": 1837,
       "description": "Log a meditation/mindfulness session (minutes).",
-      "backing_endpoint": "POST /api/v1/integrations/manual/log"
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_pillar_subscores",
@@ -515,7 +691,11 @@
       "status": "live",
       "vtid": "VTID-02753",
       "added_in_pr": 1837,
-      "description": "Break down a pillar score into baseline/completions/data/streak."
+      "description": "Break down a pillar score into baseline/completions/data/streak.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_highest_vitana_index",
@@ -527,7 +707,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "Top scorer in the community."
+      "description": "Top scorer in the community.",
+      "wired_in": []
     },
     {
       "name": "get_top_in_pillar",
@@ -539,7 +720,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "Top scorer in a single pillar."
+      "description": "Top scorer in a single pillar.",
+      "wired_in": []
     },
     {
       "name": "get_first_member",
@@ -551,7 +733,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "First/OG community member."
+      "description": "First/OG community member.",
+      "wired_in": []
     },
     {
       "name": "get_newest_member",
@@ -563,7 +746,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "Most recent community signup."
+      "description": "Most recent community signup.",
+      "wired_in": []
     },
     {
       "name": "get_most_followed",
@@ -575,7 +759,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "Member with the most followers."
+      "description": "Member with the most followers.",
+      "wired_in": []
     },
     {
       "name": "ask_who_is",
@@ -587,7 +772,8 @@
       "status": "planned",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
-      "description": "NL router for free-form 'who is...?' questions."
+      "description": "NL router for free-form 'who is...?' questions.",
+      "wired_in": []
     },
     {
       "name": "list_diary_entries",
@@ -599,7 +785,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "List the user's diary entries in a date window."
+      "description": "List the user's diary entries in a date window.",
+      "wired_in": []
     },
     {
       "name": "get_diary_streak",
@@ -611,7 +798,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "Current + longest diary streak."
+      "description": "Current + longest diary streak.",
+      "wired_in": []
     },
     {
       "name": "get_memory_timeline",
@@ -623,7 +811,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "Chronological timeline of facts/diary/events."
+      "description": "Chronological timeline of facts/diary/events.",
+      "wired_in": []
     },
     {
       "name": "recall_memory_about",
@@ -635,7 +824,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "Topic search across memory items with category filter."
+      "description": "Topic search across memory items with category filter.",
+      "wired_in": []
     },
     {
       "name": "get_memory_garden_summary",
@@ -647,7 +837,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "Counts per memory category \u2014 for 'what do you remember about me?'."
+      "description": "Counts per memory category — for 'what do you remember about me?'.",
+      "wired_in": []
     },
     {
       "name": "forget_memory",
@@ -659,7 +850,8 @@
       "status": "planned",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
-      "description": "Soft-delete a single memory item by id (after confirm)."
+      "description": "Soft-delete a single memory item by id (after confirm).",
+      "wired_in": []
     },
     {
       "name": "reschedule_event",
@@ -671,7 +863,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Move a calendar event to a new time."
+      "description": "Move a calendar event to a new time.",
+      "wired_in": []
     },
     {
       "name": "cancel_event",
@@ -683,7 +876,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Soft-cancel a calendar event."
+      "description": "Soft-cancel a calendar event.",
+      "wired_in": []
     },
     {
       "name": "complete_event",
@@ -695,7 +889,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Mark an event completed/skipped/partial."
+      "description": "Mark an event completed/skipped/partial.",
+      "wired_in": []
     },
     {
       "name": "find_free_slot",
@@ -707,7 +902,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Find next available slot for a duration."
+      "description": "Find next available slot for a duration.",
+      "wired_in": []
     },
     {
       "name": "get_event_details",
@@ -719,7 +915,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Read full details of a single event."
+      "description": "Read full details of a single event.",
+      "wired_in": []
     },
     {
       "name": "check_calendar_conflicts",
@@ -731,7 +928,8 @@
       "status": "planned",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
-      "description": "Find events overlapping a proposed window."
+      "description": "Find events overlapping a proposed window.",
+      "wired_in": []
     },
     {
       "name": "snooze_reminder",
@@ -743,7 +941,8 @@
       "status": "planned",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
-      "description": "Push a reminder out by N minutes."
+      "description": "Push a reminder out by N minutes.",
+      "wired_in": []
     },
     {
       "name": "update_reminder",
@@ -755,7 +954,8 @@
       "status": "planned",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
-      "description": "Edit a reminder's text/time."
+      "description": "Edit a reminder's text/time.",
+      "wired_in": []
     },
     {
       "name": "acknowledge_reminder",
@@ -767,7 +967,8 @@
       "status": "planned",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
-      "description": "Mark a reminder as delivered."
+      "description": "Mark a reminder as delivered.",
+      "wired_in": []
     },
     {
       "name": "complete_reminder",
@@ -779,7 +980,8 @@
       "status": "planned",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
-      "description": "Mark a reminder as DONE."
+      "description": "Mark a reminder as DONE.",
+      "wired_in": []
     },
     {
       "name": "list_missed_reminders",
@@ -791,7 +993,8 @@
       "status": "planned",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
-      "description": "List reminders that fired but weren't acked."
+      "description": "List reminders that fired but weren't acked.",
+      "wired_in": []
     },
     {
       "name": "list_my_groups",
@@ -803,7 +1006,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "List the user's group memberships."
+      "description": "List the user's group memberships.",
+      "wired_in": []
     },
     {
       "name": "create_group",
@@ -815,7 +1019,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "Create a new community group."
+      "description": "Create a new community group.",
+      "wired_in": []
     },
     {
       "name": "join_group",
@@ -827,7 +1032,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "Join an existing group by id."
+      "description": "Join an existing group by id.",
+      "wired_in": []
     },
     {
       "name": "invite_to_group",
@@ -839,7 +1045,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "Invite a member to a group."
+      "description": "Invite a member to a group.",
+      "wired_in": []
     },
     {
       "name": "accept_invitation",
@@ -851,7 +1058,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "Accept a pending group invitation."
+      "description": "Accept a pending group invitation.",
+      "wired_in": []
     },
     {
       "name": "decline_invitation",
@@ -863,7 +1071,8 @@
       "status": "planned",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
-      "description": "Decline a pending group invitation."
+      "description": "Decline a pending group invitation.",
+      "wired_in": []
     },
     {
       "name": "submit_bug_report",
@@ -875,7 +1084,8 @@
       "status": "planned",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
-      "description": "Hand off to Devon (bug-report specialist)."
+      "description": "Hand off to Devon (bug-report specialist).",
+      "wired_in": []
     },
     {
       "name": "submit_support_ticket",
@@ -887,7 +1097,8 @@
       "status": "planned",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
-      "description": "Hand off to Sage (support specialist)."
+      "description": "Hand off to Sage (support specialist).",
+      "wired_in": []
     },
     {
       "name": "submit_marketplace_dispute",
@@ -899,7 +1110,8 @@
       "status": "planned",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
-      "description": "Hand off to Atlas (marketplace dispute)."
+      "description": "Hand off to Atlas (marketplace dispute).",
+      "wired_in": []
     },
     {
       "name": "submit_account_issue",
@@ -911,7 +1123,8 @@
       "status": "planned",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
-      "description": "Hand off to Mira (account specialist)."
+      "description": "Hand off to Mira (account specialist).",
+      "wired_in": []
     },
     {
       "name": "list_my_tickets",
@@ -923,7 +1136,8 @@
       "status": "planned",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
-      "description": "List the user's open tickets."
+      "description": "List the user's open tickets.",
+      "wired_in": []
     },
     {
       "name": "start_conversation",
@@ -935,7 +1149,8 @@
       "status": "planned",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
-      "description": "Start a new DM conversation."
+      "description": "Start a new DM conversation.",
+      "wired_in": []
     },
     {
       "name": "list_conversations",
@@ -947,7 +1162,8 @@
       "status": "planned",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
-      "description": "List recent conversations."
+      "description": "List recent conversations.",
+      "wired_in": []
     },
     {
       "name": "mark_conversation_read",
@@ -959,7 +1175,8 @@
       "status": "planned",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
-      "description": "Mark a conversation read."
+      "description": "Mark a conversation read.",
+      "wired_in": []
     },
     {
       "name": "mute_conversation",
@@ -971,7 +1188,8 @@
       "status": "planned",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
-      "description": "Mute a conversation."
+      "description": "Mute a conversation.",
+      "wired_in": []
     },
     {
       "name": "archive_conversation",
@@ -983,7 +1201,8 @@
       "status": "planned",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
-      "description": "Archive a conversation."
+      "description": "Archive a conversation.",
+      "wired_in": []
     },
     {
       "name": "set_language",
@@ -995,7 +1214,8 @@
       "status": "planned",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
-      "description": "Set the UI / voice language."
+      "description": "Set the UI / voice language.",
+      "wired_in": []
     },
     {
       "name": "set_theme",
@@ -1007,7 +1227,8 @@
       "status": "planned",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
-      "description": "Set the visual theme."
+      "description": "Set the visual theme.",
+      "wired_in": []
     },
     {
       "name": "set_voice_preferences",
@@ -1019,7 +1240,8 @@
       "status": "planned",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
-      "description": "Tune voice tone / pace / persona."
+      "description": "Tune voice tone / pace / persona.",
+      "wired_in": []
     },
     {
       "name": "list_connected_apps",
@@ -1031,7 +1253,8 @@
       "status": "planned",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
-      "description": "List connected integrations."
+      "description": "List connected integrations.",
+      "wired_in": []
     },
     {
       "name": "disconnect_app",
@@ -1043,7 +1266,8 @@
       "status": "planned",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
-      "description": "Disconnect an integration."
+      "description": "Disconnect an integration.",
+      "wired_in": []
     },
     {
       "name": "global_search",
@@ -1055,7 +1279,8 @@
       "status": "planned",
       "vtid": "VTID-02773",
       "added_in_pr": 1871,
-      "description": "Unified search across people / posts / products / events."
+      "description": "Unified search across people / posts / products / events.",
+      "wired_in": []
     },
     {
       "name": "browse_news_feed",
@@ -1067,7 +1292,8 @@
       "status": "planned",
       "vtid": "VTID-02773",
       "added_in_pr": 1871,
-      "description": "Browse the community news feed."
+      "description": "Browse the community news feed.",
+      "wired_in": []
     },
     {
       "name": "rsvp_event",
@@ -1079,7 +1305,8 @@
       "status": "planned",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
-      "description": "RSVP to an event."
+      "description": "RSVP to an event.",
+      "wired_in": []
     },
     {
       "name": "cancel_rsvp",
@@ -1091,7 +1318,8 @@
       "status": "planned",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
-      "description": "Cancel an RSVP."
+      "description": "Cancel an RSVP.",
+      "wired_in": []
     },
     {
       "name": "list_upcoming_meetups",
@@ -1103,7 +1331,8 @@
       "status": "planned",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
-      "description": "List upcoming meetups near the user."
+      "description": "List upcoming meetups near the user.",
+      "wired_in": []
     },
     {
       "name": "join_live_room",
@@ -1115,7 +1344,8 @@
       "status": "planned",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
-      "description": "Join a live room."
+      "description": "Join a live room.",
+      "wired_in": []
     },
     {
       "name": "snooze_recommendation",
@@ -1127,7 +1357,8 @@
       "status": "planned",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
-      "description": "Push an Autopilot recommendation later."
+      "description": "Push an Autopilot recommendation later.",
+      "wired_in": []
     },
     {
       "name": "dismiss_recommendation",
@@ -1139,7 +1370,8 @@
       "status": "planned",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
-      "description": "Dismiss an Autopilot recommendation."
+      "description": "Dismiss an Autopilot recommendation.",
+      "wired_in": []
     },
     {
       "name": "explain_recommendation",
@@ -1151,7 +1383,8 @@
       "status": "planned",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
-      "description": "Get a natural-language reason for a recommendation."
+      "description": "Get a natural-language reason for a recommendation.",
+      "wired_in": []
     },
     {
       "name": "update_account_visibility",
@@ -1163,7 +1396,8 @@
       "status": "planned",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
-      "description": "Toggle account visibility (public / followers-only / private)."
+      "description": "Toggle account visibility (public / followers-only / private).",
+      "wired_in": []
     },
     {
       "name": "update_privacy_field",
@@ -1175,7 +1409,8 @@
       "status": "planned",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
-      "description": "Set per-field visibility (e.g. age, location)."
+      "description": "Set per-field visibility (e.g. age, location).",
+      "wired_in": []
     },
     {
       "name": "block_user",
@@ -1187,7 +1422,8 @@
       "status": "planned",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
-      "description": "Block another community member."
+      "description": "Block another community member.",
+      "wired_in": []
     },
     {
       "name": "unblock_user",
@@ -1199,7 +1435,8 @@
       "status": "planned",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
-      "description": "Unblock a previously-blocked member."
+      "description": "Unblock a previously-blocked member.",
+      "wired_in": []
     },
     {
       "name": "update_intent",
@@ -1211,7 +1448,8 @@
       "status": "planned",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
-      "description": "Edit an existing intent post."
+      "description": "Edit an existing intent post.",
+      "wired_in": []
     },
     {
       "name": "delete_intent",
@@ -1223,7 +1461,8 @@
       "status": "planned",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
-      "description": "Delete an intent post."
+      "description": "Delete an intent post.",
+      "wired_in": []
     },
     {
       "name": "browse_intent_board",
@@ -1235,7 +1474,8 @@
       "status": "planned",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
-      "description": "Browse the cross-tenant intent board."
+      "description": "Browse the cross-tenant intent board.",
+      "wired_in": []
     },
     {
       "name": "dispute_match",
@@ -1247,7 +1487,8 @@
       "status": "planned",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
-      "description": "Open a dispute on a match."
+      "description": "Open a dispute on a match.",
+      "wired_in": []
     },
     {
       "name": "get_emotional_state",
@@ -1259,7 +1500,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D28 emotional / cognitive signals."
+      "description": "D28 emotional / cognitive signals.",
+      "wired_in": []
     },
     {
       "name": "get_situational_awareness",
@@ -1271,7 +1513,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D32 situational awareness signals."
+      "description": "D32 situational awareness signals.",
+      "wired_in": []
     },
     {
       "name": "get_availability",
@@ -1283,7 +1526,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D33 availability / readiness signals."
+      "description": "D33 availability / readiness signals.",
+      "wired_in": []
     },
     {
       "name": "get_environmental_context",
@@ -1295,7 +1539,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D34 environmental / mobility signals."
+      "description": "D34 environmental / mobility signals.",
+      "wired_in": []
     },
     {
       "name": "get_social_context",
@@ -1307,7 +1552,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D35 social context signals."
+      "description": "D35 social context signals.",
+      "wired_in": []
     },
     {
       "name": "get_life_stage_context",
@@ -1319,7 +1565,8 @@
       "status": "planned",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
-      "description": "D40 life stage signals."
+      "description": "D40 life stage signals.",
+      "wired_in": []
     },
     {
       "name": "set_alarm",
@@ -1331,7 +1578,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "Set a wake-up alarm at HH:MM."
+      "description": "Set a wake-up alarm at HH:MM.",
+      "wired_in": []
     },
     {
       "name": "list_alarms",
@@ -1343,7 +1591,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "List active alarms."
+      "description": "List active alarms.",
+      "wired_in": []
     },
     {
       "name": "delete_alarm",
@@ -1355,7 +1604,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "Cancel an alarm."
+      "description": "Cancel an alarm.",
+      "wired_in": []
     },
     {
       "name": "start_timer",
@@ -1367,7 +1617,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "Start a countdown timer (60s-24h)."
+      "description": "Start a countdown timer (60s-24h).",
+      "wired_in": []
     },
     {
       "name": "start_pomodoro",
@@ -1379,7 +1630,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "Start a pomodoro work block (5-90min)."
+      "description": "Start a pomodoro work block (5-90min).",
+      "wired_in": []
     },
     {
       "name": "list_active_timers",
@@ -1391,7 +1643,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "List active timers and pomodoros."
+      "description": "List active timers and pomodoros.",
+      "wired_in": []
     },
     {
       "name": "get_world_time",
@@ -1403,7 +1656,8 @@
       "status": "planned",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
-      "description": "Current local time in a city or IANA timezone."
+      "description": "Current local time in a city or IANA timezone.",
+      "wired_in": []
     },
     {
       "name": "find_perfect_product",
@@ -1415,7 +1669,10 @@
       "status": "live",
       "vtid": "VTID-02830",
       "added_in_pr": 1883,
-      "description": "Flagship deep search \u2014 fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale."
+      "description": "Flagship deep search — fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale.",
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "find_perfect_practitioner",
@@ -1427,7 +1684,10 @@
       "status": "live",
       "vtid": "VTID-02830",
       "added_in_pr": 1883,
-      "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering."
+      "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering.",
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "find_perfect_match",
@@ -1439,7 +1699,8 @@
       "status": "planned",
       "vtid": "VTID-02780",
       "added_in_pr": 1883,
-      "description": "Flagship people-match search (workout partner, accountability buddy, mentor)."
+      "description": "Flagship people-match search (workout partner, accountability buddy, mentor).",
+      "wired_in": []
     },
     {
       "name": "ask_who_is",
@@ -1451,7 +1712,8 @@
       "status": "planned",
       "vtid": "VTID-02780",
       "added_in_pr": 1883,
-      "description": "Free-form 'who is...' superlative questions about the community."
+      "description": "Free-form 'who is...' superlative questions about the community.",
+      "wired_in": []
     },
     {
       "name": "dev_list_vtids",
@@ -1465,7 +1727,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Recent VTIDs from the ledger; filter by status."
+      "description": "Recent VTIDs from the ledger; filter by status.",
+      "wired_in": []
     },
     {
       "name": "dev_get_vtid_status",
@@ -1479,7 +1742,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Lookup a single VTID by id."
+      "description": "Lookup a single VTID by id.",
+      "wired_in": []
     },
     {
       "name": "dev_list_pending_approvals",
@@ -1493,7 +1757,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "PRs / actions waiting on approval."
+      "description": "PRs / actions waiting on approval.",
+      "wired_in": []
     },
     {
       "name": "dev_count_approvals",
@@ -1507,7 +1772,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Pending approval count \u2014 for 'how many PRs are waiting?'."
+      "description": "Pending approval count — for 'how many PRs are waiting?'.",
+      "wired_in": []
     },
     {
       "name": "dev_approve_pr",
@@ -1521,7 +1787,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies)."
+      "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies).",
+      "wired_in": []
     },
     {
       "name": "dev_reject_pr",
@@ -1535,7 +1802,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Reject a queued PR / action with reason."
+      "description": "Reject a queued PR / action with reason.",
+      "wired_in": []
     },
     {
       "name": "dev_list_voice_sessions",
@@ -1549,7 +1817,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Recent ORB voice sessions for Voice Lab."
+      "description": "Recent ORB voice sessions for Voice Lab.",
+      "wired_in": []
     },
     {
       "name": "dev_list_routines",
@@ -1563,7 +1832,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Daily routines + last run status."
+      "description": "Daily routines + last run status.",
+      "wired_in": []
     },
     {
       "name": "dev_get_routine_detail",
@@ -1577,7 +1847,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Routine detail + last N runs."
+      "description": "Routine detail + last N runs.",
+      "wired_in": []
     },
     {
       "name": "dev_list_active_healing",
@@ -1591,7 +1862,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Self-healing runs in flight."
+      "description": "Self-healing runs in flight.",
+      "wired_in": []
     },
     {
       "name": "dev_get_autonomy_pulse",
@@ -1605,7 +1877,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs)."
+      "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs).",
+      "wired_in": []
     },
     {
       "name": "dev_list_agents",
@@ -1619,7 +1892,8 @@
       "status": "planned",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
-      "description": "21-agent registry with heartbeat status."
+      "description": "21-agent registry with heartbeat status.",
+      "wired_in": []
     },
     {
       "name": "admin_briefing",
@@ -1630,8 +1904,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Top open admin_insights for the tenant."
+      "status": "planned",
+      "description": "Top open admin_insights for the tenant.",
+      "wired_in": []
     },
     {
       "name": "admin_kpi_snapshot",
@@ -1642,8 +1917,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Current KPI family snapshot for the tenant."
+      "status": "planned",
+      "description": "Current KPI family snapshot for the tenant.",
+      "wired_in": []
     },
     {
       "name": "admin_insight_detail",
@@ -1654,8 +1930,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Full body of one admin insight."
+      "status": "planned",
+      "description": "Full body of one admin insight.",
+      "wired_in": []
     },
     {
       "name": "admin_approve",
@@ -1666,8 +1943,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Mark an insight approved."
+      "status": "planned",
+      "description": "Mark an insight approved.",
+      "wired_in": []
     },
     {
       "name": "admin_reject",
@@ -1678,8 +1956,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Mark an insight rejected."
+      "status": "planned",
+      "description": "Mark an insight rejected.",
+      "wired_in": []
     },
     {
       "name": "admin_snooze",
@@ -1690,8 +1969,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Snooze an insight for N hours/days."
+      "status": "planned",
+      "description": "Snooze an insight for N hours/days.",
+      "wired_in": []
     },
     {
       "name": "admin_history",
@@ -1702,8 +1982,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "KPI family time-series for the last N days."
+      "status": "planned",
+      "description": "KPI family time-series for the last N days.",
+      "wired_in": []
     },
     {
       "name": "admin_health_check",
@@ -1714,8 +1995,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Tenant-health-index probe."
+      "status": "planned",
+      "description": "Tenant-health-index probe.",
+      "wired_in": []
     },
     {
       "name": "admin_pause_autopilot",
@@ -1726,8 +2008,9 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "live",
-      "description": "Emergency pause request for tenant autopilot."
+      "status": "planned",
+      "description": "Emergency pause request for tenant autopilot.",
+      "wired_in": []
     },
     {
       "name": "find_community_member",
@@ -1738,7 +2021,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Resolve a community member by name (alias for resolve_recipient on the discover surface)."
+      "description": "Resolve a community member by name (alias for resolve_recipient on the discover surface).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_current_screen",
@@ -1749,7 +2036,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Return the screen the user is currently looking at."
+      "description": "Return the screen the user is currently looking at.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "navigate",
@@ -1760,7 +2051,11 @@
         "user"
       ],
       "status": "live",
-      "description": "Navigate to a target screen (alias for navigate_to_screen)."
+      "description": "Navigate to a target screen (alias for navigate_to_screen).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     }
   ]
 }
