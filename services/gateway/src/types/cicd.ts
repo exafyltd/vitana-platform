@@ -548,6 +548,10 @@ export type CicdEventType =
   // runner-up. Lets ops measure how often the disambiguation gap is
   // wide enough for confident auto-nav vs list-only.
   | 'orb.intent_matches.auto_nav'
+  // VTID-01270A (PR 1.B-7): search_community auto-redirected to
+  // COMM.GROUP_DETAIL because result was unambiguous (single hit or
+  // exact name match). Lets ops measure auto-nav vs list-only ratio.
+  | 'orb.search_community.auto_nav'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'

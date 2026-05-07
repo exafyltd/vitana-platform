@@ -264,8 +264,28 @@ async def search_events(context: RunContext, query: str = "") -> str:
 
 @function_tool
 async def search_community(context: RunContext, query: str) -> str:
-    """Search community groups / channels (VTID-01270A)."""
-    body = await _dispatch(context, "search_community", {"query": query})
+    """Search community groups / channels.
+
+    PR 1.B-7: when the result is unambiguous (single hit OR exact name
+    match) the user is auto-redirected to that group's detail screen via
+    the data-channel directive. When several groups are comparable, the
+    list is returned and you should ask the user which to open.
+
+    Args:
+        query: Free-text search across group name + description + topic.
+    """
+    body = await _dispatch_with_directive(context, "search_community", {"query": query})
+    res = body.get("result") if isinstance(body, dict) else None
+    if isinstance(res, dict) and res.get("decision") == "auto_nav":
+        directive = res.get("directive") or {}
+        new_route = directive.get("route") if isinstance(directive, dict) else None
+        if isinstance(new_route, str) and new_route:
+            gw = _gw(context)
+            previous = gw.current_route
+            gw.current_route = new_route
+            if previous and previous != new_route:
+                trail = [r for r in (gw.recent_routes or []) if r != previous]
+                gw.recent_routes = ([previous] + trail)[:5]
     return summarize(body)
 
 

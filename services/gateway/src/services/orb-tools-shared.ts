@@ -562,6 +562,25 @@ export async function tool_search_community(
       text: 'No community groups found matching your query.',
     };
   }
+
+  // PR 1.B-7: auto-redirect when the result is unambiguous (single hit, OR
+  // the query exactly matches one group's name / topic_key — Postgres ilike
+  // with `*query*` wildcards is permissive, so we score the top hit's name
+  // similarity to disambiguate). For comparable matches, list-only and let
+  // the LLM ask which the user wants. Mirrors the gap-based heuristic used
+  // for view_intent_matches (PR 1.B-6) and find_community_member.
+  const isExactName = (group: { name: string; topic_key: string }) => {
+    const nq = query.toLowerCase().trim();
+    if (!nq) return false;
+    return (
+      group.name.toLowerCase() === nq ||
+      group.topic_key.toLowerCase() === nq ||
+      group.name.toLowerCase().includes(nq) && nq.length >= 3 && groups.length <= 2
+    );
+  };
+  const top = groups[0];
+  const dominant = top && (groups.length === 1 || isExactName(top));
+
   const MAX = 2000;
   let formatted = groups
     .map((g) => `${g.name} — ${(g.description || '').substring(0, 120)} | Topic: ${g.topic_key}`)
@@ -569,9 +588,52 @@ export async function tool_search_community(
   if (formatted.length > MAX) {
     formatted = formatted.substring(0, MAX) + '\n... (truncated)';
   }
+
+  if (dominant && top) {
+    const route = `/comm/groups/${encodeURIComponent(top.id)}`;
+    const directive = {
+      type: 'orb_directive',
+      directive: 'navigate',
+      screen_id: 'COMM.GROUP_DETAIL',
+      route,
+      title: top.name,
+      reason: 'search_community dominant pick',
+      vtid: 'VTID-01270A',
+    };
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    emitOasisEvent({
+      vtid: 'VTID-01270A',
+      type: 'orb.search_community.auto_nav',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: `search_community auto-redirect → ${top.name}`,
+      payload: {
+        session_id: id.session_id || null,
+        query,
+        group_id: top.id,
+        topic_key: top.topic_key,
+        result_count: groups.length,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+    }).catch(() => {});
+
+    return {
+      ok: true,
+      result: {
+        groups,
+        decision: 'auto_nav',
+        directive,
+        redirect: { route },
+      },
+      text: `Opening "${top.name}" — ${(top.description || '').substring(0, 120)}`,
+    };
+  }
+
   return {
     ok: true,
-    result: { groups },
+    result: { groups, decision: 'list_only' },
     text: `Found ${groups.length} community groups:\n${formatted}`,
   };
 }
