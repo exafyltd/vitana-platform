@@ -5289,57 +5289,26 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_community': {
-        const query = (args.query as string) || '';
+        // PR B-8: lifted to services/orb-tools-shared.ts.
         const SUPABASE_URL = process.env.SUPABASE_URL;
-        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
-
-        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
           return { success: true, result: 'Community search is temporarily unavailable.' };
         }
-
-        const headers = {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        };
-
-        const tenantId = lens.tenant_id;
-        let groupsUrl = `${SUPABASE_URL}/rest/v1/community_groups?select=id,name,topic_key,description,is_public&tenant_id=eq.${tenantId}&is_public=eq.true&order=created_at.desc&limit=8`;
-        if (query) {
-          groupsUrl += `&or=(name.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*,topic_key.ilike.*${encodeURIComponent(query)}*)`;
-        }
-
-        try {
-          const resp = await fetch(groupsUrl, { method: 'GET', headers });
-          if (!resp.ok) {
-            console.warn(`[VTID-01270A] community_groups query failed: ${resp.status}`);
-            return { success: true, result: 'Could not search community groups at this time.' };
-          }
-
-          const groups = await resp.json() as Array<{
-            id: string; name: string; topic_key: string;
-            description: string; is_public: boolean;
-          }>;
-
-          if (groups.length === 0) {
-            console.log(`[VTID-01270A] search_community: 0 hits for "${query}", ${Date.now() - startTime}ms`);
-            return { success: true, result: 'No community groups found matching your query.' };
-          }
-
-          const MAX_TOOL_RESPONSE_CHARS = 2000;
-          let formatted = groups
-            .map(g => `${g.name} — ${(g.description || '').substring(0, 120)} | Topic: ${g.topic_key}`)
-            .join('\n');
-          if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
-            formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
-          }
-
-          console.log(`[VTID-01270A] search_community: ${groups.length} hits for "${query}", ${formatted.length} chars, ${Date.now() - startTime}ms`);
-          return { success: true, result: `Found ${groups.length} community groups:\n${formatted}` };
-        } catch (e: any) {
-          console.warn(`[VTID-01270A] search_community error: ${e.message}`);
-          return { success: true, result: 'Community search encountered an error. Please try again.' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'search_community',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'get_recommendations': {
@@ -6254,50 +6223,28 @@ async function executeLiveApiToolInner(
 
       // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar deep-question dispatch ───
       case 'ask_pillar_agent': {
-        try {
-          const { askPillarAgent } = await import('../services/pillar-agents/router');
-          const { resolvePillarKey } = await import('../lib/vitana-pillars');
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-
-          const question = typeof args.question === 'string' ? args.question.trim() : '';
-          if (!question) {
-            return { success: false, result: '', error: 'question is required' };
-          }
-          // resolvePillarKey silently translates retired aliases; undefined
-          // = no explicit pillar passed, let the router auto-detect.
-          const explicit = resolvePillarKey(args.pillar);
-
-          const answer = await askPillarAgent(client, lens.user_id, question, explicit);
-          if (!answer) {
-            return {
-              success: true,
-              result: JSON.stringify({
-                routed: false,
-                reason: 'no_pillar_detected_or_agent_unavailable',
-                guidance: 'Voice should fall back to search_knowledge against the Book of the Vitana Index.',
-              }),
-            };
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              routed: true,
-              pillar: answer.pillar,
-              text: answer.text,
-              citations: answer.citations,
-              data: answer.data,
-              agent_version: answer.agent_version,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[ask_pillar_agent] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-8: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'ask_pillar_agent',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
