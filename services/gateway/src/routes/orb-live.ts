@@ -5422,12 +5422,11 @@ async function executeLiveApiToolInner(
       }
 
       // VTID-02754 — Find ONE community member by free-text query and redirect
-      // to their profile. Reads the gateway's own /api/v1/community/find-member
-      // endpoint (which runs the 4-tier ranker, persists to
-      // community_search_history, and returns voice_summary + match_recipe).
-      // The handler itself queues the navigation directive so the widget
-      // redirects to /u/<vitana_id>?from=who_search&search_id=<id> on
-      // turn_complete.
+      // to their profile. Calls findCommunityMember() directly via dynamic
+      // import (rather than an internal HTTP roundtrip) because session.access_token
+      // is never populated on the WebSocket session, so a self-call would 401.
+      // Persists to community_search_history with the admin client and queues
+      // the navigation directive so the widget redirects on turn_complete.
       case 'find_community_member': {
         const query = String(args.query || '').trim();
         if (!query) {
@@ -5441,36 +5440,68 @@ async function executeLiveApiToolInner(
           };
         }
         const excluded = Array.isArray(args.excluded_vitana_ids)
-          ? (args.excluded_vitana_ids as unknown[]).filter((s) => typeof s === 'string')
+          ? (args.excluded_vitana_ids as unknown[]).filter((s): s is string => typeof s === 'string')
           : [];
 
         try {
-          const baseUrl = process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080';
-          const url = `${baseUrl}/api/v1/community/find-member`;
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
-            },
-            body: JSON.stringify({ query, excluded_vitana_ids: excluded }),
-          });
-          const data: any = await res.json().catch(() => ({}));
-          if (!res.ok || !data?.ok) {
-            console.warn(`[VTID-02754] find_community_member upstream failed: ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
-            return {
-              success: false,
-              result: '',
-              error: data?.error || `find_member_failed_${res.status}`,
-            };
+          const { findCommunityMember, hashQuery } = await import(
+            '../services/voice-tools/community-member-ranker'
+          );
+          const { createClient } = await import('@supabase/supabase-js');
+          const supaUrl = process.env.SUPABASE_URL;
+          const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+          if (!supaUrl || !supaKey) {
+            return { success: false, result: '', error: 'supabase_not_configured' };
           }
+          const adminSb = createClient(supaUrl, supaKey, {
+            auth: { autoRefreshToken: false, persistSession: false },
+          });
+
+          const outcome = await findCommunityMember(adminSb, {
+            viewer_user_id: session.identity.user_id,
+            viewer_tenant_id: session.identity.tenant_id as string,
+            query,
+            excluded_vitana_ids: excluded,
+          });
+
+          // Persist a row to community_search_history; the frontend reads it by
+          // search_id to render the WhyThisMatchCard.
+          let searchId: string | undefined;
+          try {
+            const { data: inserted } = await adminSb
+              .from('community_search_history')
+              .insert({
+                viewer_user_id: session.identity.user_id,
+                viewer_vitana_id: session.identity?.vitana_id ?? null,
+                tenant_id: session.identity.tenant_id as string,
+                query,
+                query_hash: hashQuery(query, session.identity.user_id),
+                tier: outcome.tier,
+                lane: outcome.lane,
+                winner_user_id: outcome.winnerUserId,
+                winner_vitana_id: outcome.result.vitana_id,
+                recipe_json: outcome.result.match_recipe,
+                excluded_vitana_ids: excluded,
+              })
+              .select('search_id')
+              .maybeSingle();
+            searchId = (inserted as any)?.search_id;
+          } catch (persistErr: any) {
+            console.warn(`[VTID-02754] community_search_history insert failed: ${persistErr?.message}`);
+          }
+
+          // Bake search_id into the redirect route so WhyThisMatchCard can fetch it.
+          const route = searchId
+            ? (outcome.result.redirect.route.includes('search_id=')
+                ? outcome.result.redirect.route
+                : `${outcome.result.redirect.route}${outcome.result.redirect.route.includes('?') ? '&' : '?'}search_id=${searchId}`)
+            : outcome.result.redirect.route;
 
           // Queue navigation. Mirrors the navigate_to_screen flow at line ~4073.
           session.pendingNavigation = {
             screen_id: 'profile_with_match',
-            route: data.redirect.route,
-            title: `Profile: ${data.display_name}`,
+            route,
+            title: `Profile: ${outcome.result.display_name}`,
             reason: 'find_community_member tool call',
             decision_source: 'direct',
             requested_at: Date.now(),
@@ -5480,8 +5511,8 @@ async function executeLiveApiToolInner(
           // Update in-memory session route so subsequent get_current_screen
           // calls reflect the navigation. Mirrors navigate_to_screen line 4091-4097.
           const previousRoute = session.current_route;
-          session.current_route = data.redirect.route;
-          if (previousRoute && previousRoute !== data.redirect.route) {
+          session.current_route = route;
+          if (previousRoute && previousRoute !== route) {
             const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
             const deduped = trail.filter(r => r !== previousRoute);
             session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
@@ -5492,15 +5523,15 @@ async function executeLiveApiToolInner(
             type: 'community.find_member.matched',
             source: 'orb-live',
             status: 'info',
-            message: `find_community_member matched "${query}" → ${data.vitana_id}`,
+            message: `find_community_member matched "${query}" → ${outcome.result.vitana_id}`,
             payload: {
               session_id: session.sessionId,
               query,
-              tier: data.match_recipe?.tier,
-              lane: data.match_recipe?.lane,
-              winner_vitana_id: data.vitana_id,
-              ethics_reroute: !!data.match_recipe?.ethics_reroute,
-              search_id: data.search_id,
+              tier: outcome.tier,
+              lane: outcome.lane,
+              winner_vitana_id: outcome.result.vitana_id,
+              ethics_reroute: !!outcome.result.match_recipe?.ethics_reroute,
+              search_id: searchId,
             },
             actor_id: session.identity.user_id,
             actor_role: 'user',
@@ -5508,14 +5539,14 @@ async function executeLiveApiToolInner(
             vitana_id: session.identity?.vitana_id ?? undefined,
           }).catch(() => {});
 
-          // Return ONLY the voice_summary so Gemini reads it aloud and stops.
+          // Return the voice_summary so Gemini reads it aloud and stops.
           // The widget is closing — no follow-up commentary required.
           return {
             success: true,
-            result: `${data.voice_summary} The user is now being taken to ${data.display_name}'s profile. The widget is closing — stop speaking immediately after this line.`,
+            result: `${outcome.result.voice_summary} The user is now being taken to ${outcome.result.display_name}'s profile. The widget is closing — stop speaking immediately after this line.`,
           };
         } catch (err: any) {
-          console.error('[VTID-02754] find_community_member error:', err?.message);
+          console.error('[VTID-02754] find_community_member error:', err?.message, err?.stack);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
       }
