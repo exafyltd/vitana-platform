@@ -48,13 +48,16 @@ CREATE POLICY community_search_history_self_read
 -- Daily TTL cleanup: drop rows older than 30 days. Mirrors
 -- oasis-events-info-retention pattern. No-op if pg_cron isn't available
 -- (the gateway will still function; rows just won't auto-prune).
-DO $$
+-- Uses $body$ outer tag to avoid nested $$ ambiguity with the inner
+-- cron.schedule SQL string.
+DO $body$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     PERFORM cron.schedule(
       'community-search-history-retention',
       '15 4 * * *',
-      $$DELETE FROM public.community_search_history WHERE created_at < now() - interval '30 days'$$
+      'DELETE FROM public.community_search_history WHERE created_at < now() - interval ''30 days'''
     );
   END IF;
-END $$;
+END
+$body$;
