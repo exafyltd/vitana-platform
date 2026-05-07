@@ -1895,6 +1895,177 @@ async function tool_get_pillar_subscores(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
+//
+// Both tools fuse the user's weakest Vitana Index pillar + active Life Compass
+// goal with multi-criteria filters from the natural-language ask. They degrade
+// gracefully: when the backing catalog table is empty/missing in the active
+// environment, the tool returns ok=true with available=false + a clean
+// "not yet computed" reason so the orb can speak it.
+// ---------------------------------------------------------------------------
+
+async function _getWeakestPillarAndGoal(
+  sb: SupabaseClient,
+  userId: string,
+): Promise<{ weakest_pillar: string | null; compass_goal: string | null }> {
+  let weakest: string | null = null;
+  let goal: string | null = null;
+  try {
+    const { data: idx } = await sb
+      .from('vitana_index_scores')
+      .select('pillars')
+      .eq('user_id', userId)
+      .order('computed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (idx?.pillars && typeof idx.pillars === 'object') {
+      const pairs = Object.entries(idx.pillars as Record<string, number>);
+      pairs.sort((a, b) => a[1] - b[1]);
+      weakest = pairs[0]?.[0] ?? null;
+    }
+  } catch {
+    /* table may not exist in all envs */
+  }
+  try {
+    const { data: lc } = await sb
+      .from('life_compass')
+      .select('current_goal')
+      .eq('user_id', userId)
+      .maybeSingle();
+    goal = (lc?.current_goal as string) ?? null;
+  } catch {
+    /* table may not exist */
+  }
+  return { weakest_pillar: weakest, compass_goal: goal };
+}
+
+export async function tool_find_perfect_product(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const goalText = String(args.goal_text ?? '').trim();
+  const askedPillar = String(args.pillar ?? '').trim().toLowerCase();
+  const maxPrice = args.max_price != null ? Number(args.max_price) : null;
+  const excludeIngredients = Array.isArray(args.exclude_ingredients)
+    ? (args.exclude_ingredients as string[]).map((s) => String(s).toLowerCase())
+    : [];
+
+  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
+  const targetPillar = askedPillar || ctx.weakest_pillar || '';
+
+  let query = sb.from('products_catalog').select('*').limit(10);
+  if (targetPillar) query = query.contains('pillar_tags', [targetPillar]);
+  if (maxPrice && Number.isFinite(maxPrice)) query = query.lte('price', maxPrice);
+
+  const { data, error } = await query;
+  if (error) {
+    if (/relation .* does not exist/i.test(error.message)) {
+      return {
+        ok: true,
+        result: { available: false, reason: 'products_catalog_not_deployed' },
+        text: 'I don\'t have a product catalog wired up in this environment yet, so I can\'t recommend anything.',
+      };
+    }
+    return { ok: false, error: `find_perfect_product failed: ${error.message}` };
+  }
+
+  const filtered = (data || []).filter((p: any) => {
+    if (!excludeIngredients.length) return true;
+    const ings = (p.ingredients || []).map((i: string) => String(i).toLowerCase());
+    return !excludeIngredients.some((ex) => ings.includes(ex));
+  }).slice(0, 3);
+
+  if (filtered.length === 0) {
+    return {
+      ok: true,
+      result: { available: true, results: [], pillar: targetPillar || null },
+      text: `I couldn't find a product matching your filters${targetPillar ? ` for the ${targetPillar} pillar` : ''}.`,
+    };
+  }
+
+  const rationaleBits: string[] = [];
+  if (targetPillar) rationaleBits.push(`focused on your ${targetPillar} pillar`);
+  if (ctx.compass_goal) rationaleBits.push(`aligned with your goal "${ctx.compass_goal}"`);
+  if (goalText) rationaleBits.push(`matching: ${goalText}`);
+  const rationale = rationaleBits.length
+    ? `Top picks ${rationaleBits.join(', ')}.`
+    : 'Top community-rated picks for you.';
+
+  const titles = filtered.map((p: any) => p.name || p.title || 'product').slice(0, 3);
+  return {
+    ok: true,
+    result: {
+      available: true,
+      pillar: targetPillar || null,
+      compass_goal: ctx.compass_goal,
+      rationale,
+      results: filtered,
+    },
+    text: `${rationale} Top three: ${titles.join(', ')}.`,
+  };
+}
+
+export async function tool_find_perfect_practitioner(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const specialty = String(args.specialty ?? '').trim();
+  const language = String(args.language ?? '').trim();
+  const telehealthOk = args.telehealth_ok;
+  const maxPrice = args.max_price != null ? Number(args.max_price) : null;
+
+  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
+
+  let query = sb.from('services_catalog').select('*').limit(10);
+  if (specialty) query = query.ilike('specialty', `%${specialty}%`);
+  if (language) query = query.contains('languages', [language]);
+  if (telehealthOk === true || telehealthOk === false) query = query.eq('telehealth_supported', telehealthOk);
+  if (maxPrice && Number.isFinite(maxPrice)) query = query.lte('price', maxPrice);
+
+  const { data, error } = await query;
+  if (error) {
+    if (/relation .* does not exist/i.test(error.message)) {
+      return {
+        ok: true,
+        result: { available: false, reason: 'services_catalog_not_deployed' },
+        text: 'I don\'t have a practitioner catalog wired up in this environment yet, so I can\'t recommend anyone.',
+      };
+    }
+    return { ok: false, error: `find_perfect_practitioner failed: ${error.message}` };
+  }
+
+  const top3 = (data || []).slice(0, 3);
+  if (top3.length === 0) {
+    return {
+      ok: true,
+      result: { available: true, results: [] },
+      text: `I couldn't find a practitioner matching your filters.`,
+    };
+  }
+
+  const rationaleBits: string[] = [];
+  if (specialty) rationaleBits.push(`specialty "${specialty}"`);
+  if (ctx.compass_goal) rationaleBits.push(`aligned with your goal "${ctx.compass_goal}"`);
+  const rationale = rationaleBits.length
+    ? `Top practitioners matching ${rationaleBits.join(' and ')}.`
+    : 'Top-rated practitioners matching your filters.';
+
+  const names = top3.map((p: any) => p.display_name || p.name || 'practitioner');
+  return {
+    ok: true,
+    result: {
+      available: true,
+      compass_goal: ctx.compass_goal,
+      rationale,
+      results: top3,
+    },
+    text: `${rationale} Top three: ${names.join(', ')}.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
@@ -1935,6 +2106,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
   navigate_to_screen: (args) => tool_navigate_to_screen(args),
+  // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
+  find_perfect_product: tool_find_perfect_product,
+  find_perfect_practitioner: tool_find_perfect_practitioner,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
