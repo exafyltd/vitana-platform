@@ -6326,119 +6326,49 @@ async function executeLiveApiToolInner(
 
       // ─── VTID-01967 — Vitana ID voice messaging ───
       case 'resolve_recipient': {
-        const spoken = String(args.spoken_name || '').trim();
-        const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
-        if (!spoken) {
-          return { success: false, result: '', error: 'spoken_name is required' };
+        // PR B-6: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const { data, error } = await supabase.rpc('resolve_recipient_candidates', {
-            p_actor: session.identity.user_id,
-            p_token: spoken,
-            p_limit: limit,
-            p_global: false,
-          });
-          if (error) {
-            console.error('[VTID-01967] resolve_recipient RPC error:', error.message);
-            return { success: false, result: '', error: error.message };
-          }
-          const candidates = (data || []) as Array<{
-            user_id: string;
-            vitana_id: string | null;
-            display_name: string | null;
-            score: number;
-            reason: string;
-          }>;
-          const top_confidence = candidates.length > 0 ? Number(candidates[0].score) : 0;
-          const ambiguous =
-            candidates.length === 0 ||
-            top_confidence < 0.85 ||
-            (candidates.length > 1 && Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
-          return {
-            success: true,
-            result: JSON.stringify({
-              candidates,
-              top_confidence,
-              ambiguous,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] resolve_recipient error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'resolve_recipient',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'send_chat_message': {
-        const recipientUserId = String(args.recipient_user_id || '').trim();
-        const recipientLabel = String(args.recipient_label || '').trim();
-        const body = String(args.body || '').trim();
-        if (!recipientUserId || !body) {
-          return { success: false, result: '', error: 'recipient_user_id and body are required' };
+        // PR B-6: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (recipientUserId === session.identity.user_id) {
-          return { success: false, result: '', error: 'cannot message yourself' };
-        }
-        try {
-          const { checkVoiceSendQuota } = await import('../services/voice-message-guard');
-          const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-          const recipientVitanaId = await resolveVitanaId(recipientUserId);
-          const quota = await checkVoiceSendQuota({
-            session_id: session.sessionId,
-            actor_id: session.identity.user_id,
-            vitana_id: session.identity.vitana_id,
-            recipient_user_id: recipientUserId,
-            recipient_vitana_id: recipientVitanaId,
-            kind: 'message',
-            body_length: body.length,
-          });
-          if (!quota.allowed) {
-            return {
-              success: true,
-              result: JSON.stringify({ ok: false, rate_limited: true, reason: quota.reason }),
-            };
-          }
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-          const senderVitanaId = session.identity.vitana_id || (await resolveVitanaId(session.identity.user_id));
-          const { error: insErr } = await supabase
-            .from('chat_messages')
-            .insert({
-              tenant_id: session.identity.tenant_id,
-              sender_id: session.identity.user_id,
-              receiver_id: recipientUserId,
-              content: body,
-              ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-              ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-              metadata: {
-                source: 'voice',
-                session_id: session.sessionId,
-                recipient_label: recipientLabel || recipientVitanaId,
-              },
-            });
-          if (insErr) {
-            console.error('[VTID-01967] send_chat_message insert error:', insErr.message);
-            return { success: false, result: '', error: insErr.message };
-          }
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              recipient_label: recipientLabel || recipientVitanaId || recipientUserId,
-              remaining: quota.remaining,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01967] send_chat_message error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'send_chat_message',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // V2 — Proactive Initiative Engine: activate an Autopilot recommendation.

@@ -708,28 +708,58 @@ export async function tool_resolve_recipient(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const name = String(args.name ?? '').trim();
-  if (!name) return { ok: false, error: 'name is required' };
-  const { data } = await sb
-    .from('app_users')
-    .select('user_id, vitana_id, display_name')
-    .ilike('display_name', `%${name}%`)
-    .neq('user_id', id.user_id)
-    .limit(5);
-  const candidates = (data || []).map((u) => ({
-    user_id: u.user_id,
-    vitana_id: u.vitana_id,
-    display_name: u.display_name,
-    score: 0.8,
-    reason: 'display_name fuzzy match',
-  }));
+  // PR B-6: lifted from orb-live.ts:6340 (VTID-01967). The shared stub did
+  // a naive ilike; Vertex calls the canonical Supabase RPC
+  // resolve_recipient_candidates which scopes to the actor's tenant + same-
+  // user filter and returns scored candidates with a `reason`. That RPC is
+  // also what the rest of the platform uses for messaging, so unifying here
+  // keeps "resolve who the user means" identical across surfaces.
+  const spoken = String(args.spoken_name ?? args.name ?? '').trim();
+  const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
+  if (!spoken) {
+    return { ok: false, error: 'spoken_name is required' };
+  }
+  const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+    p_actor: id.user_id,
+    p_token: spoken,
+    p_limit: limit,
+    p_global: false,
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  const candidates = (data || []) as Array<{
+    user_id: string;
+    vitana_id: string | null;
+    display_name: string | null;
+    score: number;
+    reason: string;
+  }>;
+  const top_confidence = candidates.length > 0 ? Number(candidates[0].score) : 0;
+  const ambiguous =
+    candidates.length === 0 ||
+    top_confidence < 0.85 ||
+    (candidates.length > 1 &&
+      Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
+
+  let text: string;
+  if (candidates.length === 0) {
+    text = `No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
+  } else if (ambiguous) {
+    const names = candidates
+      .slice(0, 3)
+      .map((c) => c.display_name || c.vitana_id || c.user_id)
+      .join(', ');
+    text = `Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
+  } else {
+    const top = candidates[0];
+    text = `Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
+  }
+
   return {
     ok: true,
-    result: { candidates },
-    text:
-      candidates.length === 0
-        ? `No one named "${name}" is in the community right now — they may not have a Vitana account yet.`
-        : `Found ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} — ask the user to confirm before sending.`,
+    result: { candidates, top_confidence, ambiguous },
+    text,
   };
 }
 
@@ -738,23 +768,76 @@ export async function tool_send_chat_message(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const recipientId = String(args.recipient_id ?? '').trim();
-  const bodyText = String(args.body_text ?? '').trim();
-  if (!recipientId || !bodyText) return { ok: false, error: 'recipient_id and body_text are required' };
-  try {
-    const { error } = await sb.from('messages').insert({
-      sender_id: id.user_id,
-      recipient_id: recipientId,
-      body: bodyText,
-      created_at: new Date().toISOString(),
-    });
-    if (error) {
-      return { ok: false, error: `send failed: ${error.message}` };
-    }
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : 'send failed' };
+  // PR B-6: lifted from orb-live.ts:6388 (VTID-01967). Vertex's auth impl
+  // wrote to the canonical chat_messages table with a quota guard,
+  // vitana_id resolution, and a self-message guard. The previous shared
+  // stub wrote to a 'messages' table that does not exist in the canonical
+  // schema, so any LiveKit-sent message was silently dropped.
+  // Accepts both Vertex args (recipient_user_id, body, recipient_label) and
+  // legacy LiveKit (recipient_id, body_text).
+  const recipientUserId = String(args.recipient_user_id ?? args.recipient_id ?? '').trim();
+  const recipientLabel = String(args.recipient_label ?? '').trim();
+  const body = String(args.body ?? args.body_text ?? '').trim();
+
+  if (!recipientUserId || !body) {
+    return { ok: false, error: 'recipient_user_id and body are required' };
   }
-  return { ok: true, result: { sent: true, recipient_id: recipientId }, text: 'Message sent.' };
+  if (recipientUserId === id.user_id) {
+    return { ok: false, error: 'cannot message yourself' };
+  }
+
+  try {
+    const { checkVoiceSendQuota } = await import('./voice-message-guard');
+    const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+
+    const recipientVitanaId = await resolveVitanaId(recipientUserId);
+    const quota = await checkVoiceSendQuota({
+      session_id: `${id.user_id}:send_chat_message`,
+      actor_id: id.user_id,
+      vitana_id: id.vitana_id ?? null,
+      recipient_user_id: recipientUserId,
+      recipient_vitana_id: recipientVitanaId,
+      kind: 'message',
+      body_length: body.length,
+    });
+    if (!quota.allowed) {
+      return {
+        ok: true,
+        result: { rate_limited: true, reason: quota.reason },
+        text: `Couldn't send (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
+      };
+    }
+
+    const senderVitanaId = id.vitana_id ?? (await resolveVitanaId(id.user_id));
+    const { error: insErr } = await sb.from('chat_messages').insert({
+      tenant_id: id.tenant_id,
+      sender_id: id.user_id,
+      receiver_id: recipientUserId,
+      content: body,
+      ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+      ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+      metadata: {
+        source: 'voice',
+        session_id: `${id.user_id}:send_chat_message`,
+        recipient_label: recipientLabel || recipientVitanaId,
+      },
+    });
+    if (insErr) {
+      return { ok: false, error: insErr.message };
+    }
+    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+    return {
+      ok: true,
+      result: {
+        recipient_label: recipDisplay,
+        remaining: quota.remaining,
+      },
+      text: `Sent to ${recipDisplay}.`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'send_chat_message error';
+    return { ok: false, error: msg };
+  }
 }
 
 export async function tool_share_link(
