@@ -5363,155 +5363,28 @@ async function executeLiveApiToolInner(
       // =====================================================================
 
       case 'search_events': {
-        const query = (args.query as string) || '';
-        const typeFilter = (args.type_filter as string) || 'all';
-        const locationFilter = (args.location as string) || '';
-        const organizerFilter = (args.organizer as string) || '';
-        const dateFrom = (args.date_from as string) || '';
-        const dateTo = (args.date_to as string) || '';
-        const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
-
-        // VTID-01270A: Events live in global_community_events table (platform Supabase)
-        const EVENTS_SUPABASE_URL = process.env.SUPABASE_URL || '';
-        const EVENTS_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE || '';
-        const PLATFORM_SUPABASE_URL = process.env.SUPABASE_URL;
-        const PLATFORM_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
-
-        const now = new Date().toISOString();
-        const liveRoomResults: string[] = [];
-
-        const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
-        console.log(`[VTID-01270A] search_events: ${filterSummary}`);
-
-        // VTID-STALL-FIX: Run ALL Supabase queries in parallel to stay within
-        // the 3s TOOL_TIMEOUT_MS.
-        const fetchPromises: Promise<void>[] = [];
-
-        // Scoring engine results (populated by events fetch)
-        let scoredResult: ScoredEventResults | null = null;
-
-        // Primary: Fetch events from platform Supabase (global_community_events)
-        // VTID-01270A Scoring: Fetch broadly (no query ilike filter) so scoring engine
-        // can rank ALL events — no event is pre-excluded at the DB level.
-        if (EVENTS_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
-          fetchPromises.push((async () => {
-            const eventsHeaders = {
-              'Content-Type': 'application/json',
-              apikey: EVENTS_SUPABASE_KEY,
-              Authorization: `Bearer ${EVENTS_SUPABASE_KEY}`,
-            };
-
-            const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-            let eventsUrl = `${EVENTS_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,slug,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
-
-            if (dateTo) {
-              eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
-            }
-
-            // NOTE: No query ilike filter here — scoring engine handles relevance ranking.
-            // Date range is the only hard constraint (true temporal boundary).
-
-            try {
-              const resp = await fetch(eventsUrl, { method: 'GET', headers: eventsHeaders });
-              if (resp.ok) {
-                const events = await resp.json() as EventRecord[];
-                console.log(`[VTID-01270A] search_events: ${events.length} raw results from platform Supabase`);
-
-                // Fetch user's home_city for proximity boost
-                let userHomeCity: string | undefined;
-                if (PLATFORM_SUPABASE_URL && PLATFORM_SUPABASE_KEY) {
-                  try {
-                    const locResp = await fetch(
-                      `${PLATFORM_SUPABASE_URL}/rest/v1/location_preferences?user_id=eq.${lens.user_id}&select=home_city&limit=1`,
-                      { method: 'GET', headers: { 'Content-Type': 'application/json', apikey: PLATFORM_SUPABASE_KEY, Authorization: `Bearer ${PLATFORM_SUPABASE_KEY}` } }
-                    );
-                    if (locResp.ok) {
-                      const locRows = await locResp.json() as Array<{ home_city: string | null }>;
-                      if (locRows.length > 0 && locRows[0].home_city) {
-                        userHomeCity = locRows[0].home_city;
-                      }
-                    }
-                  } catch { /* location_preferences lookup failed — proceed without proximity */ }
-                }
-
-                const filters: EventSearchFilters = {
-                  query,
-                  location: locationFilter,
-                  organizer: organizerFilter,
-                  maxPrice,
-                  userHomeCity,
-                };
-
-                scoredResult = scoreAndRankEvents(events, filters, 6);
-                console.log(`[VTID-01270A] search_events scored: ${scoredResult.best.length} best, ${scoredResult.alternatives.length} alternatives, homeCity=${userHomeCity || 'none'}`);
-              } else {
-                const body = await resp.text();
-                console.warn(`[VTID-01270A] events query failed: ${resp.status} — ${body.substring(0, 200)}`);
-              }
-            } catch (e: any) {
-              console.warn(`[VTID-01270A] events query error: ${e.message}`);
-            }
-          })());
+        // PR B-10: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // run scoreAndRankEvents through the shared dispatcher — same scoring,
+        // same home-city proximity boost, same parallel live_rooms fetch.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        // Secondary: Fetch live rooms from Platform Supabase
-        if (PLATFORM_SUPABASE_URL && PLATFORM_SUPABASE_KEY && (typeFilter === 'live_room' || typeFilter === 'all')) {
-          fetchPromises.push((async () => {
-            const platformHeaders = {
-              'Content-Type': 'application/json',
-              apikey: PLATFORM_SUPABASE_KEY,
-              Authorization: `Bearer ${PLATFORM_SUPABASE_KEY}`,
-            };
-            const tenantId = lens.tenant_id;
-            let roomsUrl = `${PLATFORM_SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
-            if (query) {
-              roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
-            }
-            try {
-              const resp = await fetch(roomsUrl, { method: 'GET', headers: platformHeaders });
-              if (resp.ok) {
-                const rooms = await resp.json() as Array<{
-                  id: string; title: string; starts_at: string; status: string;
-                }>;
-                for (const r of rooms) {
-                  const date = r.starts_at
-                    ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                    : 'TBD';
-                  const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
-                  liveRoomResults.push(`[Live Room] ${r.title} | ${statusLabel}`);
-                }
-              }
-            } catch (e: any) {
-              console.warn(`[VTID-01270A] live_rooms query failed: ${e.message}`);
-            }
-          })());
-        }
-
-        // Wait for all queries to complete in parallel
-        await Promise.allSettled(fetchPromises);
-
-        // Build final output: scored events + live rooms
-        // Note: scoredResult is assigned inside async closure, TS can't track it
-        const sr = scoredResult as ScoredEventResults | null;
-        const hasEvents = sr && (sr.best.length > 0 || sr.alternatives.length > 0);
-        const hasRooms = liveRoomResults.length > 0;
-
-        if (!hasEvents && !hasRooms) {
-          console.log(`[VTID-01270A] search_events: 0 hits (filters: ${filterSummary}), ${Date.now() - startTime}ms`);
-          return { success: true, result: 'No upcoming events found at this time. Check back soon — new events are added regularly!' };
-        }
-
-        let formatted = '';
-        if (hasEvents) {
-          formatted = formatForVoice(sr!);
-        }
-        if (hasRooms) {
-          if (formatted) formatted += '\n\n';
-          formatted += liveRoomResults.join('\n');
-        }
-
-        console.log(`[VTID-01270A] search_events: ${(sr?.best.length || 0) + (sr?.alternatives.length || 0)} scored + ${liveRoomResults.length} rooms, ${formatted.length} chars, ${Date.now() - startTime}ms`);
-        return { success: true, result: formatted };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'search_events',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'search_community': {

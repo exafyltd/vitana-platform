@@ -171,54 +171,174 @@ export async function tool_report_to_specialist(args: OrbToolArgs): Promise<OrbT
 
 export async function tool_search_events(
   args: OrbToolArgs,
-  _id: OrbToolIdentity,
+  id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const query = String(args.query ?? '').trim().toLowerCase();
-  const { data, error } = await sb
-    .from('global_community_events')
-    .select('id, title, description, start_time, end_time, location, virtual_link, slug')
-    .gte('start_time', new Date().toISOString())
-    .order('start_time', { ascending: true })
-    .limit(20);
-  if (error) {
+  // PR B-10: lifted from orb-live.ts:5139 (VTID-01270A). Vertex's auth impl
+  // ranks ALL upcoming events through scoreAndRankEvents (not just an
+  // ilike), boosts by user's home_city for proximity, fetches live_rooms
+  // in parallel, and supports 7 args (query/type_filter/location/organizer/
+  // date_from/date_to/max_price). The previous shared impl had none of
+  // that — strict regression vs Vertex.
+  //
+  // Lifting: same scoring engine, same home_city lookup, same parallel
+  // live_rooms fetch (now via SupabaseClient instead of REST).
+  const query = String(args.query ?? '').trim();
+  const typeFilter = String(args.type_filter ?? 'all');
+  const locationFilter = String(args.location ?? '').trim();
+  const organizerFilter = String(args.organizer ?? '').trim();
+  const dateFrom = String(args.date_from ?? '').trim();
+  const dateTo = String(args.date_to ?? '').trim();
+  const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
+
+  const now = new Date().toISOString();
+  const liveRoomResults: string[] = [];
+
+  type EventRowLite = {
+    id: string;
+    title: string;
+    description: string | null;
+    start_time: string;
+    end_time: string | null;
+    location: string | null;
+    virtual_link: string | null;
+    slug: string | null;
+    metadata: Record<string, unknown> | null;
+  };
+
+  let scoredResult:
+    | import('./event-relevance-scoring').ScoredEventResults
+    | null = null;
+
+  const fetchPromises: Promise<void>[] = [];
+
+  // Primary: events from global_community_events.
+  if (typeFilter === 'meetup' || typeFilter === 'all') {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const startGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
+          let q = sb
+            .from('global_community_events')
+            .select('id, title, description, start_time, end_time, location, virtual_link, slug, metadata')
+            .gte('start_time', startGte)
+            .order('start_time', { ascending: true })
+            .limit(50);
+          if (dateTo) {
+            q = q.lte('start_time', `${dateTo}T23:59:59Z`);
+          }
+          const { data: events, error } = await q;
+          if (error || !events) return;
+
+          // Optional home-city proximity boost.
+          let userHomeCity: string | undefined;
+          try {
+            const { data: locRow } = await sb
+              .from('location_preferences')
+              .select('home_city')
+              .eq('user_id', id.user_id)
+              .maybeSingle();
+            const hc = (locRow as { home_city: string | null } | null)?.home_city;
+            if (hc) userHomeCity = hc;
+          } catch {
+            /* best-effort — proceed without proximity */
+          }
+
+          const { scoreAndRankEvents } = await import('./event-relevance-scoring');
+          const filters: import('./event-relevance-scoring').EventSearchFilters = {
+            query,
+            location: locationFilter,
+            organizer: organizerFilter,
+            maxPrice,
+            userHomeCity,
+          };
+          scoredResult = scoreAndRankEvents(
+            (events as EventRowLite[] as unknown) as import('./event-relevance-scoring').EventRecord[],
+            filters,
+            6,
+          );
+        } catch {
+          /* swallow — empty scoredResult means no scored output */
+        }
+      })(),
+    );
+  }
+
+  // Secondary: live rooms (tenant-scoped).
+  if ((typeFilter === 'live_room' || typeFilter === 'all') && id.tenant_id) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          let q = sb
+            .from('live_rooms')
+            .select('id, title, starts_at, status')
+            .eq('tenant_id', id.tenant_id!)
+            .in('status', ['scheduled', 'live'])
+            .order('starts_at', { ascending: true })
+            .limit(4);
+          if (query) {
+            q = q.ilike('title', `%${query}%`);
+          }
+          const { data: rooms } = await q;
+          for (const r of ((rooms as Array<{
+            id: string;
+            title: string;
+            starts_at: string;
+            status: string;
+          }>) ?? [])) {
+            const dateLabel = r.starts_at
+              ? new Date(r.starts_at).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })
+              : 'TBD';
+            const statusLabel = r.status === 'live' ? 'LIVE NOW' : dateLabel;
+            liveRoomResults.push(`[Live Room] ${r.title} | ${statusLabel}`);
+          }
+        } catch {
+          /* live_rooms may not exist in some envs; treat as empty */
+        }
+      })(),
+    );
+  }
+
+  await Promise.allSettled(fetchPromises);
+
+  const sr = scoredResult as
+    | import('./event-relevance-scoring').ScoredEventResults
+    | null;
+  const hasEvents = !!(sr && (sr.best.length > 0 || sr.alternatives.length > 0));
+  const hasRooms = liveRoomResults.length > 0;
+
+  if (!hasEvents && !hasRooms) {
     return {
       ok: true,
-      result: { events: [] },
-      text: `Couldn't search events right now: ${error.message}`,
+      result: { events: [], live_rooms: [] },
+      text:
+        'No upcoming events found at this time. Check back soon — new events are added regularly!',
     };
   }
-  const filtered = query
-    ? (data || []).filter(
-        (e: { title?: string; description?: string }) =>
-          (e.title || '').toLowerCase().includes(query) ||
-          (e.description || '').toLowerCase().includes(query),
-      )
-    : data || [];
-  const top = filtered.slice(0, 10).map((e) => ({
-    id: e.id,
-    title: e.title,
-    when: e.start_time,
-    location: e.location || e.virtual_link,
-    slug: e.slug,
-  }));
-  // Voice-friendly summary: include event titles + when so the LLM can read
-  // them back. The earlier "Found N upcoming events" produced silence on the
-  // voice side because the LLM had no titles to speak.
-  const lines = top.map((e) => {
-    const when = e.when
-      ? new Date(e.when).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : '';
-    const loc = e.location ? ` at ${String(e.location).slice(0, 80)}` : '';
-    return `- ${e.title}${when ? ` (${when})` : ''}${loc}`;
-  });
+
+  let formatted = '';
+  if (hasEvents) {
+    const { formatForVoice } = await import('./event-relevance-scoring');
+    formatted = formatForVoice(sr!);
+  }
+  if (hasRooms) {
+    if (formatted) formatted += '\n\n';
+    formatted += liveRoomResults.join('\n');
+  }
+
   return {
     ok: true,
-    result: { events: top },
-    text:
-      filtered.length === 0
-        ? 'No upcoming events found right now.'
-        : `Upcoming events (${filtered.length}):\n${lines.join('\n')}`,
+    result: {
+      best: sr?.best ?? [],
+      alternatives: sr?.alternatives ?? [],
+      live_rooms: liveRoomResults,
+    },
+    text: formatted,
   };
 }
 
