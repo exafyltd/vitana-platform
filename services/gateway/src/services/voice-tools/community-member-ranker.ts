@@ -295,7 +295,11 @@ async function buildCandidatePool(
     const uid = String((u as any).user_id);
     const prof = profMap.get(uid) || {};
     const vid = (u as any).vitana_id ?? null;
-    if (vid && excludedSet.has(String(vid).toLowerCase())) continue;
+    // Skip candidates without a vitana_id — the redirect route is /u/<vitana_id>,
+    // so a null vitana_id means we'd produce a broken URL. These users
+    // haven't confirmed their canonical identifier yet (per VTID-01967).
+    if (!vid) continue;
+    if (excludedSet.has(String(vid).toLowerCase())) continue;
     pool.push({
       user_id: uid,
       vitana_id: vid,
@@ -817,12 +821,17 @@ function buildMatchRecipe(args: {
 const SCREEN_TARGET = 'profile_with_match';
 
 function buildRoute(vitanaId: string | null, parsed: ParsedQuery, searchId: string | undefined): string {
-  const id = vitanaId ?? '@unknown';
   const params = new URLSearchParams();
   params.set('from', 'who_search');
   if (searchId) params.set('search_id', searchId);
   params.set('q', parsed.raw.slice(0, 80));
-  return `/u/${encodeURIComponent(id)}?${params.toString()}`;
+  // No vitana_id (winner hasn't confirmed canonical identifier yet) — fall back
+  // to the members directory with the query preserved so the user still lands
+  // on a precise screen rather than a broken /u/@unknown.
+  if (!vitanaId) {
+    return `/community/members?${params.toString()}`;
+  }
+  return `/u/${encodeURIComponent(vitanaId)}?${params.toString()}`;
 }
 
 export function hashQuery(query: string, viewerId: string): string {
