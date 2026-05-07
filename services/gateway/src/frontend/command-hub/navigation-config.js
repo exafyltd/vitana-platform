@@ -44,7 +44,8 @@ export const NAVIGATION_CONFIG = [
       { key: "experiments", label: "Experiments" },
       { key: "metrics", label: "Metrics" },
       { key: "awareness-registry", label: "Awareness Registry" },
-      { key: "awareness-test", label: "Awareness Test" }
+      { key: "awareness-test", label: "Awareness Test" },
+      { key: "voice-tools", label: "Voice Tools" }
     ]
   },
   {
