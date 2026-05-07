@@ -306,6 +306,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
   const intentEngineEnabled = process.env.FEATURE_INTENT_ENGINE_A === 'true';
   const intentsRouter = intentEngineEnabled ? require('./routes/intents').default : null;
+  // VTID-02806h: cover-image processing (Imagen outpaint to 16:9).
+  const coverImagesRouter = require('./routes/cover-images').default;
   const intentMatchesRouter = intentEngineEnabled ? require('./routes/intent-matches').default : null;
   const intentBoardRouter = intentEngineEnabled ? require('./routes/intent-board').default : null;
   const intentCategoriesRouter = intentEngineEnabled ? require('./routes/intent-categories').default : null;
@@ -857,6 +859,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
+  mountRouterSync(app, '/api/v1/cover-images', coverImagesRouter, { owner: 'cover-images' });
   if (intentMatchesRouter) mountRouterSync(app, '/api/v1/intent-matches', intentMatchesRouter, { owner: 'intent-matches' });
   if (intentBoardRouter) mountRouterSync(app, '/api/v1/intent-board', intentBoardRouter, { owner: 'intent-board' });
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
