@@ -565,16 +565,149 @@ export async function tool_search_community(
   };
 }
 
-export async function tool_play_music(args: OrbToolArgs): Promise<OrbToolResult> {
+export async function tool_play_music(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  // PR D-4: lifted from orb-live.ts:5559 (VTID-01942). Vertex's auth impl
+  // calls executeCapability('music.play'), records the play on the user
+  // timeline (history-awareness for [RECENT] / [ACTIVITY_14D] in profiler),
+  // and emits an SSE/WS directive so the orb widget opens the URL native
+  // (Spotify/YouTube/Apple Music intents on iOS/Android, browser otherwise).
+  //
+  // The previous shared stub was a hardcoded "no provider connected" — strict
+  // regression. The lift:
+  //   - calls executeCapability + handles hub-miss + not-connected nudges
+  //   - writes the timeline row (provider-unaware)
+  //   - returns a `directive` payload in `result` that Vertex's case picks up
+  //     and emits via SSE/WS. LiveKit doesn't (no SSE/WS) — the URL is in
+  //     the result and a follow-up PR can publish it via LiveKit's data
+  //     channel if the product wants the same auto-open behaviour there.
   const query = String(args.query ?? '').trim();
-  return {
-    ok: true,
-    result: { query, status: 'no_provider_connected' },
-    text:
-      `I don't have a music provider connected to your account yet. ` +
-      `Connect Spotify or YouTube Music in Settings → Connected Apps and ` +
-      `I'll be able to play "${query}" next time.`,
-  };
+  const requestedSource = typeof args.source === 'string' ? (args.source as string).trim() : undefined;
+  if (!query) {
+    return { ok: false, error: 'play_music requires a "query" argument' };
+  }
+  try {
+    const { executeCapability } = await import('../capabilities');
+    const disp = (await executeCapability(
+      { supabase: sb, userId: id.user_id, tenantId: id.tenant_id ?? '' },
+      'music.play',
+      { query, ...(requestedSource ? { source: requestedSource } : {}) },
+    )) as Record<string, unknown> & {
+      ok?: boolean;
+      url?: string;
+      raw?: Record<string, unknown>;
+      error?: string;
+      routing_reason?: string;
+      suggest_default?: boolean;
+      preference_set_method?: string;
+    };
+
+    if (!disp.ok || !disp.url) {
+      const errText = String(disp.error ?? '');
+      const isHubMiss = /no (music|podcast|shorts) found in the vitana media hub/i.test(errText);
+      const isNotConnected = /isn't connected|requires a connected provider/i.test(errText);
+      if (isHubMiss || isNotConnected) {
+        const text = isHubMiss
+          ? `I couldn't find "${query}" in the Vitana Media Hub. To play the real track, you'll need to link a music service like YouTube Music, Spotify, or Apple Music — want me to take you to Connected Apps?`
+          : `You haven't connected that music service yet. Want me to take you to Connected Apps so you can link it?`;
+        return {
+          ok: true,
+          result: { played: false, reason: isHubMiss ? 'hub_miss' : 'not_connected' },
+          text,
+        };
+      }
+      return { ok: false, error: errText || 'music.play returned no URL' };
+    }
+
+    const raw = (disp.raw ?? {}) as { title?: string; channel?: string; source?: string };
+    const title = raw.title ?? query;
+    const channel = raw.channel ?? '';
+    const source = raw.source ?? 'unknown';
+    const routingReason = disp.routing_reason;
+    const suggestDefault = Boolean(disp.suggest_default);
+    const preferenceSetMethod = disp.preference_set_method;
+
+    const rawRec = (disp.raw ?? {}) as Record<string, unknown>;
+    const androidIntent = typeof rawRec.android_intent === 'string' ? rawRec.android_intent : undefined;
+    const iosScheme = typeof rawRec.ios_scheme === 'string' ? rawRec.ios_scheme : undefined;
+
+    const directive = {
+      type: 'orb_directive',
+      directive: 'open_url',
+      url: disp.url,
+      android_intent: androidIntent,
+      ios_scheme: iosScheme,
+      title,
+      channel,
+      source,
+      query,
+      routing_reason: routingReason,
+      suggest_default: suggestDefault,
+      vtid: 'VTID-01942',
+    };
+
+    const providerDisplay =
+      source === 'youtube_music' ? 'YouTube Music'
+      : source === 'spotify' ? 'Spotify'
+      : source === 'apple_music' ? 'Apple Music'
+      : source === 'vitana_hub' ? 'the Vitana Media Hub'
+      : source;
+
+    const baseAck = channel
+      ? `Now playing "${title}" by ${channel} on ${providerDisplay}.`
+      : `Now playing "${title}" on ${providerDisplay}.`;
+
+    let tail = '';
+    if (routingReason === 'hub_fallback') {
+      tail = ' Want me to link your Spotify or YouTube Music so I can play the real track next time?';
+    } else if (suggestDefault) {
+      tail = ` That's three plays in a row on ${providerDisplay} — want me to make it your default for music?`;
+    } else if (routingReason === 'preference' && preferenceSetMethod === 'explicit') {
+      tail = '';
+    }
+
+    // Timeline writeback (provider-unaware — both pipelines benefit).
+    try {
+      const { writeTimelineRow } = await import('./timeline-projector');
+      writeTimelineRow({
+        user_id: id.user_id,
+        activity_type: 'media.music.play',
+        activity_data: {
+          query,
+          title,
+          channel,
+          source,
+          routing_reason: routingReason,
+          url: disp.url,
+        },
+        context_data: { surface: 'orb' },
+        dedupe_key: `media:music:${source}:${title}:${Math.floor(Date.now() / 60_000)}`,
+        source: 'projector:orb',
+      }).catch(() => {
+        /* fire-and-forget; timeline failures shouldn't kill playback */
+      });
+    } catch {
+      /* timeline-projector unavailable (test env); proceed */
+    }
+
+    return {
+      ok: true,
+      result: {
+        played: true,
+        url: disp.url,
+        title,
+        channel,
+        source,
+        directive, // Vertex's case picks this up and emits via SSE/WS
+      },
+      text: `${baseAck}${tail}`,
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'play_music error' };
+  }
 }
 
 export async function tool_set_capability_preference(
@@ -1785,7 +1918,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   log_exercise:     (args, id, sb) => tool_log_health('log_exercise', args, id),
   log_meditation:   (args, id, sb) => tool_log_health('log_meditation', args, id),
   get_pillar_subscores: tool_get_pillar_subscores,
-  play_music: (args) => tool_play_music(args),
+  play_music: tool_play_music,
   set_capability_preference: tool_set_capability_preference,
   read_email: tool_read_email,
   get_schedule: tool_get_schedule,
