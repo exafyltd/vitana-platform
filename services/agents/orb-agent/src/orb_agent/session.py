@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-06-participant-metadata-fix"
+CODE_VERSION = "agent-2026-05-07-phase-traces"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -344,11 +344,57 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     ctx.add_shutdown_callback(_teardown)
 
+    # Phase trace: about to call session.start. If we never see a
+    # post_start trace for the same orb_session_id, session.start crashed.
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "pre_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
     try:
         await session.start(agent=agent, room=ctx.room)
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentSession.start crashed: %s", exc)
+        try:
+            await _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "start_crashed",
+                    "orb_session_id": orb_session_id,
+                    "agent_id": agent_id,
+                    "error": str(exc)[:500],
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return
+
+    # session.start returned cleanly — emit a phase trace so we can
+    # distinguish "no audio because start() crashed" from "no audio
+    # because greeting/TTS crashed".
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "post_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
 
     # Initial greeting — fire as soon as the session is ready so the user
     # hears their personalized hello on connect. Mirrors the Vertex pipeline
@@ -379,6 +425,30 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("initial greeting generate_reply failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
+        else:
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_ok",
+                        "orb_session_id": orb_session_id,
+                    },
+                )
+            )
     else:
         try:
             await session.generate_reply(
