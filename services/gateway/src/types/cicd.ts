@@ -543,6 +543,11 @@ export type CicdEventType =
   // subsequent orb.navigator.dispatched (or .blocked) on the user's reply —
   // lets us measure clarification → resolution rate.
   | 'orb.navigator.disambiguated'
+  // VTID-01975 (PR 1.B-6): view_intent_matches auto-redirected to a
+  // match-detail screen because the top match's score dominated the
+  // runner-up. Lets ops measure how often the disambiguation gap is
+  // wide enough for confident auto-nav vs list-only.
+  | 'orb.intent_matches.auto_nav'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
