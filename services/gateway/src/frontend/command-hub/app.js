@@ -44643,34 +44643,37 @@ function renderAdminAwarenessView() {
 
 // =============================================================================
 // VTID-02766 — Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+// Uses the Command Hub design system (CSS vars + .filter-select +
+// .command-hub-events-table). No hardcoded light-mode colors.
 // =============================================================================
 function renderVoiceToolsCatalogView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Voice Tools Catalog</h2>' +
-        '<p class="section-subtitle">Every voice tool the ORB can call. Source-of-truth manifest at <code>services/gateway/src/services/tool-manifest.json</code>. Filter by surface, role, or status.</p>';
+        '<p class="section-subtitle">Every voice tool the ORB can call. Source-of-truth manifest at <code>services/gateway/src/services/tool-manifest.json</code>.</p>';
 
     if (!state.voiceToolsCatalog) {
-        state.voiceToolsCatalog = { loading: false, loaded: false, error: null, tools: [], stats: null, filter: {} };
+        state.voiceToolsCatalog = { loading: false, loaded: false, error: null, tools: [], stats: null };
     }
 
     var stats = document.createElement('div');
-    stats.style.cssText = 'display:flex;gap:1rem;margin:1rem 0;padding:0.75rem;background:#f8fafc;border-radius:6px;font-size:0.875rem;';
-    stats.id = 'vt-stats-strip';
+    stats.style.cssText = 'display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap;margin:1rem 0;padding:.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);font-size:.8rem;color:var(--color-text-secondary);';
     stats.textContent = 'Loading stats…';
     container.appendChild(stats);
 
     var filters = document.createElement('div');
-    filters.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:1rem;';
+    filters.style.cssText = 'display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;';
     var search = document.createElement('input');
     search.type = 'text';
     search.placeholder = 'Search by name or description…';
-    search.style.cssText = 'flex:1;padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    search.className = 'filter-select';
+    search.style.flex = '1';
+    search.style.minWidth = '240px';
     var surfaceSel = document.createElement('select');
-    surfaceSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    surfaceSel.className = 'filter-select';
     surfaceSel.innerHTML = '<option value="">All surfaces</option>';
     var roleSel = document.createElement('select');
-    roleSel.style.cssText = 'padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;';
+    roleSel.className = 'filter-select';
     roleSel.innerHTML = '<option value="">All roles</option><option value="community">community</option><option value="user">user</option><option value="developer">developer</option><option value="admin">admin</option>';
     filters.appendChild(search);
     filters.appendChild(surfaceSel);
@@ -44678,8 +44681,7 @@ function renderVoiceToolsCatalogView() {
     container.appendChild(filters);
 
     var listWrap = document.createElement('div');
-    listWrap.id = 'vt-list-wrap';
-    listWrap.textContent = 'Loading tools…';
+    listWrap.innerHTML = '<div class="placeholder-content">Loading tools…</div>';
     container.appendChild(listWrap);
 
     function escapeHtml(s) {
@@ -44687,15 +44689,26 @@ function renderVoiceToolsCatalogView() {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function statusPill(status) {
+        // Reuse the existing .status-live family where possible; otherwise render
+        // a neutral pill that adopts the theme's elevated background.
+        var s = String(status || '').toLowerCase();
+        if (s === 'live') {
+            return '<span class="status-live" style="font-size:.65rem;padding:2px 8px;border-radius:10px;"><span class="live-dot"></span>LIVE</span>';
+        }
+        var label = s ? s.toUpperCase() : '—';
+        return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid var(--color-border);color:var(--color-text-secondary);">' + escapeHtml(label) + '</span>';
+    }
+
     function renderStats(r) {
         if (!r || !r.ok) { stats.textContent = 'Stats unavailable.'; return; }
-        var byStatus = r.by_status || {};
+        var bs = r.by_status || {};
         stats.innerHTML =
-            '<strong>' + (r.total || 0) + '</strong> tools total &nbsp;|&nbsp; ' +
-            'Live: <strong>' + (byStatus.live || 0) + '</strong> &nbsp;|&nbsp; ' +
-            'WIP: <strong>' + (byStatus.wip || 0) + '</strong> &nbsp;|&nbsp; ' +
-            'Planned: <strong>' + (byStatus.planned || 0) + '</strong> &nbsp;|&nbsp; ' +
-            '<span style="color:#6b7280;">manifest generated ' + (r.generated_at || '?') + '</span>';
+            '<span><strong style="color:var(--color-text-primary);">' + (r.total || 0) + '</strong> total</span>' +
+            '<span>Live: <strong style="color:var(--color-text-primary);">' + (bs.live || 0) + '</strong></span>' +
+            '<span>WIP: <strong style="color:var(--color-text-primary);">' + (bs.wip || 0) + '</strong></span>' +
+            '<span>Planned: <strong style="color:var(--color-text-primary);">' + (bs.planned || 0) + '</strong></span>' +
+            '<span style="margin-left:auto;font-size:.7rem;opacity:.7;">manifest ' + escapeHtml(r.generated_at || '?') + '</span>';
     }
 
     function renderList(r) {
@@ -44703,37 +44716,40 @@ function renderVoiceToolsCatalogView() {
         var tools = r.tools || [];
         if (tools.length === 0) { listWrap.innerHTML = '<div class="placeholder-content">No tools match the filter.</div>'; return; }
 
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'border:1px solid var(--color-border);border-radius:8px;overflow:hidden;background:var(--color-bg-elevated);';
+
         var table = document.createElement('table');
-        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.875rem;';
+        table.className = 'command-hub-events-table';
         var thead = document.createElement('thead');
-        thead.innerHTML = '<tr style="background:#f1f5f9;text-align:left;">' +
-            '<th style="padding:0.5rem;">Name</th>' +
-            '<th style="padding:0.5rem;">Surface</th>' +
-            '<th style="padding:0.5rem;">Role</th>' +
-            '<th style="padding:0.5rem;">Status</th>' +
-            '<th style="padding:0.5rem;">VTID</th>' +
-            '<th style="padding:0.5rem;">Description</th>' +
+        thead.innerHTML = '<tr>' +
+            '<th>Name</th>' +
+            '<th>Surface</th>' +
+            '<th>Role</th>' +
+            '<th>Status</th>' +
+            '<th>VTID</th>' +
+            '<th>Description</th>' +
             '</tr>';
         table.appendChild(thead);
         var tbody = document.createElement('tbody');
         tools.forEach(function (t) {
             var tr = document.createElement('tr');
-            tr.style.borderTop = '1px solid #e5e7eb';
             tr.innerHTML =
-                '<td style="padding:0.5rem;font-family:monospace;"><code>' + escapeHtml(t.name) + '</code></td>' +
-                '<td style="padding:0.5rem;">' + escapeHtml(t.surface || '') + '</td>' +
-                '<td style="padding:0.5rem;font-size:0.75rem;color:#6b7280;">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
-                '<td style="padding:0.5rem;"><span class="status-' + escapeHtml(t.status) + '" style="font-size:0.75rem;padding:2px 6px;border-radius:3px;background:' + (t.status === 'live' ? '#d1fae5' : t.status === 'wip' ? '#fef3c7' : '#e5e7eb') + ';">' + escapeHtml(t.status) + '</span></td>' +
-                '<td style="padding:0.5rem;font-size:0.75rem;font-family:monospace;color:#6b7280;">' + escapeHtml(t.vtid || '—') + '</td>' +
-                '<td style="padding:0.5rem;color:#4b5563;">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
+                '<td><code style="color:var(--color-text-primary);">' + escapeHtml(t.name) + '</code></td>' +
+                '<td>' + escapeHtml(t.surface || '') + '</td>' +
+                '<td style="font-size:.7rem;color:var(--color-text-secondary);">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
+                '<td>' + statusPill(t.status) + '</td>' +
+                '<td style="font-size:.7rem;font-family:monospace;color:var(--color-text-secondary);">' + escapeHtml(t.vtid || '—') + '</td>' +
+                '<td style="color:var(--color-text-secondary);">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
+        wrap.appendChild(table);
         listWrap.innerHTML = '';
-        listWrap.appendChild(table);
+        listWrap.appendChild(wrap);
 
         var footer = document.createElement('div');
-        footer.style.cssText = 'margin-top:0.75rem;font-size:0.75rem;color:#6b7280;';
+        footer.style.cssText = 'margin-top:.5rem;font-size:.7rem;color:var(--color-text-secondary);';
         footer.textContent = 'Showing ' + tools.length + ' of ' + (r.total || tools.length) + ' tools (filtered).';
         listWrap.appendChild(footer);
     }
@@ -44763,7 +44779,7 @@ function renderVoiceToolsCatalogView() {
                 });
             }
         }).catch(function (err) {
-            listWrap.innerHTML = '<div class="error-text">Failed to load: ' + (err && err.message ? err.message : err) + '</div>';
+            listWrap.innerHTML = '<div class="error-text">Failed to load: ' + escapeHtml(err && err.message ? err.message : String(err)) + '</div>';
         });
     }
 
