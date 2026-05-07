@@ -6598,6 +6598,29 @@ async function executeLiveApiToolInner(
           postedVid = vid;
           postedKind = intentKind;
 
+          // VTID-02806g — Fire-and-forget cover-photo resolution. The form
+          // composer (POST /api/v1/intents) does this on every insert;
+          // the voice path was missing it, so every dictated intent ended
+          // up with cover_url=NULL and the frontend fell back to a static
+          // themed JPG that looked AI-generated. Now the resolution chain
+          // runs (library exact-category → universal → gender-aware AI →
+          // curated) so a user with a universal photo or a category-tagged
+          // library entry sees their own photo on dictated posts.
+          import('../services/intent-cover-service')
+            .then(({ generateCoverForIntent, themeFromCategory }) =>
+              generateCoverForIntent({
+                intentId,
+                userId: session.identity!.user_id,
+                theme: themeFromCategory(extract.category),
+              }),
+            )
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : 'unknown';
+              console.warn(
+                `[cover] voice-post auto-gen failed for ${intentId}: ${msg}`,
+              );
+            });
+
           // VTID-02716: row is now in user_intents — every side-effect below must be
           // best-effort. A throw here would otherwise reach the outer catch and Gemini
           // would say "I have a problem making the post" while the post sits in the user's list.
