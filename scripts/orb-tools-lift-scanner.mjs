@@ -152,7 +152,11 @@ function extractVertexCases(src) {
       body += lj + '\n';
       if (openSeen && depth === 0) break;
     }
-    const delegated = /dispatchOrbToolForVertex\b/.test(body);
+    // Either dispatchOrbToolForVertex (the {success,result,error} adapter)
+    // OR dispatchOrbTool (when Vertex needs the structured OrbToolResult,
+    // e.g. play_music reads result.directive to emit via SSE/WS) counts as
+    // delegation.
+    const delegated = /dispatchOrbTool(ForVertex)?\b/.test(body);
     for (let k = 0; k < fallThroughNames.length; k++) {
       const n = fallThroughNames[k];
       if (PROTOCOL.has(n)) continue;
@@ -178,8 +182,17 @@ const vertexCases = extractVertexCases(vertexSrc);
 // In-shared but no Vertex case → tool is exposed to LiveKit only.
 const sharedOnly = [];
 // Vertex case exists for a tool in the shared registry, but the case body
-// does NOT call dispatchOrbToolForVertex → DRIFT.
+// does NOT call dispatchOrbToolForVertex → DRIFT (unless allowlisted).
 const inlineDrift = [];
+// Allowlisted intentional inline — Vertex's impl is genuinely WebSocket-
+// session-state-coupled and lifting would break Vertex behaviour. The
+// shared module keeps a placeholder so LiveKit's tools.py wrapper can
+// still call /api/v1/orb/tool without a 404.
+const VERTEX_ONLY_INTENTIONAL = new Set([
+  'switch_persona',       // mutates session.pendingPersonaSwap, persona-overrides, etc.
+  'report_to_specialist', // tied to Vertex's WebSocket persona-swap orchestration
+]);
+const intentionalInline = [];
 
 for (const name of registry) {
   const v = vertexCases.get(name);
@@ -188,7 +201,11 @@ for (const name of registry) {
     continue;
   }
   if (!v.delegated) {
-    inlineDrift.push({ name, lineNumber: v.lineNumber });
+    if (VERTEX_ONLY_INTENTIONAL.has(name)) {
+      intentionalInline.push({ name, lineNumber: v.lineNumber });
+    } else {
+      inlineDrift.push({ name, lineNumber: v.lineNumber });
+    }
   }
 }
 
@@ -222,6 +239,17 @@ if (inlineDrift.length > 0) {
   }
   out += '\n';
   exitCode = 2;
+}
+
+if (intentionalInline.length > 0) {
+  out += `### ℹ️ intentional inline — ${intentionalInline.length} tool(s) allowlisted as Vertex-only\n\n`;
+  out += 'These are in `ORB_TOOL_REGISTRY` (so LiveKit\'s tools.py wrapper doesn\'t 404) ';
+  out += 'but their Vertex impl is intentionally NOT lifted because it\'s WebSocket-session-state-coupled. ';
+  out += 'The allowlist is `VERTEX_ONLY_INTENTIONAL` in `scripts/orb-tools-lift-scanner.mjs`.\n\n';
+  for (const v of intentionalInline) {
+    out += `- \`${v.name}\` — orb-live.ts:${v.lineNumber}\n`;
+  }
+  out += '\n';
 }
 
 if (sharedOnly.length > 0) {
