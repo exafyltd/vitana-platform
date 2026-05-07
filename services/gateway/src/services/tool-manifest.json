@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-07T15:30:00.000Z",
+  "generated_at": "2026-05-07T16:30:00.000Z",
   "source": "manual",
   "total": 147,
   "tools": [
@@ -1412,8 +1412,8 @@
       "role": [
         "community"
       ],
-      "status": "planned",
-      "vtid": "VTID-02780",
+      "status": "live",
+      "vtid": "VTID-02830",
       "added_in_pr": 1883,
       "description": "Flagship deep search \u2014 fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale."
     },
@@ -1424,8 +1424,8 @@
       "role": [
         "community"
       ],
-      "status": "planned",
-      "vtid": "VTID-02780",
+      "status": "live",
+      "vtid": "VTID-02830",
       "added_in_pr": 1883,
       "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering."
     },

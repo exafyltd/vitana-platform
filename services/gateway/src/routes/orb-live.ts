@@ -2233,6 +2233,63 @@ function buildLiveApiTools(
             required: ['query'],
           },
         },
+        // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
+        {
+          name: 'find_perfect_product',
+          description: [
+            'Recommend the perfect product for the user. Fuses their weakest',
+            'Vitana Index pillar + active Life Compass goal + a free-form ask',
+            'and any explicit filters (price cap, ingredients to exclude). Returns',
+            'top-3 with a rationale. Use for: "find me a product for poor sleep on',
+            'travel days", "what supplement should I take for my hydration?", etc.',
+            '',
+            'Use this for PRODUCTS (supplements, gear, food). For services or',
+            'practitioners use find_perfect_practitioner. For people / community',
+            'matches use find_community_member.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              goal_text: {
+                type: 'string',
+                description: 'Free-form description of what the user wants the product to help with.',
+              },
+              pillar: {
+                type: 'string',
+                description: 'OPTIONAL — nutrition / hydration / exercise / sleep / mental. Defaults to the user\'s weakest pillar.',
+              },
+              max_price: { type: 'number', description: 'OPTIONAL — price cap.' },
+              exclude_ingredients: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'OPTIONAL — list of ingredient names the user wants to avoid.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'find_perfect_practitioner',
+          description: [
+            'Recommend the perfect practitioner / coach / doctor for the user.',
+            'Multi-criteria: specialty, language, telehealth-ok, price cap, fused',
+            'with the active Life Compass goal. Returns top-3 with a rationale.',
+            '',
+            'Use for: "find me a functional medicine doc who takes telehealth",',
+            '"who can coach me on sleep?", "I need a German-speaking nutritionist".',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              specialty: { type: 'string', description: 'e.g. "functional medicine", "nutrition", "therapy".' },
+              goal_text: { type: 'string' },
+              language: { type: 'string', description: 'OPTIONAL — language code or name, e.g. "en", "de".' },
+              telehealth_ok: { type: 'boolean' },
+              max_price: { type: 'number' },
+            },
+            required: [],
+          },
+        },
         {
           name: 'get_recommendations',
           description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
@@ -6801,6 +6858,30 @@ async function executeLiveApiToolInner(
           console.error('[VTID-DANCE-D12] get_matchmaker_result error:', err?.message);
           return { success: false, result: '', error: err?.message || 'unknown' };
         }
+      }
+
+      // VTID-02830 — Find Perfect flagships (lifted to shared dispatcher)
+      case 'find_perfect_product':
+      case 'find_perfect_practitioner': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       default: {
