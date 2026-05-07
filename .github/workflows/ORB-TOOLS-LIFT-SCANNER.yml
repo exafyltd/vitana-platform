@@ -5,9 +5,18 @@ name: Orb Tools Lift Scanner
 # (Vertex pipeline) — specifically: Vertex cases for tools in the registry
 # that still have inline logic instead of delegating to dispatchOrbToolForVertex.
 #
-# REPORT-ONLY today. Posts the diff as a sticky PR comment; never fails
-# the build. Promote to gate by setting `ORB_TOOLS_PARITY_GATE: '1'` in
-# the env block below once all intentional drift is lifted.
+# GATE MODE (PR 1.B-10 / VTID-02845). All Phase 1.B lifts have landed:
+# 41/47 Vertex case-arms delegate via dispatchOrbTool(ForVertex), the
+# remaining 6 are either intentional Vertex-only (switch_persona,
+# report_to_specialist) or inline-but-not-shared (calendar / reminders /
+# index / intents — flagged by the scanner as "vertex-only inline" with
+# no critical drift). Promoting ORB_TOOLS_PARITY_GATE=1 turns the scanner
+# into a hard merge gate so any future PR that adds a new inline Vertex
+# case for a tool that's already in the shared registry — i.e.
+# re-introduces parity drift — fails CI on contact.
+#
+# Report-only behavior is recoverable: flip back to '0' to silence the
+# gate while a new lift is in progress.
 
 on:
   pull_request:
@@ -45,10 +54,12 @@ jobs:
       - name: Run lift-not-duplicate parity scanner
         id: scan
         env:
-          # Set to '1' to fail the build on drift (gate mode). Today
-          # report-only so it doesn't block work while remaining tools
-          # are progressively lifted.
-          ORB_TOOLS_PARITY_GATE: '0'
+          # PR 1.B-10 promoted this from '0' to '1'. Phase 1.B lifts
+          # complete — any new inline Vertex case for a tool already in
+          # ORB_TOOL_REGISTRY now FAILS the build (DRIFT-CRITICAL exit
+          # code 2). Flip back to '0' if a future lift is in progress
+          # and you need to merge work-in-progress.
+          ORB_TOOLS_PARITY_GATE: '1'
         run: |
           set -o pipefail
           node scripts/orb-tools-lift-scanner.mjs 2>&1 | tee /tmp/orb-tools-parity.md
