@@ -1,14 +1,15 @@
 /**
- * BOOTSTRAP-INTENT-COVER-GEN — unit tests for intent-cover-service.
+ * Unit tests for intent-cover-service.
  *
  * Mocks Supabase, GoogleAuth, and the global `fetch` so the suite
- * exercises:
- *   - cache hit (existing cover_url short-circuits)
- *   - rate-limit (>= configured cap returns 'rate_limited')
- *   - ownership check
- *   - AI happy path (Vertex Imagen OK → upload OK → persist OK)
- *   - AI failure → curated-fallback path (still resolves)
- *   - DRY_RUN env flag goes straight to fallback without touching Vertex
+ * exercises the full resolution chain:
+ *   1. cache hit (existing cover_url short-circuits)
+ *   2. user_library — exact-category-tagged photo from profile library
+ *   3. user_universal — single fallback photo on profile
+ *   4. AI generation (gender-aware Vertex Imagen)
+ *   5. fallback_curated — server-shipped JPGs when AI fails
+ *
+ * Plus: ownership check, rate-limit (only on the AI path), DRY_RUN.
  */
 
 const supabaseMock = {
@@ -29,11 +30,9 @@ jest.mock('google-auth-library', () => {
   };
 });
 
-// Stand-in for the global fetch the service calls against Vertex.
 const vertexFetch = jest.fn();
 (global as { fetch: typeof fetch }).fetch = vertexFetch as unknown as typeof fetch;
 
-// Stub fs.readFile so the fallback path doesn't need real files on disk.
 jest.mock('node:fs', () => {
   const real = jest.requireActual('node:fs');
   return {
@@ -45,7 +44,6 @@ jest.mock('node:fs', () => {
   };
 });
 
-// Helper: chainable supabase.from(...) builder.
 type Stub = Record<string, jest.Mock>;
 function chain(returns: { data?: unknown; error?: unknown; count?: number } = {}): Stub {
   const stub: Stub = {
@@ -57,10 +55,24 @@ function chain(returns: { data?: unknown; error?: unknown; count?: number } = {}
     gte: jest.fn(() => stub),
     maybeSingle: jest.fn(async () => returns),
     single: jest.fn(async () => returns),
+    // For library lookup: the chain ends with .eq() returning a thenable
+    // result. The test rig resolves the chain via maybeSingle / single
+    // for single-row queries; for the library case the service awaits the
+    // chain itself, which is implemented via the `then` shim below.
     then: undefined as unknown as jest.Mock,
   };
-  // Supabase counts use { count, head } in select(); the test relies on the
-  // `count` property when rate-limit checks read it.
+  // For multi-row queries (library lookup): the service does
+  //   await supabase.from(...).select(...).eq(...).eq(...)
+  // i.e. awaits the chain directly. Make the chain awaitable.
+  if (returns.data !== undefined && Array.isArray(returns.data)) {
+    (stub.eq as jest.Mock).mockImplementation(() => {
+      const inner: Stub = {
+        ...stub,
+        eq: jest.fn(async () => returns),
+      };
+      return inner;
+    });
+  }
   if (returns.count !== undefined) {
     (stub as unknown as { count: number }).count = returns.count;
     (stub.select as jest.Mock).mockImplementation(() => ({
@@ -95,21 +107,48 @@ beforeEach(() => {
   process.env.INTENT_COVER_RATE_LIMIT_PER_DAY = '10';
 });
 
+// Standard mock-chain order for the AI path (no library, no universal):
+//   1. intent fetch
+//   2. library lookup        (empty array)
+//   3. universal lookup      (null)
+//   4. rate-limit count
+//   5. gender lookup
+//   6. persistCover update
+
 describe('generateCoverForIntent', () => {
   it('returns cached cover_url when one is already set and force is not requested', async () => {
-    supabaseMock.from
-      .mockReturnValueOnce(
-        chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: 'https://x/y.png' } }),
-      );
+    supabaseMock.from.mockReturnValueOnce(
+      chain({
+        data: {
+          intent_id: 'i1',
+          requester_user_id: 'u1',
+          cover_url: 'https://x/y.png',
+          cover_source: 'user_library',
+          category: 'sport.tennis',
+        },
+      }),
+    );
     const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
-    expect(out).toEqual({ cover_url: 'https://x/y.png', source: 'ai_generated', cached: true });
+    expect(out).toEqual({
+      cover_url: 'https://x/y.png',
+      source: 'user_library',
+      cached: true,
+    });
     expect(vertexFetch).not.toHaveBeenCalled();
   });
 
   it('rejects when caller is not the intent owner', async () => {
     supabaseMock.from.mockReturnValueOnce(
-      chain({ data: { intent_id: 'i1', requester_user_id: 'someone-else', cover_url: null } }),
+      chain({
+        data: {
+          intent_id: 'i1',
+          requester_user_id: 'someone-else',
+          cover_url: null,
+          cover_source: null,
+          category: 'dance.salsa',
+        },
+      }),
     );
     const { generateCoverForIntent, CoverGenError } = await import(
       '../src/services/intent-cover-service'
@@ -119,30 +158,121 @@ describe('generateCoverForIntent', () => {
     ).rejects.toBeInstanceOf(CoverGenError);
   });
 
-  it('rate-limits when >= configured generations in last 24h', async () => {
+  it('user_library: returns the user-uploaded category-tagged photo without calling Vertex', async () => {
     supabaseMock.from
-      // intent fetch
-      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
-      // rate-limit count
+      // intent
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'sport.tennis',
+          },
+        }),
+      )
+      // library lookup — one match
+      .mockReturnValueOnce(
+        chain({ data: [{ cover_url: 'https://lib.example/tennis.jpg' }] }),
+      )
+      // persistCover update
+      .mockReturnValueOnce(chain({ data: null, error: null }));
+
+    const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
+    const out = await generateCoverForIntent({
+      intentId: 'i1',
+      userId: 'u1',
+      theme: 'tennis',
+      force: true,
+    });
+    expect(out).toEqual({
+      cover_url: 'https://lib.example/tennis.jpg',
+      source: 'user_library',
+      cached: false,
+    });
+    expect(vertexFetch).not.toHaveBeenCalled();
+  });
+
+  it('user_universal: when no library match, uses the profile universal photo', async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'food.cooking_class',
+          },
+        }),
+      )
+      // library lookup — no match
+      .mockReturnValueOnce(chain({ data: [] }))
+      // universal lookup — set
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: 'https://prof.example/me.jpg' } }))
+      // persistCover update
+      .mockReturnValueOnce(chain({ data: null, error: null }));
+
+    const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
+    const out = await generateCoverForIntent({
+      intentId: 'i1',
+      userId: 'u1',
+      theme: 'cooking',
+      force: true,
+    });
+    expect(out).toEqual({
+      cover_url: 'https://prof.example/me.jpg',
+      source: 'user_universal',
+      cached: false,
+    });
+    expect(vertexFetch).not.toHaveBeenCalled();
+  });
+
+  it('rate-limits when >= configured generations in last 24h (only on AI path)', async () => {
+    supabaseMock.from
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'fitness.gym',
+          },
+        }),
+      )
+      // library — empty
+      .mockReturnValueOnce(chain({ data: [] }))
+      // universal — null
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: null } }))
+      // rate-limit count — over the cap
       .mockReturnValueOnce(chain({ count: 10 }));
-    const { generateCoverForIntent, CoverGenError } = await import(
-      '../src/services/intent-cover-service'
-    );
+    const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     await expect(
       generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'fitness' }),
     ).rejects.toMatchObject({ code: 'rate_limited' });
-    expect(CoverGenError).toBeDefined();
   });
 
-  it('falls back to curated library when DRY_RUN is set', async () => {
+  it('falls back to curated library when DRY_RUN is set (no library, no universal)', async () => {
     process.env.INTENT_COVER_DRY_RUN = 'true';
     supabaseMock.from
-      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
-      .mockReturnValueOnce(chain({ count: 0 }))
-      // profile gender lookup
-      .mockReturnValueOnce(chain({ data: { gender: 'female' } }))
-      // persistCover update
-      .mockReturnValueOnce(chain({ data: null, error: null }));
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'fitness.gym',
+          },
+        }),
+      )
+      .mockReturnValueOnce(chain({ data: [] })) // library
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: null } })) // universal
+      .mockReturnValueOnce(chain({ count: 0 })) // rate-limit
+      .mockReturnValueOnce(chain({ data: { gender: 'female' } })) // gender
+      .mockReturnValueOnce(chain({ data: null, error: null })); // persist
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/fallback.jpg' }),
     );
@@ -155,10 +285,22 @@ describe('generateCoverForIntent', () => {
 
   it('AI happy path: provider returns image, uploads to storage, persists URL', async () => {
     supabaseMock.from
-      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
-      .mockReturnValueOnce(chain({ count: 0 }))
-      .mockReturnValueOnce(chain({ data: { gender: 'male' } }))
-      .mockReturnValueOnce(chain({ data: null, error: null }));
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'dance.salsa',
+          },
+        }),
+      )
+      .mockReturnValueOnce(chain({ data: [] })) // library
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: null } })) // universal
+      .mockReturnValueOnce(chain({ count: 0 })) // rate-limit
+      .mockReturnValueOnce(chain({ data: { gender: 'male' } })) // gender
+      .mockReturnValueOnce(chain({ data: null, error: null })); // persist
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/ai.png' }),
     );
@@ -173,10 +315,12 @@ describe('generateCoverForIntent', () => {
     } as unknown as Response);
     const { generateCoverForIntent } = await import('../src/services/intent-cover-service');
     const out = await generateCoverForIntent({ intentId: 'i1', userId: 'u1', theme: 'dance' });
-    expect(out).toEqual({ cover_url: 'https://files.example/ai.png', source: 'ai_generated', cached: false });
+    expect(out).toEqual({
+      cover_url: 'https://files.example/ai.png',
+      source: 'ai_generated',
+      cached: false,
+    });
     expect(vertexFetch).toHaveBeenCalledTimes(1);
-
-    // The Imagen prompt must reflect the requester's gender.
     const sentBody = JSON.parse(vertexFetch.mock.calls[0][1].body) as {
       instances: { prompt: string }[];
     };
@@ -186,7 +330,19 @@ describe('generateCoverForIntent', () => {
 
   it('AI failure → curated fallback (still resolves with success)', async () => {
     supabaseMock.from
-      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'dance.salsa',
+          },
+        }),
+      )
+      .mockReturnValueOnce(chain({ data: [] }))
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: null } }))
       .mockReturnValueOnce(chain({ count: 0 }))
       .mockReturnValueOnce(chain({ data: { gender: null } }))
       .mockReturnValueOnce(chain({ data: null, error: null }));
@@ -206,10 +362,23 @@ describe('generateCoverForIntent', () => {
 
   it('skips the profile gender lookup when caller passes gender explicitly', async () => {
     supabaseMock.from
-      .mockReturnValueOnce(chain({ data: { intent_id: 'i1', requester_user_id: 'u1', cover_url: null } }))
-      .mockReturnValueOnce(chain({ count: 0 }))
-      // No profile chain — caller passes gender, so the service must NOT look it up.
-      .mockReturnValueOnce(chain({ data: null, error: null }));
+      .mockReturnValueOnce(
+        chain({
+          data: {
+            intent_id: 'i1',
+            requester_user_id: 'u1',
+            cover_url: null,
+            cover_source: null,
+            category: 'sport.tennis',
+          },
+        }),
+      )
+      .mockReturnValueOnce(chain({ data: [] })) // library
+      .mockReturnValueOnce(chain({ data: { universal_intent_cover_url: null } })) // universal
+      .mockReturnValueOnce(chain({ count: 0 })) // rate-limit
+      // No gender lookup mocked — caller passed gender, the service must
+      // not hit profiles for gender.
+      .mockReturnValueOnce(chain({ data: null, error: null })); // persist
     supabaseMock.storage.from.mockReturnValue(
       storageStub({ publicUrl: 'https://files.example/ai.png' }),
     );
@@ -234,11 +403,8 @@ describe('generateCoverForIntent', () => {
     };
     expect(sentBody.instances[0].prompt).toMatch(/one smiling woman/i);
     expect(sentBody.instances[0].prompt).toMatch(/tennis/i);
-    // Caller passed gender — the test only mocked 3 supabase.from chains
-    // (intent, rate-limit, persist). If we erroneously called profiles
-    // lookup, persist would silently get the wrong stub; the upload
-    // assertion on vertexFetch above is what guarantees we got there.
-    expect(supabaseMock.from).toHaveBeenCalledTimes(3);
+    // 5 chains: intent, library, universal, rate-limit, persist.
+    expect(supabaseMock.from).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -303,7 +469,6 @@ describe('buildCoverPrompt', () => {
     for (const t of themes) {
       const p = buildCoverPrompt(t, null);
       expect(p.length).toBeGreaterThan(120);
-      // Realism + no-cartoon guarantee shared across every theme.
       expect(p).toMatch(/photorealistic/i);
       expect(p).toMatch(/not a cartoon/i);
     }
