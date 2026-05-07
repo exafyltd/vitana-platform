@@ -6853,68 +6853,27 @@ async function executeLiveApiToolInner(
       }
 
       case 'respond_to_match': {
-        const matchId = String(args.match_id || '').trim();
-        const response = String(args.response || '').trim() as 'express_interest' | 'decline';
-        const confirmed = args.confirmed === true;
-        if (!matchId || !['express_interest', 'decline'].includes(response)) {
-          return { success: false, result: '', error: 'match_id and response (express_interest|decline) required' };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        if (!confirmed) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'awaiting_confirmation',
-              instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
-            }),
-          };
-        }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
-
-          const { data: m } = await supabase
-            .from('intent_matches')
-            .select('match_id, intent_a_id, intent_b_id, state, kind_pairing')
-            .eq('match_id', matchId)
-            .maybeSingle();
-          if (!m) return { success: false, result: '', error: 'match_not_found' };
-
-          const { data: aOwner } = await supabase
-            .from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_a_id).maybeSingle();
-          const isA = aOwner && (aOwner as any).requester_user_id === session.identity!.user_id;
-          const stateField = response === 'express_interest'
-            ? (isA ? 'responded_by_a' : 'responded_by_b')
-            : 'declined';
-
-          let nextState: string = stateField;
-          if (response === 'express_interest') {
-            if ((m as any).state === 'responded_by_b' && stateField === 'responded_by_a') nextState = 'mutual_interest';
-            if ((m as any).state === 'responded_by_a' && stateField === 'responded_by_b') nextState = 'mutual_interest';
-          }
-
-          await supabase.from('intent_matches').update({ state: nextState }).eq('match_id', matchId);
-
-          if (nextState === 'mutual_interest') {
-            const { tryUnlockReveal } = await import('../services/intent-mutual-reveal');
-            const { notifyMutualInterest } = await import('../services/intent-notifier');
-            await tryUnlockReveal(matchId);
-            await notifyMutualInterest(matchId);
-          }
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'updated',
-              state: nextState,
-              mutual_interest_unlocked: nextState === 'mutual_interest',
-            }),
-          };
-        } catch (err: any) {
-          console.error('[VTID-01975] respond_to_match error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'respond_to_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'mark_intent_fulfilled': {
@@ -6938,58 +6897,27 @@ async function executeLiveApiToolInner(
 
       // VTID-DANCE-D10: voice-driven direct invite.
       case 'share_intent_post': {
-        const intentId = String(args.intent_id || '').trim();
-        const recipients = Array.isArray(args.recipient_vitana_ids)
-          ? args.recipient_vitana_ids
-              .map((r: any) => String(r ?? '').trim().replace(/^@/, '').toLowerCase())
-              .filter((r: string) => /^[a-z][a-z0-9]{3,15}$/.test(r))
-          : [];
-        const note = typeof args.note === 'string' ? args.note.slice(0, 280) : null;
-        const confirmed = Boolean(args.confirmed);
-
-        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
-        if (recipients.length === 0) return { success: false, result: '', error: 'recipient_vitana_ids must include at least one valid id' };
-
-        // Stage 1: read-back without dispatching.
-        if (!confirmed) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              stage: 'confirmation',
-              intent_id: intentId,
-              recipients,
-              note,
-              instructions: `Read back the recipients (@${recipients.join(', @')}) and ask the user to confirm. Then call share_intent_post again with confirmed=true.`,
-            }),
-          };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${intentId}/share`;
-          // Forward the user's JWT so route auth + tier checks apply.
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const fetchRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
-            },
-            body: JSON.stringify({
-              recipient_vitana_ids: recipients,
-              note: note || undefined,
-              channel: 'in_app',
-            }),
-          });
-          const data = await fetchRes.json();
-          if (!fetchRes.ok) {
-            return { success: false, result: '', error: (data as any)?.error || 'share_failed' };
-          }
-          return { success: true, result: JSON.stringify(data) };
-        } catch (err: any) {
-          console.error('[VTID-DANCE-D10] share_intent_post error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'share_intent_post',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-02770: navigate_to_screen is routed at the top of handleToolCall
@@ -7002,28 +6930,27 @@ async function executeLiveApiToolInner(
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
       case 'scan_existing_matches': {
-        const intentKind = String(args.intent_kind || '').trim();
-        if (!intentKind) return { success: false, result: '', error: 'intent_kind is required' };
-        const params = new URLSearchParams({ intent_kind: intentKind });
-        if (args.category_prefix) params.set('category_prefix', String(args.category_prefix));
-        if (args.variety) params.set('variety', String(args.variety));
-
-        try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intent-scan?${params.toString()}`;
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const res = await fetch(url, {
-            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-          });
-          const data = await res.json();
-          return {
-            success: res.ok,
-            result: JSON.stringify(data),
-            error: res.ok ? undefined : (data as any)?.error || 'scan_failed',
-          };
-        } catch (err: any) {
-          console.error('[VTID-DANCE-D11.B] scan_existing_matches error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        // PR B-7: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'scan_existing_matches',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
+          },
+          supabase,
+        );
       }
 
       // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
