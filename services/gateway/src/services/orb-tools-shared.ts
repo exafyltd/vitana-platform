@@ -79,45 +79,186 @@ export type OrbToolResult =
 // Tool handlers
 // ---------------------------------------------------------------------------
 
-export async function tool_search_memory(
+/**
+ * Shared retrieval-router-backed search. Both Vertex's search_memory and
+ * search_web (and search_knowledge if/when it lifts) call into the same
+ * computeRetrievalRouterDecision + buildContextPack stack. The only
+ * differences are: force_sources, limit_overrides, the hits field they
+ * read from the contextPack, and the output formatter.
+ */
+async function _runRetrievalSearch(
+  toolName: 'search_memory' | 'search_web' | 'search_knowledge',
   args: OrbToolArgs,
   id: OrbToolIdentity,
-  sb: SupabaseClient,
 ): Promise<OrbToolResult> {
   const query = String(args.query ?? '').trim();
-  const limit = Math.min(20, Math.max(1, Number(args.limit ?? 5)));
-  if (!query) return { ok: true, result: { items: [] }, text: 'No query provided.' };
-  const { data, error } = await sb
-    .from('memory_items')
-    .select('id, content, category_key, created_at, importance')
-    .eq('user_id', id.user_id)
-    .ilike('content', `%${query}%`)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) return { ok: false, error: `memory search failed: ${error.message}` };
+  if (!query) {
+    return { ok: false, error: `${toolName} requires a non-empty query.` };
+  }
+
+  const { computeRetrievalRouterDecision } = await import('./retrieval-router');
+  const { buildContextPack } = await import('./context-pack-builder');
+  const { createContextLens } = await import('../types/context-lens');
+
+  // Per-tool router config (matches orb-live.ts:4538/4645/4593).
+  let routerConfig: {
+    channel: 'orb';
+    force_sources: ('memory_garden' | 'knowledge_hub' | 'web_search')[];
+    limit_overrides: { memory_garden: number; knowledge_hub: number; web_search: number };
+  };
+  if (toolName === 'search_memory') {
+    routerConfig = {
+      channel: 'orb',
+      force_sources: ['memory_garden'],
+      limit_overrides: { memory_garden: 8, knowledge_hub: 0, web_search: 0 },
+    };
+  } else if (toolName === 'search_web') {
+    routerConfig = {
+      channel: 'orb',
+      force_sources: ['web_search'],
+      limit_overrides: { memory_garden: 0, knowledge_hub: 0, web_search: 5 },
+    };
+  } else {
+    routerConfig = {
+      channel: 'orb',
+      force_sources: ['knowledge_hub'],
+      limit_overrides: { memory_garden: 0, knowledge_hub: 4, web_search: 0 },
+    };
+  }
+  const routerDecision = computeRetrievalRouterDecision(query, routerConfig);
+
+  if (!id.tenant_id) {
+    return { ok: false, error: `${toolName} requires a tenant_id on the session.` };
+  }
+
+  const lens = createContextLens(id.tenant_id, id.user_id, {
+    workspace_scope: 'product',
+    active_role: id.role || undefined,
+  });
+
+  // Synthesize session-context fields when the caller didn't provide them
+  // (LiveKit pipeline doesn't have a long-lived WebSocket sessionId; using
+  // orb_session_id from args.session_id when available, else user_id).
+  const threadId = id.thread_id || id.session_id || `${id.user_id}:${toolName}`;
+  const turnNumber = typeof id.turn_number === 'number' ? id.turn_number : 0;
+  const conversationStart = id.session_started_iso || new Date().toISOString();
+  const role = id.role || 'user';
+
+  const contextPack = await buildContextPack({
+    lens,
+    query,
+    channel: 'orb',
+    thread_id: threadId,
+    turn_number: turnNumber,
+    conversation_start: conversationStart,
+    role,
+    router_decision: routerDecision,
+  });
+
+  // VTID-01224-FIX: voice cap. Oversized function_response payloads stall
+  // the Live API. Mirror Vertex's per-tool 4 KB ceiling.
+  const MAX = 4000;
+
+  if (toolName === 'search_memory') {
+    const memoryHits = (contextPack.memory_hits || []) as Array<{
+      category_key?: string;
+      content?: string;
+    }>;
+    if (memoryHits.length === 0) {
+      return {
+        ok: true,
+        result: { items: [] },
+        text: 'No relevant memories found for this query.',
+      };
+    }
+    const top = memoryHits.slice(0, 8);
+    let formatted = top
+      .map((h) => `[${h.category_key || 'memory'}] ${(h.content || '').substring(0, 300)}`)
+      .join('\n');
+    if (formatted.length > MAX) formatted = formatted.substring(0, MAX) + '\n... (truncated)';
+    return {
+      ok: true,
+      result: { items: top },
+      text: `Found ${top.length} relevant memories:\n${formatted}`,
+    };
+  }
+
+  if (toolName === 'search_web') {
+    const webHits = (contextPack.web_hits || []) as Array<{
+      title?: string;
+      snippet?: string;
+      content?: string;
+      url?: string;
+      citation?: string;
+    }>;
+    if (webHits.length === 0) {
+      return {
+        ok: true,
+        result: { items: [] },
+        text: 'No relevant web results found for this query.',
+      };
+    }
+    let formatted = webHits
+      .map(
+        (h) =>
+          `**${h.title || 'Web Result'}**\n${h.snippet || h.content || ''}\nSource: ${h.url || h.citation || 'web'}`,
+      )
+      .join('\n\n');
+    if (formatted.length > MAX) formatted = formatted.substring(0, MAX) + '\n... (truncated)';
+    return {
+      ok: true,
+      result: { items: webHits },
+      text: `Found ${webHits.length} relevant web results:\n${formatted}`,
+    };
+  }
+
+  // search_knowledge (kept for future lift; Vertex still has its own case
+  // today, but the shared dispatcher routes here when called).
+  const knowledgeHits = (contextPack.knowledge_hits || []) as Array<{
+    title?: string;
+    excerpt?: string;
+    content?: string;
+    citation?: string;
+  }>;
+  if (knowledgeHits.length === 0) {
+    return {
+      ok: true,
+      result: { items: [] },
+      text: 'No relevant knowledge entries found for this query.',
+    };
+  }
+  let formatted = knowledgeHits
+    .map((h) => `**${h.title || 'KB'}**\n${h.excerpt || h.content || ''}\nSource: ${h.citation || 'kb'}`)
+    .join('\n\n');
+  if (formatted.length > MAX) formatted = formatted.substring(0, MAX) + '\n... (truncated)';
   return {
     ok: true,
-    result: {
-      items: (data || []).map((d) => ({
-        id: d.id,
-        content: String(d.content ?? '').slice(0, 400),
-        category: d.category_key,
-        when: d.created_at,
-      })),
-    },
+    result: { items: knowledgeHits },
+    text: `Found ${knowledgeHits.length} relevant knowledge entries:\n${formatted}`,
   };
 }
 
-export async function tool_search_web(args: OrbToolArgs): Promise<OrbToolResult> {
-  const query = String(args.query ?? '').trim();
-  if (!query) return { ok: true, result: { items: [] }, text: 'No query provided.' };
-  return {
-    ok: true,
-    result: { items: [] },
-    text:
-      `Web search isn't connected to a provider in this build. ` +
-      `Ask me what I already know about "${query}" — I'll answer from your memory + the Knowledge Hub instead.`,
-  };
+export async function tool_search_memory(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  // PR D-3: lifted from orb-live.ts:4538 (VTID-01224). Vertex's auth impl
+  // routes through computeRetrievalRouterDecision + buildContextPack —
+  // proper retrieval-router with relevance ranking, embeddings, etc. The
+  // previous shared stub did naive ilike — strict regression vs Vertex.
+  return _runRetrievalSearch('search_memory', args, id);
+}
+
+export async function tool_search_web(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  // PR D-3: lifted from orb-live.ts:4645 (VTID-01224). Vertex calls the
+  // same retrieval-router stack with web_search forced. The previous
+  // shared stub returned a hardcoded "web search isn't connected" message.
+  return _runRetrievalSearch('search_web', args, id);
 }
 
 export async function tool_recall_conversation_at_time(
@@ -1632,7 +1773,7 @@ type OrbToolHandler = (
 
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   search_memory: tool_search_memory,
-  search_web: (args) => tool_search_web(args),
+  search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
   report_to_specialist: (args) => tool_report_to_specialist(args),

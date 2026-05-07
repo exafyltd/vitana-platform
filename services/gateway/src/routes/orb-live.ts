@@ -4536,58 +4536,30 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_memory': {
-        const query = (args.query as string) || '';
-        const categories = args.categories as string[] | undefined;
-
-        // VTID-01224-FIX: Reduced limits to prevent oversized function_response
-        // that can stall Gemini Live API. Max 8 hits (was 10), capped at 4000 chars.
-        const routerDecision = computeRetrievalRouterDecision(query, {
-          channel: 'orb',
-          force_sources: ['memory_garden'],
-          limit_overrides: {
-            memory_garden: 8,
-            knowledge_hub: 0,
-            web_search: 0,
+        // PR D-3: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'search_memory',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+            session_started_iso: session.createdAt.toISOString(),
           },
-        });
-
-        const contextPack = await buildContextPack({
-          lens,
-          query,
-          channel: 'orb',
-          thread_id: session.thread_id || session.sessionId,
-          turn_number: session.turn_count,
-          conversation_start: session.createdAt.toISOString(),
-          role: session.identity.role || 'user',
-          router_decision: routerDecision,
-        });
-
-        // Format memory results
-        const memoryHits = contextPack.memory_hits || [];
-        if (memoryHits.length === 0) {
-          return {
-            success: true,
-            result: 'No relevant memories found for this query.',
-          };
-        }
-
-        // VTID-01224-FIX: Cap response to top 8 hits and 4000 chars max.
-        // Oversized function_response payloads cause Gemini Live API to stall.
-        const MAX_TOOL_RESPONSE_CHARS = 4000;
-        const topHits = memoryHits.slice(0, 8);
-        let formatted = topHits
-          .map((hit: any) => `[${hit.category_key || 'memory'}] ${(hit.content || '').substring(0, 300)}`)
-          .join('\n');
-
-        if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
-          formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
-        }
-
-        console.log(`[VTID-01224] search_memory executed: ${topHits.length}/${memoryHits.length} hits, ${formatted.length} chars, ${Date.now() - startTime}ms`);
-        return {
-          success: true,
-          result: `Found ${topHits.length} relevant memories:\n${formatted}`,
-        };
+          supabase,
+        );
       }
 
       case 'search_knowledge': {
@@ -4643,48 +4615,30 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_web': {
-        const query = (args.query as string) || '';
-
-        // Build context pack with web search focus
-        const routerDecision = computeRetrievalRouterDecision(query, {
-          channel: 'orb',
-          force_sources: ['web_search'],
-          limit_overrides: {
-            memory_garden: 0,
-            knowledge_hub: 0,
-            web_search: 5,
-          },
-        });
-
-        const contextPack = await buildContextPack({
-          lens,
-          query,
-          channel: 'orb',
-          thread_id: session.thread_id || session.sessionId,
-          turn_number: session.turn_count,
-          conversation_start: session.createdAt.toISOString(),
-          role: session.identity.role || 'user',
-          router_decision: routerDecision,
-        });
-
-        // Format web results
-        const webHits = contextPack.web_hits || [];
-        if (webHits.length === 0) {
-          return {
-            success: true,
-            result: 'No relevant web results found for this query.',
-          };
+        // PR D-3: lifted to services/orb-tools-shared.ts.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        const formatted = webHits
-          .map((hit: any) => `**${hit.title || 'Web Result'}**\n${hit.snippet || hit.content}\nSource: ${hit.url || hit.citation || 'web'}`)
-          .join('\n\n');
-
-        console.log(`[VTID-01224] search_web executed: ${webHits.length} hits, ${Date.now() - startTime}ms`);
-        return {
-          success: true,
-          result: `Found ${webHits.length} relevant web results:\n${formatted}`,
-        };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'search_web',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+            session_started_iso: session.createdAt.toISOString(),
+          },
+          supabase,
+        );
       }
 
       // =====================================================================
