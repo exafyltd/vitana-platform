@@ -4447,70 +4447,48 @@ export async function handleNavigateToScreen(
 /**
  * VTID-NAV-TIMEJOURNEY: Handle get_current_screen tool call.
  *
- * Returns the user's LIVE current screen based on session.current_route,
- * resolved through the navigation catalog for a friendly title +
- * description. This is how Gemini answers "where am I?" reliably — the
- * system instruction gets stale the moment anything navigates, but this
- * tool always reads the freshest in-memory value and returns it.
- *
- * Self-contained — no identity required (reads session state only), so
- * it's anonymous-safe.
+ * PR 1.B-3 lifted the body into services/orb-tools-shared.ts so the LiveKit
+ * pipeline runs the same lookup. Vertex still resolves session-state from
+ * its WebSocket session (current_route + recent_routes are mutated inline
+ * by handleNavigateToScreen + handleNavigate as the user moves around) and
+ * passes them via args to the shared dispatcher. Anonymous-safe — no
+ * identity required.
  */
-function handleGetCurrentScreen(
-  session: GeminiLiveSession
-): { success: boolean; result: string; error?: string } {
-  const route = session.current_route || null;
-  if (!route) {
+async function handleGetCurrentScreen(
+  session: GeminiLiveSession,
+): Promise<{ success: boolean; result: string; error?: string }> {
+  const sb = getSupabase();
+  if (!sb) {
+    // Fallback — the shared dispatcher signature requires sb but
+    // tool_get_current_screen is anonymous-safe and doesn't read it. If
+    // Supabase isn't configured we degrade to "unknown screen" rather than
+    // failing the tool call.
     return {
       success: true,
-      result: 'The host app has not reported a current screen for this session. Tell the user you can see they\'re in the Vitana app but not which specific screen, and ask what they\'d like to do next.',
+      result: JSON.stringify({
+        title: 'Unknown screen',
+        description: 'The user is on a route that is not in the navigation catalog.',
+        route: session.current_route || null,
+        recent_screens: [],
+      }),
     };
   }
-
-  const lang = session.lang || 'en';
-  const entry = lookupNavByRoute(route);
-  if (entry) {
-    const content = getNavContent(entry, lang);
-    // Include the journey trail so Gemini can also answer "where was I before?"
-    // in the same tool call without needing another hop.
-    const trail = Array.isArray(session.recent_routes) ? session.recent_routes : [];
-    const trailTitles: string[] = [];
-    for (const r of trail) {
-      if (r === route) continue;
-      const e = lookupNavByRoute(r);
-      if (e) {
-        trailTitles.push(getNavContent(e, lang).title);
-      }
-      if (trailTitles.length >= 4) break;
-    }
-    const payload = {
-      title: content.title,
-      description: content.description,
-      category: entry.category,
-      screen_id: entry.screen_id,
-      // route intentionally included for structured context, but Gemini
-      // is instructed in the tool description not to speak it aloud.
-      route: entry.route,
-      recent_screens: trailTitles,
-    };
-    return {
-      success: true,
-      result: JSON.stringify(payload),
-    };
-  }
-
-  // Unknown route — catalog miss. Return what we have so Gemini can still
-  // give a useful answer (e.g. "I can see you're in the Vitana app but not
-  // which exact screen — would you like me to take you somewhere?")
-  return {
-    success: true,
-    result: JSON.stringify({
-      title: 'Unknown screen',
-      description: 'The user is on a route that is not in the navigation catalog.',
-      route,
-      recent_screens: [],
-    }),
-  };
+  const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+  return await dispatchOrbToolForVertex(
+    'get_current_screen',
+    {
+      current_route: session.current_route ?? null,
+      recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
+    },
+    {
+      user_id: session.identity?.user_id ?? '',
+      tenant_id: session.identity?.tenant_id ?? null,
+      role: session.identity?.role ?? null,
+      vitana_id: session.identity?.vitana_id ?? null,
+      lang: session.lang ?? 'en',
+    },
+    sb,
+  );
 }
 
 async function executeLiveApiToolInner(
@@ -4525,7 +4503,7 @@ async function executeLiveApiToolInner(
   // the auth gate so the existing identity check + lens construction below
   // can stay non-null for the other tools.
   if (toolName === 'get_current_screen') {
-    return handleGetCurrentScreen(session);
+    return await handleGetCurrentScreen(session);
   }
   // VTID-NAV-UNIFIED: Single tool replaces navigator_consult + navigate_to_screen.
   // The LLM just passes the user's words. The backend does all the matching,

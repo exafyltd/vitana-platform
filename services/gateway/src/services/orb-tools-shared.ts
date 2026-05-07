@@ -31,6 +31,7 @@ import { resolvePillarKey } from '../lib/vitana-pillars';
 import {
   lookupScreen,
   lookupByAlias,
+  lookupByRoute,
   suggestSimilar,
   getContent,
   type NavCatalogEntry,
@@ -1817,6 +1818,85 @@ export async function tool_navigate_to_screen(args: OrbToolArgs): Promise<OrbToo
 }
 
 // ---------------------------------------------------------------------------
+// VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3)
+//
+// Mirrors orb-live.ts:handleGetCurrentScreen byte-for-byte: resolves the
+// user's LIVE current route via the navigation catalog and includes the
+// recent-screens trail so the LLM can answer "where am I?" / "where was I
+// before?" in one tool call. Anonymous-safe — reads no user-scoped state.
+//
+// Both pipelines pass current_route + recent_routes via args (Vertex from
+// session.current_route / session.recent_routes; LiveKit from
+// GatewayClient.current_route / .recent_routes which session.py seeds from
+// the bootstrap response).
+// ---------------------------------------------------------------------------
+
+export async function tool_get_current_screen(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  const route = typeof args.current_route === 'string' && args.current_route.length > 0
+    ? args.current_route
+    : null;
+  const recent: string[] = Array.isArray(args.recent_routes)
+    ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
+    : [];
+  const lang = (id.lang || 'en') as string;
+
+  if (!route) {
+    return {
+      ok: true,
+      result: { route: null, recent_screens: [] },
+      text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen, and ask what they'd like to do next.",
+    };
+  }
+
+  const entry = lookupByRoute(route);
+  if (entry) {
+    const content = getContent(entry, lang);
+    const trailTitles: string[] = [];
+    for (const r of recent) {
+      if (r === route) continue;
+      const e = lookupByRoute(r);
+      if (e) trailTitles.push(getContent(e, lang).title);
+      if (trailTitles.length >= 4) break;
+    }
+    return {
+      ok: true,
+      result: {
+        title: content.title,
+        description: content.description,
+        category: entry.category,
+        screen_id: entry.screen_id,
+        route: entry.route,
+        recent_screens: trailTitles,
+      },
+      text: JSON.stringify({
+        title: content.title,
+        description: content.description,
+        category: entry.category,
+        screen_id: entry.screen_id,
+        route: entry.route,
+        recent_screens: trailTitles,
+      }),
+    };
+  }
+
+  // Unknown route — catalog miss.
+  const fallback = {
+    title: 'Unknown screen',
+    description: 'The user is on a route that is not in the navigation catalog.',
+    route,
+    recent_screens: [],
+  };
+  return {
+    ok: true,
+    result: fallback,
+    text: JSON.stringify(fallback),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // VTID-02753 — structured Health logging tools (LiveKit/text path).
 // Vertex path is wired in orb-live.ts directly. This shared handler keeps
 // the text-mode pipeline (POST /api/v1/orb/tool) in parity.
@@ -2234,6 +2314,11 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
   navigate_to_screen: (args) => tool_navigate_to_screen(args),
+  // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
+  // LIVE current screen via the nav catalog. Anonymous-safe — pulls
+  // current_route + recent_routes from args (Vertex/LiveKit pass them via
+  // session/GatewayClient state at dispatch time).
+  get_current_screen: tool_get_current_screen,
   // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
   find_perfect_product: tool_find_perfect_product,
   find_perfect_practitioner: tool_find_perfect_practitioner,
