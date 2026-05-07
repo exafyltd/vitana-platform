@@ -15,13 +15,15 @@
  *   - NEVER returns decrypted key material over the wire.
  */
 
-import { Router, Request, Response } from 'express';
-import * as jose from 'jose';
+import { Router, Response } from 'express';
 import * as crypto from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
+router.use(requireAuth);
+
 const VTID = 'VTID-02403';
 const LOG_PREFIX = '[AI-Assistants]';
 
@@ -79,23 +81,8 @@ const PROVIDERS: Record<ProviderId, ProviderConfig> = {
 };
 
 // ---------------------------------------------------------------------------
-// JWT + tenant helpers
+// Tenant helpers
 // ---------------------------------------------------------------------------
-
-function getUser(req: Request): { user_id: string; tenant_id: string | null } | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7);
-  try {
-    const claims = jose.decodeJwt(token);
-    const user_id = typeof claims.sub === 'string' ? claims.sub : null;
-    if (!user_id) return null;
-    const app_metadata = (claims as { app_metadata?: { active_tenant_id?: string } }).app_metadata;
-    return { user_id, tenant_id: app_metadata?.active_tenant_id ?? null };
-  } catch {
-    return null;
-  }
-}
 
 async function resolveTenantId(userId: string): Promise<string | null> {
   const supabase = getSupabase();
@@ -201,13 +188,14 @@ async function logConsent(params: {
 // =============================================================================
 // GET /providers — tenant-aware catalog
 // =============================================================================
-router.get('/providers', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+router.get('/providers', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity!.user_id;
+  const tokenTenantId = req.identity!.tenant_id;
+
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id));
+  const tenantId = tokenTenantId ?? (await resolveTenantId(userId));
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_NOT_FOUND' });
 
   // Catalog
@@ -235,7 +223,7 @@ router.get('/providers', async (req: Request, res: Response) => {
   const { data: connections } = await supabase
     .from('user_connections')
     .select('id, connector_id, is_active, connected_at')
-    .eq('user_id', user.user_id)
+    .eq('user_id', userId)
     .eq('category', 'ai_assistant');
   const connByProvider = new Map(
     (connections ?? []).filter((c) => c.is_active).map((c) => [c.connector_id, c])
@@ -287,9 +275,10 @@ router.get('/providers', async (req: Request, res: Response) => {
 // =============================================================================
 // POST /apikey/:provider — encrypt + persist
 // =============================================================================
-router.post('/apikey/:provider', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+router.post('/apikey/:provider', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity!.user_id;
+  const tokenTenantId = req.identity!.tenant_id;
+
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -307,7 +296,7 @@ router.post('/apikey/:provider', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: `API_KEY_MUST_START_WITH_${cfg.prefix.replace(/-/g, '_').toUpperCase()}` });
   }
 
-  const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id));
+  const tenantId = tokenTenantId ?? (await resolveTenantId(userId));
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_NOT_FOUND' });
 
   // Tenant must allow this provider
@@ -336,7 +325,7 @@ router.post('/apikey/:provider', async (req: Request, res: Response) => {
     .from('user_connections')
     .select('id')
     .eq('tenant_id', tenantId)
-    .eq('user_id', user.user_id)
+    .eq('user_id', userId)
     .eq('connector_id', provider)
     .eq('category', 'ai_assistant')
     .is('provider_user_id', null)
@@ -364,7 +353,7 @@ router.post('/apikey/:provider', async (req: Request, res: Response) => {
       .from('user_connections')
       .insert({
         tenant_id: tenantId,
-        user_id: user.user_id,
+        user_id: userId,
         connector_id: provider,
         category: 'ai_assistant',
         display_name: cfg.display_name,
@@ -404,7 +393,7 @@ router.post('/apikey/:provider', async (req: Request, res: Response) => {
   }
 
   await logConsent({
-    user_id: user.user_id,
+    user_id: userId,
     tenant_id: tenantId,
     provider,
     action: 'connect',
@@ -417,9 +406,10 @@ router.post('/apikey/:provider', async (req: Request, res: Response) => {
 // =============================================================================
 // POST /verify/:provider — live check against provider
 // =============================================================================
-router.post('/verify/:provider', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+router.post('/verify/:provider', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity!.user_id;
+  const tokenTenantId = req.identity!.tenant_id;
+
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -432,7 +422,7 @@ router.post('/verify/:provider', async (req: Request, res: Response) => {
   const { data: conn, error: connErr } = await supabase
     .from('user_connections')
     .select('id, is_active')
-    .eq('user_id', user.user_id)
+    .eq('user_id', userId)
     .eq('connector_id', provider)
     .eq('category', 'ai_assistant')
     .order('connected_at', { ascending: false })
@@ -511,7 +501,7 @@ router.post('/verify/:provider', async (req: Request, res: Response) => {
   }
 
   // Tenant id for audit/oasis
-  const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id));
+  const tenantId = tokenTenantId ?? (await resolveTenantId(userId));
 
   // OASIS: emit only on real state transitions
   if (verifyStatus === 'ok') {
@@ -521,10 +511,10 @@ router.post('/verify/:provider', async (req: Request, res: Response) => {
       source: 'gateway',
       status: 'success',
       message: `AI provider verified: ${provider}`,
-      payload: { provider, model: cfg.default_model, latency_ms: latencyMs, user_id: user.user_id, tenant_id: tenantId },
+      payload: { provider, model: cfg.default_model, latency_ms: latencyMs, user_id: userId, tenant_id: tenantId },
     }).catch(() => {});
     await logConsent({
-      user_id: user.user_id,
+      user_id: userId,
       tenant_id: tenantId,
       provider,
       action: 'verify_ok',
@@ -544,12 +534,12 @@ router.post('/verify/:provider', async (req: Request, res: Response) => {
         verify_status: verifyStatus,
         http_status: status,
         failure_count: newFailureCount,
-        user_id: user.user_id,
+        user_id: userId,
         tenant_id: tenantId,
       },
     }).catch(() => {});
     await logConsent({
-      user_id: user.user_id,
+      user_id: userId,
       tenant_id: tenantId,
       provider,
       action: 'verify_failed',
@@ -570,16 +560,16 @@ router.post('/verify/:provider', async (req: Request, res: Response) => {
 // =============================================================================
 // GET /connections — user's AI connections
 // =============================================================================
-router.get('/connections', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+router.get('/connections', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity!.user_id;
+
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const { data: conns, error } = await supabase
     .from('user_connections')
     .select('id, connector_id, is_active, connected_at, disconnected_at, last_error')
-    .eq('user_id', user.user_id)
+    .eq('user_id', userId)
     .eq('category', 'ai_assistant')
     .order('connected_at', { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: error.message });
@@ -625,9 +615,10 @@ router.get('/connections', async (req: Request, res: Response) => {
 // =============================================================================
 // DELETE /:provider — soft-disconnect + purge encrypted key
 // =============================================================================
-router.delete('/:provider', async (req: Request, res: Response) => {
-  const user = getUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+router.delete('/:provider', async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity!.user_id;
+  const tokenTenantId = req.identity!.tenant_id;
+
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -639,7 +630,7 @@ router.delete('/:provider', async (req: Request, res: Response) => {
   const { data: conn } = await supabase
     .from('user_connections')
     .select('id')
-    .eq('user_id', user.user_id)
+    .eq('user_id', userId)
     .eq('connector_id', provider)
     .eq('category', 'ai_assistant')
     .eq('is_active', true)
@@ -666,17 +657,17 @@ router.delete('/:provider', async (req: Request, res: Response) => {
     })
     .eq('connection_id', conn.id);
 
-  const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id));
+  const tenantId = tokenTenantId ?? (await resolveTenantId(userId));
   emitOasisEvent({
     vtid: VTID,
     type: 'integration.ai.disconnected',
     source: 'gateway',
     status: 'info',
     message: `AI provider disconnected: ${provider}`,
-    payload: { provider, user_id: user.user_id, tenant_id: tenantId, connection_id: conn.id },
+    payload: { provider, user_id: userId, tenant_id: tenantId, connection_id: conn.id },
   }).catch(() => {});
   await logConsent({
-    user_id: user.user_id,
+    user_id: userId,
     tenant_id: tenantId,
     provider,
     action: 'disconnect',
