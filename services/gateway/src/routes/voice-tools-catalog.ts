@@ -35,11 +35,18 @@ interface ToolEntry {
   parameters?: Record<string, unknown>;
   backing_endpoint?: string;
   added_in_pr?: number;
+  // PR 1.B-9 — which pipeline(s) actually serve the tool. Reconciled from
+  // ORB_TOOL_REGISTRY + Vertex case arms + LiveKit all_tool_names() by
+  // scripts/voice-tools-manifest-reconcile.mjs. Empty array == "planned"
+  // (manifest-only phantom). The Voice Tools Catalog UI shows this as a
+  // "Wired in" pill so operators don't mistake a planned tool for a live
+  // one.
+  wired_in?: ('vertex' | 'livekit')[];
 }
 
 interface ToolManifest {
   generated_at: string;
-  source: 'manual' | 'ast-extracted';
+  source: 'manual' | 'ast-extracted' | 'reconciled';
   total: number;
   tools: ToolEntry[];
 }
@@ -106,10 +113,18 @@ router.get('/catalog/stats', (_req: Request, res: Response) => {
   const bySurface: Record<string, number> = {};
   const byRole: Record<string, number> = {};
   const byStatus: Record<string, number> = { live: 0, wip: 0, planned: 0 };
+  // PR 1.B-9 — pipeline-level visibility for the Voice Tools Catalog header.
+  // 'both', 'vertex_only', 'livekit_only', 'none'.
+  const byWiredIn: Record<string, number> = { both: 0, vertex_only: 0, livekit_only: 0, none: 0 };
   for (const t of m.tools) {
     bySurface[t.surface] = (bySurface[t.surface] ?? 0) + 1;
     for (const r of t.role) byRole[r] = (byRole[r] ?? 0) + 1;
     byStatus[t.status] = (byStatus[t.status] ?? 0) + 1;
+    const w = t.wired_in ?? [];
+    const hasV = w.includes('vertex');
+    const hasL = w.includes('livekit');
+    const k = hasV && hasL ? 'both' : hasV ? 'vertex_only' : hasL ? 'livekit_only' : 'none';
+    byWiredIn[k] = (byWiredIn[k] ?? 0) + 1;
   }
   return res.json({
     ok: true,
@@ -117,6 +132,7 @@ router.get('/catalog/stats', (_req: Request, res: Response) => {
     by_surface: bySurface,
     by_role: byRole,
     by_status: byStatus,
+    by_wired_in: byWiredIn,
     generated_at: m.generated_at,
     source: m.source,
   });
