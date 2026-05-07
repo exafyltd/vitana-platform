@@ -101,45 +101,39 @@ export async function tool_search_web(args: OrbToolArgs): Promise<OrbToolResult>
 export async function tool_recall_conversation_at_time(
   args: OrbToolArgs,
   id: OrbToolIdentity,
-  sb: SupabaseClient,
+  _sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const when = String(args.when ?? '').trim();
-  const lower = when.toLowerCase();
-  const now = new Date();
-  let from = new Date(now.getTime() - 86400000);
-  let to = now;
-  if (/yesterday/.test(lower)) {
-    const y = new Date(now.getTime() - 86400000);
-    y.setHours(0, 0, 0, 0);
-    from = y;
-    to = new Date(y.getTime() + 86400000);
-  } else if (/two days ago|day before yesterday/.test(lower)) {
-    const d = new Date(now.getTime() - 2 * 86400000);
-    d.setHours(0, 0, 0, 0);
-    from = d;
-    to = new Date(d.getTime() + 86400000);
-  } else if (/last week/.test(lower)) {
-    from = new Date(now.getTime() - 7 * 86400000);
+  // Lifted from orb-live.ts:4287 (PR B-3 of the lift-not-duplicate refactor).
+  // Both pipelines now call services/tool-recall-conversation through the
+  // shared dispatcher. Accepts both `time_hint` (Vertex's canonical) and
+  // legacy `when` (the prior LiveKit Python tool key).
+  const time_hint = String(args.time_hint ?? args.when ?? '').trim();
+  if (!time_hint) {
+    return { ok: false, error: 'time_hint is required' };
   }
-  const { data } = await sb
-    .from('ai_messages')
-    .select('id, role, content, created_at')
-    .eq('user_id', id.user_id)
-    .gte('created_at', from.toISOString())
-    .lte('created_at', to.toISOString())
-    .order('created_at', { ascending: true })
-    .limit(50);
-  return {
-    ok: true,
-    result: {
-      window: { from: from.toISOString(), to: to.toISOString() },
-      turns: (data || []).map((m) => ({
-        role: m.role,
-        text: String(m.content ?? '').slice(0, 300),
-        when: m.created_at,
-      })),
-    },
-  };
+  const topic_hint = typeof args.topic_hint === 'string' ? args.topic_hint : undefined;
+
+  const userTimezone =
+    typeof args.user_timezone === 'string' ? (args.user_timezone as string) : undefined;
+
+  try {
+    const { executeRecallConversationAtTime } = await import('./tool-recall-conversation');
+    const recall = await executeRecallConversationAtTime(
+      { time_hint, topic_hint },
+      { user_id: id.user_id, user_timezone: userTimezone },
+    );
+    if (!recall.ok) {
+      return { ok: false, error: recall.error || 'recall_failed' };
+    }
+    // Cap payload to keep below the 4 KB function-response stall threshold.
+    const payload = JSON.stringify(recall);
+    const MAX = 4000;
+    const text = payload.length > MAX ? payload.slice(0, MAX) + '...(truncated)' : payload;
+    return { ok: true, result: recall, text };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'recall_exception';
+    return { ok: false, error: msg };
+  }
 }
 
 export async function tool_switch_persona(args: OrbToolArgs): Promise<OrbToolResult> {
