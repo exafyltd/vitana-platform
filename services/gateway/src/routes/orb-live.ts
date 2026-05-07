@@ -4058,10 +4058,19 @@ export async function handleNavigateToScreen(
     directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string };
   };
 
-  // Already-there short-circuit — the shared dispatcher returned ok:true
-  // with already_there:true and a friendly text. Pass through unchanged.
+  // Already-there short-circuit — the shared dispatcher returns ok:true
+  // with already_there:true (so LiveKit gets a friendly LLM-visible text).
+  // Vertex's contract is success:false + error containing "already on…"
+  // (preserved from handleNavigateToScreen pre-lift; the tool-loop logic
+  // and the nav-redirect-flow tests both depend on that shape). Translate.
   if (result.already_there) {
-    return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+    return {
+      success: false,
+      result: '',
+      error: typeof r.text === 'string' && r.text.length > 0
+        ? r.text
+        : `The user is already on ${result.route || ''}. Suggest a related screen or just answer in voice instead.`,
+    };
   }
 
   // Vertex-only: set pendingNavigation + eagerly update current_route so
