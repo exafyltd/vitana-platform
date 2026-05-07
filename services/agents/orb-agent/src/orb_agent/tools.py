@@ -258,7 +258,13 @@ async def search_events(context: RunContext, query: str = "") -> str:
         query: Optional substring to filter on title/description (case-insensitive).
                Pass "" or omit to list all upcoming events.
     """
-    body = await _dispatch(context, "search_events", {"query": query})
+    # PR 1.B-8: when the result has a single dominant event, auto-redirect
+    # the user to the event-drawer overlay via the data channel. Comparable
+    # results (live_rooms in the mix, or top score not dominant) → list-only
+    # and the LLM lets the user pick.
+    body = await _dispatch_with_directive(context, "search_events", {"query": query})
+    # No gw.current_route eager update — the event-drawer is an overlay and
+    # the underlying screen does not change.
     return summarize(body)
 
 

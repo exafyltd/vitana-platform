@@ -552,6 +552,10 @@ export type CicdEventType =
   // COMM.GROUP_DETAIL because result was unambiguous (single hit or
   // exact name match). Lets ops measure auto-nav vs list-only ratio.
   | 'orb.search_community.auto_nav'
+  // VTID-01270A (PR 1.B-8): search_events auto-redirected to the
+  // OVERLAY.EVENT_DRAWER overlay because the top event dominated the
+  // runner-up by >= 0.15 and there were no live_rooms in the result.
+  | 'orb.search_events.auto_nav'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
