@@ -96,6 +96,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { initializeOrbWebSocket } = require('./routes/orb-live');
   // VTID-01218A: Voice LAB - ORB Live Observability API
   const voiceLabRouter = require('./routes/voice-lab').default;
+  // VTID-02766: Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+  const voiceToolsCatalogRouter = require('./routes/voice-tools-catalog').default;
   // AI Personality Configuration API
   const aiPersonalityRouter = require('./routes/ai-personality').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
@@ -688,6 +690,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01218A: Voice LAB - ORB Live Observability API
   mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
+
+  // VTID-02766: Voice Tools Catalog (developer-tier)
+  mountRouterSync(app, '/api/v1/voice-tools', voiceToolsCatalogRouter, { owner: 'voice-tools-catalog' });
 
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
