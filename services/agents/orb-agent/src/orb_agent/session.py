@@ -332,6 +332,13 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # AgentSession glues together STT + LLM + TTS + the room. userdata
     # carries the per-session GatewayClient so each tool body can pull it off
     # RunContext.userdata. max_tool_steps is the tool-loop guard threshold.
+    # PR 1.B-0: stash the live Room handle on the GatewayClient so tool
+    # wrappers that receive a `directive` payload can publish on the data
+    # channel via publish_orb_directive(gw.room, directive). The frontend's
+    # data-channel listener applies the directive (open_url, navigate, etc.)
+    # the same way the SSE/WS branch does on Vertex.
+    gw.room = ctx.room
+
     session = AgentSession(
         stt=cascade.stt,
         llm=cascade.llm,

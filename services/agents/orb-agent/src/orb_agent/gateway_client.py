@@ -39,6 +39,14 @@ class GatewayClient:
         self._tenant_id = tenant_id
         self._active_role = active_role
         self._client = httpx.AsyncClient(timeout=timeout_s)
+        # The live LiveKit Room handle is stashed by session.py after the
+        # AgentSession spins up. Tool wrappers that receive a structured
+        # `directive` payload from the gateway use this to call
+        # publish_orb_directive() and the data-channel listener on the
+        # frontend handles the redirect / open-url. Optional — typed Any
+        # here so unit tests on machines without livekit installed don't
+        # need to import rtc just to construct a stub.
+        self.room: Any = None
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
