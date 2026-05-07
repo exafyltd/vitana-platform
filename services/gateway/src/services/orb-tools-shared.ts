@@ -55,6 +55,20 @@ export interface OrbToolIdentity {
    * LiveKit's gateway-issued user_jwt) should populate this.
    */
   user_jwt?: string | null;
+  /**
+   * Optional WebSocket / room session context. Some tool handlers (the
+   * retrieval-router-backed search tools, the AI-delegation tool) take
+   * a session-scoped ID + locale + start-time so they can correlate
+   * traces and pick the right per-session ranking caches. Vertex
+   * populates from session.sessionId / session.thread_id / session.lang /
+   * session.createdAt / session.turn_count; LiveKit can synthesize from
+   * orb_session_id + sensible defaults.
+   */
+  session_id?: string | null;
+  thread_id?: string | null;
+  turn_number?: number | null;
+  session_started_iso?: string | null;
+  lang?: string | null;
 }
 
 export type OrbToolResult =
@@ -719,16 +733,80 @@ export async function tool_find_contact(
   return _runCapabilityTool('find_contact', args, id, sb);
 }
 
-export async function tool_consult_external_ai(args: OrbToolArgs): Promise<OrbToolResult> {
-  const prompt = String(args.prompt ?? '').slice(0, 200);
-  return {
-    ok: true,
-    result: { prompt, forwarded_to: null, status: 'no_external_ai_connected' },
-    text:
-      `You don't have an external AI assistant (ChatGPT/Claude/Gemini) connected ` +
-      `to your account yet. Connect one in Settings → Integrations and I'll forward ` +
-      `questions like "${prompt}" through next time.`,
-  };
+export async function tool_consult_external_ai(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  // PR D-2: lifted from orb-live.ts:5800 (BOOTSTRAP-ORB-DELEGATION-ROUTE).
+  // Vertex's auth impl calls the canonical executeDelegation pipeline which
+  // resolves the user's connected external-AI provider, enforces budget
+  // caps, calls the provider with their credentials, and returns
+  // adapted-for-voice text. The previous shared stub was a hardcoded
+  // "you don't have an external AI" placeholder — strict regression.
+  if (!id.user_id) {
+    return {
+      ok: true,
+      result: { reason: 'no_session' },
+      text: 'External AI consultation requires a signed-in session. I\'ll answer this one myself.',
+    };
+  }
+  const question = String(args.question ?? '').trim();
+  if (!question) {
+    return { ok: false, error: 'consult_external_ai requires a non-empty question.' };
+  }
+  const providerHint = typeof args.provider_hint === 'string'
+    ? (args.provider_hint as 'chatgpt' | 'claude' | 'google-ai')
+    : undefined;
+
+  try {
+    const { executeDelegation, adaptForDelivery } = await import('../orb/delegation');
+    const taskClass = typeof args.task_class === 'string'
+      ? (args.task_class as import('../orb/delegation').DelegationStrength)
+      : undefined;
+
+    const startedAt = id.session_started_iso ? new Date(id.session_started_iso).getTime() : Date.now();
+
+    const outcome = await executeDelegation({
+      userId: id.user_id,
+      tenantId: id.tenant_id ?? '',
+      sessionId: id.session_id ?? `${id.user_id}:consult_external_ai`,
+      question,
+      taskClass,
+      providerHint,
+      privacyLevel: 'public',
+      lang: id.lang ?? 'en',
+      startedAt,
+    });
+
+    if (!outcome.ok) {
+      // Graceful user-facing copy by failure reason, mirroring Vertex.
+      const reason = outcome.failure.reason;
+      let text = `That external AI isn't reachable right now, so I'll answer this myself.`;
+      if (reason === 'no_providers_connected' || reason === 'no_credentials') {
+        text = "You haven't connected an external AI yet, so I'll answer this one myself.";
+      } else if (reason === 'budget_cap_exceeded') {
+        text = `You've reached this month's spending cap for that AI, so I'll answer this myself.`;
+      } else if (reason === 'provider_timeout') {
+        text = `That AI is taking too long to respond. Let me answer instead.`;
+      }
+      return { ok: true, result: { reason }, text };
+    }
+
+    const voiceText = adaptForDelivery(outcome.result, 'voice');
+    return {
+      ok: true,
+      result: {
+        provider: outcome.result.providerId,
+        model: outcome.result.model,
+        usage: outcome.result.usage,
+        latency_ms: outcome.result.latencyMs,
+      },
+      text: voiceText,
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'consult_external_ai error' };
+  }
 }
 
 export async function tool_create_index_improvement_plan(
@@ -1572,7 +1650,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   get_schedule: tool_get_schedule,
   add_to_calendar: tool_add_to_calendar,
   find_contact: tool_find_contact,
-  consult_external_ai: (args) => tool_consult_external_ai(args),
+  consult_external_ai: tool_consult_external_ai,
   create_index_improvement_plan: tool_create_index_improvement_plan,
   ask_pillar_agent: tool_ask_pillar_agent,
   explain_feature: (args) => tool_explain_feature(args),
@@ -1636,6 +1714,11 @@ export interface VertexLikeIdentity {
   role?: string | null;
   vitana_id?: string | null;
   user_jwt?: string | null;
+  session_id?: string | null;
+  thread_id?: string | null;
+  turn_number?: number | null;
+  session_started_iso?: string | null;
+  lang?: string | null;
 }
 
 export interface VertexLikeToolResult {
@@ -1659,6 +1742,11 @@ export async function dispatchOrbToolForVertex(
       role: identity.role ?? null,
       vitana_id: identity.vitana_id ?? null,
       user_jwt: identity.user_jwt ?? null,
+      session_id: identity.session_id ?? null,
+      thread_id: identity.thread_id ?? null,
+      turn_number: identity.turn_number ?? null,
+      session_started_iso: identity.session_started_iso ?? null,
+      lang: identity.lang ?? null,
     },
     sb,
   );

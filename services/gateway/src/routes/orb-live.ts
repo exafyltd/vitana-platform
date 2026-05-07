@@ -5798,73 +5798,30 @@ async function executeLiveApiToolInner(
       // budget, credential, provider call, usage log) lives in
       // services/gateway/src/orb/delegation/.
       case 'consult_external_ai': {
-        if (!session.identity?.user_id) {
-          return {
-            success: true,
-            result: 'External AI consultation requires a signed-in session. I\'ll answer this one myself.',
-          };
+        // PR D-2: lifted to services/orb-tools-shared.ts. Both pipelines now
+        // call executeDelegation through the same wrapper.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        const question = String(args.question ?? '').trim();
-        if (!question) {
-          return { success: false, result: '', error: 'consult_external_ai requires a non-empty question.' };
-        }
-
-        const providerHint = typeof args.provider_hint === 'string'
-          ? (args.provider_hint as 'chatgpt' | 'claude' | 'google-ai')
-          : undefined;
-        const taskClass = typeof args.task_class === 'string'
-          ? (args.task_class as import('../orb/delegation').DelegationStrength)
-          : undefined;
-
-        const { executeDelegation, adaptForDelivery } = await import('../orb/delegation');
-
-        const outcome = await executeDelegation({
-          userId: session.identity.user_id,
-          tenantId: session.identity.tenant_id ?? '',
-          sessionId: session.sessionId,
-          question,
-          taskClass,
-          providerHint,
-          privacyLevel: 'public',
-          lang: session.lang || 'en',
-          startedAt: startTime,
-        });
-
-        if (!outcome.ok) {
-          // Graceful user-facing copy based on failure reason. Gemini will
-          // read this string and speak it, so keep it short and natural.
-          const reason = outcome.failure.reason;
-          if (reason === 'no_providers_connected' || reason === 'no_credentials') {
-            return {
-              success: true,
-              result: "You haven't connected an external AI yet, so I'll answer this one myself.",
-            };
-          }
-          if (reason === 'budget_cap_exceeded') {
-            return {
-              success: true,
-              result: `You've reached this month's spending cap for that AI, so I'll answer this myself.`,
-            };
-          }
-          if (reason === 'provider_timeout') {
-            return {
-              success: true,
-              result: `That AI is taking too long to respond. Let me answer instead.`,
-            };
-          }
-          // provider_unauthorized / provider_error / network_error / etc.
-          console.warn(`[BOOTSTRAP-ORB-DELEGATION-ROUTE] delegation failed: ${reason} — ${outcome.failure.message}`);
-          return {
-            success: true,
-            result: `That external AI isn't reachable right now, so I'll answer this myself.`,
-          };
-        }
-
-        const voiceText = adaptForDelivery(outcome.result, 'voice');
-        console.log(`[BOOTSTRAP-ORB-DELEGATION-ROUTE] consult_external_ai ok: provider=${outcome.result.providerId} model=${outcome.result.model} in=${outcome.result.usage.inputTokens} out=${outcome.result.usage.outputTokens} cost=$${outcome.result.usage.costUsd.toFixed(4)} latency=${outcome.result.latencyMs}ms`);
-
-        return { success: true, result: voiceText };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'consult_external_ai',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            session_started_iso: new Date(startTime).toISOString(),
+            lang: session.lang || 'en',
+          },
+          supabase,
+        );
       }
 
       // ─── BOOTSTRAP-ORB-INDEX-AWARENESS round 2 — Vitana Index tools ───
