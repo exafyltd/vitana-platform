@@ -1,0 +1,66 @@
+name: Orb Tools Lift Scanner
+
+# Reports drift between services/gateway/src/services/orb-tools-shared.ts
+# (the canonical ORB_TOOL_REGISTRY) and services/gateway/src/routes/orb-live.ts
+# (Vertex pipeline) — specifically: Vertex cases for tools in the registry
+# that still have inline logic instead of delegating to dispatchOrbToolForVertex.
+#
+# REPORT-ONLY today. Posts the diff as a sticky PR comment; never fails
+# the build. Promote to gate by setting `ORB_TOOLS_PARITY_GATE: '1'` in
+# the env block below once all intentional drift is lifted.
+
+on:
+  pull_request:
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+      - 'scripts/orb-tools-lift-scanner.mjs'
+      - '.github/workflows/ORB-TOOLS-LIFT-SCANNER.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run lift-not-duplicate parity scanner
+        id: scan
+        env:
+          # Set to '1' to fail the build on drift (gate mode). Today
+          # report-only so it doesn't block work while remaining tools
+          # are progressively lifted.
+          ORB_TOOLS_PARITY_GATE: '0'
+        run: |
+          set -o pipefail
+          node scripts/orb-tools-lift-scanner.mjs 2>&1 | tee /tmp/orb-tools-parity.md
+          {
+            echo 'report<<__EOM__'
+            cat /tmp/orb-tools-parity.md
+            echo '__EOM__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: orb-tools-lift-scanner
+          message: ${{ steps.scan.outputs.report }}
