@@ -217,8 +217,18 @@ async def get_schedule(context: RunContext, date_iso: str | None = None) -> str:
 
 
 @function_tool
-async def search_events(context: RunContext, query: str) -> str:
-    """Search community events / meetups (VTID-01270A)."""
+async def search_events(context: RunContext, query: str = "") -> str:
+    """List upcoming community events, meetups, parties, or workshops.
+
+    CALL THIS whenever the user asks about events, meetups, parties,
+    workshops, gatherings, what's happening, what's coming up, or
+    anything similar — even when no specific filter is mentioned.
+    Pass an empty `query` to list ALL upcoming events.
+
+    Args:
+        query: Optional substring to filter on title/description (case-insensitive).
+               Pass "" or omit to list all upcoming events.
+    """
     body = await _dispatch(context, "search_events", {"query": query})
     return summarize(body)
 

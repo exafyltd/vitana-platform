@@ -43,6 +43,8 @@ def build_live_system_instruction(
     recent_routes: list[str] | None = None,
     client_context: dict[str, Any] | None = None,
     vitana_id: str | None = None,
+    first_name: str | None = None,
+    display_name: str | None = None,
 ) -> str:
     """Authenticated session system prompt builder.
 
@@ -52,33 +54,54 @@ def build_live_system_instruction(
     parts: list[str] = []
 
     # ── 1. THE USER YOU ARE TALKING TO — first line of the prompt ────────
-    # Plain text, no markdown. Repeat the handle so any attention head
-    # has to see it. This is what the LLM should ALWAYS use to address
-    # the user. Avoid markdown bold (**...**) since some smaller LLMs
-    # treat it as decoration and skip the content.
+    # Prefer the user's first name (from app_users.display_name or memory_facts
+    # 'user_name'). Fall back to the @handle if no name is on file. Avoid
+    # markdown bold (**...**) since some smaller LLMs treat it as decoration.
     handle = f"@{vitana_id}" if vitana_id else None
-    if handle:
-        parts.append(
-            f"You are talking to {handle}.\n"
+    name = (first_name or "").strip() or None
+    if name and handle:
+        primary_address = name
+        addressing_rule = (
+            f"- Address them by their first name ({name}) — that is how a real\n"
+            f"  person would speak to them.\n"
+            f"- {name}'s Vitana handle is {handle}; you may use it as a\n"
+            f"  fallback or in confirmations, but DO NOT keep saying {handle}\n"
+            f"  if you can say {name}.\n"
+        )
+        speakable_id = name
+    elif handle:
+        primary_address = handle
+        addressing_rule = (
             f"- Their handle is {handle}.\n"
             f"- Always use {handle} when greeting or addressing them.\n"
+        )
+        speakable_id = handle
+    else:
+        primary_address = "this user"
+        addressing_rule = "- No identifying handle on file.\n"
+        speakable_id = "this user"
+
+    if handle or name:
+        parts.append(
+            f"You are talking to {primary_address}.\n"
+            f"{addressing_rule}"
             f"- Their active role is {active_role or 'community'}.\n"
             f"\n"
             f"AUTHENTICATION STATUS — READ THIS FIRST:\n"
-            f"{handle} IS SIGNED IN RIGHT NOW. They are AUTHENTICATED. The auth\n"
+            f"{speakable_id} IS SIGNED IN RIGHT NOW. They are AUTHENTICATED. The auth\n"
             f"chain is wired end-to-end (Bearer JWT → gateway → tools). You\n"
             f"have FULL working tool access to their personal data — Vitana\n"
             f"Index, calendar, reminders, intents, recommendations, memory,\n"
             f"diary, autopilot, contacts, sharing, and 30+ other capabilities.\n"
             f"\n"
-            f"NEVER tell {handle} they are 'logged out' or 'not logged in' or\n"
+            f"NEVER tell {speakable_id} they are 'logged out' or 'not logged in' or\n"
             f"that they 'need to log in' or that you 'can see they are still\n"
-            f"logged out'. Those statements are FACTUALLY WRONG. {handle} is\n"
+            f"logged out'. Those statements are FACTUALLY WRONG. {speakable_id} is\n"
             f"signed in; you can read this sentence because the auth chain\n"
             f"already authenticated them and dropped them into your session.\n"
             f"\n"
             f"If a tool call returns empty (count=0, items=[], snapshot=null),\n"
-            f"that means {handle} simply has no data of that kind yet — narrate\n"
+            f"that means {speakable_id} simply has no data of that kind yet — narrate\n"
             f"it as 'You have none yet' or 'Your baseline survey isn't done\n"
             f"yet'. NEVER conflate empty data with auth failure."
         )

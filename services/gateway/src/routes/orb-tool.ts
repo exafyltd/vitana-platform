@@ -212,21 +212,28 @@ async function tool_search_events(args: ToolArgs, _id: Identity, sb: SupabaseCli
           (e.description || '').toLowerCase().includes(query),
       )
     : data || [];
+  const top = filtered.slice(0, 10).map((e) => ({
+    id: e.id,
+    title: e.title,
+    when: e.start_time,
+    location: e.location || e.virtual_link,
+    slug: e.slug,
+  }));
+  // Voice-friendly summary: include event titles + when so the LLM can read
+  // them back. The earlier "Found 3 upcoming events" produced silence on the
+  // voice side because the LLM had no titles to speak.
+  const lines = top.map((e) => {
+    const when = e.when ? new Date(e.when).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    const loc = e.location ? ` at ${String(e.location).slice(0, 80)}` : '';
+    return `- ${e.title}${when ? ` (${when})` : ''}${loc}`;
+  });
   return {
     ok: true,
-    result: {
-      events: filtered.slice(0, 10).map((e) => ({
-        id: e.id,
-        title: e.title,
-        when: e.start_time,
-        location: e.location || e.virtual_link,
-        slug: e.slug,
-      })),
-    },
+    result: { events: top },
     text:
       filtered.length === 0
         ? 'No upcoming events found right now.'
-        : `Found ${filtered.length} upcoming event${filtered.length === 1 ? '' : 's'}.`,
+        : `Upcoming events (${filtered.length}):\n${lines.join('\n')}`,
   };
 }
 
