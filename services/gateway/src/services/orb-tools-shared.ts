@@ -224,33 +224,69 @@ export async function tool_search_events(
 
 export async function tool_search_community(
   args: OrbToolArgs,
-  _id: OrbToolIdentity,
+  id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const query = String(args.query ?? '').trim().toLowerCase();
-  const { data, error } = await sb
+  // PR B-8: lifted from orb-live.ts:5291 (VTID-01270A). The previous shared
+  // stub queried community_groups with no tenant scope and selected only
+  // (id, name, slug) — but the canonical schema has the public-listing
+  // columns (topic_key, description, is_public) Vertex reads. The stub
+  // also failed entirely on environments where the schema cache hadn't
+  // loaded the columns. Lifting Vertex's authoritative impl: tenant-
+  // scoped, public-only, OR-filter on (name|description|topic_key),
+  // voice-friendly truncation at 2 KB.
+  const query = String(args.query ?? '').trim();
+  if (!id.tenant_id) {
+    // Without a tenant_id we can't safely scope the search.
+    return {
+      ok: true,
+      result: { groups: [] },
+      text: 'Community search is unavailable for this session (no tenant context).',
+    };
+  }
+
+  let q = sb
     .from('community_groups')
-    .select('id, name, slug')
-    .limit(100);
+    .select('id, name, topic_key, description, is_public')
+    .eq('tenant_id', id.tenant_id)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(8);
+  if (query) {
+    // Match Vertex's OR filter across name + description + topic_key.
+    q = q.or(
+      `name.ilike.*${query}*,description.ilike.*${query}*,topic_key.ilike.*${query}*`,
+    );
+  }
+
+  const { data, error } = await q;
   if (error) {
     return {
       ok: true,
       result: { groups: [] },
-      text: `Community group search isn't available right now: ${error.message}`,
+      text: 'Could not search community groups at this time.',
     };
   }
-  const filtered = query
-    ? (data || []).filter((g: { name?: string }) => (g.name || '').toLowerCase().includes(query))
-    : data || [];
+  const groups =
+    (data as Array<{ id: string; name: string; topic_key: string; description: string }>) ?? [];
+  if (groups.length === 0) {
+    return {
+      ok: true,
+      result: { groups: [] },
+      text: 'No community groups found matching your query.',
+    };
+  }
+  const MAX = 2000;
+  let formatted = groups
+    .map((g) => `${g.name} — ${(g.description || '').substring(0, 120)} | Topic: ${g.topic_key}`)
+    .join('\n');
+  if (formatted.length > MAX) {
+    formatted = formatted.substring(0, MAX) + '\n... (truncated)';
+  }
   return {
     ok: true,
-    result: {
-      groups: filtered.slice(0, 10).map((g) => ({ id: g.id, name: g.name, slug: g.slug })),
-    },
-    text:
-      filtered.length === 0
-        ? `No matching community groups found for "${query || 'all'}".`
-        : `Found ${filtered.length} group${filtered.length === 1 ? '' : 's'}.`,
+    result: { groups },
+    text: `Found ${groups.length} community groups:\n${formatted}`,
   };
 }
 
@@ -625,25 +661,41 @@ export async function tool_ask_pillar_agent(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const pillar =
-    resolvePillarKey(String(args.pillar ?? '')) ||
-    (await fetchVitanaIndexForProfiler(sb, id.user_id))?.weakest_pillar?.name ||
-    null;
-  const question = String(args.question ?? '').trim();
-  if (!pillar || !question) {
-    return { ok: false, error: 'pillar and question are required' };
+  // PR B-8: lifted from orb-live.ts:6225. Vertex calls the real
+  // pillar-agents/router service (askPillarAgent) which routes by pillar
+  // intent + returns answer text + citations + structured data. The
+  // previous shared stub just surfaced raw subscores with a note saying
+  // "lightweight mode" — a strict regression vs Vertex.
+  const question = typeof args.question === 'string' ? (args.question as string).trim() : '';
+  if (!question) {
+    return { ok: false, error: 'question is required' };
   }
-  const snap = await fetchVitanaIndexForProfiler(sb, id.user_id);
-  const subs = (snap?.subscores as Record<string, unknown> | undefined)?.[pillar];
-  return {
-    ok: true,
-    result: {
-      pillar,
-      question,
-      subscores: subs ?? null,
-      note: 'pillar agent is in lightweight mode — surfaces sub-scores; full agentic answer ships in a follow-up',
-    },
-  };
+  // resolvePillarKey silently translates retired aliases; undefined =
+  // no explicit pillar passed, let the router auto-detect.
+  const explicit = resolvePillarKey(args.pillar as string | undefined);
+  try {
+    const { askPillarAgent } = await import('./pillar-agents/router');
+    const answer = await askPillarAgent(sb, id.user_id, question, explicit);
+    if (!answer) {
+      const payload = {
+        routed: false as const,
+        reason: 'no_pillar_detected_or_agent_unavailable',
+        guidance: 'Voice should fall back to search_knowledge against the Book of the Vitana Index.',
+      };
+      return { ok: true, result: payload, text: JSON.stringify(payload) };
+    }
+    const payload = {
+      routed: true as const,
+      pillar: answer.pillar,
+      text: answer.text,
+      citations: answer.citations,
+      data: answer.data,
+      agent_version: answer.agent_version,
+    };
+    return { ok: true, result: payload, text: answer.text || JSON.stringify(payload) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'ask_pillar_agent error' };
+  }
 }
 
 export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolResult> {
