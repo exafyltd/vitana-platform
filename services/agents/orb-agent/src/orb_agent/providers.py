@@ -108,15 +108,22 @@ def _resolve_bcp47(lang: str | None) -> str:
 
 LANG_DEFAULTS: dict[str, dict[str, str]] = {
     "google_tts": {
+        # English Chirp3-HD is GA on Cloud TTS REST and works empirically
+        # (user confirmed). Other languages: prefer Neural2 / Wavenet which
+        # the Vertex pipeline already ships against (NEURAL2_TTS_VOICES in
+        # orb-live.ts) — verified-working voices. Chirp3-HD outside en-US
+        # is partially rolled out and silently fails for some locales when
+        # called via the Cloud TTS REST endpoint (gives a working
+        # construction but no audio at synth time).
         "en": "en-US-Chirp3-HD-Aoede",
-        "de": "de-DE-Chirp3-HD-Aoede",
-        "es": "es-ES-Chirp3-HD-Aoede",
-        "fr": "fr-FR-Chirp3-HD-Aoede",
-        "it": "it-IT-Chirp3-HD-Aoede",
-        "pt": "pt-BR-Chirp3-HD-Aoede",
-        "nl": "nl-NL-Chirp3-HD-Aoede",
-        "sv": "sv-SE-Chirp3-HD-Aoede",
-        "pl": "pl-PL-Chirp3-HD-Aoede",
+        "de": "de-DE-Neural2-G",
+        "es": "es-ES-Neural2-A",
+        "fr": "fr-FR-Neural2-A",
+        "it": "it-IT-Neural2-A",
+        "pt": "pt-BR-Neural2-A",
+        "nl": "nl-NL-Wavenet-A",  # Neural2 not GA for nl-NL
+        "sv": "sv-SE-Wavenet-A",  # Neural2 not GA for sv-SE
+        "pl": "pl-PL-Wavenet-A",  # Neural2 not GA for pl-PL
     },
     # Cartesia Sonic-3 is multilingual — same voice handle works across
     # languages, the model auto-detects from the input text. Documented at
@@ -135,15 +142,23 @@ def _resolve_tts_voice(
     fallback_model: str | None,
     options: dict[str, Any],
     lang: str,
-) -> str | None:
+) -> tuple[str | None, bool]:
     """Pick the TTS voice for this language.
 
+    Returns ``(voice_id, language_locked)``. ``language_locked=True`` means
+    we picked a per-language voice (from voices_per_lang or LANG_DEFAULTS),
+    so the caller must force the TTS language kwarg to bcp47 — otherwise
+    a row-seeded `tts_options.language_code: 'en-US'` would mismatch the
+    German voice and Cloud TTS rejects the synth (silent failure was the
+    bug in the first German session: voice_name='de-DE-Neural2-G' +
+    language_code='en-US' → 400 → no audio).
+
     Resolution order:
-      1. tts_options.voices_per_lang[lang]   (operator override per agent)
-      2. tts_options.voices_per_lang[short]  (e.g. 'de' even when full lang is 'de-AT')
-      3. LANG_DEFAULTS[provider][lang]       (hardcoded fallback)
-      4. tts_options.voices_per_lang['en']   (final lang fallback)
-      5. fallback_model                      (the row's static tts_model)
+      1. tts_options.voices_per_lang[lang]   (operator override per agent) — locked
+      2. tts_options.voices_per_lang[short]  (e.g. 'de' even when full lang is 'de-AT') — locked
+      3. LANG_DEFAULTS[provider][lang]       (hardcoded fallback) — locked
+      4. tts_options.voices_per_lang['en']   (final lang fallback) — locked to en
+      5. fallback_model                      (the row's static tts_model) — NOT locked
     """
     voices_per_lang = options.get("voices_per_lang") or {}
     if not isinstance(voices_per_lang, dict):
@@ -154,20 +169,20 @@ def _resolve_tts_voice(
     for key in candidates:
         v = voices_per_lang.get(key)
         if isinstance(v, str) and v:
-            return v
+            return v, True
 
     if provider:
         prov_defaults = LANG_DEFAULTS.get(provider, {}) or {}
         for key in candidates:
             v = prov_defaults.get(key)
             if isinstance(v, str) and v:
-                return v
+                return v, True
 
     en_override = voices_per_lang.get("en")
     if isinstance(en_override, str) and en_override:
-        return en_override
+        return en_override, True
 
-    return fallback_model
+    return fallback_model, False
 
 
 def build_cascade(voice_config: dict[str, Any] | None, lang: str | None = None) -> ResolvedCascade:
@@ -340,13 +355,20 @@ def _build_tts(
     → row's tts_model). For Google TTS the `language` kwarg is also
     resolved from BCP-47 so prosody matches the voice.
     """
-    voice = _resolve_tts_voice(provider, model, options or {}, lang)
+    voice, language_locked = _resolve_tts_voice(provider, model, options or {}, lang)
     if voice and model and voice != model:
         notes.append(f"tts: resolved voice {voice} for lang={lang} (row model={model})")
 
     # Strip voices_per_lang from options since plugins won't accept it.
     opts_base = dict(options or {})
     opts_base.pop("voices_per_lang", None)
+    if language_locked:
+        # The voice we picked is bound to a specific language. Drop any
+        # row-seeded language/language_code so they can't mismatch the
+        # voice (e.g. en-US language_code + de-DE-Neural2-G voice → silent
+        # 400 from Cloud TTS — that was the German bug).
+        opts_base.pop("language", None)
+        opts_base.pop("language_code", None)
 
     if provider == "cartesia":
         try:
@@ -382,8 +404,15 @@ def _build_tts(
             # accepts `language=`, so an un-renamed `language_code` would
             # surface as an unexpected-kwarg TypeError → caught silently
             # below → cascade.tts=None → AgentSession runs but produces
-            # silent audio. Normalise here. PR 1.B-Lang: when the row
-            # doesn't pin a language, resolve from identity.lang via BCP-47.
+            # silent audio. Normalise here.
+            #
+            # PR 1.B-Lang-3: when the voice was resolved via per-language
+            # lookup (language_locked=True), opts_base no longer carries
+            # any language/language_code (we stripped them above). Force
+            # bcp47 so voice_name and language match. When the voice is
+            # the row's static fallback (language_locked=False), respect
+            # any pre-seeded language_code so operators can still pin a
+            # specific locale per agent.
             opts = dict(opts_base)
             language = opts.pop("language", None) or opts.pop("language_code", None) or bcp47
             # Drop any other keys the Google plugin doesn't accept rather
