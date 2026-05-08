@@ -192,12 +192,27 @@ const VERTEX_ONLY_INTENTIONAL = new Set([
   'switch_persona',       // mutates session.pendingPersonaSwap, persona-overrides, etc.
   'report_to_specialist', // tied to Vertex's WebSocket persona-swap orchestration
 ]);
+// Tools in ORB_TOOL_REGISTRY that don't have a `case` arm in the switch
+// because Vertex routes them via a DEDICATED handler before the switch
+// (handleNavigate, handleNavigateToScreen, handleGetCurrentScreen — all
+// PR 1.B-3..5 lifts that delegate via dispatchOrbTool internally). Without
+// this allowlist the scanner flags them as `shared-only` warnings, which
+// in gate mode causes a false-positive build failure.
+const SHARED_ONLY_INTENTIONAL = new Set([
+  'navigate',             // Vertex: handleNavigate at orb-live.ts (PR 1.B-4)
+  'navigate_to_screen',   // Vertex: handleNavigateToScreen (PR 1.B-5)
+  'get_current_screen',   // Vertex: handleGetCurrentScreen (PR 1.B-3)
+]);
 const intentionalInline = [];
 
+// Tracked separately so the report shows "shared-only OK" for the
+// dedicated-handler set without contributing to the warning exit code.
+const sharedOnlyOk = [];
 for (const name of registry) {
   const v = vertexCases.get(name);
   if (!v) {
-    sharedOnly.push(name);
+    if (SHARED_ONLY_INTENTIONAL.has(name)) sharedOnlyOk.push(name);
+    else sharedOnly.push(name);
     continue;
   }
   if (!v.delegated) {
@@ -261,6 +276,20 @@ if (sharedOnly.length > 0) {
   }
   out += '\n';
   if (exitCode === 0) exitCode = 1;
+}
+
+if (sharedOnlyOk.length > 0) {
+  out += `### ℹ️ shared-only OK — ${sharedOnlyOk.length} tool(s) routed via dedicated Vertex handler\n\n`;
+  out += 'These are in `ORB_TOOL_REGISTRY` but DON\'T appear as a `case` arm in ';
+  out += 'the switch because Vertex routes them via a dedicated handler ';
+  out += '(handleNavigate / handleNavigateToScreen / handleGetCurrentScreen) ';
+  out += 'before the switch. Each handler delegates to the shared dispatcher ';
+  out += 'internally — full parity, just not via a case arm. ';
+  out += 'Allowlist: `SHARED_ONLY_INTENTIONAL` in `scripts/orb-tools-lift-scanner.mjs`.\n\n';
+  for (const n of sharedOnlyOk) {
+    out += `- \`${n}\`\n`;
+  }
+  out += '\n';
 }
 
 if (vertexOnly.length > 0) {
