@@ -439,6 +439,11 @@ def _build_tts(
             dropped = sorted(set(opts.keys()) - allowed)
             if dropped:
                 notes.append(f"google_tts: dropped unsupported tts_options keys: {dropped}")
+            # User-tuned speaking rate (default 1.1 = 10% faster than the
+            # plugin default; the Chirp3-HD voices ship at a slow baseline,
+            # particularly noticeable on German). Operators can override per
+            # agent via tts_options.speaking_rate.
+            forwarded.setdefault("speaking_rate", 1.1)
             # Google Cloud Text-to-Speech via ADC (no API key needed).
             return google.TTS(voice_name=voice_name, language=language, **forwarded)
         except ImportError:
