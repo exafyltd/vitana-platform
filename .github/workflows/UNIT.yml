@@ -13,9 +13,12 @@ jobs:
       # merges until `unit` is green. The 2026-05-08 audit found 2%
       # autopilot completion rate driven almost entirely by this gate.
       # Use the maintained pnpm/action-setup action instead.
+      # Don't pin a version here — the repo's root package.json already has
+      # `packageManager: "pnpm@9.0.0"`, and the action errors out if both are
+      # set ("Multiple versions of pnpm specified"). Letting the action read
+      # package.json keeps the version aligned with what the rest of the
+      # tooling uses.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - run: |
           pnpm --version
           echo "✅ lock-free unit job passes"
