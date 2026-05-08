@@ -120,7 +120,11 @@ LANG_DEFAULTS: dict[str, dict[str, str]] = {
         # missing system-prompt language threading (fixed in PR-1.B-Lang-4),
         # not the voice itself.
         "en": "en-US-Chirp3-HD-Aoede",
-        "de": "de-DE-Chirp3-HD-Aoede",
+        # PR-VTID-02853: Leda described as "soft, narrative" in Google's
+        # Chirp3-HD catalog — warmer / more human-like than Aoede's neutral
+        # tone. User feedback after first German session: Aoede sounded
+        # robotic.
+        "de": "de-DE-Chirp3-HD-Leda",
         "es": "es-ES-Chirp3-HD-Aoede",
         "fr": "fr-FR-Chirp3-HD-Aoede",
         "it": "it-IT-Chirp3-HD-Aoede",
@@ -189,7 +193,12 @@ def _resolve_tts_voice(
     return fallback_model, False
 
 
-def build_cascade(voice_config: dict[str, Any] | None, lang: str | None = None) -> ResolvedCascade:
+def build_cascade(
+    voice_config: dict[str, Any] | None,
+    lang: str | None = None,
+    *,
+    voice_override: str | None = None,
+) -> ResolvedCascade:
     """Instantiate the STT/LLM/TTS plugins per the agent_voice_configs row.
 
     voice_config shape (matches PR #3 migration):
@@ -238,6 +247,7 @@ def build_cascade(voice_config: dict[str, Any] | None, lang: str | None = None) 
         notes,
         lang=resolved_lang,
         bcp47=bcp47,
+        voice_override=voice_override,
     )
     return ResolvedCascade(stt=stt, llm=llm, tts=tts, notes=notes)
 
@@ -356,6 +366,7 @@ def _build_tts(
     *,
     lang: str = "en",
     bcp47: str = "en-US",
+    voice_override: str | None = None,
 ) -> _TTSPlugin | None:
     """Construct the configured TTS plugin with a per-language voice.
 
@@ -363,10 +374,19 @@ def _build_tts(
     is resolved via _resolve_tts_voice (operator override → LANG_DEFAULTS
     → row's tts_model). For Google TTS the `language` kwarg is also
     resolved from BCP-47 so prosody matches the voice.
+
+    `voice_override` is a per-session voice name (passed in via the
+    LiveKit token metadata from the test page's voice dropdown). When set,
+    skip the LANG_DEFAULTS lookup and use it directly. Treated as
+    language_locked so the row-seeded language_code can't mismatch.
     """
-    voice, language_locked = _resolve_tts_voice(provider, model, options or {}, lang)
-    if voice and model and voice != model:
-        notes.append(f"tts: resolved voice {voice} for lang={lang} (row model={model})")
+    if voice_override:
+        voice, language_locked = voice_override, True
+        notes.append(f"tts: voice_override={voice_override} (per-session)")
+    else:
+        voice, language_locked = _resolve_tts_voice(provider, model, options or {}, lang)
+        if voice and model and voice != model:
+            notes.append(f"tts: resolved voice {voice} for lang={lang} (row model={model})")
 
     # Strip voices_per_lang from options since plugins won't accept it.
     opts_base = dict(options or {})

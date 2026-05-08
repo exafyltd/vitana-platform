@@ -35115,6 +35115,68 @@ function renderLivekitTestView() {
     var langSelect = controls.querySelector('.lkt-lang');
     langSelect.addEventListener('change', function () {
         try { localStorage.setItem('lkt.lang', langSelect.value); } catch (e) {}
+        rebuildVoiceOptions();
+    });
+
+    // PR-VTID-02853: voice-override row. The dropdown rebuilds on language
+    // change to scope Chirp3-HD options to the selected locale (each
+    // persona only exists for that locale's voice). Gemini TTS voices are
+    // multilingual — same names work across all languages, the model
+    // detects from text — so they appear in the dropdown regardless.
+    var voiceRow = document.createElement('div');
+    voiceRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:#94a3b8;';
+    voiceRow.innerHTML = '<span style="margin-right:4px;">VOICE:</span>'
+        + '<select class="lkt-voice" title="TTS voice override (Chirp3-HD has 8 personas per language; Gemini TTS personas are multilingual)" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;min-width:280px;">'
+        + '</select>'
+        + '<span style="font-size:11px;opacity:0.7;">— restart the session for voice change to take effect</span>';
+    container.appendChild(voiceRow);
+    var voiceSelect = voiceRow.querySelector('.lkt-voice');
+
+    var CHIRP_PERSONAS = [
+        ['Aoede', 'F · clear, neutral'],
+        ['Kore', 'F · warm, conversational'],
+        ['Leda', 'F · soft, narrative'],
+        ['Zephyr', 'F · bright, expressive'],
+        ['Charon', 'M · deep, calm'],
+        ['Puck', 'M · energetic, casual'],
+        ['Fenrir', 'M · bold, assertive'],
+        ['Orus', 'M · smooth, broadcast'],
+    ];
+    var BCP47_FOR_LANG = {
+        en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT',
+        pt: 'pt-BR', nl: 'nl-NL', sv: 'sv-SE', pl: 'pl-PL',
+    };
+
+    function rebuildVoiceOptions() {
+        var saved = '';
+        try { saved = localStorage.getItem('lkt.voice') || ''; } catch (e) {}
+        var lang = langSelect.value || 'en';
+        var bcp47 = BCP47_FOR_LANG[lang] || (lang + '-' + lang.toUpperCase());
+        var html = '<option value="">(default — Aoede for en, Leda for de, Aoede for others)</option>';
+        // Chirp3-HD voices, scoped to the selected language.
+        html += '<optgroup label="Chirp3-HD · ' + bcp47 + '">';
+        for (var i = 0; i < CHIRP_PERSONAS.length; i++) {
+            var name = CHIRP_PERSONAS[i][0];
+            var hint = CHIRP_PERSONAS[i][1];
+            var voice = bcp47 + '-Chirp3-HD-' + name;
+            var sel = voice === saved ? ' selected' : '';
+            html += '<option value="' + voice + '"' + sel + '>' + voice + ' — ' + hint + '</option>';
+        }
+        html += '</optgroup>';
+        // Gemini TTS voices (multilingual).
+        html += '<optgroup label="Gemini TTS · multilingual">';
+        for (var j = 0; j < CHIRP_PERSONAS.length; j++) {
+            var gname = CHIRP_PERSONAS[j][0];
+            var ghint = CHIRP_PERSONAS[j][1];
+            var gsel = gname === saved ? ' selected' : '';
+            html += '<option value="' + gname + '"' + gsel + '>' + gname + ' — ' + ghint + '</option>';
+        }
+        html += '</optgroup>';
+        voiceSelect.innerHTML = html;
+    }
+    rebuildVoiceOptions();
+    voiceSelect.addEventListener('change', function () {
+        try { localStorage.setItem('lkt.voice', voiceSelect.value); } catch (e) {}
     });
 
     // Diagnostics panel — fed by the "Run Diagnostics" button below.
@@ -35803,13 +35865,22 @@ function renderLivekitTestView() {
             var langEl = container.querySelector('.lkt-lang');
             if (langEl && langEl.value) selectedLang = langEl.value;
         } catch (e) {}
+        // PR-VTID-02853: voice override from the .lkt-voice dropdown — empty
+        // string means "use language default from LANG_DEFAULTS".
+        var selectedVoice = '';
+        try {
+            var voiceEl = container.querySelector('.lkt-voice');
+            if (voiceEl && voiceEl.value) selectedVoice = voiceEl.value;
+        } catch (e) {}
         var url, body;
         if (mode === 'test-session') {
             url = (window.GATEWAY_URL || '') + '/api/v1/agents/' + encodeURIComponent(agentId) + '/voice-config/test-session';
             body = { lang: selectedLang };
+            if (selectedVoice) body.voice_override = selectedVoice;
         } else {
             url = (window.GATEWAY_URL || '') + '/api/v1/orb/livekit/token';
             body = { lang: selectedLang, agent_id: agentId };
+            if (selectedVoice) body.voice_override = selectedVoice;
         }
         log('event', 'POST ' + url);
         var res = await fetch(url, {

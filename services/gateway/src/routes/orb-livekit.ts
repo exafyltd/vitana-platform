@@ -283,6 +283,13 @@ interface MintTokenBody {
   lang?: string;
   agent_id?: string;
   voice_style?: string;
+  // PR-VTID-02853: per-session voice override from the LiveKit test page
+  // dropdown. Embedded in the AccessToken metadata; the agent reads it and
+  // hands to build_cascade(voice_override=…). Examples:
+  //   "de-DE-Chirp3-HD-Leda"  (Chirp3-HD German persona)
+  //   "Kore"                  (Gemini TTS multilingual voice)
+  // Empty / absent → use language default from LANG_DEFAULTS.
+  voice_override?: string;
 }
 
 router.post(
@@ -314,6 +321,9 @@ router.post(
     const body = (req.body ?? {}) as MintTokenBody;
     const lang = body.lang || 'en';
     const agentId = body.agent_id || 'vitana';
+    const voiceOverride = typeof body.voice_override === 'string' && body.voice_override.trim().length > 0
+      ? body.voice_override.trim()
+      : null;
     const isAnonymous = !req.identity;
     const userId = req.identity?.user_id ?? `anon-${randomUUID()}`;
     const tenantId = req.identity?.tenant_id ?? '';
@@ -346,6 +356,7 @@ router.post(
         agent_id: agentId,
         orb_session_id: orbSessionId,
         vitana_id: req.identity?.vitana_id ?? null,
+        voice_override: voiceOverride,
         // VTID-LIVEKIT-AGENT-JWT: the orb-agent extracts this and uses it as
         // Bearer for every gateway tool call. Same secret/shape as the
         // user's normal JWT — existing optionalAuth/requireAuth middleware
@@ -895,6 +906,9 @@ router.post(
     // TTS voice. Without this, every test-session falls back to en-US even
     // when the user picked German in the LiveKit test page dropdown.
     const lang = typeof proposed.lang === 'string' && proposed.lang ? proposed.lang : 'en';
+    const voiceOverride = typeof proposed.voice_override === 'string' && proposed.voice_override.trim().length > 0
+      ? proposed.voice_override.trim()
+      : null;
     const roomName = `orb-test-${id}-${Date.now()}`;
 
     const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
@@ -911,6 +925,7 @@ router.post(
         is_test_session: true,
         proposed_voice_config: proposed,
         vitana_id: req.identity?.vitana_id ?? null,
+        voice_override: voiceOverride,
         user_jwt: agentUserJwt,
       }),
     });

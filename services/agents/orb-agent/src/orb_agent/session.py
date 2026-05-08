@@ -183,6 +183,15 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     identity = resolve_identity_from_room_metadata(metadata)
     agent_id = str(metadata.get("agent_id", "vitana"))
     orb_session_id = str(metadata.get("orb_session_id", ""))
+    # PR-VTID-02853: per-session voice override from the LiveKit test page
+    # dropdown. None / empty string means "use the language default from
+    # LANG_DEFAULTS." Operators experiment with different Chirp3-HD
+    # personas (Aoede / Kore / Leda / Charon / etc.) without a code-deploy
+    # cycle by picking from the dropdown — the value flows token mint →
+    # AccessToken metadata → here → build_cascade(voice_override=…).
+    voice_override = metadata.get("voice_override") or None
+    if voice_override is not None:
+        voice_override = str(voice_override).strip() or None
 
     # GatewayClient carries the user JWT (Bearer) PLUS X-User-ID /
     # X-Tenant-ID / X-Vitana-Active-Role headers as defense-in-depth for
@@ -242,7 +251,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # the matching BCP-47 code and TTS picks a per-language voice via
     # voices_per_lang / LANG_DEFAULTS. Without this, German users get
     # English STT models + an English Chirp speaking German text.
-    cascade = build_cascade(bootstrap.voice_config, lang=identity.lang)
+    cascade = build_cascade(bootstrap.voice_config, lang=identity.lang, voice_override=voice_override)
     cascade_summary = {
         "stt_present": cascade.stt is not None,
         "llm_present": cascade.llm is not None,
