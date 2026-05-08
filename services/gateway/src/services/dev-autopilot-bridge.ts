@@ -21,7 +21,14 @@
  *        - confidence < 0.5 OR triage errored
  *             → mark failed_escalated; surface for human review
  *
- * DRY_RUN honors DEV_AUTOPILOT_DRY_RUN=true (default) — no real GitHub calls.
+ * DRY_RUN honors DEV_AUTOPILOT_DRY_RUN=true (opt-in for tests / dev). The
+ * default is 'false' so the bridge actually closes failed PRs in production.
+ * The previous default of 'true' was misaligned with the executor's default
+ * of 'false' and was load-bearing: the bridge logged "reverted via
+ * #closed-dry-run" while leaving the GitHub PR open, then
+ * spawnChildExecution() opened a fresh PR for the same finding. Combined
+ * with autoApproveTick re-picking the still-status='new' finding, that
+ * mechanism produced the 2026-05-07 flood (530 stranded PRs in 4 days).
  */
 
 import { randomUUID } from 'crypto';
@@ -36,7 +43,8 @@ import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
 
-const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'true').toLowerCase() === 'true';
+// Default 'false' — match the executor's default. See header doc.
+const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
 const GITHUB_TOKEN =
   process.env.DEV_AUTOPILOT_GITHUB_TOKEN ||
   process.env.GITHUB_SAFE_MERGE_TOKEN ||

@@ -1878,21 +1878,29 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
   }
 
   if (prR.data.state === 'closed' && !prR.data.merged) {
-    // PR closed without merge — terminal failure.
+    // PR closed without merge — terminal "PR was handled" state. Mark
+    // status='auto_archived' (NOT 'failed') so the runExecutionSession +
+    // approveAutoExecute PR-flood guards stop treating this finding as
+    // stranded. Without auto_archived, the operator's manual close keeps
+    // the finding blocked forever — the original bug that forced the
+    // 2026-05-07 cleanup. Skip bridgeFailure too: spawning a self-heal
+    // child here would burn an LLM call to re-fix a finding whose
+    // proposed PR was just closed (operator/CI rejected it). If the
+    // finding is still actionable, autoApproveTick will pick it up on
+    // its next sweep — bounded by the per-finding retry cap.
     await patchExecution(s, exec.id, {
-      status: 'failed',
+      status: 'auto_archived',
       completed_at: new Date().toISOString(),
-      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge' },
+      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge (auto_archived)' },
     });
     await emitOasisEvent({
       vtid: EXEC_VTID,
-      type: 'dev_autopilot.execution.failed',
+      type: 'dev_autopilot.execution.auto_archived',
       source: 'dev-autopilot',
-      status: 'error',
-      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} closed without merge`,
+      status: 'info',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} closed without merge — auto_archived`,
       payload: { execution_id: exec.id, pr_number: exec.pr_number, reason: 'pr_closed_unmerged' },
     });
-    bridgeFailure(exec.id, 'ci', 'PR closed without merge').catch(() => {});
     return;
   }
 
