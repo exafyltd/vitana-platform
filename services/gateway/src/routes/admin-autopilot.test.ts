@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import request from 'supertest';
 import adminAutopilotRouter from './admin-autopilot';
 
@@ -39,8 +39,13 @@ jest.mock('../lib/supabase', () => ({
   getSupabase: jest.fn(() => mockSupabase),
 }));
 
+// We need to define an extended request to avoid TS errors
+interface AdminRequest extends Request {
+  targetTenantId?: string;
+}
+
 jest.mock('../middleware/require-tenant-admin', () => ({
-  requireTenantAdmin: jest.fn((req: any, res: any, next: any) => {
+  requireTenantAdmin: jest.fn((req: AdminRequest, res: Response, next: NextFunction) => {
     // Inject mock tenant ID to simulate authorized tenant admin
     req.targetTenantId = 'tenant-123';
     next();
