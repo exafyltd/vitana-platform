@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import request from 'supertest';
 import aiAssistantsRouter from '../../src/routes/ai-assistants';
-import { requireAuth } from '../../src/middleware/auth-supabase-jwt';
+import { requireAuth, AuthenticatedRequest } from '../../src/middleware/auth-supabase-jwt';
 import { getSupabase } from '../../src/lib/supabase';
 
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
@@ -33,7 +33,7 @@ describe('AI Assistants Routes', () => {
   });
 
   it('GET /providers with valid auth passes middleware and proceeds to handler', async () => {
-    (requireAuth as jest.Mock).mockImplementation((req: any, res: Response, next: NextFunction) => {
+    (requireAuth as jest.Mock).mockImplementation((req: AuthenticatedRequest, res: Response, next: NextFunction) => {
       req.identity = { 
         user_id: 'user-123', 
         tenant_id: 'tenant-123', 
