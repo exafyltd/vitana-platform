@@ -8,9 +8,9 @@
 \echo '=== Plan-version stats ==='
 SELECT
   count(*) AS total_plan_versions,
-  count(*) FILTER (WHERE coalesce(array_length(files_referenced, 1), 0) = 0) AS plans_with_zero_files,
-  count(*) FILTER (WHERE coalesce(array_length(files_referenced, 1), 0) BETWEEN 1 AND 5) AS plans_with_1_to_5_files,
-  count(*) FILTER (WHERE coalesce(array_length(files_referenced, 1), 0) > 5) AS plans_with_more_than_5_files
+  count(*) FILTER (WHERE coalesce(jsonb_array_length(files_referenced), 0) = 0) AS plans_with_zero_files,
+  count(*) FILTER (WHERE coalesce(jsonb_array_length(files_referenced), 0) BETWEEN 1 AND 5) AS plans_with_1_to_5_files,
+  count(*) FILTER (WHERE coalesce(jsonb_array_length(files_referenced), 0) > 5) AS plans_with_more_than_5_files
 FROM dev_autopilot_plan_versions;
 
 \echo ''
@@ -22,7 +22,7 @@ WITH latest AS (
 )
 SELECT
   count(*) AS total_findings_with_plans,
-  count(*) FILTER (WHERE coalesce(array_length(files_referenced, 1), 0) = 0) AS findings_whose_latest_plan_has_zero_files,
+  count(*) FILTER (WHERE coalesce(jsonb_array_length(files_referenced), 0) = 0) AS findings_whose_latest_plan_has_zero_files,
   count(*) FILTER (WHERE plan_markdown IS NULL OR plan_markdown = '') AS findings_whose_plan_markdown_is_empty
 FROM latest;
 
@@ -43,7 +43,7 @@ FROM autopilot_recommendations r
 JOIN latest l ON l.finding_id = r.id
 WHERE r.source_type = 'dev_autopilot'
   AND r.status = 'new'
-  AND coalesce(array_length(l.files_referenced, 1), 0) = 0
+  AND coalesce(jsonb_array_length(l.files_referenced), 0) = 0
 ORDER BY r.impact_score DESC NULLS LAST, l.plan_created DESC
 LIMIT 10;
 
@@ -64,6 +64,6 @@ FROM autopilot_recommendations r
 JOIN latest l ON l.finding_id = r.id
 WHERE r.source_type = 'dev_autopilot'
   AND r.status = 'new'
-  AND coalesce(array_length(l.files_referenced, 1), 0) = 0
+  AND coalesce(jsonb_array_length(l.files_referenced), 0) = 0
 ORDER BY r.impact_score DESC NULLS LAST
 LIMIT 2;
