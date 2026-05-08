@@ -108,22 +108,26 @@ def _resolve_bcp47(lang: str | None) -> str:
 
 LANG_DEFAULTS: dict[str, dict[str, str]] = {
     "google_tts": {
-        # English Chirp3-HD is GA on Cloud TTS REST and works empirically
-        # (user confirmed). Other languages: prefer Neural2 / Wavenet which
-        # the Vertex pipeline already ships against (NEURAL2_TTS_VOICES in
-        # orb-live.ts) — verified-working voices. Chirp3-HD outside en-US
-        # is partially rolled out and silently fails for some locales when
-        # called via the Cloud TTS REST endpoint (gives a working
-        # construction but no audio at synth time).
+        # MUST use Chirp3-HD voice names. The livekit-plugins-google TTS
+        # class auto-selects the underlying TTS model from voice_name:
+        #   - "chirp" in voice_name → model_name="chirp_3"
+        #   - else                  → model_name="gemini-2.5-flash-tts"
+        # Neural2/Wavenet voices fall into the second branch, but Cloud TTS
+        # rejects voice="de-DE-Neural2-G" + model="gemini-2.5-flash-tts" as
+        # an invalid pair → silent 400 → no audio. Chirp3-HD voices ARE
+        # GA on Cloud TTS REST for all 9 languages below; the previous
+        # "no audio for German" was caused by row-seeded language_code +
+        # missing system-prompt language threading (fixed in PR-1.B-Lang-4),
+        # not the voice itself.
         "en": "en-US-Chirp3-HD-Aoede",
-        "de": "de-DE-Neural2-G",
-        "es": "es-ES-Neural2-A",
-        "fr": "fr-FR-Neural2-A",
-        "it": "it-IT-Neural2-A",
-        "pt": "pt-BR-Neural2-A",
-        "nl": "nl-NL-Wavenet-A",  # Neural2 not GA for nl-NL
-        "sv": "sv-SE-Wavenet-A",  # Neural2 not GA for sv-SE
-        "pl": "pl-PL-Wavenet-A",  # Neural2 not GA for pl-PL
+        "de": "de-DE-Chirp3-HD-Aoede",
+        "es": "es-ES-Chirp3-HD-Aoede",
+        "fr": "fr-FR-Chirp3-HD-Aoede",
+        "it": "it-IT-Chirp3-HD-Aoede",
+        "pt": "pt-BR-Chirp3-HD-Aoede",
+        "nl": "nl-NL-Chirp3-HD-Aoede",
+        "sv": "sv-SE-Chirp3-HD-Aoede",
+        "pl": "pl-PL-Chirp3-HD-Aoede",
     },
     # Cartesia Sonic-3 is multilingual — same voice handle works across
     # languages, the model auto-detects from the input text. Documented at
