@@ -258,20 +258,26 @@ def _build_stt(
     # Strip the multilingual-routing carrier so it doesn't leak into the
     # plugin kwargs (it's a TTS-only convention but we drop it defensively).
     opts.pop("voices_per_lang", None)
+    # PR 1.B-Lang-4: ALWAYS override row-seeded language(s). The agent_voice_configs
+    # row often carries hardcoded English (`languages: ['en-US']` for google_stt,
+    # `language: 'en-US'` for deepgram/assemblyai) from the original Vertex-era
+    # seed. STT language MUST match the user's actual speech, not a per-agent
+    # config — there is no operator override that makes sense here. Drop the row
+    # values; the bcp47 resolved from identity.lang is always correct.
+    opts.pop("language", None)
+    opts.pop("languages", None)
 
     if provider == "deepgram":
         try:
             from livekit.plugins import deepgram  # type: ignore[import-not-found]
-            opts.setdefault("language", bcp47)
-            return deepgram.STT(model=model or "nova-3", **opts)
+            return deepgram.STT(model=model or "nova-3", language=bcp47, **opts)
         except ImportError:
             notes.append("STT provider 'deepgram' requested but livekit-plugins-deepgram not installed")
             return None
     if provider == "assemblyai":
         try:
             from livekit.plugins import assemblyai  # type: ignore[import-not-found]
-            opts.setdefault("language", bcp47)
-            return assemblyai.STT(**opts)
+            return assemblyai.STT(language=bcp47, **opts)
         except ImportError:
             notes.append("STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
             return None
@@ -280,12 +286,11 @@ def _build_stt(
             from livekit.plugins import google  # type: ignore[import-not-found]
             # Google Cloud Speech-to-Text via ADC. Passing project explicitly
             # so the plugin doesn't fall back to the consumer Speech endpoint
-            # that requires GOOGLE_API_KEY. The plugin takes a `languages`
-            # list — we send the resolved BCP-47 every session.
-            languages = opts.pop("languages", None) or [bcp47]
+            # that requires GOOGLE_API_KEY. Always send identity.lang's BCP-47
+            # — see comment above on why we ignore the row's `languages` field.
             return google.STT(
                 model=model or "latest_long",
-                languages=languages,
+                languages=[bcp47],
                 **opts,
             )
         except ImportError:
