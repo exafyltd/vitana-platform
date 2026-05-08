@@ -60,6 +60,7 @@ class ContextBootstrap:
         agent_id: str = "vitana",
         is_reconnect: bool = False,
         last_n_turns: int = 0,
+        lang: str | None = None,
     ) -> BootstrapResult:
         params: dict[str, str | int | bool] = {
             "agent_id": agent_id,
@@ -73,6 +74,12 @@ class ContextBootstrap:
         request_headers: dict[str, str] = dict(self._headers)
         if user_jwt:
             request_headers["Authorization"] = f"Bearer {user_jwt}"
+        # PR 1.B-Lang-4: pass the user's language via Accept-Language so the
+        # gateway's /orb/context-bootstrap builds the system prompt in the
+        # right language. Without this the gateway defaults to 'en' and the
+        # LLM keeps responding in English even when the user speaks German.
+        if lang:
+            request_headers["Accept-Language"] = lang
         try:
             r = await self._client.get(
                 self._endpoint,

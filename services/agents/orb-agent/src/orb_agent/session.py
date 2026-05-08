@@ -198,11 +198,15 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     )
 
     # Fetch the merged context (memory + role + agent voice config).
+    # PR 1.B-Lang-4: pass identity.lang so the system prompt is built in
+    # the user's language. Without this the gateway falls back to 'en'
+    # and the LLM keeps responding in English even for German users.
     bootstrap = await ctx_fetcher.fetch(
         user_jwt=user_jwt or "",
         agent_id=agent_id,
         is_reconnect=False,
         last_n_turns=0,
+        lang=identity.lang,
     )
 
     # System instruction.
@@ -584,7 +588,7 @@ async def perform_handoff(
 
     # Fetch new agent's context + voice config.
     new_bootstrap = await ctx_fetcher.fetch(
-        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10
+        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10, lang=lang,
     )
     new_cascade = build_cascade(new_bootstrap.voice_config, lang=lang)
 
