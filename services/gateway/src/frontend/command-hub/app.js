@@ -35071,6 +35071,35 @@ function renderLivekitTestView() {
 
     var controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;';
+    // PR 1.B-Lang: language selector. Drives the `lang` field in the
+    // /orb/livekit/token mint, which becomes Identity.lang in the agent and
+    // gets passed to build_cascade(lang=) — STT picks BCP-47, TTS picks the
+    // per-language voice from voices_per_lang / LANG_DEFAULTS. 9 languages
+    // seeded today; adding more = LANG_DEFAULTS row + dropdown option.
+    var savedLang = '';
+    try { savedLang = localStorage.getItem('lkt.lang') || ''; } catch (e) {}
+    if (!savedLang) {
+        try { savedLang = (localStorage.getItem('vitana.lang') || '').slice(0, 2); } catch (e) {}
+    }
+    if (!savedLang) savedLang = 'en';
+    var langOptions = [
+        ['en', 'English'],
+        ['de', 'Deutsch'],
+        ['es', 'Español'],
+        ['fr', 'Français'],
+        ['it', 'Italiano'],
+        ['pt', 'Português'],
+        ['nl', 'Nederlands'],
+        ['sv', 'Svenska'],
+        ['pl', 'Polski'],
+    ];
+    var langSelectHtml = '<select class="lkt-lang" title="Session language" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">';
+    for (var i = 0; i < langOptions.length; i++) {
+        var code = langOptions[i][0], label = langOptions[i][1];
+        var sel = code === savedLang ? ' selected' : '';
+        langSelectHtml += '<option value="' + code + '"' + sel + '>' + label + ' (' + code + ')</option>';
+    }
+    langSelectHtml += '</select>';
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
@@ -35079,9 +35108,14 @@ function renderLivekitTestView() {
         +   '<option value="active">Production token (active provider must be livekit)</option>'
         +   '<option value="test-session">Test-session token (any active provider)</option>'
         + '</select>'
+        + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
         + '<a href="/command-hub/diagnostics/voice-lab/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Lab</a>';
     container.appendChild(controls);
+    var langSelect = controls.querySelector('.lkt-lang');
+    langSelect.addEventListener('change', function () {
+        try { localStorage.setItem('lkt.lang', langSelect.value); } catch (e) {}
+    });
 
     // Diagnostics panel — fed by the "Run Diagnostics" button below.
     var diagPanel = document.createElement('div');
@@ -35761,13 +35795,21 @@ function renderLivekitTestView() {
         token = token || localStorage.getItem('vitana.authToken');
         if (!token) throw new Error('no auth token in localStorage — sign in first');
 
+        // PR 1.B-Lang: read the language selector so a German user gets
+        // de-DE STT + a German Chirp voice end-to-end. Falls back to 'en'
+        // when the selector is absent (e.g. older cached page).
+        var selectedLang = 'en';
+        try {
+            var langEl = container.querySelector('.lkt-lang');
+            if (langEl && langEl.value) selectedLang = langEl.value;
+        } catch (e) {}
         var url, body;
         if (mode === 'test-session') {
             url = (window.GATEWAY_URL || '') + '/api/v1/agents/' + encodeURIComponent(agentId) + '/voice-config/test-session';
-            body = {};
+            body = { lang: selectedLang };
         } else {
             url = (window.GATEWAY_URL || '') + '/api/v1/orb/livekit/token';
-            body = { lang: 'en', agent_id: agentId };
+            body = { lang: selectedLang, agent_id: agentId };
         }
         log('event', 'POST ' + url);
         var res = await fetch(url, {

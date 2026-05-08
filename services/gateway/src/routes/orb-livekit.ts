@@ -890,6 +890,11 @@ router.post(
     }
     const userId = req.identity?.user_id ?? `tester-${randomUUID()}`;
     const proposed = req.body ?? {};
+    // PR 1.B-Lang: thread `lang` from the body into the token metadata so
+    // the agent's build_cascade picks the right STT language + per-language
+    // TTS voice. Without this, every test-session falls back to en-US even
+    // when the user picked German in the LiveKit test page dropdown.
+    const lang = typeof proposed.lang === 'string' && proposed.lang ? proposed.lang : 'en';
     const roomName = `orb-test-${id}-${Date.now()}`;
 
     const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
@@ -899,9 +904,13 @@ router.post(
       ttl: TEST_SESSION_TOKEN_TTL_SECONDS,
       metadata: JSON.stringify({
         user_id: userId,
+        tenant_id: req.identity?.tenant_id ?? '',
+        role: req.identity?.role ?? 'developer',
+        lang,
         agent_id: id,
         is_test_session: true,
         proposed_voice_config: proposed,
+        vitana_id: req.identity?.vitana_id ?? null,
         user_jwt: agentUserJwt,
       }),
     });
