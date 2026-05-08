@@ -446,6 +446,10 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     && typeof rec.source_ref === 'string'
     && rec.source_ref.startsWith('feedback_ticket:');
 
+  // Pass the scanner identifier so the safety gate can apply per-scanner
+  // scope overrides (e.g. npm-audit-scanner-v1 → allow package.json).
+  // See dev-autopilot-safety.ts:applyScannerOverrides for the full list.
+  const scannerForSafety = (rec.spec_snapshot as { scanner?: string } | null)?.scanner;
   const safetyCtx: SafetyContext = {
     config: {
       kill_switch: cfg.kill_switch,
@@ -458,6 +462,7 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     approved_today: approvedToday,
     auto_fix_depth: 0,
     is_feedback_lane: isFeedbackLane,
+    scanner: scannerForSafety,
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {

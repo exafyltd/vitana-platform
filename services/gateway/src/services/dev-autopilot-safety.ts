@@ -57,6 +57,24 @@ export interface SafetyContext {
    * plan-vs-diff validator gap still applies).
    */
   is_feedback_lane?: boolean;
+
+  /**
+   * The scanner that produced the finding (e.g. 'npm-audit-scanner-v1',
+   * 'rls-policy-scanner-v1'). Optional — when set, the gate applies
+   * per-scanner scope overrides so the finding's canonical fix is allowed
+   * even when the global allow/deny rules would block it. Examples:
+   *   - npm-audit-scanner-v1 / cve-scanner-v1 → allow `**\/package.json`,
+   *     `**\/pnpm-lock.yaml` (the only valid CVE fix is a dep bump)
+   *   - rls-policy-scanner-v1 / schema-drift-scanner-v1 → lift the
+   *     `supabase/migrations/**` deny rule (the canonical fix is a NEW
+   *     dated migration; the executor's "never modify existing migrations"
+   *     rule still applies separately)
+   *   - workflow-fix-scanner-v1 / ci-fix-scanner-v1 → lift `.github/workflows/**`
+   *     deny rule
+   * The 2026-05-08 audit found that without these overrides, ~40% of
+   * findings produced test-only PRs that fail CI 100% of the time.
+   */
+  scanner?: string;
 }
 
 export interface SafetyPlan {
@@ -158,6 +176,60 @@ export function isTestFile(path: string): boolean {
 }
 
 // =============================================================================
+// Per-scanner scope overrides
+// =============================================================================
+//
+// Some scanners' canonical fixes touch files the global allow/deny rules
+// block on purpose. Without overrides, those findings produce test-only
+// PRs that fail CI deterministically. Adjust effective allow/deny based
+// on the finding's scanner.
+//
+// Conservative defaults: each override matches a SPECIFIC scanner identifier.
+// Unknown scanners get no override — same surface as before.
+
+const PACKAGE_MANIFEST_GLOBS = ['**/package.json', '**/pnpm-lock.yaml'];
+const MIGRATIONS_DENY_GLOB = 'supabase/migrations/**';
+const WORKFLOWS_DENY_GLOB = '.github/workflows/**';
+
+const NPM_AUDIT_SCANNERS = new Set<string>(['npm-audit-scanner-v1', 'cve-scanner-v1']);
+const NEW_MIGRATION_SCANNERS = new Set<string>([
+  'rls-policy-scanner-v1',
+  'schema-drift-scanner-v1',
+]);
+const WORKFLOW_SCANNERS = new Set<string>(['workflow-fix-scanner-v1', 'ci-fix-scanner-v1']);
+
+export function applyScannerOverrides(
+  allowScope: string[],
+  denyScope: string[],
+  scanner: string | undefined,
+): { effectiveAllow: string[]; effectiveDeny: string[] } {
+  if (!scanner) {
+    return { effectiveAllow: allowScope, effectiveDeny: denyScope };
+  }
+  let effectiveAllow = allowScope;
+  let effectiveDeny = denyScope;
+
+  // npm-audit / cve: dep bumps land in package.json. Add to allow.
+  if (NPM_AUDIT_SCANNERS.has(scanner)) {
+    effectiveAllow = effectiveAllow.concat(PACKAGE_MANIFEST_GLOBS);
+  }
+
+  // rls-policy / schema-drift: canonical fix is a NEW dated migration.
+  // Lift the migrations deny rule (executor enforces "never modify
+  // existing migrations" separately via the planner prompt + reviewers).
+  if (NEW_MIGRATION_SCANNERS.has(scanner)) {
+    effectiveDeny = effectiveDeny.filter(g => g !== MIGRATIONS_DENY_GLOB);
+  }
+
+  // workflow / ci scanners: fix is in .github/workflows/*. Lift that deny.
+  if (WORKFLOW_SCANNERS.has(scanner)) {
+    effectiveDeny = effectiveDeny.filter(g => g !== WORKFLOWS_DENY_GLOB);
+  }
+
+  return { effectiveAllow, effectiveDeny };
+}
+
+// =============================================================================
 // Main gate
 // =============================================================================
 
@@ -188,14 +260,19 @@ export function evaluateSafetyGate(plan: SafetyPlan, ctx: SafetyContext): Safety
     });
   }
 
-  // 3. Scope — allow + deny
+  // 3. Scope — allow + deny, with per-scanner overrides (see SafetyContext.scanner doc)
+  const { effectiveAllow, effectiveDeny } = applyScannerOverrides(
+    ctx.config.allow_scope,
+    ctx.config.deny_scope,
+    ctx.scanner,
+  );
   const filesOutsideAllow: string[] = [];
   const filesInDeny: string[] = [];
   for (const f of plan.files_to_modify) {
-    if (!matchesAnyGlob(f, ctx.config.allow_scope)) {
+    if (!matchesAnyGlob(f, effectiveAllow)) {
       filesOutsideAllow.push(f);
     }
-    if (matchesAnyGlob(f, ctx.config.deny_scope)) {
+    if (matchesAnyGlob(f, effectiveDeny)) {
       filesInDeny.push(f);
     }
   }

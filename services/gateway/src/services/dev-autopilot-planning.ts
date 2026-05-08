@@ -498,16 +498,52 @@ export function buildPlanningPrompt(
       for (const g of deny) lines.push(`  - \`${g}\``);
       lines.push(``);
     }
-    lines.push(
-      `Common traps — do NOT put these in Files to modify:`,
-      `  - \`services/gateway/package.json\` / any \`package.json\``,
+    // Scanner-aware trap list. The blanket "never modify package.json /
+    // migrations / workflows / etc." rule was added to stop the planner
+    // from sneaking config files into unrelated plans, but it became the
+    // dominant reason autopilot PRs couldn't actually fix anything: an
+    // npm-audit-scanner-v1 finding's only valid fix IS bumping
+    // package.json, an rls-policy-scanner-v1 finding's only valid fix IS
+    // a new migration, etc. The 2026-05-08 audit found these scanners
+    // produced test-only PRs that fail CI 100% of the time because the
+    // actual fix was forbidden. Below, each trap is gated on the
+    // scanner of THIS finding so the trap fires for every UNRELATED
+    // finding (preserving the original protection) but is lifted for
+    // findings whose category legitimately requires touching that file
+    // type.
+    const scanner = String(snap.scanner || '');
+    const trapBullets: string[] = [];
+    if (scanner !== 'npm-audit-scanner-v1' && scanner !== 'cve-scanner-v1') {
+      trapBullets.push(
+        `  - \`services/gateway/package.json\` / any \`package.json\` ` +
+          `(this finding's scanner is not the dependency-audit scanner — ` +
+          `if a dep change is genuinely needed, surface it in Out-of-scope)`,
+      );
+    }
+    trapBullets.push(
       `  - \`services/gateway/tsconfig.json\` / any \`tsconfig*.json\``,
       `  - \`services/gateway/jest.config.ts\` / any \`jest.config.*\``,
-      `  - Any \`.github/workflows/*\` file`,
-      `  - Any \`supabase/migrations/*\` file`,
-      `  - Any path containing \`auth\` unless it IS the finding's target`,
+    );
+    if (scanner !== 'workflow-fix-scanner-v1' && scanner !== 'ci-fix-scanner-v1') {
+      trapBullets.push(`  - Any \`.github/workflows/*\` file`);
+    }
+    // Migration MODIFICATIONS are never allowed (rule #1 above), but new
+    // dated migration files ARE the canonical fix for schema-drift /
+    // rls-policy findings. The blanket trap was wrong here.
+    if (scanner !== 'rls-policy-scanner-v1' && scanner !== 'schema-drift-scanner-v1') {
+      trapBullets.push(`  - Any \`supabase/migrations/*\` file`);
+    } else {
+      trapBullets.push(
+        `  - **Modifying** any existing \`supabase/migrations/*\` file (per ` +
+          `rule #1 above; ADDING a new dated migration file IS allowed for this scanner)`,
+      );
+    }
+    trapBullets.push(`  - Any path containing \`auth\` unless it IS the finding's target`);
+    lines.push(
+      `Common traps — do NOT put these in Files to modify:`,
+      ...trapBullets,
       ``,
-      `If the developer needs to verify any of the above, write a bullet in`,
+      `If the developer needs to verify a forbidden file, write a bullet in`,
       `Out-of-scope like: "Developer should verify supertest is in`,
       `services/gateway/package.json devDependencies" — NOT a line in`,
       `Files to modify.`,

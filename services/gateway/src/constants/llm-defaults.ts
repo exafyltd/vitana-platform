@@ -78,7 +78,7 @@ export interface LLMRoutingPolicy {
 export const LLM_SAFE_DEFAULTS: LLMRoutingPolicy = {
   planner: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'anthropic',
     fallback_model: 'claude-opus-4-7',
   },
@@ -86,35 +86,35 @@ export const LLM_SAFE_DEFAULTS: LLMRoutingPolicy = {
     primary_provider: 'claude_subscription',
     primary_model: 'claude-opus-4-7',
     fallback_provider: 'vertex',
-    fallback_model: 'gemini-2.5-pro',
+    fallback_model: 'gemini-3.1-pro-preview',
   },
   validator: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'anthropic',
     fallback_model: 'claude-opus-4-7',
   },
   operator: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'anthropic',
     fallback_model: 'claude-opus-4-7',
   },
   memory: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'deepseek',
     fallback_model: 'deepseek-reasoner',
   },
   triage: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'anthropic',
     fallback_model: 'claude-opus-4-7',
   },
   vision: {
     primary_provider: 'vertex',
-    primary_model: 'gemini-2.5-pro',
+    primary_model: 'gemini-3.1-pro-preview',
     fallback_provider: 'anthropic',
     fallback_model: 'claude-opus-4-7',
   },
@@ -122,7 +122,7 @@ export const LLM_SAFE_DEFAULTS: LLMRoutingPolicy = {
     primary_provider: 'deepseek',
     primary_model: 'deepseek-reasoner',
     fallback_provider: 'vertex',
-    fallback_model: 'gemini-2.5-pro',
+    fallback_model: 'gemini-3.1-pro-preview',
   },
 };
 
@@ -140,8 +140,9 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
 
   // Google Vertex AI — flagship + mid + light
-  'gemini-2.5-pro': { input: 1.25, output: 5.00 },
+  'gemini-3.1-pro-preview': { input: 1.25, output: 5.00 },
   'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // legacy alias retained for back-compat
+  'gemini-2.5-pro': { input: 1.25, output: 5.00 },        // legacy alias — old policy rows may still reference
   'gemini-2.5-flash': { input: 0.075, output: 0.30 },
   'gemini-1.5-pro': { input: 1.25, output: 5.00 },
   'gemini-1.5-flash': { input: 0.075, output: 0.30 },
@@ -210,7 +211,7 @@ export const VALID_PROVIDERS: LLMProvider[] = [
  */
 export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   anthropic: 'claude-opus-4-7',
-  vertex: 'gemini-2.5-pro',
+  vertex: 'gemini-3.1-pro-preview',
   openai: 'gpt-5',
   deepseek: 'deepseek-reasoner',
   claude_subscription: 'claude-opus-4-7',
@@ -220,14 +221,14 @@ export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
  * Recommended models per stage (for UI warnings)
  */
 export const RECOMMENDED_MODELS: Record<LLMStage, string[]> = {
-  planner: ['gemini-2.5-pro', 'claude-opus-4-7', 'gpt-5'],
-  worker: ['claude-opus-4-7', 'gemini-2.5-pro', 'gpt-5'],
-  validator: ['gemini-2.5-pro', 'claude-opus-4-7'],
-  operator: ['gemini-2.5-pro', 'claude-opus-4-7'],
-  memory: ['gemini-2.5-pro', 'deepseek-reasoner', 'claude-opus-4-7'],
-  triage: ['gemini-2.5-pro', 'claude-opus-4-7', 'deepseek-reasoner'],
-  vision: ['gemini-2.5-pro', 'claude-opus-4-7'],
-  classifier: ['deepseek-reasoner', 'gemini-2.5-pro', 'gpt-5'],
+  planner: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'gpt-5'],
+  worker: ['claude-opus-4-7', 'gemini-3.1-pro-preview', 'gpt-5'],
+  validator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
+  operator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
+  memory: ['gemini-3.1-pro-preview', 'deepseek-reasoner', 'claude-opus-4-7'],
+  triage: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'deepseek-reasoner'],
+  vision: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
+  classifier: ['deepseek-reasoner', 'gemini-3.1-pro-preview', 'gpt-5'],
 };
 
 /**
