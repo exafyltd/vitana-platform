@@ -75,6 +75,8 @@ import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
 import { notifyUserAsync } from '../services/notification-service';
+// VTID-02857: read operator-tunable speakingRate from system_config (cached)
+import { getVoiceConfig } from '../services/voice-config';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01225-READ-FIX: Inline fact extraction for voice sessions
@@ -13497,6 +13499,8 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
   try {
     console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
 
+    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+    const __vc = await getVoiceConfig();
     const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
       input: { text: testText },
       voice: {
@@ -13507,7 +13511,7 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
       },
       audioConfig: {
         audioEncoding: 'MP3' as any,
-        speakingRate: 1.0,
+        speakingRate: __vc.tts.speaking_rate,
         pitch: 0
       }
     };
@@ -15308,12 +15312,14 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
       voiceParams.modelName = 'gemini-2.5-flash-tts';
     }
 
+    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+    const __vc15315 = await getVoiceConfig();
     const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
       input: { text: text },
       voice: voiceParams,
       audioConfig: {
         audioEncoding: 'MP3' as any,  // Returns MP3 directly
-        speakingRate: 1.0,
+        speakingRate: __vc15315.tts.speaking_rate,
         pitch: 0
       }
     };
@@ -15489,12 +15495,14 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
         voiceParams.modelName = 'gemini-2.5-flash-tts';
       }
 
+      // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+      const __vc15498 = await getVoiceConfig();
       const [ttsResponse] = await ttsClient.synthesizeSpeech({
         input: { text: replyText },
         voice: voiceParams,
         audioConfig: {
           audioEncoding: 'MP3' as any,
-          speakingRate: 1.0,
+          speakingRate: __vc15498.tts.speaking_rate,
           pitch: 0
         }
       });
