@@ -45130,6 +45130,31 @@ function renderAwarenessSignalRow(signal) {
         pendBadge.style.cssText = 'font-size:.65rem;color:#a16207;background:rgba(234,179,8,.12);padding:.1rem .35rem;border-radius:4px;';
         labelLine.appendChild(pendBadge);
     }
+    // VTID-02858: Wired status — operator-visible "is this signal actually
+    // firing on production sessions?" Independent of enforcement_status above
+    // (which is about whether the gate exists in code).
+    if (signal.wired) {
+        var wiredBadge = document.createElement('span');
+        wiredBadge.style.cssText = 'font-size:.65rem;padding:.1rem .35rem;border-radius:4px;';
+        if (signal.wired === 'live') {
+            wiredBadge.textContent = '✓ wired';
+            wiredBadge.style.color = '#22c55e';
+            wiredBadge.style.background = 'rgba(34,197,94,.12)';
+        } else if (signal.wired === 'partial') {
+            wiredBadge.textContent = '⚠ partial';
+            wiredBadge.style.color = '#a16207';
+            wiredBadge.style.background = 'rgba(234,179,8,.12)';
+        } else if (signal.wired === 'not_wired') {
+            wiredBadge.textContent = '✗ not wired';
+            wiredBadge.style.color = '#dc2626';
+            wiredBadge.style.background = 'rgba(220,38,38,.12)';
+        } else if (signal.wired === 'not_relevant') {
+            wiredBadge.textContent = 'n/a';
+            wiredBadge.style.color = 'var(--color-text-secondary)';
+            wiredBadge.style.background = 'var(--color-bg)';
+        }
+        labelLine.appendChild(wiredBadge);
+    }
     var keyTag = document.createElement('code');
     keyTag.textContent = signal.key;
     keyTag.style.cssText = 'font-size:.6rem;color:var(--color-text-secondary);margin-left:auto;';
@@ -45327,11 +45352,46 @@ function renderAdminAwarenessView() {
     previewBtn.onclick = awarenessRunPreview;
     toolbar.appendChild(previewBtn);
 
+    // VTID-02858: Wired-status filter \u2014 operators scanning for "what's still missing"
+    if (!state.awarenessRegistry.wiredFilter) state.awarenessRegistry.wiredFilter = 'all';
+    var wiredFilterLabel = document.createElement('label');
+    wiredFilterLabel.style.cssText = 'display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--color-text-secondary);margin-left:auto;';
+    wiredFilterLabel.appendChild(document.createTextNode('Wired:'));
+    var wiredFilterSelect = document.createElement('select');
+    wiredFilterSelect.style.cssText = 'padding:.25rem .45rem;background:var(--color-bg-elevated);border:1px solid var(--color-border);color:var(--color-text);border-radius:4px;font-size:.75rem;';
+    [
+        { value: 'all',          label: 'All' },
+        { value: 'live',         label: '\u2713 Live' },
+        { value: 'partial',      label: '\u26a0 Partial' },
+        { value: 'not_wired',    label: '\u2717 Not wired' },
+        { value: 'not_relevant', label: 'n/a' },
+        { value: 'unknown',      label: 'Unspecified' },
+    ].forEach(function (o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (state.awarenessRegistry.wiredFilter === o.value) opt.selected = true;
+        wiredFilterSelect.appendChild(opt);
+    });
+    wiredFilterSelect.onchange = function () {
+        state.awarenessRegistry.wiredFilter = wiredFilterSelect.value;
+        renderApp();
+    };
+    wiredFilterLabel.appendChild(wiredFilterSelect);
+    toolbar.appendChild(wiredFilterLabel);
+
     container.appendChild(toolbar);
+
+    var wiredFilter = state.awarenessRegistry.wiredFilter || 'all';
+    var filteredManifest = manifest.filter(function (s) {
+        if (wiredFilter === 'all') return true;
+        if (wiredFilter === 'unknown') return !s.wired;
+        return s.wired === wiredFilter;
+    });
 
     // Group manifest by tier
     var byTier = {};
-    manifest.forEach(function (s) {
+    filteredManifest.forEach(function (s) {
         if (!byTier[s.tier]) byTier[s.tier] = [];
         byTier[s.tier].push(s);
     });
