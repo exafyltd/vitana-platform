@@ -698,6 +698,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02766: Voice Tools Catalog (developer-tier)
   mountRouterSync(app, '/api/v1/voice-tools', voiceToolsCatalogRouter, { owner: 'voice-tools-catalog' });
 
+  // VTID-02857: Voice configuration (Providers & Voice screen)
+  // GET/PUT /api/v1/voice/config + GET /api/v1/voice/tts-voices + POST /api/v1/voice/preview
+  const voiceConfigRouter = require('./routes/voice-config').default;
+  mountRouterSync(app, '/api/v1', voiceConfigRouter, { owner: 'voice-config' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 

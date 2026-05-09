@@ -6164,9 +6164,9 @@ function renderModuleContent(moduleKey, tab) {
         state.voiceLab.activeSubTab = 'orb-live';
         container.appendChild(renderVoiceLabView());
     } else if (moduleKey === 'voice' && tab === 'providers') {
-        // Providers & Voice — V2V/STT/TTS provider switches + TTS voice/language/speed
-        // Full implementation lands in PR 2; scaffold renders a coming-soon placeholder.
-        container.appendChild(renderVoiceProvidersPlaceholderView());
+        // VTID-02857: Providers & Voice — V2V (Vertex/LiveKit) + STT + TTS
+        // provider switches + TTS voice/language/speed.
+        container.appendChild(renderVoiceProvidersView());
     } else if (moduleKey === 'voice' && tab === 'awareness') {
         // Sub-tab strip for Registry / Test / Watchdogs
         container.appendChild(renderVoiceAwarenessView());
@@ -41278,25 +41278,458 @@ function renderMovedToVoiceBreadcrumb(label, voiceTab) {
     return box;
 }
 
-// Placeholder while PR 2 (Providers & Voice screen + voice-config helper)
-// is in flight. Tells operators what's coming and links to the legacy
-// LiveKit Test Bench for the current way to switch providers manually.
-function renderVoiceProvidersPlaceholderView() {
-    var c = document.createElement('div');
-    c.style.cssText = 'padding:1.5rem;';
-    var h = document.createElement('h2');
-    h.style.margin = '0 0 0.5rem 0';
-    h.textContent = 'Providers & Voice';
-    c.appendChild(h);
-    var sub = document.createElement('p');
-    sub.className = 'section-subtitle';
-    sub.textContent = 'V2V (Vertex / LiveKit) + STT + TTS provider switches and TTS voice / language / speed controls.';
-    c.appendChild(sub);
-    var note = document.createElement('div');
-    note.style.cssText = 'margin-top:1rem;padding:1rem 1.25rem;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);line-height:1.55;';
-    note.innerHTML = 'Coming in PR 2 of the Voice reorganization (VTID-02856 scaffold ships first). Until then, the active provider can be inspected at <code>GET /api/v1/orb/active-provider</code> and flipped manually with <code>POST /api/v1/orb/active-provider</code> (60-min cooldown). The LiveKit pipeline can be exercised on the <strong>LiveKit Test Bench</strong> tab.';
-    c.appendChild(note);
-    return c;
+// VTID-02857: Real Providers & Voice screen — six cards stacked top-to-bottom:
+//   1. V2V (Vertex / LiveKit) flip with cooldown
+//   2. STT provider + model
+//   3. TTS provider + model
+//   4. Language (operator override; empty = Accept-Language inference)
+//   5. TTS Voice
+//   6. TTS Speed (slider + Preview button)
+// Reads /api/v1/voice/config + /api/v1/orb/active-provider; writes via PUT
+// with diff in OASIS event. Preview synthesizes a phrase with the pending
+// settings so the operator hears the result before saving.
+function renderVoiceProvidersView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1.5rem;max-width:1100px;';
+
+    var title = document.createElement('h2');
+    title.style.margin = '0 0 0.25rem 0';
+    title.textContent = 'Providers & Voice';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'V2V (Vertex / LiveKit) realtime + STT and TTS provider, plus TTS voice / language / speed.';
+    container.appendChild(subtitle);
+
+    if (!state.voiceConfig) {
+        state.voiceConfig = {
+            loaded: false,
+            loading: false,
+            error: null,
+            saving: false,
+            data: null,
+            v2v: null,
+            voicesByLang: {},
+            previewLoading: false,
+            pending: {} // ttsProvider/Model/Voice/Language/SpeakingRate, sttProvider/Model
+        };
+    }
+    var vc = state.voiceConfig;
+
+    if (!vc.loaded && !vc.loading) {
+        vc.loading = true;
+        vc.error = null;
+        Promise.all([
+            fetch('/api/v1/voice/config', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/orb/active-provider', { headers: buildContextHeaders() }).then(function (r) { return r.json(); })
+        ]).then(function (results) {
+            vc.data = results[0];
+            vc.v2v = results[1];
+            vc.loaded = true;
+            vc.loading = false;
+            vc.pending = {};
+            var lang = (vc.data.tts && vc.data.tts.language) || 'en';
+            return fetchTtsVoicesForLanguage(lang);
+        }).then(function () {
+            renderApp();
+        }).catch(function (err) {
+            vc.loading = false;
+            vc.error = err && err.message ? err.message : String(err);
+            renderApp();
+        });
+    }
+
+    if (vc.loading && !vc.loaded) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading…';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (vc.error) {
+        var errEl = document.createElement('div');
+        errEl.className = 'placeholder-content error-text';
+        errEl.textContent = 'Error: ' + vc.error;
+        container.appendChild(errEl);
+        return container;
+    }
+
+    var data = vc.data || {};
+    var v2v = vc.v2v || {};
+    var pending = vc.pending || {};
+    var tts = (data.tts) || {};
+    var stt = (data.stt) || {};
+    var supportedLangs = (data.supported_languages) || [];
+    var ttsImpl = (data.implemented && data.implemented.tts_providers) || ['google_tts'];
+    var sttImpl = (data.implemented && data.implemented.stt_providers) || ['google_stt'];
+
+    var effLanguage = pending.ttsLanguage !== undefined ? pending.ttsLanguage : (tts.language || '');
+    var effVoice = pending.ttsVoice !== undefined ? pending.ttsVoice : (tts.voice || '');
+    var effSpeakingRate = pending.ttsSpeakingRate !== undefined ? pending.ttsSpeakingRate : (typeof tts.speaking_rate === 'number' ? tts.speaking_rate : 1.0);
+    var effTtsProvider = pending.ttsProvider !== undefined ? pending.ttsProvider : (tts.provider || 'google_tts');
+    var effTtsModel = pending.ttsModel !== undefined ? pending.ttsModel : (tts.model || 'neural2');
+    var effSttProvider = pending.sttProvider !== undefined ? pending.sttProvider : (stt.provider || 'google_stt');
+    var effSttModel = pending.sttModel !== undefined ? pending.sttModel : (stt.model || 'default');
+
+    var dirty = Object.keys(pending).length > 0;
+
+    // ─── Card: V2V (active provider switch) ─────────────────────────
+    var v2vCard = vpMakeCard('Voice-to-Voice (Realtime) Provider');
+    var v2vBody = document.createElement('div');
+    v2vBody.style.cssText = 'display:flex;flex-direction:column;gap:0.75rem;';
+
+    var current = v2v.active_provider || 'vertex';
+    var cooldown = typeof v2v.cooldown_remaining_s === 'number' ? v2v.cooldown_remaining_s : 0;
+
+    var statusRow = document.createElement('div');
+    statusRow.style.cssText = 'display:flex;gap:1rem;align-items:center;';
+    statusRow.innerHTML = '<strong>Active:</strong> <code style="background:rgba(59,130,246,0.12);padding:2px 8px;border-radius:4px;">' + escapeHtml(current) + '</code>'
+        + (v2v.last_flipped_at ? ('<span style="color:var(--color-text-secondary);font-size:0.8rem;">last flip: ' + escapeHtml(v2v.last_flipped_at) + '</span>') : '');
+    v2vBody.appendChild(statusRow);
+
+    if (cooldown > 0) {
+        var cdMsg = document.createElement('div');
+        cdMsg.style.cssText = 'padding:0.5rem 0.75rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:0.8rem;color:#fbbf24;';
+        cdMsg.textContent = 'Flip cooldown: ' + Math.ceil(cooldown / 60) + ' min remaining';
+        v2vBody.appendChild(cdMsg);
+    }
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.5rem;';
+    ['vertex', 'livekit'].forEach(function (p) {
+        var btn = document.createElement('button');
+        btn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+        btn.textContent = (current === p ? '✓ ' : '') + 'Use ' + (p === 'vertex' ? 'Vertex (Gemini Live)' : 'LiveKit');
+        btn.disabled = current === p || cooldown > 0;
+        btn.onclick = function () {
+            if (!confirm('Flip realtime voice provider to ' + p + '? 60-min cooldown applies after flip.')) return;
+            btn.disabled = true;
+            btn.textContent = 'Flipping…';
+            fetch('/api/v1/orb/active-provider', {
+                method: 'POST',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ provider: p, reason: 'manual flip via Providers & Voice tab' })
+            }).then(function (r) { return r.json(); }).then(function (resp) {
+                if (resp.ok) {
+                    showToast('Provider flipped to ' + p, 'success');
+                    vc.loaded = false;
+                    renderApp();
+                } else {
+                    showToast(resp.error || 'Flip failed', 'error');
+                    renderApp();
+                }
+            }).catch(function (err) {
+                showToast(err.message || 'Flip failed', 'error');
+                renderApp();
+            });
+        };
+        btnRow.appendChild(btn);
+    });
+    v2vBody.appendChild(btnRow);
+    v2vCard.appendChild(v2vBody);
+    container.appendChild(v2vCard);
+
+    // ─── Card: STT provider ─────────────────────────────────────────
+    var sttCard = vpMakeCard('STT (Speech-to-Text) Provider');
+    var sttBody = document.createElement('div');
+    sttBody.style.cssText = 'display:flex;flex-direction:column;gap:0.75rem;';
+
+    var sttBadge = document.createElement('div');
+    sttBadge.style.cssText = 'padding:0.4rem 0.75rem;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:6px;font-size:0.78rem;color:var(--color-text-secondary);';
+    sttBadge.innerHTML = '<strong>Active when V2V = LiveKit.</strong> Vertex Gemini Live does STT internally and ignores this setting.';
+    sttBody.appendChild(sttBadge);
+
+    var sttProviderRow = vpMakeFieldRow('Provider');
+    var sttProviderSelect = document.createElement('select');
+    vpStyleSelect(sttProviderSelect);
+    ['google_stt', 'deepgram', 'assemblyai', 'cartesia', 'openai_stt'].forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p + (sttImpl.indexOf(p) === -1 ? ' (not yet wired)' : '');
+        opt.disabled = sttImpl.indexOf(p) === -1;
+        if (effSttProvider === p) opt.selected = true;
+        sttProviderSelect.appendChild(opt);
+    });
+    sttProviderSelect.onchange = function () { pending.sttProvider = sttProviderSelect.value; renderApp(); };
+    sttProviderRow.appendChild(sttProviderSelect);
+    sttBody.appendChild(sttProviderRow);
+
+    var sttModelRow = vpMakeFieldRow('Model');
+    var sttModelInput = document.createElement('input');
+    vpStyleInput(sttModelInput);
+    sttModelInput.value = effSttModel;
+    sttModelInput.placeholder = 'e.g. nova-2, default';
+    sttModelInput.oninput = function () { pending.sttModel = sttModelInput.value; };
+    sttModelInput.onblur = function () { renderApp(); };
+    sttModelRow.appendChild(sttModelInput);
+    sttBody.appendChild(sttModelRow);
+
+    sttCard.appendChild(sttBody);
+    container.appendChild(sttCard);
+
+    // ─── Card: TTS provider ─────────────────────────────────────────
+    var ttsProviderCard = vpMakeCard('TTS (Text-to-Speech) Provider');
+    var ttsProviderBody = document.createElement('div');
+    ttsProviderBody.style.cssText = 'display:flex;flex-direction:column;gap:0.75rem;';
+
+    var ttsProviderRow = vpMakeFieldRow('Provider');
+    var ttsProviderSelect = document.createElement('select');
+    vpStyleSelect(ttsProviderSelect);
+    ['google_tts', 'elevenlabs', 'rime', 'inworld', 'deepgram_tts', 'openai_tts'].forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p + (ttsImpl.indexOf(p) === -1 ? ' (not yet wired)' : '');
+        opt.disabled = ttsImpl.indexOf(p) === -1;
+        if (effTtsProvider === p) opt.selected = true;
+        ttsProviderSelect.appendChild(opt);
+    });
+    ttsProviderSelect.onchange = function () { pending.ttsProvider = ttsProviderSelect.value; renderApp(); };
+    ttsProviderRow.appendChild(ttsProviderSelect);
+    ttsProviderBody.appendChild(ttsProviderRow);
+
+    var ttsModelRow = vpMakeFieldRow('Model');
+    var ttsModelInput = document.createElement('input');
+    vpStyleInput(ttsModelInput);
+    ttsModelInput.value = effTtsModel;
+    ttsModelInput.placeholder = 'e.g. neural2, gemini-2.5-flash-tts';
+    ttsModelInput.oninput = function () { pending.ttsModel = ttsModelInput.value; };
+    ttsModelInput.onblur = function () { renderApp(); };
+    ttsModelRow.appendChild(ttsModelInput);
+    ttsProviderBody.appendChild(ttsModelRow);
+
+    ttsProviderCard.appendChild(ttsProviderBody);
+    container.appendChild(ttsProviderCard);
+
+    // ─── Card: Language ─────────────────────────────────────────────
+    var langCard = vpMakeCard('Language');
+    var langBody = document.createElement('div');
+    langBody.style.cssText = 'display:flex;flex-direction:column;gap:0.5rem;';
+    var langRow = vpMakeFieldRow('Operator override');
+    var langSelect = document.createElement('select');
+    vpStyleSelect(langSelect);
+    var noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(use Accept-Language inference)';
+    if (!effLanguage) noneOpt.selected = true;
+    langSelect.appendChild(noneOpt);
+    supportedLangs.forEach(function (l) {
+        var opt = document.createElement('option');
+        opt.value = l.code;
+        opt.textContent = l.label;
+        if (effLanguage === l.code) opt.selected = true;
+        langSelect.appendChild(opt);
+    });
+    langSelect.onchange = function () {
+        pending.ttsLanguage = langSelect.value;
+        pending.ttsVoice = ''; // reset voice when language changes
+        if (langSelect.value) { fetchTtsVoicesForLanguage(langSelect.value).then(renderApp); }
+        else { renderApp(); }
+    };
+    langRow.appendChild(langSelect);
+    langBody.appendChild(langRow);
+    langCard.appendChild(langBody);
+    container.appendChild(langCard);
+
+    // ─── Card: TTS Voice ────────────────────────────────────────────
+    var voiceCard = vpMakeCard('TTS Voice');
+    var voiceBody = document.createElement('div');
+    voiceBody.style.cssText = 'display:flex;flex-direction:column;gap:0.5rem;';
+    var voiceLangKey = effLanguage || 'en';
+    var voicesForLang = vc.voicesByLang[voiceLangKey] || [];
+    var voiceRow = vpMakeFieldRow('Voice');
+    var voiceSelect = document.createElement('select');
+    vpStyleSelect(voiceSelect);
+    var voiceDefault = document.createElement('option');
+    voiceDefault.value = '';
+    voiceDefault.textContent = '(use language default)';
+    if (!effVoice) voiceDefault.selected = true;
+    voiceSelect.appendChild(voiceDefault);
+    voicesForLang.forEach(function (v) {
+        var opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = v.name + '  [' + v.tier + ']';
+        if (effVoice === v.name) opt.selected = true;
+        voiceSelect.appendChild(opt);
+    });
+    voiceSelect.onchange = function () { pending.ttsVoice = voiceSelect.value; renderApp(); };
+    voiceRow.appendChild(voiceSelect);
+    voiceBody.appendChild(voiceRow);
+    if (voicesForLang.length === 0) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        hint.textContent = 'No voices loaded yet for ' + voiceLangKey + '. Pick a language above.';
+        voiceBody.appendChild(hint);
+    }
+    voiceCard.appendChild(voiceBody);
+    container.appendChild(voiceCard);
+
+    // ─── Card: TTS Speed ────────────────────────────────────────────
+    var speedCard = vpMakeCard('TTS Speed');
+    var speedBody = document.createElement('div');
+    speedBody.style.cssText = 'display:flex;flex-direction:column;gap:0.75rem;';
+
+    var sliderRow = document.createElement('div');
+    sliderRow.style.cssText = 'display:flex;align-items:center;gap:1rem;';
+    var slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.5';
+    slider.max = '2.0';
+    slider.step = '0.05';
+    slider.value = String(effSpeakingRate);
+    slider.style.cssText = 'flex:1;';
+    var readout = document.createElement('span');
+    readout.style.cssText = 'font-family:monospace;min-width:60px;text-align:right;';
+    readout.textContent = Number(effSpeakingRate).toFixed(2) + '×';
+    slider.oninput = function () {
+        readout.textContent = Number(slider.value).toFixed(2) + '×';
+        pending.ttsSpeakingRate = parseFloat(slider.value);
+    };
+    slider.onchange = function () { renderApp(); };
+    sliderRow.appendChild(slider);
+    sliderRow.appendChild(readout);
+    speedBody.appendChild(sliderRow);
+
+    var previewRow = document.createElement('div');
+    previewRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;';
+    var previewInput = document.createElement('input');
+    vpStyleInput(previewInput);
+    previewInput.placeholder = 'Test phrase to synthesize…';
+    previewInput.value = vc.previewText || 'Hello from Vitana voice.';
+    previewInput.style.flex = '1';
+    previewInput.oninput = function () { vc.previewText = previewInput.value; };
+    var previewBtn = document.createElement('button');
+    previewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    previewBtn.textContent = vc.previewLoading ? 'Synthesizing…' : '🔊 Preview';
+    previewBtn.disabled = vc.previewLoading;
+    previewBtn.onclick = function () {
+        var phrase = previewInput.value || 'Hello from Vitana voice.';
+        vc.previewLoading = true;
+        renderApp();
+        fetch('/api/v1/voice/preview', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                text: phrase,
+                language: effLanguage || 'en',
+                voice: effVoice || undefined,
+                speaking_rate: effSpeakingRate,
+                provider: effTtsProvider
+            })
+        }).then(function (r) {
+            if (!r.ok) { return r.json().then(function (j) { throw new Error(j.error || 'preview failed'); }); }
+            return r.blob();
+        }).then(function (blob) {
+            vc.previewLoading = false;
+            renderApp();
+            var url = URL.createObjectURL(blob);
+            var audio = new Audio(url);
+            audio.play().catch(function () { showToast('Audio play blocked by browser', 'error'); });
+        }).catch(function (err) {
+            vc.previewLoading = false;
+            renderApp();
+            showToast(err.message || 'Preview failed', 'error');
+        });
+    };
+    previewRow.appendChild(previewInput);
+    previewRow.appendChild(previewBtn);
+    speedBody.appendChild(previewRow);
+
+    speedCard.appendChild(speedBody);
+    container.appendChild(speedCard);
+
+    // ─── Save bar ───────────────────────────────────────────────────
+    var saveBar = document.createElement('div');
+    saveBar.style.cssText = 'display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--color-border);';
+
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'task-spec-pipeline-btn';
+    resetBtn.textContent = 'Discard changes';
+    resetBtn.disabled = !dirty || vc.saving;
+    resetBtn.onclick = function () { vc.pending = {}; renderApp(); };
+    saveBar.appendChild(resetBtn);
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    saveBtn.textContent = vc.saving ? 'Saving…' : 'Save';
+    saveBtn.disabled = !dirty || vc.saving;
+    saveBtn.onclick = function () {
+        var payload = { tts: {}, stt: {} };
+        if (pending.ttsProvider !== undefined) payload.tts.provider = pending.ttsProvider;
+        if (pending.ttsModel !== undefined) payload.tts.model = pending.ttsModel;
+        if (pending.ttsVoice !== undefined) payload.tts.voice = pending.ttsVoice;
+        if (pending.ttsLanguage !== undefined) payload.tts.language = pending.ttsLanguage;
+        if (pending.ttsSpeakingRate !== undefined) payload.tts.speaking_rate = pending.ttsSpeakingRate;
+        if (pending.sttProvider !== undefined) payload.stt.provider = pending.sttProvider;
+        if (pending.sttModel !== undefined) payload.stt.model = pending.sttModel;
+        vc.saving = true;
+        renderApp();
+        fetch('/api/v1/voice/config', {
+            method: 'PUT',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload)
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            vc.saving = false;
+            if (resp.ok) {
+                vc.loaded = false;
+                vc.pending = {};
+                renderApp();
+                showToast('Voice config saved', 'success');
+            } else {
+                renderApp();
+                showToast(resp.error || 'Save failed', 'error');
+            }
+        }).catch(function (err) {
+            vc.saving = false;
+            renderApp();
+            showToast(err.message || 'Save failed', 'error');
+        });
+    };
+    saveBar.appendChild(saveBtn);
+
+    container.appendChild(saveBar);
+
+    return container;
+}
+
+function fetchTtsVoicesForLanguage(lang) {
+    if (!state.voiceConfig) return Promise.resolve();
+    if (state.voiceConfig.voicesByLang[lang]) return Promise.resolve();
+    return fetch('/api/v1/voice/tts-voices?provider=google_tts&language=' + encodeURIComponent(lang), {
+        headers: buildContextHeaders()
+    }).then(function (r) { return r.json(); }).then(function (resp) {
+        state.voiceConfig.voicesByLang[lang] = (resp && resp.voices) || [];
+    }).catch(function () {
+        state.voiceConfig.voicesByLang[lang] = [];
+    });
+}
+
+function vpMakeCard(titleText) {
+    var card = document.createElement('section');
+    card.style.cssText = 'margin-bottom:1rem;padding:1rem 1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;';
+    var h = document.createElement('h3');
+    h.style.cssText = 'margin:0 0 0.75rem 0;font-size:0.95rem;';
+    h.textContent = titleText;
+    card.appendChild(h);
+    return card;
+}
+
+function vpMakeFieldRow(labelText) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.75rem;';
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'min-width:140px;font-size:0.85rem;color:var(--color-text-secondary);';
+    lbl.textContent = labelText;
+    row.appendChild(lbl);
+    return row;
+}
+
+function vpStyleSelect(el) {
+    el.style.cssText = 'padding:0.45rem 0.6rem;background:var(--color-surface);color:var(--color-text-primary);border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;';
+}
+function vpStyleInput(el) {
+    el.style.cssText = 'padding:0.45rem 0.6rem;background:var(--color-surface);color:var(--color-text-primary);border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;';
 }
 
 // Awareness tab — hosts three sub-tabs (Registry / Test / Watchdogs).
