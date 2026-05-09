@@ -1,0 +1,33 @@
+diff --git a/services/gateway/src/frontend/command-hub/orb-widget.js b/services/gateway/src/frontend/command-hub/orb-widget.js
+index 4b57683..378a57c 100644
+--- a/services/gateway/src/frontend/command-hub/orb-widget.js
++++ b/services/gateway/src/frontend/command-hub/orb-widget.js
+@@ -17,7 +17,7 @@
+ (function (window) {
+   'use strict';
+ 
+-  var _WIDGET_VERSION = '2026-05-08-vtid-02034b-stale-instance-404';
++  var _WIDGET_VERSION = '2026-05-09-vtid-02034c-budget-reset';
+   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
+ 
+   // Prevent double-load
+@@ -1787,6 +1787,19 @@
+     }).then(function (r) {
+       if (r.ok) {
+         _s._audioSendFailCount = 0;
++        // VTID-02034c: a successful audio POST after a silent re-register
++        // means the new session is healthy on whichever instance answered.
++        // Reset the budget so subsequent legitimate cross-instance 404s
++        // during normal conversation get fresh re-register attempts instead
++        // of exhausting a counter that has already paid its way back to a
++        // working session. Without this, two routine cross-instance 404s
++        // in the first 30s of a session burn the whole budget even though
++        // both re-registers worked, and the third 404 plays the user-visible
++        // "internet issues" alert during normal conversation. (Codex P2.)
++        if (_s._silentReregisterCount > 0) {
++          _s._silentReregisterCount = 0;
++          _s._silentReregisterWindowStart = 0;
++        }
+         return;
+       }
+       // VTID-02034b: 404 means this Cloud Run instance doesn't hold our
