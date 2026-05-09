@@ -62,6 +62,13 @@ export interface AwarenessSignal {
   locked?: boolean;            // cannot be turned off (mandatory)
   params?: ParamSpec[];        // optional tunable parameters
   enforcement_status?: 'live' | 'pending'; // pending = manifest-only, no code gate yet
+  // VTID-02858: Operator-visible status of whether the signal actually
+  // fires on production sessions (vs. enforcement_status above, which is
+  // about whether the gate exists in code). Surfaced as a column in the
+  // Voice / Awareness / Registry sub-tab so operators can scan "what's
+  // still missing" at a glance. Backfilled incrementally; undefined =
+  // unknown.
+  wired?: 'live' | 'partial' | 'not_wired' | 'not_relevant';
 }
 
 export interface ResolvedSignal {
@@ -89,12 +96,14 @@ export interface AwarenessConfigSnapshot {
 
 const M: AwarenessSignal[] = [
   // ─── 1. IDENTITY (locked) ─────────────────────────────────────────────────
-  { key: 'identity.user_id',    tier: 'identity', subcategory: 'Authenticated user', label: 'User ID',     description: 'JWT sub claim resolved into the active user_id.',         default_on: true, locked: true },
-  { key: 'identity.tenant_id',  tier: 'identity', subcategory: 'Authenticated user', label: 'Tenant ID',   description: 'JWT app_metadata.active_tenant_id.',                       default_on: true, locked: true },
-  { key: 'identity.active_role',tier: 'identity', subcategory: 'Authenticated user', label: 'Active role', description: 'community / professional / staff / admin / dev.',          default_on: true, locked: true },
-  { key: 'identity.email',      tier: 'identity', subcategory: 'Authenticated user', label: 'Email',       description: 'Caller email from JWT (used for personalization).',        default_on: true },
-  { key: 'identity.surface',    tier: 'identity', subcategory: 'Session surface',    label: 'Surface',     description: 'orb / operator / command-hub / cicd / api.',               default_on: true, locked: true },
-  { key: 'identity.is_anonymous', tier: 'identity', subcategory: 'Session surface',  label: 'Anonymous flag', description: 'Emitted when no JWT — gates personal context entirely.', default_on: true, locked: true },
+  { key: 'identity.user_id',    tier: 'identity', subcategory: 'Authenticated user', label: 'User ID',     description: 'JWT sub claim resolved into the active user_id.',         default_on: true, locked: true, wired: 'live' },
+  { key: 'identity.tenant_id',  tier: 'identity', subcategory: 'Authenticated user', label: 'Tenant ID',   description: 'JWT app_metadata.active_tenant_id.',                       default_on: true, locked: true, wired: 'live' },
+  // VTID-02858 wired-mapping: user's #1 (Authoritative role header) — live.
+  { key: 'identity.active_role',tier: 'identity', subcategory: 'Authenticated user', label: 'Active role', description: 'community / professional / staff / admin / dev.',          default_on: true, locked: true, wired: 'live' },
+  { key: 'identity.email',      tier: 'identity', subcategory: 'Authenticated user', label: 'Email',       description: 'Caller email from JWT (used for personalization).',        default_on: true, wired: 'live' },
+  // VTID-02858 wired-mapping: user's #21 (Surface scoping) — live in tools layer.
+  { key: 'identity.surface',    tier: 'identity', subcategory: 'Session surface',    label: 'Surface',     description: 'orb / operator / command-hub / cicd / api.',               default_on: true, locked: true, wired: 'live' },
+  { key: 'identity.is_anonymous', tier: 'identity', subcategory: 'Session surface',  label: 'Anonymous flag', description: 'Emitted when no JWT — gates personal context entirely.', default_on: true, locked: true, wired: 'live' },
 
   // ─── 2. MEMORY ───────────────────────────────────────────────────────────
   { key: 'memory.items.enabled', tier: 'memory', subcategory: 'Memory Garden', label: 'Memory items', description: 'Inject ranked memory_items rows from the user\'s Memory Garden.', default_on: true, params: [
@@ -115,14 +124,16 @@ const M: AwarenessSignal[] = [
   { key: 'memory.items.categories.future_plans',          tier: 'memory', subcategory: 'Memory Garden categories', label: 'Future plans',            description: 'Upcoming milestones.',                                       default_on: true },
   { key: 'memory.items.categories.uncategorized',         tier: 'memory', subcategory: 'Memory Garden categories', label: 'Uncategorized',           description: 'Conversation notes that did not match a category.',          default_on: true },
 
-  { key: 'memory.facts.enabled',       tier: 'memory', subcategory: 'Memory Facts (VTID-01192)', label: 'Memory facts',                description: 'Inject high-confidence memory_facts (name, birthday, etc.).',  default_on: true, locked: true, params: [
+  // VTID-02858 wired-mapping: user's #11 (Memory facts) — live, also #23 (Vitana ID context lives here).
+  { key: 'memory.facts.enabled',       tier: 'memory', subcategory: 'Memory Facts (VTID-01192)', label: 'Memory facts',                description: 'Inject high-confidence memory_facts (name, birthday, etc.).',  default_on: true, locked: true, wired: 'live', params: [
       { key: 'min_confidence', label: 'Minimum confidence', type: 'float', default: 0.7, min: 0, max: 1, step: 0.05 },
       { key: 'max_count',      label: 'Max facts in profile', type: 'int', default: 6, min: 1, max: 30, step: 1 },
   ]},
   { key: 'memory.facts.entity.self',     tier: 'memory', subcategory: 'Memory Facts (VTID-01192)', label: 'Self facts',     description: 'Facts about the user themselves.', default_on: true },
   { key: 'memory.facts.entity.disclosed',tier: 'memory', subcategory: 'Memory Facts (VTID-01192)', label: 'Disclosed facts',description: 'Facts the user disclosed about others (family, partner, friends).', default_on: true },
 
-  { key: 'memory.recent_turns.enabled', tier: 'memory', subcategory: 'Recent ORB turns', label: 'Recent ORB turns', description: 'Last N raw user utterances — answers "what did I just say?".', default_on: true, params: [
+  // VTID-02858 wired-mapping: user's #10 (Last-10-turns conversation history) — partial; recent_turns inject is live but the 10-turn reconnect block is not.
+  { key: 'memory.recent_turns.enabled', tier: 'memory', subcategory: 'Recent ORB turns', label: 'Recent ORB turns', description: 'Last N raw user utterances — answers "what did I just say?".', default_on: true, wired: 'partial', params: [
       { key: 'count', label: 'Turn count', type: 'int', default: 3, min: 1, max: 10, step: 1 },
   ]},
 
@@ -278,27 +289,32 @@ const M: AwarenessSignal[] = [
   { key: 'health.omics.upload_count',      tier: 'health', subcategory: 'Omics',                      label: 'Upload count',    description: 'Recent omics uploads.',              default_on: true, enforcement_status: 'pending' },
 
   // ─── 9. SESSION CONTEXT ──────────────────────────────────────────────────
-  { key: 'context.current_route',  tier: 'context', subcategory: 'Navigation', label: 'currentRoute', description: 'URL path the user is on right now.', default_on: true },
-  { key: 'context.selected_id',    tier: 'context', subcategory: 'Navigation', label: 'selectedId',   description: 'Specific entity the user has open.',   default_on: true },
-  { key: 'context.recent_routes',  tier: 'context', subcategory: 'Navigation', label: 'recentRoutes', description: 'Last N pages visited this session.', default_on: true, params: [
+  // VTID-02858 wired-mapping: user's #7 (Temporal/journey context) — live for current_route + recent_routes ring.
+  { key: 'context.current_route',  tier: 'context', subcategory: 'Navigation', label: 'currentRoute', description: 'URL path the user is on right now.', default_on: true, wired: 'live' },
+  { key: 'context.selected_id',    tier: 'context', subcategory: 'Navigation', label: 'selectedId',   description: 'Specific entity the user has open.',   default_on: true, wired: 'live' },
+  { key: 'context.recent_routes',  tier: 'context', subcategory: 'Navigation', label: 'recentRoutes', description: 'Last N pages visited this session.', default_on: true, wired: 'live', params: [
       { key: 'count', label: 'Routes count', type: 'int', default: 5, min: 1, max: 20, step: 1 },
   ]},
-  { key: 'context.client.city',           tier: 'context', subcategory: 'Client context (IP + device)', label: 'City',          description: 'IP geo city.',          default_on: true },
-  { key: 'context.client.country',        tier: 'context', subcategory: 'Client context (IP + device)', label: 'Country',       description: 'IP geo country.',       default_on: true },
-  { key: 'context.client.timezone',       tier: 'context', subcategory: 'Client context (IP + device)', label: 'Timezone',      description: 'User timezone.',         default_on: true },
-  { key: 'context.client.time_of_day',    tier: 'context', subcategory: 'Client context (IP + device)', label: 'Time of day',   description: 'morning / midday / afternoon / evening / night.', default_on: true },
-  { key: 'context.client.device',         tier: 'context', subcategory: 'Client context (IP + device)', label: 'Device',        description: 'iOS / Android / Desktop / Appilix WebView.', default_on: true },
-  { key: 'context.client.browser',        tier: 'context', subcategory: 'Client context (IP + device)', label: 'Browser',       description: 'Browser identifier.',   default_on: true },
-  { key: 'context.client.accept_language',tier: 'context', subcategory: 'Client context (IP + device)', label: 'Accept-Language',description: 'Browser-preferred language.', default_on: true },
-  { key: 'context.last_session_info',     tier: 'context', subcategory: 'Session continuity',           label: 'Last session info', description: 'When the user was last in voice + whether it failed.', default_on: true },
-  { key: 'context.conversation_summary',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation summary', description: 'Returning-user bridge summary text.', default_on: true },
-  { key: 'context.conversation_history',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation history (reconnect)', description: 'Last N turns when reconnecting.', default_on: true, params: [
+  // VTID-02858 wired-mapping: user's #24 (ENVIRONMENT CONTEXT geo + time) — just shipped.
+  { key: 'context.client.city',           tier: 'context', subcategory: 'Client context (IP + device)', label: 'City',          description: 'IP geo city.',          default_on: true, wired: 'live' },
+  { key: 'context.client.country',        tier: 'context', subcategory: 'Client context (IP + device)', label: 'Country',       description: 'IP geo country.',       default_on: true, wired: 'live' },
+  { key: 'context.client.timezone',       tier: 'context', subcategory: 'Client context (IP + device)', label: 'Timezone',      description: 'User timezone.',         default_on: true, wired: 'live' },
+  { key: 'context.client.time_of_day',    tier: 'context', subcategory: 'Client context (IP + device)', label: 'Time of day',   description: 'morning / midday / afternoon / evening / night.', default_on: true, wired: 'live' },
+  { key: 'context.client.device',         tier: 'context', subcategory: 'Client context (IP + device)', label: 'Device',        description: 'iOS / Android / Desktop / Appilix WebView.', default_on: true, wired: 'live' },
+  { key: 'context.client.browser',        tier: 'context', subcategory: 'Client context (IP + device)', label: 'Browser',       description: 'Browser identifier.',   default_on: true, wired: 'live' },
+  { key: 'context.client.accept_language',tier: 'context', subcategory: 'Client context (IP + device)', label: 'Accept-Language',description: 'Browser-preferred language.', default_on: true, wired: 'live' },
+  { key: 'context.last_session_info',     tier: 'context', subcategory: 'Session continuity',           label: 'Last session info', description: 'When the user was last in voice + whether it failed.', default_on: true, wired: 'partial' },
+  // VTID-02858 wired-mapping: user's #8 (Conversation Summary) — not_wired (returns null).
+  { key: 'context.conversation_summary',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation summary', description: 'Returning-user bridge summary text.', default_on: true, wired: 'not_wired' },
+  // VTID-02858 wired-mapping: user's #10 (Last-10-turns conversation history) — not_wired.
+  { key: 'context.conversation_history',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation history (reconnect)', description: 'Last N turns when reconnecting.', default_on: true, wired: 'not_wired', params: [
       { key: 'max_turns', label: 'Max turns', type: 'int', default: 10, min: 1, max: 50, step: 1 },
   ]},
-  { key: 'context.journey_stage',         tier: 'context', subcategory: 'Session continuity',           label: 'Journey stage', description: '90-day wave / wave_name / day_number.', default_on: true },
+  { key: 'context.journey_stage',         tier: 'context', subcategory: 'Session continuity',           label: 'Journey stage', description: '90-day wave / wave_name / day_number.', default_on: true, wired: 'live' },
 
   // ─── 10. KNOWLEDGE & SYSTEM ──────────────────────────────────────────────
-  { key: 'knowledge.hub.enabled', tier: 'knowledge', subcategory: 'Knowledge Hub (retrieval router)', label: 'Knowledge Hub', description: 'Master toggle for knowledge retrieval.', default_on: true, params: [
+  // VTID-02858 wired-mapping: user's #9 (Bootstrap context block) — partial: facts + pillars + memory items shipped, Knowledge Hub items still missing.
+  { key: 'knowledge.hub.enabled', tier: 'knowledge', subcategory: 'Knowledge Hub (retrieval router)', label: 'Knowledge Hub', description: 'Master toggle for knowledge retrieval.', default_on: true, wired: 'partial', params: [
       { key: 'max_items', label: 'Max items', type: 'int', default: 8, min: 1, max: 30, step: 1 },
   ]},
   { key: 'knowledge.ns.vitana_system',     tier: 'knowledge', subcategory: 'Namespaces (retrieval-router)', label: 'vitana_system (priority 100)',     description: 'Platform docs & how-to.', default_on: true, locked: true },
@@ -319,15 +335,20 @@ const M: AwarenessSignal[] = [
   { key: 'brain.awareness.journey',           tier: 'brain', subcategory: 'User Awareness block', label: 'Journey wave',         description: 'Current 90-day wave.',              default_on: true, enforcement_status: 'pending' },
   { key: 'brain.awareness.goal',              tier: 'brain', subcategory: 'User Awareness block', label: 'Active goal',          description: 'Active Life Compass goal.',         default_on: true, enforcement_status: 'pending' },
   { key: 'brain.awareness.motivation_signal', tier: 'brain', subcategory: 'User Awareness block', label: 'Motivation signal',    description: 'absent / low / present.',           default_on: true, enforcement_status: 'pending' },
-  { key: 'brain.opener.enabled',              tier: 'brain', subcategory: 'Proactive opener',    label: 'Proactive opener',     description: 'Suggest opener from shape matrix.',  default_on: true, enforcement_status: 'pending' },
-  { key: 'brain.opener.forbidden_phrases',    tier: 'brain', subcategory: 'Proactive opener',    label: 'Forbidden openings',   description: '"What can I do for you?" override.',default_on: true, enforcement_status: 'pending' },
+  // VTID-02858 wired-mapping: user's #16 (Proactive Opener Override matrix) — not_wired.
+  { key: 'brain.opener.enabled',              tier: 'brain', subcategory: 'Proactive opener',    label: 'Proactive opener',     description: 'Suggest opener from shape matrix.',  default_on: true, enforcement_status: 'pending', wired: 'not_wired' },
+  { key: 'brain.opener.forbidden_phrases',    tier: 'brain', subcategory: 'Proactive opener',    label: 'Forbidden openings',   description: '"What can I do for you?" override.',default_on: true, enforcement_status: 'pending', wired: 'not_wired' },
   { key: 'brain.retrieval_router.enabled',    tier: 'brain', subcategory: 'Retrieval router',    label: 'Retrieval router',     description: 'Router-based retrieval rules.',     default_on: true, enforcement_status: 'pending' },
 
   // ─── 12. OVERRIDES (high-priority, append-last blocks) ───────────────────
-  { key: 'overrides.proactive_opener',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'PROACTIVE OPENER OVERRIDE', description: 'VTID-01927 — appended after temporal journey to override greeting reflexes.', default_on: true },
-  { key: 'overrides.activity_awareness',  tier: 'overrides', subcategory: 'High-priority overrides', label: 'ACTIVITY AWARENESS OVERRIDE', description: 'BOOTSTRAP-HISTORY-AWARE-TIMELINE — re-asserts USER CONTEXT PROFILE at end of prompt with hard rules.', default_on: true },
-  { key: 'overrides.navigator_policy',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'Navigator policy',           description: 'Navigator tool routing rules section.', default_on: true, enforcement_status: 'pending' },
-  { key: 'overrides.temporal_journey',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'Temporal + journey context', description: 'Time-of-day greeting + 90-day journey stage.', default_on: true, enforcement_status: 'pending' },
+  // VTID-02858 wired-mapping: user's #16 (Proactive Opener Override matrix) — not_wired.
+  { key: 'overrides.proactive_opener',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'PROACTIVE OPENER OVERRIDE', description: 'VTID-01927 — appended after temporal journey to override greeting reflexes.', default_on: true, wired: 'not_wired' },
+  // VTID-02858 wired-mapping: user's #17 (Activity awareness override) — not_wired.
+  { key: 'overrides.activity_awareness',  tier: 'overrides', subcategory: 'High-priority overrides', label: 'ACTIVITY AWARENESS OVERRIDE', description: 'BOOTSTRAP-HISTORY-AWARE-TIMELINE — re-asserts USER CONTEXT PROFILE at end of prompt with hard rules.', default_on: true, wired: 'not_wired' },
+  // VTID-02858 wired-mapping: user's #6 (Navigator policy section) — partial (gates wired, prose section missing).
+  { key: 'overrides.navigator_policy',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'Navigator policy',           description: 'Navigator tool routing rules section.', default_on: true, enforcement_status: 'pending', wired: 'partial' },
+  // VTID-02858 wired-mapping: user's #7 (Temporal/journey context) — live.
+  { key: 'overrides.temporal_journey',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'Temporal + journey context', description: 'Time-of-day greeting + 90-day journey stage.', default_on: true, enforcement_status: 'pending', wired: 'live' },
 ];
 
 // =============================================================================
