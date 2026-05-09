@@ -42,10 +42,12 @@ from .oasis import (
     TOPIC_PERSONA_SWAP,
     TOPIC_SESSION_START,
     TOPIC_SESSION_STOP,
+    TOPIC_STALL_DETECTED,
     OasisEmitter,
 )
 from .providers import build_cascade
 from .tools import all_tools
+from .watchdogs import ReconnectBucket, StallWatchdog, STALL_THRESHOLD_MS
 
 logger = logging.getLogger(__name__)
 
@@ -469,9 +471,58 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # ── speech_created phase trace (kept post-fix for ongoing visibility) ──
     # Surfaces every TTS turn in the firehose so future cascade regressions
     # are visible in seconds, not weeks.
+    #
+    # PR-VTID-02854: also feeds the StallWatchdog. The watchdog fires when
+    # NEITHER agent speech NOR user state transitions land within
+    # STALL_THRESHOLD_MS (30s). On stall: emit livekit.stall_detected +
+    # force the room to disconnect, which provokes the LiveKit SDK's
+    # transparent transport reconnect (chat_ctx is preserved across it,
+    # so the conversation resumes where it left off — same behaviour the
+    # user observed today, just triggered in 30s instead of 60-120s).
+    reconnect_bucket = ReconnectBucket()
+    stall = StallWatchdog(threshold_ms=STALL_THRESHOLD_MS)
+
+    async def _on_stall() -> None:
+        if not reconnect_bucket.record_attempt():
+            logger.error(
+                "StallWatchdog: max reconnects (%d) reached for orb_session_id=%s — giving up",
+                reconnect_bucket.count,
+                orb_session_id,
+            )
+            return
+        logger.warning(
+            "StallWatchdog: no activity in %ds — forcing reconnect (attempt %d) for orb_session_id=%s",
+            int(STALL_THRESHOLD_MS / 1000),
+            reconnect_bucket.count,
+            orb_session_id,
+        )
+        try:
+            await oasis.emit(
+                topic=TOPIC_STALL_DETECTED,
+                payload={
+                    "orb_session_id": orb_session_id,
+                    "user_id": identity.user_id,
+                    "agent_id": agent_id,
+                    "reconnect_attempt": reconnect_bucket.count,
+                    "threshold_ms": STALL_THRESHOLD_MS,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        # Disconnecting the room provokes livekit-client.js's auto-reconnect
+        # on the user's browser. AgentSession's chat_ctx persists across
+        # the reconnect so the conversation resumes where it stalled.
+        try:
+            await ctx.room.disconnect()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("StallWatchdog: room.disconnect() failed: %s", exc)
+
+    stall.start(on_stall=_on_stall)
+
     try:
         @session.on("speech_created")  # type: ignore[misc]
         def _on_speech(ev: Any) -> None:  # noqa: ARG001
+            stall.feed()
             asyncio.create_task(
                 _early_trace_heartbeat(
                     cfg.gateway_url,
@@ -485,6 +536,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not hook speech_created: %s", exc)
+
+    # PR-VTID-02854: also feed on agent + user state transitions so a long
+    # user utterance (no agent speech for >30s) doesn't false-fire the
+    # watchdog, and a long silent agent (waiting for user input) doesn't
+    # either. We don't know which exact event names AgentSession emits in
+    # this version of livekit-agents, so subscribe defensively.
+    for ev_name in ("user_state_changed", "agent_state_changed", "user_input_transcribed"):
+        try:
+            session.on(ev_name)(lambda _ev=None: stall.feed())  # type: ignore[misc]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("could not hook %s: %s", ev_name, exc)
+
+    # Stop the watchdog when the room disconnects so we don't leak the task.
+    async def _stop_stall_on_shutdown() -> None:
+        try:
+            await stall.stop()
+        except Exception:  # noqa: BLE001
+            pass
+
+    ctx.add_shutdown_callback(_stop_stall_on_shutdown)
 
     # Initial greeting — uses the LLM (via generate_reply) so the agent reads
     # the user's name and verified facts from the system-prompt's WHO YOU ARE
