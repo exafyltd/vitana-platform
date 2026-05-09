@@ -65,7 +65,7 @@ except ImportError:
     LK_AVAILABLE = False
 
 
-CODE_VERSION = "agent-2026-05-06-participant-metadata-fix"
+CODE_VERSION = "agent-2026-05-07-name-and-facts"
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -183,6 +183,15 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     identity = resolve_identity_from_room_metadata(metadata)
     agent_id = str(metadata.get("agent_id", "vitana"))
     orb_session_id = str(metadata.get("orb_session_id", ""))
+    # PR-VTID-02853: per-session voice override from the LiveKit test page
+    # dropdown. None / empty string means "use the language default from
+    # LANG_DEFAULTS." Operators experiment with different Chirp3-HD
+    # personas (Aoede / Kore / Leda / Charon / etc.) without a code-deploy
+    # cycle by picking from the dropdown — the value flows token mint →
+    # AccessToken metadata → here → build_cascade(voice_override=…).
+    voice_override = metadata.get("voice_override") or None
+    if voice_override is not None:
+        voice_override = str(voice_override).strip() or None
 
     # GatewayClient carries the user JWT (Bearer) PLUS X-User-ID /
     # X-Tenant-ID / X-Vitana-Active-Role headers as defense-in-depth for
@@ -198,11 +207,15 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     )
 
     # Fetch the merged context (memory + role + agent voice config).
+    # PR 1.B-Lang-4: pass identity.lang so the system prompt is built in
+    # the user's language. Without this the gateway falls back to 'en'
+    # and the LLM keeps responding in English even for German users.
     bootstrap = await ctx_fetcher.fetch(
         user_jwt=user_jwt or "",
         agent_id=agent_id,
         is_reconnect=False,
         last_n_turns=0,
+        lang=identity.lang,
     )
 
     # System instruction.
@@ -226,10 +239,37 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             recent_routes=bootstrap.recent_routes,
             client_context=bootstrap.client_context,
             vitana_id=bootstrap.vitana_id or identity.vitana_id,
+            first_name=bootstrap.first_name,
+            display_name=bootstrap.display_name,
         )
 
-    # Cascade.
-    cascade = build_cascade(bootstrap.voice_config)
+    # Cascade. If any of stt/llm/tts is None it means the corresponding
+    # plugin failed to instantiate (wrong provider name, ImportError,
+    # config kwarg not accepted, ADC missing scopes, etc.). Trace the
+    # cascade.notes so we never have to guess again.
+    # PR 1.B-Lang: thread identity.lang into the cascade so STT receives
+    # the matching BCP-47 code and TTS picks a per-language voice via
+    # voices_per_lang / LANG_DEFAULTS. Without this, German users get
+    # English STT models + an English Chirp speaking German text.
+    cascade = build_cascade(bootstrap.voice_config, lang=identity.lang, voice_override=voice_override)
+    cascade_summary = {
+        "stt_present": cascade.stt is not None,
+        "llm_present": cascade.llm is not None,
+        "tts_present": cascade.tts is not None,
+        "notes": list(cascade.notes),
+    }
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "cascade_built",
+                "orb_session_id": orb_session_id,
+                "cascade_summary": cascade_summary,
+            },
+        )
+    )
 
     # OASIS session start.
     await oasis.emit(
@@ -281,16 +321,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             "user_jwt_present": bool(user_jwt),
             "user_jwt_len": len(user_jwt) if user_jwt else 0,
             "bootstrap_context_length": len(bootstrap.bootstrap_context or ""),
+            "bootstrap_first_1500_chars": (bootstrap.bootstrap_context or "")[:1500],
             "bootstrap_active_role": bootstrap.active_role,
             "bootstrap_vitana_id": bootstrap.vitana_id,
+            "bootstrap_display_name": bootstrap.display_name,
+            "bootstrap_first_name": bootstrap.first_name,
+            "bootstrap_identity_facts_count": len(bootstrap.identity_facts or []),
+            "bootstrap_identity_fact_keys": [
+                f.get("fact_key") for f in (bootstrap.identity_facts or [])
+            ],
             "bootstrap_voice_config_llm": (bootstrap.voice_config or {}).get("llm_model"),
             "bootstrap_voice_config_stt": (bootstrap.voice_config or {}).get("stt_model"),
             "bootstrap_voice_config_tts": (bootstrap.voice_config or {}).get("tts_model"),
             "system_prompt_length": len(sys_prompt),
-            "system_prompt_first_400_chars": sys_prompt[:400],
+            "system_prompt_first_600_chars": sys_prompt[:600],
             "tools_count": len(tool_list),
             "tools_first_5": tool_names[:5],
             "tools_handle_in_first_chars": "@" + (bootstrap.vitana_id or identity.vitana_id or "") in sys_prompt[:600],
+            "tools_first_name_in_first_chars": bool(
+                bootstrap.first_name and bootstrap.first_name.lower() in sys_prompt[:600].lower()
+            ),
         }
         await gw.post("/api/v1/orb/agent-trace", trace_payload)
     except Exception as exc:  # noqa: BLE001
@@ -299,6 +349,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # AgentSession glues together STT + LLM + TTS + the room. userdata
     # carries the per-session GatewayClient so each tool body can pull it off
     # RunContext.userdata. max_tool_steps is the tool-loop guard threshold.
+    # PR 1.B-0: stash the live Room handle on the GatewayClient so tool
+    # wrappers that receive a `directive` payload can publish on the data
+    # channel via publish_orb_directive(gw.room, directive). The frontend's
+    # data-channel listener applies the directive (open_url, navigate, etc.)
+    # the same way the SSE/WS branch does on Vertex.
+    gw.room = ctx.room
+
+    # PR 1.B-3 (VTID-NAV-TIMEJOURNEY): seed the agent's view of the user's
+    # current screen + recent-routes trail from the bootstrap response. The
+    # get_current_screen tool wrapper reads these and the gateway's shared
+    # tool_get_current_screen resolves them through the navigation catalog
+    # for a friendly answer to "where am I?". Future PRs in this phase
+    # (1.B-4 free-text navigate, 1.B-5 navigator gates) eagerly update them
+    # post-navigate so subsequent get_current_screen calls see fresh values.
+    gw.current_route = bootstrap.current_route
+    gw.recent_routes = list(bootstrap.recent_routes or [])
+    # PR 1.B-5 — identity facts the navigator gates need at dispatch.
+    gw.is_mobile = bool(identity.is_mobile)
+    gw.is_anonymous = bool(identity.is_anonymous)
+
     session = AgentSession(
         stt=cascade.stt,
         llm=cascade.llm,
@@ -344,41 +414,118 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     ctx.add_shutdown_callback(_teardown)
 
+    # Phase trace: about to call session.start. If we never see a
+    # post_start trace for the same orb_session_id, session.start crashed.
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "pre_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
     try:
         await session.start(agent=agent, room=ctx.room)
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentSession.start crashed: %s", exc)
+        try:
+            await _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "start_crashed",
+                    "orb_session_id": orb_session_id,
+                    "agent_id": agent_id,
+                    "error": str(exc)[:500],
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return
 
-    # Initial greeting — fire as soon as the session is ready so the user
-    # hears their personalized hello on connect. Mirrors the Vertex pipeline
-    # behaviour (orb-live.ts opens with a generated greeting). The
-    # bootstrap_context already has the user's display_name / vitana_id /
-    # verified facts, so the LLM can reach into the prompt and pull the
-    # right name without an extra tool call.
-    if not identity.is_anonymous:
-        # Greeting must always include the user's @vitana_id handle. If a
-        # `user_name` memory_fact exists, also use the first name. The
-        # WHO YOU ARE TALKING TO block of the system prompt has the handle
-        # at position #1, so the LLM cannot truthfully claim it doesn't
-        # know.
-        vid = (bootstrap.vitana_id or "").strip()
-        try:
-            await session.generate_reply(
-                instructions=(
-                    "Greet the user warmly RIGHT NOW. **MUST** include their "
-                    f"@vitana_id handle (it is @{vid or 'their handle'}) in the "
-                    "greeting so they can hear you recognize them. If a "
-                    "`user_name` fact is in your YOUR USER'S CONTEXT block, "
-                    "use the first name (e.g. 'Hi Dragan!'). Otherwise just "
-                    f"use the handle: 'Hi @{vid or 'there'}!'. ONE short "
-                    "sentence + brief 'What can I help with today?'. NEVER "
-                    "say you don't know them — you do. NEVER apologize for "
-                    "anything in the greeting."
-                ),
+    # session.start returned cleanly — emit a phase trace so we can
+    # distinguish "no audio because start() crashed" from "no audio
+    # because greeting/TTS crashed".
+    asyncio.create_task(
+        _early_trace_heartbeat(
+            cfg.gateway_url,
+            {
+                "user_id": identity.user_id or "unknown",
+                "code_version": CODE_VERSION,
+                "phase": "post_start",
+                "orb_session_id": orb_session_id,
+                "agent_id": agent_id,
+                "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            },
+        )
+    )
+
+    # ── speech_created phase trace (kept post-fix for ongoing visibility) ──
+    # Surfaces every TTS turn in the firehose so future cascade regressions
+    # are visible in seconds, not weeks.
+    try:
+        @session.on("speech_created")  # type: ignore[misc]
+        def _on_speech(ev: Any) -> None:  # noqa: ARG001
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "speech_created",
+                        "orb_session_id": orb_session_id,
+                    },
+                )
             )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not hook speech_created: %s", exc)
+
+    # Initial greeting — uses the LLM (via generate_reply) so the agent reads
+    # the user's name and verified facts from the system-prompt's WHO YOU ARE
+    # TALKING TO block. The TTS bug that caused 25s of dead air on every
+    # session is fixed in providers.py (language_code → language).
+    if not identity.is_anonymous:
+        vid = (bootstrap.vitana_id or "").strip()
+        first_name = (bootstrap.first_name or "").strip()
+        if first_name:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW by their first name: '{first_name}'. "
+                f"Examples: 'Hi {first_name}!' or 'Hey {first_name}, good to hear from you.' "
+                f"Their Vitana handle ({'@' + vid if vid else '<no handle>'}) is "
+                f"available as a fallback but DO NOT lead with it — '{first_name}' is "
+                f"the natural way a real person would address them. ONE short sentence "
+                f"+ brief 'What can I help with today?'. NEVER say you don't know them — "
+                f"you do. NEVER apologize for anything in the greeting."
+            )
+        else:
+            greeting_instructions = (
+                f"Greet the user warmly RIGHT NOW using their @vitana_id handle "
+                f"(it is @{vid or 'their handle'}). Example: 'Hi @{vid or 'there'}!'. "
+                f"ONE short sentence + brief 'What can I help with today?'. NEVER say "
+                f"you don't know them — you do. NEVER apologize for anything in the greeting."
+            )
+        try:
+            await session.generate_reply(instructions=greeting_instructions)
         except Exception as exc:  # noqa: BLE001
             logger.warning("initial greeting generate_reply failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
     else:
         try:
             await session.generate_reply(
@@ -418,8 +565,14 @@ async def perform_handoff(
     to_agent_id: str,
     reason: str,
     context_summary: str,
+    lang: str = "en",
 ) -> None:
-    """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap."""
+    """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap.
+
+    PR 1.B-Lang: `lang` propagates the user's identity.lang into the new
+    cascade so the specialist's TTS picks a voice in the user's language.
+    Defaults to English so callers that haven't been updated keep working.
+    """
     await oasis.emit(
         topic=TOPIC_HANDOFF_START,
         payload={
@@ -444,9 +597,9 @@ async def perform_handoff(
 
     # Fetch new agent's context + voice config.
     new_bootstrap = await ctx_fetcher.fetch(
-        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10
+        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10, lang=lang,
     )
-    new_cascade = build_cascade(new_bootstrap.voice_config)
+    new_cascade = build_cascade(new_bootstrap.voice_config, lang=lang)
 
     # Swap LLM + TTS instances. STT untouched.
     if new_cascade.llm is not None:

@@ -96,6 +96,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { initializeOrbWebSocket } = require('./routes/orb-live');
   // VTID-01218A: Voice LAB - ORB Live Observability API
   const voiceLabRouter = require('./routes/voice-lab').default;
+  // VTID-02766: Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+  const voiceToolsCatalogRouter = require('./routes/voice-tools-catalog').default;
   // AI Personality Configuration API
   const aiPersonalityRouter = require('./routes/ai-personality').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
@@ -304,12 +306,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
   const intentEngineEnabled = process.env.FEATURE_INTENT_ENGINE_A === 'true';
   const intentsRouter = intentEngineEnabled ? require('./routes/intents').default : null;
+  // VTID-02806h: cover-image processing (Imagen outpaint to 16:9).
+  const coverImagesRouter = require('./routes/cover-images').default;
   const intentMatchesRouter = intentEngineEnabled ? require('./routes/intent-matches').default : null;
   const intentBoardRouter = intentEngineEnabled ? require('./routes/intent-board').default : null;
   const intentCategoriesRouter = intentEngineEnabled ? require('./routes/intent-categories').default : null;
   const adminIntentEngineRouter = intentEngineEnabled ? require('./routes/admin-intent-engine').default : null;
   // VTID-DANCE-D4: public community members directory (always on)
   const communityMembersRouter = require('./routes/community-members').default;
+  // VTID-02754: find-one-community-member voice search endpoint
+  const communityFindMemberRouter = require('./routes/community-find-member').default;
   // E2: profile partner_preferences + service_offerings PATCH endpoints
   const profilePrefsRouter = require('./routes/profile-prefs').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
@@ -689,6 +695,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01218A: Voice LAB - ORB Live Observability API
   mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
 
+  // VTID-02766: Voice Tools Catalog (developer-tier)
+  mountRouterSync(app, '/api/v1/voice-tools', voiceToolsCatalogRouter, { owner: 'voice-tools-catalog' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
@@ -850,11 +859,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
+  mountRouterSync(app, '/api/v1/cover-images', coverImagesRouter, { owner: 'cover-images' });
   if (intentMatchesRouter) mountRouterSync(app, '/api/v1/intent-matches', intentMatchesRouter, { owner: 'intent-matches' });
   if (intentBoardRouter) mountRouterSync(app, '/api/v1/intent-board', intentBoardRouter, { owner: 'intent-board' });
   if (intentCategoriesRouter) mountRouterSync(app, '/api/v1/intent-categories', intentCategoriesRouter, { owner: 'intent-categories' });
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
+  mountRouterSync(app, '/api/v1', communityFindMemberRouter, { owner: 'community-find-member' });
   mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });

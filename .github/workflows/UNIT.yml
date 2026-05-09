@@ -5,10 +5,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The previous step ran `curl get.pnpm.io/install.sh | sh -` which
+      # consistently failed in CI: "The configured global bin directory
+      # /home/runner/.local/share/pnpm is not in PATH" → exit 1. The
+      # failure was unconditional, so this required-status check broke
+      # every PR (autopilot AND human) because branch protection blocks
+      # merges until `unit` is green. The 2026-05-08 audit found 2%
+      # autopilot completion rate driven almost entirely by this gate.
+      # Use the maintained pnpm/action-setup action instead.
+      # Don't pin a version here — the repo's root package.json already has
+      # `packageManager: "pnpm@9.0.0"`, and the action errors out if both are
+      # set ("Multiple versions of pnpm specified"). Letting the action read
+      # package.json keeps the version aligned with what the rest of the
+      # tooling uses.
+      - uses: pnpm/action-setup@v4
       - run: |
-          # Install pnpm and use it in the same shell
-          curl -fsSL https://get.pnpm.io/install.sh | sh -
-          export PNPM_HOME="/home/runner/.local/share/pnpm"
-          export PATH="$PNPM_HOME:$PATH"
           pnpm --version
           echo "✅ lock-free unit job passes"

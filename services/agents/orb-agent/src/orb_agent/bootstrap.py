@@ -35,6 +35,9 @@ class BootstrapResult:
     client_context: dict[str, Any]
     vitana_id: str | None
     voice_config: dict[str, Any] | None  # agent_voice_configs row
+    display_name: str | None = None  # full display name from app_users.display_name
+    first_name: str | None = None  # first token of display_name (or memory_facts.user_name)
+    identity_facts: list[dict[str, Any]] | None = None  # raw memory_facts whitelisted by identity-core keys
     is_degraded: bool = False
 
 
@@ -57,6 +60,7 @@ class ContextBootstrap:
         agent_id: str = "vitana",
         is_reconnect: bool = False,
         last_n_turns: int = 0,
+        lang: str | None = None,
     ) -> BootstrapResult:
         params: dict[str, str | int | bool] = {
             "agent_id": agent_id,
@@ -70,6 +74,12 @@ class ContextBootstrap:
         request_headers: dict[str, str] = dict(self._headers)
         if user_jwt:
             request_headers["Authorization"] = f"Bearer {user_jwt}"
+        # PR 1.B-Lang-4: pass the user's language via Accept-Language so the
+        # gateway's /orb/context-bootstrap builds the system prompt in the
+        # right language. Without this the gateway defaults to 'en' and the
+        # LLM keeps responding in English even when the user speaks German.
+        if lang:
+            request_headers["Accept-Language"] = lang
         try:
             r = await self._client.get(
                 self._endpoint,
@@ -89,6 +99,9 @@ class ContextBootstrap:
                 client_context=data.get("client_context", {}),
                 vitana_id=data.get("vitana_id"),
                 voice_config=data.get("voice_config"),
+                display_name=data.get("display_name"),
+                first_name=data.get("first_name"),
+                identity_facts=data.get("identity_facts") or [],
                 is_degraded=False,
             )
         except (httpx.TimeoutException, httpx.HTTPError) as exc:

@@ -39,6 +39,31 @@ class GatewayClient:
         self._tenant_id = tenant_id
         self._active_role = active_role
         self._client = httpx.AsyncClient(timeout=timeout_s)
+        # The live LiveKit Room handle is stashed by session.py after the
+        # AgentSession spins up. Tool wrappers that receive a structured
+        # `directive` payload from the gateway use this to call
+        # publish_orb_directive() and the data-channel listener on the
+        # frontend handles the redirect / open-url. Optional — typed Any
+        # here so unit tests on machines without livekit installed don't
+        # need to import rtc just to construct a stub.
+        self.room: Any = None
+        # PR 1.B-3 (VTID-NAV-TIMEJOURNEY): the user's LIVE current screen +
+        # recent-routes ring buffer. session.py seeds these from the
+        # /orb/context-bootstrap response at session start; later PRs (1.B-4
+        # navigate, 1.B-5 navigator gates) eagerly mutate them after every
+        # navigate*-tool call so the next get_current_screen call sees fresh
+        # values without an extra round-trip to the gateway. Mirrors how
+        # Vertex's session.current_route + session.recent_routes track state
+        # between turns.
+        self.current_route: str | None = None
+        self.recent_routes: list[str] = []
+        # PR 1.B-5 — identity facts the navigator gates need at dispatch
+        # time. session.py seeds is_mobile + is_anonymous from the resolved
+        # Identity. tool_navigate_to_screen reads them through the args
+        # payload to enforce the viewport gate (VTID-02789), the anonymous
+        # gate, and the mobile_route override.
+        self.is_mobile: bool = False
+        self.is_anonymous: bool = False
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}

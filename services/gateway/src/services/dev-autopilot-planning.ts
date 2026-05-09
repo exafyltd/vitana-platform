@@ -40,6 +40,7 @@ import {
   loadSchemaSnippets,
   formatSchemaBlock,
 } from './dev-autopilot-schema-context';
+import { applyScannerOverrides } from './dev-autopilot-safety';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -476,18 +477,89 @@ export function buildPlanningPrompt(
   // deny_scope, so a plan that puts config files in that section is
   // guaranteed to be blocked. Surface the constraint as part of the prompt
   // so Claude puts reference-only files in a separate section instead.
-  const allow = scope?.allow && scope.allow.length > 0 ? scope.allow : undefined;
-  const deny = scope?.deny && scope.deny.length > 0 ? scope.deny : undefined;
+  // Compute the EFFECTIVE allow/deny shown to the LLM using the same
+  // scanner-aware overrides the safety gate applies. Without this, the
+  // gate accepts a fix that touches `package.json` (per applyScannerOverrides)
+  // but the planner prompt still tells the LLM the file is out-of-scope, so
+  // the LLM correctly omits it and the resulting plan is the test-only PR
+  // we keep failing on.
+  const baseAllow = scope?.allow && scope.allow.length > 0 ? scope.allow : [];
+  const baseDeny = scope?.deny && scope.deny.length > 0 ? scope.deny : [];
+  const scannerForOverrides = String(snap.scanner || '');
+  const { effectiveAllow, effectiveDeny } = applyScannerOverrides(
+    baseAllow,
+    baseDeny,
+    scannerForOverrides,
+  );
+  const allow = effectiveAllow.length > 0 ? effectiveAllow : undefined;
+  const deny = effectiveDeny.length > 0 ? effectiveDeny : undefined;
+
+  // Positive guidance per scanner: tell the LLM what the canonical fix
+  // looks like for THIS scanner type. Without this, even with overrides,
+  // the LLM tends to default to "add a regression test, ask the developer
+  // to bump the version manually" — which is what produced PRs #1995-1998
+  // (test-only PRs that fail CI 100%).
+  const NPM_AUDIT_SCANNERS_LOCAL = new Set(['npm-audit-scanner-v1', 'cve-scanner-v1']);
+  const NEW_MIGRATION_SCANNERS_LOCAL = new Set([
+    'rls-policy-scanner-v1',
+    'schema-drift-scanner-v1',
+  ]);
+  if (NPM_AUDIT_SCANNERS_LOCAL.has(scannerForOverrides)) {
+    lines.push(
+      `## Canonical fix shape for this scanner (REQUIRED)`,
+      ``,
+      `This finding came from \`${scannerForOverrides}\`. The canonical fix`,
+      `for a CVE / dep-audit finding is to **bump the affected package**`,
+      `in the relevant \`package.json\` (and \`pnpm-lock.yaml\` if applicable).`,
+      `A regression test that asserts the new version is welcome but is NOT`,
+      `sufficient on its own — the test will fail CI 100% of the time until`,
+      `the manifest is updated, and the developer cannot merge a guaranteed-`,
+      `red PR.`,
+      ``,
+      `Your "Files to modify" list MUST include the relevant \`package.json\``,
+      `(typically \`services/gateway/package.json\`). The override on the`,
+      `safety gate explicitly allows this for your scanner — \`package.json\``,
+      `and \`pnpm-lock.yaml\` are NOT off-limits here.`,
+      ``,
+    );
+  }
+  if (NEW_MIGRATION_SCANNERS_LOCAL.has(scannerForOverrides)) {
+    lines.push(
+      `## Canonical fix shape for this scanner (REQUIRED)`,
+      ``,
+      `This finding came from \`${scannerForOverrides}\`. The canonical fix`,
+      `is a **new dated migration** under \`supabase/migrations/\` (filename`,
+      `\`YYYYMMDDHHMMSS_<purpose>.sql\`). Existing migrations are append-only`,
+      `(rule #1 above) — never modify them. The override on the safety gate`,
+      `explicitly allows you to ADD a new migration file for this scanner.`,
+      ``,
+      `Your "Files to modify" list MUST include the new migration file path.`,
+      `A test alone is not sufficient.`,
+      ``,
+    );
+  }
+
   if (allow || deny) {
+    // Tailor the introduction to the override status: when the scanner has
+    // legitimately allowed a config/dep file, the "do NOT list config files"
+    // sentence becomes wrong and confuses the LLM.
+    const hasManifestOverride = NPM_AUDIT_SCANNERS_LOCAL.has(scannerForOverrides);
+    const hasMigrationOverride = NEW_MIGRATION_SCANNERS_LOCAL.has(scannerForOverrides);
     lines.push(
       `## Scope constraints (enforced automatically — violations block approval)`,
       ``,
       `The "Files to modify" section must contain ONLY paths that the executor`,
-      `will actually create, modify, or delete. Do NOT list config files or`,
-      `dependency manifests there for the developer to "double-check" — put`,
-      `those as plain-text notes in the Out-of-scope section instead.`,
+      `will actually create, modify, or delete.`,
       ``,
     );
+    if (!hasManifestOverride && !hasMigrationOverride) {
+      lines.push(
+        `Do NOT list config files or dependency manifests there for the`,
+        `developer to "double-check" — put those as plain-text notes in the`,
+        `Out-of-scope section instead.`,
+        ``,
+      );
+    }
     if (allow) {
       lines.push(`Files to modify MUST match one of these allow-scope globs:`);
       for (const g of allow) lines.push(`  - \`${g}\``);
@@ -498,16 +570,52 @@ export function buildPlanningPrompt(
       for (const g of deny) lines.push(`  - \`${g}\``);
       lines.push(``);
     }
-    lines.push(
-      `Common traps — do NOT put these in Files to modify:`,
-      `  - \`services/gateway/package.json\` / any \`package.json\``,
+    // Scanner-aware trap list. The blanket "never modify package.json /
+    // migrations / workflows / etc." rule was added to stop the planner
+    // from sneaking config files into unrelated plans, but it became the
+    // dominant reason autopilot PRs couldn't actually fix anything: an
+    // npm-audit-scanner-v1 finding's only valid fix IS bumping
+    // package.json, an rls-policy-scanner-v1 finding's only valid fix IS
+    // a new migration, etc. The 2026-05-08 audit found these scanners
+    // produced test-only PRs that fail CI 100% of the time because the
+    // actual fix was forbidden. Below, each trap is gated on the
+    // scanner of THIS finding so the trap fires for every UNRELATED
+    // finding (preserving the original protection) but is lifted for
+    // findings whose category legitimately requires touching that file
+    // type.
+    const scanner = String(snap.scanner || '');
+    const trapBullets: string[] = [];
+    if (scanner !== 'npm-audit-scanner-v1' && scanner !== 'cve-scanner-v1') {
+      trapBullets.push(
+        `  - \`services/gateway/package.json\` / any \`package.json\` ` +
+          `(this finding's scanner is not the dependency-audit scanner — ` +
+          `if a dep change is genuinely needed, surface it in Out-of-scope)`,
+      );
+    }
+    trapBullets.push(
       `  - \`services/gateway/tsconfig.json\` / any \`tsconfig*.json\``,
       `  - \`services/gateway/jest.config.ts\` / any \`jest.config.*\``,
-      `  - Any \`.github/workflows/*\` file`,
-      `  - Any \`supabase/migrations/*\` file`,
-      `  - Any path containing \`auth\` unless it IS the finding's target`,
+    );
+    if (scanner !== 'workflow-fix-scanner-v1' && scanner !== 'ci-fix-scanner-v1') {
+      trapBullets.push(`  - Any \`.github/workflows/*\` file`);
+    }
+    // Migration MODIFICATIONS are never allowed (rule #1 above), but new
+    // dated migration files ARE the canonical fix for schema-drift /
+    // rls-policy findings. The blanket trap was wrong here.
+    if (scanner !== 'rls-policy-scanner-v1' && scanner !== 'schema-drift-scanner-v1') {
+      trapBullets.push(`  - Any \`supabase/migrations/*\` file`);
+    } else {
+      trapBullets.push(
+        `  - **Modifying** any existing \`supabase/migrations/*\` file (per ` +
+          `rule #1 above; ADDING a new dated migration file IS allowed for this scanner)`,
+      );
+    }
+    trapBullets.push(`  - Any path containing \`auth\` unless it IS the finding's target`);
+    lines.push(
+      `Common traps — do NOT put these in Files to modify:`,
+      ...trapBullets,
       ``,
-      `If the developer needs to verify any of the above, write a bullet in`,
+      `If the developer needs to verify a forbidden file, write a bullet in`,
       `Out-of-scope like: "Developer should verify supertest is in`,
       `services/gateway/package.json devDependencies" — NOT a line in`,
       `Files to modify.`,

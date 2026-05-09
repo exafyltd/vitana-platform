@@ -2729,7 +2729,8 @@ const NAVIGATION_CONFIG = [
             { "key": "experiments",         "path": "/command-hub/assistant/experiments/" },
             { "key": "metrics",             "path": "/command-hub/assistant/metrics/" },
             { "key": "awareness-registry",  "path": "/command-hub/assistant/awareness-registry/" },
-            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" }
+            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" },
+            { "key": "voice-tools",         "path": "/command-hub/assistant/voice-tools/" }
         ]
     },
     {
@@ -6149,6 +6150,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAdminAwarenessView());
     } else if (moduleKey === 'assistant' && tab === 'awareness-test') {
         container.appendChild(renderVitanaAwarenessTestView());
+    } else if (moduleKey === 'assistant' && tab === 'voice-tools') {
+        // VTID-02766: Voice Tools Catalog
+        container.appendChild(renderVoiceToolsCatalogView());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -35067,6 +35071,35 @@ function renderLivekitTestView() {
 
     var controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;';
+    // PR 1.B-Lang: language selector. Drives the `lang` field in the
+    // /orb/livekit/token mint, which becomes Identity.lang in the agent and
+    // gets passed to build_cascade(lang=) — STT picks BCP-47, TTS picks the
+    // per-language voice from voices_per_lang / LANG_DEFAULTS. 9 languages
+    // seeded today; adding more = LANG_DEFAULTS row + dropdown option.
+    var savedLang = '';
+    try { savedLang = localStorage.getItem('lkt.lang') || ''; } catch (e) {}
+    if (!savedLang) {
+        try { savedLang = (localStorage.getItem('vitana.lang') || '').slice(0, 2); } catch (e) {}
+    }
+    if (!savedLang) savedLang = 'en';
+    var langOptions = [
+        ['en', 'English'],
+        ['de', 'Deutsch'],
+        ['es', 'Español'],
+        ['fr', 'Français'],
+        ['it', 'Italiano'],
+        ['pt', 'Português'],
+        ['nl', 'Nederlands'],
+        ['sv', 'Svenska'],
+        ['pl', 'Polski'],
+    ];
+    var langSelectHtml = '<select class="lkt-lang" title="Session language" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">';
+    for (var i = 0; i < langOptions.length; i++) {
+        var code = langOptions[i][0], label = langOptions[i][1];
+        var sel = code === savedLang ? ' selected' : '';
+        langSelectHtml += '<option value="' + code + '"' + sel + '>' + label + ' (' + code + ')</option>';
+    }
+    langSelectHtml += '</select>';
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
@@ -35075,9 +35108,76 @@ function renderLivekitTestView() {
         +   '<option value="active">Production token (active provider must be livekit)</option>'
         +   '<option value="test-session">Test-session token (any active provider)</option>'
         + '</select>'
+        + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
         + '<a href="/command-hub/diagnostics/voice-lab/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Lab</a>';
     container.appendChild(controls);
+    var langSelect = controls.querySelector('.lkt-lang');
+    langSelect.addEventListener('change', function () {
+        try { localStorage.setItem('lkt.lang', langSelect.value); } catch (e) {}
+        rebuildVoiceOptions();
+    });
+
+    // PR-VTID-02853: voice-override row. The dropdown rebuilds on language
+    // change to scope Chirp3-HD options to the selected locale (each
+    // persona only exists for that locale's voice). Gemini TTS voices are
+    // multilingual — same names work across all languages, the model
+    // detects from text — so they appear in the dropdown regardless.
+    var voiceRow = document.createElement('div');
+    voiceRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:#94a3b8;';
+    voiceRow.innerHTML = '<span style="margin-right:4px;">VOICE:</span>'
+        + '<select class="lkt-voice" title="TTS voice override (Chirp3-HD has 8 personas per language; Gemini TTS personas are multilingual)" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;min-width:280px;">'
+        + '</select>'
+        + '<span style="font-size:11px;opacity:0.7;">— restart the session for voice change to take effect</span>';
+    container.appendChild(voiceRow);
+    var voiceSelect = voiceRow.querySelector('.lkt-voice');
+
+    var CHIRP_PERSONAS = [
+        ['Aoede', 'F · clear, neutral'],
+        ['Kore', 'F · warm, conversational'],
+        ['Leda', 'F · soft, narrative'],
+        ['Zephyr', 'F · bright, expressive'],
+        ['Charon', 'M · deep, calm'],
+        ['Puck', 'M · energetic, casual'],
+        ['Fenrir', 'M · bold, assertive'],
+        ['Orus', 'M · smooth, broadcast'],
+    ];
+    var BCP47_FOR_LANG = {
+        en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT',
+        pt: 'pt-BR', nl: 'nl-NL', sv: 'sv-SE', pl: 'pl-PL',
+    };
+
+    function rebuildVoiceOptions() {
+        var saved = '';
+        try { saved = localStorage.getItem('lkt.voice') || ''; } catch (e) {}
+        var lang = langSelect.value || 'en';
+        var bcp47 = BCP47_FOR_LANG[lang] || (lang + '-' + lang.toUpperCase());
+        var html = '<option value="">(default — Aoede for en, Leda for de, Aoede for others)</option>';
+        // Chirp3-HD voices, scoped to the selected language.
+        html += '<optgroup label="Chirp3-HD · ' + bcp47 + '">';
+        for (var i = 0; i < CHIRP_PERSONAS.length; i++) {
+            var name = CHIRP_PERSONAS[i][0];
+            var hint = CHIRP_PERSONAS[i][1];
+            var voice = bcp47 + '-Chirp3-HD-' + name;
+            var sel = voice === saved ? ' selected' : '';
+            html += '<option value="' + voice + '"' + sel + '>' + voice + ' — ' + hint + '</option>';
+        }
+        html += '</optgroup>';
+        // Gemini TTS voices (multilingual).
+        html += '<optgroup label="Gemini TTS · multilingual">';
+        for (var j = 0; j < CHIRP_PERSONAS.length; j++) {
+            var gname = CHIRP_PERSONAS[j][0];
+            var ghint = CHIRP_PERSONAS[j][1];
+            var gsel = gname === saved ? ' selected' : '';
+            html += '<option value="' + gname + '"' + gsel + '>' + gname + ' — ' + ghint + '</option>';
+        }
+        html += '</optgroup>';
+        voiceSelect.innerHTML = html;
+    }
+    rebuildVoiceOptions();
+    voiceSelect.addEventListener('change', function () {
+        try { localStorage.setItem('lkt.voice', voiceSelect.value); } catch (e) {}
+    });
 
     // Diagnostics panel — fed by the "Run Diagnostics" button below.
     var diagPanel = document.createElement('div');
@@ -35685,6 +35785,33 @@ function renderLivekitTestView() {
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
     }
 
+    /**
+     * PR 1.B-0 — handle an orb_directive received on the LiveKit data channel.
+     * Parallel to Vertex's SSE/WS orb_directive handler in orb-widget.js.
+     *
+     * Supported directives:
+     *   - open_url      → window.open(url, '_blank') (e.g. play_music opens the native music app)
+     *   - navigate      → window.location.href = route (e.g. find_community_member redirects to /u/:vitana_id)
+     *
+     * Logged to the on-screen events panel so testers can see exactly what fired.
+     */
+    function handleOrbDirective(msg) {
+        if (!msg || typeof msg !== 'object') return;
+        var kind = msg.directive || msg.kind;
+        if (kind === 'open_url' && msg.url) {
+            log('info', 'orb_directive open_url', { url: msg.url, title: msg.title || '' });
+            try { window.open(String(msg.url), '_blank', 'noopener,noreferrer'); } catch (e) { log('warn', 'open_url failed', { error: String(e) }); }
+            return;
+        }
+        if (kind === 'navigate' && msg.route) {
+            log('info', 'orb_directive navigate', { route: msg.route, screen_id: msg.screen_id || '' });
+            // Use a brief delay so the agent's voice cue plays before the page transitions.
+            setTimeout(function () { window.location.href = String(msg.route); }, 250);
+            return;
+        }
+        log('event', 'orb_directive (unhandled kind)', msg);
+    }
+
     // Load active provider on mount.
     fetch((window.GATEWAY_URL || '') + '/api/v1/orb/active-provider')
         .then(function (r) { return r.json(); })
@@ -35730,13 +35857,30 @@ function renderLivekitTestView() {
         token = token || localStorage.getItem('vitana.authToken');
         if (!token) throw new Error('no auth token in localStorage — sign in first');
 
+        // PR 1.B-Lang: read the language selector so a German user gets
+        // de-DE STT + a German Chirp voice end-to-end. Falls back to 'en'
+        // when the selector is absent (e.g. older cached page).
+        var selectedLang = 'en';
+        try {
+            var langEl = container.querySelector('.lkt-lang');
+            if (langEl && langEl.value) selectedLang = langEl.value;
+        } catch (e) {}
+        // PR-VTID-02853: voice override from the .lkt-voice dropdown — empty
+        // string means "use language default from LANG_DEFAULTS".
+        var selectedVoice = '';
+        try {
+            var voiceEl = container.querySelector('.lkt-voice');
+            if (voiceEl && voiceEl.value) selectedVoice = voiceEl.value;
+        } catch (e) {}
         var url, body;
         if (mode === 'test-session') {
             url = (window.GATEWAY_URL || '') + '/api/v1/agents/' + encodeURIComponent(agentId) + '/voice-config/test-session';
-            body = {};
+            body = { lang: selectedLang };
+            if (selectedVoice) body.voice_override = selectedVoice;
         } else {
             url = (window.GATEWAY_URL || '') + '/api/v1/orb/livekit/token';
-            body = { lang: 'en', agent_id: agentId };
+            body = { lang: selectedLang, agent_id: agentId };
+            if (selectedVoice) body.voice_override = selectedVoice;
         }
         log('event', 'POST ' + url);
         var res = await fetch(url, {
@@ -35793,12 +35937,24 @@ function renderLivekitTestView() {
                 }
             });
 
-            room.on(LivekitClient.RoomEvent.DataReceived, function (payload) {
+            room.on(LivekitClient.RoomEvent.DataReceived, function (payload, _participant, _kind, topic) {
                 try {
                     var msg = JSON.parse(new TextDecoder().decode(payload));
                     log('event', 'DataReceived', msg);
                     if (msg.type === 'transcript') appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
                     if (msg.type === 'tool_call') log('event', 'tool_call', msg);
+                    // PR 1.B-0 — orb_directive: the agent publishes structured payloads on
+                    // the data channel (topic='orb_directive') so the page can react out-of-band
+                    // the same way the SSE/WS branch does on Vertex. Currently 2 directive
+                    // types: 'open_url' (e.g. play_music URL → opens in new tab native app
+                    // intent if present) and 'navigate' (e.g. find_community_member redirect
+                    // → window.location.href).
+                    var isDirective = topic === 'orb_directive' || msg.type === 'orb_directive';
+                    if (isDirective) {
+                        try {
+                            handleOrbDirective(msg);
+                        } catch (dErr) { log('warn', 'orb_directive handler error', { error: String(dErr) }); }
+                    }
                 } catch (e) { log('event', 'DataReceived (non-json)', { len: payload && payload.byteLength }); }
             });
 
@@ -44634,6 +44790,206 @@ function renderAdminAwarenessView() {
         container.appendChild(auditCard);
     }
 
+    return container;
+}
+
+// =============================================================================
+// VTID-02766 — Voice Tools Catalog (Command Hub > Assistant > Voice Tools)
+// Uses the Command Hub design system (CSS vars + .filter-select +
+// .command-hub-events-table). No hardcoded light-mode colors.
+// =============================================================================
+function renderVoiceToolsCatalogView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Voice Tools Catalog</h2>' +
+        '<p class="section-subtitle">Every voice tool the ORB can call. Source-of-truth manifest at <code>services/gateway/src/services/tool-manifest.json</code>.</p>';
+
+    if (!state.voiceToolsCatalog) {
+        state.voiceToolsCatalog = { loading: false, loaded: false, error: null, tools: [], stats: null };
+    }
+
+    var stats = document.createElement('div');
+    stats.style.cssText = 'display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap;margin:1rem 0;padding:.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-elevated);font-size:.8rem;color:var(--color-text-secondary);';
+    stats.textContent = 'Loading stats…';
+    container.appendChild(stats);
+
+    var filters = document.createElement('div');
+    filters.style.cssText = 'display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;';
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Search by name or description…';
+    search.className = 'filter-select';
+    search.style.flex = '1';
+    search.style.minWidth = '240px';
+    var surfaceSel = document.createElement('select');
+    surfaceSel.className = 'filter-select';
+    surfaceSel.innerHTML = '<option value="">All surfaces</option>';
+    var roleSel = document.createElement('select');
+    roleSel.className = 'filter-select';
+    roleSel.innerHTML = '<option value="">All roles</option><option value="community">community</option><option value="user">user</option><option value="developer">developer</option><option value="admin">admin</option>';
+    // PR 1.B-9: Wired-in filter so operators can quickly answer
+    // "which tools work on LiveKit but not Vertex?" / "which planned
+    // phantoms haven't been wired yet?".
+    var wiredSel = document.createElement('select');
+    wiredSel.className = 'filter-select';
+    wiredSel.innerHTML = '<option value="">All pipelines</option>' +
+        '<option value="both">Both (live)</option>' +
+        '<option value="vertex_only">Vertex only</option>' +
+        '<option value="livekit_only">LiveKit only</option>' +
+        '<option value="none">Planned (neither)</option>';
+    filters.appendChild(search);
+    filters.appendChild(surfaceSel);
+    filters.appendChild(roleSel);
+    filters.appendChild(wiredSel);
+    container.appendChild(filters);
+
+    var listWrap = document.createElement('div');
+    listWrap.innerHTML = '<div class="placeholder-content">Loading tools…</div>';
+    container.appendChild(listWrap);
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function statusPill(status) {
+        // Reuse the existing .status-live family where possible; otherwise render
+        // a neutral pill that adopts the theme's elevated background.
+        var s = String(status || '').toLowerCase();
+        if (s === 'live') {
+            return '<span class="status-live" style="font-size:.65rem;padding:2px 8px;border-radius:10px;"><span class="live-dot"></span>LIVE</span>';
+        }
+        var label = s ? s.toUpperCase() : '—';
+        return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid var(--color-border);color:var(--color-text-secondary);">' + escapeHtml(label) + '</span>';
+    }
+
+    function renderStats(r) {
+        if (!r || !r.ok) { stats.textContent = 'Stats unavailable.'; return; }
+        var bs = r.by_status || {};
+        var bw = r.by_wired_in || {};
+        stats.innerHTML =
+            '<span><strong style="color:var(--color-text-primary);">' + (r.total || 0) + '</strong> total</span>' +
+            '<span>Live: <strong style="color:var(--color-text-primary);">' + (bs.live || 0) + '</strong></span>' +
+            '<span>WIP: <strong style="color:var(--color-text-primary);">' + (bs.wip || 0) + '</strong></span>' +
+            '<span>Planned: <strong style="color:var(--color-text-primary);">' + (bs.planned || 0) + '</strong></span>' +
+            '<span style="border-left:1px solid var(--color-border);padding-left:1rem;">Both: <strong style="color:var(--color-text-primary);">' + (bw.both || 0) + '</strong></span>' +
+            '<span>Vertex-only: <strong style="color:var(--color-text-primary);">' + (bw.vertex_only || 0) + '</strong></span>' +
+            '<span>LiveKit-only: <strong style="color:var(--color-text-primary);">' + (bw.livekit_only || 0) + '</strong></span>' +
+            '<span style="margin-left:auto;font-size:.7rem;opacity:.7;">manifest ' + escapeHtml(r.generated_at || '?') + '</span>';
+    }
+
+    function wiredPill(wiredIn) {
+        var w = Array.isArray(wiredIn) ? wiredIn : [];
+        var hasV = w.indexOf('vertex') >= 0;
+        var hasL = w.indexOf('livekit') >= 0;
+        var label, color;
+        if (hasV && hasL) { label = 'BOTH';        color = '#22c55e'; }
+        else if (hasV)    { label = 'VERTEX';      color = '#3b82f6'; }
+        else if (hasL)    { label = 'LIVEKIT';     color = '#8b5cf6'; }
+        else              { label = 'NONE';        color = 'var(--color-text-secondary)'; }
+        return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid ' + color + ';color:' + color + ';">' + label + '</span>';
+    }
+
+    function renderList(r) {
+        if (!r || !r.ok) { listWrap.innerHTML = '<div class="error-text">Catalog unavailable.</div>'; return; }
+        var tools = r.tools || [];
+        // PR 1.B-9: client-side wired_in filter (server doesn't support it
+        // as a query param yet — the catalog endpoint returns the full list,
+        // we slice locally by the dropdown selection).
+        if (wiredSel.value) {
+            tools = tools.filter(function (t) {
+                var w = Array.isArray(t.wired_in) ? t.wired_in : [];
+                var hasV = w.indexOf('vertex') >= 0;
+                var hasL = w.indexOf('livekit') >= 0;
+                if (wiredSel.value === 'both') return hasV && hasL;
+                if (wiredSel.value === 'vertex_only') return hasV && !hasL;
+                if (wiredSel.value === 'livekit_only') return hasL && !hasV;
+                if (wiredSel.value === 'none') return !hasV && !hasL;
+                return true;
+            });
+        }
+        if (tools.length === 0) { listWrap.innerHTML = '<div class="placeholder-content">No tools match the filter.</div>'; return; }
+
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'border:1px solid var(--color-border);border-radius:8px;overflow:hidden;background:var(--color-bg-elevated);';
+
+        var table = document.createElement('table');
+        table.className = 'command-hub-events-table';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            '<th>Name</th>' +
+            '<th>Surface</th>' +
+            '<th>Role</th>' +
+            '<th>Status</th>' +
+            '<th>Wired in</th>' +
+            '<th>VTID</th>' +
+            '<th>Description</th>' +
+            '</tr>';
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        tools.forEach(function (t) {
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td><code style="color:var(--color-text-primary);">' + escapeHtml(t.name) + '</code></td>' +
+                '<td>' + escapeHtml(t.surface || '') + '</td>' +
+                '<td style="font-size:.7rem;color:var(--color-text-secondary);">' + escapeHtml((t.role || []).join(', ')) + '</td>' +
+                '<td>' + statusPill(t.status) + '</td>' +
+                '<td>' + wiredPill(t.wired_in) + '</td>' +
+                '<td style="font-size:.7rem;font-family:monospace;color:var(--color-text-secondary);">' + escapeHtml(t.vtid || '—') + '</td>' +
+                '<td style="color:var(--color-text-secondary);">' + escapeHtml((t.description || '').slice(0, 200)) + '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        listWrap.innerHTML = '';
+        listWrap.appendChild(wrap);
+
+        var footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:.5rem;font-size:.7rem;color:var(--color-text-secondary);';
+        footer.textContent = 'Showing ' + tools.length + ' of ' + (r.total || tools.length) + ' tools (filtered).';
+        listWrap.appendChild(footer);
+    }
+
+    function fetchAndRender() {
+        var qs = [];
+        if (search.value) qs.push('q=' + encodeURIComponent(search.value));
+        if (surfaceSel.value) qs.push('surface=' + encodeURIComponent(surfaceSel.value));
+        if (roleSel.value) qs.push('role=' + encodeURIComponent(roleSel.value));
+        qs.push('limit=200');
+        var url = '/api/v1/voice-tools/catalog' + (qs.length ? '?' + qs.join('&') : '');
+
+        Promise.all([
+            fetch(url, { credentials: 'include' }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-tools/catalog/stats', { credentials: 'include' }).then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            var catalog = results[0];
+            var statsResp = results[1];
+            renderStats(statsResp);
+            renderList(catalog);
+            if (statsResp && statsResp.by_surface && surfaceSel.options.length === 1) {
+                Object.keys(statsResp.by_surface).sort().forEach(function (name) {
+                    var opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name + ' (' + statsResp.by_surface[name] + ')';
+                    surfaceSel.appendChild(opt);
+                });
+            }
+        }).catch(function (err) {
+            listWrap.innerHTML = '<div class="error-text">Failed to load: ' + escapeHtml(err && err.message ? err.message : String(err)) + '</div>';
+        });
+    }
+
+    var debounceTimer = null;
+    function debouncedFetch() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fetchAndRender, 250);
+    }
+    search.addEventListener('input', debouncedFetch);
+    surfaceSel.addEventListener('change', fetchAndRender);
+    roleSel.addEventListener('change', fetchAndRender);
+    wiredSel.addEventListener('change', fetchAndRender);
+
+    fetchAndRender();
     return container;
 }
 

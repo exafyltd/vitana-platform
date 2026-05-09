@@ -283,6 +283,13 @@ interface MintTokenBody {
   lang?: string;
   agent_id?: string;
   voice_style?: string;
+  // PR-VTID-02853: per-session voice override from the LiveKit test page
+  // dropdown. Embedded in the AccessToken metadata; the agent reads it and
+  // hands to build_cascade(voice_override=…). Examples:
+  //   "de-DE-Chirp3-HD-Leda"  (Chirp3-HD German persona)
+  //   "Kore"                  (Gemini TTS multilingual voice)
+  // Empty / absent → use language default from LANG_DEFAULTS.
+  voice_override?: string;
 }
 
 router.post(
@@ -314,6 +321,9 @@ router.post(
     const body = (req.body ?? {}) as MintTokenBody;
     const lang = body.lang || 'en';
     const agentId = body.agent_id || 'vitana';
+    const voiceOverride = typeof body.voice_override === 'string' && body.voice_override.trim().length > 0
+      ? body.voice_override.trim()
+      : null;
     const isAnonymous = !req.identity;
     const userId = req.identity?.user_id ?? `anon-${randomUUID()}`;
     const tenantId = req.identity?.tenant_id ?? '';
@@ -346,6 +356,7 @@ router.post(
         agent_id: agentId,
         orb_session_id: orbSessionId,
         vitana_id: req.identity?.vitana_id ?? null,
+        voice_override: voiceOverride,
         // VTID-LIVEKIT-AGENT-JWT: the orb-agent extracts this and uses it as
         // Bearer for every gateway tool call. Same secret/shape as the
         // user's normal JWT — existing optionalAuth/requireAuth middleware
@@ -628,6 +639,13 @@ router.get(
       );
     }
 
+    // Extract first name from display_name OR memory_facts.user_name fact.
+    // app_users.display_name commonly stores the full name ("Dragan Alexander"),
+    // but the agent should address the user by their first name only.
+    const userNameFact = identityFacts.find((f) => f.fact_key === 'user_name');
+    const fullName = (userNameFact?.fact_value || displayName || '').trim();
+    const firstName = fullName ? fullName.split(/\s+/)[0] : null;
+
     res.json({
       ok: true,
       vtid: VTID,
@@ -643,6 +661,13 @@ router.get(
       recent_routes: [],
       client_context: { user_agent: req.headers['user-agent'] ?? null },
       vitana_id: req.identity?.vitana_id ?? null,
+      // VTID-LIVEKIT-IDENTITY-NAME: surface the user's name + verified facts as
+      // structured fields so the agent's instructions.py can address them by
+      // first name rather than only by @handle.
+      display_name: displayName,
+      first_name: firstName,
+      identity_facts: identityFacts,
+      identity_facts_count: identityFacts.length,
       voice_config: voiceConfig,
       memory_items: memoryItems,
     });
@@ -876,6 +901,14 @@ router.post(
     }
     const userId = req.identity?.user_id ?? `tester-${randomUUID()}`;
     const proposed = req.body ?? {};
+    // PR 1.B-Lang: thread `lang` from the body into the token metadata so
+    // the agent's build_cascade picks the right STT language + per-language
+    // TTS voice. Without this, every test-session falls back to en-US even
+    // when the user picked German in the LiveKit test page dropdown.
+    const lang = typeof proposed.lang === 'string' && proposed.lang ? proposed.lang : 'en';
+    const voiceOverride = typeof proposed.voice_override === 'string' && proposed.voice_override.trim().length > 0
+      ? proposed.voice_override.trim()
+      : null;
     const roomName = `orb-test-${id}-${Date.now()}`;
 
     const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
@@ -885,9 +918,14 @@ router.post(
       ttl: TEST_SESSION_TOKEN_TTL_SECONDS,
       metadata: JSON.stringify({
         user_id: userId,
+        tenant_id: req.identity?.tenant_id ?? '',
+        role: req.identity?.role ?? 'developer',
+        lang,
         agent_id: id,
         is_test_session: true,
         proposed_voice_config: proposed,
+        vitana_id: req.identity?.vitana_id ?? null,
+        voice_override: voiceOverride,
         user_jwt: agentUserJwt,
       }),
     });

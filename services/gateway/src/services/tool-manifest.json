@@ -1,0 +1,2061 @@
+{
+  "generated_at": "2026-05-07T23:43:18.327Z",
+  "source": "reconciled",
+  "total": 147,
+  "tools": [
+    {
+      "name": "search_knowledge",
+      "surface": "Knowledge",
+      "category": "knowledge",
+      "role": [
+        "community",
+        "user",
+        "operator",
+        "admin",
+        "developer"
+      ],
+      "status": "live",
+      "description": "Search the Vitana knowledge base.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "search_calendar",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community",
+        "user",
+        "operator"
+      ],
+      "status": "live",
+      "description": "Search calendar events.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_schedule",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Read the user's calendar via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "create_calendar_event",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Create a calendar event.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "add_to_calendar",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Add an event via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_recommendations",
+      "surface": "Autopilot",
+      "category": "autopilot",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Fetch Autopilot recommendations.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "activate_recommendation",
+      "surface": "Autopilot",
+      "category": "autopilot",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Activate a recommendation.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_vitana_index",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Return the user's current Vitana Index.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_index_improvement_suggestions",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Suggest concrete actions to lift the Index.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "save_diary_entry",
+      "surface": "Diary",
+      "category": "diary",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-01983",
+      "description": "Save a diary entry from voice.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "set_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-02601",
+      "description": "Create a one-shot reminder.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "find_reminders",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-02601",
+      "description": "Search active reminders.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "delete_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-02601",
+      "description": "Delete one or all reminders (after confirm).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "post_intent",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Post a new intent (find-a-partner, etc.).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "list_my_intents",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "List the user's posted intents.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "view_intent_matches",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "View matches on a specific intent.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_matchmaker_result",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Poll for matchmaker agent's polished result.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "mark_intent_fulfilled",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Mark an intent as fulfilled.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "search_memory",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community",
+        "user",
+        "developer"
+      ],
+      "status": "live",
+      "description": "Keyword-search memory items.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "search_web",
+      "surface": "Search",
+      "category": "search",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Web search (provider-gated).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "recall_conversation_at_time",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-02052",
+      "description": "Recall a past conversation by time reference.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "switch_persona",
+      "surface": "Persona",
+      "category": "persona",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Switch ORB persona style.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "report_to_specialist",
+      "surface": "Specialist",
+      "category": "specialist",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Hand off to a specialist persona (Devon/Sage/Atlas/Mira).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "search_events",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Search community events.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "search_community",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Search community groups.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "play_music",
+      "surface": "Music",
+      "category": "music",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Play music via connected provider.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "set_capability_preference",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Choose default provider for a capability.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "read_email",
+      "surface": "Email",
+      "category": "email",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Read email via connected Gmail account.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "find_contact",
+      "surface": "Contacts",
+      "category": "contacts",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Find a contact by name.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "consult_external_ai",
+      "surface": "AI",
+      "category": "ai",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Delegate a question to a connected external AI.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "create_index_improvement_plan",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Schedule a calendar plan to lift a pillar.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "ask_pillar_agent",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Ask a pillar-specific agent a question.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "explain_feature",
+      "surface": "Help",
+      "category": "help",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Explain a Vitana feature.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "resolve_recipient",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Map a name to a community member user_id.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "send_chat_message",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Send a DM to another member.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "share_link",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Share a deep link with another member.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "share_intent_post",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Share an intent post with someone.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "scan_existing_matches",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Scan for new matches on existing intents.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "respond_to_match",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Mark interested/not-interested on a match.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "navigate_to_screen",
+      "surface": "Navigation",
+      "category": "navigation",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Navigate to a canonical app screen.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "log_water",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02753",
+      "added_in_pr": 1837,
+      "description": "Log a hydration entry (ml).",
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "log_sleep",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02753",
+      "added_in_pr": 1837,
+      "description": "Log a sleep duration (minutes).",
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "log_exercise",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02753",
+      "added_in_pr": 1837,
+      "description": "Log an exercise session (minutes + activity type).",
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "log_meditation",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02753",
+      "added_in_pr": 1837,
+      "description": "Log a meditation/mindfulness session (minutes).",
+      "backing_endpoint": "POST /api/v1/integrations/manual/log",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_pillar_subscores",
+      "surface": "Health",
+      "category": "health",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02753",
+      "added_in_pr": 1837,
+      "description": "Break down a pillar score into baseline/completions/data/streak.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_highest_vitana_index",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "Top scorer in the community.",
+      "wired_in": []
+    },
+    {
+      "name": "get_top_in_pillar",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "Top scorer in a single pillar.",
+      "wired_in": []
+    },
+    {
+      "name": "get_first_member",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "First/OG community member.",
+      "wired_in": []
+    },
+    {
+      "name": "get_newest_member",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "Most recent community signup.",
+      "wired_in": []
+    },
+    {
+      "name": "get_most_followed",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "Member with the most followers.",
+      "wired_in": []
+    },
+    {
+      "name": "ask_who_is",
+      "surface": "Superlatives",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02754",
+      "added_in_pr": 1857,
+      "description": "NL router for free-form 'who is...?' questions.",
+      "wired_in": []
+    },
+    {
+      "name": "list_diary_entries",
+      "surface": "Diary",
+      "category": "diary",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "List the user's diary entries in a date window.",
+      "wired_in": []
+    },
+    {
+      "name": "get_diary_streak",
+      "surface": "Diary",
+      "category": "diary",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "Current + longest diary streak.",
+      "wired_in": []
+    },
+    {
+      "name": "get_memory_timeline",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "Chronological timeline of facts/diary/events.",
+      "wired_in": []
+    },
+    {
+      "name": "recall_memory_about",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "Topic search across memory items with category filter.",
+      "wired_in": []
+    },
+    {
+      "name": "get_memory_garden_summary",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "Counts per memory category — for 'what do you remember about me?'.",
+      "wired_in": []
+    },
+    {
+      "name": "forget_memory",
+      "surface": "Memory",
+      "category": "memory",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02757",
+      "added_in_pr": 1858,
+      "description": "Soft-delete a single memory item by id (after confirm).",
+      "wired_in": []
+    },
+    {
+      "name": "reschedule_event",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Move a calendar event to a new time.",
+      "wired_in": []
+    },
+    {
+      "name": "cancel_event",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Soft-cancel a calendar event.",
+      "wired_in": []
+    },
+    {
+      "name": "complete_event",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Mark an event completed/skipped/partial.",
+      "wired_in": []
+    },
+    {
+      "name": "find_free_slot",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Find next available slot for a duration.",
+      "wired_in": []
+    },
+    {
+      "name": "get_event_details",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Read full details of a single event.",
+      "wired_in": []
+    },
+    {
+      "name": "check_calendar_conflicts",
+      "surface": "Calendar",
+      "category": "calendar",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02761",
+      "added_in_pr": 1860,
+      "description": "Find events overlapping a proposed window.",
+      "wired_in": []
+    },
+    {
+      "name": "snooze_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02763",
+      "added_in_pr": 1861,
+      "description": "Push a reminder out by N minutes.",
+      "wired_in": []
+    },
+    {
+      "name": "update_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02763",
+      "added_in_pr": 1861,
+      "description": "Edit a reminder's text/time.",
+      "wired_in": []
+    },
+    {
+      "name": "acknowledge_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02763",
+      "added_in_pr": 1861,
+      "description": "Mark a reminder as delivered.",
+      "wired_in": []
+    },
+    {
+      "name": "complete_reminder",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02763",
+      "added_in_pr": 1861,
+      "description": "Mark a reminder as DONE.",
+      "wired_in": []
+    },
+    {
+      "name": "list_missed_reminders",
+      "surface": "Reminders",
+      "category": "reminders",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02763",
+      "added_in_pr": 1861,
+      "description": "List reminders that fired but weren't acked.",
+      "wired_in": []
+    },
+    {
+      "name": "list_my_groups",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "List the user's group memberships.",
+      "wired_in": []
+    },
+    {
+      "name": "create_group",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "Create a new community group.",
+      "wired_in": []
+    },
+    {
+      "name": "join_group",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "Join an existing group by id.",
+      "wired_in": []
+    },
+    {
+      "name": "invite_to_group",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "Invite a member to a group.",
+      "wired_in": []
+    },
+    {
+      "name": "accept_invitation",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "Accept a pending group invitation.",
+      "wired_in": []
+    },
+    {
+      "name": "decline_invitation",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02764",
+      "added_in_pr": 1862,
+      "description": "Decline a pending group invitation.",
+      "wired_in": []
+    },
+    {
+      "name": "submit_bug_report",
+      "surface": "Feedback",
+      "category": "feedback",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02768",
+      "added_in_pr": 1865,
+      "description": "Hand off to Devon (bug-report specialist).",
+      "wired_in": []
+    },
+    {
+      "name": "submit_support_ticket",
+      "surface": "Feedback",
+      "category": "feedback",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02768",
+      "added_in_pr": 1865,
+      "description": "Hand off to Sage (support specialist).",
+      "wired_in": []
+    },
+    {
+      "name": "submit_marketplace_dispute",
+      "surface": "Feedback",
+      "category": "feedback",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02768",
+      "added_in_pr": 1865,
+      "description": "Hand off to Atlas (marketplace dispute).",
+      "wired_in": []
+    },
+    {
+      "name": "submit_account_issue",
+      "surface": "Feedback",
+      "category": "feedback",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02768",
+      "added_in_pr": 1865,
+      "description": "Hand off to Mira (account specialist).",
+      "wired_in": []
+    },
+    {
+      "name": "list_my_tickets",
+      "surface": "Feedback",
+      "category": "feedback",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02768",
+      "added_in_pr": 1865,
+      "description": "List the user's open tickets.",
+      "wired_in": []
+    },
+    {
+      "name": "start_conversation",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02771",
+      "added_in_pr": 1866,
+      "description": "Start a new DM conversation.",
+      "wired_in": []
+    },
+    {
+      "name": "list_conversations",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02771",
+      "added_in_pr": 1866,
+      "description": "List recent conversations.",
+      "wired_in": []
+    },
+    {
+      "name": "mark_conversation_read",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02771",
+      "added_in_pr": 1866,
+      "description": "Mark a conversation read.",
+      "wired_in": []
+    },
+    {
+      "name": "mute_conversation",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02771",
+      "added_in_pr": 1866,
+      "description": "Mute a conversation.",
+      "wired_in": []
+    },
+    {
+      "name": "archive_conversation",
+      "surface": "Chat",
+      "category": "chat",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02771",
+      "added_in_pr": 1866,
+      "description": "Archive a conversation.",
+      "wired_in": []
+    },
+    {
+      "name": "set_language",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02772",
+      "added_in_pr": 1869,
+      "description": "Set the UI / voice language.",
+      "wired_in": []
+    },
+    {
+      "name": "set_theme",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02772",
+      "added_in_pr": 1869,
+      "description": "Set the visual theme.",
+      "wired_in": []
+    },
+    {
+      "name": "set_voice_preferences",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02772",
+      "added_in_pr": 1869,
+      "description": "Tune voice tone / pace / persona.",
+      "wired_in": []
+    },
+    {
+      "name": "list_connected_apps",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02772",
+      "added_in_pr": 1869,
+      "description": "List connected integrations.",
+      "wired_in": []
+    },
+    {
+      "name": "disconnect_app",
+      "surface": "Settings",
+      "category": "settings",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02772",
+      "added_in_pr": 1869,
+      "description": "Disconnect an integration.",
+      "wired_in": []
+    },
+    {
+      "name": "global_search",
+      "surface": "Search",
+      "category": "search",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02773",
+      "added_in_pr": 1871,
+      "description": "Unified search across people / posts / products / events.",
+      "wired_in": []
+    },
+    {
+      "name": "browse_news_feed",
+      "surface": "News",
+      "category": "news",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02773",
+      "added_in_pr": 1871,
+      "description": "Browse the community news feed.",
+      "wired_in": []
+    },
+    {
+      "name": "rsvp_event",
+      "surface": "Events",
+      "category": "events",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02774",
+      "added_in_pr": 1873,
+      "description": "RSVP to an event.",
+      "wired_in": []
+    },
+    {
+      "name": "cancel_rsvp",
+      "surface": "Events",
+      "category": "events",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02774",
+      "added_in_pr": 1873,
+      "description": "Cancel an RSVP.",
+      "wired_in": []
+    },
+    {
+      "name": "list_upcoming_meetups",
+      "surface": "Events",
+      "category": "events",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02774",
+      "added_in_pr": 1873,
+      "description": "List upcoming meetups near the user.",
+      "wired_in": []
+    },
+    {
+      "name": "join_live_room",
+      "surface": "Events",
+      "category": "events",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02774",
+      "added_in_pr": 1873,
+      "description": "Join a live room.",
+      "wired_in": []
+    },
+    {
+      "name": "snooze_recommendation",
+      "surface": "Autopilot",
+      "category": "autopilot",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02775",
+      "added_in_pr": 1874,
+      "description": "Push an Autopilot recommendation later.",
+      "wired_in": []
+    },
+    {
+      "name": "dismiss_recommendation",
+      "surface": "Autopilot",
+      "category": "autopilot",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02775",
+      "added_in_pr": 1874,
+      "description": "Dismiss an Autopilot recommendation.",
+      "wired_in": []
+    },
+    {
+      "name": "explain_recommendation",
+      "surface": "Autopilot",
+      "category": "autopilot",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02775",
+      "added_in_pr": 1874,
+      "description": "Get a natural-language reason for a recommendation.",
+      "wired_in": []
+    },
+    {
+      "name": "update_account_visibility",
+      "surface": "Privacy",
+      "category": "privacy",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02776",
+      "added_in_pr": 1875,
+      "description": "Toggle account visibility (public / followers-only / private).",
+      "wired_in": []
+    },
+    {
+      "name": "update_privacy_field",
+      "surface": "Privacy",
+      "category": "privacy",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02776",
+      "added_in_pr": 1875,
+      "description": "Set per-field visibility (e.g. age, location).",
+      "wired_in": []
+    },
+    {
+      "name": "block_user",
+      "surface": "Privacy",
+      "category": "privacy",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02776",
+      "added_in_pr": 1875,
+      "description": "Block another community member.",
+      "wired_in": []
+    },
+    {
+      "name": "unblock_user",
+      "surface": "Privacy",
+      "category": "privacy",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02776",
+      "added_in_pr": 1875,
+      "description": "Unblock a previously-blocked member.",
+      "wired_in": []
+    },
+    {
+      "name": "update_intent",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02777",
+      "added_in_pr": 1877,
+      "description": "Edit an existing intent post.",
+      "wired_in": []
+    },
+    {
+      "name": "delete_intent",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02777",
+      "added_in_pr": 1877,
+      "description": "Delete an intent post.",
+      "wired_in": []
+    },
+    {
+      "name": "browse_intent_board",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02777",
+      "added_in_pr": 1877,
+      "description": "Browse the cross-tenant intent board.",
+      "wired_in": []
+    },
+    {
+      "name": "dispute_match",
+      "surface": "Intents",
+      "category": "intents",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02777",
+      "added_in_pr": 1877,
+      "description": "Open a dispute on a match.",
+      "wired_in": []
+    },
+    {
+      "name": "get_emotional_state",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D28 emotional / cognitive signals.",
+      "wired_in": []
+    },
+    {
+      "name": "get_situational_awareness",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D32 situational awareness signals.",
+      "wired_in": []
+    },
+    {
+      "name": "get_availability",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D33 availability / readiness signals.",
+      "wired_in": []
+    },
+    {
+      "name": "get_environmental_context",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D34 environmental / mobility signals.",
+      "wired_in": []
+    },
+    {
+      "name": "get_social_context",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D35 social context signals.",
+      "wired_in": []
+    },
+    {
+      "name": "get_life_stage_context",
+      "surface": "Awareness",
+      "category": "awareness",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02778",
+      "added_in_pr": 1879,
+      "description": "D40 life stage signals.",
+      "wired_in": []
+    },
+    {
+      "name": "set_alarm",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "Set a wake-up alarm at HH:MM.",
+      "wired_in": []
+    },
+    {
+      "name": "list_alarms",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "List active alarms.",
+      "wired_in": []
+    },
+    {
+      "name": "delete_alarm",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "Cancel an alarm.",
+      "wired_in": []
+    },
+    {
+      "name": "start_timer",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "Start a countdown timer (60s-24h).",
+      "wired_in": []
+    },
+    {
+      "name": "start_pomodoro",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "Start a pomodoro work block (5-90min).",
+      "wired_in": []
+    },
+    {
+      "name": "list_active_timers",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "List active timers and pomodoros.",
+      "wired_in": []
+    },
+    {
+      "name": "get_world_time",
+      "surface": "Clock",
+      "category": "clock",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02779",
+      "added_in_pr": 1881,
+      "description": "Current local time in a city or IANA timezone.",
+      "wired_in": []
+    },
+    {
+      "name": "find_perfect_product",
+      "surface": "Marketplace",
+      "category": "marketplace",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02830",
+      "added_in_pr": 1883,
+      "description": "Flagship deep search — fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "find_perfect_practitioner",
+      "surface": "Marketplace",
+      "category": "marketplace",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "vtid": "VTID-02830",
+      "added_in_pr": 1883,
+      "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "find_perfect_match",
+      "surface": "Match",
+      "category": "match",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02780",
+      "added_in_pr": 1883,
+      "description": "Flagship people-match search (workout partner, accountability buddy, mentor).",
+      "wired_in": []
+    },
+    {
+      "name": "ask_who_is",
+      "surface": "Superlatives",
+      "category": "superlatives",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02780",
+      "added_in_pr": 1883,
+      "description": "Free-form 'who is...' superlative questions about the community.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_vtids",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Recent VTIDs from the ledger; filter by status.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_get_vtid_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Lookup a single VTID by id.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_pending_approvals",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "PRs / actions waiting on approval.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_count_approvals",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Pending approval count — for 'how many PRs are waiting?'.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_approve_pr",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies).",
+      "wired_in": []
+    },
+    {
+      "name": "dev_reject_pr",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Reject a queued PR / action with reason.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_voice_sessions",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Recent ORB voice sessions for Voice Lab.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_routines",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Daily routines + last run status.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_get_routine_detail",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Routine detail + last N runs.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_active_healing",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Self-healing runs in flight.",
+      "wired_in": []
+    },
+    {
+      "name": "dev_get_autonomy_pulse",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs).",
+      "wired_in": []
+    },
+    {
+      "name": "dev_list_agents",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "vtid": "VTID-02782",
+      "added_in_pr": 1926,
+      "description": "21-agent registry with heartbeat status.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_briefing",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Top open admin_insights for the tenant.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_kpi_snapshot",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Current KPI family snapshot for the tenant.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_insight_detail",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Full body of one admin insight.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_approve",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Mark an insight approved.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_reject",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Mark an insight rejected.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_snooze",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Snooze an insight for N hours/days.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_history",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "KPI family time-series for the last N days.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_health_check",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Tenant-health-index probe.",
+      "wired_in": []
+    },
+    {
+      "name": "admin_pause_autopilot",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin",
+        "developer"
+      ],
+      "status": "planned",
+      "description": "Emergency pause request for tenant autopilot.",
+      "wired_in": []
+    },
+    {
+      "name": "find_community_member",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Resolve a community member by name (alias for resolve_recipient on the discover surface).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_current_screen",
+      "surface": "Navigation",
+      "category": "navigation",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Return the screen the user is currently looking at.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "navigate",
+      "surface": "Navigation",
+      "category": "navigation",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "description": "Navigate to a target screen (alias for navigate_to_screen).",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    }
+  ]
+}

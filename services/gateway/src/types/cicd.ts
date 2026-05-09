@@ -543,6 +543,19 @@ export type CicdEventType =
   // subsequent orb.navigator.dispatched (or .blocked) on the user's reply —
   // lets us measure clarification → resolution rate.
   | 'orb.navigator.disambiguated'
+  // VTID-01975 (PR 1.B-6): view_intent_matches auto-redirected to a
+  // match-detail screen because the top match's score dominated the
+  // runner-up. Lets ops measure how often the disambiguation gap is
+  // wide enough for confident auto-nav vs list-only.
+  | 'orb.intent_matches.auto_nav'
+  // VTID-01270A (PR 1.B-7): search_community auto-redirected to
+  // COMM.GROUP_DETAIL because result was unambiguous (single hit or
+  // exact name match). Lets ops measure auto-nav vs list-only ratio.
+  | 'orb.search_community.auto_nav'
+  // VTID-01270A (PR 1.B-8): search_events auto-redirected to the
+  // OVERLAY.EVENT_DRAWER overlay because the top event dominated the
+  // runner-up by >= 0.15 and there were no live_rooms in the result.
+  | 'orb.search_events.auto_nav'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
@@ -623,6 +636,7 @@ export type CicdEventType =
   | 'dev_autopilot.execution.escalated'
   | 'dev_autopilot.execution.completed'
   | 'dev_autopilot.execution.failed'
+  | 'dev_autopilot.execution.auto_archived'
   | 'dev_autopilot.batch.first_failure'
   | 'dev_autopilot.kill_switch.activated'
   | 'dev_autopilot.kill_switch.deactivated'
@@ -721,6 +735,8 @@ export type CicdEventType =
   | 'memory.consolidator.run.completed'
   | 'memory.consolidator.loop.failed'
   | 'memory.index_delta.observed'
+  // VTID-02754: find_community_member voice tool — search-to-profile redirect
+  | 'community.find_member.matched'
   // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
   | 'architecture.investigation.started'
   | 'architecture.investigation.completed'

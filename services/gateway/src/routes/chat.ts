@@ -128,7 +128,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
           sender_name: senderName,
           message_id: data.id,
           thread_id: identity.user_id,
-          url: `/inbox?thread=${identity.user_id}&context=global`,
+          url: `/inbox?recipient=${identity.user_id}&context=global`,
         },
       },
       supabase,
