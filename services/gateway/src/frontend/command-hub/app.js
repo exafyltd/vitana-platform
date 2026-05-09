@@ -2723,14 +2723,25 @@ const NAVIGATION_CONFIG = [
         "basePath": "/command-hub/assistant/",
         "tabs": [
             { "key": "overview",            "path": "/command-hub/assistant/overview/" },
-            { "key": "orb-live",            "path": "/command-hub/assistant/orb-live/" },
             { "key": "sessions",            "path": "/command-hub/assistant/sessions/" },
             { "key": "personality",         "path": "/command-hub/assistant/personality/" },
             { "key": "experiments",         "path": "/command-hub/assistant/experiments/" },
-            { "key": "metrics",             "path": "/command-hub/assistant/metrics/" },
-            { "key": "awareness-registry",  "path": "/command-hub/assistant/awareness-registry/" },
-            { "key": "awareness-test",      "path": "/command-hub/assistant/awareness-test/" },
-            { "key": "voice-tools",         "path": "/command-hub/assistant/voice-tools/" }
+            { "key": "metrics",             "path": "/command-hub/assistant/metrics/" }
+        ]
+    },
+    // VTID-02856: Unified Voice section — owns every voice-management surface.
+    // Orb LIVE is tab #1 so operators land on live performance first.
+    {
+        "section": "voice",
+        "basePath": "/command-hub/voice/",
+        "tabs": [
+            { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
+            { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
+            { "key": "awareness",       "label": "Awareness",          "path": "/command-hub/voice/awareness/" },
+            { "key": "tools",           "label": "Tool Catalog",       "path": "/command-hub/voice/tools/" },
+            { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
+            { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
+            { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
         ]
     },
     {
@@ -2870,8 +2881,7 @@ const NAVIGATION_CONFIG = [
             { "key": "latency", "path": "/command-hub/diagnostics/latency/" },
             { "key": "errors", "path": "/command-hub/diagnostics/errors/" },
             { "key": "sse", "path": "/command-hub/diagnostics/sse/" },
-            { "key": "debug-panel", "path": "/command-hub/diagnostics/debug-panel/" },
-            { "key": "voice-lab", "path": "/command-hub/diagnostics/voice-lab/" }
+            { "key": "debug-panel", "path": "/command-hub/diagnostics/debug-panel/" }
         ]
     },
     {
@@ -2893,8 +2903,7 @@ const NAVIGATION_CONFIG = [
             { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
             { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
             { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" },
-            { "key": "livekit-test", "path": "/command-hub/testing-qa/livekit-test/" }
+            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
         ]
     },
     {
@@ -2935,6 +2944,7 @@ const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
     'assistant': 'Assistant',
+    'voice': 'Voice',
     'autonomy': 'Autonomy',
     'operator': 'Operator',
     'command-hub': 'Operations',
@@ -3081,6 +3091,9 @@ const state = {
     historyEvents: [],
     historyLoading: false,
     historyError: null,
+
+    // VTID-02856: Voice / Awareness sub-tab pill state
+    voiceAwareness: { activeSubTab: 'registry' },
 
     // VTID-01218E: Voice LAB State
     // VTID-01218B: Enhanced with auto-refresh, session details, turns, runtime controls
@@ -6130,10 +6143,6 @@ function renderModuleContent(moduleKey, tab) {
     // ──── BOOTSTRAP-ASSISTANT-SECTION-NAV: Assistant section ────
     } else if (moduleKey === 'assistant' && tab === 'overview') {
         container.appendChild(renderAssistantOverviewView());
-    } else if (moduleKey === 'assistant' && tab === 'orb-live') {
-        // Reuses the Voice Lab ORB Live panel — same live-sessions view.
-        state.voiceLab.activeSubTab = 'orb-live';
-        container.appendChild(renderVoiceLabOrbLivePanel());
     } else if (moduleKey === 'assistant' && tab === 'sessions') {
         state.voiceLab.activeSubTab = 'sessions';
         container.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
@@ -6146,13 +6155,31 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'assistant' && tab === 'metrics') {
         state.voiceLab.activeSubTab = 'metrics';
         container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
-    } else if (moduleKey === 'assistant' && tab === 'awareness-registry') {
-        container.appendChild(renderAdminAwarenessView());
-    } else if (moduleKey === 'assistant' && tab === 'awareness-test') {
-        container.appendChild(renderVitanaAwarenessTestView());
-    } else if (moduleKey === 'assistant' && tab === 'voice-tools') {
-        // VTID-02766: Voice Tools Catalog
+
+    // ──── VTID-02856: Voice section ────
+    } else if (moduleKey === 'voice' && tab === 'orb-live') {
+        // Tab #1: rich Voice Lab content (sessions list + detail drawer).
+        // Reset the internal Voice-Lab sub-tab so a stale value (e.g. from a
+        // previous visit to "Experiments") doesn't leak into the new home.
+        state.voiceLab.activeSubTab = 'orb-live';
+        container.appendChild(renderVoiceLabView());
+    } else if (moduleKey === 'voice' && tab === 'providers') {
+        // Providers & Voice — V2V/STT/TTS provider switches + TTS voice/language/speed
+        // Full implementation lands in PR 2; scaffold renders a coming-soon placeholder.
+        container.appendChild(renderVoiceProvidersPlaceholderView());
+    } else if (moduleKey === 'voice' && tab === 'awareness') {
+        // Sub-tab strip for Registry / Test / Watchdogs
+        container.appendChild(renderVoiceAwarenessView());
+    } else if (moduleKey === 'voice' && tab === 'tools') {
         container.appendChild(renderVoiceToolsCatalogView());
+    } else if (moduleKey === 'voice' && tab === 'self-healing') {
+        // Voice slice extracted from autonomy/self-healing
+        container.appendChild(renderVoiceSelfHealingPanel());
+    } else if (moduleKey === 'voice' && tab === 'livekit-test') {
+        container.appendChild(renderLivekitTestView());
+    } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
+        // Migrated from testing-qa/e2e — scheduled UI E2E test runs
+        container.appendChild(renderOrbMonitorSection());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -6214,9 +6241,6 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'agents' && tab === 'telemetry') {
         // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
         container.appendChild(renderAgentsTelemetryView());
-    } else if (moduleKey === 'diagnostics' && tab === 'voice-lab') {
-        // VTID-01218E: Voice LAB - ORB Live Observability
-        container.appendChild(renderVoiceLabView());
     } else if (moduleKey === 'routines' && tab === 'catalog') {
         // VTID-01981: Routines Catalog — every daily Claude Code remote agent + last-run summary
         container.appendChild(renderRoutinesCatalogView());
@@ -6358,9 +6382,6 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingE2eView());
     } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
         container.appendChild(renderTestingCiReportsView());
-    } else if (moduleKey === 'testing-qa' && tab === 'livekit-test') {
-        // VTID-LIVEKIT-FOUNDATION: standalone test page for the LiveKit pipeline
-        container.appendChild(renderLivekitTestView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -9662,19 +9683,34 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
     '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
-    // Assistant section moves (Round 2)
-    '/command-hub/admin/awareness/':              { section: 'assistant', tab: 'awareness-registry' },
-    '/command-hub/testing-qa/vitana-awareness/':  { section: 'assistant', tab: 'awareness-test' },
-    '/command-hub/autonomy/awareness-registry/':  { section: 'assistant', tab: 'awareness-registry' },
-    '/command-hub/autonomy/awareness-test/':      { section: 'assistant', tab: 'awareness-test' },
-    // Voice Lab's ORB-facing sub-tabs now live under Assistant (Providers +
-    // Governance stay with Voice Lab under Diagnostics).
-    '/command-hub/diagnostics/voice-lab/':            { section: 'assistant', tab: 'orb-live' },
+    // Assistant section moves (Round 2) — kept for legacy bookmarks; awareness-* now redirect onward to Voice (below).
+    '/command-hub/admin/awareness/':              { section: 'voice',     tab: 'awareness', subtab: 'registry' },
+    '/command-hub/testing-qa/vitana-awareness/':  { section: 'voice',     tab: 'awareness', subtab: 'test' },
+    '/command-hub/autonomy/awareness-registry/':  { section: 'voice',     tab: 'awareness', subtab: 'registry' },
+    '/command-hub/autonomy/awareness-test/':      { section: 'voice',     tab: 'awareness', subtab: 'test' },
+    // VTID-02856: Voice section consolidation. Old paths now resolve to the unified Voice tabs.
+    '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'orb-live' },
     '/command-hub/diagnostics/voice-lab/experiments/':{ section: 'assistant', tab: 'experiments' },
     '/command-hub/diagnostics/voice-lab/personality/':{ section: 'assistant', tab: 'personality' },
     '/command-hub/diagnostics/voice-lab/sessions/':   { section: 'assistant', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/metrics/':    { section: 'assistant', tab: 'metrics' },
+    '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'orb-live' },
+    '/command-hub/assistant/voice-tools/':             { section: 'voice', tab: 'tools' },
+    '/command-hub/assistant/awareness-registry/':      { section: 'voice', tab: 'awareness', subtab: 'registry' },
+    '/command-hub/assistant/awareness-test/':          { section: 'voice', tab: 'awareness', subtab: 'test' },
+    '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
+    '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
 };
+
+// VTID-02856: Apply optional `subtab` field from a redirect entry to the
+// matching tab state. Only the Voice / Awareness tab uses this today.
+function applyRouteSubtab(route) {
+    if (!route || !route.subtab) return;
+    if (route.section === 'voice' && route.tab === 'awareness') {
+        if (!state.voiceAwareness) state.voiceAwareness = { activeSubTab: 'registry' };
+        state.voiceAwareness.activeSubTab = route.subtab;
+    }
+}
 
 function getRouteFromPath(pathname) {
     // DEV-COMHU-2025-0009: Normalize path - ensure trailing slash for consistent matching
@@ -9733,6 +9769,7 @@ window.onpopstate = () => {
     }
     state.currentModuleKey = route.section;
     state.currentTab = route.tab;
+    applyRouteSubtab(route);
     renderApp();
 
     // VTID-01002: Restore scroll positions for new route from persistent storage
@@ -16315,7 +16352,10 @@ function startVoiceLabAutoRefresh() {
         var onOrbLive =
             (state.currentModuleKey === 'diagnostics' && state.currentTab === 'voice-lab'
              && state.voiceLab.activeSubTab === 'orb-live')
-            || (state.currentModuleKey === 'assistant' && state.currentTab === 'orb-live');
+            || (state.currentModuleKey === 'assistant' && state.currentTab === 'orb-live')
+            // VTID-02856: Voice section's Orb LIVE tab uses the same auto-refresh.
+            || (state.currentModuleKey === 'voice' && state.currentTab === 'orb-live'
+                && state.voiceLab.activeSubTab === 'orb-live');
 
         if (onOrbLive && state.voiceLab.autoRefreshEnabled) {
             fetchVoiceLabSessionsSilent();
@@ -34770,8 +34810,8 @@ function renderTestingE2eView() {
         container.appendChild(cyclesGrid);
     }
 
-    // ─── ORB Monitor — GitHub Actions workflow status ───────────────
-    container.appendChild(renderOrbMonitorSection());
+    // VTID-02856: ORB Monitor relocated to Voice / Orb UI Monitor.
+    container.appendChild(renderMovedToVoiceBreadcrumb('Orb UI Monitor', 'orb-ui-monitor'));
 
     // Runs history table
     var runsTitle = document.createElement('h3');
@@ -35110,7 +35150,7 @@ function renderLivekitTestView() {
         + '</select>'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
-        + '<a href="/command-hub/diagnostics/voice-lab/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Lab</a>';
+        + '<a href="/command-hub/voice/orb-live/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Orb LIVE</a>';
     container.appendChild(controls);
     var langSelect = controls.querySelector('.lkt-lang');
     langSelect.addEventListener('change', function () {
@@ -37154,6 +37194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const route = getRouteFromPath(window.location.pathname);
         state.currentModuleKey = route.section;
         state.currentTab = route.tab;
+        applyRouteSubtab(route);
 
         // If current path is not valid or is root, replace with calculated path
         const section = NAVIGATION_CONFIG.find(s => s.section === route.section);
@@ -41214,6 +41255,107 @@ function _vhRenderReportContent(row) {
     return c;
 }
 
+// ─── VTID-02856: Voice section helpers ──────────────────────────────────
+
+// Small inline breadcrumb shown where a voice surface used to live.
+// Lets operators with old bookmarks one-click jump to the new home.
+function renderMovedToVoiceBreadcrumb(label, voiceTab) {
+    var box = document.createElement('div');
+    box.style.cssText = 'margin:0 0 16px 0;padding:10px 14px;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);';
+    var link = document.createElement('a');
+    link.href = '/command-hub/voice/' + voiceTab + '/';
+    link.textContent = 'Voice / ' + label;
+    link.style.cssText = 'color:#60a5fa;text-decoration:none;font-weight:600;';
+    link.onclick = function (ev) {
+        ev.preventDefault();
+        history.pushState(null, '', link.getAttribute('href'));
+        state.currentModuleKey = 'voice';
+        state.currentTab = voiceTab;
+        renderApp();
+    };
+    box.appendChild(document.createTextNode('Moved to '));
+    box.appendChild(link);
+    return box;
+}
+
+// Placeholder while PR 2 (Providers & Voice screen + voice-config helper)
+// is in flight. Tells operators what's coming and links to the legacy
+// LiveKit Test Bench for the current way to switch providers manually.
+function renderVoiceProvidersPlaceholderView() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:1.5rem;';
+    var h = document.createElement('h2');
+    h.style.margin = '0 0 0.5rem 0';
+    h.textContent = 'Providers & Voice';
+    c.appendChild(h);
+    var sub = document.createElement('p');
+    sub.className = 'section-subtitle';
+    sub.textContent = 'V2V (Vertex / LiveKit) + STT + TTS provider switches and TTS voice / language / speed controls.';
+    c.appendChild(sub);
+    var note = document.createElement('div');
+    note.style.cssText = 'margin-top:1rem;padding:1rem 1.25rem;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);line-height:1.55;';
+    note.innerHTML = 'Coming in PR 2 of the Voice reorganization (VTID-02856 scaffold ships first). Until then, the active provider can be inspected at <code>GET /api/v1/orb/active-provider</code> and flipped manually with <code>POST /api/v1/orb/active-provider</code> (60-min cooldown). The LiveKit pipeline can be exercised on the <strong>LiveKit Test Bench</strong> tab.';
+    c.appendChild(note);
+    return c;
+}
+
+// Awareness tab — hosts three sub-tabs (Registry / Test / Watchdogs).
+// Registry + Test reuse existing renderers (relocated, not rewritten).
+// Watchdogs is a placeholder until PR 4.
+function renderVoiceAwarenessView() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:0;';
+
+    if (!state.voiceAwareness) state.voiceAwareness = { activeSubTab: 'registry' };
+    var active = state.voiceAwareness.activeSubTab || 'registry';
+
+    var pills = document.createElement('div');
+    pills.style.cssText = 'display:flex;gap:0.5rem;padding:1rem 1.5rem 0 1.5rem;flex-wrap:wrap;border-bottom:1px solid var(--color-border);';
+    var subs = [
+        { key: 'registry',   label: 'Registry'   },
+        { key: 'test',       label: 'Test'       },
+        { key: 'watchdogs',  label: 'Watchdogs'  }
+    ];
+    subs.forEach(function (s) {
+        var pill = document.createElement('button');
+        var isActive = (s.key === active);
+        pill.textContent = s.label;
+        pill.style.cssText = 'padding:0.5rem 1rem;border:none;background:none;border-bottom:2px solid ' + (isActive ? '#3b82f6' : 'transparent') + ';color:' + (isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)') + ';cursor:pointer;font-size:0.85rem;font-weight:' + (isActive ? '600' : '400') + ';';
+        pill.onclick = function () {
+            state.voiceAwareness.activeSubTab = s.key;
+            renderApp();
+        };
+        pills.appendChild(pill);
+    });
+    c.appendChild(pills);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding-top:0.5rem;';
+    if (active === 'registry') {
+        body.appendChild(renderAdminAwarenessView());
+    } else if (active === 'test') {
+        body.appendChild(renderVitanaAwarenessTestView());
+    } else if (active === 'watchdogs') {
+        var wb = document.createElement('div');
+        wb.style.cssText = 'padding:1.5rem;';
+        var wh = document.createElement('h3');
+        wh.style.margin = '0 0 0.5rem 0';
+        wh.textContent = 'Awareness Watchdogs';
+        wb.appendChild(wh);
+        var wsub = document.createElement('p');
+        wsub.className = 'section-subtitle';
+        wsub.textContent = 'Continuous checks that verify each awareness signal is firing on production sessions.';
+        wb.appendChild(wsub);
+        var wnote = document.createElement('div');
+        wnote.style.cssText = 'margin-top:1rem;padding:1rem 1.25rem;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);line-height:1.55;';
+        wnote.textContent = 'Coming in PR 4 of the Voice reorganization (VTID-02856 scaffold ships first). The first 10 watchdogs cover the awareness signals tracked alongside this work.';
+        wb.appendChild(wnote);
+        body.appendChild(wb);
+    }
+    c.appendChild(body);
+    return c;
+}
+
 function renderVoiceSelfHealingPanel() {
     var panel = document.createElement('section');
     panel.className = 'vh-panel';
@@ -41421,10 +41563,9 @@ function renderSelfHealingView() {
         fetchSelfHealingData();
     }
 
-    // VTID-01991: Voice Self-Healing panel pinned at top — gives ops live
-    // visibility into ORB voice health, the watchdog fix verification,
-    // per-class healing state, and the mode flip control.
-    container.appendChild(renderVoiceSelfHealingPanel());
+    // VTID-02856: Voice Self-Healing relocated to Voice / Self-Healing.
+    // A small breadcrumb stays here so operators with old bookmarks find it.
+    container.appendChild(renderMovedToVoiceBreadcrumb('Voice Self-Healing', 'self-healing'));
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');
@@ -45162,9 +45303,8 @@ function renderAssistantOverviewView() {
         };
         return b;
     };
-    toolbar.appendChild(quickBtn('Open ORB Live', 'assistant', 'orb-live'));
-    toolbar.appendChild(quickBtn('Awareness Registry', 'assistant', 'awareness-registry'));
-    toolbar.appendChild(quickBtn('Run Awareness Test', 'assistant', 'awareness-test'));
+    toolbar.appendChild(quickBtn('Open Orb LIVE', 'voice', 'orb-live'));
+    toolbar.appendChild(quickBtn('Awareness', 'voice', 'awareness'));
     toolbar.appendChild(quickBtn('Personality', 'assistant', 'personality'));
     container.appendChild(toolbar);
 
