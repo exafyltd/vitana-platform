@@ -703,6 +703,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceConfigRouter = require('./routes/voice-config').default;
   mountRouterSync(app, '/api/v1', voiceConfigRouter, { owner: 'voice-config' });
 
+  // VTID-02859: Voice Awareness Watchdogs (Voice / Awareness / Watchdogs sub-tab)
+  // GET /api/v1/voice/awareness/watchdogs
+  const voiceAwarenessRouter = require('./routes/voice-awareness').default;
+  mountRouterSync(app, '/api/v1', voiceAwarenessRouter, { owner: 'voice-awareness' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 

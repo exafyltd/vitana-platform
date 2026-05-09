@@ -41732,9 +41732,162 @@ function vpStyleInput(el) {
     el.style.cssText = 'padding:0.45rem 0.6rem;background:var(--color-surface);color:var(--color-text-primary);border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;';
 }
 
+// VTID-02859: Awareness Watchdogs table — fetches per-watchdog status from
+// /api/v1/voice/awareness/watchdogs and renders pass/fail/partial verdicts
+// with last-run timestamps and the signal keys each watchdog covers.
+function renderAwarenessWatchdogsTable() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:1.5rem;';
+
+    var h = document.createElement('h3');
+    h.style.margin = '0 0 0.5rem 0';
+    h.textContent = 'Awareness Watchdogs';
+    c.appendChild(h);
+
+    var sub = document.createElement('p');
+    sub.className = 'section-subtitle';
+    sub.textContent = 'Continuous checks that verify each awareness signal is firing on production sessions.';
+    c.appendChild(sub);
+
+    if (!state.awarenessWatchdogs) {
+        state.awarenessWatchdogs = { loaded: false, loading: false, error: null, rows: [] };
+    }
+    var w = state.awarenessWatchdogs;
+
+    if (!w.loaded && !w.loading) {
+        w.loading = true;
+        fetch('/api/v1/voice/awareness/watchdogs', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                w.loading = false;
+                if (resp && resp.ok) {
+                    w.rows = resp.watchdogs || [];
+                    w.loaded = true;
+                } else {
+                    w.error = (resp && resp.error) || 'failed to load';
+                }
+                renderApp();
+            })
+            .catch(function (err) {
+                w.loading = false;
+                w.error = err.message || String(err);
+                renderApp();
+            });
+    }
+
+    if (w.loading && !w.loaded) {
+        var l = document.createElement('div');
+        l.className = 'placeholder-content';
+        l.textContent = 'Loading watchdogs…';
+        c.appendChild(l);
+        return c;
+    }
+    if (w.error) {
+        var e = document.createElement('div');
+        e.className = 'placeholder-content error-text';
+        e.textContent = 'Error: ' + w.error;
+        c.appendChild(e);
+        return c;
+    }
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.textContent = '⟳ Refresh';
+    refreshBtn.style.marginBottom = '1rem';
+    refreshBtn.onclick = function () { w.loaded = false; renderApp(); };
+    c.appendChild(refreshBtn);
+
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:.8rem;';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="text-align:left;border-bottom:1px solid var(--color-border);">'
+        + '<th style="padding:.5rem;">Watchdog</th>'
+        + '<th style="padding:.5rem;">Verdict</th>'
+        + '<th style="padding:.5rem;">Last run</th>'
+        + '<th style="padding:.5rem;">Watches</th>'
+        + '</tr>';
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    (w.rows || []).forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.style.cssText = 'border-bottom:1px solid var(--color-border);';
+
+        var nameCell = document.createElement('td');
+        nameCell.style.cssText = 'padding:.5rem;vertical-align:top;';
+        var nameStrong = document.createElement('strong');
+        nameStrong.textContent = (row.watchdog && row.watchdog.name) || row.watchdog.id;
+        nameCell.appendChild(nameStrong);
+        if (row.watchdog && row.watchdog.description) {
+            var d = document.createElement('div');
+            d.style.cssText = 'font-size:.7rem;color:var(--color-text-secondary);';
+            d.textContent = row.watchdog.description;
+            nameCell.appendChild(d);
+        }
+        if (row.last_result_summary) {
+            var sumDiv = document.createElement('div');
+            sumDiv.style.cssText = 'font-size:.65rem;color:var(--color-text-secondary);margin-top:.2rem;';
+            sumDiv.textContent = row.last_result_summary;
+            nameCell.appendChild(sumDiv);
+        }
+        tr.appendChild(nameCell);
+
+        var verdictCell = document.createElement('td');
+        verdictCell.style.cssText = 'padding:.5rem;vertical-align:top;';
+        var badge = document.createElement('span');
+        badge.style.cssText = 'padding:.15rem .45rem;border-radius:4px;font-size:.7rem;';
+        if (row.verdict === 'pass') {
+            badge.textContent = '✓ pass';
+            badge.style.color = '#22c55e';
+            badge.style.background = 'rgba(34,197,94,.12)';
+        } else if (row.verdict === 'fail') {
+            badge.textContent = '✗ fail';
+            badge.style.color = '#dc2626';
+            badge.style.background = 'rgba(220,38,38,.12)';
+        } else if (row.verdict === 'partial') {
+            badge.textContent = '⚠ partial';
+            badge.style.color = '#a16207';
+            badge.style.background = 'rgba(234,179,8,.12)';
+        } else {
+            badge.textContent = '? unknown';
+            badge.style.color = 'var(--color-text-secondary)';
+            badge.style.background = 'var(--color-bg)';
+        }
+        verdictCell.appendChild(badge);
+        tr.appendChild(verdictCell);
+
+        var lastCell = document.createElement('td');
+        lastCell.style.cssText = 'padding:.5rem;vertical-align:top;font-family:monospace;font-size:.7rem;color:var(--color-text-secondary);';
+        lastCell.textContent = row.last_run_at ? new Date(row.last_run_at).toLocaleString() : '—';
+        tr.appendChild(lastCell);
+
+        var watchesCell = document.createElement('td');
+        watchesCell.style.cssText = 'padding:.5rem;vertical-align:top;';
+        var watches = (row.watchdog && row.watchdog.watches) || [];
+        watches.forEach(function (k) {
+            var code = document.createElement('code');
+            code.textContent = k;
+            code.style.cssText = 'font-size:.65rem;background:var(--color-bg);padding:.1rem .35rem;border-radius:4px;margin-right:.25rem;display:inline-block;';
+            watchesCell.appendChild(code);
+        });
+        if (watches.length === 0) {
+            var dash = document.createElement('span');
+            dash.style.cssText = 'color:var(--color-text-secondary);';
+            dash.textContent = '—';
+            watchesCell.appendChild(dash);
+        }
+        tr.appendChild(watchesCell);
+
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    c.appendChild(table);
+
+    return c;
+}
+
 // Awareness tab — hosts three sub-tabs (Registry / Test / Watchdogs).
 // Registry + Test reuse existing renderers (relocated, not rewritten).
-// Watchdogs is a placeholder until PR 4.
+// VTID-02859: Watchdogs sub-tab now wired with real /voice/awareness/watchdogs feed.
 function renderVoiceAwarenessView() {
     var c = document.createElement('div');
     c.style.cssText = 'padding:0;';
@@ -41769,21 +41922,8 @@ function renderVoiceAwarenessView() {
     } else if (active === 'test') {
         body.appendChild(renderVitanaAwarenessTestView());
     } else if (active === 'watchdogs') {
-        var wb = document.createElement('div');
-        wb.style.cssText = 'padding:1.5rem;';
-        var wh = document.createElement('h3');
-        wh.style.margin = '0 0 0.5rem 0';
-        wh.textContent = 'Awareness Watchdogs';
-        wb.appendChild(wh);
-        var wsub = document.createElement('p');
-        wsub.className = 'section-subtitle';
-        wsub.textContent = 'Continuous checks that verify each awareness signal is firing on production sessions.';
-        wb.appendChild(wsub);
-        var wnote = document.createElement('div');
-        wnote.style.cssText = 'margin-top:1rem;padding:1rem 1.25rem;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);line-height:1.55;';
-        wnote.textContent = 'Coming in PR 4 of the Voice reorganization (VTID-02856 scaffold ships first). The first 10 watchdogs cover the awareness signals tracked alongside this work.';
-        wb.appendChild(wnote);
-        body.appendChild(wb);
+        // VTID-02859: Awareness Watchdogs sub-tab — fetches /voice/awareness/watchdogs
+        body.appendChild(renderAwarenessWatchdogsTable());
     }
     c.appendChild(body);
     return c;
