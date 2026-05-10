@@ -1902,7 +1902,11 @@ async function buildBootstrapContextPack(
  * guided to public destinations like the Maxina portal. Authenticated
  * sessions get the full set including memory/knowledge/event search.
  */
-function buildLiveApiTools(
+// Exported for characterization testing (A0.1, orb-live-refactor).
+// No behavior change — this is the same function, just made externally
+// addressable so the refactor can lock its current output as a contract
+// before A5 extracts the tool catalog into orb/live/tools/.
+export function buildLiveApiTools(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
   currentRoute?: string,
   activeRole?: string,
@@ -7380,7 +7384,11 @@ function buildTemporalJourneyContextSection(
  * model can pick a time-appropriate greeting and acknowledge where the
  * user is in the app instead of restarting with "Hello <name>!" every time.
  */
-function buildLiveSystemInstruction(
+// Exported for characterization testing (A0.1, orb-live-refactor).
+// No behavior change — this is the same function, just made externally
+// addressable so the refactor can lock its current output as a contract
+// before A3 extracts it into orb/live/instruction/live-system-instruction.ts.
+export function buildLiveSystemInstruction(
   lang: string,
   voiceStyle: string,
   bootstrapContext?: string,
