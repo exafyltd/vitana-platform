@@ -3531,9 +3531,16 @@ function buildLiveApiTools(
           description: [
             'After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.',
             'Call this 3 seconds after post_intent to fetch the polished result. status will be:',
-            '  pending/running — call again in 3 seconds',
+            '  pending/running/not_started — call again in 3 seconds',
             '  complete — read back voice_readback verbatim, then offer next steps',
             '  error — fall back to the SQL match summary already returned by post_intent',
+            '',
+            'CRITICAL (VTID-02861): this tool ALWAYS reports success at the wire level. The post_intent',
+            'row is already in user_intents — nothing this tool returns means the post failed.',
+            'NEVER say "I had a problem", "there was an issue", "I couldn\'t post", or any apologetic phrase',
+            'about the post based on this tool\'s response. status:"error" / "not_started" / "not_found"',
+            'just means the polish is unavailable; the post is still live. Use the SQL match summary from',
+            'post_intent and continue normally.',
             '',
             'The polished result includes counter_questions when the user gave a vague intent.',
             'If counter_questions is non-empty, ASK them progressively (variety → time → location)',
@@ -6682,25 +6689,98 @@ async function executeLiveApiToolInner(
       }
 
       // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
+      // VTID-02861 (2026-05-07): query intent_match_recommendations directly via
+      // service-role Supabase. The previous self-HTTP call to /api/v1/intents/:id/matchmaker
+      // always 401'd because session.access_token is never populated on the WebSocket
+      // session (same root cause as VTID-02754 for find_community_member). The 401 made
+      // this tool return success:false right after a successful post_intent, and Gemini
+      // misattributed that to the post itself — apologizing "I had a problem making the
+      // post" while the row was already in user_intents. Now we always return success:true
+      // with the polished status inside the result; the voice tool description already
+      // tells the model how to react to status:'error' / status:'not_started'.
       case 'get_matchmaker_result': {
         const intentId = String(args.intent_id || '').trim();
-        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        if (!intentId) {
+          return {
+            success: true,
+            result: JSON.stringify({ ok: false, status: 'error', error: 'intent_id is required' }),
+          };
+        }
 
         try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${encodeURIComponent(intentId)}/matchmaker`;
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const res = await fetch(url, {
-            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          const SUPABASE_URL = process.env.SUPABASE_URL;
+          const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+          if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'supabase_unavailable' }),
+            };
+          }
+          const { createClient } = await import('@supabase/supabase-js');
+          const adminSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+            auth: { autoRefreshToken: false, persistSession: false },
           });
-          const data = await res.json();
+
+          // Visibility gate: requester owns the intent OR intent is public.
+          const { data: src } = await adminSb
+            .from('user_intents')
+            .select('intent_id, requester_user_id, visibility')
+            .eq('intent_id', intentId)
+            .maybeSingle();
+          if (!src) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'intent_not_found' }),
+            };
+          }
+          const isOwner = (src as any).requester_user_id === session.identity?.user_id;
+          const visibility = String((src as any).visibility || 'public');
+          if (!isOwner && visibility !== 'public') {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'forbidden' }),
+            };
+          }
+
+          const { data: rec } = await adminSb
+            .from('intent_match_recommendations')
+            .select('intent_id, status, mode, pool_size, candidates, counter_questions, voice_readback, reasoning_summary, used_fallback, model, latency_ms, error, computed_at, updated_at')
+            .eq('intent_id', intentId)
+            .maybeSingle();
+
+          if (!rec) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, status: 'not_started', poll_again_ms: 2000 }),
+            };
+          }
+
+          const status = String((rec as any).status);
           return {
-            success: res.ok,
-            result: JSON.stringify(data),
-            error: res.ok ? undefined : (data as any)?.error || 'poll_failed',
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              status,
+              mode: (rec as any).mode,
+              pool_size: (rec as any).pool_size,
+              candidates: (rec as any).candidates ?? [],
+              counter_questions: (rec as any).counter_questions ?? [],
+              voice_readback: (rec as any).voice_readback,
+              reasoning_summary: (rec as any).reasoning_summary,
+              used_fallback: (rec as any).used_fallback,
+              model: (rec as any).model,
+              latency_ms: (rec as any).latency_ms,
+              error: (rec as any).error,
+              computed_at: (rec as any).computed_at,
+              poll_again_ms: status === 'pending' || status === 'running' ? 3000 : null,
+            }),
           };
         } catch (err: any) {
           console.error('[VTID-DANCE-D12] get_matchmaker_result error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+          return {
+            success: true,
+            result: JSON.stringify({ ok: false, status: 'error', error: err?.message || 'unknown' }),
+          };
         }
       }
 
