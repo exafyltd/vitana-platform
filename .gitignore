@@ -27,3 +27,6 @@ Thumbs.db
 .env.local
 .env.production
 .claude/settings.local.json
+
+# Local git worktrees (used by parallel Claude Code sessions)
+.worktrees/
