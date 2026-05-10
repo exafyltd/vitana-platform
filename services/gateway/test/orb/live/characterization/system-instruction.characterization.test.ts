@@ -18,7 +18,7 @@
  */
 
 import { buildLiveSystemInstruction } from '../../../../src/routes/orb-live';
-import { ALL_PERSONAS } from './_personas';
+import { ALL_PERSONAS } from './personas';
 
 describe('A0.1 characterization: buildLiveSystemInstruction', () => {
   it.each(ALL_PERSONAS)('renders a stable system instruction for persona "$name"', ({ name, input }) => {
@@ -33,7 +33,7 @@ describe('A0.1 characterization: buildLiveSystemInstruction', () => {
       input.lastSessionInfo,
       input.currentRoute,
       input.recentRoutes,
-      undefined, // clientContext — intentionally undefined (see _personas.ts)
+      undefined, // clientContext — intentionally undefined (see personas.ts)
       input.vitanaId,
     );
 
