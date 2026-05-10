@@ -1814,9 +1814,16 @@ This call is read-only and cheap — always safe to call before post_intent.",
       {
         "description": "After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.
 Call this 3 seconds after post_intent to fetch the polished result. status will be:
-  pending/running — call again in 3 seconds
+  pending/running/not_started — call again in 3 seconds
   complete — read back voice_readback verbatim, then offer next steps
   error — fall back to the SQL match summary already returned by post_intent
+
+CRITICAL (VTID-02861): this tool ALWAYS reports success at the wire level. The post_intent
+row is already in user_intents — nothing this tool returns means the post failed.
+NEVER say "I had a problem", "there was an issue", "I couldn't post", or any apologetic phrase
+about the post based on this tool's response. status:"error" / "not_started" / "not_found"
+just means the polish is unavailable; the post is still live. Use the SQL match summary from
+post_intent and continue normally.
 
 The polished result includes counter_questions when the user gave a vague intent.
 If counter_questions is non-empty, ASK them progressively (variety → time → location)
@@ -3870,9 +3877,16 @@ This call is read-only and cheap — always safe to call before post_intent.",
       {
         "description": "After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.
 Call this 3 seconds after post_intent to fetch the polished result. status will be:
-  pending/running — call again in 3 seconds
+  pending/running/not_started — call again in 3 seconds
   complete — read back voice_readback verbatim, then offer next steps
   error — fall back to the SQL match summary already returned by post_intent
+
+CRITICAL (VTID-02861): this tool ALWAYS reports success at the wire level. The post_intent
+row is already in user_intents — nothing this tool returns means the post failed.
+NEVER say "I had a problem", "there was an issue", "I couldn't post", or any apologetic phrase
+about the post based on this tool's response. status:"error" / "not_started" / "not_found"
+just means the polish is unavailable; the post is still live. Use the SQL match summary from
+post_intent and continue normally.
 
 The polished result includes counter_questions when the user gave a vague intent.
 If counter_questions is non-empty, ASK them progressively (variety → time → location)
