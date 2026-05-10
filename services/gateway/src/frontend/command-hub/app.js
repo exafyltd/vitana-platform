@@ -35122,16 +35122,19 @@ function renderLivekitTestView() {
         try { savedLang = (localStorage.getItem('vitana.lang') || '').slice(0, 2); } catch (e) {}
     }
     if (!savedLang) savedLang = 'en';
+    // VTID-02856: mirror Vertex's production language set (orb-live.ts
+    // NEURAL2_TTS_VOICES + LIVE_API_VOICES). it/pt/nl/sv/pl were a
+    // mistake — never in Vertex; ar/zh/ru/sr were dropped by accident
+    // and are now restored.
     var langOptions = [
         ['en', 'English'],
         ['de', 'Deutsch'],
         ['es', 'Español'],
         ['fr', 'Français'],
-        ['it', 'Italiano'],
-        ['pt', 'Português'],
-        ['nl', 'Nederlands'],
-        ['sv', 'Svenska'],
-        ['pl', 'Polski'],
+        ['ar', 'العربية'],
+        ['zh', '中文'],
+        ['ru', 'Русский'],
+        ['sr', 'Srpski'],
     ];
     var langSelectHtml = '<select class="lkt-lang" title="Session language" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">';
     for (var i = 0; i < langOptions.length; i++) {
@@ -35183,8 +35186,9 @@ function renderLivekitTestView() {
         ['Orus', 'M · smooth, broadcast'],
     ];
     var BCP47_FOR_LANG = {
-        en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT',
-        pt: 'pt-BR', nl: 'nl-NL', sv: 'sv-SE', pl: 'pl-PL',
+        en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
+        // Vertex's production locales (multi-region Arabic, Mandarin, etc.)
+        ar: 'ar-XA', zh: 'cmn-CN', ru: 'ru-RU', sr: 'sr-RS',
     };
 
     function rebuildVoiceOptions() {

@@ -931,7 +931,7 @@ interface GeminiLiveSession {
  * VTID-CONTEXT: Client environment context gathered at session start.
  * Injected into system instruction to make Vitana contextually aware.
  */
-interface ClientContext {
+export interface ClientContext {
   ip: string;
   city?: string;
   country?: string;
@@ -8408,7 +8408,7 @@ naturally, never call a tool.`;
  * VTID-CONTEXT: Format client context into a context section for the system instruction.
  * Used for both anonymous and authenticated sessions.
  */
-function formatClientContextForInstruction(ctx: ClientContext): string {
+export function formatClientContextForInstruction(ctx: ClientContext): string {
   const parts: string[] = [];
   if (ctx.city && ctx.country) parts.push(`User location: ${ctx.city}, ${ctx.country}`);
   else if (ctx.country) parts.push(`User location: ${ctx.country}`);
@@ -10915,7 +10915,7 @@ function getLocalTimeContext(timezone?: string): { localTime: string; timeOfDay:
 /**
  * Build full client context from request.
  */
-async function buildClientContext(req: Request): Promise<ClientContext> {
+export async function buildClientContext(req: Request): Promise<ClientContext> {
   const ip = getClientIP(req);
   // Log all IP-related headers for debugging Cloud Run IP extraction
   console.log(`[VTID-CONTEXT] IP headers: xff="${req.get('x-forwarded-for') || ''}", xri="${req.get('x-real-ip') || ''}", xaui="${req.get('x-appengine-user-ip') || ''}", req.ip="${req.ip || ''}" → resolved="${ip}"`);

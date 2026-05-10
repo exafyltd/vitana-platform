@@ -38,6 +38,15 @@ import { AccessToken } from 'livekit-server-sdk';
 import * as jose from 'jose';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
+// VTID-02855: reuse Vertex's geo-IP + UA-parse + format helpers so the
+// LiveKit bootstrap injects the same ENVIRONMENT CONTEXT block (city,
+// country, timezone, localTime, UTC, device) that Vertex's authenticated
+// system prompt has. Without this, LiveKit's LLM has no location/time
+// awareness and answers "where am I?" / "what time is it?" with garbage.
+import {
+  buildClientContext,
+  formatClientContextForInstruction,
+} from './orb-live';
 import {
   optionalAuth,
   requireAuthWithTenant,
@@ -646,6 +655,20 @@ router.get(
     const fullName = (userNameFact?.fact_value || displayName || '').trim();
     const firstName = fullName ? fullName.split(/\s+/)[0] : null;
 
+    // VTID-02855: ENVIRONMENT CONTEXT — geo-IP + UA + local time, mirrors
+    // Vertex's orb-live.ts:14026 path. Without this, LiveKit's LLM has
+    // no idea where the user is or what time it is. The block goes at
+    // the END of bootstrap_context so identity facts come first.
+    let envContext: import('./orb-live').ClientContext | null = null;
+    try {
+      envContext = await buildClientContext(req);
+      const envBlock = formatClientContextForInstruction(envContext);
+      if (envBlock) ctxParts.push(envBlock);
+    } catch (exc) {
+      // Geo lookup is best-effort; never fail the bootstrap on it.
+      console.warn(`[${VTID}] buildClientContext failed: ${(exc as Error).message}`);
+    }
+
     res.json({
       ok: true,
       vtid: VTID,
@@ -659,7 +682,7 @@ router.get(
       last_session_info: null,
       current_route: null,
       recent_routes: [],
-      client_context: { user_agent: req.headers['user-agent'] ?? null },
+      client_context: envContext ?? { user_agent: req.headers['user-agent'] ?? null },
       vitana_id: req.identity?.vitana_id ?? null,
       // VTID-LIVEKIT-IDENTITY-NAME: surface the user's name + verified facts as
       // structured fields so the agent's instructions.py can address them by
