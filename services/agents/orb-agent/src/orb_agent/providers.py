@@ -66,16 +66,19 @@ class ResolvedCascade:
 # through unchanged.
 # ---------------------------------------------------------------------------
 
+# Match Vertex's NEURAL2_TTS_VOICES set (orb-live.ts:1176): the languages
+# the Vitana team has actually provisioned for production. NOT a generic
+# EU/European set. Adding a language is a deliberate decision that has
+# to land in BOTH pipelines.
 _BCP47_DEFAULTS: dict[str, str] = {
     "en": "en-US",
     "de": "de-DE",
     "es": "es-ES",
     "fr": "fr-FR",
-    "it": "it-IT",
-    "pt": "pt-BR",
-    "nl": "nl-NL",
-    "sv": "sv-SE",
-    "pl": "pl-PL",
+    "ar": "ar-XA",   # Vertex uses ar-XA (multi-region Arabic), not ar-SA
+    "zh": "cmn-CN",  # Vertex uses cmn-CN (Mandarin), not zh-CN
+    "ru": "ru-RU",
+    "sr": "sr-RS",
 }
 
 
@@ -108,30 +111,32 @@ def _resolve_bcp47(lang: str | None) -> str:
 
 LANG_DEFAULTS: dict[str, dict[str, str]] = {
     "google_tts": {
-        # MUST use Chirp3-HD voice names. The livekit-plugins-google TTS
-        # class auto-selects the underlying TTS model from voice_name:
-        #   - "chirp" in voice_name → model_name="chirp_3"
-        #   - else                  → model_name="gemini-2.5-flash-tts"
-        # Neural2/Wavenet voices fall into the second branch, but Cloud TTS
-        # rejects voice="de-DE-Neural2-G" + model="gemini-2.5-flash-tts" as
-        # an invalid pair → silent 400 → no audio. Chirp3-HD voices ARE
-        # GA on Cloud TTS REST for all 9 languages below; the previous
-        # "no audio for German" was caused by row-seeded language_code +
-        # missing system-prompt language threading (fixed in PR-1.B-Lang-4),
-        # not the voice itself.
+        # Mirrors Vertex's production set (orb-live.ts:LIVE_API_VOICES +
+        # NEURAL2_TTS_VOICES). DO NOT add languages here that aren't in
+        # Vertex — that's a deliberate parity violation. The previous
+        # mistake (it/pt/nl/sv/pl substituted for ar/zh/ru/sr) was a
+        # generic-EU pick that broke the user's actual config.
+        #
+        # Voice routing through livekit-plugins-google:
+        #   - "chirp" in name → chirp_3 model (Cloud TTS REST GA voices)
+        #   - else            → gemini-2.5-flash-tts model (multilingual,
+        #                       voice name without locale prefix, model
+        #                       auto-detects language from input text)
+        #
+        # For ar/zh/ru/sr we use Gemini TTS multilingual voices because
+        # Chirp3-HD coverage outside the major Western locales is thin and
+        # we'd rather use a voice that's GUARANTEED to synthesize than
+        # ship a name that 400s. Mirrors Vertex's LIVE_API_VOICES which
+        # uses bare names ('Charon', 'Kore') for those same languages.
         "en": "en-US-Chirp3-HD-Aoede",
-        # PR-VTID-02853: Leda described as "soft, narrative" in Google's
-        # Chirp3-HD catalog — warmer / more human-like than Aoede's neutral
-        # tone. User feedback after first German session: Aoede sounded
-        # robotic.
+        # Leda = "soft, narrative" — warmer than Aoede per user feedback.
         "de": "de-DE-Chirp3-HD-Leda",
         "es": "es-ES-Chirp3-HD-Aoede",
         "fr": "fr-FR-Chirp3-HD-Aoede",
-        "it": "it-IT-Chirp3-HD-Aoede",
-        "pt": "pt-BR-Chirp3-HD-Aoede",
-        "nl": "nl-NL-Chirp3-HD-Aoede",
-        "sv": "sv-SE-Chirp3-HD-Aoede",
-        "pl": "pl-PL-Chirp3-HD-Aoede",
+        "ar": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['ar']
+        "zh": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['zh']
+        "ru": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['ru']
+        "sr": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['sr']
     },
     # Cartesia Sonic-3 is multilingual — same voice handle works across
     # languages, the model auto-detects from the input text. Documented at

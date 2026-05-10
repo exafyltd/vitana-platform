@@ -47,7 +47,7 @@ from .oasis import (
 )
 from .providers import build_cascade
 from .tools import all_tools
-from .watchdogs import ReconnectBucket, StallWatchdog, STALL_THRESHOLD_MS
+from .watchdogs import StallWatchdog, STALL_THRESHOLD_MS
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +294,22 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # thin async call to a gateway endpoint via the GatewayClient carried on
     # RunContext.userdata (set on AgentSession below).
     tool_list = list(all_tools())
+    # PR-VTID-02856: Native Gemini Google Search grounding. Mirrors Vertex's
+    # orb-live.ts:3732 `{ google_search: {} }` declaration. Without this the
+    # LiveKit LLM has no way to fetch fresh facts (sports scores, news, etc.)
+    # — the search_web custom function is a stub when PERPLEXITY_API_KEY
+    # isn't set (it isn't, and per orb-live.ts the comment explicitly says
+    # native google_search REPLACED the broken Perplexity path). Add the
+    # GoogleSearch ProviderTool to the agent's tool list when the LLM
+    # provider is google_llm; the model handles tool calls automatically
+    # and returns answers with citations.
+    if (bootstrap.voice_config or {}).get("llm_provider") == "google_llm":
+        try:
+            from livekit.plugins.google.tools import GoogleSearch  # type: ignore[import-not-found]
+            tool_list.append(GoogleSearch())
+            logger.info("GoogleSearch grounding enabled (Gemini native tool)")
+        except ImportError as exc:
+            logger.warning("GoogleSearch grounding unavailable: %s", exc)
     agent = Agent(
         instructions=sys_prompt,
         tools=tool_list,
@@ -479,21 +495,25 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # transparent transport reconnect (chat_ctx is preserved across it,
     # so the conversation resumes where it left off — same behaviour the
     # user observed today, just triggered in 30s instead of 60-120s).
-    reconnect_bucket = ReconnectBucket()
+    # PR-VTID-02856: telemetry-only watchdog. The previous version called
+    # ctx.room.disconnect() to provoke the SDK's auto-reconnect — but that
+    # surfaces as a visible "disconnect" to the user, which the user
+    # explicitly said is wrong: the connection must stay active until
+    # they manually disconnect. Instead, we just record the stall in
+    # OASIS so operators can see the rate, and let livekit-agents'
+    # underlying transport reconnect (which IS organic and silent — same
+    # 1-2 min recovery the user observed before my watchdog) handle it.
+    # Future option: add a soft pipeline-reset path that resets STT/LLM
+    # without dropping the room. For now: telemetry-only.
+    stall_count = {"n": 0}
     stall = StallWatchdog(threshold_ms=STALL_THRESHOLD_MS)
 
     async def _on_stall() -> None:
-        if not reconnect_bucket.record_attempt():
-            logger.error(
-                "StallWatchdog: max reconnects (%d) reached for orb_session_id=%s — giving up",
-                reconnect_bucket.count,
-                orb_session_id,
-            )
-            return
+        stall_count["n"] += 1
         logger.warning(
-            "StallWatchdog: no activity in %ds — forcing reconnect (attempt %d) for orb_session_id=%s",
+            "StallWatchdog: no activity in %ds (count=%d) for orb_session_id=%s — telemetry only, no disconnect",
             int(STALL_THRESHOLD_MS / 1000),
-            reconnect_bucket.count,
+            stall_count["n"],
             orb_session_id,
         )
         try:
@@ -503,19 +523,13 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "orb_session_id": orb_session_id,
                     "user_id": identity.user_id,
                     "agent_id": agent_id,
-                    "reconnect_attempt": reconnect_bucket.count,
+                    "stall_count": stall_count["n"],
                     "threshold_ms": STALL_THRESHOLD_MS,
+                    "action": "telemetry_only",
                 },
             )
         except Exception:  # noqa: BLE001
             pass
-        # Disconnecting the room provokes livekit-client.js's auto-reconnect
-        # on the user's browser. AgentSession's chat_ctx persists across
-        # the reconnect so the conversation resumes where it stalled.
-        try:
-            await ctx.room.disconnect()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("StallWatchdog: room.disconnect() failed: %s", exc)
 
     stall.start(on_stall=_on_stall)
 
