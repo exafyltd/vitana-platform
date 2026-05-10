@@ -2730,11 +2730,13 @@ const NAVIGATION_CONFIG = [
         ]
     },
     // VTID-02856: Unified Voice section — owns every voice-management surface.
-    // Orb LIVE is tab #1 so operators land on live performance first.
+    // VTID-02865: Improve cockpit is tab #1 — operators land on the
+    // diagnose-and-repair surface; Orb LIVE moves to #2.
     {
         "section": "voice",
         "basePath": "/command-hub/voice/",
         "tabs": [
+            { "key": "improve",         "label": "Improve",            "path": "/command-hub/voice/improve/" },
             { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
             { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
             { "key": "awareness",       "label": "Awareness",          "path": "/command-hub/voice/awareness/" },
@@ -6156,9 +6158,12 @@ function renderModuleContent(moduleKey, tab) {
         state.voiceLab.activeSubTab = 'metrics';
         container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
 
-    // ──── VTID-02856: Voice section ────
+    // ──── VTID-02856: Voice section · VTID-02865: Improve cockpit ────
+    } else if (moduleKey === 'voice' && tab === 'improve') {
+        // VTID-02865: Diagnose-and-repair cockpit. Default landing for /voice/.
+        container.appendChild(renderVoiceImproveView());
     } else if (moduleKey === 'voice' && tab === 'orb-live') {
-        // Tab #1: rich Voice Lab content (sessions list + detail drawer).
+        // Rich Voice Lab content (sessions list + detail drawer).
         // Reset the internal Voice-Lab sub-tab so a stale value (e.g. from a
         // previous visit to "Experiments") doesn't leak into the new home.
         state.voiceLab.activeSubTab = 'orb-live';
@@ -41260,6 +41265,345 @@ function _vhRenderReportContent(row) {
 }
 
 // ─── VTID-02856: Voice section helpers ──────────────────────────────────
+
+// VTID-02865: Voice Improve cockpit — diagnose-and-repair view.
+// Reads /api/v1/voice/improvement/briefing and renders:
+//   1. Header strip with composite quality score + badge counts + refresh
+//   2. Session-health card (audio-in-zero rate, one-way rate)
+//   3. Action queue table with action buttons that call existing endpoints
+function renderVoiceImproveView() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:1.5rem;max-width:1200px;';
+
+    var title = document.createElement('h2');
+    title.style.margin = '0 0 0.25rem 0';
+    title.textContent = 'Voice Improve';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'What is degrading the voice-to-voice experience right now — proof, owner, and the safest fix path.';
+    container.appendChild(subtitle);
+
+    if (!state.voiceImprove) {
+        state.voiceImprove = { loaded: false, loading: false, error: null, data: null, busyRowId: null };
+    }
+    var vi = state.voiceImprove;
+
+    if (!vi.loaded && !vi.loading) {
+        vi.loading = true;
+        fetch('/api/v1/voice/improvement/briefing', { headers: buildContextHeaders() })
+            .then(function (r) {
+                if (r.status === 401 || r.status === 403) {
+                    throw new Error('Voice Improve requires developer access (exafy_admin).');
+                }
+                return r.json();
+            })
+            .then(function (resp) {
+                vi.loading = false;
+                if (resp && resp.ok) {
+                    vi.data = resp;
+                    vi.loaded = true;
+                } else {
+                    vi.error = (resp && resp.error) || 'failed to load briefing';
+                }
+                renderApp();
+            })
+            .catch(function (err) {
+                vi.loading = false;
+                vi.error = err.message || String(err);
+                renderApp();
+            });
+    }
+
+    if (vi.loading && !vi.loaded) {
+        var l = document.createElement('div');
+        l.className = 'placeholder-content';
+        l.textContent = 'Building briefing…';
+        container.appendChild(l);
+        return container;
+    }
+
+    if (vi.error) {
+        var e = document.createElement('div');
+        e.className = 'placeholder-content error-text';
+        e.textContent = 'Error: ' + vi.error;
+        container.appendChild(e);
+        return container;
+    }
+
+    var data = vi.data || {};
+    var summary = data.summary || { total_action_items: 0, critical: 0, warning: 0, info: 0 };
+    var items = data.action_items || [];
+    var sessionHealth = data.voice_session_health || {};
+
+    // ─── Header strip: quality score + badges + refresh ───
+    var headerCard = document.createElement('section');
+    headerCard.style.cssText = 'display:flex;align-items:center;gap:1.5rem;margin-bottom:1rem;padding:1rem 1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;';
+
+    var scoreDiv = document.createElement('div');
+    var qs = typeof data.quality_score === 'number' ? data.quality_score : 100;
+    var scoreColor = qs >= 80 ? '#22c55e' : qs >= 50 ? '#f59e0b' : '#dc2626';
+    scoreDiv.style.cssText = 'display:flex;flex-direction:column;align-items:center;min-width:120px;';
+    scoreDiv.innerHTML =
+        '<div style="font-size:2.5rem;font-weight:700;color:' + scoreColor + ';line-height:1;">' + qs + '</div>'
+        + '<div style="font-size:0.7rem;color:var(--color-text-secondary);">Quality score</div>';
+    headerCard.appendChild(scoreDiv);
+
+    var badgesDiv = document.createElement('div');
+    badgesDiv.style.cssText = 'display:flex;gap:0.75rem;flex:1;';
+    [
+        { label: 'Critical', count: summary.critical, color: '#dc2626' },
+        { label: 'Warning',  count: summary.warning,  color: '#f59e0b' },
+        { label: 'Info',     count: summary.info,     color: '#3b82f6' }
+    ].forEach(function (b) {
+        var pill = document.createElement('div');
+        pill.style.cssText = 'padding:0.5rem 0.9rem;border-radius:6px;background:rgba(255,255,255,0.04);border:1px solid var(--color-border);min-width:90px;';
+        pill.innerHTML = '<div style="font-size:1.4rem;font-weight:700;color:' + b.color + ';line-height:1;">' + b.count + '</div>'
+            + '<div style="font-size:0.65rem;color:var(--color-text-secondary);">' + b.label + '</div>';
+        badgesDiv.appendChild(pill);
+    });
+    headerCard.appendChild(badgesDiv);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.textContent = '⟳ Refresh';
+    refreshBtn.onclick = function () { vi.loaded = false; renderApp(); };
+    headerCard.appendChild(refreshBtn);
+
+    container.appendChild(headerCard);
+
+    // ─── Session-health card ───
+    if (sessionHealth.sessions_observed > 0) {
+        var hc = document.createElement('section');
+        hc.style.cssText = 'margin-bottom:1rem;padding:0.75rem 1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;display:flex;gap:2rem;font-size:0.85rem;';
+        hc.innerHTML =
+            '<div><strong>' + sessionHealth.sessions_observed + '</strong> sessions in last 24h</div>'
+            + '<div>Audio-in-zero: <strong style="color:' + (sessionHealth.audio_in_zero_ratio > 0.1 ? '#dc2626' : '#22c55e') + ';">' + (sessionHealth.audio_in_zero_ratio * 100).toFixed(1) + '%</strong></div>'
+            + '<div>One-way: <strong style="color:' + (sessionHealth.one_way_ratio > 0.1 ? '#dc2626' : '#22c55e') + ';">' + (sessionHealth.one_way_ratio * 100).toFixed(1) + '%</strong></div>';
+        container.appendChild(hc);
+    }
+
+    // ─── Action queue ───
+    if (items.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'padding:2rem;text-align:center;color:var(--color-text-secondary);';
+        none.innerHTML = '✓ No action items right now. Voice quality looks healthy.';
+        container.appendChild(none);
+        return container;
+    }
+
+    items.forEach(function (it) {
+        var card = document.createElement('section');
+        var sevColor = it.severity === 'critical' ? '#dc2626' : it.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+        card.style.cssText = 'margin-bottom:0.5rem;padding:0.85rem 1rem;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + sevColor + ';border-radius:6px;';
+        if (vi.busyRowId === it.id) card.style.opacity = '0.55';
+
+        var headerRow = document.createElement('div');
+        headerRow.style.cssText = 'display:flex;align-items:start;gap:0.75rem;';
+
+        var titleBlock = document.createElement('div');
+        titleBlock.style.cssText = 'flex:1;';
+        var sevBadge = '<span style="display:inline-block;font-size:0.6rem;font-weight:600;padding:0.1rem 0.35rem;border-radius:4px;color:' + sevColor + ';background:rgba(' + (it.severity === 'critical' ? '220,38,38' : it.severity === 'warning' ? '245,158,11' : '59,130,246') + ',0.12);text-transform:uppercase;margin-right:0.4rem;">' + it.severity + '</span>';
+        titleBlock.innerHTML =
+            '<div style="font-weight:600;font-size:0.9rem;">' + sevBadge + escapeHtml(it.title) + '</div>'
+            + '<div style="font-size:0.78rem;color:var(--color-text-secondary);margin-top:0.15rem;">' + escapeHtml(it.description || '') + '</div>';
+        if (it.recommended_action) {
+            titleBlock.innerHTML += '<div style="font-size:0.72rem;color:var(--color-text-secondary);margin-top:0.4rem;font-style:italic;">→ ' + escapeHtml(it.recommended_action) + '</div>';
+        }
+        if (it.evidence && it.evidence.length) {
+            var evDiv = document.createElement('div');
+            evDiv.style.cssText = 'margin-top:0.4rem;display:flex;flex-wrap:wrap;gap:0.3rem;';
+            it.evidence.slice(0, 6).forEach(function (ev) {
+                var chip = document.createElement('span');
+                chip.style.cssText = 'font-size:0.65rem;background:var(--color-bg);padding:0.1rem 0.4rem;border-radius:4px;color:var(--color-text-secondary);';
+                chip.textContent = ev.kind + ': ' + (ev.ref || '').slice(0, 60);
+                evDiv.appendChild(chip);
+            });
+            titleBlock.appendChild(evDiv);
+        }
+        headerRow.appendChild(titleBlock);
+
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;flex-direction:column;gap:0.25rem;flex-shrink:0;';
+        (it.available_actions || []).forEach(function (verb) {
+            var btn = document.createElement('button');
+            btn.style.cssText = 'padding:0.25rem 0.6rem;font-size:0.7rem;border-radius:4px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);cursor:pointer;';
+            btn.textContent = verbLabel(verb);
+            btn.disabled = vi.busyRowId === it.id;
+            btn.onclick = function () { handleVoiceImproveAction(it, verb); };
+            actions.appendChild(btn);
+        });
+        headerRow.appendChild(actions);
+
+        card.appendChild(headerRow);
+        container.appendChild(card);
+    });
+
+    return container;
+}
+
+function verbLabel(verb) {
+    switch (verb) {
+        case 'investigate':           return 'Investigate';
+        case 'create_vtid':           return 'Create VTID';
+        case 'accept_execute':        return 'Accept & Execute';
+        case 'snooze':                return 'Snooze 24h';
+        case 'reject':                return 'Reject';
+        case 'open_in_self_healing':  return 'Open in Self-Healing';
+        default:                      return verb;
+    }
+}
+
+function handleVoiceImproveAction(item, verb) {
+    var vi = state.voiceImprove;
+    if (verb === 'investigate' || verb === 'open_in_self_healing') {
+        var target = '/command-hub/voice/orb-live/';
+        if (item.source === 'awareness_not_wired' || item.source.startsWith('watchdog_')) target = '/command-hub/voice/awareness/';
+        else if (item.source === 'healing_quarantine' || item.source === 'self_healing_escalation' || item.source === 'architecture_report' || item.source === 'failure_class_no_rule') target = '/command-hub/voice/self-healing/';
+        else if (item.source === 'provider_drift') target = '/command-hub/voice/providers/';
+        history.pushState(null, '', target);
+        var route = getRouteFromPath(target);
+        state.currentModuleKey = route.section;
+        state.currentTab = route.tab;
+        renderApp();
+        return;
+    }
+
+    vi.busyRowId = item.id;
+    renderApp();
+
+    if (verb === 'create_vtid') {
+        var endpoint = '/api/v1/voice/improvement/items/' + encodeURIComponent(item.id) + '/create-vtid';
+        if (item.source === 'architecture_report') {
+            endpoint = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(item.source_ref.id) + '/execute';
+        }
+        fetch(endpoint, {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                title: item.title,
+                summary: item.description,
+                source_files: item.source_files || [],
+                briefing_window: '24h'
+            })
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            vi.busyRowId = null;
+            if (resp && resp.ok) {
+                showToast('VTID ' + (resp.vtid || (resp.executed_vtids && resp.executed_vtids[0]) || '') + (resp.idempotent ? ' (existing)' : '') + ' created', 'success');
+                vi.loaded = false;
+            } else {
+                showToast(resp.error || 'create-vtid failed', 'error');
+            }
+            renderApp();
+        }).catch(function (err) {
+            vi.busyRowId = null;
+            renderApp();
+            showToast(err.message || 'create-vtid failed', 'error');
+        });
+        return;
+    }
+
+    if (verb === 'snooze') {
+        // Only autopilot rows have a backing finding to snooze
+        if (item.source !== 'autopilot_recommendation') {
+            vi.busyRowId = null;
+            renderApp();
+            showToast('Snooze only available for autopilot findings', 'error');
+            return;
+        }
+        fetch('/api/v1/dev-autopilot/findings/' + encodeURIComponent(item.source_ref.id) + '/snooze', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ hours: 24 })
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            vi.busyRowId = null;
+            if (resp && resp.ok) {
+                vi.loaded = false;
+                renderApp();
+                showToast('Snoozed 24h', 'success');
+            } else {
+                renderApp();
+                showToast(resp.error || 'snooze failed', 'error');
+            }
+        }).catch(function (err) {
+            vi.busyRowId = null;
+            renderApp();
+            showToast(err.message || 'snooze failed', 'error');
+        });
+        return;
+    }
+
+    if (verb === 'reject') {
+        var rejEndpoint, rejBody, rejMethod;
+        if (item.source === 'architecture_report') {
+            rejEndpoint = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(item.source_ref.id);
+            rejMethod = 'PATCH';
+            rejBody = JSON.stringify({ status: 'rejected' });
+        } else if (item.source === 'autopilot_recommendation') {
+            rejEndpoint = '/api/v1/dev-autopilot/findings/' + encodeURIComponent(item.source_ref.id) + '/reject';
+            rejMethod = 'POST';
+            rejBody = JSON.stringify({});
+        } else {
+            vi.busyRowId = null;
+            renderApp();
+            showToast('Reject not available for this source', 'error');
+            return;
+        }
+        fetch(rejEndpoint, {
+            method: rejMethod,
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: rejBody
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            vi.busyRowId = null;
+            if (resp && resp.ok) {
+                vi.loaded = false;
+                renderApp();
+                showToast('Rejected', 'success');
+            } else {
+                renderApp();
+                showToast(resp.error || 'reject failed', 'error');
+            }
+        }).catch(function (err) {
+            vi.busyRowId = null;
+            renderApp();
+            showToast(err.message || 'reject failed', 'error');
+        });
+        return;
+    }
+
+    if (verb === 'accept_execute') {
+        if (item.source !== 'autopilot_recommendation') {
+            vi.busyRowId = null;
+            renderApp();
+            showToast('Accept & Execute only available for autopilot findings', 'error');
+            return;
+        }
+        fetch('/api/v1/dev-autopilot/findings/' + encodeURIComponent(item.source_ref.id) + '/approve-auto-execute', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({})
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            vi.busyRowId = null;
+            if (resp && resp.ok) {
+                vi.loaded = false;
+                renderApp();
+                showToast('Accepted; executing…', 'success');
+            } else {
+                renderApp();
+                showToast(resp.error || 'accept failed', 'error');
+            }
+        }).catch(function (err) {
+            vi.busyRowId = null;
+            renderApp();
+            showToast(err.message || 'accept failed', 'error');
+        });
+        return;
+    }
+
+    vi.busyRowId = null;
+    renderApp();
+}
 
 // Small inline breadcrumb shown where a voice surface used to live.
 // Lets operators with old bookmarks one-click jump to the new home.

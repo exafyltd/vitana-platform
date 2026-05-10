@@ -708,6 +708,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceAwarenessRouter = require('./routes/voice-awareness').default;
   mountRouterSync(app, '/api/v1', voiceAwarenessRouter, { owner: 'voice-awareness' });
 
+  // VTID-02865: Voice Improve cockpit (Voice / Improve tab)
+  // GET /api/v1/voice/improvement/briefing + POST /items/:id/create-vtid
+  const voiceImproveRouter = require('./routes/voice-improve').default;
+  mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
