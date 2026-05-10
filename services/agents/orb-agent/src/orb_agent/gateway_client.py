@@ -13,7 +13,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT_S = 10.0
+DEFAULT_TIMEOUT_S = 30.0  # VTID-02863: bumped from 10s. /api/v1/intents POST
+                          # used to time out at 10s while embedding/match-compute
+                          # ran inline; the agent then reported a failure to the
+                          # LLM ("there was a problem creating your post") even
+                          # though the row was already in user_intents. Server-
+                          # side, those phases are now fire-and-forget so the
+                          # response returns in well under a second — but 30s
+                          # gives transient slowness room without ever surfacing
+                          # a fake "post failed" to the user.
 SLOW_TIMEOUT_S = 30.0  # for tools that may hit external APIs (search_web, consult_external_ai)
 
 

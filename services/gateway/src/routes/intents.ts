@@ -320,19 +320,28 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     });
   }
 
-  // VTID-01992: Embedding path is now flag-controlled.
-  //   FEATURE_INTENT_EMBEDDING_ASYNC=true  → skip inline; the embedding
-  //                                         worker (intent-embedding-worker.ts)
-  //                                         will pick up the row within ~5s.
-  //   default (unset / false)              → keep inline behavior. Worker
-  //                                         still runs as a safety net for
-  //                                         rows that slip past inline.
-  if (process.env.FEATURE_INTENT_EMBEDDING_ASYNC !== 'true') {
-    const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
-    if (embedding) {
-      await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', (inserted as any).intent_id);
+  // VTID-01992 / VTID-02863: Embedding is now ALWAYS fire-and-forget. The
+  // inline-await path used to hold the POST response for the duration of an
+  // OpenAI embedding call (1-3s typical, longer under provider load), which
+  // pushed total response time past the LiveKit agent's 10s HTTP timeout.
+  // The agent then returned `{ok:false, error:'timeout'}` to the LLM, and the
+  // LLM apologized — "there was a problem creating your post" — even though
+  // the row was already in user_intents. The embedding worker
+  // (intent-embedding-worker.ts) picks up rows with NULL embedding within ~5s.
+  void (async () => {
+    try {
+      const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
+      if (embedding) {
+        const { error: embedUpdErr } = await supabase
+          .from('user_intents')
+          .update({ embedding: embedding as any })
+          .eq('intent_id', (inserted as any).intent_id);
+        if (embedUpdErr) console.warn(`[VTID-01973] inline embedding update failed: ${embedUpdErr.message}`);
+      }
+    } catch (err: any) {
+      console.warn(`[VTID-01973] inline embedding non-fatal: ${err?.message}`);
     }
-  }
+  })();
 
   // VTID-01975 (P2-B): kind-discriminated Memory Garden write hooks.
   // Fire-and-forget so the post path is never blocked by memory persistence.
@@ -346,20 +355,30 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     kind_payload: kindPayload,
   }).catch((err) => console.warn(`[VTID-01975] writeIntentFacts non-fatal: ${err?.message}`));
 
-  // Compute matches now (best-effort; daily recompute catches misses).
-  let matchCount = 0;
-  try {
-    matchCount = await computeForIntent((inserted as any).intent_id);
-    if (matchCount > 0) {
-      const top = await surfaceTopMatches((inserted as any).intent_id, 5);
-      // VTID-01975 (P2-B): real push fan-out replaces P2-A audit-only stub.
-      for (const m of top) {
-        await notifyMatchSurfaced({ match: m, kind: intentKind });
+  // VTID-02863: match compute + notify fan-out also moved fire-and-forget.
+  // computeForIntent + surfaceTopMatches + N×notifyMatchSurfaced was the second
+  // multi-second blocker before the response — combined with embedding it
+  // routinely pushed total response past 10s. The voice/REST clients get
+  // match_count: 0 in the immediate response and rely on
+  // GET /api/v1/intents/:id/matchmaker (polled by get_matchmaker_result) for
+  // the polished re-rank. cold_start UX in the voice tool description handles
+  // the "0 matches" case gracefully.
+  void (async () => {
+    try {
+      const matchCount = await computeForIntent((inserted as any).intent_id);
+      if (matchCount > 0) {
+        const top = await surfaceTopMatches((inserted as any).intent_id, 5);
+        for (const m of top) {
+          await notifyMatchSurfaced({ match: m, kind: intentKind });
+        }
       }
+    } catch (err: any) {
+      console.warn(`[VTID-01973] post-insert match compute failed: ${err.message}`);
     }
-  } catch (err: any) {
-    console.warn(`[VTID-01973] post-insert match compute failed: ${err.message}`);
-  }
+  })();
+  // The response carries match_count: 0 immediately. The matchmaker poll
+  // endpoint surfaces the actual count once the async compute lands.
+  const matchCount = 0;
 
   // VTID-DANCE-D12 — Layer 2 matchmaker agent (Gemini 2.5 Pro), async.
   // Kicks off a background re-rank. Clients poll
@@ -372,7 +391,9 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     console.warn(`[VTID-DANCE-D12] matchmaker async kick failed (non-fatal): ${err?.message}`);
   }
 
-  await emitOasisEvent({
+  // VTID-02863: emitOasisEvent moved fire-and-forget. OASIS persistence is
+  // best-effort and must never block the user-visible POST response.
+  void emitOasisEvent({
     vtid: 'VTID-01973',
     type: 'voice.message.sent',
     source: 'intents-route',
@@ -389,7 +410,7 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     actor_role: 'user',
     surface: 'api',
     vitana_id: identity.vitana_id ?? undefined,
-  });
+  }).catch((err: any) => console.warn(`[VTID-01973] post-insert oasis emit failed: ${err?.message}`));
 
   return res.status(201).json({
     ok: true,
