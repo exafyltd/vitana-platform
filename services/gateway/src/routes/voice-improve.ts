@@ -25,6 +25,8 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { buildVoiceImprovementBriefing } from '../services/voice-improvement-aggregator';
+// VTID-02867: per-provider quality rollup feeds the Providers & Voice quality strip.
+import { getProviderQualityRollup } from '../services/voice-quality-by-provider';
 
 const router = Router();
 const VTID = 'VTID-02865';
@@ -237,5 +239,20 @@ router.post(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// VTID-02867: GET /api/v1/voice/quality-by-provider
+// Powers the quality strip on top of the Providers & Voice card. Lives
+// under voice-improve (observability) — not voice-config (configuration).
+// ---------------------------------------------------------------------------
+router.get('/voice/quality-by-provider', requireDevAccess, async (req: Request, res: Response) => {
+  try {
+    const days = req.query.days ? Math.min(30, Math.max(1, parseInt(String(req.query.days), 10))) : 7;
+    const rollup = await getProviderQualityRollup(days);
+    res.json({ ok: true, ...rollup, vtid: 'VTID-02867' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message, vtid: 'VTID-02867' });
+  }
+});
 
 export default router;

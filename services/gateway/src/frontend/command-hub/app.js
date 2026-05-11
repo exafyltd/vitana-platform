@@ -41723,6 +41723,9 @@ function renderVoiceProvidersView() {
 
     var dirty = Object.keys(pending).length > 0;
 
+    // ─── VTID-02867: Quality-by-provider strip ──────────────────────
+    container.appendChild(renderVoiceProviderQualityStrip());
+
     // ─── Card: V2V (active provider switch) ─────────────────────────
     var v2vCard = vpMakeCard('Voice-to-Voice (Realtime) Provider');
     var v2vBody = document.createElement('div');
@@ -42053,6 +42056,96 @@ function fetchTtsVoicesForLanguage(lang) {
     });
 }
 
+// VTID-02867: Quality-by-provider strip — gives operators data-driven
+// justification for a provider flip rather than going on feel.
+// Renders a small table: provider · sessions (7d) · audio-in-zero % · one-way %.
+function renderVoiceProviderQualityStrip() {
+    var box = document.createElement('section');
+    box.style.cssText = 'margin-bottom:1rem;padding:0.75rem 1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;';
+    var h = document.createElement('div');
+    h.style.cssText = 'font-size:0.78rem;color:var(--color-text-secondary);margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;';
+    h.innerHTML = '<strong>Quality by provider (7d)</strong><span style="font-size:0.65rem;">audio-in-zero & one-way rates from oasis_events</span>';
+    box.appendChild(h);
+
+    if (!state.voiceProviderQuality) {
+        state.voiceProviderQuality = { loaded: false, loading: false, error: null, rows: [] };
+    }
+    var q = state.voiceProviderQuality;
+
+    if (!q.loaded && !q.loading) {
+        q.loading = true;
+        fetch('/api/v1/voice/quality-by-provider?days=7', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                q.loading = false;
+                if (resp && resp.ok) {
+                    q.rows = resp.rows || [];
+                    q.loaded = true;
+                } else {
+                    q.error = (resp && resp.error) || 'failed';
+                }
+                renderApp();
+            })
+            .catch(function (err) {
+                q.loading = false;
+                q.error = err.message || String(err);
+                renderApp();
+            });
+    }
+
+    if (q.loading && !q.loaded) {
+        var l = document.createElement('div');
+        l.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        l.textContent = 'Loading…';
+        box.appendChild(l);
+        return box;
+    }
+    if (q.error) {
+        var e = document.createElement('div');
+        e.style.cssText = 'font-size:0.75rem;color:#dc2626;';
+        e.textContent = 'Error: ' + q.error;
+        box.appendChild(e);
+        return box;
+    }
+    if (!q.rows.length) {
+        var none = document.createElement('div');
+        none.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        none.textContent = 'No voice sessions observed in the last 7 days.';
+        box.appendChild(none);
+        return box;
+    }
+
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;font-size:0.78rem;';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="text-align:left;color:var(--color-text-secondary);font-size:0.7rem;">'
+        + '<th style="padding:0.25rem 0;">Provider</th>'
+        + '<th style="padding:0.25rem 0;">Sessions</th>'
+        + '<th style="padding:0.25rem 0;">Audio-in-zero</th>'
+        + '<th style="padding:0.25rem 0;">One-way</th>'
+        + '<th style="padding:0.25rem 0;">Median dur</th>'
+        + '</tr>';
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    q.rows.forEach(function (r) {
+        var tr = document.createElement('tr');
+        var aiPct = (r.audio_in_zero_ratio * 100).toFixed(1);
+        var owPct = (r.one_way_ratio * 100).toFixed(1);
+        var dur = r.median_duration_ms ? (Math.round(r.median_duration_ms / 1000) + 's') : '—';
+        var aiColor = r.audio_in_zero_ratio > 0.1 ? '#dc2626' : r.audio_in_zero_ratio > 0.03 ? '#f59e0b' : '#22c55e';
+        var owColor = r.one_way_ratio > 0.1 ? '#dc2626' : r.one_way_ratio > 0.03 ? '#f59e0b' : '#22c55e';
+        tr.innerHTML = '<td style="padding:0.2rem 0;"><code>' + escapeHtml(r.provider) + '</code></td>'
+            + '<td style="padding:0.2rem 0;">' + r.sessions_observed + '</td>'
+            + '<td style="padding:0.2rem 0;color:' + aiColor + ';">' + aiPct + '% (' + r.audio_in_zero_count + ')</td>'
+            + '<td style="padding:0.2rem 0;color:' + owColor + ';">' + owPct + '% (' + r.one_way_count + ')</td>'
+            + '<td style="padding:0.2rem 0;font-family:monospace;">' + dur + '</td>';
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+    return box;
+}
+
 function vpMakeCard(titleText) {
     var card = document.createElement('section');
     card.style.cssText = 'margin-bottom:1rem;padding:1rem 1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;';
@@ -42277,6 +42370,140 @@ function renderVoiceAwarenessView() {
     return c;
 }
 
+// VTID-02867: Inline expandable "Open architecture reports (N)" section.
+// Fetches voice_architecture_reports where status='open' and lets the
+// operator Accept (via /healing/reports/:id/execute) or Reject (via
+// PATCH /healing/reports/:id { status:'rejected' }) without leaving
+// the Self-Healing tab.
+function renderInlineArchitectureReports() {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:12px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
+
+    if (!state.voiceArchReports) {
+        state.voiceArchReports = { loaded: false, loading: false, error: null, rows: [], expanded: false, busy: {} };
+    }
+    var ar = state.voiceArchReports;
+
+    if (!ar.loaded && !ar.loading) {
+        ar.loading = true;
+        // Endpoint doesn't yet take a status filter, so we fetch up to 50 and
+        // client-side filter to status='open' (typically a small set).
+        fetch('/api/v1/voice-lab/healing/reports?limit=50', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                ar.loading = false;
+                if (resp && (resp.ok || Array.isArray(resp.reports))) {
+                    var all = resp.reports || resp.rows || [];
+                    ar.rows = all.filter(function (r) { return r.status === 'open'; });
+                    ar.loaded = true;
+                } else {
+                    ar.error = (resp && resp.error) || 'failed';
+                }
+                renderApp();
+            })
+            .catch(function (err) {
+                ar.loading = false;
+                ar.error = err.message || String(err);
+                renderApp();
+            });
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:10px;cursor:pointer;';
+    var caret = ar.expanded ? '▼' : '▶';
+    var count = ar.rows.length;
+    header.innerHTML = '<span style="color:#94a3b8;">' + caret + '</span>'
+        + '<strong style="color:#e2e8f0;">Open architecture reports</strong>'
+        + '<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + (ar.loading ? '…' : count) + '</span>';
+    header.onclick = function () { ar.expanded = !ar.expanded; renderApp(); };
+    wrap.appendChild(header);
+
+    if (ar.error) {
+        var e = document.createElement('div');
+        e.style.cssText = 'color:#dc2626;font-size:0.75rem;margin-top:8px;';
+        e.textContent = 'Error: ' + ar.error;
+        wrap.appendChild(e);
+        return wrap;
+    }
+
+    if (!ar.expanded) return wrap;
+    if (ar.loading) {
+        var l = document.createElement('div');
+        l.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
+        l.textContent = 'Loading…';
+        wrap.appendChild(l);
+        return wrap;
+    }
+    if (!count) {
+        var none = document.createElement('div');
+        none.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
+        none.textContent = 'No open architecture reports.';
+        wrap.appendChild(none);
+        return wrap;
+    }
+
+    ar.rows.forEach(function (rpt) {
+        var row = document.createElement('div');
+        row.style.cssText = 'margin-top:8px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;';
+        if (ar.busy[rpt.id]) row.style.opacity = '0.55';
+        var rec = (rpt.report && rpt.report.recommendation) || {};
+        var track = rec.track || '?';
+        var conf = typeof rec.confidence === 'number' ? (rec.confidence * 100).toFixed(0) + '%' : '?';
+        var summary = (rec.summary || '').slice(0, 220);
+        row.innerHTML = '<div style="color:#e2e8f0;font-size:0.8rem;"><strong>' + escapeHtml(rpt.class) + '</strong>'
+            + ' <span style="background:rgba(168,85,247,.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:0.65rem;">' + escapeHtml(track) + '</span>'
+            + ' <span style="color:#94a3b8;font-size:0.7rem;">' + conf + ' confidence</span></div>'
+            + '<div style="color:#94a3b8;font-size:0.72rem;margin-top:4px;">' + escapeHtml(summary) + '</div>';
+        var btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+        var acceptBtn = document.createElement('button');
+        acceptBtn.textContent = 'Accept & Execute';
+        acceptBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid #22c55e;border-radius:4px;cursor:pointer;';
+        acceptBtn.disabled = ar.busy[rpt.id];
+        acceptBtn.onclick = function () { handleArchReportAction(rpt, 'accept'); };
+        var rejectBtn = document.createElement('button');
+        rejectBtn.textContent = 'Reject';
+        rejectBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(220,38,38,.12);color:#dc2626;border:1px solid #dc2626;border-radius:4px;cursor:pointer;';
+        rejectBtn.disabled = ar.busy[rpt.id];
+        rejectBtn.onclick = function () { handleArchReportAction(rpt, 'reject'); };
+        btnRow.appendChild(acceptBtn);
+        btnRow.appendChild(rejectBtn);
+        row.appendChild(btnRow);
+        wrap.appendChild(row);
+    });
+
+    return wrap;
+}
+
+function handleArchReportAction(rpt, action) {
+    var ar = state.voiceArchReports;
+    ar.busy[rpt.id] = true;
+    renderApp();
+    var url, opts;
+    if (action === 'accept') {
+        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id) + '/execute';
+        opts = { method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({}) };
+    } else {
+        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id);
+        opts = { method: 'PATCH', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ status: 'rejected' }) };
+    }
+    fetch(url, opts).then(function (r) { return r.json(); }).then(function (resp) {
+        ar.busy[rpt.id] = false;
+        if (resp && resp.ok) {
+            ar.loaded = false; // refetch
+            renderApp();
+            showToast(action === 'accept' ? ('Accepted: ' + (resp.executed_vtids || []).join(', ')) : 'Rejected', 'success');
+        } else {
+            renderApp();
+            showToast(resp.error || (action + ' failed'), 'error');
+        }
+    }).catch(function (err) {
+        ar.busy[rpt.id] = false;
+        renderApp();
+        showToast(err.message || (action + ' failed'), 'error');
+    });
+}
+
 function renderVoiceSelfHealingPanel() {
     var panel = document.createElement('section');
     panel.className = 'vh-panel';
@@ -42335,6 +42562,9 @@ function renderVoiceSelfHealingPanel() {
         }
         return panel;
     }
+
+    // ── VTID-02867: Open Architecture Reports inline ──
+    panel.appendChild(renderInlineArchitectureReports());
 
     // ── Watchdog Fix Verification (VTID-01984) ──
     var lm = vh.liveMonitor;
@@ -45642,6 +45872,45 @@ function renderAwarenessSignalRow(signal) {
             wiredBadge.style.background = 'var(--color-bg)';
         }
         labelLine.appendChild(wiredBadge);
+        // VTID-02867: actionable "Create improvement item" button on not_wired rows.
+        // Hands the row off to the Voice Improve cockpit (VTID-02865) for tracking.
+        if (signal.wired === 'not_wired') {
+            var createBtn = document.createElement('button');
+            createBtn.textContent = '+ Improvement item';
+            createBtn.title = 'Create a tracked VTID from this not-wired signal (idempotent — re-click returns the same VTID).';
+            createBtn.style.cssText = 'font-size:.6rem;padding:.1rem .4rem;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);border-radius:4px;cursor:pointer;';
+            createBtn.onclick = function () {
+                if (createBtn.disabled) return;
+                createBtn.disabled = true;
+                createBtn.textContent = 'Creating…';
+                var itemId = 'awareness_not_wired:' + signal.key;
+                fetch('/api/v1/voice/improvement/items/' + encodeURIComponent(itemId) + '/create-vtid', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        title: 'Wire awareness signal: ' + signal.label,
+                        summary: signal.description + '\n\nSignal key: ' + signal.key + '\nTier: ' + signal.tier,
+                        source_files: ['services/gateway/src/services/awareness-registry.ts'],
+                        briefing_window: 'manual'
+                    })
+                }).then(function (r) { return r.json(); }).then(function (resp) {
+                    createBtn.disabled = false;
+                    if (resp && resp.ok) {
+                        createBtn.textContent = resp.idempotent ? '↻ ' + resp.vtid : '✓ ' + resp.vtid;
+                        createBtn.style.color = '#22c55e';
+                        showToast((resp.idempotent ? 'Existing VTID ' : 'VTID created: ') + resp.vtid, 'success');
+                    } else {
+                        createBtn.textContent = '+ Improvement item';
+                        showToast(resp.error || 'create-vtid failed', 'error');
+                    }
+                }).catch(function (err) {
+                    createBtn.disabled = false;
+                    createBtn.textContent = '+ Improvement item';
+                    showToast(err.message || 'create-vtid failed', 'error');
+                });
+            };
+            labelLine.appendChild(createBtn);
+        }
     }
     var keyTag = document.createElement('code');
     keyTag.textContent = signal.key;
