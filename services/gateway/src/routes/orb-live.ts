@@ -298,8 +298,8 @@ interface StopMessage {
 // In-memory session store (dev sandbox only)
 const sessions = new Map<string, OrbLiveSession>();
 
-// Session timeout: 30 minutes
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+// A2 (orb-live-refactor): SESSION_TIMEOUT_MS lifted to orb/live/config.ts.
+import { SESSION_TIMEOUT_MS } from '../orb/live/config';
 
 // Allowed origins (dev sandbox)
 // VTID-01226: Added Lovable dynamic origins for frontend integration
@@ -335,8 +335,8 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/community-app[a-z0-9-]*\.us-central1\.run\.app$/,
 ];
 
-// Connection limit per IP (dev sandbox)
-const MAX_CONNECTIONS_PER_IP = 5;
+// A2 (orb-live-refactor): MAX_CONNECTIONS_PER_IP lifted to orb/live/config.ts.
+import { MAX_CONNECTIONS_PER_IP } from '../orb/live/config';
 const connectionCountByIP = new Map<string, number>();
 
 // Gemini API configuration
@@ -674,7 +674,8 @@ const orbConversations = new Map<string, OrbConversation>();
 
 // VTID-0135: Conversation timeout
 // VTID-01109: Extended from 30 minutes to 24 hours for better conversation continuity
-const CONVERSATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+// A2 (orb-live-refactor): CONVERSATION_TIMEOUT_MS lifted to orb/live/config.ts.
+import { CONVERSATION_TIMEOUT_MS } from '../orb/live/config';
 
 // =============================================================================
 // VTID-01039: ORB Session Transcript Store
@@ -733,7 +734,8 @@ const LIVE_LANGUAGE_VOICES: Record<string, string> = {
   'ru': 'Gacrux'
 };
 
-const SUPPORTED_LIVE_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'sr', 'ru'];
+// A2 (orb-live-refactor): SUPPORTED_LIVE_LANGUAGES lifted to orb/live/config.ts.
+import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
 
 /**
  * VTID-01155: Gemini Live session state
@@ -1085,8 +1087,8 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 // VTID-01155: Vertex AI Live API configuration
 // Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
 // Fallback to hardcoded project ID for Cloud Run deployments.
-const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
+// A2 (orb-live-refactor): VERTEX_PROJECT_ID + VERTEX_LOCATION lifted to orb/live/config.ts.
+import { VERTEX_PROJECT_ID, VERTEX_LOCATION } from '../orb/live/config';
 // A1 (orb-live-refactor): VERTEX_LIVE_MODEL + VERTEX_TTS_MODEL lifted to
 // orb/live/protocol.ts. Same values, same callers; the constants now live
 // in a shared module so A3/A7/A9 don't have to re-declare them.
@@ -8747,7 +8749,8 @@ async function connectToLiveAPI(
  *
  * MAX_RECONNECTS prevents infinite reconnection loops.
  */
-const MAX_RECONNECTS = 10; // Max reconnections per session (~50 min total)
+// A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
+import { MAX_RECONNECTS } from '../orb/live/config';
 
 async function attemptTransparentReconnect(
   session: GeminiLiveSession,
