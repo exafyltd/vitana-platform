@@ -2740,6 +2740,7 @@ const NAVIGATION_CONFIG = [
             { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
             { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
             { "key": "awareness",       "label": "Awareness",          "path": "/command-hub/voice/awareness/" },
+            { "key": "journey-context", "label": "Journey Context",    "path": "/command-hub/voice/journey-context/" },
             { "key": "tools",           "label": "Tool Catalog",       "path": "/command-hub/voice/tools/" },
             { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
             { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
@@ -6175,6 +6176,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'voice' && tab === 'awareness') {
         // Sub-tab strip for Registry / Test / Watchdogs
         container.appendChild(renderVoiceAwarenessView());
+    } else if (moduleKey === 'voice' && tab === 'journey-context') {
+        // VTID-02909 (B0c): durable assistant state + match-journey panel
+        container.appendChild(renderJourneyContextView());
     } else if (moduleKey === 'voice' && tab === 'tools') {
         container.appendChild(renderVoiceToolsCatalogView());
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
@@ -42389,6 +42393,286 @@ function renderVoiceAwarenessView() {
     }
     c.appendChild(body);
     return c;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02909 (B0c): Journey Context view.
+//
+// Operator-facing inspection screen for the B0b context-compiler output
+// + the B0c `user_assistant_state` table.
+//
+// Panels (rendered top → bottom):
+//   1. User picker        — userId / tenantId inputs (sticky in state)
+//   2. Decision Preview   — the distilled AssistantDecisionContext the
+//                            LLM actually sees
+//   3. Match Journey      — REQUIRED VISIBLE even at journeyStage='none'.
+//                            Empty-state rows: current surface, "none"
+//                            stage, "no recommended next move", privacy
+//                            mode/gate, source health for
+//                            match_journey_context, suppression reason
+//                            placeholder ("none yet — B0d not shipped").
+//   4. Source Health      — per-source latency + degradation flags
+//   5. Durable State      — rows from user_assistant_state (ephemeral
+//                            route/surface state is NEVER stored here)
+//
+// Hard rule (carried from the plan): the Match Journey panel MUST NOT be
+// hidden when journeyStage='none'. Empty IS the state to render.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextView() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:1.5rem;';
+
+    if (!state.journeyContext) {
+        state.journeyContext = {
+            userId: '',
+            tenantId: '',
+            loading: false,
+            error: null,
+            preview: null,
+            stateRows: null,
+        };
+    }
+    var jc = state.journeyContext;
+
+    // ---- Header ----
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:1rem;';
+    var title = document.createElement('h2');
+    title.textContent = 'Journey Context';
+    title.style.cssText = 'margin:0 0 0.25rem 0;font-size:1.25rem;color:var(--color-text-primary);';
+    header.appendChild(title);
+    var subtitle = document.createElement('div');
+    subtitle.textContent = 'B0c — durable assistant state + B0b decision-context preview. VTID-02909.';
+    subtitle.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+    header.appendChild(subtitle);
+    c.appendChild(header);
+
+    // ---- User picker ----
+    var picker = document.createElement('div');
+    picker.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;padding:0.75rem;background:#0f172a;border:1px solid #1e293b;border-radius:6px;';
+
+    var uidLabel = document.createElement('label');
+    uidLabel.textContent = 'userId';
+    uidLabel.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+    var uidInput = document.createElement('input');
+    uidInput.type = 'text';
+    uidInput.placeholder = 'UUID';
+    uidInput.value = jc.userId;
+    uidInput.style.cssText = 'flex:1;min-width:280px;padding:0.4rem 0.6rem;background:#020617;border:1px solid #334155;border-radius:4px;color:var(--color-text-primary);font-size:0.85rem;font-family:monospace;';
+    uidInput.oninput = function () { jc.userId = uidInput.value.trim(); };
+
+    var tidLabel = document.createElement('label');
+    tidLabel.textContent = 'tenantId';
+    tidLabel.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+    var tidInput = document.createElement('input');
+    tidInput.type = 'text';
+    tidInput.placeholder = 'UUID';
+    tidInput.value = jc.tenantId;
+    tidInput.style.cssText = 'flex:1;min-width:280px;padding:0.4rem 0.6rem;background:#020617;border:1px solid #334155;border-radius:4px;color:var(--color-text-primary);font-size:0.85rem;font-family:monospace;';
+    tidInput.oninput = function () { jc.tenantId = tidInput.value.trim(); };
+
+    var loadBtn = document.createElement('button');
+    loadBtn.textContent = jc.loading ? 'Loading…' : 'Load';
+    loadBtn.disabled = jc.loading;
+    loadBtn.style.cssText = 'padding:0.45rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem;';
+    loadBtn.onclick = function () { loadJourneyContext(); };
+
+    picker.appendChild(uidLabel);
+    picker.appendChild(uidInput);
+    picker.appendChild(tidLabel);
+    picker.appendChild(tidInput);
+    picker.appendChild(loadBtn);
+    c.appendChild(picker);
+
+    if (jc.error) {
+        var errBox = document.createElement('div');
+        errBox.textContent = 'Error: ' + jc.error;
+        errBox.style.cssText = 'padding:0.75rem;margin-bottom:1rem;background:#7f1d1d;color:#fee2e2;border-radius:6px;font-size:0.85rem;';
+        c.appendChild(errBox);
+    }
+
+    // ---- Panels ----
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr;gap:1rem;';
+
+    grid.appendChild(renderJourneyContextDecisionPanel(jc.preview));
+    grid.appendChild(renderJourneyContextMatchJourneyPanel(jc.preview));
+    grid.appendChild(renderJourneyContextSourceHealthPanel(jc.preview));
+    grid.appendChild(renderJourneyContextStatePanel(jc.stateRows));
+
+    c.appendChild(grid);
+    return c;
+}
+
+function loadJourneyContext() {
+    var jc = state.journeyContext;
+    if (!jc.userId || !jc.tenantId) {
+        jc.error = 'userId and tenantId are required';
+        renderApp();
+        return;
+    }
+    jc.loading = true;
+    jc.error = null;
+    renderApp();
+
+    var qs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId);
+    Promise.all([
+        fetch('/api/v1/voice/journey-context/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice/journey-context/state'   + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+    ]).then(function (results) {
+        jc.loading = false;
+        if (results[0] && results[0].ok) {
+            jc.preview = results[0];
+        } else {
+            jc.error = (results[0] && results[0].error) || 'preview failed';
+        }
+        if (results[1] && results[1].ok) {
+            jc.stateRows = results[1];
+        }
+        renderApp();
+    }).catch(function (err) {
+        jc.loading = false;
+        jc.error = String(err && err.message ? err.message : err);
+        renderApp();
+    });
+}
+
+function renderJourneyContextPanel(titleText, subtitleText) {
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:1rem;';
+    var h = document.createElement('div');
+    h.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.5rem;';
+    var t = document.createElement('div');
+    t.textContent = titleText;
+    t.style.cssText = 'font-weight:600;font-size:0.95rem;color:var(--color-text-primary);';
+    h.appendChild(t);
+    if (subtitleText) {
+        var s = document.createElement('div');
+        s.textContent = subtitleText;
+        s.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        h.appendChild(s);
+    }
+    panel.appendChild(h);
+    return panel;
+}
+
+function renderJourneyContextEmptyRow(label, valueText) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #1e293b;font-size:0.85rem;';
+    var l = document.createElement('span');
+    l.textContent = label;
+    l.style.cssText = 'color:var(--color-text-secondary);';
+    var v = document.createElement('span');
+    v.textContent = valueText;
+    v.style.cssText = 'color:var(--color-text-primary);font-family:monospace;';
+    row.appendChild(l);
+    row.appendChild(v);
+    return row;
+}
+
+function renderJourneyContextDecisionPanel(preview) {
+    var panel = renderJourneyContextPanel(
+        'Decision Preview',
+        'AssistantDecisionContext — what the LLM actually sees',
+    );
+    if (!preview || !preview.decision) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+    var d = preview.decision;
+    panel.appendChild(renderJourneyContextEmptyRow('greetingPolicy',       String(d.greetingPolicy)));
+    panel.appendChild(renderJourneyContextEmptyRow('explanationDepth',     String(d.explanationDepth)));
+    panel.appendChild(renderJourneyContextEmptyRow('privacyMode',          String(d.privacyMode)));
+    panel.appendChild(renderJourneyContextEmptyRow('situationalFit.time',
+        (d.situationalFit && d.situationalFit.timeAppropriateness) || '—'));
+    panel.appendChild(renderJourneyContextEmptyRow('situationalFit.daylight',
+        (d.situationalFit && d.situationalFit.daylightPhase) || '—'));
+    panel.appendChild(renderJourneyContextEmptyRow('warnings.count',       String((d.warnings || []).length)));
+    return panel;
+}
+
+function renderJourneyContextMatchJourneyPanel(preview) {
+    // ── B0c acceptance check #4 + match-journey acceptance check #4: this
+    //    panel MUST be visible regardless of whether match-journey is
+    //    populated. Empty-state rows are the contract.
+    var panel = renderJourneyContextPanel(
+        'Match Journey',
+        'B0b seam — empty until the activity-match concierge ships',
+    );
+    var compiled = preview && preview.compiled;
+    var mj = compiled && compiled.matchJourney;
+    var stage = (mj && mj.journeyStage) || 'none';
+    var envelope = compiled && compiled.envelope;
+    var currentSurface = (envelope && envelope.journeySurface) || 'unknown';
+    var privacyMode = (envelope && envelope.privacyMode) || 'unknown';
+    var privacyGate = (mj && mj.privacyGate) || 'safe';
+    var nextMove = (mj && mj.recommendedNextMove) || 'no recommended next move';
+    var pendingDecision = (mj && mj.pendingUserDecision) || '—';
+
+    panel.appendChild(renderJourneyContextEmptyRow('current surface',          String(currentSurface)));
+    panel.appendChild(renderJourneyContextEmptyRow('journey stage',            String(stage)));
+    panel.appendChild(renderJourneyContextEmptyRow('recommended next move',    String(nextMove)));
+    panel.appendChild(renderJourneyContextEmptyRow('pending user decision',    String(pendingDecision)));
+    panel.appendChild(renderJourneyContextEmptyRow('privacyMode',              String(privacyMode)));
+    panel.appendChild(renderJourneyContextEmptyRow('privacyGate',              String(privacyGate)));
+
+    // Source health row specific to match_journey_context
+    var sh = compiled && compiled.sourceHealth;
+    var mjSrc = sh && sh.timings && sh.timings.filter(function (t) { return t.source === 'match_journey_context'; })[0];
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'source health',
+        mjSrc ? (mjSrc.status + ' (latency ' + (mjSrc.latencyMs != null ? mjSrc.latencyMs + 'ms' : '—') + ')') : '—',
+    ));
+
+    // Suppression reason — placeholder until B0d ships (continuation contract).
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'suppression reason',
+        'none yet — continuation contract not shipped (B0d gated on B0c)',
+    ));
+    return panel;
+}
+
+function renderJourneyContextSourceHealthPanel(preview) {
+    var panel = renderJourneyContextPanel('Source Health', 'per-source latency + degradation flags');
+    var sh = preview && preview.compiled && preview.compiled.sourceHealth;
+    if (!sh || !sh.timings) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data'));
+        return panel;
+    }
+    sh.timings.forEach(function (t) {
+        panel.appendChild(renderJourneyContextEmptyRow(
+            t.source,
+            (t.status || '—') + ' (' + (t.latencyMs != null ? t.latencyMs + 'ms' : '—') + ')' + (t.reason ? ' — ' + t.reason : ''),
+        ));
+    });
+    return panel;
+}
+
+function renderJourneyContextStatePanel(stateRows) {
+    var panel = renderJourneyContextPanel(
+        'Durable Assistant State',
+        'user_assistant_state — durable signals only, no ephemeral route/surface',
+    );
+    if (!stateRows) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+    if (stateRows.source_health && stateRows.source_health.user_assistant_state && !stateRows.source_health.user_assistant_state.available) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'unavailable — ' + (stateRows.source_health.user_assistant_state.reason || 'unknown')));
+        return panel;
+    }
+    var rows = stateRows.rows || [];
+    if (rows.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('rows', '0 (empty — user has no durable signals yet)'));
+        return panel;
+    }
+    rows.forEach(function (r) {
+        var lbl = r.signal_name + (r.count ? ' (' + r.count + ')' : '');
+        var val = (typeof r.value === 'object') ? JSON.stringify(r.value) : String(r.value);
+        if (val.length > 80) val = val.slice(0, 80) + '…';
+        panel.appendChild(renderJourneyContextEmptyRow(lbl, val));
+    });
+    return panel;
 }
 
 // VTID-02867: Inline expandable "Open architecture reports (N)" section.

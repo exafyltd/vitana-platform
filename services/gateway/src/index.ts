@@ -713,6 +713,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
 
+  // VTID-02909 (B0c): Journey Context inspection (Voice / Journey Context tab)
+  // GET /api/v1/voice/journey-context/preview + GET /api/v1/voice/journey-context/state
+  const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;
+  mountRouterSync(app, '/api/v1', voiceJourneyContextRouter, { owner: 'voice-journey-context' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
