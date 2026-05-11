@@ -569,6 +569,15 @@ export type CicdEventType =
   | 'dev.recommendation.presented'
   | 'dev.recommendation.selected'
   | 'dev.fallback.tool_used'
+  // VTID-02934: Autopilot recommendation activation
+  | 'autopilot.recommendation.activated'
+  // VTID-02935: Mission Alignment warnings — fired when a recommendation
+  // graduates to a VTID without declaring how it serves the Ultimate Goal.
+  // See docs/GOVERNANCE/ULTIMATE-GOAL.md. NOT a hard block — visibility only.
+  // Future: graduation to a block once ≥80% of activations in a 14-day
+  // window carry alignment fields without operator intervention.
+  | 'autopilot.alignment.unclear'
+  | 'autopilot.alignment.served'
   // VTID-01270: Proactive Match Messenger Events
   | 'match.proactive.sent'
   | 'match.proactive.skipped'
