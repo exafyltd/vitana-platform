@@ -71,7 +71,7 @@ router.get(
       // Pull the snapshots BEFORE invoking the provider so the panel
       // can show the catalog + awareness the ranker actually saw.
       const [capabilities, awareness] = await Promise.all([
-        defaultSupabaseCapabilityFetcher.listCapabilities(),
+        defaultSupabaseCapabilityFetcher.listCapabilities({ tenantId }),
         defaultSupabaseCapabilityFetcher.listAwareness({ tenantId, userId }),
       ]);
 

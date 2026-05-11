@@ -42,16 +42,25 @@ interface CacheEntry<T> {
 const CATALOG_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const AWARENESS_TTL_MS = 60 * 1000;   // 1 minute
 
-let _catalogCache: CacheEntry<CapabilityRow[]> | null = null;
+// Catalog cache is keyed by tenantId (defensive: the catalog is global
+// today via system_capabilities RLS read-all, but per-tenant overrides
+// may ship later — the cache key needs to be tenant-correct from the
+// start so we don't have to chase down callers later). The key
+// '__global__' captures the tenant-less inspection path.
+const _catalogCache = new Map<string, CacheEntry<CapabilityRow[]>>();
 const _awarenessCache = new Map<string, CacheEntry<AwarenessRow[]>>();
 
 function awarenessCacheKey(tenantId: string, userId: string): string {
   return `${tenantId}::${userId}`;
 }
 
+function catalogCacheKey(tenantId: string | undefined): string {
+  return tenantId && tenantId.length > 0 ? tenantId : '__global__';
+}
+
 /** Test seam: clear all caches between tests. */
 export function resetSupabaseCapabilityFetcherCache(): void {
-  _catalogCache = null;
+  _catalogCache.clear();
   _awarenessCache.clear();
 }
 
@@ -73,16 +82,18 @@ export function createSupabaseCapabilityFetcher(
   const getDb = opts.getDb ?? getSupabase;
 
   return {
-    async listCapabilities(): Promise<CapabilityRow[]> {
+    async listCapabilities(args = {}): Promise<CapabilityRow[]> {
       const t = now();
-      if (_catalogCache && _catalogCache.expiresAtMs > t) {
-        return _catalogCache.value;
+      const key = catalogCacheKey(args.tenantId);
+      const cached = _catalogCache.get(key);
+      if (cached && cached.expiresAtMs > t) {
+        return cached.value;
       }
       const sb = getDb();
       if (!sb) {
         // No DB available (unit tests / disabled environment). The
         // provider's suppression path catches this gracefully.
-        _catalogCache = { value: [], expiresAtMs: t + CATALOG_TTL_MS };
+        _catalogCache.set(key, { value: [], expiresAtMs: t + CATALOG_TTL_MS });
         return [];
       }
       try {
@@ -93,14 +104,14 @@ export function createSupabaseCapabilityFetcher(
           )
           .eq('enabled', true);
         if (error || !Array.isArray(data)) {
-          _catalogCache = { value: [], expiresAtMs: t + CATALOG_TTL_MS };
+          _catalogCache.set(key, { value: [], expiresAtMs: t + CATALOG_TTL_MS });
           return [];
         }
         const rows: CapabilityRow[] = data.map(rowToCapability);
-        _catalogCache = { value: rows, expiresAtMs: t + CATALOG_TTL_MS };
+        _catalogCache.set(key, { value: rows, expiresAtMs: t + CATALOG_TTL_MS });
         return rows;
       } catch {
-        _catalogCache = { value: [], expiresAtMs: t + CATALOG_TTL_MS };
+        _catalogCache.set(key, { value: [], expiresAtMs: t + CATALOG_TTL_MS });
         return [];
       }
     },

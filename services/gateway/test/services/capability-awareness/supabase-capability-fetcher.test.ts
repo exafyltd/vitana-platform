@@ -142,6 +142,35 @@ describe('B0e.3 — Supabase-backed CapabilityFetcher', () => {
       expect(fake.counters.capability).toBe(1);
     });
 
+    it('catalog cache key is tenant-scoped (no cross-tenant bleed)', async () => {
+      const fake = makeFakeClient({
+        capabilities: [{ capability_key: 'a', display_name: 'A', description: 'A' }],
+      });
+      const fetcher = createSupabaseCapabilityFetcher({
+        getDb: () => fake.client as any,
+        now: () => 1000,
+      });
+      await fetcher.listCapabilities({ tenantId: 'A' });
+      await fetcher.listCapabilities({ tenantId: 'B' });
+      // Different tenants → fresh DB read each. The catalog is global
+      // today but the cache boundary stays tenant-correct so per-tenant
+      // overrides shipping later don't bleed.
+      expect(fake.counters.capability).toBe(2);
+    });
+
+    it('catalog cache without tenantId uses the __global__ key', async () => {
+      const fake = makeFakeClient({
+        capabilities: [{ capability_key: 'a', display_name: 'A', description: 'A' }],
+      });
+      const fetcher = createSupabaseCapabilityFetcher({
+        getDb: () => fake.client as any,
+        now: () => 1000,
+      });
+      await fetcher.listCapabilities();
+      await fetcher.listCapabilities();
+      expect(fake.counters.capability).toBe(1);
+    });
+
     it('catalog cache expires after 5 minutes', async () => {
       const fake = makeFakeClient({ capabilities: [{ capability_key: 'a', display_name: 'A', description: 'A' }] });
       let nowMs = 1000;

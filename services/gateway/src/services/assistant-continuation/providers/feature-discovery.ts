@@ -95,9 +95,16 @@ export interface AwarenessRow {
  * Read-only data source for the feature-discovery ranker. Injectable
  * so tests can pass canned data and the production binding can hit
  * Supabase.
+ *
+ * `listCapabilities` accepts an optional `{ tenantId }` argument so
+ * the Supabase fetcher can key its cache by tenant. The catalog is
+ * global today (system_capabilities has no per-tenant rows), but
+ * tenant-scoped caching future-proofs against per-tenant overrides
+ * shipping in a later slice — callers thread tenantId through now so
+ * the cache boundary is correct from the start.
  */
 export interface CapabilityFetcher {
-  listCapabilities(): Promise<CapabilityRow[]>;
+  listCapabilities(args?: { tenantId?: string }): Promise<CapabilityRow[]>;
   listAwareness(args: { tenantId: string; userId: string }): Promise<AwarenessRow[]>;
 }
 
@@ -335,7 +342,7 @@ export function makeFeatureDiscoveryProvider(
       let awareness: AwarenessRow[];
       try {
         [capabilities, awareness] = await Promise.all([
-          opts.fetcher.listCapabilities(),
+          opts.fetcher.listCapabilities({ tenantId: ctx.tenantId }),
           opts.fetcher.listAwareness({ tenantId: ctx.tenantId, userId: ctx.userId }),
         ]);
       } catch (err) {
