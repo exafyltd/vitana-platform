@@ -190,6 +190,9 @@ export const ENDPOINT_FILE_MAP: Record<string, string> = {
   '/api/v1/assistant/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/assistant/knowledge/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/orb/health': 'services/gateway/src/routes/orb-live.ts',
+  // PR-A (VTID-02922): operator-armed canary for end-to-end self-healing
+  // smoke tests. Endpoint returns 500 iff system_config.self_healing_canary_armed=true.
+  '/api/v1/self-healing/canary/failing-health': 'services/gateway/src/routes/self-healing-canary.ts',
   '/api/v1/voice-lab/health': 'services/gateway/src/routes/voice-lab.ts',
   '/api/v1/conversation/health': 'services/gateway/src/routes/conversation.ts',
   '/api/v1/conversation/tool-health': 'services/gateway/src/routes/conversation.ts',

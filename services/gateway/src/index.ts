@@ -394,6 +394,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // PR-A (VTID-02922): operator-armed canary for end-to-end self-healing smoke tests
+  const selfHealingCanaryRouter = require('./routes/self-healing-canary').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
 
@@ -972,6 +974,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification
   mountRouterSync(app, '/api/v1/self-healing', selfHealingRouter, { owner: 'self-healing' });
+  // PR-A (VTID-02922): canary route mounted at root so its paths
+  // (/api/v1/self-healing/canary/*) sit alongside the main self-healing
+  // router but in a separate module — keeps deliberate-fault code out of
+  // the lifecycle path's blast radius.
+  mountRouterSync(app, '/', selfHealingCanaryRouter, { owner: 'self-healing' });
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });

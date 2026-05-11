@@ -581,6 +581,14 @@ export type CicdEventType =
   | 'self-healing.spec.generated'
   | 'self-healing.task.injected'
   | 'self-healing.task.skipped'
+  // PR-A (VTID-02922): bridge into Dev Autopilot execution pipeline + the
+  // four-state contract events from worker-runner / reconciler.
+  | 'self-healing.injection.deduped'
+  | 'self-healing.execution.bridged'
+  | 'self-healing.execution.bridge_failed'
+  | 'self-healing.execution.deferred'
+  | 'self-healing.execution.failed'
+  | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'
   | 'self-healing.verification.success'

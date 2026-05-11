@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { RunnerConfig, TaskDomain, ExecutionResult, PendingTask, RoutingResult } from '../types';
 import { validateLLMResponse, formatViolationsForReprompt } from './contract-validator';
+import { awaitAutopilotExecution } from './gateway-client';
 
 const VTID = 'VTID-01200';
 
@@ -324,6 +325,22 @@ export async function executeTask(
 
   console.log(`[${VTID}] Executing task ${task.vtid} (domain=${domain}, run_id=${runId}, model=${modelName})`);
 
+  // PR-A (VTID-02922): self-healing tasks bridged into the Dev Autopilot
+  // pipeline delegate execution to the autopilot Cloud Run Job, which
+  // actually edits files, opens a real PR, runs CI, and verifies deploy.
+  // The worker-runner's own describe-only LLM call is bypassed for these.
+  const isSelfHealing = task.metadata?.source === 'self-healing';
+  const autopilotExecutionId =
+    typeof task.metadata?.autopilot_execution_id === 'string'
+      ? (task.metadata.autopilot_execution_id as string)
+      : undefined;
+  if (isSelfHealing && autopilotExecutionId) {
+    console.log(
+      `[${VTID}] Self-healing task ${task.vtid} delegating to autopilot execution ${autopilotExecutionId.slice(0, 8)} — skipping local LLM call`,
+    );
+    return await delegateToAutopilot(config, task, autopilotExecutionId, modelName, provider, startTime);
+  }
+
   if (!initClaude()) {
     return {
       ok: false,
@@ -395,6 +412,110 @@ export async function executeTask(
       model: modelName,
       provider,
     };
+  }
+}
+
+/**
+ * PR-A (VTID-02922): poll the gateway's /await-autopilot-execution endpoint
+ * and translate the four-state contract into an ExecutionResult.
+ *
+ *   'pr_ready'  → ok=true, files_changed populated, healing_state=
+ *                 'patched_pending_deploy'. Worker reports completion so the
+ *                 repair-evidence gate clears, but the reconciler — NOT the
+ *                 worker — owns final terminal_outcome='success' after CI +
+ *                 deploy + live probe pass.
+ *   'completed' → ok=true, files_changed populated, healing_state=
+ *                 'verified_healed'. Reconciler will set terminal_outcome=
+ *                 'success' on the next cycle.
+ *   'failed'    → ok=false, terminal_outcome will be 'failed'.
+ *   'deferred'  → ok=true (so the runner doesn't fall into the failure
+ *                 path), defer=true so the caller releases the claim
+ *                 WITHOUT calling /complete or /terminalize. The
+ *                 self-healing reconciler finishes the lifecycle.
+ */
+async function delegateToAutopilot(
+  config: RunnerConfig,
+  task: PendingTask,
+  autopilotExecutionId: string,
+  modelName: string,
+  provider: string,
+  startTime: number,
+): Promise<ExecutionResult> {
+  const awaited = await awaitAutopilotExecution(config, task.vtid, autopilotExecutionId);
+  const duration_ms = Date.now() - startTime;
+
+  if (!awaited.ok || !awaited.result) {
+    return {
+      ok: false,
+      error: awaited.error || 'await-autopilot-execution failed with no body',
+      duration_ms,
+      model: modelName,
+      provider,
+      autopilot_execution_id: autopilotExecutionId,
+    };
+  }
+
+  const r = awaited.result;
+  switch (r.state) {
+    case 'pr_ready':
+      return {
+        ok: true,
+        files_changed: r.files_changed || [],
+        files_created: r.files_created || [],
+        summary: `Autopilot opened PR ${r.pr_url} (status=${r.execution_status}); CI + deploy + live probe pending — reconciler owns final healed state.`,
+        duration_ms,
+        model: 'autopilot-executor',
+        provider: 'dev-autopilot',
+        healing_state: 'patched_pending_deploy',
+        pr_url: r.pr_url,
+        pr_number: r.pr_number,
+        branch: r.branch || undefined,
+        autopilot_execution_id: autopilotExecutionId,
+      };
+    case 'completed':
+      return {
+        ok: true,
+        files_changed: r.files_changed || [],
+        files_created: r.files_created || [],
+        summary: `Autopilot execution completed: PR ${r.pr_url} merged, deployed, and live probe verified.`,
+        duration_ms,
+        model: 'autopilot-executor',
+        provider: 'dev-autopilot',
+        healing_state: 'verified_healed',
+        pr_url: r.pr_url,
+        pr_number: r.pr_number,
+        branch: r.branch || undefined,
+        autopilot_execution_id: autopilotExecutionId,
+      };
+    case 'failed':
+      return {
+        ok: false,
+        error: r.error || `autopilot execution failed (status=${r.execution_status})`,
+        duration_ms,
+        model: 'autopilot-executor',
+        provider: 'dev-autopilot',
+        healing_state: 'execution_failed',
+        autopilot_execution_id: autopilotExecutionId,
+      };
+    case 'deferred':
+      return {
+        ok: true,
+        defer: true,
+        summary: `Autopilot execution still in '${r.execution_status}' after worker-runner await window; reconciler will finish.`,
+        duration_ms,
+        model: 'autopilot-executor',
+        provider: 'dev-autopilot',
+        autopilot_execution_id: autopilotExecutionId,
+      };
+    default:
+      return {
+        ok: false,
+        error: `unknown await-autopilot-execution state: ${(r as any).state}`,
+        duration_ms,
+        model: 'autopilot-executor',
+        provider: 'dev-autopilot',
+        autopilot_execution_id: autopilotExecutionId,
+      };
   }
 }
 
