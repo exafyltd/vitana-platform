@@ -45,7 +45,7 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'Authoritative role + tenant headers are flowing into orb-live for every session.',
     watches: ['identity.user_id', 'identity.tenant_id', 'identity.active_role'],
     source_hint: 'services/gateway/src/routes/orb-live.ts',
-    oasis_topic: 'orb.session.started',
+    oasis_topic: 'vtid.live.session.start',
   },
   {
     id: 'environment_context_geo',
@@ -53,7 +53,7 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'IP geo + timezone + time-of-day sections are present in the bootstrap context.',
     watches: ['context.client.city', 'context.client.country', 'context.client.timezone', 'context.client.time_of_day'],
     source_hint: 'services/gateway/src/routes/orb-live.ts',
-    oasis_topic: 'orb.session.started',
+    oasis_topic: 'vtid.live.session.start',
   },
   {
     id: 'memory_facts_injected',
@@ -61,7 +61,11 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'High-confidence memory_facts rows are being injected into ORB sessions.',
     watches: ['memory.facts.enabled'],
     source_hint: 'services/gateway/src/routes/orb-live.ts',
-    oasis_topic: 'orb.memory.context_injected',
+    // VTID-02903: orb.memory.context_injected isn't a real topic. Memory
+    // facts are injected at session start, so we lean on vtid.live.session.start
+    // as the proxy. A more granular topic could be added later if/when memory
+    // injection becomes a separate emit.
+    oasis_topic: 'vtid.live.session.start',
   },
   {
     id: 'temporal_journey_block',
@@ -69,7 +73,7 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'currentRoute + recentRoutes ring + journey_stage are present in the prompt.',
     watches: ['context.current_route', 'context.recent_routes', 'context.journey_stage', 'overrides.temporal_journey'],
     source_hint: 'services/gateway/src/routes/orb-live.ts',
-    oasis_topic: 'orb.session.started',
+    oasis_topic: 'vtid.live.session.start',
   },
   {
     id: 'navigator_policy_section',
@@ -106,7 +110,7 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'Health pillars + Vitana Index score sections are present in the prompt.',
     watches: [],
     source_hint: 'services/gateway/src/routes/orb-live.ts',
-    oasis_topic: 'orb.session.started',
+    oasis_topic: 'vtid.live.session.start',
   },
   {
     id: 'surface_scoping',
@@ -114,7 +118,8 @@ const WATCHDOGS: AwarenessWatchdog[] = [
     description: 'Surface header + mobile-community role coercion gate every tool call.',
     watches: ['identity.surface'],
     source_hint: 'services/gateway/src/middleware/auth-supabase-jwt.ts',
-    oasis_topic: 'orb.tool.invoked',
+    // VTID-02903: real topic is orb.live.tool.executed (not orb.tool.invoked).
+    oasis_topic: 'orb.live.tool.executed',
   },
 ];
 
