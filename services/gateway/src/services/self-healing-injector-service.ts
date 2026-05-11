@@ -177,7 +177,10 @@ async function bridgeToAutopilotExecution(
 
   // Step 3: Insert the plan_version row directly. runExecutionSession reads
   // plan_markdown + files_referenced from here, so this is the actual
-  // execution-driving spec for the LLM.
+  // execution-driving spec for the LLM. Note: dev_autopilot_plan_versions
+  // has no `author` column (the original migration didn't include one); the
+  // spec_snapshot.scanner='self-healing' marker on the recommendation is
+  // how we identify origin downstream.
   const planResp = await fetch(`${SUPABASE_URL}/rest/v1/dev_autopilot_plan_versions`, {
     method: 'POST',
     headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
@@ -186,7 +189,6 @@ async function bridgeToAutopilotExecution(
       version: 1,
       plan_markdown: spec,
       files_referenced: filesReferenced,
-      author: 'self-healing-injector',
     }),
   });
   if (!planResp.ok) {
