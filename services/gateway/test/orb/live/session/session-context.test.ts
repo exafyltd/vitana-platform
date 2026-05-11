@@ -136,6 +136,41 @@ describe('A6 — SessionContext seam', () => {
     });
   });
 
+  describe('A6.2 regression: recent_routes field-name fix', () => {
+    // A6.1 read `session.recentRoutes` (camelCase), which silently
+    // returned `[]` because GeminiLiveSession's real field is
+    // `recent_routes` (snake_case). A6.2 fixed this. These tests lock
+    // the fix.
+
+    it('reads from session.recent_routes (snake_case — the real field)', () => {
+      const ctx = buildSessionContext({
+        sessionId: 'live-test',
+        recent_routes: ['/health', '/diary', '/wallet'],
+        createdAt: new Date(),
+      });
+      expect(ctx.recentRoutes).toEqual(['/health', '/diary', '/wallet']);
+    });
+
+    it('falls back to session.recentRoutes (camelCase alias) when recent_routes is absent', () => {
+      const ctx = buildSessionContext({
+        sessionId: 'live-test',
+        recentRoutes: ['/diary'],
+        createdAt: new Date(),
+      });
+      expect(ctx.recentRoutes).toEqual(['/diary']);
+    });
+
+    it('prefers recent_routes when both are present (real field wins)', () => {
+      const ctx = buildSessionContext({
+        sessionId: 'live-test',
+        recent_routes: ['/from-real-field'],
+        recentRoutes: ['/from-alias'],
+        createdAt: new Date(),
+      });
+      expect(ctx.recentRoutes).toEqual(['/from-real-field']);
+    });
+  });
+
   describe('boundary defaults', () => {
     it('clientContext undefined → undefined (not coerced to empty object)', () => {
       const ctx = buildSessionContext({
