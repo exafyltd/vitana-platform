@@ -176,8 +176,14 @@ describe('executeTask — self-healing delegation', () => {
     expect(result.error).toContain('ANTHROPIC_API_KEY');
   });
 
-  it('falls back to local LLM path when self-healing flag set but execution_id missing', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  // PR-E (VTID-02931, Gap 1): self-healing tasks without an autopilot
+  // bridge MUST NOT fall back to the local LLM path. The repair-evidence
+  // gate from PR #2045 was a weak check — Claude can hallucinate file
+  // paths in its describe-only output and slip past `files_changed.length
+  // > 0`. The worker-runner now refuses the fallback entirely.
+  it('REFUSES local LLM fallback when self-healing flag set but execution_id missing (Gap 1)', async () => {
+    process.env.ANTHROPIC_API_KEY = 'fake-key-that-should-NEVER-be-used';
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const partialTask: PendingTask = {
       ...selfHealingTask(),
       metadata: { source: 'self-healing' }, // no autopilot_execution_id
@@ -187,6 +193,13 @@ describe('executeTask — self-healing delegation', () => {
 
     expect(mockAwait).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
+    expect(result.error).toContain('refusing legacy LLM fallback');
+    expect(result.healing_state).toBe('execution_failed');
+    expect(result.provider).toBe('self-healing-guard');
+    // The model field must NOT be claude-* — confirms no Claude call.
+    expect(result.model).toBe('none');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Refusing legacy LLM fallback'));
+    warnSpy.mockRestore();
   });
 
   it('surfaces gateway errors instead of silently treating as success', async () => {
