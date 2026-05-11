@@ -65,7 +65,17 @@ jest.mock('./event-emitter', () => ({
 }));
 
 import { WorkerRunner } from './runner-service';
-import { registerWorker, pollPendingTasks, claimTask } from './gateway-client';
+import {
+  registerWorker,
+  pollPendingTasks,
+  claimTask,
+  routeTask,
+  reportSubagentComplete,
+  reportOrchestratorComplete,
+  releaseTask,
+  terminalizeTask,
+} from './gateway-client';
+import { executeTask } from './execution-service';
 import { runnerEvents } from './event-emitter';
 
 describe('WorkerRunner', () => {
@@ -229,6 +239,202 @@ describe('WorkerRunner', () => {
 
       // Should have claimed the eligible task
       expect(claimTask).toHaveBeenCalledWith(testConfig, 'VTID-01001');
+
+      await runner.stop();
+    });
+  });
+
+  describe('self-healing completion gates', () => {
+    const selfHealingTask = {
+      vtid: 'VTID-02001',
+      title: 'SELF-HEAL: repair ORB health endpoint',
+      status: 'scheduled',
+      spec_status: 'approved',
+      is_terminal: false,
+      claimed_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      metadata: { source: 'self-healing', endpoint: '/api/v1/orb/health' },
+      task_domain: 'backend' as const,
+      target_paths: ['services/gateway/src/routes/orb-live.ts'],
+    };
+
+    it('fails closed when a self-healing task has no hydrated spec content', async () => {
+      (pollPendingTasks as jest.Mock).mockResolvedValueOnce({
+        tasks: [selfHealingTask],
+        count: 1,
+      });
+
+      const runner = new WorkerRunner(testConfig);
+      await runner.start();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(executeTask).not.toHaveBeenCalled();
+      expect(reportSubagentComplete).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'backend',
+        expect.any(String),
+        expect.objectContaining({
+          ok: false,
+          error: expect.stringContaining('no hydrated spec_content'),
+        }),
+      );
+      expect(terminalizeTask).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'failed',
+        expect.any(String),
+      );
+      expect(terminalizeTask).not.toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'success',
+        expect.any(String),
+      );
+      expect(releaseTask).toHaveBeenCalledWith(testConfig, 'VTID-02001', 'failed');
+
+      await runner.stop();
+    });
+
+    it('does not terminalize success when gateway verification rejects completion', async () => {
+      (pollPendingTasks as jest.Mock).mockResolvedValueOnce({
+        tasks: [{ ...selfHealingTask, spec_content: 'Fix the ORB health route and run tests.' }],
+        count: 1,
+      });
+      (executeTask as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        files_changed: ['services/gateway/src/routes/orb-live.ts'],
+        files_created: [],
+        summary: 'Patched ORB health route and verified health check.',
+        duration_ms: 1000,
+        model: 'test-model',
+        provider: 'test-provider',
+      });
+      (reportSubagentComplete as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        reason: 'skip_verification not allowed',
+      });
+      (reportOrchestratorComplete as jest.Mock).mockResolvedValueOnce({ ok: true });
+
+      const runner = new WorkerRunner(testConfig);
+      await runner.start();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(reportSubagentComplete).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'backend',
+        'run_test123',
+        expect.objectContaining({
+          ok: true,
+          files_changed: ['services/gateway/src/routes/orb-live.ts'],
+        }),
+      );
+      expect(reportOrchestratorComplete).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'run_test123',
+        'backend',
+        false,
+        expect.stringContaining('completion rejected'),
+        expect.stringContaining('skip_verification not allowed'),
+        expect.objectContaining({
+          ok: false,
+        }),
+      );
+      expect(terminalizeTask).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'failed',
+        'run_test123',
+      );
+      expect(terminalizeTask).not.toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'success',
+        'run_test123',
+      );
+      expect(releaseTask).toHaveBeenCalledWith(testConfig, 'VTID-02001', 'failed');
+
+      await runner.stop();
+    });
+
+    it('runs a synthetic self-healing task through the local success path with repair evidence', async () => {
+      (pollPendingTasks as jest.Mock).mockResolvedValueOnce({
+        tasks: [{ ...selfHealingTask, spec_content: 'Fix the ORB health route and run tests.' }],
+        count: 1,
+      });
+      (executeTask as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        files_changed: ['services/gateway/src/routes/orb-live.ts'],
+        files_created: [],
+        summary: 'Patched ORB health route and verified health check.',
+        duration_ms: 1000,
+        model: 'test-model',
+        provider: 'test-provider',
+      });
+      (reportSubagentComplete as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        verified: true,
+      });
+      (reportOrchestratorComplete as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        verified: true,
+      });
+
+      const runner = new WorkerRunner(testConfig);
+      await runner.start();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(executeTask).toHaveBeenCalledWith(
+        testConfig,
+        expect.objectContaining({
+          vtid: 'VTID-02001',
+          spec_content: 'Fix the ORB health route and run tests.',
+        }),
+        expect.objectContaining({ ok: true }),
+        'backend',
+      );
+      expect(routeTask).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'SELF-HEAL: repair ORB health endpoint',
+        'backend',
+        'Fix the ORB health route and run tests.',
+        ['services/gateway/src/routes/orb-live.ts'],
+      );
+      expect(reportSubagentComplete).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'backend',
+        'run_test123',
+        expect.objectContaining({
+          ok: true,
+          files_changed: ['services/gateway/src/routes/orb-live.ts'],
+          summary: 'Patched ORB health route and verified health check.',
+        }),
+      );
+      expect(reportOrchestratorComplete).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'run_test123',
+        'backend',
+        true,
+        'Patched ORB health route and verified health check.',
+        undefined,
+        expect.objectContaining({
+          ok: true,
+          files_changed: ['services/gateway/src/routes/orb-live.ts'],
+        }),
+      );
+      expect(terminalizeTask).toHaveBeenCalledWith(
+        testConfig,
+        'VTID-02001',
+        'success',
+        'run_test123',
+      );
+      expect(releaseTask).toHaveBeenCalledWith(testConfig, 'VTID-02001', 'completed');
 
       await runner.stop();
     });

@@ -29,6 +29,12 @@ import {
 } from '../services/worker-orchestrator-service';
 import { runPreflightChain, listSkills, getPreflightChains } from '../services/skills/preflight-runner';
 import { fetchServiceTierAgents } from './agents-registry';
+import {
+  getSpecDomain,
+  getSpecTargetPaths,
+  getSpecText,
+  getVtidSpec,
+} from '../services/vtid-spec-service';
 
 // ---------------------------------------------------------------------------
 // Self-healing log sync: when a self-healing VTID completes or fails in the
@@ -371,6 +377,19 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
     const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (result?.ok) {
+      if (!hasRepairEvidence(result) && await isSelfHealingVtid(vtid)) {
+        await emitMissingRepairEvidenceEvent(vtid, run_id, 'subagent/complete', domain);
+        return res.status(400).json({
+          ok: false,
+          error: 'self-healing completion requires repair evidence',
+          reason: 'missing_repair_evidence',
+          vtid,
+          domain,
+          run_id,
+          event: `vtid.stage.worker_${domain}.failed`,
+        });
+      }
+
       // VTID-01175: Run verification before marking success (unless skipped with governance approval)
       if (skip_verification) {
         // Governance check: is skip_verification allowed?
@@ -504,6 +523,19 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
     const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (success) {
+      if (!hasRepairEvidence(result) && await isSelfHealingVtid(vtid)) {
+        await emitMissingRepairEvidenceEvent(vtid, run_id, 'orchestrator/complete', domain);
+        return res.status(400).json({
+          ok: false,
+          error: 'self-healing completion requires repair evidence',
+          reason: 'missing_repair_evidence',
+          vtid,
+          run_id,
+          verified: false,
+          event: 'vtid.stage.worker_orchestrator.failed',
+        });
+      }
+
       // VTID-01175: Run verification before marking success (unless skipped with governance approval)
       const needsSkip = skip_verification || !domain || !result;
       if (needsSkip) {
@@ -733,6 +765,148 @@ workerOrchestratorRouter.get('/api/v1/worker/skills', (_req: Request, res: Respo
 // =============================================================================
 
 const LOG_PREFIX = '[VTID-01183]';
+const TASK_DOMAINS: TaskDomain[] = ['frontend', 'backend', 'memory', 'infra', 'ai', 'mixed'];
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function asTaskDomain(value: unknown): TaskDomain | undefined {
+  return typeof value === 'string' && TASK_DOMAINS.includes(value as TaskDomain)
+    ? value as TaskDomain
+    : undefined;
+}
+
+function hasRepairEvidence(result?: { files_changed?: string[]; files_created?: string[] }): boolean {
+  return ((result?.files_changed?.length || 0) + (result?.files_created?.length || 0)) > 0;
+}
+
+async function isSelfHealingVtid(vtid: string): Promise<boolean> {
+  const result = await supabaseRequest<any[]>(
+    `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=metadata`
+  );
+  if (!result.ok) {
+    console.warn(`${LOG_PREFIX} Could not load metadata for ${vtid}: ${result.error}`);
+    return false;
+  }
+
+  const metadata = asRecord(result.data?.[0]?.metadata);
+  return metadata.source === 'self-healing';
+}
+
+async function emitMissingRepairEvidenceEvent(
+  vtid: string,
+  runId: string,
+  stage: 'subagent/complete' | 'orchestrator/complete',
+  domain?: string
+): Promise<void> {
+  await emitOasisEvent({
+    vtid,
+    type: 'self-healing.verification.rejected' as any,
+    source: 'worker-orchestrator',
+    status: 'error',
+    message: `Self-healing completion rejected at ${stage}: missing repair evidence`,
+    payload: {
+      vtid,
+      run_id: runId,
+      domain,
+      stage,
+      reason: 'missing_repair_evidence',
+      required: ['files_changed', 'files_created'],
+      emitted_at: new Date().toISOString(),
+    },
+  });
+}
+
+type LegacyVtidSpecRow = {
+  vtid: string;
+  title?: string | null;
+  spec_markdown?: string | null;
+  spec_hash?: string | null;
+  status?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+};
+
+async function fetchLegacyVtidSpec(vtid: string): Promise<LegacyVtidSpecRow | null> {
+  const result = await supabaseRequest<LegacyVtidSpecRow[]>(
+    `/rest/v1/vtid_specs?vtid=eq.${encodeURIComponent(vtid)}` +
+      `&select=vtid,title,spec_markdown,spec_hash,status,created_by,created_at` +
+      `&order=created_at.desc&limit=1`
+  );
+
+  if (!result.ok) {
+    console.warn(`${LOG_PREFIX} Legacy spec lookup failed for ${vtid}: ${result.error}`);
+    return null;
+  }
+
+  const row = result.data?.[0];
+  return row?.spec_markdown ? row : null;
+}
+
+function inferTaskDomainFromPaths(paths: string[]): TaskDomain | undefined {
+  if (paths.some((p) => p.includes('/frontend/') || p.endsWith('.css') || p.endsWith('.html'))) {
+    return 'frontend';
+  }
+  if (paths.some((p) => p.startsWith('supabase/') || p.endsWith('.sql'))) {
+    return 'memory';
+  }
+  if (paths.some((p) => p.includes('/agents/') || p.includes('agent') || p.includes('llm'))) {
+    return 'ai';
+  }
+  if (paths.some((p) => p.includes('/routes/') || p.includes('/services/') || p.endsWith('.ts'))) {
+    return 'backend';
+  }
+  return undefined;
+}
+
+async function hydratePendingTask(task: any) {
+  const metadata = asRecord(task.metadata);
+  const spec = await getVtidSpec(task.vtid, { bypassCache: true });
+  const legacySpec = spec ? null : await fetchLegacyVtidSpec(task.vtid);
+  const specTargetPaths = spec ? getSpecTargetPaths(spec) : [];
+  const metadataTargetPaths = asStringArray(metadata.target_paths).length > 0
+    ? asStringArray(metadata.target_paths)
+    : asStringArray(metadata.files_to_modify);
+  const targetPaths = specTargetPaths.length > 0 ? specTargetPaths : metadataTargetPaths;
+  const specContent = spec ? getSpecText(spec) : legacySpec?.spec_markdown;
+  const specHash = spec?.spec_checksum ||
+    legacySpec?.spec_hash ||
+    (typeof metadata.spec_hash === 'string' ? metadata.spec_hash : undefined);
+
+  return {
+    vtid: task.vtid,
+    title: task.title,
+    summary: task.summary,
+    status: task.status,
+    spec_status: task.spec_status,
+    spec_content: specContent,
+    task_domain:
+      asTaskDomain(spec ? getSpecDomain(spec) : undefined) ||
+      asTaskDomain(metadata.task_domain) ||
+      inferTaskDomainFromPaths(targetPaths),
+    target_paths: targetPaths,
+    spec_hash: specHash,
+    metadata,
+    is_terminal: task.is_terminal || false,
+    layer: task.layer,
+    module: task.module,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+    claimed_by: task.claimed_by || null,
+    claim_expires_at: task.claim_expires_at || null,
+    claim_started_at: task.claim_started_at || null,
+  };
+}
 
 // Helper: Supabase request
 async function supabaseRequest<T>(
@@ -1019,7 +1193,7 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
       `/rest/v1/vtid_ledger?` +
       `status=in.(scheduled,in_progress)&` +
       `spec_status=eq.approved&` +
-      `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
+      `select=vtid,title,summary,status,layer,module,metadata,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
       `order=created_at.asc&` +
       `limit=${limit * 2}` // Fetch extra to allow for filtering
     );
@@ -1035,7 +1209,7 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
     //   - claimed_by IS NULL (unclaimed)
     //   - OR claimed_by = worker_id (requesting worker's own claimed task)
     //   - OR claim_expires_at < now (expired claim)
-    const claimableTasks = (queryResult.data || [])
+    const claimableRows = (queryResult.data || [])
       .filter(task => {
         // is_terminal must be false or null
         if (task.is_terminal === true) return false;
@@ -1047,22 +1221,9 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
 
         return isUnclaimed || isClaimedByWorker || isExpired;
       })
-      .slice(0, limit)
-      .map(task => ({
-        vtid: task.vtid,
-        title: task.title,
-        summary: task.summary,
-        status: task.status,
-        spec_status: task.spec_status,
-        is_terminal: task.is_terminal || false,
-        layer: task.layer,
-        module: task.module,
-        created_at: task.created_at,
-        updated_at: task.updated_at,
-        claimed_by: task.claimed_by || null,
-        claim_expires_at: task.claim_expires_at || null,
-        claim_started_at: task.claim_started_at || null,
-      }));
+      .slice(0, limit);
+
+    const claimableTasks = await Promise.all(claimableRows.map(hydratePendingTask));
 
     // Telemetry only — no OASIS event (polling ≠ progress)
     console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} eligible tasks found (worker_id=${workerId || 'none'})`);

@@ -486,6 +486,128 @@ router.get('/impact-rules', requireDevRole, async (_req: Request, res: Response)
 });
 
 // =============================================================================
+// Self-healing autonomy readiness
+// =============================================================================
+
+type SelfHealingGateStatus = 'ready' | 'blocked' | 'pending';
+
+interface SelfHealingAutonomyGate {
+  id: string;
+  title: string;
+  status: SelfHealingGateStatus;
+  description: string;
+  evidence: string[];
+  next_step?: string;
+  command_hub_target?: string;
+}
+
+interface SelfHealingAutonomyReadiness {
+  summary: {
+    ready_gates: number;
+    total_gates: number;
+    autonomy_percent: number;
+    next_gate: SelfHealingAutonomyGate | null;
+  };
+  gates: SelfHealingAutonomyGate[];
+}
+
+export function buildSelfHealingAutonomyReadiness(): SelfHealingAutonomyReadiness {
+  const gates: SelfHealingAutonomyGate[] = [
+    {
+      id: 'spec_hydration',
+      title: 'Hydrated worker specs',
+      status: 'ready',
+      description: 'Self-healing VTIDs must reach workers with canonical spec text, metadata, task domain, target paths, and spec hash.',
+      evidence: [
+        'pending tasks include spec_content from vtid_specs',
+        'self-healing workers fail closed without hydrated specs',
+        'target_paths are forwarded into governance routing',
+      ],
+      command_hub_target: '/command-hub/autonomy/self-healing/',
+    },
+    {
+      id: 'completion_evidence',
+      title: 'No false terminal success',
+      status: 'ready',
+      description: 'A self-healing task cannot terminalize success from an LLM claim or a verification bypass.',
+      evidence: [
+        'worker-runner removed unconditional skip_verification',
+        'gateway rejects self-healing success without repair evidence',
+        'worker terminalizes success only after gateway completion acceptance',
+      ],
+      command_hub_target: '/command-hub/autonomy/self-healing/',
+    },
+    {
+      id: 'patch_artifacts',
+      title: 'Real patch artifacts',
+      status: 'blocked',
+      description: 'The worker must apply a validated diff in an isolated workspace before reporting a repair.',
+      evidence: [],
+      next_step: 'Create patch-contract.ts and patch-workspace-service.ts, then require diff hash, changed files, and test output before ok=true.',
+      command_hub_target: '/command-hub/autopilot/auto-approve/',
+    },
+    {
+      id: 'test_execution',
+      title: 'Declared tests executed',
+      status: 'pending',
+      description: 'Every repair must run the tests declared by the patch contract plus package-level minimum checks.',
+      evidence: [],
+      next_step: 'Persist test commands, exit codes, and output snippets as repair evidence.',
+      command_hub_target: '/command-hub/autopilot/runs/',
+    },
+    {
+      id: 'deploy_canary',
+      title: 'Canary deploy identity',
+      status: 'pending',
+      description: 'A fix is not production-healed until the deployed revision and traffic split are known.',
+      evidence: [],
+      next_step: 'Record git SHA, Cloud Run revision, deployment URL, and 10% canary traffic before full rollout.',
+      command_hub_target: '/command-hub/operations/deployments/',
+    },
+    {
+      id: 'production_verification',
+      title: 'Production health verification',
+      status: 'pending',
+      description: 'Terminal fixed requires a healthy post-fix snapshot for the target and no blast-radius regression.',
+      evidence: [],
+      next_step: 'Tie self-healing snapshots to patch/deploy evidence and require target health before fixed.',
+      command_hub_target: '/command-hub/autonomy/self-healing/',
+    },
+    {
+      id: 'rollback_execution',
+      title: 'Actual rollback',
+      status: 'pending',
+      description: 'Rollback events must reflect real traffic movement, not only an emitted status event.',
+      evidence: [],
+      next_step: 'Dispatch the rollback workflow or Cloud Run traffic API, then verify the previous revision is serving.',
+      command_hub_target: '/command-hub/operations/deployments/',
+    },
+    {
+      id: 'repair_memory',
+      title: 'Repair memory and anti-loop controls',
+      status: 'pending',
+      description: 'The system must remember failed and known-good fixes per incident signature.',
+      evidence: [],
+      next_step: 'Persist repair attempts by incident signature, spec hash, patch hash, test result, deploy revision, and recurrence outcome.',
+      command_hub_target: '/command-hub/autonomy/self-healing/',
+    },
+  ];
+
+  const readyGates = gates.filter(g => g.status === 'ready').length;
+  const nextGate = gates.find(g => g.status !== 'ready') || null;
+
+  return {
+    summary: {
+      ready_gates: readyGates,
+      total_gates: gates.length,
+      autonomy_percent: gates.length > 0 ? Math.round((readyGates / gates.length) * 100) : 0,
+      next_gate: nextGate,
+    },
+    gates,
+  };
+}
+
+// =============================================================================
 // GET /auto-approve — aggregated view of the auto-approve registry
 // =============================================================================
 // One call for the Command Hub Auto-Approve tab. Returns:
@@ -594,6 +716,7 @@ router.get('/auto-approve', requireDevRole, async (_req: Request, res: Response)
       total_surfaces: totalSurfaces,
       autonomy_percent: autonomyProgress,
     },
+    self_healing: buildSelfHealingAutonomyReadiness(),
     scanners,
     rules,
   });
