@@ -44,3 +44,51 @@ export const FEATURE_DISCOVERY_TOPIC_REGISTRY = [
   FEATURE_DISCOVERY_DISMISSED,
   FEATURE_DISCOVERY_COMPLETED,
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Capability awareness state-advance events (B0e.4)
+//
+// Distinct family from feature.discovery.*:
+//   feature.discovery.*   — provider lifecycle (offered/suppressed/etc.)
+//   capability.awareness.* — user-state transitions on the ladder
+//
+// One event per state advance. The advance_capability_awareness() RPC
+// is the ONLY mutation entrypoint; OASIS emission happens AFTER the
+// transaction commits so a failed mutation never produces a stale
+// state-advance event.
+// ---------------------------------------------------------------------------
+
+export const CAPABILITY_AWARENESS_INTRODUCED = 'capability.awareness.introduced' as const;
+export const CAPABILITY_AWARENESS_SEEN       = 'capability.awareness.seen'       as const;
+export const CAPABILITY_AWARENESS_TRIED      = 'capability.awareness.tried'      as const;
+export const CAPABILITY_AWARENESS_COMPLETED  = 'capability.awareness.completed'  as const;
+export const CAPABILITY_AWARENESS_DISMISSED  = 'capability.awareness.dismissed'  as const;
+export const CAPABILITY_AWARENESS_MASTERED   = 'capability.awareness.mastered'   as const;
+
+export type CapabilityAwarenessEventName =
+  | 'introduced' | 'seen' | 'tried' | 'completed' | 'dismissed' | 'mastered';
+
+export const CAPABILITY_AWARENESS_TOPIC_REGISTRY = [
+  CAPABILITY_AWARENESS_INTRODUCED,
+  CAPABILITY_AWARENESS_SEEN,
+  CAPABILITY_AWARENESS_TRIED,
+  CAPABILITY_AWARENESS_COMPLETED,
+  CAPABILITY_AWARENESS_DISMISSED,
+  CAPABILITY_AWARENESS_MASTERED,
+] as const;
+
+/**
+ * Map an awareness event name to its OASIS topic constant. The service
+ * MUST use this map — never construct topic strings inline.
+ */
+export const AWARENESS_EVENT_TO_TOPIC: Record<
+  CapabilityAwarenessEventName,
+  (typeof CAPABILITY_AWARENESS_TOPIC_REGISTRY)[number]
+> = {
+  introduced: CAPABILITY_AWARENESS_INTRODUCED,
+  seen:       CAPABILITY_AWARENESS_SEEN,
+  tried:      CAPABILITY_AWARENESS_TRIED,
+  completed:  CAPABILITY_AWARENESS_COMPLETED,
+  dismissed:  CAPABILITY_AWARENESS_DISMISSED,
+  mastered:   CAPABILITY_AWARENESS_MASTERED,
+};
