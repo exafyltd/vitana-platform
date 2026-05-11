@@ -305,9 +305,13 @@ const M: AwarenessSignal[] = [
   { key: 'context.client.accept_language',tier: 'context', subcategory: 'Client context (IP + device)', label: 'Accept-Language',description: 'Browser-preferred language.', default_on: true, wired: 'live' },
   { key: 'context.last_session_info',     tier: 'context', subcategory: 'Session continuity',           label: 'Last session info', description: 'When the user was last in voice + whether it failed.', default_on: true, wired: 'partial' },
   // VTID-02858 wired-mapping: user's #8 (Conversation Summary) — not_wired (returns null).
-  { key: 'context.conversation_summary',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation summary', description: 'Returning-user bridge summary text.', default_on: true, wired: 'not_wired' },
+  // VTID-02899: deferred-by-design — marked enforcement_status: 'pending'
+  // so the Voice Improve briefing doesn't surface this as an urgent action
+  // item. Wired badge in the Registry still shows ✗ (status reflects reality).
+  { key: 'context.conversation_summary',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation summary', description: 'Returning-user bridge summary text.', default_on: true, wired: 'not_wired', enforcement_status: 'pending' },
   // VTID-02858 wired-mapping: user's #10 (Last-10-turns conversation history) — not_wired.
-  { key: 'context.conversation_history',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation history (reconnect)', description: 'Last N turns when reconnecting.', default_on: true, wired: 'not_wired', params: [
+  // VTID-02899: deferred-by-design (see above).
+  { key: 'context.conversation_history',  tier: 'context', subcategory: 'Session continuity',           label: 'Conversation history (reconnect)', description: 'Last N turns when reconnecting.', default_on: true, wired: 'not_wired', enforcement_status: 'pending', params: [
       { key: 'max_turns', label: 'Max turns', type: 'int', default: 10, min: 1, max: 50, step: 1 },
   ]},
   { key: 'context.journey_stage',         tier: 'context', subcategory: 'Session continuity',           label: 'Journey stage', description: '90-day wave / wave_name / day_number.', default_on: true, wired: 'live' },
@@ -342,9 +346,12 @@ const M: AwarenessSignal[] = [
 
   // ─── 12. OVERRIDES (high-priority, append-last blocks) ───────────────────
   // VTID-02858 wired-mapping: user's #16 (Proactive Opener Override matrix) — not_wired.
-  { key: 'overrides.proactive_opener',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'PROACTIVE OPENER OVERRIDE', description: 'VTID-01927 — appended after temporal journey to override greeting reflexes.', default_on: true, wired: 'not_wired' },
+  // VTID-02899: deferred-by-design — enforcement_status: 'pending' excludes
+  // from Voice Improve briefing as actionable; Registry still shows ✗.
+  { key: 'overrides.proactive_opener',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'PROACTIVE OPENER OVERRIDE', description: 'VTID-01927 — appended after temporal journey to override greeting reflexes.', default_on: true, wired: 'not_wired', enforcement_status: 'pending' },
   // VTID-02858 wired-mapping: user's #17 (Activity awareness override) — not_wired.
-  { key: 'overrides.activity_awareness',  tier: 'overrides', subcategory: 'High-priority overrides', label: 'ACTIVITY AWARENESS OVERRIDE', description: 'BOOTSTRAP-HISTORY-AWARE-TIMELINE — re-asserts USER CONTEXT PROFILE at end of prompt with hard rules.', default_on: true, wired: 'not_wired' },
+  // VTID-02899: deferred-by-design (see above).
+  { key: 'overrides.activity_awareness',  tier: 'overrides', subcategory: 'High-priority overrides', label: 'ACTIVITY AWARENESS OVERRIDE', description: 'BOOTSTRAP-HISTORY-AWARE-TIMELINE — re-asserts USER CONTEXT PROFILE at end of prompt with hard rules.', default_on: true, wired: 'not_wired', enforcement_status: 'pending' },
   // VTID-02858 wired-mapping: user's #6 (Navigator policy section) — partial (gates wired, prose section missing).
   { key: 'overrides.navigator_policy',    tier: 'overrides', subcategory: 'High-priority overrides', label: 'Navigator policy',           description: 'Navigator tool routing rules section.', default_on: true, enforcement_status: 'pending', wired: 'partial' },
   // VTID-02858 wired-mapping: user's #7 (Temporal/journey context) — live.
