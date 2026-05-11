@@ -42508,6 +42508,9 @@ function renderJourneyContextView() {
     // VTID-02923 (B0e.3): Feature Discovery panel — catalog + awareness
     // ladder + provider state (selected / suppressed / errored).
     grid.appendChild(renderJourneyContextFeatureDiscoveryPanel(jc.featureDiscovery));
+    // VTID-02930 (B1): Greeting Decay panel — simulated policy decision
+    // + reason + evidence + signal source-health. Read-only.
+    grid.appendChild(renderJourneyContextGreetingDecayPanel(jc.greetingDecay));
 
     c.appendChild(grid);
     return c;
@@ -42534,12 +42537,27 @@ function loadJourneyContext() {
     // Global view (no userId/tenantId filter — the operator wants the
     // full picture). Limit caps server-side at 500.
     var raQs = '?limit=200';
+    // VTID-02930 (B1): greeting policy preview — pure simulator using
+    // operator-supplied query knobs from state.greetingDecaySim, or
+    // sensible defaults when unset. NO user-specific data; pure decision.
+    var sim = state.greetingDecaySim || {};
+    var gdQs = '?bucket=' + encodeURIComponent(sim.bucket || 'today');
+    if (sim.isReconnect !== undefined) gdQs += '&isReconnect=' + (sim.isReconnect ? 'true' : 'false');
+    if (sim.wasFailure !== undefined) gdQs += '&wasFailure=' + (sim.wasFailure ? 'true' : 'false');
+    if (sim.seconds_since_last_turn_anywhere !== undefined) gdQs += '&seconds_since_last_turn_anywhere=' + encodeURIComponent(sim.seconds_since_last_turn_anywhere);
+    if (sim.sessions_today_count !== undefined) gdQs += '&sessions_today_count=' + encodeURIComponent(sim.sessions_today_count);
+    if (sim.is_transparent_reconnect !== undefined) gdQs += '&is_transparent_reconnect=' + (sim.is_transparent_reconnect ? 'true' : 'false');
+    if (sim.time_since_last_greeting_today_ms !== undefined) gdQs += '&time_since_last_greeting_today_ms=' + encodeURIComponent(sim.time_since_last_greeting_today_ms);
+    if (sim.greeting_style_last_used) gdQs += '&greeting_style_last_used=' + encodeURIComponent(sim.greeting_style_last_used);
+    if (sim.wake_origin) gdQs += '&wake_origin=' + encodeURIComponent(sim.wake_origin);
+    if (sim.device_handoff_signal !== undefined) gdQs += '&device_handoff_signal=' + (sim.device_handoff_signal ? 'true' : 'false');
     Promise.all([
         fetch('/api/v1/voice/journey-context/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/journey-context/state'   + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/wake-timeline/recent'    + wakeQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
         fetch('/api/v1/voice/feature-discovery/preview' + fdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
         fetch('/api/v1/voice/wake-timeline/analysis'  + raQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        fetch('/api/v1/voice/greeting-policy/preview' + gdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42564,6 +42582,11 @@ function loadJourneyContext() {
             jc.reliabilityAnalysis = results[4].analysis;
         } else {
             jc.reliabilityAnalysis = null;
+        }
+        if (results[5] && results[5].ok) {
+            jc.greetingDecay = results[5];
+        } else {
+            jc.greetingDecay = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -42782,6 +42805,78 @@ function renderJourneyContextWakeTimelinePanel(timelines) {
         });
 
         panel.appendChild(entry);
+    });
+
+    return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02930 (B1): Greeting Decay panel.
+//
+// Read-only inspection surface for the A4 greeting-policy seam with the
+// 7 B1 cadence signals layered on. Operators read:
+//   - the simulated decision (policy + reason)
+//   - the evidence list (which signals influenced which way)
+//   - signal source-health (present / missing) so operators can tell
+//     when the decision is degraded due to absent inputs
+//
+// Wall (B1): NO mutation, NO POST, NO tuning controls. The route the
+// loader hits (GET /voice/greeting-policy/preview) is a pure simulator
+// — query params drive the input, the response is the decision.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextGreetingDecayPanel(gd) {
+    var panel = renderJourneyContextPanel(
+        'Greeting Decay (B1)',
+        'A4 seam + 7 cadence signals — pure simulator, no mutation',
+    );
+
+    if (!gd) {
+        // Acceptance #5: panel renders even when no cadence data exists.
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — set state.greetingDecaySim or load a user above'));
+        return panel;
+    }
+
+    var d = (gd && gd.decision) || {};
+    var inp = (gd && gd.input) || {};
+
+    panel.appendChild(renderJourneyContextEmptyRow('policy', d.policy || '—'));
+    panel.appendChild(renderJourneyContextEmptyRow('reason', d.reason || '—'));
+    panel.appendChild(renderJourneyContextEmptyRow('fell back to bucket', String(d.fellBackToBucket === true)));
+
+    // ---- Signal source-health ----
+    var shHeader = document.createElement('div');
+    shHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    shHeader.textContent = 'Signal source-health';
+    panel.appendChild(shHeader);
+    var present = Array.isArray(d.signalsPresent) ? d.signalsPresent : [];
+    var missing = Array.isArray(d.signalsMissing) ? d.signalsMissing : [];
+    panel.appendChild(renderJourneyContextEmptyRow('present (' + present.length + ')', present.length > 0 ? present.join(', ') : '—'));
+    panel.appendChild(renderJourneyContextEmptyRow('missing (' + missing.length + ')', missing.length > 0 ? missing.join(', ') : '—'));
+
+    // ---- Evidence ----
+    var evHeader = document.createElement('div');
+    evHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    evHeader.textContent = 'Evidence (which signals influenced the decision)';
+    panel.appendChild(evHeader);
+    var evidence = Array.isArray(d.evidence) ? d.evidence : [];
+    if (evidence.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('evidence', 'no signals participated'));
+    } else {
+        evidence.forEach(function (e) {
+            panel.appendChild(renderJourneyContextEmptyRow(
+                e.signal + ' [' + e.influence + ']',
+                String(e.value),
+            ));
+        });
+    }
+
+    // ---- Input simulator echo ----
+    var inHeader = document.createElement('div');
+    inHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    inHeader.textContent = 'Input';
+    panel.appendChild(inHeader);
+    Object.keys(inp).forEach(function (k) {
+        panel.appendChild(renderJourneyContextEmptyRow(k, String(inp[k])));
     });
 
     return panel;

@@ -742,6 +742,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceFeatureDiscoveryEventRouter = require('./routes/voice-feature-discovery-event').default;
   mountRouterSync(app, '/api/v1', voiceFeatureDiscoveryEventRouter, { owner: 'voice-feature-discovery-event' });
 
+  // VTID-02930 (B1): Greeting Decay preview (read-only simulator).
+  // GET /api/v1/voice/greeting-policy/preview
+  const voiceGreetingPolicyRouter = require('./routes/voice-greeting-policy').default;
+  mountRouterSync(app, '/api/v1', voiceGreetingPolicyRouter, { owner: 'voice-greeting-policy' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
