@@ -576,6 +576,7 @@ export type CicdEventType =
   | 'match.proactive.batch.completed'
   // Self-Healing System Events
   | 'self-healing.report.received'
+  | 'self-healing.preflight.recovered'
   | 'self-healing.diagnosis.started'
   | 'self-healing.diagnosis.completed'
   | 'self-healing.spec.generated'
