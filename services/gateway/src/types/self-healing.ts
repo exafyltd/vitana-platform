@@ -54,7 +54,22 @@ export interface CommitInfo {
 export interface CodebaseAnalysis {
   route_file: string | null;
   route_file_exists: boolean;
+  /** Held in memory during a single diagnosis run for regex checks; STRIPPED
+   * by redactDiagnosisForPersistence() before any write to self_healing_log
+   * or vtid_ledger.metadata. Use route_file_excerpt for durable storage. */
   route_file_content: string | null;
+  /** Where the source was read from. 'fs' = local container filesystem;
+   * 'github_deployed_sha' = GitHub Contents API at the SHA the running
+   * revision was built from (read from BUILD_INFO); 'github_main' =
+   * last-resort fallback against ref=main. */
+  route_file_source?: 'fs' | 'github_deployed_sha' | 'github_main';
+  /** SHA of the resolved file content (when fetched via GitHub) or null
+   * for filesystem reads. Lets us detect drift between diagnosis time and
+   * any subsequent fix attempt. */
+  route_file_sha?: string | null;
+  /** Short ≤500-char excerpt around the matched health handler, safe for
+   * persistence. Populated alongside route_file_content. */
+  route_file_excerpt?: string | null;
   health_handler_exists: boolean;
   handler_has_errors: boolean;
   error_description: string | null;

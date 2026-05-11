@@ -40,6 +40,178 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const REPO_ROOT = path.resolve(__dirname, '../../../../');
 const INDEX_PATH = path.join(REPO_ROOT, 'services/gateway/src/index.ts');
 
+// PR-C (VTID-02916): GitHub Contents API fallback for source-tree visibility.
+// Cloud Run revisions don't carry the full source tree under REPO_ROOT, so
+// fs.existsSync()/fs.readFileSync() return ENOENT and diagnosis falsely
+// reports "route file does not exist". We fall back to GitHub at the SHA the
+// running container was built from (BUILD_INFO.sha) and only as last resort
+// to ref=main, which may have drifted ahead of the deployed revision.
+const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER || 'exafyltd';
+const GITHUB_REPO = process.env.GITHUB_REPO_NAME || 'vitana-platform';
+const GITHUB_TOKEN = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+
+// Read every call so tests + operators can override at runtime; the work
+// is cheap (env read + at most one fs.readFileSync of a tiny JSON file).
+function getDeployedSha(): string | null {
+  // 1. Explicit env override (set by EXEC-DEPLOY.yml when known).
+  if (process.env.DEPLOYED_GIT_SHA) return process.env.DEPLOYED_GIT_SHA;
+  if (process.env.BUILD_SHA) return process.env.BUILD_SHA;
+  // 2. Cloud Run sets K_REVISION but the value is a revision name, not a
+  //    commit SHA — skip it. Fall through to BUILD_INFO file.
+  // 3. Read BUILD_INFO written at container build time.
+  try {
+    const buildInfoPath = path.join(__dirname, '..', '..', 'BUILD_INFO');
+    if (fs.existsSync(buildInfoPath)) {
+      const raw = fs.readFileSync(buildInfoPath, 'utf-8').trim();
+      try {
+        const parsed = JSON.parse(raw) as { sha?: string };
+        return parsed?.sha || null;
+      } catch {
+        return raw || null;
+      }
+    }
+  } catch {
+    // Ignore — fall through.
+  }
+  return null;
+}
+
+interface LoadedSource {
+  found: boolean;
+  content?: string;
+  sha?: string | null;
+  source: 'fs' | 'github_deployed_sha' | 'github_main';
+}
+
+async function fetchFromGithub(
+  relativeFile: string,
+  ref: string,
+): Promise<{ ok: boolean; content?: string; sha?: string }> {
+  if (!GITHUB_TOKEN) {
+    return { ok: false };
+  }
+  const encoded = relativeFile.split('/').map(encodeURIComponent).join('/');
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(ref)}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return { ok: false };
+    const body = (await res.json()) as { content?: string; encoding?: string; sha?: string };
+    if (!body?.content || body.encoding !== 'base64') return { ok: false };
+    const content = Buffer.from(body.content, 'base64').toString('utf-8');
+    return { ok: true, content, sha: body.sha };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Resolve a repo-relative file path to its current source. Tries the local
+ * filesystem first, then GitHub at the deployed SHA, then GitHub at main.
+ * The cache is request-scoped so we don't refetch the same file twice in
+ * one diagnosis run.
+ */
+export async function loadSourceFile(
+  relativeFile: string,
+  cache?: Map<string, LoadedSource>,
+): Promise<LoadedSource> {
+  if (cache?.has(relativeFile)) return cache.get(relativeFile)!;
+
+  // 1. Local filesystem (fastest, no network).
+  try {
+    const absolutePath = path.join(REPO_ROOT, relativeFile);
+    if (fs.existsSync(absolutePath)) {
+      const content = fs.readFileSync(absolutePath, 'utf-8');
+      const result: LoadedSource = { found: true, content, sha: null, source: 'fs' };
+      cache?.set(relativeFile, result);
+      return result;
+    }
+  } catch {
+    // Fall through to GitHub fallbacks.
+  }
+
+  // 2. GitHub at the deployed SHA, when available.
+  const deployedSha = getDeployedSha();
+  if (deployedSha) {
+    const gh = await fetchFromGithub(relativeFile, deployedSha);
+    if (gh.ok && gh.content !== undefined) {
+      const result: LoadedSource = {
+        found: true,
+        content: gh.content,
+        sha: gh.sha ?? null,
+        source: 'github_deployed_sha',
+      };
+      cache?.set(relativeFile, result);
+      return result;
+    }
+  }
+
+  // 3. Last resort: GitHub at ref=main. May be drifted ahead of the
+  // running revision — log so operators see when this path is taken.
+  const ghMain = await fetchFromGithub(relativeFile, 'main');
+  if (ghMain.ok && ghMain.content !== undefined) {
+    console.warn(
+      `[self-healing-diagnosis] loadSourceFile fell back to ref=main for ${relativeFile} ` +
+        `(deployed_sha=${deployedSha || 'unknown'} unavailable). Diagnosis may be against a ` +
+        `newer source than what is deployed.`,
+    );
+    const result: LoadedSource = {
+      found: true,
+      content: ghMain.content,
+      sha: ghMain.sha ?? null,
+      source: 'github_main',
+    };
+    cache?.set(relativeFile, result);
+    return result;
+  }
+
+  const miss: LoadedSource = { found: false, source: 'fs' };
+  cache?.set(relativeFile, miss);
+  return miss;
+}
+
+/**
+ * Build a short excerpt around the first occurrence of a regex match (or the
+ * top of the file if no match). Bounded to 500 chars so it is safe to
+ * persist in self_healing_log.diagnosis.
+ */
+function buildSourceExcerpt(content: string, matcher?: RegExp): string {
+  if (!content) return '';
+  if (matcher) {
+    const m = matcher.exec(content);
+    if (m && typeof m.index === 'number') {
+      const start = Math.max(0, m.index - 100);
+      const end = Math.min(content.length, m.index + 400);
+      return content.substring(start, end);
+    }
+  }
+  return content.substring(0, 500);
+}
+
+/**
+ * Strip large/unsafe fields off a Diagnosis before persisting it. Keeps
+ * route_file_source / route_file_sha / route_file_excerpt for forensics
+ * but drops the full route_file_content (which can be tens of KB and may
+ * contain secrets like inline API keys).
+ */
+export function redactDiagnosisForPersistence(diagnosis: Diagnosis): Diagnosis {
+  if (!diagnosis.codebase_analysis) return diagnosis;
+  const codebase = diagnosis.codebase_analysis;
+  return {
+    ...diagnosis,
+    codebase_analysis: {
+      ...codebase,
+      route_file_content: null,
+    },
+  };
+}
+
 const AUTO_FIXABLE_CLASSES: Set<FailureClass> = new Set([
   FailureClass.ROUTE_NOT_REGISTERED,
   FailureClass.HANDLER_CRASH,
@@ -108,13 +280,16 @@ export async function runDeepDiagnosis(
   const evidence: string[] = [];
   const filesRead: string[] = [];
   const filesToModify: string[] = [];
+  // Request-scoped cache so the same source isn't fetched twice from GitHub
+  // within one diagnosis run.
+  const sourceCache = new Map<string, LoadedSource>();
 
   // Layer 1 — HTTP Response Analysis
   const { failureClass: httpClass, confidence: httpConf, rootCause: httpCause, fix: httpFix } =
     analyzeHttpResponse(failure, evidence);
 
   // Layer 2 — Codebase Deep Dive
-  const codebaseAnalysis = analyzeCodebase(failure, evidence, filesRead);
+  const codebaseAnalysis = await analyzeCodebase(failure, evidence, filesRead, sourceCache);
 
   // Layer 3 — Git History
   const gitAnalysis = analyzeGitHistory(failure, codebaseAnalysis, evidence);
@@ -271,11 +446,12 @@ function analyzeHttpResponse(
 // Layer 2: Codebase Deep Dive
 // ---------------------------------------------------------------------------
 
-function analyzeCodebase(
+async function analyzeCodebase(
   failure: ServiceStatus,
   evidence: string[],
   filesRead: string[],
-): CodebaseAnalysis {
+  sourceCache?: Map<string, LoadedSource>,
+): Promise<CodebaseAnalysis> {
   const result: CodebaseAnalysis = {
     route_file: null,
     route_file_exists: false,
@@ -301,21 +477,35 @@ function analyzeCodebase(
   }
 
   result.route_file = relativeFile;
-  const absolutePath = path.join(REPO_ROOT, relativeFile);
 
   try {
-    if (!fs.existsSync(absolutePath)) {
+    // PR-C (VTID-02916): try local fs, then GitHub at deployed SHA, then
+    // GitHub at main. Cloud Run revisions don't carry the source tree, so
+    // the legacy fs.existsSync()-only check was producing false negatives.
+    const loaded = await loadSourceFile(relativeFile, sourceCache);
+    result.route_file_source = loaded.source;
+    result.route_file_sha = loaded.sha ?? null;
+
+    if (!loaded.found) {
       result.route_file_exists = false;
-      result.evidence.push(`Route file does not exist: ${absolutePath}`);
+      result.evidence.push(
+        `Route file ${relativeFile} not found via fs OR GitHub (deployed_sha=${getDeployedSha() || 'unknown'})`,
+      );
       evidence.push(`Route file missing: ${relativeFile}`);
       return result;
     }
 
     result.route_file_exists = true;
-    const content = fs.readFileSync(absolutePath, 'utf-8');
+    const content = loaded.content!;
     result.route_file_content = content;
     result.files_read.push(relativeFile);
     filesRead.push(relativeFile);
+    if (loaded.source !== 'fs') {
+      result.evidence.push(
+        `Route file ${relativeFile} loaded via ${loaded.source}` +
+          (loaded.sha ? ` (sha=${loaded.sha.substring(0, 7)})` : ''),
+      );
+    }
 
     // Check for health handler
     const healthEndpoint = failure.endpoint.split('/').pop();
@@ -324,6 +514,9 @@ function analyzeCodebase(
       'i',
     );
     result.health_handler_exists = healthPattern.test(content);
+    // Persist a short, safe excerpt around the match site (or top of the
+    // file when no match). The full content stays in-memory only.
+    result.route_file_excerpt = buildSourceExcerpt(content, healthPattern);
     if (!result.health_handler_exists) {
       result.evidence.push(`No handler found matching /${healthEndpoint} in ${relativeFile}`);
       evidence.push(`Health handler not found in ${relativeFile}`);
@@ -382,8 +575,13 @@ function analyzeCodebase(
     const serviceImports = result.imports.filter(
       (i) => i.includes('service') || i.includes('Service'),
     );
+    // Anchor resolution to the route file's location under REPO_ROOT.
+    // resolveImportPath is filesystem-based, so it can only find files that
+    // also live in the local container. Imports that resolve to paths absent
+    // from disk just don't get added — preferable to a stale guess.
+    const anchorAbs = path.join(REPO_ROOT, relativeFile);
     for (const imp of serviceImports) {
-      const resolved = resolveImportPath(absolutePath, imp);
+      const resolved = resolveImportPath(anchorAbs, imp);
       if (resolved) {
         result.related_service_files.push(path.relative(REPO_ROOT, resolved));
       }
