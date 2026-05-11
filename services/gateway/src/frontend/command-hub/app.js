@@ -42499,6 +42499,8 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextMatchJourneyPanel(jc.preview));
     grid.appendChild(renderJourneyContextSourceHealthPanel(jc.preview));
     grid.appendChild(renderJourneyContextStatePanel(jc.stateRows));
+    // VTID-02917 (B0d.3): ORB Wake Reliability Timeline panel.
+    grid.appendChild(renderJourneyContextWakeTimelinePanel(jc.wakeTimelines));
 
     c.appendChild(grid);
     return c;
@@ -42516,9 +42518,12 @@ function loadJourneyContext() {
     renderApp();
 
     var qs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId);
+    // VTID-02917 (B0d.3): also fetch recent wake timelines for the user.
+    var wakeQs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId) + '&limit=10';
     Promise.all([
         fetch('/api/v1/voice/journey-context/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/journey-context/state'   + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice/wake-timeline/recent'    + wakeQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42528,6 +42533,11 @@ function loadJourneyContext() {
         }
         if (results[1] && results[1].ok) {
             jc.stateRows = results[1];
+        }
+        if (results[2] && results[2].ok) {
+            jc.wakeTimelines = results[2].timelines || [];
+        } else {
+            jc.wakeTimelines = [];
         }
         renderApp();
     }).catch(function (err) {
@@ -42673,6 +42683,89 @@ function renderJourneyContextStatePanel(stateRows) {
         panel.appendChild(renderJourneyContextEmptyRow(lbl, val));
     });
     return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02917 (B0d.3): ORB Wake Reliability Timeline panel.
+//
+// Lists the recent wake sessions for the selected user. Each row shows
+// the per-wake aggregates (time_to_first_audio_ms,
+// selected_continuation_kind / none_with_reason, fallback_used) and an
+// "events" link to expand the full event trail (16 locked event names).
+// Per the plan's measure-before-optimize discipline, this panel ONLY
+// renders observed data — no thresholds, no tuning suggestions.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextWakeTimelinePanel(timelines) {
+    var panel = renderJourneyContextPanel(
+        'ORB Wake Timeline',
+        'Wake-to-first-audio + disconnect trail (B0d.3 — emit + render only)'
+    );
+
+    var rows = Array.isArray(timelines) ? timelines : null;
+    if (rows === null) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+    if (rows.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('recent wakes', '0 (no sessions recorded yet)'));
+        return panel;
+    }
+
+    rows.forEach(function (t) {
+        var entry = document.createElement('div');
+        entry.style.cssText = 'border-top:1px solid #1e293b;padding:0.5rem 0;font-size:0.82rem;';
+        var hdr = document.createElement('div');
+        hdr.style.cssText = 'display:flex;justify-content:space-between;color:var(--color-text-primary);font-family:monospace;';
+        var sid = (t.session_id || '').slice(-12);
+        hdr.appendChild(textSpan('session ' + sid, 'flex:1;'));
+        var startedAt = t.started_at ? new Date(t.started_at).toLocaleString() : '—';
+        hdr.appendChild(textSpan(startedAt, 'color:var(--color-text-secondary);'));
+        entry.appendChild(hdr);
+
+        var wake = t.aggregates && t.aggregates.wake;
+        var disconnects = t.aggregates && Array.isArray(t.aggregates.disconnects) ? t.aggregates.disconnects : [];
+
+        // Wake aggregate row
+        var wakeLine = document.createElement('div');
+        wakeLine.style.cssText = 'margin-top:0.25rem;color:var(--color-text-secondary);font-size:0.78rem;';
+        if (wake) {
+            var ms = wake.time_to_first_audio_ms;
+            var kind = wake.selected_continuation_kind || 'none';
+            var nwr = wake.none_with_reason ? ' (' + wake.none_with_reason + ')' : '';
+            var fallback = wake.fallback_used ? ' · fallback_used' : '';
+            wakeLine.textContent = 'tt-first-audio: ' + (ms !== null && ms !== undefined ? ms + 'ms' : '—') + ' · kind: ' + kind + nwr + fallback;
+        } else {
+            wakeLine.textContent = 'wake aggregate: not yet computed (session in-flight)';
+        }
+        entry.appendChild(wakeLine);
+
+        // Events count
+        var evCount = Array.isArray(t.events) ? t.events.length : 0;
+        var evLine = document.createElement('div');
+        evLine.style.cssText = 'margin-top:0.15rem;color:var(--color-text-secondary);font-size:0.78rem;';
+        evLine.textContent = 'events: ' + evCount + ' · disconnects: ' + disconnects.length + (t.transport ? ' · transport: ' + t.transport : '');
+        entry.appendChild(evLine);
+
+        // Disconnect detail (if any)
+        disconnects.forEach(function (d) {
+            var dRow = document.createElement('div');
+            dRow.style.cssText = 'margin-top:0.15rem;color:#f59e0b;font-size:0.78rem;';
+            var reason = d.disconnect_reason || ('unknown_with_context: ' + JSON.stringify(d.unknown_with_context || {}));
+            dRow.textContent = '↳ ' + reason + ' @ age ' + (d.session_age_ms || 0) + 'ms · upstream: ' + (d.upstream_state || '—');
+            entry.appendChild(dRow);
+        });
+
+        panel.appendChild(entry);
+    });
+
+    return panel;
+}
+
+function textSpan(text, css) {
+    var s = document.createElement('span');
+    s.textContent = text;
+    if (css) s.style.cssText = css;
+    return s;
 }
 
 // VTID-02867: Inline expandable "Open architecture reports (N)" section.
