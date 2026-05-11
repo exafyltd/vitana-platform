@@ -42,10 +42,12 @@ import {
   isWakeTimelineEventName,
   type WakeTimelineEventName,
 } from '../services/wake-timeline/timeline-events';
+import { analyzeReliabilityCohort } from '../services/wake-timeline/reliability-cohort-analysis';
 
 const router = Router();
 const VTID = 'VTID-02917';
 const INGEST_VTID = 'VTID-02919';
+const ANALYSIS_VTID = 'VTID-02927';
 
 router.get(
   '/voice/wake-timeline',
@@ -175,6 +177,57 @@ router.post(
         ok: false,
         error: (e as Error).message,
         vtid: INGEST_VTID,
+      });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/voice/wake-timeline/analysis (VTID-02927, R0)
+//
+// Cohort-level reliability rollup over recent wake timelines. Powers
+// the Command Hub "Wake Reliability Analysis" panel + the R0 first-
+// evidence-report scaffold.
+//
+// Query params:
+//   limit?       — max sessions to include (1..500, default 200)
+//   userId?      — filter to one user (operators usually want global)
+//   tenantId?    — filter to one tenant
+//
+// Auth: exafy_admin. Same auth as the existing GET routes — this is
+// operator telemetry, not user-visible content.
+//
+// Wall: read-only. No tuning, no thresholds, no alerting. The route
+// returns numbers + percentiles; the operator decides what to do.
+// ---------------------------------------------------------------------------
+router.get(
+  '/voice/wake-timeline/analysis',
+  requireAuthWithTenant,
+  requireExafyAdmin,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+      const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : undefined;
+      const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 200;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 200;
+
+      const timelines = await defaultWakeTimelineRecorder.listRecent({
+        userId,
+        tenantId,
+        limit,
+      });
+      const analysis = analyzeReliabilityCohort(timelines);
+      return res.json({
+        ok: true,
+        vtid: ANALYSIS_VTID,
+        filters: { userId: userId ?? null, tenantId: tenantId ?? null, limit },
+        analysis,
+      });
+    } catch (e) {
+      return res.status(500).json({
+        ok: false,
+        error: (e as Error).message,
+        vtid: ANALYSIS_VTID,
       });
     }
   },

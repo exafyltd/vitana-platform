@@ -81,6 +81,26 @@ export type ContinuationKindHint =
   | 'match_journey_next_move'
   | 'none_with_reason';
 
+/**
+ * Stage-by-stage deltas (R0 — VTID-02927). Operators read these to
+ * answer "where does the wake latency actually live?" without having
+ * to hand-walk every event.
+ *
+ * All values are non-negative milliseconds, or `null` when the source
+ * event(s) for that stage didn't fire. The stage labels mirror the 4
+ * segments the user named in the R0 brief.
+ */
+export interface WakeStageBreakdown {
+  /** wake_clicked → session_start_received. */
+  wake_to_gateway_ms: number | null;
+  /** session_start_received → continuation_decision_finished. */
+  gateway_to_decision_ms: number | null;
+  /** continuation_decision_finished → upstream_live_connected. */
+  decision_to_upstream_ms: number | null;
+  /** upstream_live_connected → first_audio_output. */
+  upstream_to_first_audio_ms: number | null;
+}
+
 export interface WakeAggregates {
   /**
    * Time from the earliest `wake_clicked` (frontend) OR
@@ -88,6 +108,9 @@ export interface WakeAggregates {
    * `first_audio_output`. `null` when first_audio_output never fired.
    */
   time_to_first_audio_ms: number | null;
+
+  /** R0: stage-by-stage breakdown (which segment owns the latency). */
+  stage_breakdown: WakeStageBreakdown;
 
   /**
    * The continuation kind that fired on the wake. When nothing fired,

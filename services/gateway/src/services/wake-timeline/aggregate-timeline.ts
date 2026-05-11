@@ -99,8 +99,33 @@ function computeWakeAggregate(
     (hasReconnectAttempt && !hasReconnectSuccess) ||
     (!firstAudio && hasDisconnect);
 
+  // R0 (VTID-02927): stage-by-stage breakdown so operators can read
+  // "where the latency lives" without walking events by hand.
+  // (sessionStart already in scope from the time_to_first_audio block.)
+  const decisionFinished = events.find((e) => e.name === 'continuation_decision_finished');
+  const upstreamConnected = events.find((e) => e.name === 'upstream_live_connected');
+  const stage_breakdown = {
+    wake_to_gateway_ms:
+      wakeClick && sessionStart
+        ? Math.max(0, sessionStart.tSessionMs - wakeClick.tSessionMs)
+        : null,
+    gateway_to_decision_ms:
+      sessionStart && decisionFinished
+        ? Math.max(0, decisionFinished.tSessionMs - sessionStart.tSessionMs)
+        : null,
+    decision_to_upstream_ms:
+      decisionFinished && upstreamConnected
+        ? Math.max(0, upstreamConnected.tSessionMs - decisionFinished.tSessionMs)
+        : null,
+    upstream_to_first_audio_ms:
+      upstreamConnected && firstAudio
+        ? Math.max(0, firstAudio.tSessionMs - upstreamConnected.tSessionMs)
+        : null,
+  };
+
   return {
     time_to_first_audio_ms,
+    stage_breakdown,
     selected_continuation_kind,
     fallback_used,
     ...(none_with_reason ? { none_with_reason } : {}),

@@ -42501,6 +42501,10 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextStatePanel(jc.stateRows));
     // VTID-02917 (B0d.3): ORB Wake Reliability Timeline panel.
     grid.appendChild(renderJourneyContextWakeTimelinePanel(jc.wakeTimelines));
+    // VTID-02927 (R0): Wake Reliability Analysis — cohort metrics
+    // (latency percentiles, stage breakdown, drop-off, unknown
+    // disconnect %, continuation outcomes). Read-only.
+    grid.appendChild(renderJourneyContextReliabilityAnalysisPanel(jc.reliabilityAnalysis));
     // VTID-02923 (B0e.3): Feature Discovery panel — catalog + awareness
     // ladder + provider state (selected / suppressed / errored).
     grid.appendChild(renderJourneyContextFeatureDiscoveryPanel(jc.featureDiscovery));
@@ -42526,11 +42530,16 @@ function loadJourneyContext() {
     // VTID-02923 (B0e.3): feature-discovery preview at the orb_turn_end
     // surface (the default firing surface; orb_wake is gated off).
     var fdQs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId) + '&surface=orb_turn_end';
+    // VTID-02927 (R0): cohort reliability analysis over recent wakes.
+    // Global view (no userId/tenantId filter — the operator wants the
+    // full picture). Limit caps server-side at 500.
+    var raQs = '?limit=200';
     Promise.all([
         fetch('/api/v1/voice/journey-context/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/journey-context/state'   + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/wake-timeline/recent'    + wakeQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
         fetch('/api/v1/voice/feature-discovery/preview' + fdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        fetch('/api/v1/voice/wake-timeline/analysis'  + raQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42550,6 +42559,11 @@ function loadJourneyContext() {
             jc.featureDiscovery = results[3];
         } else {
             jc.featureDiscovery = null;
+        }
+        if (results[4] && results[4].ok) {
+            jc.reliabilityAnalysis = results[4].analysis;
+        } else {
+            jc.reliabilityAnalysis = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -42778,6 +42792,146 @@ function textSpan(text, css) {
     s.textContent = text;
     if (css) s.style.cssText = css;
     return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02927 (R0): Wake Reliability Analysis panel.
+//
+// Cohort-level rollup of the wake-timeline data B0d.3/4 already
+// collect. Read-only — operator panel only, no tuning controls. The
+// goal is to make the data answer: "where does latency live?" + "which
+// stage drops sessions?" + "how often do we not even know why?"
+//
+// Wall: NO buttons, NO POST/PUT/PATCH/DELETE, NO state mutation.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextReliabilityAnalysisPanel(analysis) {
+    var panel = renderJourneyContextPanel(
+        'Wake Reliability Analysis (R0)',
+        'Cohort rollup over recent wakes — measurement only, no tuning',
+    );
+
+    if (!analysis) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    // ---- Summary ----
+    panel.appendChild(renderJourneyContextEmptyRow('sessions analyzed', String(analysis.total_sessions)));
+    panel.appendChild(renderJourneyContextEmptyRow('sessions with events', String(analysis.sessions_with_events)));
+    panel.appendChild(renderJourneyContextEmptyRow('reached first_audio_output', String(analysis.sessions_with_first_audio)));
+    panel.appendChild(renderJourneyContextEmptyRow('fallback_used', String(analysis.sessions_with_fallback)));
+
+    // ---- Latency: time_to_first_audio_ms ----
+    var ttfa = analysis.latency && analysis.latency.time_to_first_audio_ms;
+    if (ttfa && ttfa.count > 0) {
+        var ttfaHeader = document.createElement('div');
+        ttfaHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+        ttfaHeader.textContent = 'time_to_first_audio_ms (n=' + ttfa.count + ')';
+        panel.appendChild(ttfaHeader);
+        panel.appendChild(renderJourneyContextEmptyRow('p50', ttfa.p50 + 'ms'));
+        panel.appendChild(renderJourneyContextEmptyRow('p90', ttfa.p90 + 'ms'));
+        panel.appendChild(renderJourneyContextEmptyRow('p99', ttfa.p99 + 'ms'));
+    }
+
+    // ---- Stage breakdown ----
+    var stagesHeader = document.createElement('div');
+    stagesHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    stagesHeader.textContent = 'Stage breakdown (p90 = where the latency lives)';
+    panel.appendChild(stagesHeader);
+    var stages = (analysis.latency && analysis.latency.stages) || {};
+    [
+        ['wake_to_gateway_ms',          'wake_clicked → gateway'],
+        ['gateway_to_decision_ms',      'gateway → continuation_decision_finished'],
+        ['decision_to_upstream_ms',     'decision → upstream_live_connected'],
+        ['upstream_to_first_audio_ms',  'upstream → first_audio_output'],
+    ].forEach(function (pair) {
+        var key = pair[0];
+        var label = pair[1];
+        var b = stages[key] || { p50: null, p90: null, p99: null, count: 0 };
+        var v = b.count > 0
+            ? ('p50=' + b.p50 + 'ms / p90=' + b.p90 + 'ms / p99=' + b.p99 + 'ms (n=' + b.count + ')')
+            : 'no samples';
+        panel.appendChild(renderJourneyContextEmptyRow(label, v));
+    });
+
+    // ---- Milestone reach (drop-off) ----
+    var mrHeader = document.createElement('div');
+    mrHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    mrHeader.textContent = 'Milestone reach (which stage drops sessions)';
+    panel.appendChild(mrHeader);
+    var mr = analysis.milestone_reach || {};
+    var milestones = [
+        'wake_clicked', 'session_start_received', 'continuation_decision_finished',
+        'upstream_live_connected', 'first_audio_output', 'disconnect',
+    ];
+    milestones.forEach(function (m) {
+        panel.appendChild(renderJourneyContextEmptyRow(m, String(mr[m] || 0)));
+    });
+
+    // ---- Disconnects ----
+    var d = analysis.disconnects || { total: 0, unknown: 0, unknown_pct: 0, by_reason: {}, by_transport: {} };
+    var dHeader = document.createElement('div');
+    dHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    dHeader.textContent = 'Disconnects (total=' + d.total + ', unknown=' + d.unknown + ' / ' + d.unknown_pct + '%)';
+    panel.appendChild(dHeader);
+    var reasons = Object.keys(d.by_reason || {}).sort(function (a, b) {
+        return (d.by_reason[b] || 0) - (d.by_reason[a] || 0);
+    });
+    if (reasons.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('by_reason', 'no disconnects recorded'));
+    } else {
+        reasons.slice(0, 10).forEach(function (r) {
+            panel.appendChild(renderJourneyContextEmptyRow(r, String(d.by_reason[r])));
+        });
+    }
+    var transports = Object.keys(d.by_transport || {}).sort();
+    if (transports.length > 0) {
+        var tLine = transports.map(function (t) { return t + '=' + d.by_transport[t]; }).join(', ');
+        panel.appendChild(renderJourneyContextEmptyRow('by_transport', tLine));
+    }
+
+    // ---- Continuation outcome distribution ----
+    var c = analysis.continuation || { by_kind: {}, none_with_reason_breakdown: {} };
+    var cHeader = document.createElement('div');
+    cHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    cHeader.textContent = 'Continuation outcomes';
+    panel.appendChild(cHeader);
+    var kinds = Object.keys(c.by_kind || {}).sort(function (a, b) {
+        return (c.by_kind[b] || 0) - (c.by_kind[a] || 0);
+    });
+    if (kinds.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('by_kind', 'no continuation decisions recorded'));
+    } else {
+        kinds.forEach(function (k) {
+            panel.appendChild(renderJourneyContextEmptyRow(k, String(c.by_kind[k])));
+        });
+    }
+    var nwrKeys = Object.keys(c.none_with_reason_breakdown || {});
+    if (nwrKeys.length > 0) {
+        var nwrLine = nwrKeys.map(function (k) { return k + '=' + c.none_with_reason_breakdown[k]; }).join(', ');
+        panel.appendChild(renderJourneyContextEmptyRow('none_with_reason', nwrLine));
+    }
+
+    // ---- Evidence pointers ----
+    var eHeader = document.createElement('div');
+    eHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    eHeader.textContent = 'Sample reconstructions';
+    panel.appendChild(eHeader);
+    var ev = analysis.evidence || {};
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'one happy-path session',
+        ev.one_successful_session_id || 'none yet — no session reached first_audio_output cleanly',
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'one failed-path session',
+        ev.one_failed_session_id || 'none yet — no session has fallback_used or missing first_audio',
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'failed-path missing stage',
+        ev.one_failed_missing_stage || '—',
+    ));
+
+    return panel;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
