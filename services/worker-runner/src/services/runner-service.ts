@@ -41,6 +41,14 @@ const VTID = 'VTID-01200';
 const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
 const MAX_CLAIM_RETRIES = 3;
 
+function isSelfHealingTask(task: PendingTask): boolean {
+  return task.metadata?.source === 'self-healing';
+}
+
+function hasRepairEvidence(result: ExecutionResult): boolean {
+  return (result.files_changed?.length || 0) + (result.files_created?.length || 0) > 0;
+}
+
 /**
  * Worker Runner Service
  */
@@ -254,6 +262,10 @@ export class WorkerRunner {
     let executionResult: ExecutionResult = { ok: false, error: 'Not executed', duration_ms: 0 };
 
     try {
+      if (isSelfHealingTask(task) && !task.spec_content?.trim()) {
+        throw new Error(`Self-healing task ${vtid} has no hydrated spec_content`);
+      }
+
       // Step 2: Route through governance
       this.metrics.state = 'executing';
       const routingResult = await routeTask(
@@ -261,7 +273,8 @@ export class WorkerRunner {
         vtid,
         task.title,
         task.task_domain,
-        task.spec_content
+        task.spec_content,
+        task.target_paths
       );
 
       if (!routingResult.ok) {
@@ -269,7 +282,7 @@ export class WorkerRunner {
         await runnerEvents.error(this.config, `Routing failed: ${routingResult.error}`, vtid);
 
         // Mark as failed
-        await this.completeTask(vtid, runId, domain, false, routingResult.error);
+        executionSuccess = await this.completeTask(vtid, runId, domain, false, routingResult.error);
         return;
       }
 
@@ -334,6 +347,9 @@ export class WorkerRunner {
         if (!anyStageSucceeded) {
           executionResult = { ok: false, error: lastError || 'All stages failed', duration_ms: 0 };
         }
+
+        executionResult = this.applySelfHealingEvidenceGate(task, executionResult);
+        executionSuccess = executionResult.ok;
       } else {
         // Single domain: original behavior
         domain = (routingResult.dispatched_to?.replace('worker-', '') || 'backend') as TaskDomain;
@@ -375,11 +391,12 @@ export class WorkerRunner {
           executionResult.summary
         );
 
+        executionResult = this.applySelfHealingEvidenceGate(task, executionResult);
         executionSuccess = executionResult.ok;
       }
 
       // Step 5: Complete the task
-      await this.completeTask(
+      executionSuccess = await this.completeTask(
         vtid,
         runId,
         domain,
@@ -393,13 +410,30 @@ export class WorkerRunner {
       await runnerEvents.error(this.config, `Processing error: ${errorMessage}`, vtid);
 
       // Attempt to complete as failed
-      await this.completeTask(vtid, runId, domain, false, errorMessage);
+      executionSuccess = await this.completeTask(vtid, runId, domain, false, errorMessage);
     } finally {
       // Always release claim and cleanup
       await releaseTask(this.config, vtid, executionSuccess ? 'completed' : 'failed');
       this.activeVtid = null;
       this.metrics.state = 'idle';
     }
+  }
+
+  private applySelfHealingEvidenceGate(task: PendingTask, result: ExecutionResult): ExecutionResult {
+    if (!isSelfHealingTask(task) || !result.ok) {
+      return result;
+    }
+
+    if (hasRepairEvidence(result)) {
+      return result;
+    }
+
+    return {
+      ...result,
+      ok: false,
+      error: `Self-healing task ${task.vtid} reported success without repair evidence`,
+      summary: result.summary || 'Self-healing success rejected: no files changed or created',
+    };
   }
 
   /**
@@ -439,34 +473,59 @@ export class WorkerRunner {
     domain: TaskDomain,
     success: boolean,
     error?: string,
-    result?: { ok: boolean; files_changed?: string[]; files_created?: string[]; summary?: string }
-  ): Promise<void> {
+    result?: { ok: boolean; files_changed?: string[]; files_created?: string[]; summary?: string; error?: string }
+  ): Promise<boolean> {
     this.metrics.state = 'completing';
 
     try {
-      // Report subagent completion
-      await reportSubagentComplete(this.config, vtid, domain, runId, {
+      let finalSuccess = success;
+      let finalError = error;
+      const completionPayload: ExecutionResult = {
         ok: success,
         files_changed: result?.files_changed || [],
         files_created: result?.files_created || [],
         summary: result?.summary || (success ? 'Task completed' : error),
         error: success ? undefined : error,
-      });
+      };
+
+      // Report subagent completion
+      const subagentCompletion = await reportSubagentComplete(this.config, vtid, domain, runId, completionPayload);
+
+      if (!subagentCompletion.ok) {
+        finalSuccess = false;
+        finalError = `Subagent completion rejected: ${subagentCompletion.reason || 'unknown reason'}`;
+        await runnerEvents.error(this.config, finalError, vtid);
+      }
+
+      const orchestratorPayload: ExecutionResult = finalSuccess
+        ? completionPayload
+        : {
+            ...completionPayload,
+            ok: false,
+            summary: 'Worker completion rejected by verification',
+            error: finalError,
+          };
 
       // Report orchestrator completion
-      await reportOrchestratorComplete(
+      const orchestratorCompletion = await reportOrchestratorComplete(
         this.config,
         vtid,
         runId,
         domain,
-        success,
-        result?.summary,
-        error,
-        result as any
+        finalSuccess,
+        finalSuccess ? result?.summary : 'Worker completion rejected by verification',
+        finalSuccess ? error : finalError,
+        orchestratorPayload
       );
 
+      if (!orchestratorCompletion.ok) {
+        finalSuccess = false;
+        finalError = `Orchestrator completion rejected: ${orchestratorCompletion.reason || 'unknown reason'}`;
+        await runnerEvents.error(this.config, finalError, vtid);
+      }
+
       // Update metrics
-      if (success) {
+      if (finalSuccess) {
         this.metrics.tasks_completed++;
       } else {
         this.metrics.tasks_failed++;
@@ -474,23 +533,27 @@ export class WorkerRunner {
 
       // Step 6: Terminalize the VTID
       this.metrics.state = 'terminalizing';
-      const outcome: TerminalOutcome = success ? 'success' : 'failed';
+      const outcome: TerminalOutcome = finalSuccess ? 'success' : 'failed';
       const termResult = await terminalizeTask(this.config, vtid, outcome, runId);
 
       if (termResult.ok) {
         await runnerEvents.terminalized(this.config, vtid, outcome, runId);
         console.log(`[${VTID}] Task ${vtid} terminalized: ${outcome}`);
+        return finalSuccess;
       } else if (!termResult.already_terminal) {
         console.error(`[${VTID}] Failed to terminalize ${vtid}: ${termResult.error}`);
         await runnerEvents.error(this.config, `Terminalization failed: ${termResult.error}`, vtid);
       } else {
         console.log(`[${VTID}] Task ${vtid} already terminal (idempotent)`);
+        return finalSuccess;
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[${VTID}] Completion error for ${vtid}: ${errorMessage}`);
       await runnerEvents.error(this.config, `Completion error: ${errorMessage}`, vtid);
     }
+
+    return false;
   }
 
   /**

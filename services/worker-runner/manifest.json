@@ -33,7 +33,12 @@
       "AUTOPILOT_LOOP_ENABLED",
       "GOOGLE_CLOUD_PROJECT",
       "VERTEX_LOCATION",
-      "VERTEX_MODEL"
+      "VERTEX_MODEL",
+      "ANTHROPIC_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "WORKER_LLM_MODEL",
+      "WORKER_FALLBACK_MODEL",
+      "WORKER_DEEPSEEK_FALLBACK"
     ]
   },
   "resources": {

@@ -44938,6 +44938,76 @@ function renderAutopilotAutoApproveView() {
     cfgSection.appendChild(cfgRules);
     container.appendChild(cfgSection);
 
+    // Self-healing readiness ladder
+    if (data.self_healing && data.self_healing.summary && Array.isArray(data.self_healing.gates)) {
+        var sh = data.self_healing;
+        var shSection = document.createElement('section');
+        shSection.style.cssText = 'background:#101521;border:1px solid #334155;border-radius:8px;padding:1rem 1.25rem;margin-bottom:1.5rem;';
+
+        var shHeader = document.createElement('div');
+        shHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;';
+        var shTitleWrap = document.createElement('div');
+        var shTitle = document.createElement('h3');
+        shTitle.textContent = 'SELF-HEALING READINESS';
+        shTitle.style.cssText = 'color:#cbd5e1;font-size:0.8rem;letter-spacing:0.08em;margin:0 0 0.35rem 0;';
+        shTitleWrap.appendChild(shTitle);
+        var shHelp = document.createElement('div');
+        shHelp.style.cssText = 'color:#94a3b8;font-size:0.78rem;line-height:1.45;';
+        shHelp.textContent = 'Autonomy gates for safe repair: spec, evidence, patch, tests, deploy, verification, rollback, and memory.';
+        shTitleWrap.appendChild(shHelp);
+        shHeader.appendChild(shTitleWrap);
+
+        var shPct = document.createElement('div');
+        shPct.style.cssText = 'color:#4ade80;font-size:1.35rem;font-weight:700;font-variant-numeric:tabular-nums;';
+        shPct.textContent = sh.summary.autonomy_percent + '%';
+        shHeader.appendChild(shPct);
+        shSection.appendChild(shHeader);
+
+        var shTrack = document.createElement('div');
+        shTrack.style.cssText = 'background:#0f172a;border:1px solid #334155;border-radius:999px;height:8px;overflow:hidden;margin-bottom:0.75rem;';
+        var shFill = document.createElement('div');
+        shFill.style.cssText = 'background:linear-gradient(90deg,#22c55e,#06b6d4);height:100%;width:' + sh.summary.autonomy_percent + '%;';
+        shTrack.appendChild(shFill);
+        shSection.appendChild(shTrack);
+
+        var shNext = document.createElement('div');
+        shNext.style.cssText = 'color:#cbd5e1;font-size:0.82rem;margin-bottom:0.75rem;';
+        var nextGate = sh.summary.next_gate;
+        shNext.textContent = nextGate
+            ? 'Next gate: ' + nextGate.title + ' — ' + (nextGate.next_step || nextGate.description)
+            : 'All self-healing gates are ready for full bounded autonomy.';
+        shSection.appendChild(shNext);
+
+        (sh.gates || []).forEach(function (gate) {
+            var row = document.createElement('div');
+            var color = gate.status === 'ready' ? '#4ade80' : gate.status === 'blocked' ? '#f97316' : '#94a3b8';
+            row.style.cssText = 'display:flex;gap:0.75rem;align-items:flex-start;border-top:1px solid #1f2937;padding:0.65rem 0;';
+
+            var badge = document.createElement('span');
+            badge.textContent = gate.status === 'ready' ? 'ready' : gate.status;
+            badge.style.cssText = 'background:' + color + '20;color:' + color + ';border:1px solid ' + color + '55;padding:2px 9px;border-radius:999px;font-size:0.72rem;min-width:68px;text-align:center;text-transform:uppercase;';
+            row.appendChild(badge);
+
+            var body = document.createElement('div');
+            body.style.cssText = 'flex:1;min-width:0;';
+            var gateTitle = document.createElement('div');
+            gateTitle.style.cssText = 'color:#e5e7eb;font-weight:600;font-size:0.86rem;';
+            gateTitle.textContent = gate.title;
+            body.appendChild(gateTitle);
+            var gateDesc = document.createElement('div');
+            gateDesc.style.cssText = 'color:#94a3b8;font-size:0.76rem;line-height:1.4;margin-top:2px;';
+            gateDesc.textContent = gate.status === 'ready'
+                ? ((gate.evidence || []).join(' · ') || gate.description)
+                : (gate.next_step || gate.description);
+            body.appendChild(gateDesc);
+            row.appendChild(body);
+
+            shSection.appendChild(row);
+        });
+
+        container.appendChild(shSection);
+    }
+
     // Helper: one row per surface.
     function renderSurfaceRow(s, idField, type) {
         var card = document.createElement('div');

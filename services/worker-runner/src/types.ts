@@ -31,10 +31,13 @@ export type RunnerState = 'idle' | 'polling' | 'claiming' | 'executing' | 'compl
 export interface PendingTask {
   vtid: string;
   title: string;
+  summary?: string;
   status: string;
   spec_status: string;
   spec_content?: string;
   task_domain?: TaskDomain;
+  target_paths?: string[];
+  spec_hash?: string;
   created_at: string;
   updated_at: string;
   is_terminal: boolean;
@@ -42,6 +45,8 @@ export interface PendingTask {
   claim_expires_at?: string | null;
   claim_started_at?: string | null;
   metadata?: Record<string, unknown>;
+  layer?: string;
+  module?: string;
 }
 
 /**

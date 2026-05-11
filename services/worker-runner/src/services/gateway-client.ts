@@ -177,7 +177,8 @@ export async function routeTask(
   vtid: string,
   title: string,
   domain?: TaskDomain,
-  specContent?: string
+  specContent?: string,
+  targetPaths?: string[]
 ): Promise<RoutingResult> {
   console.log(`[${VTID}] Routing task: ${vtid}`);
 
@@ -191,6 +192,7 @@ export async function routeTask(
         title,
         task_domain: domain,
         spec_content: specContent,
+        target_paths: targetPaths,
         worker_id: config.workerId,
       }),
     }
@@ -262,7 +264,6 @@ export async function reportSubagentComplete(
         vtid,
         domain,
         run_id: runId,
-        skip_verification: true, // For worker-runner, we trust the LLM result
         result: {
           ok: result.ok,
           files_changed: result.files_changed || [],
@@ -309,11 +310,13 @@ export async function reportOrchestratorComplete(
         success,
         summary: summary || (success ? 'Task completed successfully' : 'Task failed'),
         error,
-        skip_verification: true, // For worker-runner, we trust the LLM result
         result: result
           ? {
+              ok: result.ok,
               files_changed: result.files_changed || [],
               files_created: result.files_created || [],
+              summary: result.summary,
+              error: result.error,
             }
           : undefined,
       }),

@@ -434,6 +434,12 @@ jobs:
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
             SECRETS_ARGS+=(--update-secrets=ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest)
+            # BOOTSTRAP-WORKER-DS: worker-runner execution falls back to
+            # DeepSeek when the Anthropic primary is unavailable. Gateway
+            # already binds this GitHub secret; bind it here too so live
+            # self-healing VTIDs do not fail after claim with "fallback key
+            # missing".
+            EXTRA_ENV_ARGS+=(--update-env-vars=DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }})
           fi
 
           # VTID-01175: Vitana Verification Engine — needs gateway URL for agents registry heartbeat
