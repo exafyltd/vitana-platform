@@ -340,6 +340,31 @@ export async function executeTask(
     );
     return await delegateToAutopilot(config, task, autopilotExecutionId, modelName, provider, startTime);
   }
+  // PR-E (VTID-02931, Gap 1): never fall through to the local LLM for
+  // self-healing tasks. The repair-evidence gate from PR #2045 is a weak
+  // check — Claude can hallucinate file paths in its describe-only output,
+  // which slips past the `files_changed.length > 0` check and produces a
+  // false success. Worker-runner must refuse to even attempt the local
+  // path when the autopilot bridge linkage is missing; the task fails
+  // hard, the reconciler tombstones it, and the operator sees the bridge
+  // failure that needs root-cause attention (safety-gate block, scope
+  // mismatch, etc.) instead of a silently-fake "fixed" claim.
+  if (isSelfHealing && !autopilotExecutionId) {
+    console.warn(
+      `[${VTID}] Refusing legacy LLM fallback for self-healing task ${task.vtid}: ` +
+        `metadata.autopilot_execution_id is missing (bridge failed upstream). ` +
+        `See self-healing.execution.bridge_failed in oasis_events for the root cause.`,
+    );
+    return {
+      ok: false,
+      error:
+        'self-healing requires autopilot bridge — refusing legacy LLM fallback (see self-healing.execution.bridge_failed)',
+      duration_ms: Date.now() - startTime,
+      model: 'none',
+      provider: 'self-healing-guard',
+      healing_state: 'execution_failed',
+    };
+  }
 
   if (!initClaude()) {
     return {
