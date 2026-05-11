@@ -225,6 +225,20 @@ async function fetchWatchdogIssues(cfg: SupabaseConfig): Promise<ActionItem[]> {
   } catch {
     return [];
   }
+  // VTID-02899: a watchdog whose every watched signal is wired='not_wired'
+  // is by design unable to observe — surfacing it as a blind spot duplicates
+  // the awareness_not_wired finding for the same signal. Filter those out so
+  // the operator sees one row per gap, not two.
+  const manifest = getAwarenessManifest();
+  const notWired = new Set<string>();
+  for (const sig of manifest) {
+    if (sig.wired === 'not_wired') notWired.add(sig.key);
+  }
+  const allWatchedNotWired = (w: typeof statuses[number]['watchdog']): boolean => {
+    if (!w.watches || w.watches.length === 0) return false;
+    return w.watches.every((k) => notWired.has(k));
+  };
+
   for (const s of statuses) {
     if (s.verdict === 'fail') {
       out.push({
@@ -248,6 +262,8 @@ async function fetchWatchdogIssues(cfg: SupabaseConfig): Promise<ActionItem[]> {
         detected_at: new Date().toISOString(),
       });
     } else if (s.verdict === 'unknown') {
+      // VTID-02899: suppress if all watched signals are not_wired by design.
+      if (allWatchedNotWired(s.watchdog)) continue;
       out.push({
         id: `watchdog_unknown:${s.watchdog.id}`,
         source: 'watchdog_unknown' as const,
@@ -457,10 +473,16 @@ async function fetchProviderDrift(cfg: SupabaseConfig): Promise<ActionItem[]> {
 async function fetchFailureClassesNoRule(cfg: SupabaseConfig): Promise<ActionItem[]> {
   try {
     // Lazy-import so taxonomy file isn't pulled during testing if not needed.
+    // VTID-02899: the export is `VOICE_FAILURE_CLASSES` (array), not
+    // `FAILURE_CLASSES` (which doesn't exist). Original lookup never
+    // populated knownClasses → every class with an open report was
+    // reported as "no rule", producing false-positive findings on classes
+    // that already had taxonomy entries (e.g. voice.model_under_responds).
     const taxonomy = await import('./voice-failure-taxonomy').catch(() => null);
     const knownClasses = new Set<string>();
-    if (taxonomy && typeof (taxonomy as any).FAILURE_CLASSES === 'object') {
-      for (const k of Object.keys((taxonomy as any).FAILURE_CLASSES || {})) knownClasses.add(k);
+    const arr = taxonomy && (taxonomy as any).VOICE_FAILURE_CLASSES;
+    if (Array.isArray(arr)) {
+      for (const k of arr) if (typeof k === 'string') knownClasses.add(k);
     }
 
     const r = await fetch(
@@ -514,11 +536,11 @@ async function fetchVoiceSessionHealth(cfg: SupabaseConfig): Promise<VoiceImprov
   try {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     const r = await fetch(
-      `${cfg.url}/rest/v1/oasis_events?topic=in.(vtid.live.session.stop,voice.live.session.ended)&occurred_at=gte.${encodeURIComponent(since)}&select=topic,metadata,occurred_at&order=occurred_at.desc&limit=500`,
+      `${cfg.url}/rest/v1/oasis_events?topic=in.(vtid.live.session.stop,voice.live.session.ended)&created_at=gte.${encodeURIComponent(since)}&select=topic,metadata,created_at&order=created_at.desc&limit=500`,
       { headers: authHeaders(cfg) },
     );
     if (!r.ok) return empty;
-    const rows = (await r.json()) as Array<{ topic: string; metadata: any; occurred_at: string }>;
+    const rows = (await r.json()) as Array<{ topic: string; metadata: any; created_at: string }>;
     let total = 0,
       audioInZero = 0,
       oneWay = 0;

@@ -148,14 +148,14 @@ export async function getWatchdogStatuses(): Promise<WatchdogStatus[]> {
     const since = new Date(Date.now() - PASS_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
     const { data } = await sb
       .from('oasis_events')
-      .select('topic, occurred_at')
+      .select('topic, created_at')
       .in('topic', topics)
-      .gte('occurred_at', since)
-      .order('occurred_at', { ascending: false })
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
       .limit(500);
-    for (const row of (data || []) as Array<{ topic: string; occurred_at: string }>) {
+    for (const row of (data || []) as Array<{ topic: string; created_at: string }>) {
       if (!mostRecentByTopic[row.topic]) {
-        mostRecentByTopic[row.topic] = row.occurred_at;
+        mostRecentByTopic[row.topic] = row.created_at;
       }
     }
   }
