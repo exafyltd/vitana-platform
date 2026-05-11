@@ -42518,6 +42518,10 @@ function renderJourneyContextView() {
     // owed promises, recently-kept promises, counts, source-health.
     // Read-only.
     grid.appendChild(renderJourneyContextContinuityPanel(jc.continuity));
+    // VTID-02936 (B3): Concept Mastery panel — concepts explained,
+    // mastery observations, DYK cards seen, with repetition hints
+    // for the decision layer. Read-only.
+    grid.appendChild(renderJourneyContextConceptMasteryPanel(jc.conceptMastery));
 
     c.appendChild(grid);
     return c;
@@ -42568,6 +42572,9 @@ function loadJourneyContext() {
         // VTID-02932 (B2): conversation continuity preview — open threads
         // + promises + distilled context. Keyed on user/tenant.
         fetch('/api/v1/voice/continuity/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        // VTID-02936 (B3): concept-mastery preview — explained / mastered
+        // / DYK cards seen + distilled context. Keyed on user/tenant.
+        fetch('/api/v1/voice/concept-mastery/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42602,6 +42609,11 @@ function loadJourneyContext() {
             jc.continuity = results[6];
         } else {
             jc.continuity = null;
+        }
+        if (results[7] && results[7].ok) {
+            jc.conceptMastery = results[7];
+        } else {
+            jc.conceptMastery = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -43009,6 +43021,118 @@ function renderJourneyContextContinuityPanel(co) {
     } else {
         promisesKept.forEach(function (p) {
             panel.appendChild(renderJourneyContextEmptyRow(p.promise_text, 'kept ' + p.kept_at));
+        });
+    }
+
+    return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02936 (B3): Concept Mastery panel.
+//
+// Read-only inspection surface for the B3 concept-mastery context the
+// assistant decision layer reads from. Operators read:
+//   - concepts explained (with count + repetition hint: first_time /
+//     one_liner / skip)
+//   - concepts the user has demonstrated mastery of
+//   - DYK cards already surfaced (with last-seen recency)
+//   - aggregate counts used by the cadence layer
+//   - source-health
+//
+// Wall (B3): NO mutation, NO POST, NO buttons. Selection is read-
+// only; state advancement (incrementing concept_explained_count,
+// marking mastery, recording dyk_card_seen) lives in a follow-up
+// slice with its own dedicated event endpoint.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextConceptMasteryPanel(cm) {
+    var panel = renderJourneyContextPanel(
+        'Concept Mastery (B3)',
+        'Explained / mastered / DYK seen — read-only, no mutation',
+    );
+
+    if (!cm) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    var ctx = cm.context || {};
+    var counts = ctx.counts || {};
+    var sh = ctx.source_health || {};
+
+    // ---- Counts ----
+    panel.appendChild(renderJourneyContextEmptyRow('concepts_explained_total', String(counts.concepts_explained_total || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('concepts_mastered_total', String(counts.concepts_mastered_total || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('dyk_cards_seen_total', String(counts.dyk_cards_seen_total || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('concepts_explained_in_last_24h', String(counts.concepts_explained_in_last_24h || 0)));
+
+    // ---- Source health ----
+    var cmShHeader = document.createElement('div');
+    cmShHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    cmShHeader.textContent = 'Source health';
+    panel.appendChild(cmShHeader);
+    var stateHealth = sh.user_assistant_state || { ok: false, reason: 'unknown' };
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'user_assistant_state',
+        stateHealth.ok ? 'ok' : ('failed: ' + (stateHealth.reason || 'unknown')),
+    ));
+
+    // ---- Concepts explained ----
+    var ceHeader = document.createElement('div');
+    ceHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    ceHeader.textContent = 'Concepts explained (most recent first, capped at 10)';
+    panel.appendChild(ceHeader);
+    var explained = Array.isArray(ctx.concepts_explained) ? ctx.concepts_explained : [];
+    if (explained.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('concepts_explained', 'no concepts explained'));
+    } else {
+        explained.forEach(function (c) {
+            var ageLabel = (c.days_since_last_explained === null || c.days_since_last_explained === undefined)
+                ? '?d'
+                : (c.days_since_last_explained + 'd');
+            panel.appendChild(renderJourneyContextEmptyRow(
+                c.concept_key + ' [×' + c.count + ', ' + ageLabel + ']',
+                'hint=' + c.repetition_hint,
+            ));
+        });
+    }
+
+    // ---- Concepts mastered ----
+    var cmHeader = document.createElement('div');
+    cmHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    cmHeader.textContent = 'Concepts mastered (most recent first, capped at 10)';
+    panel.appendChild(cmHeader);
+    var mastered = Array.isArray(ctx.concepts_mastered) ? ctx.concepts_mastered : [];
+    if (mastered.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('concepts_mastered', 'no mastery observed yet'));
+    } else {
+        mastered.forEach(function (c) {
+            var conf = (c.confidence === null || c.confidence === undefined)
+                ? '?'
+                : c.confidence.toFixed(2);
+            panel.appendChild(renderJourneyContextEmptyRow(
+                c.concept_key + ' [conf=' + conf + ']',
+                'observed ' + c.last_observed_at,
+            ));
+        });
+    }
+
+    // ---- DYK cards seen ----
+    var dykHeader = document.createElement('div');
+    dykHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    dykHeader.textContent = 'DYK cards seen (most recent first, capped at 10)';
+    panel.appendChild(dykHeader);
+    var dyk = Array.isArray(ctx.dyk_cards_seen) ? ctx.dyk_cards_seen : [];
+    if (dyk.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('dyk_cards_seen', 'no DYK cards surfaced'));
+    } else {
+        dyk.forEach(function (c) {
+            var ageLabel = (c.days_since_last_seen === null || c.days_since_last_seen === undefined)
+                ? '?d'
+                : (c.days_since_last_seen + 'd');
+            panel.appendChild(renderJourneyContextEmptyRow(
+                c.card_key + ' [×' + c.count + ', ' + ageLabel + ']',
+                'last_seen ' + c.last_seen_at,
+            ));
         });
     }
 
