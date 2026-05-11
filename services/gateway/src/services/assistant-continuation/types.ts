@@ -334,17 +334,65 @@ export const KNOWN_CONTINUATION_KINDS: ReadonlySet<ContinuationKind> = new Set<
   'none_with_reason',
 ]);
 
+/**
+ * Surfaces the orchestrator services. The validator rejects unknown
+ * surface values so a typo'd `journeySurface` from a third-party
+ * caller can't slip into the ranker.
+ */
+export const KNOWN_CONTINUATION_SURFACES: ReadonlySet<ContinuationSurface> = new Set<
+  ContinuationSurface
+>(['orb_wake', 'orb_turn_end', 'text_turn_end', 'home']);
+
+/**
+ * Privacy gates the renderer can honor. Unknown values are rejected so
+ * a malformed value can't downgrade or upgrade the gate by accident.
+ */
+export const KNOWN_PRIVACY_MODES: ReadonlySet<ContinuationPrivacyMode> = new Set<
+  ContinuationPrivacyMode
+>(['safe_to_speak', 'use_silently', 'suppress_sensitive']);
+
+/**
+ * CTA types recognized by `render-voice-continuation.ts` /
+ * `render-text-continuation.ts` (shipped in B0d.2+). Each type may
+ * require additional fields (route for navigate, toolName for run_tool)
+ * — the validator enforces those too.
+ */
+const KNOWN_CTA_TYPES: ReadonlySet<ContinuationCta['type']> = new Set<
+  ContinuationCta['type']
+>(['ask_permission', 'navigate', 'offer_demo', 'run_tool', 'explain', 'noop']);
+
 export type CandidateValidation =
   | { ok: true }
   | { ok: false; reason: string };
 
+function isNonEmptyTrimmedString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
 /**
- * Validate a provider-returned candidate against the contract invariants:
+ * Validate a provider-returned candidate against the full
+ * `AssistantContinuation` shape AND the kind-specific invariants:
+ *
  *   - candidate is a non-null object
- *   - `kind` is one of `KNOWN_CONTINUATION_KINDS`
+ *   - `kind`        ∈ KNOWN_CONTINUATION_KINDS
+ *   - `id`          non-empty string
+ *   - `surface`     ∈ KNOWN_CONTINUATION_SURFACES
+ *   - `priority`    finite number
+ *   - `userFacingLine` string (empty allowed for `none_with_reason`)
+ *   - `dedupeKey`   non-empty string
+ *   - `privacyMode` ∈ KNOWN_PRIVACY_MODES
+ *   - `cta`         object with `type` ∈ KNOWN_CTA_TYPES,
+ *                   `navigate` requires `route`, `run_tool` requires `toolName`
+ *   - `evidence`    array; each entry has non-empty `kind` + `detail`
+ *   - `expiresAt`   if present, must be string
  *   - `suppressReason` ↔ `kind === 'none_with_reason'`:
- *       - present (non-empty string) when kind is `none_with_reason`
- *       - absent when kind is anything else
+ *       * present (non-empty trimmed string) when kind is `none_with_reason`
+ *       * absent when kind is anything else
+ *
+ * The discriminated union enforces the kind/suppressReason invariant at
+ * compile time for typed callers; this validator is the defense for
+ * providers that bypass the type system (`as any`, JS-side callers like
+ * the ai-chat edge function in B0d.4, etc.).
  *
  * Reasons are prefixed with `invariant_violation:` so they're easy to
  * grep out of the Continuation Inspector + OASIS payloads.
@@ -358,13 +406,136 @@ export function validateContinuationCandidate(
       reason: 'invariant_violation: candidate_not_an_object',
     };
   }
-  const c = candidate as { kind?: unknown; suppressReason?: unknown };
-  if (typeof c.kind !== 'string' || !KNOWN_CONTINUATION_KINDS.has(c.kind as ContinuationKind)) {
+  const c = candidate as Record<string, unknown>;
+
+  // ---- kind ----
+  if (
+    typeof c.kind !== 'string' ||
+    !KNOWN_CONTINUATION_KINDS.has(c.kind as ContinuationKind)
+  ) {
     return {
       ok: false,
       reason: `invariant_violation: unknown_continuation_kind (${String(c.kind)})`,
     };
   }
+
+  // ---- id ----
+  if (!isNonEmptyTrimmedString(c.id)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: id',
+    };
+  }
+
+  // ---- surface ----
+  if (
+    typeof c.surface !== 'string' ||
+    !KNOWN_CONTINUATION_SURFACES.has(c.surface as ContinuationSurface)
+  ) {
+    return {
+      ok: false,
+      reason: `invariant_violation: unknown_continuation_surface (${String(c.surface)})`,
+    };
+  }
+
+  // ---- priority ----
+  if (typeof c.priority !== 'number' || !Number.isFinite(c.priority)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: priority',
+    };
+  }
+
+  // ---- userFacingLine (empty allowed for none_with_reason) ----
+  if (typeof c.userFacingLine !== 'string') {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: userFacingLine',
+    };
+  }
+
+  // ---- dedupeKey ----
+  if (!isNonEmptyTrimmedString(c.dedupeKey)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: dedupeKey',
+    };
+  }
+
+  // ---- privacyMode ----
+  if (
+    typeof c.privacyMode !== 'string' ||
+    !KNOWN_PRIVACY_MODES.has(c.privacyMode as ContinuationPrivacyMode)
+  ) {
+    return {
+      ok: false,
+      reason: `invariant_violation: unknown_privacy_mode (${String(c.privacyMode)})`,
+    };
+  }
+
+  // ---- cta ----
+  if (c.cta === null || typeof c.cta !== 'object') {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: cta',
+    };
+  }
+  const cta = c.cta as Record<string, unknown>;
+  if (
+    typeof cta.type !== 'string' ||
+    !KNOWN_CTA_TYPES.has(cta.type as ContinuationCta['type'])
+  ) {
+    return {
+      ok: false,
+      reason: `invariant_violation: unknown_cta_type (${String(cta.type)})`,
+    };
+  }
+  if (cta.type === 'navigate' && !isNonEmptyTrimmedString(cta.route)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: cta_navigate_requires_route',
+    };
+  }
+  if (cta.type === 'run_tool' && !isNonEmptyTrimmedString(cta.toolName)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: cta_run_tool_requires_toolName',
+    };
+  }
+
+  // ---- evidence ----
+  if (!Array.isArray(c.evidence)) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: evidence_must_be_array',
+    };
+  }
+  for (let i = 0; i < c.evidence.length; i++) {
+    const e = c.evidence[i];
+    if (e === null || typeof e !== 'object') {
+      return {
+        ok: false,
+        reason: `invariant_violation: evidence_entry_invalid (index ${i})`,
+      };
+    }
+    const ee = e as Record<string, unknown>;
+    if (!isNonEmptyTrimmedString(ee.kind) || !isNonEmptyTrimmedString(ee.detail)) {
+      return {
+        ok: false,
+        reason: `invariant_violation: evidence_entry_invalid (index ${i})`,
+      };
+    }
+  }
+
+  // ---- expiresAt (optional) ----
+  if (c.expiresAt !== undefined && typeof c.expiresAt !== 'string') {
+    return {
+      ok: false,
+      reason: 'invariant_violation: missing_or_invalid_field: expiresAt',
+    };
+  }
+
+  // ---- suppressReason ↔ kind invariant ----
   const isNoneKind = c.kind === 'none_with_reason';
   const hasReason =
     typeof c.suppressReason === 'string' && c.suppressReason.trim().length > 0;
@@ -380,5 +551,6 @@ export function validateContinuationCandidate(
       reason: 'invariant_violation: non_none_kind_must_not_carry_suppressReason',
     };
   }
+
   return { ok: true };
 }

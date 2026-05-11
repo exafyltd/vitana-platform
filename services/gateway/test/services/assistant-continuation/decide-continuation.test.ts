@@ -662,6 +662,38 @@ describe('B0d.1 decideContinuation — P1: candidate invariant validation', () =
     );
   });
 
+  // P1 round-2: structural validation. A bare `{ kind: 'wake_brief' }`
+  // is missing id/surface/priority/userFacingLine/cta/evidence/dedupeKey/
+  // privacyMode. The validator must reject it; the orchestrator must
+  // downgrade it to `status: 'errored'` so renderers never see a
+  // half-built continuation.
+  it('downgrades a returned candidate missing required fields (e.g. only kind set)', async () => {
+    const registry = createProviderRegistry();
+    registry.register({
+      key: 'minimal-shape',
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: 'minimal-shape',
+        status: 'returned',
+        latencyMs: 5,
+        candidate: { kind: 'wake_brief' } as unknown as AssistantContinuation,
+      }),
+    });
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: frozenNow(),
+      newId: newIdFactory(),
+    });
+    expect(decision.selectedContinuation).toBeNull();
+    const row = decision.sourceProviderResults[0];
+    expect(row.status).toBe('errored');
+    // First required field failure is `id`; the message names a specific
+    // field so operators can fix the upstream provider quickly.
+    expect(row.reason).toMatch(/^invariant_violation: missing_or_invalid_field: id/);
+  });
+
   it('a valid candidate alongside a malformed one still wins', async () => {
     const registry = createProviderRegistry();
     const valid = wakeBriefCandidate({ id: 'valid', priority: 30, line: 'ok' });

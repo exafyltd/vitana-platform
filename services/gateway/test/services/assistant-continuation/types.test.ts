@@ -14,6 +14,8 @@ import {
   isNoneWithReason,
   validateContinuationCandidate,
   KNOWN_CONTINUATION_KINDS,
+  KNOWN_CONTINUATION_SURFACES,
+  KNOWN_PRIVACY_MODES,
   type AssistantContinuation,
 } from '../../../src/services/assistant-continuation/types';
 
@@ -261,5 +263,269 @@ describe('B0d.1 — validateContinuationCandidate (P1 fix)', () => {
     expect(KNOWN_CONTINUATION_KINDS.has('none_with_reason')).toBe(true);
     expect(KNOWN_CONTINUATION_KINDS.has('wake_brief')).toBe(true);
     expect(KNOWN_CONTINUATION_KINDS.has('match_journey_next_move')).toBe(true);
+  });
+
+  it('KNOWN_CONTINUATION_SURFACES covers all 4 surfaces', () => {
+    expect(KNOWN_CONTINUATION_SURFACES.size).toBe(4);
+    expect(KNOWN_CONTINUATION_SURFACES.has('orb_wake')).toBe(true);
+    expect(KNOWN_CONTINUATION_SURFACES.has('orb_turn_end')).toBe(true);
+    expect(KNOWN_CONTINUATION_SURFACES.has('text_turn_end')).toBe(true);
+    expect(KNOWN_CONTINUATION_SURFACES.has('home')).toBe(true);
+  });
+
+  it('KNOWN_PRIVACY_MODES covers all 3 modes', () => {
+    expect(KNOWN_PRIVACY_MODES.size).toBe(3);
+    expect(KNOWN_PRIVACY_MODES.has('safe_to_speak')).toBe(true);
+    expect(KNOWN_PRIVACY_MODES.has('use_silently')).toBe(true);
+    expect(KNOWN_PRIVACY_MODES.has('suppress_sensitive')).toBe(true);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Code-review finding P1 (round 2): the validator must enforce the FULL
+// AssistantContinuation shape, not only the suppressReason invariant.
+// A provider returning `{ kind: 'wake_brief' } as any` must NOT pass.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('B0d.1 — validateContinuationCandidate: full-shape enforcement (P1 round 2)', () => {
+  function validNonNoneCandidate(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: 'wb-1',
+      surface: 'orb_wake',
+      kind: 'wake_brief',
+      priority: 50,
+      userFacingLine: 'Welcome back.',
+      cta: { type: 'explain' },
+      evidence: [],
+      dedupeKey: 'wb-1',
+      privacyMode: 'safe_to_speak',
+      ...overrides,
+    };
+  }
+
+  it('accepts a fully-specified non-none candidate', () => {
+    expect(validateContinuationCandidate(validNonNoneCandidate())).toEqual({
+      ok: true,
+    });
+  });
+
+  // User-requested test: known kind + missing required fields → reject.
+  it('rejects known non-none kind with missing required fields', () => {
+    // Only kind is set; every other required field is missing.
+    const r = validateContinuationCandidate({ kind: 'wake_brief' });
+    expect(r.ok).toBe(false);
+  });
+
+  describe('rejects missing required fields one by one', () => {
+    const requiredFields = [
+      'id',
+      'surface',
+      'priority',
+      'userFacingLine',
+      'cta',
+      'evidence',
+      'dedupeKey',
+      'privacyMode',
+    ];
+    it.each(requiredFields)('rejects when %s is missing', (field) => {
+      const candidate = validNonNoneCandidate();
+      delete candidate[field];
+      const r = validateContinuationCandidate(candidate);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/^invariant_violation:/);
+    });
+  });
+
+  describe('rejects invalid field types', () => {
+    it('rejects empty id', () => {
+      const r = validateContinuationCandidate(validNonNoneCandidate({ id: '' }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: id/);
+    });
+
+    it('rejects whitespace-only id', () => {
+      const r = validateContinuationCandidate(validNonNoneCandidate({ id: '   ' }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: id/);
+    });
+
+    it('rejects non-number priority', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ priority: 'high' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: priority/);
+    });
+
+    it('rejects non-finite priority (NaN, Infinity)', () => {
+      const rNan = validateContinuationCandidate(
+        validNonNoneCandidate({ priority: Number.NaN }),
+      );
+      expect(rNan.ok).toBe(false);
+      const rInf = validateContinuationCandidate(
+        validNonNoneCandidate({ priority: Number.POSITIVE_INFINITY }),
+      );
+      expect(rInf.ok).toBe(false);
+    });
+
+    it('accepts priority=0 (legitimate for none_with_reason)', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ priority: 0 }),
+      );
+      expect(r).toEqual({ ok: true });
+    });
+
+    it('rejects non-string userFacingLine', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ userFacingLine: 42 }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: userFacingLine/);
+    });
+
+    it('accepts empty userFacingLine (none_with_reason carries empty)', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ userFacingLine: '' }),
+      );
+      expect(r).toEqual({ ok: true });
+    });
+
+    it('rejects empty dedupeKey', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ dedupeKey: '' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: dedupeKey/);
+    });
+
+    it('rejects unknown surface', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ surface: 'made_up_surface' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/unknown_continuation_surface/);
+    });
+
+    it('rejects unknown privacyMode', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ privacyMode: 'totally_invented' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/unknown_privacy_mode/);
+    });
+  });
+
+  describe('cta validation', () => {
+    it('rejects non-object cta', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ cta: 'explain' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: cta/);
+    });
+
+    it('rejects unknown cta type', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ cta: { type: 'twirl' } }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/unknown_cta_type/);
+    });
+
+    it('rejects cta type="navigate" without a route', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ cta: { type: 'navigate' } }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/cta_navigate_requires_route/);
+    });
+
+    it('accepts cta type="navigate" with a valid route', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({
+          cta: { type: 'navigate', route: '/matches/123' },
+        }),
+      );
+      expect(r).toEqual({ ok: true });
+    });
+
+    it('rejects cta type="run_tool" without a toolName', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ cta: { type: 'run_tool' } }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/cta_run_tool_requires_toolName/);
+    });
+
+    it('accepts cta type="run_tool" with a valid toolName', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({
+          cta: { type: 'run_tool', toolName: 'save_diary_entry' },
+        }),
+      );
+      expect(r).toEqual({ ok: true });
+    });
+  });
+
+  describe('evidence validation', () => {
+    it('rejects non-array evidence', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ evidence: 'foo' }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/evidence_must_be_array/);
+    });
+
+    it('accepts an empty evidence array', () => {
+      expect(
+        validateContinuationCandidate(validNonNoneCandidate({ evidence: [] })),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects evidence entries missing kind or detail', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ evidence: [{ kind: 'demo' }] }), // detail missing
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/evidence_entry_invalid \(index 0\)/);
+    });
+
+    it('reports the index of the first malformed entry', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({
+          evidence: [
+            { kind: 'a', detail: 'ok' },
+            { kind: 'b', detail: 'ok' },
+            { kind: 'c' }, // bad
+          ],
+        }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/evidence_entry_invalid \(index 2\)/);
+    });
+  });
+
+  describe('expiresAt optional field', () => {
+    it('accepts missing expiresAt', () => {
+      expect(
+        validateContinuationCandidate(validNonNoneCandidate()),
+      ).toEqual({ ok: true });
+    });
+
+    it('accepts a string expiresAt', () => {
+      expect(
+        validateContinuationCandidate(
+          validNonNoneCandidate({ expiresAt: '2026-05-12T00:00:00Z' }),
+        ),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects a non-string expiresAt', () => {
+      const r = validateContinuationCandidate(
+        validNonNoneCandidate({ expiresAt: 1234567890 }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/missing_or_invalid_field: expiresAt/);
+    });
   });
 });
