@@ -99,17 +99,14 @@ export interface ContinuationEvidence {
 }
 
 /**
- * The continuation unit itself. Returned by a provider and rendered into
- * the user-facing surface by `render-voice-continuation.ts` /
- * `render-text-continuation.ts` (those renderers ship in B0d.2+).
+ * Shared fields for every continuation kind. The discriminated union
+ * below pairs this with the kind-specific suppressReason rule.
  */
-export interface AssistantContinuation {
+interface ContinuationBase {
   /** Stable id; same across re-renders of the same logical continuation. */
   id: string;
   /** Where the continuation is rendered. */
   surface: ContinuationSurface;
-  /** What kind. `none_with_reason` is a real kind, not a sentinel. */
-  kind: ContinuationKind;
   /** Higher number = more important. Ranker uses this × situational fit. */
   priority: number;
   /** Already-rendered line in the user's language. Empty for `none_with_reason`. */
@@ -124,16 +121,39 @@ export interface AssistantContinuation {
   expiresAt?: string;
   /** Privacy gate. */
   privacyMode: ContinuationPrivacyMode;
-  /**
-   * REQUIRED when `kind === 'none_with_reason'`. Forbidden otherwise — a
-   * real continuation does not carry a suppress reason.
-   *
-   * The type system can't enforce this conditional on the kind alone
-   * without discriminated unions, so the runtime guard in
-   * `makeNoneWithReason()` does the work.
-   */
-  suppressReason?: string;
 }
+
+/**
+ * Every non-suppression continuation kind. Listed explicitly so the
+ * discriminated-union branches stay exhaustive: a new kind added to the
+ * ContinuationKind union must also be added here or it won't compile
+ * against `AssistantContinuation`.
+ */
+export type NonSuppressionContinuationKind = Exclude<
+  ContinuationKind,
+  'none_with_reason'
+>;
+
+/**
+ * The continuation unit. Discriminated union — `kind === 'none_with_reason'`
+ * REQUIRES `suppressReason: string`; any other kind FORBIDS the field
+ * (`?: never` makes TS reject the assignment at compile time).
+ *
+ * The runtime validator `validateContinuationCandidate()` enforces the
+ * same invariant for provider outputs that bypass the type system via
+ * `as any`. The orchestrator calls it on every returned candidate so
+ * malformed providers downgrade to `status: 'errored'` instead of
+ * silently passing through.
+ */
+export type AssistantContinuation =
+  | (ContinuationBase & {
+      kind: 'none_with_reason';
+      suppressReason: string;
+    })
+  | (ContinuationBase & {
+      kind: NonSuppressionContinuationKind;
+      suppressReason?: never;
+    });
 
 // ---------------------------------------------------------------------------
 // Provider — anything that can produce a candidate continuation OR
@@ -267,9 +287,98 @@ export function makeNoneWithReason(args: {
 
 /**
  * Type guard: is this continuation a suppression?
+ *
+ * The compile-time check (`kind === 'none_with_reason'`) is sufficient
+ * once the discriminated union is in place — TS knows the
+ * `suppressReason: string` branch is selected. The runtime guard adds
+ * defense against `as any`-bypassed inputs: a malformed candidate that
+ * names `kind: 'none_with_reason'` but omits `suppressReason` returns
+ * `false` here, so downstream renderers can't trust a missing value.
  */
 export function isNoneWithReason(
   c: AssistantContinuation,
-): c is AssistantContinuation & { suppressReason: string } {
-  return c.kind === 'none_with_reason';
+): c is Extract<AssistantContinuation, { kind: 'none_with_reason' }> {
+  return (
+    c.kind === 'none_with_reason' &&
+    typeof (c as { suppressReason?: unknown }).suppressReason === 'string' &&
+    ((c as { suppressReason: string }).suppressReason.trim().length > 0)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Runtime validator — defense for provider outputs that bypass the type
+// system. Called by `decide-continuation.ts` on every returned candidate.
+// Invariant failures become `status: 'errored'` results so malformed
+// candidates never reach renderers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Set of all kinds known to the contract — used by the validator to
+ * reject typo'd / unknown kinds before they reach the orchestrator's
+ * ranker. Kept as a runtime constant so JS callers (e.g. ai-chat edge
+ * function) can validate too.
+ */
+export const KNOWN_CONTINUATION_KINDS: ReadonlySet<ContinuationKind> = new Set<
+  ContinuationKind
+>([
+  'wake_brief',
+  'next_step',
+  'did_you_know',
+  'feature_discovery',
+  'opportunity',
+  'reminder',
+  'check_in',
+  'offer_to_continue',
+  'journey_guidance',
+  'match_journey_next_move',
+  'none_with_reason',
+]);
+
+export type CandidateValidation =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+/**
+ * Validate a provider-returned candidate against the contract invariants:
+ *   - candidate is a non-null object
+ *   - `kind` is one of `KNOWN_CONTINUATION_KINDS`
+ *   - `suppressReason` ↔ `kind === 'none_with_reason'`:
+ *       - present (non-empty string) when kind is `none_with_reason`
+ *       - absent when kind is anything else
+ *
+ * Reasons are prefixed with `invariant_violation:` so they're easy to
+ * grep out of the Continuation Inspector + OASIS payloads.
+ */
+export function validateContinuationCandidate(
+  candidate: unknown,
+): CandidateValidation {
+  if (candidate === null || typeof candidate !== 'object') {
+    return {
+      ok: false,
+      reason: 'invariant_violation: candidate_not_an_object',
+    };
+  }
+  const c = candidate as { kind?: unknown; suppressReason?: unknown };
+  if (typeof c.kind !== 'string' || !KNOWN_CONTINUATION_KINDS.has(c.kind as ContinuationKind)) {
+    return {
+      ok: false,
+      reason: `invariant_violation: unknown_continuation_kind (${String(c.kind)})`,
+    };
+  }
+  const isNoneKind = c.kind === 'none_with_reason';
+  const hasReason =
+    typeof c.suppressReason === 'string' && c.suppressReason.trim().length > 0;
+  if (isNoneKind && !hasReason) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: none_with_reason_requires_suppressReason',
+    };
+  }
+  if (!isNoneKind && c.suppressReason !== undefined) {
+    return {
+      ok: false,
+      reason: 'invariant_violation: non_none_kind_must_not_carry_suppressReason',
+    };
+  }
+  return { ok: true };
 }

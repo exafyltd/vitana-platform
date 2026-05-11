@@ -552,6 +552,251 @@ describe('B0d.1 decideContinuation — checklist #5: contract generic across kin
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────
+// Code-review finding P1: invariant validation at the orchestrator.
+// Malformed provider candidates are downgraded to `status: 'errored'`
+// with a specific `invariant_violation: …` reason. The bad candidate
+// never reaches the ranker.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('B0d.1 decideContinuation — P1: candidate invariant validation', () => {
+  it('downgrades a returned candidate with malformed kind to errored', async () => {
+    const registry = createProviderRegistry();
+    // Provider claims to return a continuation but the kind is bogus.
+    registry.register({
+      key: 'malformed-kind',
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: 'malformed-kind',
+        status: 'returned',
+        latencyMs: 5,
+        candidate: { kind: 'completely_made_up' } as unknown as AssistantContinuation,
+      }),
+    });
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: frozenNow(),
+      newId: newIdFactory(),
+    });
+    expect(decision.selectedContinuation).toBeNull();
+    const row = decision.sourceProviderResults[0];
+    expect(row.status).toBe('errored');
+    expect(row.reason).toMatch(/invariant_violation: unknown_continuation_kind/);
+  });
+
+  it('downgrades a returned kind="none_with_reason" candidate missing suppressReason', async () => {
+    const registry = createProviderRegistry();
+    registry.register({
+      key: 'malformed-none',
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: 'malformed-none',
+        status: 'returned',
+        latencyMs: 5,
+        candidate: {
+          id: 'x',
+          surface: 'orb_wake',
+          kind: 'none_with_reason',
+          priority: 0,
+          userFacingLine: '',
+          cta: { type: 'noop' },
+          evidence: [],
+          dedupeKey: 'dk',
+          privacyMode: 'safe_to_speak',
+          // suppressReason intentionally missing
+        } as unknown as AssistantContinuation,
+      }),
+    });
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: frozenNow(),
+      newId: newIdFactory(),
+    });
+    expect(decision.selectedContinuation).toBeNull();
+    const row = decision.sourceProviderResults[0];
+    expect(row.status).toBe('errored');
+    expect(row.reason).toMatch(
+      /invariant_violation: none_with_reason_requires_suppressReason/,
+    );
+  });
+
+  it('downgrades a real kind that carries suppressReason', async () => {
+    const registry = createProviderRegistry();
+    registry.register({
+      key: 'malformed-real',
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: 'malformed-real',
+        status: 'returned',
+        latencyMs: 5,
+        candidate: {
+          id: 'wb',
+          surface: 'orb_wake',
+          kind: 'wake_brief',
+          priority: 50,
+          userFacingLine: 'Hi.',
+          cta: { type: 'explain' },
+          evidence: [],
+          dedupeKey: 'wb',
+          privacyMode: 'safe_to_speak',
+          suppressReason: 'should not be here',
+        } as unknown as AssistantContinuation,
+      }),
+    });
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: frozenNow(),
+      newId: newIdFactory(),
+    });
+    expect(decision.selectedContinuation).toBeNull();
+    const row = decision.sourceProviderResults[0];
+    expect(row.status).toBe('errored');
+    expect(row.reason).toMatch(
+      /invariant_violation: non_none_kind_must_not_carry_suppressReason/,
+    );
+  });
+
+  it('a valid candidate alongside a malformed one still wins', async () => {
+    const registry = createProviderRegistry();
+    const valid = wakeBriefCandidate({ id: 'valid', priority: 30, line: 'ok' });
+    registry.register({
+      key: 'malformed',
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: 'malformed',
+        status: 'returned',
+        latencyMs: 2,
+        candidate: { kind: 'completely_made_up' } as unknown as AssistantContinuation,
+      }),
+    });
+    registry.register(returningProvider('ok', valid));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: frozenNow(),
+      newId: newIdFactory(),
+    });
+    expect(decision.selectedContinuation).toBe(valid);
+    // The malformed one is still recorded — just downgraded to errored.
+    const malformedRow = decision.sourceProviderResults.find(
+      (r) => r.providerKey === 'malformed',
+    );
+    expect(malformedRow?.status).toBe('errored');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Code-review finding P3: latency policy. A provider-supplied `0`
+// (or absent / negative / non-finite) must not be accepted — fall
+// back to the orchestrator's measurement. B0d.3 depends on this to
+// diagnose wake delay; a silent 0 would lie.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('B0d.1 decideContinuation — P3: latency fallback policy', () => {
+  function fakeProviderWithLatency(
+    key: string,
+    reportedLatencyMs: number | undefined,
+  ): ContinuationProvider {
+    return {
+      key,
+      surfaces: ['orb_wake'],
+      produce: (): ProviderResult => ({
+        providerKey: key,
+        status: 'suppressed',
+        latencyMs: reportedLatencyMs as number,
+        reason: 'just_testing',
+      }),
+    };
+  }
+
+  // Inject a clock that advances by `deltaMs` on every call. The
+  // orchestrator calls now() multiple times around each provider; we
+  // only care that the delta between the call BEFORE produce() and the
+  // call AFTER produce() equals deltaMs. Since each call advances by
+  // the same amount, the delta between adjacent calls is exactly deltaMs.
+  function clockWithDelta(deltaMs: number) {
+    let t = 1_000_000_000_000;
+    return () => {
+      const out = new Date(t);
+      t += deltaMs;
+      return out;
+    };
+  }
+
+  it('uses the orchestrator measurement when provider reports latencyMs=0', async () => {
+    const registry = createProviderRegistry();
+    registry.register(fakeProviderWithLatency('p0', 0));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: clockWithDelta(7),
+      newId: newIdFactory(),
+    });
+    const row = decision.sourceProviderResults[0];
+    expect(row.latencyMs).toBe(7); // measured, not the provider's 0
+  });
+
+  it('uses the orchestrator measurement when latencyMs is negative', async () => {
+    const registry = createProviderRegistry();
+    registry.register(fakeProviderWithLatency('pneg', -5));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: clockWithDelta(11),
+      newId: newIdFactory(),
+    });
+    expect(decision.sourceProviderResults[0].latencyMs).toBe(11);
+  });
+
+  it('uses the orchestrator measurement when latencyMs is missing', async () => {
+    const registry = createProviderRegistry();
+    registry.register(fakeProviderWithLatency('pundef', undefined));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: clockWithDelta(3),
+      newId: newIdFactory(),
+    });
+    expect(decision.sourceProviderResults[0].latencyMs).toBe(3);
+  });
+
+  it('uses the orchestrator measurement when latencyMs is non-finite', async () => {
+    const registry = createProviderRegistry();
+    registry.register(fakeProviderWithLatency('pnan', Number.NaN));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: clockWithDelta(13),
+      newId: newIdFactory(),
+    });
+    expect(decision.sourceProviderResults[0].latencyMs).toBe(13);
+  });
+
+  it('keeps provider-supplied latency when it is strictly positive', async () => {
+    const registry = createProviderRegistry();
+    registry.register(fakeProviderWithLatency('preal', 42));
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      now: clockWithDelta(1),
+      newId: newIdFactory(),
+    });
+    expect(decision.sourceProviderResults[0].latencyMs).toBe(42);
+  });
+});
+
 describe('B0d.1 decideContinuation — rollUpSuppressionReason helper', () => {
   it('returns no_providers_registered when zero providers ran', () => {
     expect(rollUpSuppressionReason([], 0)).toBe('no_providers_registered');

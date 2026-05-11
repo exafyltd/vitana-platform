@@ -45,7 +45,10 @@ import type {
   ProviderResult,
   DecisionTelemetryContext,
 } from './types';
-import { makeNoneWithReason } from './types';
+import {
+  makeNoneWithReason,
+  validateContinuationCandidate,
+} from './types';
 import {
   defaultProviderRegistry,
   type ContinuationProviderRegistry,
@@ -208,12 +211,36 @@ async function invokeProviderSafely(
   const t0 = now().getTime();
   try {
     const result = await provider.produce(ctx);
-    // Provider-supplied latency wins (some providers measure their own
-    // critical section). Fall back to wall-clock if absent or zero.
-    if (typeof result.latencyMs === 'number' && result.latencyMs >= 0) {
-      return result;
+    // Latency policy: provider-supplied wins ONLY when it's a strictly
+    // positive number. Otherwise (absent, zero, negative, non-finite)
+    // we use the orchestrator's wall-clock measurement. A zero from a
+    // provider is treated as missing — B0d.3 relies on this evidence
+    // to diagnose wake delay; a silent 0 would lie.
+    const measuredLatencyMs = now().getTime() - t0;
+    const reportedLatencyMs =
+      typeof result.latencyMs === 'number' &&
+      Number.isFinite(result.latencyMs) &&
+      result.latencyMs > 0
+        ? result.latencyMs
+        : measuredLatencyMs;
+
+    // Invariant validation for returned candidates. A malformed
+    // candidate (missing/extra `suppressReason`, unknown kind, non-
+    // object) is downgraded to `status: 'errored'` with the validator's
+    // specific reason. The bad candidate NEVER reaches the ranker.
+    if (result.status === 'returned' && result.candidate !== undefined) {
+      const guard = validateContinuationCandidate(result.candidate);
+      if (!guard.ok) {
+        return {
+          providerKey: provider.key,
+          status: 'errored',
+          latencyMs: reportedLatencyMs,
+          reason: guard.reason,
+        };
+      }
     }
-    return { ...result, latencyMs: now().getTime() - t0 };
+
+    return { ...result, latencyMs: reportedLatencyMs };
   } catch (err) {
     return {
       providerKey: provider.key,
