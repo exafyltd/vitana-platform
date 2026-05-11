@@ -165,10 +165,13 @@ export interface SelfHealingReportResponse {
   processed: number;
   vtids_created: number;
   skipped: number;
+  /** Count of failures that the pre-probe found already healthy at report
+   * time — no VTID allocated, no self_healing_log row written. */
+  recovered_externally?: number;
   details: Array<{
     service: string;
     endpoint: string;
-    action: 'created' | 'skipped' | 'escalated' | 'disabled';
+    action: 'created' | 'skipped' | 'escalated' | 'disabled' | 'recovered_externally';
     vtid?: string;
     reason?: string;
   }>;
