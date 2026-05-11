@@ -736,6 +736,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { defaultSupabaseCapabilityFetcher } = require('./services/capability-awareness/supabase-capability-fetcher');
   ensureFeatureDiscoveryRegistered(defaultSupabaseCapabilityFetcher);
 
+  // VTID-02924 (B0e.4): capability awareness event ingestion (the ONLY
+  // mutation entrypoint for the awareness ladder). POST /api/v1/voice/
+  // feature-discovery/event.
+  const voiceFeatureDiscoveryEventRouter = require('./routes/voice-feature-discovery-event').default;
+  mountRouterSync(app, '/api/v1', voiceFeatureDiscoveryEventRouter, { owner: 'voice-feature-discovery-event' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
