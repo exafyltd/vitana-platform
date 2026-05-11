@@ -927,73 +927,20 @@ interface GeminiLiveSession {
   cachedMemoryPack?: { pack: ContextPack; cachedAt: number };
 }
 
-/**
- * VTID-CONTEXT: Client environment context gathered at session start.
- * Injected into system instruction to make Vitana contextually aware.
- */
-export interface ClientContext {
-  ip: string;
-  city?: string;
-  country?: string;
-  timezone?: string;
-  localTime?: string;       // e.g. "Saturday evening, 20:35"
-  timeOfDay?: string;       // morning | afternoon | evening | night
-  device?: string;          // iPhone, Android, Desktop
-  browser?: string;         // Chrome, Safari, Firefox
-  os?: string;              // iOS, Android, Windows, macOS
-  isMobile?: boolean;
-  lang?: string;            // from Accept-Language
-  referrer?: string;        // how they found us
-}
-
-/**
- * VTID-01155: Live session start request
- */
-interface LiveSessionStartRequest {
-  lang: string;
-  voice_style?: string;
-  response_modalities?: string[];
-  conversation_summary?: string;
-  // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms).
-  // Allows clients to tune response latency vs. pause tolerance.
-  vad_silence_ms?: number;
-  // VTID-02020: contextual recovery — when the client is re-starting after a
-  // disconnect, it sends the last few transcript turns + the stage the user
-  // was in (idle / listening_user_speaking / thinking / speaking) so the
-  // backend can route to the contextual recovery prompt instead of the
-  // standard greeting. conversation_id is the pinned thread identifier.
-  transcript_history?: Array<{ role: 'user' | 'assistant'; text: string }>;
-  reconnect_stage?: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking';
-  conversation_id?: string;
-}
-
-/**
- * VTID-01155: TTS request body
- */
-interface TtsRequest {
-  text: string;
-  lang?: string;
-  voice_style?: string;
-}
-
-/**
- * VTID-01155: Stream message types from client
- */
-interface LiveStreamAudioChunk {
-  type: 'audio';
-  data_b64: string;
-  mime: string;  // audio/pcm;rate=16000
-}
-
-interface LiveStreamVideoFrame {
-  type: 'video';
-  source: 'screen' | 'camera';
-  data_b64: string;  // JPEG base64
-  width?: number;
-  height?: number;
-}
-
-type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
+// A1 (orb-live-refactor): client/protocol types lifted to orb/live/types.ts.
+// No behavior change — same declarations, imported from a shared module so
+// A3/A8/A9 don't have to circle back here for the wire contract. We keep
+// ClientContext as a public re-export because external modules already
+// import it from this route file.
+import type {
+  ClientContext,
+  LiveSessionStartRequest,
+  TtsRequest,
+  LiveStreamAudioChunk,
+  LiveStreamVideoFrame,
+  LiveStreamMessage,
+} from '../orb/live/types';
+export type { ClientContext } from '../orb/live/types';
 
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
@@ -1140,9 +1087,11 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 // Fallback to hardcoded project ID for Cloud Run deployments.
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
+// A1 (orb-live-refactor): VERTEX_LIVE_MODEL + VERTEX_TTS_MODEL lifted to
+// orb/live/protocol.ts. Same values, same callers; the constants now live
+// in a shared module so A3/A7/A9 don't have to re-declare them.
+import { VERTEX_LIVE_MODEL, VERTEX_TTS_MODEL } from '../orb/live/protocol';
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
-const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
 // Uses ADC (Application Default Credentials) - automatic on Cloud Run
