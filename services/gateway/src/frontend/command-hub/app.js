@@ -42501,6 +42501,9 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextStatePanel(jc.stateRows));
     // VTID-02917 (B0d.3): ORB Wake Reliability Timeline panel.
     grid.appendChild(renderJourneyContextWakeTimelinePanel(jc.wakeTimelines));
+    // VTID-02923 (B0e.3): Feature Discovery panel — catalog + awareness
+    // ladder + provider state (selected / suppressed / errored).
+    grid.appendChild(renderJourneyContextFeatureDiscoveryPanel(jc.featureDiscovery));
 
     c.appendChild(grid);
     return c;
@@ -42520,10 +42523,14 @@ function loadJourneyContext() {
     var qs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId);
     // VTID-02917 (B0d.3): also fetch recent wake timelines for the user.
     var wakeQs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId) + '&limit=10';
+    // VTID-02923 (B0e.3): feature-discovery preview at the orb_turn_end
+    // surface (the default firing surface; orb_wake is gated off).
+    var fdQs = '?userId=' + encodeURIComponent(jc.userId) + '&tenantId=' + encodeURIComponent(jc.tenantId) + '&surface=orb_turn_end';
     Promise.all([
         fetch('/api/v1/voice/journey-context/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/journey-context/state'   + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/voice/wake-timeline/recent'    + wakeQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        fetch('/api/v1/voice/feature-discovery/preview' + fdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42538,6 +42545,11 @@ function loadJourneyContext() {
             jc.wakeTimelines = results[2].timelines || [];
         } else {
             jc.wakeTimelines = [];
+        }
+        if (results[3] && results[3].ok) {
+            jc.featureDiscovery = results[3];
+        } else {
+            jc.featureDiscovery = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -42766,6 +42778,94 @@ function textSpan(text, css) {
     s.textContent = text;
     if (css) s.style.cssText = css;
     return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02923 (B0e.3): Feature Discovery panel on the Journey Context screen.
+//
+// Three sub-sections:
+//   1. Provider state — status (returned/suppressed/skipped/errored),
+//      latency, reason or selected candidate.
+//   2. Capability catalog — every enabled capability the provider saw.
+//   3. Awareness ladder — the user's per-capability state (the ranker
+//      input that drives selection).
+//
+// Wall discipline: this panel is READ-ONLY. No buttons to advance state
+// or seed capabilities. Mutation is B0e.4's concern.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextFeatureDiscoveryPanel(fd) {
+    var panel = renderJourneyContextPanel(
+        'Feature Discovery',
+        'B0e.3 — provider state + capability catalog + awareness ladder (read-only)',
+    );
+
+    if (!fd) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    // -------- Provider state --------
+    var provider = fd.provider || {};
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'provider status',
+        (provider.status || '—') + (provider.latencyMs != null ? ' (' + provider.latencyMs + 'ms)' : ''),
+    ));
+    if (provider.candidate) {
+        panel.appendChild(renderJourneyContextEmptyRow(
+            'selected capability',
+            (provider.candidate.evidence && provider.candidate.evidence[0] && provider.candidate.evidence[0].detail) || '—',
+        ));
+        panel.appendChild(renderJourneyContextEmptyRow(
+            'user-facing line',
+            (provider.candidate.userFacingLine || '').slice(0, 80) +
+                ((provider.candidate.userFacingLine || '').length > 80 ? '…' : ''),
+        ));
+    }
+    if (provider.reason) {
+        panel.appendChild(renderJourneyContextEmptyRow('reason', provider.reason));
+    }
+
+    // -------- Catalog --------
+    var catalog = Array.isArray(fd.catalog) ? fd.catalog : [];
+    var catalogHeader = document.createElement('div');
+    catalogHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    catalogHeader.textContent = 'Catalog (' + catalog.length + ' enabled)';
+    panel.appendChild(catalogHeader);
+    if (catalog.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('catalog', 'empty — system_capabilities has no enabled rows'));
+    } else {
+        catalog.forEach(function (cap) {
+            panel.appendChild(renderJourneyContextEmptyRow(
+                cap.capability_key,
+                cap.display_name + (Array.isArray(cap.required_integrations) && cap.required_integrations.length > 0
+                    ? ' [needs: ' + cap.required_integrations.join(',') + ']'
+                    : ''),
+            ));
+        });
+    }
+
+    // -------- Awareness ladder --------
+    var awareness = Array.isArray(fd.awareness) ? fd.awareness : [];
+    var awarenessHeader = document.createElement('div');
+    awarenessHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    awarenessHeader.textContent = 'Awareness ladder (' + awareness.length + ' rows)';
+    panel.appendChild(awarenessHeader);
+    if (awareness.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('awareness', 'no rows — user has not encountered any tracked capability yet'));
+    } else {
+        awareness.forEach(function (row) {
+            var label = row.capability_key;
+            var detail = row.awareness_state;
+            if (row.dismiss_count > 0) detail += ' (dismissed × ' + row.dismiss_count + ')';
+            if (row.use_count > 0) detail += ' (used × ' + row.use_count + ')';
+            if (row.last_introduced_at) {
+                detail += ' · last intro: ' + new Date(row.last_introduced_at).toLocaleDateString();
+            }
+            panel.appendChild(renderJourneyContextEmptyRow(label, detail));
+        });
+    }
+
+    return panel;
 }
 
 // VTID-02867: Inline expandable "Open architecture reports (N)" section.
