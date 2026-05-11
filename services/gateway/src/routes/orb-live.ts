@@ -49,6 +49,11 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
+// VTID-02918 (B0d.4): wake-brief decision wiring. Side-effect import
+// registers the voice-wake-brief provider with the default registry;
+// `decideWakeBriefForSession` runs the continuation decision and emits
+// the 3 continuation_decision_* timeline events.
+import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -11428,7 +11433,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 
   // VTID-02917 (B0d.3): record the session_start_received event in the
   // wake timeline. This is the backend's earliest signal — frontend will
-  // emit wake_clicked separately in B0d.4.
+  // emit wake_clicked separately in B0d.4-frontend (vitana-v1).
   try {
     defaultWakeTimelineRecorder.startSession({
       sessionId,
@@ -11448,6 +11453,37 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     });
   } catch {
     // Best-effort; never block the wake path on telemetry.
+  }
+
+  // VTID-02918 (B0d.4): wake-brief continuation decision. Decides which
+  // backend-owned line (if any) Vitana should speak first. The selected
+  // continuation is attached to the response + session for observability;
+  // it does NOT yet drive the spoken greeting — that swap-in waits for
+  // the vitana-v1 frontend coordination AFTER timeline data confirms
+  // the path is healthy. Best-effort: any failure inside the decision
+  // path leaves `wakeBriefDecision` null without breaking the wake.
+  let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+  try {
+    const temporal = describeTimeSince(session.lastSessionInfo);
+    wakeBriefDecision = await decideWakeBriefForSession({
+      sessionId,
+      tenantId: orbIdentity?.tenant_id ?? null,
+      userId: orbIdentity?.user_id ?? null,
+      bucket: temporal.bucket,
+      wasFailure: temporal.wasFailure,
+      isReconnect: isReconnectStart,
+      lang,
+      // envelopeJourneySurface will be populated once the legacy
+      // ClientContext is replaced by the B0a ClientContextEnvelope on
+      // the orb-live path. Until then the wake-brief decision proceeds
+      // without it — the existing greetingPolicy/lang inputs are
+      // sufficient for B0d.2's renderer.
+    });
+    (session as any).wakeBriefDecision = wakeBriefDecision;
+  } catch (e) {
+    console.warn(
+      `[VTID-02918] wake-brief decision failed for ${sessionId}: ${(e as Error).message}`,
+    );
   }
 
   // Emit OASIS event with identity context
@@ -11492,7 +11528,24 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
         context_chars: null,
         skipped_reason: contextBootstrapSkippedReason || null,
         deferred: !!contextReadyPromise,
-      }
+      },
+      // VTID-02918 (B0d.4): wake-brief continuation decision (read-only).
+      // The frontend can consume this in a future slice (vitana-v1) to
+      // replace the passive instantGreeting line. NULL until then is
+      // a valid + expected state — the orb chime/visual still plays.
+      wake_brief: wakeBriefDecision
+        ? {
+            decision_id: wakeBriefDecision.decisionId,
+            selected_kind:
+              wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
+            user_facing_line:
+              wakeBriefDecision.selectedContinuation?.userFacingLine ?? '',
+            suppression_reason:
+              wakeBriefDecision.selectedContinuation?.kind === 'none_with_reason'
+                ? wakeBriefDecision.selectedContinuation.suppressReason
+                : wakeBriefDecision.suppressionReason ?? null,
+          }
+        : null,
     }
   });
 });
