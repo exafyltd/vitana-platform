@@ -22,6 +22,9 @@ import { spawnInvestigator } from '../services/voice-architecture-investigator';
 import { notifyGChat } from '../services/self-healing-snapshot-service';
 import { setMode } from '../services/voice-shadow-mode';
 import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
+// VTID-02868: per-session quality classification from session-stop metadata.
+// Pure function — runs inline on session-list responses without extra I/O.
+import { classifyQualityFromSessionStop } from '../services/voice-failure-taxonomy';
 import {
   buildHealingSummary,
   buildShadowComparison,
@@ -81,6 +84,14 @@ interface LiveSessionSummary {
   user_display_name?: string;
   user_role?: string;
   platform?: string;
+  // VTID-02868: quality classification from session-stop metadata
+  // (voice-failure-taxonomy.ts canonical taxonomy). Null when the session
+  // is active OR when metrics don't match any quality class — that's the
+  // healthy / pre-completion default. Surfaced in the Voice Lab list +
+  // drawer so operators can scan for failure patterns without leaving
+  // the screen.
+  failure_class?: string | null;
+  failure_signature?: string | null;
 }
 
 /**
@@ -309,6 +320,24 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
           ? new Date(endEvent.created_at).getTime() - new Date(startEvent.created_at).getTime()
           : undefined);
 
+      // VTID-02868: classify quality from session-stop metadata (only when
+      // ended; active sessions haven't produced the metrics yet). Pure
+      // function from voice-failure-taxonomy — no I/O.
+      let failureClass: string | null = null;
+      let failureSignature: string | null = null;
+      if (endEvent && endEvent.metadata) {
+        const classified = classifyQualityFromSessionStop({
+          audio_in_chunks: Number(endEvent.metadata.audio_in_chunks ?? 0),
+          audio_out_chunks: Number(endEvent.metadata.audio_out_chunks ?? 0),
+          duration_ms: Number(endEvent.metadata.duration_ms ?? 0),
+          turn_count: Number(endEvent.metadata.turn_count ?? endEvent.metadata.turn_number ?? 0),
+        });
+        if (classified) {
+          failureClass = classified.class;
+          failureSignature = classified.normalized_signature;
+        }
+      }
+
       const summary: LiveSessionSummary = {
         session_id: sessionId,
         status: isActive ? 'active' : 'ended',
@@ -331,6 +360,8 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
         user_display_name: startEvent.metadata?.email?.split('@')[0] || undefined,
         user_role: startEvent.metadata?.active_role,
         platform: parsePlatform(startEvent.metadata?.user_agent),
+        failure_class: failureClass,
+        failure_signature: failureSignature,
       };
 
       sessions.push(summary);

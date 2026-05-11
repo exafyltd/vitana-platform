@@ -15440,6 +15440,7 @@ function renderVoiceLabOrbLivePanel() {
             '<th>Duration</th>' +
             '<th>Status</th>' +
             '<th>Turns</th>' +
+            '<th>Class</th>' +  // VTID-02868
             '<th>Alerts</th>' +
             '<th>Actions</th>' +
             '</tr>';
@@ -15493,6 +15494,19 @@ function renderVoiceLabOrbLivePanel() {
             }
             var durationStr = durationMs ? formatDuration(durationMs) : (session.connected ? 'Live' : '-');
 
+            // VTID-02868: failure-class badge (server-side classifier).
+            // Empty when session is active OR metrics don't match a quality
+            // class — that's the healthy default.
+            var classHtml = '<span style="color:var(--color-text-secondary);font-size:0.7rem;">—</span>';
+            if (session.failureClass) {
+                var fcLabel = session.failureClass.replace(/^voice\./, '');
+                var fcColor = '#dc2626';
+                if (session.failureClass === 'voice.low_turn_progression') fcColor = '#a16207';
+                else if (session.failureClass === 'voice.no_engagement') fcColor = '#f59e0b';
+                else if (session.failureClass === 'voice.model_under_responds') fcColor = '#f59e0b';
+                classHtml = '<span title="' + escapeHtml(session.failureSignature || '') + '" style="font-size:0.65rem;padding:.1rem .35rem;border-radius:4px;color:' + fcColor + ';background:rgba(220,38,38,.08);">' + escapeHtml(fcLabel) + '</span>';
+            }
+
             row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
                 '<td class="session-user" title="' + userTitle + '">' + userDisplay + '</td>' +
                 '<td><span class="' + platformClass + '">' + platformDisplay + '</span></td>' +
@@ -15500,6 +15514,7 @@ function renderVoiceLabOrbLivePanel() {
                 '<td>' + durationStr + '</td>' +
                 '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
                 '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
+                '<td>' + classHtml + '</td>' +
                 '<td>' + alertsHtml + '</td>' +
                 '<td></td>';
 
@@ -16270,7 +16285,10 @@ function fetchVoiceLabSessions(append) {
                     userEmail: s.user_email,
                     userDisplayName: s.user_display_name,
                     userRole: s.user_role,
-                    platform: s.platform
+                    platform: s.platform,
+                    // VTID-02868: per-session quality classification from server.
+                    failureClass: s.failure_class || null,
+                    failureSignature: s.failure_signature || null,
                 };
             });
             if (append) {
@@ -16407,7 +16425,10 @@ function fetchVoiceLabSessionsSilent() {
                     userEmail: s.user_email,
                     userDisplayName: s.user_display_name,
                     userRole: s.user_role,
-                    platform: s.platform
+                    platform: s.platform,
+                    // VTID-02868: per-session quality classification from server.
+                    failureClass: s.failure_class || null,
+                    failureSignature: s.failure_signature || null,
                 };
             });
             // If user has loaded more pages, keep those and only replace the first page
