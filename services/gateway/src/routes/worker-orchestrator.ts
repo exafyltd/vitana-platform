@@ -1318,6 +1318,220 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/stats', async (_req: R
   }
 });
 
+// =============================================================================
+// PR-A (VTID-02922): /await-autopilot-execution
+// =============================================================================
+// Self-healing VTIDs are bridged into the Dev Autopilot execution pipeline
+// (see self-healing-injector-service bridgeToAutopilotExecution). The
+// worker-runner detects metadata.autopilot_execution_id and calls this
+// endpoint instead of running its describe-only LLM call. The four-state
+// contract is intentional: 'pr_ready' clears the repair-evidence gate at
+// /complete (real files_changed list from the PR), but the VTID is NOT
+// terminalized — the reconciler owns final terminal_outcome='success' only
+// after dev_autopilot_executions.status='completed' (which means CI passed,
+// merge happened, EXEC-DEPLOY ran, and the live probe verified).
+
+const AWAIT_POLL_INTERVAL_MS = 5_000;
+const AWAIT_DEFAULT_TIMEOUT_MS = 15 * 60_000;
+const AWAIT_HARD_TIMEOUT_MS = 30 * 60_000;
+
+interface PrFileChange {
+  path: string;
+  action: 'created' | 'changed';
+}
+
+async function fetchPrFileChanges(prNumber: number): Promise<PrFileChange[]> {
+  // Read env at call-time so the token can be set after module load
+  // (matters for tests + late-binding deployments).
+  const token = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+  if (!token) return [];
+  const owner = process.env.GITHUB_REPO_OWNER || 'exafyltd';
+  const repo = process.env.GITHUB_REPO_NAME || 'vitana-platform';
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as Array<{ filename: string; status: string }>;
+    return body.map(f => ({
+      path: f.filename,
+      action: f.status === 'added' ? 'created' : 'changed',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+interface AutopilotExecRow {
+  id: string;
+  status: string;
+  pr_url: string | null;
+  pr_number: number | null;
+  branch: string | null;
+  metadata: Record<string, unknown> | null;
+  completed_at: string | null;
+}
+
+async function fetchExecutionRow(executionId: string): Promise<AutopilotExecRow | null> {
+  const r = await supabaseRequest<AutopilotExecRow[]>(
+    `/rest/v1/dev_autopilot_executions?id=eq.${encodeURIComponent(executionId)}&select=id,status,pr_url,pr_number,branch,metadata,completed_at&limit=1`,
+  );
+  if (!r.ok || !r.data || r.data.length === 0) return null;
+  return r.data[0];
+}
+
+async function isWorkerClaimingVtid(vtid: string, workerId: string): Promise<boolean> {
+  const r = await supabaseRequest<Array<{ claimed_by: string | null; claim_expires_at: string | null }>>(
+    `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=claimed_by,claim_expires_at&limit=1`,
+  );
+  if (!r.ok || !r.data || r.data.length === 0) return false;
+  const row = r.data[0];
+  if (row.claimed_by !== workerId) return false;
+  if (!row.claim_expires_at) return true;
+  return new Date(row.claim_expires_at) > new Date();
+}
+
+/**
+ * POST /api/v1/worker/orchestrator/await-autopilot-execution
+ *
+ * Worker-only endpoint. The caller must:
+ *  - present a worker_id that exists in worker_registry
+ *  - hold a current claim on the VTID it's polling for
+ *
+ * Body: { vtid, autopilot_execution_id, worker_id, timeout_ms? }
+ *
+ * Polls dev_autopilot_executions every 5s until one of the four states
+ * is reached. See module comment above for the contract.
+ */
+workerOrchestratorRouter.post(
+  '/api/v1/worker/orchestrator/await-autopilot-execution',
+  async (req: Request, res: Response) => {
+    try {
+      const { vtid, autopilot_execution_id, worker_id, timeout_ms } = req.body || {};
+
+      if (!vtid || typeof vtid !== 'string') {
+        return res.status(400).json({ ok: false, error: 'vtid is required' });
+      }
+      if (!autopilot_execution_id || typeof autopilot_execution_id !== 'string') {
+        return res.status(400).json({ ok: false, error: 'autopilot_execution_id is required' });
+      }
+      if (!worker_id || typeof worker_id !== 'string') {
+        return res.status(401).json({ ok: false, error: 'worker_id is required' });
+      }
+
+      // Auth gate 1: confirm worker is registered.
+      const regCheck = await supabaseRequest<Array<{ worker_id: string }>>(
+        `/rest/v1/worker_registry?worker_id=eq.${encodeURIComponent(worker_id)}&select=worker_id&limit=1`,
+      );
+      if (!regCheck.ok || !regCheck.data || regCheck.data.length === 0) {
+        return res.status(401).json({ ok: false, error: 'worker not registered' });
+      }
+
+      // Auth gate 2: confirm worker is the current claim holder on this VTID.
+      const owns = await isWorkerClaimingVtid(vtid, worker_id);
+      if (!owns) {
+        return res.status(403).json({
+          ok: false,
+          error: 'worker does not hold an active claim on this VTID',
+        });
+      }
+
+      const cap = Math.min(
+        Math.max(60_000, Number(timeout_ms) || AWAIT_DEFAULT_TIMEOUT_MS),
+        AWAIT_HARD_TIMEOUT_MS,
+      );
+      const deadline = Date.now() + cap;
+
+      let lastStatus: string = 'unknown';
+      let lastRow: AutopilotExecRow | null = null;
+
+      while (Date.now() < deadline) {
+        const row = await fetchExecutionRow(autopilot_execution_id);
+        if (!row) {
+          return res.json({
+            state: 'failed',
+            error: 'autopilot execution row not found',
+            execution_status: 'unknown',
+          });
+        }
+        lastRow = row;
+        lastStatus = row.status;
+
+        if (row.status === 'failed' || row.status === 'failed_escalated' || row.status === 'reverted') {
+          const errMsg = (row.metadata as any)?.error
+            || `autopilot execution reached terminal status '${row.status}'`;
+          return res.json({
+            state: 'failed',
+            error: errMsg,
+            execution_status: row.status,
+          });
+        }
+
+        if (row.status === 'completed') {
+          const files = row.pr_number ? await fetchPrFileChanges(row.pr_number) : [];
+          return res.json({
+            state: 'completed',
+            pr_url: row.pr_url,
+            pr_number: row.pr_number,
+            branch: row.branch,
+            files_changed: files.filter(f => f.action === 'changed').map(f => f.path),
+            files_created: files.filter(f => f.action === 'created').map(f => f.path),
+            execution_status: row.status,
+          });
+        }
+
+        if (row.pr_url && row.pr_number && (
+          row.status === 'ci' || row.status === 'merging' ||
+          row.status === 'deploying' || row.status === 'verifying'
+        )) {
+          const files = await fetchPrFileChanges(row.pr_number);
+          return res.json({
+            state: 'pr_ready',
+            pr_url: row.pr_url,
+            pr_number: row.pr_number,
+            branch: row.branch,
+            files_changed: files.filter(f => f.action === 'changed').map(f => f.path),
+            files_created: files.filter(f => f.action === 'created').map(f => f.path),
+            execution_status: row.status,
+          });
+        }
+
+        await new Promise(r => setTimeout(r, AWAIT_POLL_INTERVAL_MS));
+      }
+
+      await emitOasisEvent({
+        type: 'self-healing.execution.deferred',
+        vtid,
+        source: 'worker-orchestrator',
+        status: 'info',
+        message: `Worker-runner await timed out after ${Math.round(cap / 1000)}s; autopilot execution ${autopilot_execution_id.slice(0, 8)} still in '${lastStatus}'`,
+        payload: {
+          autopilot_execution_id,
+          execution_status: lastStatus,
+          pr_url: lastRow?.pr_url || null,
+          worker_id,
+        },
+      });
+      return res.json({
+        state: 'deferred',
+        reason: 'timeout',
+        execution_status: lastStatus,
+      });
+    } catch (error: any) {
+      console.error(`${LOG_PREFIX} await-autopilot-execution error:`, error);
+      return res.status(500).json({ ok: false, error: error.message || 'unknown error' });
+    }
+  },
+);
+
 /**
  * POST /api/v1/worker/orchestrator/cleanup
  *

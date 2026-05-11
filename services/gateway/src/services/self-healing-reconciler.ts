@@ -393,10 +393,188 @@ async function reconcileVoiceRow(
   }
 }
 
+// PR-A (VTID-02922): owner of final terminal_outcome for self-healing VTIDs
+// that were bridged into the Dev Autopilot execution pipeline. Worker-runner
+// returns a 'pr_ready' (PR opened but CI/deploy/verify still in flight) or
+// 'deferred' (autopilot still running past worker-runner await window) and
+// MUST NOT terminalize the VTID itself. This scan runs every reconciler
+// cycle and:
+//   - terminalizes 'success' when dev_autopilot_executions.status='completed'
+//     (which means CI green + deploy verified + live probe passed)
+//   - terminalizes 'failed' when status in (failed, failed_escalated, reverted)
+//   - leaves in-flight statuses alone (cooling/running/ci/merging/...)
+export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return;
+  try {
+    // Pull self-healing VTIDs that have a linked autopilot execution and are
+    // not terminal yet. Filter via metadata.source + metadata.autopilot_execution_id.
+    const ledgerUrl =
+      `${SUPABASE_URL}/rest/v1/vtid_ledger` +
+      `?metadata->>source=eq.self-healing` +
+      `&metadata->>autopilot_execution_id=not.is.null` +
+      `&is_terminal=eq.false` +
+      `&select=vtid,metadata,claimed_by,claim_expires_at` +
+      `&order=updated_at.asc&limit=50`;
+    const ledgerRes = await fetch(ledgerUrl, { headers: supabaseHeaders() });
+    if (!ledgerRes.ok) {
+      const txt = await ledgerRes.text().catch(() => '');
+      console.warn(`${LOG_PREFIX} autopilot-linked scan: ledger fetch ${ledgerRes.status} ${txt.slice(0, 200)}`);
+      return;
+    }
+    const ledgerRows = (await ledgerRes.json()) as Array<{
+      vtid: string;
+      metadata: Record<string, unknown> | null;
+    }>;
+    if (ledgerRows.length === 0) return;
+
+    for (const lrow of ledgerRows) {
+      const execId = lrow.metadata?.autopilot_execution_id as string | undefined;
+      if (!execId) continue;
+
+      const execRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/dev_autopilot_executions?id=eq.${encodeURIComponent(execId)}` +
+          `&select=id,status,pr_url,pr_number,branch,metadata,completed_at&limit=1`,
+        { headers: supabaseHeaders() },
+      );
+      if (!execRes.ok) continue;
+      const execRows = (await execRes.json()) as Array<{
+        id: string;
+        status: string;
+        pr_url: string | null;
+        pr_number: number | null;
+        branch: string | null;
+        metadata: Record<string, unknown> | null;
+        completed_at: string | null;
+      }>;
+      if (execRows.length === 0) continue;
+      const exec = execRows[0];
+
+      // Final success: autopilot says CI green + deploy verified + live probe.
+      if (exec.status === 'completed') {
+        const newMeta = {
+          ...(lrow.metadata || {}),
+          healing_state: 'verified_healed',
+          pr_url: exec.pr_url,
+          pr_number: exec.pr_number,
+          branch: exec.branch,
+          terminalized_by: 'self-healing-reconciler',
+          terminalized_at: new Date().toISOString(),
+        };
+        await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(lrow.vtid)}`, {
+          method: 'PATCH',
+          headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'completed',
+            is_terminal: true,
+            terminal_outcome: 'success',
+            metadata: newMeta,
+            updated_at: new Date().toISOString(),
+          }),
+        }).catch(err => console.warn(`${LOG_PREFIX} vtid_ledger PATCH failed for ${lrow.vtid}:`, err));
+
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/self_healing_log?vtid=eq.${encodeURIComponent(lrow.vtid)}&outcome=eq.pending`,
+          {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              outcome: 'fixed',
+              resolved_at: new Date().toISOString(),
+            }),
+          },
+        ).catch(err => console.warn(`${LOG_PREFIX} self_healing_log PATCH failed for ${lrow.vtid}:`, err));
+
+        try {
+          await emitOasisEvent({
+            vtid: lrow.vtid,
+            type: 'self-healing.completed',
+            source: 'self-healing-reconciler',
+            status: 'success',
+            message: `Self-healing verified-healed for ${lrow.vtid}: autopilot execution ${execId.slice(0, 8)} reached 'completed' (PR ${exec.pr_url || '?'})`,
+            payload: {
+              autopilot_execution_id: execId,
+              pr_url: exec.pr_url,
+              pr_number: exec.pr_number,
+              branch: exec.branch,
+            },
+          });
+        } catch { /* non-fatal */ }
+        console.log(`${LOG_PREFIX} ${lrow.vtid} terminalized success via autopilot execution ${execId.slice(0, 8)}`);
+        continue;
+      }
+
+      // Terminal failure on the autopilot side → propagate to the VTID.
+      if (exec.status === 'failed' || exec.status === 'failed_escalated' || exec.status === 'reverted') {
+        const errMsg =
+          (exec.metadata as any)?.error ||
+          `autopilot execution reached terminal status '${exec.status}'`;
+        const newMeta = {
+          ...(lrow.metadata || {}),
+          healing_state: 'execution_failed',
+          execution_failure_status: exec.status,
+          execution_failure_error: errMsg,
+          terminalized_by: 'self-healing-reconciler',
+          terminalized_at: new Date().toISOString(),
+        };
+        await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(lrow.vtid)}`, {
+          method: 'PATCH',
+          headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            is_terminal: true,
+            terminal_outcome: 'failed',
+            metadata: newMeta,
+            updated_at: new Date().toISOString(),
+          }),
+        }).catch(err => console.warn(`${LOG_PREFIX} vtid_ledger PATCH failed for ${lrow.vtid}:`, err));
+
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/self_healing_log?vtid=eq.${encodeURIComponent(lrow.vtid)}&outcome=eq.pending`,
+          {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              outcome: 'escalated',
+              resolved_at: new Date().toISOString(),
+            }),
+          },
+        ).catch(err => console.warn(`${LOG_PREFIX} self_healing_log PATCH failed for ${lrow.vtid}:`, err));
+
+        try {
+          await emitOasisEvent({
+            vtid: lrow.vtid,
+            type: 'self-healing.execution.failed',
+            source: 'self-healing-reconciler',
+            status: 'error',
+            message: `Self-healing execution failed for ${lrow.vtid}: ${errMsg}`,
+            payload: {
+              autopilot_execution_id: execId,
+              execution_status: exec.status,
+              error: errMsg,
+            },
+          });
+        } catch { /* non-fatal */ }
+        console.log(`${LOG_PREFIX} ${lrow.vtid} terminalized failed via autopilot execution ${execId.slice(0, 8)} (${exec.status})`);
+        continue;
+      }
+
+      // Otherwise: cooling / queued / running / ci / merging / deploying /
+      // verifying — the autopilot reconciler is still progressing this row.
+      // Leave it alone; we'll re-check on the next cycle.
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} autopilot-linked scan error:`, err);
+  }
+}
+
 async function runReconcileCycle(thresholdMs: number): Promise<void> {
   if (cycleInFlight) return;
   cycleInFlight = true;
   try {
+    // PR-A (VTID-02922): terminalize self-healing VTIDs whose autopilot
+    // execution has reached a terminal state. Runs before the legacy stale
+    // scan so successful autopilot runs clear quickly.
+    await reconcileAutopilotLinkedSelfHealingVtids();
+
     const rows = await fetchStaleRows(thresholdMs);
     if (rows.length === 0) return;
     console.log(`${LOG_PREFIX} Found ${rows.length} stale row(s) to reconcile`);
