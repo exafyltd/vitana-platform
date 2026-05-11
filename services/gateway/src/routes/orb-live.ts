@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
+// never block the wake path. The recorder is best-effort by design.
+import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -11423,6 +11426,30 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // Store session
   liveSessions.set(sessionId, session);
 
+  // VTID-02917 (B0d.3): record the session_start_received event in the
+  // wake timeline. This is the backend's earliest signal — frontend will
+  // emit wake_clicked separately in B0d.4.
+  try {
+    defaultWakeTimelineRecorder.startSession({
+      sessionId,
+      tenantId: orbIdentity?.tenant_id ?? null,
+      userId: orbIdentity?.user_id ?? null,
+      surface: 'orb_wake',
+      transport: 'sse',
+    });
+    defaultWakeTimelineRecorder.recordEvent({
+      sessionId,
+      name: 'session_start_received',
+      metadata: {
+        isReconnect: isReconnectStart,
+        reconnectStage,
+        lang: clientRequestedLang ?? null,
+      },
+    });
+  } catch {
+    // Best-effort; never block the wake path on telemetry.
+  }
+
   // Emit OASIS event with identity context
   await emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
@@ -11645,6 +11672,24 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
 
   // Remove from store
   liveSessions.delete(session_id);
+
+  // VTID-02917 (B0d.3): record disconnect + flush the wake timeline.
+  // Best-effort: never block the stop path.
+  try {
+    defaultWakeTimelineRecorder.recordEvent({
+      sessionId: session_id,
+      name: 'disconnect',
+      metadata: {
+        disconnect_reason: 'session_stop_requested',
+        transport: 'sse',
+      },
+    });
+    void defaultWakeTimelineRecorder.endSession(session_id).catch(() => {
+      // swallow — debugging tool must not break the stop path.
+    });
+  } catch {
+    // ignore
+  }
 
   console.log(`[VTID-01155] Live session stopped: ${session_id}`);
 

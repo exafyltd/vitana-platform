@@ -718,6 +718,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;
   mountRouterSync(app, '/api/v1', voiceJourneyContextRouter, { owner: 'voice-journey-context' });
 
+  // VTID-02917 (B0d.3): ORB Wake Reliability Timeline
+  // GET /api/v1/voice/wake-timeline + GET /api/v1/voice/wake-timeline/recent
+  const voiceWakeTimelineRouter = require('./routes/voice-wake-timeline').default;
+  mountRouterSync(app, '/api/v1', voiceWakeTimelineRouter, { owner: 'voice-wake-timeline' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
