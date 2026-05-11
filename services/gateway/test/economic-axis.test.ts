@@ -37,6 +37,12 @@ describe('deriveEconomicAxis', () => {
     expect(deriveEconomicAxis('community', 'weakness_movement')).toBe('none');
   });
 
+  test('returns "none" for match-looking source_refs outside community sources', () => {
+    expect(deriveEconomicAxis('health', 'engage_matches')).toBe('none');
+    expect(deriveEconomicAxis('behavior', 'onboarding_matches')).toBe('none');
+    expect(deriveEconomicAxis('llm', 'deepen_connection')).toBe('none');
+  });
+
   test('returns "none" for null/undefined inputs', () => {
     expect(deriveEconomicAxis(null, null)).toBe('none');
     expect(deriveEconomicAxis(undefined, undefined)).toBe('none');

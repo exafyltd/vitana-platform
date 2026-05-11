@@ -46,6 +46,6 @@ export function deriveEconomicAxis(
   sourceRef: string | null | undefined,
 ): EconomicAxis {
   if (sourceType === 'marketplace') return 'marketplace';
-  if (sourceRef && FIND_MATCH_SOURCE_REFS.has(sourceRef)) return 'find_match';
+  if (sourceType === 'community' && sourceRef && FIND_MATCH_SOURCE_REFS.has(sourceRef)) return 'find_match';
   return 'none';
 }

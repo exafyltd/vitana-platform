@@ -850,6 +850,7 @@ export async function generatePersonalRecommendations(
         source_ref: (r as any).source_ref ?? null,
         impact_score: (r as any).impact_score ?? null,
         contribution_vector: (r as any).contribution_vector ?? null,
+        economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
       }));
       const ranked = rankBatch(rankerInputs, rankerCtx);
       // Apply rank order back onto recommendations[].

@@ -182,7 +182,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -246,7 +246,7 @@ async function queryRecommendationsFallback(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -458,6 +458,7 @@ router.get('/', async (req: Request, res: Response) => {
                 target.rank_score = r.rank_score;
                 target.pillar_boost = r.pillar_boost;
                 target.compass_boost = r.compass_boost;
+                target.economic_boost = r.economic_boost;
                 target.journey_mode = r.journey_mode;
               }
             }
