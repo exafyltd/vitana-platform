@@ -26,6 +26,20 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
+import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+
+/**
+ * Annotate an array of recommendation rows from get_autopilot_recommendations
+ * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
+ * from contribution_vector JSONB — see services/.../pillar-impact.ts.
+ * Mutates each row in place (cheap and unambiguous for response payload use).
+ */
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(rows: T[]): Array<T & { pillar_impact: ReturnType<typeof derivePillarImpact> }> {
+  return rows.map((row) => ({
+    ...row,
+    pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+  }));
+}
 
 const router = Router();
 
@@ -497,7 +511,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       return res.status(200).json({
         ok: true,
-        recommendations,
+        recommendations: annotateWithPillarImpact(recommendations),
         count: recommendations.length,
         has_more: hasMore,
         ...(waves ? { waves } : {}),
@@ -534,7 +548,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      recommendations,
+      recommendations: annotateWithPillarImpact(recommendations),
       count: recommendations.length,
       has_more: hasMore,
       vtid: 'VTID-01180',

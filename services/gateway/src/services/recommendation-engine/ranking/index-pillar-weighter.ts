@@ -30,6 +30,23 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { PILLAR_KEYS, PILLAR_TAGS, describeBalance, type PillarKey } from '../../../lib/vitana-pillars';
 
+export type EconomicAxis =
+  | 'find_match'
+  | 'marketplace'
+  | 'income_generation'
+  | 'business_formation'
+  | 'none';
+
+/**
+ * Goal categories that are "economic" for the purposes of the economic_boost
+ * gate. Sourced from services/gateway/src/types/life-stage-awareness.ts:44.
+ * Keeping this tight is the contract: social_relationships / community_contribution
+ * are NOT in the set, so Find-a-Match recs paired with a social goal are
+ * handled by the existing compass_boost machinery, not the new economy axis.
+ * See docs/GOVERNANCE/ULTIMATE-GOAL.md for the orthogonal-axes rationale.
+ */
+const ECONOMIC_GOAL_CATEGORIES = new Set<string>(['career_purpose', 'financial_security']);
+
 export interface RankInputRec {
   id?: string;
   source_ref?: string | null;
@@ -37,6 +54,7 @@ export interface RankInputRec {
   contribution_vector?: Record<string, number> | null;
   domain?: string | null;
   status?: string | null;
+  economic_axis?: EconomicAxis | string | null;
 }
 
 export interface RankedRec<T extends RankInputRec = RankInputRec> {
@@ -44,6 +62,7 @@ export interface RankedRec<T extends RankInputRec = RankInputRec> {
   rank_score: number;
   pillar_boost: number;
   compass_boost: number;
+  economic_boost: number;
   journey_mode: number;
   explanation: string;
 }
@@ -74,6 +93,7 @@ export interface RankerConfig {
   alpha_pillar: number;   // default 0.5
   alpha_wave: number;     // default 0.3
   compass_boost: number;  // default 1.3
+  economic_boost: number; // default 1.15 — multiplier when rec.economic_axis is set AND user has an economic compass goal
   pillar_quota_max: number;   // default 0.40 → at most 40% from one pillar
   weakest_quota_max: number;  // default 0.60 when balance_factor ≤ 0.7
   // G7: feedback-loop multipliers
@@ -88,6 +108,7 @@ export const DEFAULT_RANKER_CONFIG: RankerConfig = {
   alpha_pillar: 0.5,
   alpha_wave: 0.3,
   compass_boost: 1.3,
+  economic_boost: 1.15,
   pillar_quota_max: 0.40,
   weakest_quota_max: 0.60,
   completion_dampener: 0.3,
@@ -96,6 +117,16 @@ export const DEFAULT_RANKER_CONFIG: RankerConfig = {
   streak_reinforcement: 1.3,
   community_momentum_boost: 1.2,
 };
+
+/**
+ * Returns true iff the user has an active Life Compass goal in an economic
+ * category. Gates the economic_boost multiplier so it only fires for users
+ * who have signalled income/business focus — preventing it from blanket-
+ * boosting economy-tagged recs and crowding out health pillars.
+ */
+export function hasEconomicGoal(ctx: Pick<RankerContext, 'active_goal_category'>): boolean {
+  return !!ctx.active_goal_category && ECONOMIC_GOAL_CATEGORIES.has(ctx.active_goal_category);
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Category → preferred template set (mirrors life-compass-analyzer). A rec
@@ -294,6 +325,19 @@ export function scoreRec<T extends RankInputRec>(
     }
   }
 
+  // Economic boost — applies when the rec advances the longevity economy axis
+  // AND the user has signalled an economic Life Compass goal. Gated so the
+  // boost cannot fire blanket-wide and crowd out the 5 health pillars (per the
+  // contract: 5 pillars stay clinically clean; the economy axis is orthogonal).
+  let economic_boost = 1.0;
+  if (
+    rec.economic_axis &&
+    rec.economic_axis !== 'none' &&
+    hasEconomicGoal(ctx)
+  ) {
+    economic_boost = cfg.economic_boost;
+  }
+
   // Journey mode — decays over 90 days, gated on data coverage.
   const journey_mode = computeJourneyMode(ctx);
 
@@ -340,16 +384,17 @@ export function scoreRec<T extends RankInputRec>(
     }
   }
 
-  // Final: base × (1 + alpha_pillar × pillarBoost × (1 − journey_mode)) × compass_boost × feedback_mult
-  const rank_score = base * (1 + cfg.alpha_pillar * pillar_boost * (1 - journey_mode)) * compass_boost * feedback_mult;
+  // Final: base × (1 + alpha_pillar × pillarBoost × (1 − journey_mode)) × compass_boost × economic_boost × feedback_mult
+  const rank_score = base * (1 + cfg.alpha_pillar * pillar_boost * (1 - journey_mode)) * compass_boost * economic_boost * feedback_mult;
 
   return {
     rec,
     rank_score,
     pillar_boost,
     compass_boost,
+    economic_boost,
     journey_mode,
-    explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} × fb=${feedback_mult.toFixed(2)}${feedback_reason} = ${rank_score.toFixed(2)}`,
+    explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} × econ=${economic_boost.toFixed(2)} × fb=${feedback_mult.toFixed(2)}${feedback_reason} = ${rank_score.toFixed(2)}`,
   };
 }
 
