@@ -1118,6 +1118,12 @@ export {
 // characterization test) continue to resolve from this route file.
 import { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
+// A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
+// lifted navigator handler. orb-live.ts keeps compat shims that build
+// the typed views and forward to handlers under orb/live/tools/handlers/.
+import { buildSessionContext } from '../orb/live/session/session-context';
+import { makeSessionMutator } from '../orb/live/session/session-mutator';
+import { getCurrentScreenHandler } from '../orb/live/tools/handlers/navigator';
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
@@ -2272,41 +2278,21 @@ export async function handleNavigateToScreen(
  * passes them via args to the shared dispatcher. Anonymous-safe — no
  * identity required.
  */
+// A6.2 (orb-live-refactor): handleGetCurrentScreen is now a compat shim.
+// The handler body lives in orb/live/tools/handlers/navigator.ts and
+// receives the typed SessionContext + SessionMutator. The shim here
+// builds the typed views from the live session and forwards.
+//
+// This is the template every subsequent A6.x handler extraction will
+// follow: route file keeps a thin (session) → handler(args, ctx, mutator)
+// wrapper for compatibility with the dispatcher; the real logic lives
+// under orb/live/tools/handlers/.
 async function handleGetCurrentScreen(
   session: GeminiLiveSession,
 ): Promise<{ success: boolean; result: string; error?: string }> {
-  const sb = getSupabase();
-  if (!sb) {
-    // Fallback — the shared dispatcher signature requires sb but
-    // tool_get_current_screen is anonymous-safe and doesn't read it. If
-    // Supabase isn't configured we degrade to "unknown screen" rather than
-    // failing the tool call.
-    return {
-      success: true,
-      result: JSON.stringify({
-        title: 'Unknown screen',
-        description: 'The user is on a route that is not in the navigation catalog.',
-        route: session.current_route || null,
-        recent_screens: [],
-      }),
-    };
-  }
-  const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
-  return await dispatchOrbToolForVertex(
-    'get_current_screen',
-    {
-      current_route: session.current_route ?? null,
-      recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
-    },
-    {
-      user_id: session.identity?.user_id ?? '',
-      tenant_id: session.identity?.tenant_id ?? null,
-      role: session.identity?.role ?? null,
-      vitana_id: session.identity?.vitana_id ?? null,
-      lang: session.lang ?? 'en',
-    },
-    sb,
-  );
+  const ctx = buildSessionContext(session as any);
+  const mutator = makeSessionMutator(session as any);
+  return getCurrentScreenHandler({}, ctx, mutator);
 }
 
 async function executeLiveApiToolInner(

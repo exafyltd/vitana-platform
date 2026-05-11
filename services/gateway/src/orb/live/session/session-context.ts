@@ -105,9 +105,17 @@ export function buildSessionContext(session: SessionLike): SessionContext {
 
   // Defensive copy of route trail. We slice + freeze so a handler can't
   // even theoretically mutate the source array.
-  const recentRoutes = Array.isArray(session.recentRoutes)
-    ? Object.freeze(session.recentRoutes.slice()) as ReadonlyArray<string>
-    : Object.freeze([]) as ReadonlyArray<string>;
+  //
+  // A6.2 (2026-05-11): fixed field-name mismatch. A6.1 read the
+  // non-existent `session.recentRoutes` (camelCase), which silently
+  // returned an empty array because the live `GeminiLiveSession`
+  // exposes `recent_routes` (snake_case). No prior consumer noticed
+  // because A6.1 had no callers; this fix lands BEFORE A6.2 lifts
+  // `handleGetCurrentScreen` (which is the first consumer).
+  const sourceTrail = Array.isArray(session.recent_routes)
+    ? session.recent_routes
+    : (Array.isArray(session.recentRoutes) ? session.recentRoutes : []);
+  const recentRoutes = Object.freeze(sourceTrail.slice()) as ReadonlyArray<string>;
 
   return Object.freeze({
     sessionId: session.sessionId,
@@ -143,6 +151,12 @@ export interface SessionLike {
   lang?: string;
   clientContext?: ClientContext;
   current_route?: string | null;
+  /**
+   * Recent navigation trail. A6.2: the real `GeminiLiveSession` field is
+   * `recent_routes` (snake_case). `recentRoutes` is retained as an alias
+   * for fixtures/tests; production code reads `recent_routes` first.
+   */
+  recent_routes?: string[];
   recentRoutes?: string[];
   turn_count?: number;
   createdAt: Date | string;
