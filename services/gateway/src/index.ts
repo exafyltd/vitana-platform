@@ -723,6 +723,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceWakeTimelineRouter = require('./routes/voice-wake-timeline').default;
   mountRouterSync(app, '/api/v1', voiceWakeTimelineRouter, { owner: 'voice-wake-timeline' });
 
+  // VTID-02923 (B0e.3): Feature Discovery inspection (read-only).
+  // GET /api/v1/voice/feature-discovery/preview
+  const voiceFeatureDiscoveryRouter = require('./routes/voice-feature-discovery').default;
+  mountRouterSync(app, '/api/v1', voiceFeatureDiscoveryRouter, { owner: 'voice-feature-discovery' });
+  // Register the B0e.2 Feature Discovery provider with the default
+  // continuation registry, bound to the real Supabase-backed fetcher.
+  // Side-effect import: safe across hot-reloads (idempotent).
+  const { ensureFeatureDiscoveryRegistered } = require('./services/assistant-continuation/providers/feature-discovery');
+  const { defaultSupabaseCapabilityFetcher } = require('./services/capability-awareness/supabase-capability-fetcher');
+  ensureFeatureDiscoveryRegistered(defaultSupabaseCapabilityFetcher);
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
