@@ -42514,6 +42514,10 @@ function renderJourneyContextView() {
     // VTID-02930 (B1): Greeting Decay panel — simulated policy decision
     // + reason + evidence + signal source-health. Read-only.
     grid.appendChild(renderJourneyContextGreetingDecayPanel(jc.greetingDecay));
+    // VTID-02932 (B2): Conversation Continuity panel — open threads,
+    // owed promises, recently-kept promises, counts, source-health.
+    // Read-only.
+    grid.appendChild(renderJourneyContextContinuityPanel(jc.continuity));
 
     c.appendChild(grid);
     return c;
@@ -42561,6 +42565,9 @@ function loadJourneyContext() {
         fetch('/api/v1/voice/feature-discovery/preview' + fdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
         fetch('/api/v1/voice/wake-timeline/analysis'  + raQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
         fetch('/api/v1/voice/greeting-policy/preview' + gdQs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        // VTID-02932 (B2): conversation continuity preview — open threads
+        // + promises + distilled context. Keyed on user/tenant.
+        fetch('/api/v1/voice/continuity/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42590,6 +42597,11 @@ function loadJourneyContext() {
             jc.greetingDecay = results[5];
         } else {
             jc.greetingDecay = null;
+        }
+        if (results[6] && results[6].ok) {
+            jc.continuity = results[6];
+        } else {
+            jc.continuity = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -42881,6 +42893,124 @@ function renderJourneyContextGreetingDecayPanel(gd) {
     Object.keys(inp).forEach(function (k) {
         panel.appendChild(renderJourneyContextEmptyRow(k, String(inp[k])));
     });
+
+    return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02932 (B2): Conversation Continuity panel.
+//
+// Read-only inspection surface for the B2 continuity context the
+// assistant decision layer reads from. Operators read:
+//   - open threads (most recently mentioned first)
+//   - owed promises (oldest due first)
+//   - recently-kept promises (for credit acknowledgement)
+//   - aggregate counts used by the cadence layer
+//   - per-table source-health
+//
+// Wall (B2): NO mutation, NO POST, NO buttons. Selection is read-only;
+// state advancement (creating threads / marking promises) lives in a
+// follow-up slice with its own dedicated event endpoint.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextContinuityPanel(co) {
+    var panel = renderJourneyContextPanel(
+        'Conversation Continuity (B2)',
+        'Open threads + owed/kept promises — read-only, no mutation',
+    );
+
+    if (!co) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    var ctx = co.context || {};
+    var counts = ctx.counts || {};
+    var sh = ctx.source_health || {};
+
+    // ---- Counts ----
+    panel.appendChild(renderJourneyContextEmptyRow('open_threads_total', String(counts.open_threads_total || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('promises_owed_total', String(counts.promises_owed_total || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('promises_overdue', String(counts.promises_overdue || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('threads_mentioned_today', String(counts.threads_mentioned_today || 0)));
+
+    // ---- Source health ----
+    var shHeader = document.createElement('div');
+    shHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    shHeader.textContent = 'Source health';
+    panel.appendChild(shHeader);
+    var threadsHealth = sh.user_open_threads || { ok: false, reason: 'unknown' };
+    var promisesHealth = sh.assistant_promises || { ok: false, reason: 'unknown' };
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'user_open_threads',
+        threadsHealth.ok ? 'ok' : ('failed: ' + (threadsHealth.reason || 'unknown')),
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'assistant_promises',
+        promisesHealth.ok ? 'ok' : ('failed: ' + (promisesHealth.reason || 'unknown')),
+    ));
+
+    // ---- Open threads ----
+    var otHeader = document.createElement('div');
+    otHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    otHeader.textContent = 'Open threads (most recent first, capped at 5)';
+    panel.appendChild(otHeader);
+    var openThreads = Array.isArray(ctx.open_threads) ? ctx.open_threads : [];
+    if (openThreads.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('open_threads', 'no open threads'));
+    } else {
+        openThreads.forEach(function (t) {
+            var ageLabel = (t.days_since_last_mention === null || t.days_since_last_mention === undefined)
+                ? '?d'
+                : (t.days_since_last_mention + 'd');
+            panel.appendChild(renderJourneyContextEmptyRow(
+                t.topic + ' [' + ageLabel + ']',
+                t.summary || '(no summary)',
+            ));
+        });
+    }
+
+    // ---- Owed promises ----
+    var opHeader = document.createElement('div');
+    opHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    opHeader.textContent = 'Promises owed (oldest due first, capped at 5)';
+    panel.appendChild(opHeader);
+    var promisesOwed = Array.isArray(ctx.promises_owed) ? ctx.promises_owed : [];
+    if (promisesOwed.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('promises_owed', 'no promises owed'));
+    } else {
+        promisesOwed.forEach(function (p) {
+            var dueLabel;
+            if (p.due_at === null || p.due_at === undefined) {
+                dueLabel = 'no due_at';
+            } else if (p.days_overdue === null || p.days_overdue === undefined) {
+                dueLabel = 'due ' + p.due_at;
+            } else if (p.days_overdue > 0) {
+                dueLabel = p.days_overdue + 'd overdue';
+            } else if (p.days_overdue < 0) {
+                dueLabel = 'due in ' + Math.abs(p.days_overdue) + 'd';
+            } else {
+                dueLabel = 'due today';
+            }
+            panel.appendChild(renderJourneyContextEmptyRow(
+                p.promise_text + ' [' + dueLabel + ']',
+                p.decision_id ? ('decision=' + p.decision_id) : '(no decision_id)',
+            ));
+        });
+    }
+
+    // ---- Recently-kept promises ----
+    var kpHeader = document.createElement('div');
+    kpHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    kpHeader.textContent = 'Promises kept (last 7 days, capped at 3)';
+    panel.appendChild(kpHeader);
+    var promisesKept = Array.isArray(ctx.promises_kept_recently) ? ctx.promises_kept_recently : [];
+    if (promisesKept.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('promises_kept_recently', 'no promises kept in last 7 days'));
+    } else {
+        promisesKept.forEach(function (p) {
+            panel.appendChild(renderJourneyContextEmptyRow(p.promise_text, 'kept ' + p.kept_at));
+        });
+    }
 
     return panel;
 }
