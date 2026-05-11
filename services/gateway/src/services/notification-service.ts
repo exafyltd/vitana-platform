@@ -288,9 +288,25 @@ export async function sendAppilixPush(
       body: params.toString(),
     });
 
+    const text = await res.text().catch(() => '');
+
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
       console.warn(`[Notifications] Appilix push failed (${res.status}):`, text);
+      return false;
+    }
+
+    // Appilix returns HTTP 200 with { status: false, message: "No devices..." }
+    // when delivery fails (e.g. no device registered for that user_identity).
+    // Parse the JSON body and treat status:false as failure so the log
+    // accurately reflects what Appilix did.
+    let parsed: { status?: boolean | string; message?: string } | null = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    const ok = parsed?.status === true || parsed?.status === 'true';
+    if (!ok) {
+      console.warn(
+        `[Notifications] Appilix push DROPPED for user=${userId.slice(0, 8)}…: ` +
+        `${parsed?.message || text}`
+      );
       return false;
     }
     console.log(`[Notifications] Appilix push sent for user=${userId.slice(0, 8)}…`);
