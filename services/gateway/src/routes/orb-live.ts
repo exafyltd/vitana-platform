@@ -7049,7 +7049,11 @@ NEVER speak raw URLs or route paths.`;
  */
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
-function describeTimeSince(lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined): {
+// Exported for characterization testing (A0.2, orb-live-refactor).
+// No behavior change — same function, externally addressable so the refactor
+// can lock its time-bucket logic before A8 extracts session lifecycle into
+// orb/live/session/.
+export function describeTimeSince(lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined): {
   bucket: TemporalBucket;
   timeAgo: string;
   diffMs: number;
