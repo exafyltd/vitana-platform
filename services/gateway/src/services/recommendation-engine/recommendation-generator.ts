@@ -44,6 +44,7 @@ import {
 import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
 import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
 import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
+import { deriveEconomicAxis } from './economic-axis';
 import {
   analyzeMarketplace,
   MarketplaceSignal,
@@ -673,6 +674,7 @@ export async function generateRecommendations(
         p_expires_days: 30,
         p_user_id: rec.user_id || null,
         p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
       });
 
       if (insertResult.ok) {
@@ -848,6 +850,7 @@ export async function generatePersonalRecommendations(
         source_ref: (r as any).source_ref ?? null,
         impact_score: (r as any).impact_score ?? null,
         contribution_vector: (r as any).contribution_vector ?? null,
+        economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
       }));
       const ranked = rankBatch(rankerInputs, rankerCtx);
       // Apply rank order back onto recommendations[].
@@ -909,6 +912,7 @@ export async function generatePersonalRecommendations(
         p_expires_days: 7, // Personal recs expire faster
         p_user_id: rec.user_id || null,
         p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
       });
 
       if (insertResult.ok) {

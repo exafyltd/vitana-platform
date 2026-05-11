@@ -119,7 +119,7 @@ export async function buildMorningBrief(
       // top is picked.
       const { data: recs } = await supabase
         .from('autopilot_recommendations')
-        .select('id, title, source_ref, impact_score, contribution_vector, domain, status')
+        .select('id, title, source_ref, impact_score, economic_axis, contribution_vector, domain, status')
         .eq('user_id', input.user_id)
         .eq('source_type', 'community')
         .eq('status', 'new')

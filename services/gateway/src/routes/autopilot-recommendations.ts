@@ -26,6 +26,20 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
+import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+
+/**
+ * Annotate an array of recommendation rows from get_autopilot_recommendations
+ * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
+ * from contribution_vector JSONB — see services/.../pillar-impact.ts.
+ * Mutates each row in place (cheap and unambiguous for response payload use).
+ */
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(rows: T[]): Array<T & { pillar_impact: ReturnType<typeof derivePillarImpact> }> {
+  return rows.map((row) => ({
+    ...row,
+    pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+  }));
+}
 
 const router = Router();
 
@@ -168,7 +182,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -232,7 +246,7 @@ async function queryRecommendationsFallback(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -444,6 +458,7 @@ router.get('/', async (req: Request, res: Response) => {
                 target.rank_score = r.rank_score;
                 target.pillar_boost = r.pillar_boost;
                 target.compass_boost = r.compass_boost;
+                target.economic_boost = r.economic_boost;
                 target.journey_mode = r.journey_mode;
               }
             }
@@ -497,7 +512,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       return res.status(200).json({
         ok: true,
-        recommendations,
+        recommendations: annotateWithPillarImpact(recommendations),
         count: recommendations.length,
         has_more: hasMore,
         ...(waves ? { waves } : {}),
@@ -534,7 +549,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      recommendations,
+      recommendations: annotateWithPillarImpact(recommendations),
       count: recommendations.length,
       has_more: hasMore,
       vtid: 'VTID-01180',
