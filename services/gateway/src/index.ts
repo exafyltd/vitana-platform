@@ -747,6 +747,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceGreetingPolicyRouter = require('./routes/voice-greeting-policy').default;
   mountRouterSync(app, '/api/v1', voiceGreetingPolicyRouter, { owner: 'voice-greeting-policy' });
 
+  // VTID-02932 (B2): Conversation Continuity preview (read-only).
+  // GET /api/v1/voice/continuity/preview
+  const voiceContinuityRouter = require('./routes/voice-continuity').default;
+  mountRouterSync(app, '/api/v1', voiceContinuityRouter, { owner: 'voice-continuity' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
