@@ -752,6 +752,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceContinuityRouter = require('./routes/voice-continuity').default;
   mountRouterSync(app, '/api/v1', voiceContinuityRouter, { owner: 'voice-continuity' });
 
+  // VTID-02936 (B3): Concept Mastery preview (read-only).
+  // GET /api/v1/voice/concept-mastery/preview
+  const voiceConceptMasteryRouter = require('./routes/voice-concept-mastery').default;
+  mountRouterSync(app, '/api/v1', voiceConceptMasteryRouter, { owner: 'voice-concept-mastery' });
+
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
 
