@@ -27,6 +27,61 @@ import { generateRecommendations, generatePersonalRecommendations, SourceType } 
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
 import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
+
+/**
+ * Phase 5 of the Ultimate Goal hardening (VTID-02935): when a recommendation
+ * graduates to a VTID, emit an OASIS event reporting whether the rec advances
+ * any mission dimension. The rec is "aligned" if it has a primary pillar OR a
+ * non-'none' economic_axis. Pillar impact is derived from contribution_vector.
+ *
+ * NOT a hard block — visibility only. Future: graduation to a block once ≥80%
+ * of activations in a 14-day window carry alignment fields. See
+ * docs/GOVERNANCE/ULTIMATE-GOAL.md.
+ */
+async function emitAlignmentEventForActivation(params: {
+  vtid: string;
+  recId: string;
+  recTitle: string;
+  userId: string | null;
+  supabaseUrl: string;
+  svcKey: string;
+}): Promise<void> {
+  try {
+    const recResp = await fetch(
+      `${params.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${params.recId}&select=economic_axis,autonomy_level,contribution_vector,source_type,source_ref,domain&limit=1`,
+      { headers: { apikey: params.svcKey, Authorization: `Bearer ${params.svcKey}` } },
+    );
+    if (!recResp.ok) return;
+    const rows = await recResp.json() as any[];
+    const rec = rows[0];
+    if (!rec) return;
+
+    const evaluation = evaluateRecAlignment(rec);
+
+    await emitOasisEvent({
+      vtid: params.vtid,
+      type: evaluation.topic,
+      source: 'autopilot-recommendations',
+      status: evaluation.status,
+      message: evaluation.message,
+      payload: {
+        recommendation_id: params.recId,
+        recommendation_title: params.recTitle,
+        user_id: params.userId,
+        pillar_impact: evaluation.pillar_impact,
+        economic_axis: evaluation.economic_axis,
+        autonomy_level: evaluation.autonomy_level,
+        source_type: rec.source_type || null,
+        source_ref: rec.source_ref || null,
+        domain: rec.domain || null,
+      },
+    });
+  } catch (err: any) {
+    // Never let alignment telemetry break the activation path.
+    console.warn(`[VTID-02935] emitAlignmentEventForActivation failed (non-fatal): ${err?.message || err}`);
+  }
+}
 
 /**
  * Annotate an array of recommendation rows from get_autopilot_recommendations
@@ -936,7 +991,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Emit OASIS event for tracking
     await emitOasisEvent({
       vtid: response.vtid || 'SYSTEM',
-      type: 'autopilot.recommendation.activated' as any,
+      type: 'autopilot.recommendation.activated',
       source: 'autopilot-recommendations',
       status: 'info',
       message: `Recommendation activated: ${response.title}`,
@@ -947,6 +1002,24 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         already_activated: response.already_activated,
       },
     });
+
+    // VTID-02935 Phase 5: emit alignment telemetry for fresh activations only.
+    // Skip already-activated calls (idempotent re-tries don't change alignment
+    // state). Pillar impact is derived from contribution_vector at read time.
+    if (!response.already_activated && response.vtid) {
+      const supabaseUrlForAlign = process.env.SUPABASE_URL;
+      const svcKeyForAlign = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrlForAlign && svcKeyForAlign) {
+        await emitAlignmentEventForActivation({
+          vtid: response.vtid,
+          recId: id,
+          recTitle: response.title || '',
+          userId: userId || null,
+          supabaseUrl: supabaseUrlForAlign,
+          svcKey: svcKeyForAlign,
+        });
+      }
+    }
 
     // Create draft spec in oasis_specs from recommendation data so the task
     // enters the spec pipeline with content ready for validate → approve flow
