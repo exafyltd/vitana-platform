@@ -46,9 +46,16 @@ const INDEX_PATH = path.join(REPO_ROOT, 'services/gateway/src/index.ts');
 // reports "route file does not exist". We fall back to GitHub at the SHA the
 // running container was built from (BUILD_INFO.sha) and only as last resort
 // to ref=main, which may have drifted ahead of the deployed revision.
-const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER || 'exafyltd';
-const GITHUB_REPO = process.env.GITHUB_REPO_NAME || 'vitana-platform';
-const GITHUB_TOKEN = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+// Env reads at module load are brittle — tests + operators can override
+// at runtime via DEPLOYED_GIT_SHA / BUILD_SHA / GITHUB_SAFE_MERGE_TOKEN,
+// and the values must be honored even if they're set AFTER imports.
+function githubAuthEnv(): { owner: string; repo: string; token: string } {
+  return {
+    owner: process.env.GITHUB_REPO_OWNER || 'exafyltd',
+    repo: process.env.GITHUB_REPO_NAME || 'vitana-platform',
+    token: process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '',
+  };
+}
 
 // Read every call so tests + operators can override at runtime; the work
 // is cheap (env read + at most one fs.readFileSync of a tiny JSON file).
@@ -87,15 +94,16 @@ async function fetchFromGithub(
   relativeFile: string,
   ref: string,
 ): Promise<{ ok: boolean; content?: string; sha?: string }> {
-  if (!GITHUB_TOKEN) {
+  const { owner, repo, token } = githubAuthEnv();
+  if (!token) {
     return { ok: false };
   }
   const encoded = relativeFile.split('/').map(encodeURIComponent).join('/');
-  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(ref)}`;
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encoded}?ref=${encodeURIComponent(ref)}`;
   try {
     const res = await fetch(url, {
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -297,8 +305,10 @@ export async function runDeepDiagnosis(
   // Layer 4 — Dependency Analysis
   const dependencyAnalysis = analyzeDependencies(codebaseAnalysis, evidence);
 
-  // Layer 5 — Workflow Analysis
-  const workflowAnalysis = analyzeWorkflow(failure, codebaseAnalysis, evidence, filesRead);
+  // Layer 5 — Workflow Analysis (PR-F: GitHub-fallback aware so Cloud Run
+  // can see whether routes are mounted in index.ts even without the source
+  // tree on disk; shares the same sourceCache as Layer 2).
+  const workflowAnalysis = await analyzeWorkflow(failure, codebaseAnalysis, evidence, filesRead, sourceCache);
 
   // Layer 6 — OASIS Correlation
   const { oasisEvidence, priorAttempts } = await correlateOasis(failure, vtid, evidence);
@@ -746,12 +756,13 @@ function analyzeDependencies(
 // Layer 5: Workflow Analysis
 // ---------------------------------------------------------------------------
 
-function analyzeWorkflow(
+async function analyzeWorkflow(
   failure: ServiceStatus,
   codebase: CodebaseAnalysis,
   evidence: string[],
   filesRead: string[],
-): WorkflowAnalysis {
+  sourceCache?: Map<string, LoadedSource>,
+): Promise<WorkflowAnalysis> {
   const result: WorkflowAnalysis = {
     route_mounted_in_index: false,
     mount_path: null,
@@ -763,12 +774,28 @@ function analyzeWorkflow(
     evidence: [],
   };
 
-  // Read index.ts to check route mounting
+  // PR-F (VTID-02933, Gap 2): Cloud Run revisions don't carry the source
+  // tree under REPO_ROOT, so the old fs-only read of index.ts ENOENT-failed
+  // on every live diagnosis. That falsely synthesized route_mounted_in_index
+  // = false on EVERY endpoint and tipped the synthesizer into proposing
+  // `files_to_modify=['services/gateway/src/index.ts']`. The autopilot
+  // safety gate then (correctly) blocked edits to that high-blast-radius
+  // file at "safety gate blocked approval", which surfaced as Gap 1 in the
+  // VTID-02928 smoke run. Routing the same loadSourceFile() PR-C uses
+  // fixes it: fs → deployed SHA → ref=main, with the same redaction
+  // contract.
   let indexContent: string | null = null;
   try {
-    if (fs.existsSync(INDEX_PATH)) {
-      indexContent = fs.readFileSync(INDEX_PATH, 'utf-8');
+    const loaded = await loadSourceFile('services/gateway/src/index.ts', sourceCache);
+    if (loaded.found && loaded.content) {
+      indexContent = loaded.content;
       filesRead.push('services/gateway/src/index.ts');
+      if (loaded.source !== 'fs') {
+        result.evidence.push(
+          `index.ts loaded via ${loaded.source}` +
+            (loaded.sha ? ` (sha=${loaded.sha.substring(0, 7)})` : ''),
+        );
+      }
     }
   } catch (err: any) {
     result.evidence.push(`Cannot read index.ts: ${err.message}`);
@@ -777,7 +804,7 @@ function analyzeWorkflow(
   }
 
   if (!indexContent) {
-    result.evidence.push('index.ts not found — cannot verify route mounting');
+    result.evidence.push('index.ts not found via fs OR GitHub — cannot verify route mounting');
     return result;
   }
 
