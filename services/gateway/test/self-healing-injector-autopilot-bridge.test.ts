@@ -143,11 +143,18 @@ describe('injectIntoAutopilotPipeline — autopilot bridge', () => {
     expect(typeof rec.spec_snapshot.dedupe_key).toBe('string');
     expect(rec.spec_snapshot.dedupe_key.length).toBe(64); // sha256 hex
 
-    // Plan version carries the spec markdown.
-    expect(state.planVersionInserts[0].plan_markdown).toBe('spec markdown');
-    expect(state.planVersionInserts[0].files_referenced).toEqual([
+    // PR-H (VTID-02947): plan markdown is the original spec PLUS a
+    // "Required repair deliverables" footer with paired source+test
+    // paths. The footer is appended (not replacing the diagnosis).
+    expect(state.planVersionInserts[0].plan_markdown).toMatch(/^spec markdown/);
+    expect(state.planVersionInserts[0].plan_markdown).toContain('Required repair deliverables');
+    // PR-H: files_referenced now includes both source AND derived test path.
+    expect(state.planVersionInserts[0].files_referenced).toContain(
       'services/gateway/src/routes/availability.ts',
-    ]);
+    );
+    expect(state.planVersionInserts[0].files_referenced).toContain(
+      'services/gateway/test/availability.test.ts',
+    );
 
     // Ledger is patched twice: once initially (status=scheduled), then post-bridge
     // with autopilot_execution_id in metadata.
