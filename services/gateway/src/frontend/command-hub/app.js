@@ -42522,6 +42522,9 @@ function renderJourneyContextView() {
     // mastery observations, DYK cards seen, with repetition hints
     // for the decision layer. Read-only.
     grid.appendChild(renderJourneyContextConceptMasteryPanel(jc.conceptMastery));
+    // VTID-02937 (B4): Tenure & Journey Stage panel — onboarding ladder
+    // + tenure days + usage days + last active + Index tier. Read-only.
+    grid.appendChild(renderJourneyContextJourneyStagePanel(jc.journeyStage));
 
     c.appendChild(grid);
     return c;
@@ -42575,6 +42578,9 @@ function loadJourneyContext() {
         // VTID-02936 (B3): concept-mastery preview — explained / mastered
         // / DYK cards seen + distilled context. Keyed on user/tenant.
         fetch('/api/v1/voice/concept-mastery/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        // VTID-02937 (B4): journey-stage preview — tenure / usage_days /
+        // Index tier + distilled context. Keyed on user/tenant.
+        fetch('/api/v1/voice/journey-stage/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42614,6 +42620,11 @@ function loadJourneyContext() {
             jc.conceptMastery = results[7];
         } else {
             jc.conceptMastery = null;
+        }
+        if (results[8] && results[8].ok) {
+            jc.journeyStage = results[8];
+        } else {
+            jc.journeyStage = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -43135,6 +43146,101 @@ function renderJourneyContextConceptMasteryPanel(cm) {
             ));
         });
     }
+
+    return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02937 (B4): Tenure & Journey Stage panel.
+//
+// Read-only inspection surface for the B4 journey-stage context the
+// assistant decision layer reads from. Operators read:
+//   - onboarding stage (5-step ladder)
+//   - tenure days + usage_days_count
+//   - last active date + freshness
+//   - Vitana Index tier + score + tier_days_held
+//   - explanation_depth_hint (the decision-layer summary)
+//   - per-source source-health
+//
+// Wall (B4): NO mutation, NO POST, NO buttons. Selection is read-
+// only; none of B4's signals need persistence — they read from
+// authoritative sources already populated by other code paths.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextJourneyStagePanel(js) {
+    var panel = renderJourneyContextPanel(
+        'Tenure & Journey Stage (B4)',
+        'Onboarding ladder + tenure + Index tier — read-only, no mutation',
+    );
+
+    if (!js) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    var jsCtx = js.context || {};
+    var vi = jsCtx.vitana_index || {};
+    var jsSh = jsCtx.source_health || {};
+
+    // ---- Decision-grade summary ----
+    panel.appendChild(renderJourneyContextEmptyRow('onboarding_stage', String(jsCtx.onboarding_stage || '—')));
+    panel.appendChild(renderJourneyContextEmptyRow('explanation_depth_hint', String(jsCtx.explanation_depth_hint || '—')));
+
+    // ---- Tenure ----
+    var tHeader = document.createElement('div');
+    tHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    tHeader.textContent = 'Tenure';
+    panel.appendChild(tHeader);
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'tenure_days',
+        jsCtx.tenure_days === null || jsCtx.tenure_days === undefined ? 'unknown' : String(jsCtx.tenure_days),
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow('usage_days_count', String(jsCtx.usage_days_count || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'last_active_date',
+        jsCtx.last_active_date || '—',
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'days_since_last_active',
+        jsCtx.days_since_last_active === null || jsCtx.days_since_last_active === undefined
+            ? 'unknown'
+            : String(jsCtx.days_since_last_active),
+    ));
+
+    // ---- Vitana Index ----
+    var iHeader = document.createElement('div');
+    iHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    iHeader.textContent = 'Vitana Index';
+    panel.appendChild(iHeader);
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'score_total',
+        vi.score_total === null || vi.score_total === undefined ? 'no score' : String(vi.score_total),
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow('tier', String(vi.tier || 'unknown')));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'tier_days_held',
+        vi.tier_days_held === null || vi.tier_days_held === undefined ? '—' : String(vi.tier_days_held),
+    ));
+
+    // ---- Source health ----
+    var jsShHeader = document.createElement('div');
+    jsShHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    jsShHeader.textContent = 'Source health';
+    panel.appendChild(jsShHeader);
+    var appHealth = jsSh.app_users || { ok: false, reason: 'unknown' };
+    var adHealth = jsSh.user_active_days || { ok: false, reason: 'unknown' };
+    var viHealth = jsSh.vitana_index_scores || { ok: false, reason: 'unknown' };
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'app_users',
+        appHealth.ok ? 'ok' : ('failed: ' + (appHealth.reason || 'unknown')),
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'user_active_days',
+        adHealth.ok ? 'ok' : ('failed: ' + (adHealth.reason || 'unknown')),
+    ));
+    panel.appendChild(renderJourneyContextEmptyRow(
+        'vitana_index_scores',
+        viHealth.ok ? 'ok' : ('failed: ' + (viHealth.reason || 'unknown')),
+    ));
 
     return panel;
 }
