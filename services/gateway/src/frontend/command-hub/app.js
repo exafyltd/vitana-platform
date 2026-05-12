@@ -2817,7 +2817,8 @@ const NAVIGATION_CONFIG = [
             { "key": "runs", "path": "/command-hub/autopilot/runs/" },
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
-            { "key": "growth", "path": "/command-hub/autopilot/growth/" }
+            { "key": "growth", "path": "/command-hub/autopilot/growth/" },
+            { "key": "mission-alignment", "path": "/command-hub/autopilot/mission-alignment/" }
         ]
     },
     {
@@ -6439,6 +6440,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAutopilotEngineView());
     } else if (moduleKey === 'autopilot' && tab === 'growth') {
         container.appendChild(renderAutopilotGrowthView());
+    } else if (moduleKey === 'autopilot' && tab === 'mission-alignment') {
+        container.appendChild(renderAutopilotMissionAlignmentView());
 
     } else {
         // Fallback placeholder for any unmapped screens
@@ -44548,6 +44551,7 @@ if (!state.autopilot) {
         live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
         growth: { loading: false, metrics: null, period: '7d' },
+        missionAlignment: { loading: false, recs: null, error: null, lastFetchAt: null, statusFilter: 'new' },
         selectedAutomation: null,
         drawerOpen: false,
     };
@@ -46197,6 +46201,289 @@ function renderAutopilotGrowthView() {
         topCard.appendChild(empty);
     }
     container.appendChild(topCard);
+
+    return container;
+}
+
+// =============================================================================
+// VTID-02934 — Mission Alignment cockpit
+// =============================================================================
+// Reads the existing /api/v1/autopilot/recommendations endpoint (no new API
+// surface). Aggregates the queue along the three contract dimensions:
+//   - Pillar impact     (5 health pillars + 'none')
+//   - Economic axis     (4 axes + 'none')
+//   - Autonomy level    (manual / assisted / auto_approved / self_healing)
+// Each dimension answers a separate supervisor question:
+//   pillar  → which longevity pillars is the queue actually serving?
+//   axis    → is the longevity economy axis represented at all?
+//   level   → what fraction is auto-executed vs human-gated?
+// See docs/GOVERNANCE/ULTIMATE-GOAL.md.
+// =============================================================================
+
+const MISSION_ALIGNMENT_PILLARS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'];
+const MISSION_ALIGNMENT_ECONOMIC_AXES = ['find_match', 'marketplace', 'income_generation', 'business_formation'];
+const MISSION_ALIGNMENT_AUTONOMY_LEVELS = ['manual', 'assisted', 'auto_approved', 'self_healing'];
+
+function fetchMissionAlignmentRecs() {
+    var ma = state.autopilot.missionAlignment;
+    ma.loading = true;
+    ma.error = null;
+    renderApp();
+    var status = ma.statusFilter || 'new';
+    var url = '/api/v1/autopilot/recommendations?limit=500&status=' + encodeURIComponent(status);
+    fetch(url, { credentials: 'include', headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            ma.loading = false;
+            if (j && j.ok) {
+                ma.recs = j.recommendations || [];
+                ma.lastFetchAt = new Date().toISOString();
+            } else {
+                ma.recs = null;
+                ma.error = (j && j.error) || 'Fetch failed';
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            ma.loading = false;
+            ma.recs = null;
+            ma.error = String(err);
+            renderApp();
+        });
+}
+
+function aggregateMissionAlignment(recs) {
+    var pillarCounts = { nutrition: 0, hydration: 0, exercise: 0, sleep: 0, mental: 0, none: 0 };
+    var axisCounts = { find_match: 0, marketplace: 0, income_generation: 0, business_formation: 0, none: 0 };
+    var levelCounts = { manual: 0, assisted: 0, auto_approved: 0, self_healing: 0 };
+    var total = recs.length;
+    var mission_served = 0;
+
+    recs.forEach(function (r) {
+        var pi = r.pillar_impact || {};
+        var primary = pi.primary_pillar;
+        if (primary && Object.prototype.hasOwnProperty.call(pillarCounts, primary)) {
+            pillarCounts[primary] += 1;
+        } else {
+            pillarCounts.none += 1;
+        }
+        var axis = (r.economic_axis || 'none');
+        if (!Object.prototype.hasOwnProperty.call(axisCounts, axis)) axis = 'none';
+        axisCounts[axis] += 1;
+        var level = (r.autonomy_level || 'manual');
+        if (!Object.prototype.hasOwnProperty.call(levelCounts, level)) level = 'manual';
+        levelCounts[level] += 1;
+        if (primary || (axis !== 'none')) mission_served += 1;
+    });
+
+    return {
+        total: total,
+        mission_served: mission_served,
+        mission_served_pct: total > 0 ? Math.round((mission_served / total) * 100) : 0,
+        pillarCounts: pillarCounts,
+        axisCounts: axisCounts,
+        levelCounts: levelCounts,
+    };
+}
+
+function formatPillarLabel(p) {
+    var labels = { nutrition: 'Nutrition', hydration: 'Hydration', exercise: 'Exercise', sleep: 'Sleep', mental: 'Mental Health', none: 'Not pillar-aligned' };
+    return labels[p] || p;
+}
+function formatAxisLabel(a) {
+    var labels = { find_match: 'Find a Match', marketplace: 'Marketplace', income_generation: 'Income generation', business_formation: 'Business formation', none: 'Not economy-aligned' };
+    return labels[a] || a;
+}
+function formatLevelLabel(l) {
+    var labels = { manual: 'Manual', assisted: 'Assisted', auto_approved: 'Auto-approved', self_healing: 'Self-healing' };
+    return labels[l] || l;
+}
+
+function renderMissionAlignmentBreakdown(title, keys, counts, total, formatter, modifier) {
+    var card = document.createElement('div');
+    card.className = 'mission-alignment-card';
+
+    var h = document.createElement('h3');
+    h.className = 'mission-alignment-card-title';
+    h.textContent = title;
+    card.appendChild(h);
+
+    if (total === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'mission-alignment-empty';
+        empty.textContent = 'No recommendations in the current queue.';
+        card.appendChild(empty);
+        return card;
+    }
+
+    keys.forEach(function (key) {
+        var count = counts[key] || 0;
+        var pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        var row = document.createElement('div');
+        row.className = 'mission-alignment-row';
+
+        var labelEl = document.createElement('span');
+        labelEl.className = 'mission-alignment-row-label';
+        labelEl.textContent = formatter(key);
+        row.appendChild(labelEl);
+
+        var barWrap = document.createElement('div');
+        barWrap.className = 'mission-alignment-bar-track';
+        var bar = document.createElement('div');
+        bar.className = 'mission-alignment-bar-fill' + (modifier ? ' ' + modifier(key) : '');
+        bar.style.width = pct + '%';
+        barWrap.appendChild(bar);
+        row.appendChild(barWrap);
+
+        var stats = document.createElement('span');
+        stats.className = 'mission-alignment-row-stats';
+        stats.textContent = count + ' (' + pct + '%)';
+        row.appendChild(stats);
+
+        card.appendChild(row);
+    });
+
+    return card;
+}
+
+function renderAutopilotMissionAlignmentView() {
+    var container = document.createElement('div');
+    container.className = 'mission-alignment-container';
+
+    var header = document.createElement('div');
+    header.className = 'mission-alignment-header';
+
+    var titleBlock = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'Mission Alignment';
+    titleBlock.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Does the autopilot queue advance the Vitana Ultimate Goal? Reads the live recommendation queue and groups it across the three contract dimensions.';
+    titleBlock.appendChild(subtitle);
+    header.appendChild(titleBlock);
+
+    var contractLink = document.createElement('a');
+    contractLink.href = 'https://github.com/exafyltd/vitana-platform/blob/main/docs/GOVERNANCE/ULTIMATE-GOAL.md';
+    contractLink.target = '_blank';
+    contractLink.rel = 'noopener';
+    contractLink.className = 'mission-alignment-contract-link';
+    contractLink.textContent = 'View the Ultimate Goal contract →';
+    header.appendChild(contractLink);
+
+    container.appendChild(header);
+
+    var ma = state.autopilot.missionAlignment;
+
+    var filterRow = document.createElement('div');
+    filterRow.className = 'mission-alignment-filter-row';
+    var filterLabel = document.createElement('span');
+    filterLabel.className = 'mission-alignment-filter-label';
+    filterLabel.textContent = 'Queue:';
+    filterRow.appendChild(filterLabel);
+    ['new', 'activated', 'rejected', 'snoozed'].forEach(function (s) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = s;
+        btn.className = 'mission-alignment-filter-btn' + (ma.statusFilter === s ? ' is-active' : '');
+        btn.onclick = function () {
+            if (ma.statusFilter === s) return;
+            ma.statusFilter = s;
+            ma.recs = null;
+            fetchMissionAlignmentRecs();
+        };
+        filterRow.appendChild(btn);
+    });
+    var refreshBtn = document.createElement('button');
+    refreshBtn.type = 'button';
+    refreshBtn.className = 'mission-alignment-refresh-btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () { fetchMissionAlignmentRecs(); };
+    filterRow.appendChild(refreshBtn);
+    container.appendChild(filterRow);
+
+    if (ma.recs === null && !ma.loading && !ma.error) {
+        setTimeout(function () { fetchMissionAlignmentRecs(); }, 0);
+    }
+
+    if (ma.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading mission alignment...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    if (ma.error) {
+        var errBox = document.createElement('div');
+        errBox.className = 'mission-alignment-error';
+        errBox.textContent = 'Could not load: ' + ma.error;
+        container.appendChild(errBox);
+        return container;
+    }
+
+    if (!ma.recs) return container;
+
+    var agg = aggregateMissionAlignment(ma.recs);
+
+    var summary = document.createElement('div');
+    summary.className = 'mission-alignment-summary';
+    var totalCard = document.createElement('div');
+    totalCard.className = 'mission-alignment-summary-card';
+    totalCard.innerHTML = '<div class="mission-alignment-summary-value">' + agg.total + '</div>' +
+        '<div class="mission-alignment-summary-label">recommendations in queue</div>';
+    summary.appendChild(totalCard);
+
+    var servedCard = document.createElement('div');
+    servedCard.className = 'mission-alignment-summary-card';
+    servedCard.innerHTML = '<div class="mission-alignment-summary-value">' + agg.mission_served_pct + '%</div>' +
+        '<div class="mission-alignment-summary-label">advance the mission</div>';
+    summary.appendChild(servedCard);
+
+    var unalignedCard = document.createElement('div');
+    unalignedCard.className = 'mission-alignment-summary-card';
+    var unaligned = agg.total - agg.mission_served;
+    unalignedCard.innerHTML = '<div class="mission-alignment-summary-value">' + unaligned + '</div>' +
+        '<div class="mission-alignment-summary-label">not yet aligned</div>';
+    summary.appendChild(unalignedCard);
+    container.appendChild(summary);
+
+    var breakdowns = document.createElement('div');
+    breakdowns.className = 'mission-alignment-breakdowns';
+
+    breakdowns.appendChild(renderMissionAlignmentBreakdown(
+        'Pillar impact',
+        ['nutrition', 'hydration', 'exercise', 'sleep', 'mental', 'none'],
+        agg.pillarCounts,
+        agg.total,
+        formatPillarLabel,
+        function (k) { return k === 'none' ? 'is-muted' : 'is-pillar-' + k; }
+    ));
+
+    breakdowns.appendChild(renderMissionAlignmentBreakdown(
+        'Economic axis',
+        ['find_match', 'marketplace', 'income_generation', 'business_formation', 'none'],
+        agg.axisCounts,
+        agg.total,
+        formatAxisLabel,
+        function (k) { return k === 'none' ? 'is-muted' : 'is-economy'; }
+    ));
+
+    breakdowns.appendChild(renderMissionAlignmentBreakdown(
+        'Autonomy level',
+        ['manual', 'assisted', 'auto_approved', 'self_healing'],
+        agg.levelCounts,
+        agg.total,
+        formatLevelLabel,
+        function (k) { return 'is-autonomy-' + k.replace('_', '-'); }
+    ));
+
+    container.appendChild(breakdowns);
+
+    var foot = document.createElement('div');
+    foot.className = 'mission-alignment-footnote';
+    foot.textContent = 'Pillar impact is derived from contribution_vector. Economic axis is set at insert time (deriveEconomicAxis). Autonomy level is derived by the BEFORE INSERT trigger for dev_autopilot paths. Last refreshed: ' + (ma.lastFetchAt || 'never');
+    container.appendChild(foot);
 
     return container;
 }
