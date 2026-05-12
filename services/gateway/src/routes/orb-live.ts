@@ -54,6 +54,11 @@ import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-time
 // `decideWakeBriefForSession` runs the continuation decision and emits
 // the 3 continuation_decision_* timeline events.
 import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
+// VTID-02941 (B0b-min + B2 decision integration): minimal decision-contract
+// spine. The instruction layer renders the typed contract; the compiler
+// distills. NO raw rows cross this boundary.
+import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
+import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -9088,9 +9093,34 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
 
     // VTID-01118: Inject cross-turn state context into system instruction
     const stateContext = stateEngine.generateContextString();
-    const systemInstruction = stateContext
+    let systemInstruction = stateContext
       ? `${baseSystemInstruction}\n\n${stateContext}`
       : baseSystemInstruction;
+
+    // VTID-02941 (B0b-min + B2 decision integration): append the decision-
+    // contract section. Continuity is the only signal flowing through the
+    // spine in this slice; future slices add more fields to
+    // AssistantDecisionContext via the same renderer.
+    //
+    // Wall: a thrown error here MUST NOT break the prompt — the contract
+    // is an enrichment layer, never required. We log and continue with the
+    // unaugmented instruction (acceptance #6).
+    if (identity?.tenant_id && identity?.user_id) {
+      try {
+        const decision = await compileAssistantDecisionContext({
+          tenantId: identity.tenant_id,
+          userId: identity.user_id,
+        });
+        const contractSection = renderDecisionContract(decision);
+        if (contractSection) {
+          systemInstruction = `${systemInstruction}\n\n${contractSection}`;
+        }
+      } catch (e) {
+        console.warn(
+          `[VTID-02941] decision contract render failed: ${(e as Error).message}`,
+        );
+      }
+    }
 
     // VTID-01106: Emit memory context injection event
     if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
