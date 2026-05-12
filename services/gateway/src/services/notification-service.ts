@@ -537,30 +537,23 @@ export async function notifyUser(
   }
 
   // ── 5. Send push — FCM first, Appilix as fallback ──────
-  // Only send ONE push per user to avoid duplicate notifications.
-  // FCM covers desktop Chrome + mobile Chrome; Appilix covers Maxina app
-  // users who have no FCM tokens registered.
+  // Single dispatch policy: FCM first, Appilix fallback.
   //
-  // Appilix native push honors open_link_url (deep-links into the app).
-  // FCM in the Appilix WebView does NOT support deep-links (no service
-  // worker / Notification API). So when the payload has a URL, prefer
-  // Appilix for mobile users, with FCM as fallback for desktop browsers.
-  // For desktop-only users, Appilix fails silently → FCM delivers.
+  // Historically chat-category notifications routed through Appilix first
+  // because we only had web-push FCM tokens (which open the browser, not
+  // the app). Per Appilix support, their iOS wrapper exposes the native
+  // FCM token via a JS bridge (appilix.postMessage({type:"firebase_token"}))
+  // which the frontend now registers in user_device_tokens. With native
+  // tokens stored, Firebase Admin SDK delivers via APNs straight to the
+  // installed app — bypassing Appilix's user_identity routing layer
+  // entirely. Appilix remains as fallback for users whose token isn't
+  // registered yet.
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
-    if (payload.data?.url) {
-      // Notification with deep-link URL → Appilix first
+    pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+    if (pushed === 0) {
       appilixSent = await sendAppilixPush(userId, payload);
-      if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-      }
-    } else {
-      // Notification without URL → FCM first, Appilix fallback
-      pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-      if (pushed === 0) {
-        appilixSent = await sendAppilixPush(userId, payload);
-      }
     }
   }
 
