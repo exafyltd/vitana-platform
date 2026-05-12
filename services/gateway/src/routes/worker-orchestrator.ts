@@ -1019,7 +1019,13 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
       `/rest/v1/vtid_ledger?` +
       `status=in.(scheduled,in_progress)&` +
       `spec_status=eq.approved&` +
-      `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
+      // PR-G (VTID-02940): metadata is REQUIRED for hydratePendingTask to
+      // expose source/autopilot_execution_id to the worker-runner. Without
+      // it, the Gap 1 guard in worker-runner/execution-service.ts can't
+      // detect self-healing tasks and falls through to the local LLM,
+      // hallucinating success. PR #2045's draft included this column; lost
+      // in the squash-merge that landed PR-A.
+      `select=vtid,title,summary,status,layer,module,metadata,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
       `order=created_at.asc&` +
       `limit=${limit * 2}` // Fetch extra to allow for filtering
     );
