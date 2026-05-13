@@ -173,4 +173,32 @@ describe('A8.3a.2: orb-live.ts is a thin consumer of the factory', () => {
     const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
     expect(fnBody).not.toMatch(/new\s+WebSocket\s*\(\s*wsUrl/);
   });
+
+  it('A8.3b.2: legacy raw-WebSocket scaffolding is removed from connectToLiveAPI', () => {
+    // A8.3b.2 (VTID-02972): with VertexLiveClient owning the entire
+    // open-handshake (auth-token fetch, URL build, headers attach,
+    // ws.on('open') envelope send, setup_complete gate), the outer
+    // connectToLiveAPI body no longer needs to fetch the token or
+    // construct the WSS URL itself. Those three artifacts must NOT
+    // reappear inside the function body:
+    //
+    //   1. `const wsUrl = ...`  — URL is internal to VertexLiveClient.
+    //   2. `const accessToken = await getAccessToken()` — VertexLiveClient
+    //      invokes `options.getAccessToken()` itself.
+    //   3. `async () => accessToken` closure — the function reference is
+    //      passed directly instead.
+    //
+    // VertexLiveClient.connect() must still be called (sanity check), and
+    // getAccessToken must still appear inside it (as the option's value).
+    const fnStart = orbLiveSrc.indexOf('async function connectToLiveAPI');
+    expect(fnStart).toBeGreaterThan(0);
+    const fnEnd = orbLiveSrc.indexOf('\nasync function ', fnStart + 1);
+    const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
+    expect(fnBody).not.toMatch(/const\s+wsUrl\s*=/);
+    expect(fnBody).not.toMatch(/const\s+accessToken\s*=\s*await\s+getAccessToken\s*\(/);
+    expect(fnBody).not.toMatch(/async\s*\(\s*\)\s*=>\s*accessToken\b/);
+    // Sanity: the seam is still wired.
+    expect(fnBody).toMatch(/vertex\.connect\s*\(/);
+    expect(fnBody).toMatch(/getAccessToken\b/);
+  });
 });
