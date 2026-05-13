@@ -41423,7 +41423,20 @@ function renderVoiceImproveView() {
 
     items.forEach(function (it) {
         var card = document.createElement('section');
-        var sevColor = it.severity === 'critical' ? '#dc2626' : it.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+        // VTID-02953 (PR-K): self_healing_win gets a distinct green visual so
+        // autonomous fixes are recognizably WINS, not yet-another-info-item.
+        var isWin = it.source === 'self_healing_win';
+        var sevColor = isWin
+            ? '#16a34a'
+            : it.severity === 'critical' ? '#dc2626'
+            : it.severity === 'warning' ? '#f59e0b'
+            : '#3b82f6';
+        var badgeRgb = isWin
+            ? '22,163,74'
+            : it.severity === 'critical' ? '220,38,38'
+            : it.severity === 'warning' ? '245,158,11'
+            : '59,130,246';
+        var badgeLabel = isWin ? 'HEALED' : it.severity;
         card.style.cssText = 'margin-bottom:0.5rem;padding:0.85rem 1rem;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + sevColor + ';border-radius:6px;';
         if (vi.busyRowId === it.id) card.style.opacity = '0.55';
 
@@ -41432,7 +41445,7 @@ function renderVoiceImproveView() {
 
         var titleBlock = document.createElement('div');
         titleBlock.style.cssText = 'flex:1;';
-        var sevBadge = '<span style="display:inline-block;font-size:0.6rem;font-weight:600;padding:0.1rem 0.35rem;border-radius:4px;color:' + sevColor + ';background:rgba(' + (it.severity === 'critical' ? '220,38,38' : it.severity === 'warning' ? '245,158,11' : '59,130,246') + ',0.12);text-transform:uppercase;margin-right:0.4rem;">' + it.severity + '</span>';
+        var sevBadge = '<span style="display:inline-block;font-size:0.6rem;font-weight:600;padding:0.1rem 0.35rem;border-radius:4px;color:' + sevColor + ';background:rgba(' + badgeRgb + ',0.12);text-transform:uppercase;margin-right:0.4rem;">' + badgeLabel + '</span>';
         titleBlock.innerHTML =
             '<div style="font-weight:600;font-size:0.9rem;">' + sevBadge + escapeHtml(it.title) + '</div>'
             + '<div style="font-size:0.78rem;color:var(--color-text-secondary);margin-top:0.15rem;">' + escapeHtml(it.description || '') + '</div>';

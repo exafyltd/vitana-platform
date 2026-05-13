@@ -26,9 +26,35 @@ import {
 } from './awareness-watchdogs';
 import { getManifest as getAwarenessManifest } from './awareness-registry';
 import { IMPLEMENTED_TTS_PROVIDERS, IMPLEMENTED_STT_PROVIDERS } from './voice-config';
+import { ENDPOINT_FILE_MAP } from '../types/self-healing';
 
 const ITEM_LOOKBACK_HOURS = 24;
 const MAX_ITEMS_DEFAULT = 20;
+
+// VTID-02953 (PR-K): zombie filter for the Improve cockpit.
+// Escalations against endpoints that are no longer registered (route retired
+// in a PR, e.g. PR-I deleted /api/v1/self-healing/canary/failing-health) show
+// up as `route_not_registered` forever and pollute the actionable queue.
+// Skip them: the underlying endpoint is gone, so manual investigation is
+// pointless. Real route_not_registered escalations (against endpoints still
+// in ENDPOINT_FILE_MAP) still surface — the deletion is the legitimate fix.
+export function isZombieEscalation(endpoint: string, failureClass: string | null): boolean {
+  if (failureClass === 'route_not_registered' && !ENDPOINT_FILE_MAP[endpoint]) {
+    return true;
+  }
+  // dev_autopilot_safety_gate_blocked against synthetic autopilot.* endpoints
+  // (not real route paths) — these are dev-autopilot finding artifacts that
+  // tend to accumulate when the safety gate refuses a bridge. They have no
+  // route to fix; surface them via the dev-autopilot recommendations panel
+  // instead, not the self-healing escalation list.
+  if (
+    failureClass === 'dev_autopilot_safety_gate_blocked' &&
+    endpoint.startsWith('autopilot.')
+  ) {
+    return true;
+  }
+  return false;
+}
 
 export type ActionSeverity = 'critical' | 'warning' | 'info';
 
@@ -39,6 +65,7 @@ export type ActionSource =
   | 'watchdog_unknown'
   | 'awareness_not_wired'
   | 'self_healing_escalation'
+  | 'self_healing_win' // VTID-02953 (PR-K): positive surface for completed autonomous self-heals
   | 'autopilot_recommendation'
   | 'provider_drift'
   | 'failure_class_no_rule';
@@ -339,28 +366,104 @@ async function fetchRecentEscalations(cfg: SupabaseConfig): Promise<ActionItem[]
       created_at: string;
       diagnosis: any;
     }>;
+    return rows
+      // VTID-02953 (PR-K): drop zombie escalations against retired endpoints
+      // and dev_autopilot finding noise — those endpoints aren't actionable
+      // from this surface.
+      .filter((row) => !isZombieEscalation(row.endpoint, row.failure_class))
+      .map((row) => {
+        const reason = row.diagnosis?.reason ?? row.diagnosis?.tombstone_reason ?? row.outcome;
+        return {
+          id: `self_healing_escalation:${row.vtid}`,
+          source: 'self_healing_escalation' as const,
+          severity: (row.outcome === 'rolled_back' ? 'critical' : 'warning') as ActionSeverity,
+          title: `Self-healing ${row.outcome}: ${row.endpoint}`,
+          description: `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — ${reason}.`,
+          evidence: [
+            { kind: 'vtid', ref: row.vtid },
+            { kind: 'endpoint', ref: row.endpoint },
+            { kind: 'failure_class', ref: row.failure_class ?? '(none)' },
+          ],
+          affected_sessions: null,
+          affected_cohort: null,
+          likely_owner: 'self-healing',
+          source_files: [],
+          confidence: 0.8,
+          recommended_action: 'Endpoint requires manual investigation.',
+          available_actions: ['investigate', 'open_in_self_healing'],
+          source_ref: { table: 'self_healing_log', id: row.vtid },
+          detected_at: row.created_at,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Source 5b (VTID-02953 / PR-K): self_healing_log — recent wins (last 24h)
+//
+// Surfaces autonomous self-heals that reached outcome='fixed' so the cockpit
+// reflects what actually worked, not just what's still on fire. Joins
+// vtid_ledger to pull the autopilot PR url + merged sha for evidence.
+// ---------------------------------------------------------------------------
+interface SelfHealWinRow {
+  vtid: string;
+  endpoint: string;
+  failure_class: string | null;
+  outcome: string;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+async function fetchRecentSelfHeals(cfg: SupabaseConfig): Promise<ActionItem[]> {
+  try {
+    const since = new Date(Date.now() - ITEM_LOOKBACK_HOURS * 3600_000).toISOString();
+    const r = await fetch(
+      `${cfg.url}/rest/v1/self_healing_log?outcome=eq.fixed&created_at=gte.${encodeURIComponent(since)}&select=vtid,endpoint,failure_class,outcome,resolved_at,created_at&order=created_at.desc&limit=50`,
+      { headers: authHeaders(cfg) },
+    );
+    if (!r.ok) return [];
+    const rows = (await r.json()) as SelfHealWinRow[];
+    if (rows.length === 0) return [];
+    // Pull PR url + merged sha from vtid_ledger.metadata for evidence.
+    const vtidList = rows.map((row) => row.vtid).join(',');
+    const ledgerResp = await fetch(
+      `${cfg.url}/rest/v1/vtid_ledger?vtid=in.(${vtidList})&select=vtid,metadata`,
+      { headers: authHeaders(cfg) },
+    );
+    const ledgerRows = ledgerResp.ok
+      ? ((await ledgerResp.json()) as Array<{ vtid: string; metadata: any }>)
+      : [];
+    const metaByVtid = new Map<string, any>();
+    for (const l of ledgerRows) metaByVtid.set(l.vtid, l.metadata || {});
     return rows.map((row) => {
-      const reason = row.diagnosis?.reason ?? row.diagnosis?.tombstone_reason ?? row.outcome;
+      const meta = metaByVtid.get(row.vtid) || {};
+      const prUrl = (meta.pr_url ?? meta.autopilot_pr_url ?? null) as string | null;
+      const prNumber = (meta.pr_number ?? null) as number | null;
+      const evidence: ActionItem['evidence'] = [
+        { kind: 'vtid', ref: row.vtid },
+        { kind: 'endpoint', ref: row.endpoint },
+        { kind: 'failure_class', ref: row.failure_class ?? '(none)' },
+      ];
+      if (prUrl) evidence.push({ kind: 'pr', ref: prUrl });
+      const prSuffix = prNumber ? ` (PR #${prNumber})` : '';
       return {
-        id: `self_healing_escalation:${row.vtid}`,
-        source: 'self_healing_escalation' as const,
-        severity: (row.outcome === 'rolled_back' ? 'critical' : 'warning') as ActionSeverity,
-        title: `Self-healing ${row.outcome}: ${row.endpoint}`,
-        description: `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — ${reason}.`,
-        evidence: [
-          { kind: 'vtid', ref: row.vtid },
-          { kind: 'endpoint', ref: row.endpoint },
-          { kind: 'failure_class', ref: row.failure_class ?? '(none)' },
-        ],
+        id: `self_healing_win:${row.vtid}`,
+        source: 'self_healing_win' as const,
+        severity: 'info' as ActionSeverity,
+        title: `Self-healed: ${row.endpoint}${prSuffix}`,
+        description: `VTID ${row.vtid} (${row.failure_class ?? 'unknown class'}) — autonomous fix landed${prUrl ? ` via ${prUrl}` : ''}.`,
+        evidence,
         affected_sessions: null,
         affected_cohort: null,
         likely_owner: 'self-healing',
         source_files: [],
-        confidence: 0.8,
-        recommended_action: 'Endpoint requires manual investigation.',
-        available_actions: ['investigate', 'open_in_self_healing'],
+        confidence: 1.0,
+        recommended_action: 'Recently completed — no action needed.',
+        available_actions: ['investigate'],
         source_ref: { table: 'self_healing_log', id: row.vtid },
-        detected_at: row.created_at,
+        detected_at: row.resolved_at || row.created_at,
       };
     });
   } catch {
@@ -611,6 +714,7 @@ export async function buildVoiceImprovementBriefing(opts?: { max?: number }): Pr
     watchdogIssues,
     notWired,
     escalations,
+    selfHealWins,
     autopilot,
     providerDrift,
     classesNoRule,
@@ -621,6 +725,7 @@ export async function buildVoiceImprovementBriefing(opts?: { max?: number }): Pr
     fetchWatchdogIssues(cfg),
     Promise.resolve(fetchAwarenessNotWired()),
     fetchRecentEscalations(cfg),
+    fetchRecentSelfHeals(cfg), // VTID-02953 (PR-K): positive surface
     fetchAutopilotVoiceFindings(cfg),
     fetchProviderDrift(cfg),
     fetchFailureClassesNoRule(cfg),
@@ -633,6 +738,7 @@ export async function buildVoiceImprovementBriefing(opts?: { max?: number }): Pr
     ...watchdogIssues,
     ...notWired,
     ...escalations,
+    ...selfHealWins,
     ...autopilot,
     ...providerDrift,
     ...classesNoRule,
