@@ -2,6 +2,7 @@
  * VTID-02941 (B0b-min) — decision-contract-renderer.
  * VTID-02950 (F2)     — adds concept-mastery section.
  * VTID-02954 (F3)     — adds journey-stage section.
+ * VTID-02955 (B5)     — adds pillar-momentum section.
  *
  * Single responsibility: take an `AssistantDecisionContext` and
  * produce a prompt section string the static system instruction can
@@ -13,11 +14,16 @@
  *   - read memory tables
  *   - touch Supabase directly
  *   - import from `services/continuity/*`, `services/concept-mastery/*`,
- *     `services/journey-stage/*`, or any compiler module
+ *     `services/journey-stage/*`, `services/pillar-momentum/*`,
+ *     or any compiler module
  *
  * Type-level enforcement: the only argument is `AssistantDecisionContext`.
  * A test asserts the renderer source file contains no `import` from
  * `services/`, `lib/supabase`, or `fetch`.
+ *
+ * NEVER carries medical interpretation, diagnoses, or treatment
+ * advice through the pillar-momentum section. Pillars are coaching
+ * axes, not clinical categories.
  *
  * Empty / degraded handling:
  *   - `decision.<field> === null` → no section for that field is emitted.
@@ -33,6 +39,7 @@ import type {
   DecisionConceptMastery,
   DecisionContinuity,
   DecisionJourneyStage,
+  DecisionPillarMomentum,
 } from '../../context/types';
 
 export interface RenderDecisionContractOptions {
@@ -90,6 +97,18 @@ export function renderDecisionContract(
   } else if (journeyHealth && journeyHealth.ok === false) {
     lines.push(
       `[journey_stage: source degraded — ${journeyHealth.reason ?? 'unknown_reason'}]`,
+    );
+  }
+
+  // ---- pillar momentum (B5) ----
+  const pillarSection = renderPillarMomentum(decision.pillar_momentum);
+  const pillarHealth = decision.source_health.pillar_momentum;
+
+  if (pillarSection) {
+    lines.push(pillarSection);
+  } else if (pillarHealth && pillarHealth.ok === false) {
+    lines.push(
+      `[pillar_momentum: source degraded — ${pillarHealth.reason ?? 'unknown_reason'}]`,
     );
   }
 
@@ -221,4 +240,55 @@ function renderJourneyStage(js: DecisionJourneyStage | null): string {
   }
 
   return ['Journey stage:', ...lines].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Pillar Momentum sub-section (B5)
+// ---------------------------------------------------------------------------
+
+function renderPillarMomentum(pm: DecisionPillarMomentum | null): string {
+  if (!pm) return '';
+
+  const lines: string[] = [];
+
+  // Per-pillar momentum line. Pillars whose momentum is 'unknown'
+  // are omitted to keep the section tight — the LLM doesn't need to
+  // hear about pillars with no recent data.
+  const interesting = pm.per_pillar.filter((p) => p.momentum !== 'unknown');
+  if (interesting.length > 0) {
+    const pillarLine = interesting
+      .map((p) => `${p.pillar}: ${p.momentum}`)
+      .join(', ');
+    lines.push(`  - per_pillar: ${pillarLine}`);
+  }
+
+  if (pm.weakest_pillar !== null) {
+    lines.push(`  - weakest: ${pm.weakest_pillar}`);
+  }
+
+  if (pm.strongest_pillar !== null) {
+    lines.push(`  - strongest: ${pm.strongest_pillar}`);
+  }
+
+  if (pm.suggested_focus !== null) {
+    lines.push(`  - suggested focus: ${pm.suggested_focus}`);
+  }
+
+  lines.push(`  - confidence: ${pm.confidence}`);
+
+  if (pm.warnings.length > 0) {
+    lines.push(`  - warnings: ${pm.warnings.join(', ')}`);
+  }
+
+  // If we have nothing useful AT ALL (no per_pillar, no weakest,
+  // no strongest, no suggested), bail and let the caller decide
+  // whether to emit a degraded hint instead.
+  const hasAnyContent =
+    interesting.length > 0 ||
+    pm.weakest_pillar !== null ||
+    pm.strongest_pillar !== null ||
+    pm.suggested_focus !== null;
+  if (!hasAnyContent && pm.warnings.length === 0) return '';
+
+  return ['Pillar momentum:', ...lines].join('\n');
 }

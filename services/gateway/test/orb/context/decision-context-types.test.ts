@@ -185,4 +185,77 @@ describe('B0b-min — AssistantDecisionContext type guards', () => {
   it('DecisionSourceHealth declares journey_stage health entry', () => {
     expect(typesSrc).toMatch(/journey_stage:\s*\{\s*ok:\s*boolean/);
   });
+
+  // B5: pillar-momentum type guards.
+  describe('forbidden raw fields are NOT declared in DecisionPillarMomentum', () => {
+    const forbiddenPillarFields = [
+      'latest_score',
+      'recent_window_days',
+      'history_days_sampled',
+      'score_sleep',
+      'score_nutrition',
+      'score_exercise',
+      'score_hydration',
+      'score_mental',
+    ];
+
+    it.each(forbiddenPillarFields)('does not declare %s in DecisionPillarMomentum', (field) => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionPillarMomentum\s*\{([\s\S]*?)\n\}/,
+      );
+      expect(ifaceMatch).toBeTruthy();
+      const ifaceBody = ifaceMatch![1];
+      const decl = new RegExp(`\\b${field}\\s*\\??:`, 'g');
+      expect(ifaceBody).not.toMatch(decl);
+    });
+
+    it('declares pillar-momentum as enums, NEVER raw numbers', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionPillarMomentum\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      expect(ifaceBody).not.toMatch(/:\s*number/);
+      expect(ifaceBody).toMatch(/confidence:\s*PillarMomentumConfidence/);
+      expect(ifaceBody).toMatch(/momentum:\s*PillarMomentumBand/);
+      expect(ifaceBody).toMatch(/pillar:\s*PillarKey/);
+    });
+
+    it('warnings are an enum-only ReadonlyArray', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionPillarMomentum\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      expect(ifaceBody).toMatch(/warnings:\s*ReadonlyArray<PillarMomentumWarning>/);
+      expect(ifaceBody).not.toMatch(/warnings:\s*ReadonlyArray<string>/);
+      expect(ifaceBody).not.toMatch(/warnings:\s*string\[\]/);
+    });
+  });
+
+  it('AssistantDecisionContext.pillar_momentum is optional null', () => {
+    expect(typesSrc).toMatch(/pillar_momentum:\s*DecisionPillarMomentum\s*\|\s*null/);
+  });
+
+  it('DecisionSourceHealth declares pillar_momentum health entry', () => {
+    expect(typesSrc).toMatch(/pillar_momentum:\s*\{\s*ok:\s*boolean/);
+  });
+
+  it('PillarMomentumWarning enum does NOT include medical/clinical labels', () => {
+    const enumMatch = typesSrc.match(/export type PillarMomentumWarning\s*=([\s\S]*?);/);
+    expect(enumMatch).toBeTruthy();
+    const enumBody = enumMatch![1];
+    // Banned: any term that could read as medical interpretation.
+    const banned = [
+      'diagnos',
+      'symptom',
+      'disease',
+      'illness',
+      'treatment',
+      'prescription',
+      'medication',
+      'clinical',
+    ];
+    for (const word of banned) {
+      expect(enumBody.toLowerCase()).not.toContain(word);
+    }
+  });
 });
