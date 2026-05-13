@@ -120,4 +120,69 @@ describe('B0b-min — AssistantDecisionContext type guards', () => {
   it('DecisionSourceHealth declares concept_mastery health entry', () => {
     expect(typesSrc).toMatch(/concept_mastery:\s*\{\s*ok:\s*boolean/);
   });
+
+  // F3: journey-stage type guards.
+  describe('forbidden raw fields are NOT declared in DecisionJourneyStage', () => {
+    // These fields exist in the underlying JourneyStageContext but
+    // MUST NOT appear in DecisionJourneyStage. Each was the raw
+    // counterpart of a bucketed enum in the decision shape.
+    const forbiddenJourneyFields = [
+      'tenure_days',           // → tenure_bucket enum
+      'last_active_date',      // → activity_recency enum
+      'days_since_last_active',// → activity_recency enum (no raw days)
+      'usage_days_count',      // → usage_volume enum
+      'score_total',           // → vitana_index_tier enum
+      'tier_days_held',        // → tier_tenure enum
+    ];
+
+    it.each(forbiddenJourneyFields)('does not declare %s in DecisionJourneyStage', (field) => {
+      // Restrict the search window to JUST the DecisionJourneyStage
+      // interface body; the same field names may legitimately appear
+      // in comments referencing the wall.
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionJourneyStage\s*\{([\s\S]*?)\n\}/,
+      );
+      expect(ifaceMatch).toBeTruthy();
+      const ifaceBody = ifaceMatch![1];
+      const decl = new RegExp(`\\b${field}\\s*\\??:`, 'g');
+      expect(ifaceBody).not.toMatch(decl);
+    });
+
+    it('declares journey-stage as bucketed enums, NEVER raw numbers', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionJourneyStage\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      // None of the journey-stage fields should be `: number`.
+      expect(ifaceBody).not.toMatch(/:\s*number/);
+      // Each bucketed enum must appear as the field type.
+      expect(ifaceBody).toMatch(/stage:\s*TenureBucket/);
+      expect(ifaceBody).toMatch(/tenure_bucket:\s*TenureBucket/);
+      expect(ifaceBody).toMatch(/vitana_index_tier:\s*VitanaIndexTierBucket/);
+      expect(ifaceBody).toMatch(/tier_tenure:\s*TierTenureBucket/);
+      expect(ifaceBody).toMatch(/activity_recency:\s*ActivityRecencyBucket/);
+      expect(ifaceBody).toMatch(/usage_volume:\s*UsageVolumeBucket/);
+      expect(ifaceBody).toMatch(/journey_confidence:\s*JourneyConfidenceBucket/);
+      expect(ifaceBody).toMatch(/tone_hint:\s*StageToneHint/);
+    });
+
+    it('warnings are an enum-only ReadonlyArray', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionJourneyStage\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      expect(ifaceBody).toMatch(/warnings:\s*ReadonlyArray<JourneyStageWarning>/);
+      // Not a string array — that would allow free-text leakage.
+      expect(ifaceBody).not.toMatch(/warnings:\s*ReadonlyArray<string>/);
+      expect(ifaceBody).not.toMatch(/warnings:\s*string\[\]/);
+    });
+  });
+
+  it('AssistantDecisionContext.journey_stage is optional null', () => {
+    expect(typesSrc).toMatch(/journey_stage:\s*DecisionJourneyStage\s*\|\s*null/);
+  });
+
+  it('DecisionSourceHealth declares journey_stage health entry', () => {
+    expect(typesSrc).toMatch(/journey_stage:\s*\{\s*ok:\s*boolean/);
+  });
 });
