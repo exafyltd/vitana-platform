@@ -3,6 +3,7 @@
  * VTID-02950 (F2)     — adds conceptMastery field.
  * VTID-02954 (F3)     — adds journeyStage field.
  * VTID-02955 (B5)     — adds pillarMomentum field.
+ * VTID-02962 (B6)     — adds interactionStyle field.
  *
  * This is the SINGLE typed shape the instruction layer reads to assemble
  * a prompt. Raw rows (memory, threads, messages, promises, profiles,
@@ -15,9 +16,12 @@
  *     continuation contract, greeting decay rewrite, reliability tuning.
  *     Each gets its own slice.
  *   - Continuity (B2) + conceptMastery (B3) + journeyStage (B4) +
- *     pillarMomentum (B5) are wired through this contract.
+ *     pillarMomentum (B5) + interactionStyle (B6) are wired through
+ *     this contract.
  *   - Adding new fields later is fine; pushing raw rows into them is not.
  *   - No medical interpretation. No diagnoses. No treatment advice.
+ *   - No free-text psychological summaries. No diagnostic-feeling
+ *     personality labels. No mental-health inference.
  */
 
 /**
@@ -339,6 +343,103 @@ export interface DecisionPillarMomentum {
   warnings: ReadonlyArray<PillarMomentumWarning>;
 }
 
+// ---------------------------------------------------------------------------
+// B6 — Interaction Style (VTID-02962)
+// ---------------------------------------------------------------------------
+
+/**
+ * Preferred verbosity of the assistant's answers. Coarse band, NEVER
+ * derived from word counts or free-text classification. The compiler
+ * either reads it from a stored user preference or returns 'unknown'.
+ */
+export type PreferredResponseStyle =
+  | 'concise'
+  | 'balanced'
+  | 'detailed'
+  | 'unknown';
+
+/**
+ * How fast the user wants the conversation to move. Coarse band; the
+ * adapter MUST NOT pass raw response latencies or turn timestamps.
+ */
+export type InteractionPace = 'slow' | 'normal' | 'fast' | 'unknown';
+
+/**
+ * Tone the user prefers from the assistant. Enum-only — never a free-
+ * text descriptor and NEVER diagnostic-sounding (no
+ * "anxious / depressive / avoidant" etc.).
+ */
+export type TonePreference =
+  | 'direct'
+  | 'warm'
+  | 'coaching'
+  | 'neutral'
+  | 'unknown';
+
+/**
+ * Hint for how deep the assistant's explanations should go. Tighter
+ * than B4's `ExplanationDepthHint` because it captures the user's own
+ * preference rather than the stage-derived default. The renderer uses
+ * 'normal' as the no-signal fallback so callers can rely on a
+ * non-degenerate value without inspecting source_health.
+ */
+export type InteractionExplanationDepth = 'minimal' | 'normal' | 'expanded';
+
+/**
+ * Coarse confidence band for the interaction-style signal as a whole.
+ * Replaces any raw 0..1 numeric score the underlying store may carry.
+ */
+export type InteractionStyleConfidenceBucket =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'unknown';
+
+/**
+ * Allowed warnings on the interaction-style signal. Enums only —
+ * NEVER free-text, NEVER diagnostic, NEVER medical.
+ */
+export type InteractionStyleWarning =
+  | 'no_recorded_preferences'
+  | 'low_signal_confidence';
+
+/**
+ * Distilled interaction-style view. Mirrors `InteractionStyleContext`
+ * from `services/interaction-style/types.ts` but strips:
+ *   - raw user preference rows
+ *   - raw timestamps (`last_updated_at`, `last_seen_at`)
+ *   - raw chat-message or transcript-derived counts
+ *   - raw confidence floats (bucketed to low / medium / high / unknown)
+ *   - any free-text personality / psychological summary
+ *
+ * Kept: bucketed preference enums, an explanation-depth hint the
+ * renderer can read directly, and an enum-only warnings list.
+ *
+ * NEVER carries:
+ *   - medical interpretation
+ *   - mental-health inference
+ *   - diagnostic-feeling personality labels
+ *   - free-text psychological summaries
+ */
+export interface DecisionInteractionStyle {
+  /** Preferred verbosity. Enum-only. */
+  preferred_response_style: PreferredResponseStyle;
+  /** Preferred conversational pace. Enum-only. */
+  interaction_pace: InteractionPace;
+  /** Preferred tone from the assistant. Enum-only. */
+  tone_preference: TonePreference;
+  /**
+   * Explanation depth hint derived from the user's recorded preference.
+   * Defaults to 'normal' when no signal is available so the prompt
+   * always reads a usable value.
+   */
+  explanation_depth_hint: InteractionExplanationDepth;
+  /** Coarse confidence band the LLM can use to weight the signal. */
+  confidence_bucket: InteractionStyleConfidenceBucket;
+  /** Warnings as enums. NEVER free-text. NEVER diagnostic. */
+  warnings: ReadonlyArray<InteractionStyleWarning>;
+}
+
 /**
  * Per-source health view. Empty/missing rows are not failures — they
  * just mean the user has no state yet. Failures (Supabase down, schema
@@ -352,6 +453,8 @@ export interface DecisionSourceHealth {
   journey_stage: { ok: boolean; reason?: string };
   /** B5: pillar-momentum source health. */
   pillar_momentum: { ok: boolean; reason?: string };
+  /** B6: interaction-style source health. */
+  interaction_style: { ok: boolean; reason?: string };
 }
 
 /**
@@ -388,6 +491,12 @@ export interface AssistantDecisionContext {
    * no pillar-momentum section in that case.
    */
   pillar_momentum: DecisionPillarMomentum | null;
+  /**
+   * B6: Interaction-style decision view. `null` when the compiler had
+   * no input or source-health is degraded — the renderer must emit
+   * no interaction-style section in that case.
+   */
+  interaction_style: DecisionInteractionStyle | null;
   /** Per-source health. Always present, even when fields are null. */
   source_health: DecisionSourceHealth;
 }

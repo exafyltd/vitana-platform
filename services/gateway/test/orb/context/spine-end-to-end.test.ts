@@ -15,7 +15,9 @@
  */
 
 import { compileContinuityContext } from '../../../src/services/continuity/compile-continuity-context';
+import { compileInteractionStyleContext } from '../../../src/services/interaction-style/compile-interaction-style-context';
 import { distillContinuityForDecision } from '../../../src/orb/context/providers/continuity-decision-provider';
+import { distillInteractionStyleForDecision } from '../../../src/orb/context/providers/interaction-style-decision-provider';
 import { renderDecisionContract } from '../../../src/orb/live/instruction/decision-contract-renderer';
 import type { AssistantDecisionContext } from '../../../src/orb/context/types';
 import type {
@@ -98,11 +100,13 @@ describe('B0b-min — end-to-end spine', () => {
       concept_mastery: null,
       journey_stage: null,
       pillar_momentum: null,
+      interaction_style: null,
       source_health: {
         continuity: { ok: true },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
         pillar_momentum: { ok: true },
+        interaction_style: { ok: true },
       },
     };
     const rendered = renderDecisionContract(decision);
@@ -143,11 +147,13 @@ describe('B0b-min — end-to-end spine', () => {
       concept_mastery: null,
       journey_stage: null,
       pillar_momentum: null,
+      interaction_style: null,
       source_health: {
         continuity: { ok: true },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
         pillar_momentum: { ok: true },
+        interaction_style: { ok: true },
       },
     };
     expect(renderDecisionContract(decision)).toBe('');
@@ -167,15 +173,89 @@ describe('B0b-min — end-to-end spine', () => {
       concept_mastery: null,
       journey_stage: null,
       pillar_momentum: null,
+      interaction_style: null,
       source_health: {
         continuity: { ok: false, reason: 'supabase_unconfigured' },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
         pillar_momentum: { ok: true },
+        interaction_style: { ok: true },
       },
     };
     const rendered = renderDecisionContract(decision);
     expect(rendered).toContain('continuity: source degraded');
+    expect(rendered).toContain('supabase_unconfigured');
+  });
+
+  it('B6: interaction_style renders only distilled enums + drops timestamps', () => {
+    const interactionCtx = compileInteractionStyleContext({
+      fetchResult: {
+        ok: true,
+        row: {
+          value: {
+            response_style: 'concise',
+            pace: 'normal',
+            tone: 'direct',
+            explanation_depth: 'minimal',
+            confidence: 0.91,
+          },
+          confidence: 0.91,
+          updated_at: '2026-05-13T10:00:00Z',
+          last_seen_at: '2026-05-13T10:00:00Z',
+        },
+      },
+    });
+    const decision: AssistantDecisionContext = {
+      continuity: null,
+      concept_mastery: null,
+      journey_stage: null,
+      pillar_momentum: null,
+      interaction_style: distillInteractionStyleForDecision({
+        interactionStyle: interactionCtx,
+      }),
+      source_health: {
+        continuity: { ok: true },
+        concept_mastery: { ok: true },
+        journey_stage: { ok: true },
+        pillar_momentum: { ok: true },
+        interaction_style: { ok: true },
+      },
+    };
+    const rendered = renderDecisionContract(decision);
+
+    // Distilled section present
+    expect(rendered).toContain('Interaction style:');
+    expect(rendered).toContain('response style: concise');
+    expect(rendered).toContain('pace: normal');
+    expect(rendered).toContain('tone: direct');
+    expect(rendered).toContain('explanation depth: minimal');
+    expect(rendered).toContain('confidence: high');
+
+    // Forbidden raw fields MUST NOT leak through the renderer.
+    expect(rendered).not.toContain('2026-05-13');
+    expect(rendered).not.toContain('T10:00:00');
+    expect(rendered).not.toContain('0.91');
+    expect(rendered).not.toContain('last_updated_at');
+    expect(rendered).not.toContain('last_seen_at');
+  });
+
+  it('B6: degraded interaction_style source produces a hint, no crash', () => {
+    const decision: AssistantDecisionContext = {
+      continuity: null,
+      concept_mastery: null,
+      journey_stage: null,
+      pillar_momentum: null,
+      interaction_style: null,
+      source_health: {
+        continuity: { ok: true },
+        concept_mastery: { ok: true },
+        journey_stage: { ok: true },
+        pillar_momentum: { ok: true },
+        interaction_style: { ok: false, reason: 'supabase_unconfigured' },
+      },
+    };
+    const rendered = renderDecisionContract(decision);
+    expect(rendered).toContain('interaction_style: source degraded');
     expect(rendered).toContain('supabase_unconfigured');
   });
 });
