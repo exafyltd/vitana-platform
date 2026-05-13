@@ -2,20 +2,22 @@
  * VTID-02941 (B0b-min) — AssistantDecisionContext: the decision contract.
  * VTID-02950 (F2)     — adds conceptMastery field.
  * VTID-02954 (F3)     — adds journeyStage field.
+ * VTID-02955 (B5)     — adds pillarMomentum field.
  *
  * This is the SINGLE typed shape the instruction layer reads to assemble
  * a prompt. Raw rows (memory, threads, messages, promises, profiles,
  * concept rows, scores, transcripts, journey rows, route history,
- * behavioral history) MUST NOT cross this boundary. The compiler
- * distills; the renderer formats. No exceptions.
+ * behavioral history, biomarkers, trend arrays) MUST NOT cross this
+ * boundary. The compiler distills; the renderer formats. No exceptions.
  *
  * Wall:
  *   - Forbidden: match journey, feature discovery, wake brief,
  *     continuation contract, greeting decay rewrite, reliability tuning.
  *     Each gets its own slice.
- *   - Continuity (B2) + conceptMastery (B3) + journeyStage (B4) are
- *     wired through this contract.
+ *   - Continuity (B2) + conceptMastery (B3) + journeyStage (B4) +
+ *     pillarMomentum (B5) are wired through this contract.
  *   - Adding new fields later is fine; pushing raw rows into them is not.
+ *   - No medical interpretation. No diagnoses. No treatment advice.
  */
 
 /**
@@ -261,6 +263,83 @@ export interface DecisionJourneyStage {
 }
 
 /**
+ * Canonical 5-pillar enum (post-Phase E). Re-declared here so the
+ * decision-contract types stay self-contained (no imports from
+ * `services/`).
+ */
+export type PillarKey =
+  | 'sleep'
+  | 'nutrition'
+  | 'exercise'
+  | 'hydration'
+  | 'mental';
+
+/**
+ * Per-pillar momentum band — same enum as the underlying B5 compiler;
+ * already decision-grade.
+ */
+export type PillarMomentumBand =
+  | 'improving'
+  | 'steady'
+  | 'slipping'
+  | 'unknown';
+
+/**
+ * Coarse confidence in the pillar-momentum signal. The decision
+ * adapter passes this through unchanged from the B5 compiler.
+ */
+export type PillarMomentumConfidence = 'low' | 'medium' | 'high';
+
+/**
+ * Allowed warnings on the pillar-momentum signal. Enums only —
+ * NEVER free-text. NEVER medical interpretation. NEVER diagnosis.
+ */
+export type PillarMomentumWarning =
+  | 'low_pillar_confidence'
+  | 'no_recent_pillar_data';
+
+/**
+ * Distilled pillar-momentum view. Mirrors `PillarMomentumContext`
+ * from `services/pillar-momentum/types.ts` but strips:
+ *   - raw pillar scores (0..200 per pillar)
+ *   - raw history dates / timestamps
+ *   - raw trend arrays
+ *   - raw window-coverage integers
+ *
+ * Kept: stable pillar enums (which one is weakest / strongest /
+ * suggested-focus), per-pillar momentum band, coarse confidence,
+ * and enum-only warnings.
+ *
+ * NEVER carries medical interpretation, diagnoses, or treatment
+ * advice. The pillars are coaching axes, not clinical categories.
+ */
+export interface DecisionPillarMomentum {
+  /**
+   * Per-pillar momentum band, one entry per canonical pillar.
+   * Order is deterministic (sleep / nutrition / exercise / hydration
+   * / mental) so the renderer output is stable.
+   */
+  per_pillar: ReadonlyArray<{
+    pillar: PillarKey;
+    momentum: PillarMomentumBand;
+  }>;
+  /** Pillar with the lowest latest score, or null if no data. */
+  weakest_pillar: PillarKey | null;
+  /** Pillar with the highest latest score, or null if no data. */
+  strongest_pillar: PillarKey | null;
+  /**
+   * Suggested focus pillar — typically the weakest, with a tie-break
+   * preference for pillars whose momentum is 'slipping' or 'unknown'.
+   * Null when no pillar data exists.
+   */
+  suggested_focus: PillarKey | null;
+  /** Coarse confidence the LLM can use to weight the signal. */
+  confidence: PillarMomentumConfidence;
+  /** Warnings as enums. NEVER free-text, NEVER medical. */
+  warnings: ReadonlyArray<PillarMomentumWarning>;
+}
+
+/**
  * Per-source health view. Empty/missing rows are not failures — they
  * just mean the user has no state yet. Failures (Supabase down, schema
  * mismatch, etc.) surface here with a `reason`.
@@ -271,6 +350,8 @@ export interface DecisionSourceHealth {
   concept_mastery: { ok: boolean; reason?: string };
   /** F3: journey-stage source health. */
   journey_stage: { ok: boolean; reason?: string };
+  /** B5: pillar-momentum source health. */
+  pillar_momentum: { ok: boolean; reason?: string };
 }
 
 /**
@@ -301,6 +382,12 @@ export interface AssistantDecisionContext {
    * journey-stage section in that case.
    */
   journey_stage: DecisionJourneyStage | null;
+  /**
+   * B5: Pillar-momentum decision view. `null` when the compiler had
+   * no input or source-health is degraded — the renderer must emit
+   * no pillar-momentum section in that case.
+   */
+  pillar_momentum: DecisionPillarMomentum | null;
   /** Per-source health. Always present, even when fields are null. */
   source_health: DecisionSourceHealth;
 }

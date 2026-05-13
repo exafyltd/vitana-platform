@@ -97,10 +97,12 @@ describe('B0b-min — end-to-end spine', () => {
       continuity: distillContinuityForDecision({ continuity: continuityCtx }),
       concept_mastery: null,
       journey_stage: null,
+      pillar_momentum: null,
       source_health: {
         continuity: { ok: true },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
+        pillar_momentum: { ok: true },
       },
     };
     const rendered = renderDecisionContract(decision);
@@ -140,10 +142,12 @@ describe('B0b-min — end-to-end spine', () => {
       continuity: distillContinuityForDecision({ continuity: continuityCtx }),
       concept_mastery: null,
       journey_stage: null,
+      pillar_momentum: null,
       source_health: {
         continuity: { ok: true },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
+        pillar_momentum: { ok: true },
       },
     };
     expect(renderDecisionContract(decision)).toBe('');
@@ -162,10 +166,12 @@ describe('B0b-min — end-to-end spine', () => {
       continuity: null,
       concept_mastery: null,
       journey_stage: null,
+      pillar_momentum: null,
       source_health: {
         continuity: { ok: false, reason: 'supabase_unconfigured' },
         concept_mastery: { ok: true },
         journey_stage: { ok: true },
+        pillar_momentum: { ok: true },
       },
     };
     const rendered = renderDecisionContract(decision);
