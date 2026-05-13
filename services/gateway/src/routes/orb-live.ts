@@ -1139,15 +1139,15 @@ import {
 } from '../orb/live/session/live-session-registry';
 // A8.2 (orb-live-refactor / VTID-02961): session lifecycle helpers +
 // smallest session-action handler lifted into the controller module.
-// `cleanupExpiredSessions`, `cleanupWsSession`, `handleLiveStreamEndTurn`
-// now live in orb/live/session/live-session-controller.ts. orb-live.ts
-// configures the controller with its locals (resolveOrbIdentity,
-// clearResponseWatchdog, sendEndOfTurn) at module-init below.
+// A8.2.1 (VTID-02962): `/live/session/start` handler also lifted into the
+// controller; orb-live.ts configures the deps bag with all locals the
+// lifted handlers need at module-init below.
 import {
   configureLiveSessionController,
   cleanupExpiredSessions,
   cleanupWsSession,
   handleLiveStreamEndTurn,
+  handleLiveSessionStart,
 } from '../orb/live/session/live-session-controller';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
@@ -8393,15 +8393,29 @@ You KNOW this user. You REMEMBER their name, their hometown, their family, and t
   }
 }
 
-// A8.2 (VTID-02961): wire orb-live.ts locals into the session controller.
-// MUST happen before any session-action handler fires. Function
-// declarations (resolveOrbIdentity / clearResponseWatchdog / sendEndOfTurn)
-// are hoisted, so the references resolve at this module-load point even
-// though the bodies appear later in the file.
+// A8.2 (VTID-02961) + A8.2.1 (VTID-02962): wire orb-live.ts locals into
+// the session controller. MUST happen before any session-action handler
+// fires. Function declarations are hoisted, so the references resolve at
+// this module-load point even though some bodies appear later.
 configureLiveSessionController({
+  // A8.2
   resolveOrbIdentity,
   clearResponseWatchdog,
   sendEndOfTurn,
+  // A8.2.1 (/live/session/start)
+  validateOrigin,
+  buildClientContext,
+  normalizeLang,
+  getVoiceForLang,
+  getStoredLanguagePreference,
+  persistLanguagePreference,
+  fetchLastSessionInfo,
+  fetchOnboardingCohortBlock,
+  buildBootstrapContextPack,
+  resolveEffectiveRole,
+  terminateExistingSessionsForUser,
+  emitLiveSessionEvent,
+  describeTimeSince,
 });
 
 // A8.2: cleanupExpiredSessions body lifted to
@@ -11110,505 +11124,11 @@ async function getStoredLanguagePreference(
  * - 401 UNAUTHENTICATED: Missing or invalid JWT
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  */
+// A8.2.1: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/session/start', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  console.log('[VTID-ORBC] POST /orb/live/session/start');
-
-  // Validate origin
-  if (!validateOrigin(req)) {
-    return res.status(403).json({ ok: false, error: 'Origin not allowed' });
-  }
-
-  // VTID-AUTH-BACKEND-REJECT: If a Bearer token was provided but the JWT
-  // failed verification, reject with 401 so the client knows to re-auth.
-  // optionalAuth silently drops invalid tokens, which is fine for truly
-  // anonymous widget requests on public pages (no Authorization header),
-  // but lets stale authenticated sessions degrade into anonymous greetings —
-  // which is how logged-in users ended up hearing the first-time intro
-  // speech after their JWT expired in the background.
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ') && !req.identity) {
-    console.warn('[VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401');
-    return res.status(401).json({
-      ok: false,
-      error: 'AUTH_TOKEN_INVALID',
-      message: 'Session expired or invalid — please re-authenticate',
-    });
-  }
-
-  const body = req.body as LiveSessionStartRequest;
-  const clientRequestedLang = body.lang; // may be undefined if client didn't specify
-  console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
-  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
-  const responseModalities = body.response_modalities || ['audio', 'text'];
-  const conversationSummary = body.conversation_summary || undefined;
-  // VTID-02020: contextual recovery hints sent by the orb-widget on reconnect.
-  // Empty / absent on first-time sessions, in which case the standard greeting
-  // path runs unchanged. When present, _resumedFromHistory is set on the session
-  // object so the /live/stream handler routes to sendReconnectRecoveryPromptToLiveAPI.
-  const reconnectTranscriptHistory: Array<{ role: 'user' | 'assistant'; text: string }> =
-    Array.isArray(body.transcript_history)
-      ? body.transcript_history
-          .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
-          .slice(-20)
-      : [];
-  const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
-    typeof body.reconnect_stage === 'string'
-    && (body.reconnect_stage === 'idle' || body.reconnect_stage === 'listening_user_speaking'
-        || body.reconnect_stage === 'thinking' || body.reconnect_stage === 'speaking')
-      ? body.reconnect_stage
-      : 'idle';
-  const incomingConversationId: string | null =
-    typeof body.conversation_id === 'string' && body.conversation_id.length > 0
-      ? body.conversation_id : null;
-  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
-  const resolvedConversationId = incomingConversationId || randomUUID();
-  if (isReconnectStart) {
-    console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
-  }
-
-  // Generate session ID
-  const sessionId = `live-${randomUUID()}`;
-
-  // VTID-01224: Build bootstrap context pack (memory + knowledge) for system instruction
-  // This was missing from the SSE path — only the WebSocket path had it
-  let contextInstruction: string | undefined;
-  let contextPack: ContextPack | undefined;
-  let contextBootstrapLatencyMs: number | undefined;
-  let contextBootstrapSkippedReason: string | undefined;
-
-  // VTID-ANON: Anonymous = no verified JWT on the request.
-  // req.identity is set by optionalAuth middleware ONLY when a valid JWT is present.
-  // DEV_IDENTITY (from resolveOrbIdentity) is NOT a real user — it must NOT be
-  // treated as authenticated. Previously DEV_IDENTITY had real user_id/tenant_id
-  // which passed the hasRealIdentity check → loaded Jovana's memory for everyone.
-  const hasJwtIdentity = !!(req.identity && req.identity.user_id);
-  const isAnonymousSession = !hasJwtIdentity;
-
-  // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback for API calls)
-  const orbIdentity = await resolveOrbIdentity(req);
-  // Only use as bootstrapIdentity for memory/context if user has a REAL JWT
-  const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
-
-  // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
-  const clientContext = await buildClientContext(req);
-  console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
-  console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
-
-  // Resolve language priority:
-  // 1. Client-requested lang (from vitana.lang localStorage = user's LATEST UI selection)
-  // 2. Stored preference (from memory_facts = previous session's choice, used as fallback)
-  // 3. Accept-Language header (browser default)
-  // 4. 'en' (ultimate fallback)
-  //
-  // BOOTSTRAP-ORB-PHASE1: Previously getStoredLanguagePreference awaited
-  // serially here (~100 ms) before the bootstrap Promise.all. Now we kick it
-  // off in parallel and await its result alongside bootstrap/role/sessionInfo.
-  // The client-request short-circuit (most common case) stays synchronous.
-  let lang = normalizeLang(clientRequestedLang || 'en');
-  const needsStoredLang = !clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id;
-  const storedLangPromise: Promise<string | null> = needsStoredLang
-    ? getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id)
-    : Promise.resolve(null);
-  if (clientRequestedLang) {
-    console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
-  }
-  // For anonymous sessions: use Accept-Language header if client didn't specify
-  if (isAnonymousSession && !clientRequestedLang && clientContext.lang) {
-    const browserLang = normalizeLang(clientContext.lang);
-    if (browserLang !== 'en' || !clientRequestedLang) {
-      lang = browserLang;
-      console.log(`[LANG-PREF] Anonymous session using Accept-Language: ${lang}`);
-    }
-  }
-
-  // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
-  let sseActiveRole: string | null = null;
-  // VTID-01224-FIX: Last session info for context-aware greeting
-  let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
-  // BOOTSTRAP-ORB-CRITICAL-PATH: Promise resolving once context assembly has
-  // populated the session fields below. Attached to the session object and
-  // awaited by connectToLiveAPI's ws.on('open') handler, so context build
-  // overlaps with Google auth + Gemini WS handshake instead of blocking the
-  // /live/session/start response. Undefined for anonymous / no-identity
-  // sessions (nothing to build).
-  let contextReadyPromise: Promise<void> | undefined;
-
-  if (isAnonymousSession) {
-    // VTID-ANON: Anonymous session — skip ALL personal context.
-    // No memory, no tools, no lastSessionInfo, no role.
-    contextBootstrapSkippedReason = 'anonymous_session';
-    console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
-  } else if (bootstrapIdentity) {
-    const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
-    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
-
-    // VITANA-BRAIN: If ORB brain flag is enabled, use brain context assembly instead
-    const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
-    const useOrbBrain = await isVitanaBrainOrbEnabled();
-    const contextBuildStart = Date.now();
-
-    // BOOTSTRAP-ORB-CRITICAL-PATH: Kick off bootstrap + role + sessionInfo +
-    // stored-language + admin briefing in parallel, WITHOUT awaiting. The
-    // resulting promise is stored on the session and awaited by
-    // connectToLiveAPI's ws.on('open') handler. Admin briefing is fetched
-    // speculatively (only needs tenant_id) and discarded if the resolved role
-    // turns out not to be admin-ish.
-    const bootstrapWork = Promise.all([
-      useOrbBrain
-        ? (async () => {
-            const brainStart = Date.now();
-            try {
-              const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
-              // VTID-ROLE-CMD-HUB: Infer developer role from Command Hub route
-              const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-              // BOOTSTRAP-ORB-MOBILE-ROLE: Mobile (Appilix WebView / phone browsers) is community-only.
-              // Even if DB role is admin/developer/professional, mobile sessions must greet as community.
-              const brainRole = clientContext.isMobile
-                ? 'community'
-                : bodyRoute.startsWith('/command-hub')
-                  ? 'developer'
-                  : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
-                user_id: bootstrapIdentity.user_id,
-                tenant_id: bootstrapIdentity.tenant_id || 'default',
-                role: brainRole,
-                channel: 'orb',
-                thread_id: sessionId,
-                user_timezone: clientContext?.timezone,
-              });
-              console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
-              return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
-            } catch (err: any) {
-              console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
-              return buildBootstrapContextPack(bootstrapIdentity, sessionId);
-            }
-          })()
-        : buildBootstrapContextPack(bootstrapIdentity, sessionId),
-      usingDevFallback
-        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      fetchLastSessionInfo(bootstrapIdentity.user_id),
-      storedLangPromise,
-      bootstrapIdentity.tenant_id
-        ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
-            console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
-            return null;
-          })
-        : Promise.resolve(null),
-    ]);
-
-    contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
-        // Resolve effective role (same overrides as before — kept in sync with the Brain path above).
-        let resolvedRole = fetchedSseRole;
-        const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
-          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'developer';
-        }
-        if (clientContext.isMobile && resolvedRole !== 'community') {
-          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'community';
-        }
-
-        // Build final context instruction, optionally prepending the admin briefing.
-        let finalContext = bootstrapResult.contextInstruction || '';
-        if (isAdminRole(resolvedRole) && adminBriefing) {
-          finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
-          emitOasisEvent({
-            vtid: 'BOOTSTRAP-ADMIN-EE',
-            type: 'admin.briefing.injected',
-            source: 'orb-live',
-            status: 'info',
-            message: `Admin briefing injected into SSE session ${sessionId}`,
-            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: resolvedRole, chars: adminBriefing.length },
-            actor_id: bootstrapIdentity.user_id,
-            actor_role: 'admin',
-            surface: 'orb',
-          }).catch(() => {});
-        }
-
-        if (bootstrapResult.skippedReason) {
-          console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
-        } else {
-          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${finalContext.length}`);
-        }
-
-        // Determine final lang (stored preference wins only if client didn't
-        // explicitly request one).
-        let finalLang = lang;
-        if (storedLangResult && !clientRequestedLang) {
-          finalLang = storedLangResult;
-          console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
-        }
-
-        // Patch the session (it has already been constructed with placeholders
-        // below this block). Mutations are safe because no consumer reads
-        // these fields before awaiting contextReadyPromise.
-        session.active_role = resolvedRole;
-        session.lastSessionInfo = fetchedSessionInfo;
-        session.contextInstruction = finalContext;
-        session.contextPack = bootstrapResult.contextPack;
-        session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
-        session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
-        session.contextBootstrapBuiltAt = Date.now();
-        // Forwarding v2: cache the onboarding-cohort hint for first-30-day users.
-        // Computed once at bootstrap; never changes during a session.
-        try {
-          (session as any).onboardingCohortBlock = await fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
-        } catch { /* non-blocking */ }
-        if (finalLang !== session.lang) {
-          session.lang = finalLang;
-        }
-
-        // Persist language preference (non-blocking, after we know the final lang).
-        if (bootstrapIdentity.user_id && bootstrapIdentity.tenant_id) {
-          persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, finalLang);
-        }
-
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
-      })
-      .catch((err) => {
-        console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
-      });
-  } else {
-    contextBootstrapSkippedReason = 'no_identity';
-    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
-  }
-
-  // Create session object with identity and context attached
-  const session: GeminiLiveSession = {
-    sessionId,
-    lang,
-    voiceStyle,
-    responseModalities,
-    upstreamWs: null,
-    sseResponse: null,
-    active: true,
-    createdAt: new Date(),
-    lastActivity: new Date(),
-    audioInChunks: 0,
-    videoInFrames: 0,
-    audioOutChunks: 0,
-    // VTID-01224: Context and identity
-    turn_count: 0,
-    // BOOTSTRAP-ORB-CRITICAL-PATH: context/role/lastSessionInfo are populated
-    // asynchronously by contextReadyPromise (kicked off above). For anonymous
-    // / no-identity sessions the promise is undefined and these stay
-    // undefined, which all downstream consumers already tolerate.
-    contextInstruction,
-    contextPack,
-    contextBootstrapLatencyMs,
-    contextBootstrapSkippedReason,
-    contextBootstrapBuiltAt: Date.now(),
-    contextReadyPromise,
-    // VTID-01225: Transcript accumulation for Cognee extraction.
-    // VTID-02020: seeded from request body when this is a reconnect, so the
-    // post-greeting recovery prompt + the system-instruction history block
-    // both have the previous turns immediately available.
-    transcriptTurns: reconnectTranscriptHistory.length > 0
-      ? reconnectTranscriptHistory.map(t => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
-      : [],
-    outputTranscriptBuffer: '',
-    pendingEventLinks: [],
-    // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
-    inputTranscriptBuffer: '',
-    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
-    isModelSpeaking: false,
-    // VTID-ECHO-COOLDOWN: No cooldown at session start
-    turnCompleteAt: 0,
-    // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
-    // VTID-ANON: Only attach identity if user has a real JWT.
-    // DEV_IDENTITY must NOT be attached — it would enable tools/memory for anonymous sessions.
-    identity: hasJwtIdentity ? orbIdentity || undefined : undefined,
-    // Conversation summary from previous session for greeting context
-    conversationSummary,
-    // VTID-01225-ROLE: Application-level role (community/admin/developer)
-    active_role: sseActiveRole,
-    // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
-    lastAudioForwardedTime: Date.now(),
-    // Telemetry batching: emit at most once per 10s window
-    lastTelemetryEmitTime: 0,
-    // VTID-RESPONSE-DELAY: Per-session VAD from client or default
-    vadSilenceMs: (body as any).vad_silence_ms && (body as any).vad_silence_ms >= 500 && (body as any).vad_silence_ms <= 3000
-      ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
-    // VTID-AUDIO-READY: SSE path sends greeting immediately (no handshake)
-    greetingDeferred: false,
-    // VTID-01224-FIX: Last session info for context-aware greeting
-    lastSessionInfo,
-    // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
-    consecutiveModelTurns: 0,
-    // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
-    consecutiveToolCalls: 0,
-    // VTID-ANON: Anonymous session flag
-    isAnonymous: isAnonymousSession,
-    // VTID-CONTEXT: Client environment context
-    clientContext,
-    // VTID-NAV: Current page + recent navigation history from the host React
-    // Router. The widget pushes these via VTOrb.updateContext() and includes
-    // them in the session-start payload so the consult service can score
-    // catalog matches with the user's actual context.
-    current_route: typeof (body as any).current_route === 'string'
-      ? (body as any).current_route
-      : undefined,
-    recent_routes: Array.isArray((body as any).recent_routes)
-      ? ((body as any).recent_routes as any[])
-          .filter((r): r is string => typeof r === 'string')
-          .slice(0, 5)
-      : undefined,
-    // VTID-02789: Frontend useOrbVoiceWidget reads useIsMobile() and
-    // includes is_mobile in the start payload so the Navigator picks
-    // mobile_route over route on mobile sessions.
-    is_mobile: typeof (body as any).is_mobile === 'boolean'
-      ? (body as any).is_mobile
-      : undefined,
-  };
-
-  // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
-  // Prevents zombie sessions when user re-opens the ORB without closing the previous one.
-  // VTID-SESSION-LIMIT-FIX: Skip for dev-sandbox identity — all anonymous/dev users share
-  // the same user_id (DEV_IDENTITY.USER_ID), so enforcing session limit would kill every
-  // other anonymous session whenever a new one starts, creating a death spiral of 0-turn sessions.
-  let terminatedCount = 0;
-  const isDevIdentity = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
-  if (orbIdentity?.user_id && !isDevIdentity) {
-    terminatedCount = terminateExistingSessionsForUser(orbIdentity.user_id, sessionId);
-    if (terminatedCount > 0) {
-      console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
-    }
-  }
-
-  // VTID-02020: pin the conversation_id (echoed back to the client) and
-  // mark this session as resumed-from-history when the client sent context.
-  // The /live/stream handler reads `resumedFromHistory` to route to the
-  // contextual recovery prompt instead of the standard greeting.
-  session.conversation_id = resolvedConversationId;
-  if (isReconnectStart) {
-    (session as any).resumedFromHistory = true;
-    (session as any).reconnectStage = reconnectStage;
-  }
-
-  // Store session
-  liveSessions.set(sessionId, session);
-
-  // VTID-02917 (B0d.3): record the session_start_received event in the
-  // wake timeline. This is the backend's earliest signal — frontend will
-  // emit wake_clicked separately in B0d.4-frontend (vitana-v1).
-  try {
-    defaultWakeTimelineRecorder.startSession({
-      sessionId,
-      tenantId: orbIdentity?.tenant_id ?? null,
-      userId: orbIdentity?.user_id ?? null,
-      surface: 'orb_wake',
-      transport: 'sse',
-    });
-    defaultWakeTimelineRecorder.recordEvent({
-      sessionId,
-      name: 'session_start_received',
-      metadata: {
-        isReconnect: isReconnectStart,
-        reconnectStage,
-        lang: clientRequestedLang ?? null,
-      },
-    });
-  } catch {
-    // Best-effort; never block the wake path on telemetry.
-  }
-
-  // VTID-02918 (B0d.4): wake-brief continuation decision. Decides which
-  // backend-owned line (if any) Vitana should speak first. The selected
-  // continuation is attached to the response + session for observability;
-  // it does NOT yet drive the spoken greeting — that swap-in waits for
-  // the vitana-v1 frontend coordination AFTER timeline data confirms
-  // the path is healthy. Best-effort: any failure inside the decision
-  // path leaves `wakeBriefDecision` null without breaking the wake.
-  let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
-  try {
-    const temporal = describeTimeSince(session.lastSessionInfo);
-    wakeBriefDecision = await decideWakeBriefForSession({
-      sessionId,
-      tenantId: orbIdentity?.tenant_id ?? null,
-      userId: orbIdentity?.user_id ?? null,
-      bucket: temporal.bucket,
-      wasFailure: temporal.wasFailure,
-      isReconnect: isReconnectStart,
-      lang,
-      // envelopeJourneySurface will be populated once the legacy
-      // ClientContext is replaced by the B0a ClientContextEnvelope on
-      // the orb-live path. Until then the wake-brief decision proceeds
-      // without it — the existing greetingPolicy/lang inputs are
-      // sufficient for B0d.2's renderer.
-    });
-    (session as any).wakeBriefDecision = wakeBriefDecision;
-  } catch (e) {
-    console.warn(
-      `[VTID-02918] wake-brief decision failed for ${sessionId}: ${(e as Error).message}`,
-    );
-  }
-
-  // Emit OASIS event with identity context
-  await emitLiveSessionEvent('vtid.live.session.start', {
-    session_id: sessionId,
-    user_id: orbIdentity?.user_id || 'anonymous',
-    tenant_id: orbIdentity?.tenant_id || null,
-    email: orbIdentity?.email || null,
-    active_role: sseActiveRole || null,
-    user_agent: req.headers['user-agent'] || null,
-    origin: req.headers['origin'] || req.headers['referer'] || null,
-    transport: 'sse',
-    lang,
-    modalities: responseModalities,
-    voice: getVoiceForLang(lang)
-  });
-
-  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
-
-  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
-  // shows orb-live as healthy whenever a voice session is established.
-  // Fire-and-forget: registry write must never block the SSE response.
-  recordAgentHeartbeat('orb-live').catch(() => {});
-
-  return res.status(200).json({
-    ok: true,
-    session_id: sessionId,
-    // VTID-02020: echo the pinned conversation_id so the client can persist it
-    // and re-send on the next reconnect to keep the same conversation thread.
-    conversation_id: resolvedConversationId,
-    meta: {
-      lang,
-      voice: getVoiceForLang(lang),
-      modalities: responseModalities,
-      model: VERTEX_LIVE_MODEL,
-      context_bootstrap: {
-        // BOOTSTRAP-ORB-CRITICAL-PATH: latency / char count are now known only
-        // after contextReadyPromise resolves (which happens during the Gemini
-        // WS handshake). Returning placeholders is intentional — clients use
-        // these for diagnostics only.
-        latency_ms: contextBootstrapLatencyMs ?? null,
-        context_chars: null,
-        skipped_reason: contextBootstrapSkippedReason || null,
-        deferred: !!contextReadyPromise,
-      },
-      // VTID-02918 (B0d.4): wake-brief continuation decision (read-only).
-      // The frontend can consume this in a future slice (vitana-v1) to
-      // replace the passive instantGreeting line. NULL until then is
-      // a valid + expected state — the orb chime/visual still plays.
-      wake_brief: wakeBriefDecision
-        ? {
-            decision_id: wakeBriefDecision.decisionId,
-            selected_kind:
-              wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
-            user_facing_line:
-              wakeBriefDecision.selectedContinuation?.userFacingLine ?? '',
-            suppression_reason:
-              wakeBriefDecision.selectedContinuation?.kind === 'none_with_reason'
-                ? wakeBriefDecision.selectedContinuation.suppressReason
-                : wakeBriefDecision.suppressionReason ?? null,
-          }
-        : null,
-    }
-  });
+  await handleLiveSessionStart(req, res);
 });
+
 
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
