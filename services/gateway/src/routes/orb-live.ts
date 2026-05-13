@@ -1157,6 +1157,13 @@ import {
 // / resolve) via onSetupComplete + isSetupComplete callbacks, and forwards
 // every orb-live.ts-local helper through the deps bag.
 import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-message-handler';
+// A8.3b.1 (VTID-02971): connectToLiveAPI now uses the A7 UpstreamLiveClient
+// boundary via VertexLiveClient. The orb-specific persona/tools/context
+// envelope is supplied through the new `customSetupMessage` option so the
+// payload remains byte-for-byte identical to the pre-A8.3b.1 path.
+// A8.3b.2 will rename / remove this adapter; for now it remains the active
+// call path so frontends + transparent reconnect see no behavior change.
+import { VertexLiveClient } from '../orb/live/upstream/vertex-live-client';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -5538,27 +5545,32 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
 
-  return new Promise((resolve, reject) => {
-    // VTID-01222: Connect WITHOUT subprotocol - Google's official examples don't use one
-    // Only Authorization header is required per documentation
-    const ws = new WebSocket(wsUrl, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
+  // A8.3b.1 (VTID-02971): the WS lifecycle now flows through the A7
+  // UpstreamLiveClient boundary via VertexLiveClient. The orb-specific
+  // persona/tools/context envelope is supplied via `customSetupMessage`
+  // so the wire payload remains byte-for-byte identical to the pre-A8.3b.1
+  // path. Error/close handlers continue to register on the raw socket
+  // returned by `vertex.getSocket()`, preserving the transparent-reconnect
+  // path and all VTID-02637 connection-issue dedupe behavior.
+  return new Promise<WebSocket>(async (resolve, reject) => {
+    const vertex = new VertexLiveClient();
 
     let setupComplete = false;
     const connectionTimeout = setTimeout(() => {
       if (!setupComplete) {
         console.error(`[VTID-01219] Live API connection timeout for session ${session.sessionId}`);
-        ws.close();
+        vertex.close().catch(() => { /* swallow */ });
         reject(new Error('Live API connection timeout'));
       }
     }, 15000); // 15 second timeout
 
-    // Connection opened - send setup message
-    ws.on('open', async () => {
+    // Build the orb-specific Vertex setup envelope. Identical body to the
+    // pre-A8.3b.1 ws.on('open') handler — returns the {setup: {...}}
+    // envelope object instead of calling ws.send() directly.
+    // VertexLiveClient awaits this builder and sends the envelope inside
+    // its own ws.on('open'), then resolves connect() when setup_complete
+    // arrives.
+    const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
 
       // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
@@ -5760,24 +5772,71 @@ async function connectToLiveAPI(
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
-      ws.send(JSON.stringify(setupMessage));
-      console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
-    });
+      console.log(`[VTID-01219] Setup envelope built for session ${session.sessionId} — VertexLiveClient will send`);
+      return setupMessage as unknown as Record<string, unknown>;
+    };
 
-    // A8.3a.1 (VTID-02965): The upstream message dispatcher is now a NAMED
-    // A8.3a.2 (VTID-02968): the named function body lifted to
-    // orb/live/session/upstream-message-handler.ts. Factory binds the
-    // Promise-closure state (setupComplete / connectionTimeout / resolve /
-    // reject) via onSetupComplete + isSetupComplete callbacks, and
-    // forwards every orb-live.ts-local helper through the deps bag.
+    // A8.3b.1 (VTID-02971): open the upstream connection through the A7
+    // UpstreamLiveClient boundary. `vertex.connect()` performs the auth
+    // header attach, the ws.on('open') handshake, awaits our custom
+    // envelope builder, sends the envelope, and resolves on setup_complete.
+    // After it resolves, the raw ws is available via `vertex.getSocket()`
+    // so the legacy message + error + close handlers attach as before.
+    let ws: WebSocket;
+    try {
+      await vertex.connect({
+        model: VERTEX_LIVE_MODEL,
+        projectId: VERTEX_PROJECT_ID,
+        location: VERTEX_LOCATION,
+        // The next four fields are overridden by `customSetupMessage`.
+        // VertexLiveClient's default `buildSetupMessage` is not used.
+        voiceName: 'overridden',
+        responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+        vadSilenceMs: session.vadSilenceMs,
+        systemInstruction: 'overridden',
+        // Reuse the already-fetched OAuth token for this connect; the
+        // builder type expects a `() => Promise<string>` shape.
+        getAccessToken: async () => accessToken,
+        connectTimeoutMs: 15000,
+        customSetupMessage: buildOrbVertexSetupEnvelope,
+      });
+    } catch (err) {
+      clearTimeout(connectionTimeout);
+      reject(err as Error);
+      return;
+    }
+
+    // setup_complete arrived → connect() resolved. Mark the legacy flag
+    // (preserves any code-path that reads `setupComplete`) and clear the
+    // outer connection timeout. The connect Promise is the source of
+    // truth from here on.
+    setupComplete = true;
+    clearTimeout(connectionTimeout);
+
+    const socket = vertex.getSocket();
+    if (!socket) {
+      reject(new Error('VertexLiveClient.getSocket() returned null after connect()'));
+      return;
+    }
+    ws = socket;
+
+    // A8.3a.2 (VTID-02968): the upstream message handler lives in
+    // orb/live/session/upstream-message-handler.ts. After A8.3b.1 the
+    // setup_complete branch inside it is unreachable (VertexLiveClient
+    // consumed that frame), but the handler still owns every
+    // post-setup dispatch (audio, transcripts, tool calls, turn-complete,
+    // interrupted, ANON-NUDGE, identity intercept, NAV directive, chat
+    // bridge — see the handler file for the full list).
     const handleUpstreamLiveMessage = createUpstreamLiveMessageHandler({
       session,
       ws,
       callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+      // setup_complete is consumed by VertexLiveClient now; this hook is a
+      // no-op for the Vertex path but stays wired so the handler keeps
+      // working unchanged if a future provider needs caller-side
+      // handshake plumbing.
       onSetupComplete: () => {
-        setupComplete = true;
-        clearTimeout(connectionTimeout);
-        resolve(ws);
+        /* no-op: VertexLiveClient already resolved connect() */
       },
       isSetupComplete: () => setupComplete,
       deps: {
@@ -6017,6 +6076,11 @@ async function connectToLiveAPI(
         }
       }
     });
+
+    // A8.3b.1: resolve the outer Promise — connect() already settled when
+    // setup_complete arrived, and the message/error/close handlers are
+    // wired up. Legacy consumers expect Promise<WebSocket>.
+    resolve(ws);
   });
 }
 

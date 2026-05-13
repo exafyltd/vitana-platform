@@ -79,6 +79,25 @@ export interface UpstreamConnectOptions {
    * for API keys / JWTs.
    */
   getAccessToken: () => Promise<string>;
+
+  /**
+   * A8.3b.1 (VTID-02971) — optional custom setup-message builder. When set,
+   * the implementation calls this inside `ws.on('open')` (awaiting the
+   * returned promise) and sends the produced envelope INSTEAD OF the
+   * default `buildSetupMessage(options)` envelope.
+   *
+   * Used by orb-live.ts's `connectToLiveAPI` adapter to produce the legacy
+   * orb-specific setup envelope (persona swap, tools, transcription
+   * config, system instruction overrides) without VertexLiveClient
+   * needing to know any of that surface area.
+   *
+   * The builder can be sync or async. The handshake-completion gate is
+   * still the upstream `setup_complete` reply, regardless of envelope
+   * shape.
+   */
+  customSetupMessage?: () =>
+    | Record<string, unknown>
+    | Promise<Record<string, unknown>>;
 }
 
 /**
