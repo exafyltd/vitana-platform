@@ -758,6 +758,7 @@ export type CicdEventType =
   | 'voice.message.misroute'
   | 'voice.message.share_link_sent'
   | 'voice.chat_message.send_failed'
+  | 'voice.chat_message.missing_session_fallback'
   | 'vitana_id.confirmed'
   // VTID-02047: Unified Feedback Pipeline events
   | 'feedback.ticket.created'

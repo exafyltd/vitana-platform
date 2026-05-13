@@ -35,6 +35,8 @@ function sweepExpired(): void {
  * { allowed: true } when the cap hasn't been hit, { allowed: false, reason }
  * when it has. Emits OASIS audit events on every call.
  */
+export type VoiceQuotaKeyType = 'real_session' | 'missing_session_fallback';
+
 export async function checkVoiceSendQuota(args: {
   session_id: string;
   actor_id: string;
@@ -44,11 +46,20 @@ export async function checkVoiceSendQuota(args: {
   kind: 'message' | 'share_link';
   body_length?: number;
   target_url?: string;
+  /**
+   * VTID-02963: provenance of the rate-limit key. Lets the cockpit see
+   * whether voice sends are being scoped to a real Gemini Live session
+   * (per-conversation isolation, the intended behavior) or to the
+   * synthetic per-user fallback (degraded mode — every send across every
+   * orb open shares one counter until TTL expires).
+   */
+  key_type?: VoiceQuotaKeyType;
 }): Promise<{ allowed: boolean; reason?: string; remaining: number }> {
   sweepExpired();
 
   const existing = sendCounters.get(args.session_id);
   const count = existing?.count ?? 0;
+  const keyType: VoiceQuotaKeyType = args.key_type ?? 'real_session';
 
   if (count >= SEND_CAP_PER_SESSION) {
     await emitOasisEvent({
@@ -59,6 +70,7 @@ export async function checkVoiceSendQuota(args: {
       message: `Voice send quota exceeded for session ${args.session_id} (${count}/${SEND_CAP_PER_SESSION})`,
       payload: {
         session_id: args.session_id,
+        key_type: keyType,
         recipient_user_id: args.recipient_user_id,
         recipient_vitana_id: args.recipient_vitana_id,
         kind: args.kind,
@@ -89,6 +101,7 @@ export async function checkVoiceSendQuota(args: {
     message: `Voice ${args.kind === 'share_link' ? 'link share' : 'message'} sent to @${args.recipient_vitana_id ?? args.recipient_user_id}`,
     payload: {
       session_id: args.session_id,
+      key_type: keyType,
       recipient_user_id: args.recipient_user_id,
       recipient_vitana_id: args.recipient_vitana_id,
       kind: args.kind,
@@ -107,6 +120,15 @@ export async function checkVoiceSendQuota(args: {
     allowed: true,
     remaining: SEND_CAP_PER_SESSION - (count + 1),
   };
+}
+
+/**
+ * VTID-02963: Test-only reset helper. Lets tests verify per-key isolation
+ * without leaking counter state between cases. Not exported through any
+ * index file; production callers must not use this.
+ */
+export function _resetSendCountersForTests(): void {
+  sendCounters.clear();
 }
 
 /**

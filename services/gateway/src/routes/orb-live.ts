@@ -4234,6 +4234,10 @@ async function executeLiveApiToolInner(
 
       case 'send_chat_message': {
         // PR B-6: lifted to services/orb-tools-shared.ts.
+        // VTID-02963: thread session.sessionId through identity so the
+        // shared tool can scope its rate-limit key per real voice session
+        // (the lift originally dropped it and used a synthetic per-user
+        // key, breaking per-conversation isolation).
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -4250,6 +4254,7 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
           },
           supabase,
         );
