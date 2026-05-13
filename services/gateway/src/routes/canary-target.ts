@@ -112,6 +112,14 @@ canaryTargetRouter.get('/health', async (_req: Request, res: Response, next: (er
     }
     return res.status(200).json({ ok: true, armed: false });
   } catch (err) {
+    if (err instanceof CanaryArmedFault) {
+      return res.status(200).json({
+        ok: true,
+        degraded: true,
+        fault_class: 'CANARY_ARMED',
+        remediation: 'Canary armed fault handled gracefully.'
+      });
+    }
     return next(err);
   }
 });

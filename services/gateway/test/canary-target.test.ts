@@ -89,11 +89,25 @@ describe('canary-target — armed fault (current behavior; SELF-HEALING REPAIR T
   // ADD a test below this `describe` block that asserts the degraded
   // shape after the repair is applied. The LLM should NOT remove this
   // describe block — it documents the pre-repair behavior.
-  it('armed → /health throws CanaryArmedFault (handled as 500 by Express)', async () => {
+  it.skip('armed → /health throws CanaryArmedFault (handled as 500 by Express)', async () => {
     mockSupabaseConfig(true);
     const res = await request(buildApp(freshRouter())).get('/api/v1/canary-target/health');
     expect(res.status).toBe(500);
     expect(res.body.name).toBe('CanaryArmedFault');
     expect(res.body.code).toBe('CANARY_ARMED');
+  });
+});
+
+describe('canary-target — armed fault (repaired behavior)', () => {
+  it('armed → /health catches CanaryArmedFault and returns 200 with degraded state', async () => {
+    mockSupabaseConfig(true);
+    const res = await request(buildApp(freshRouter())).get('/api/v1/canary-target/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      degraded: true,
+      fault_class: 'CANARY_ARMED',
+      remediation: 'Canary armed fault handled gracefully.'
+    });
   });
 });
