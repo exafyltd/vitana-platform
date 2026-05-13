@@ -45,7 +45,7 @@ describe('test-contract-commands resolveCommand', () => {
     expect(typeof cmd!.resolve).toBe('function');
   });
 
-  it('exposes the 6 PR-L1 seed contracts', () => {
+  it('exposes the 6 PR-L1 seed contracts + 5 M1 worker-runner entries', () => {
     const keys = listAllowlistedKeys().sort();
     expect(keys).toEqual([
       'canary_target.disarmed_health',
@@ -53,7 +53,13 @@ describe('test-contract-commands resolveCommand', () => {
       'gateway.alive',
       'oasis.vtid_terminalize_validates_payload',
       'self_healing.active_route_mounted',
+      // M1: worker-runner targets
       'worker_orchestrator.await_autopilot_requires_auth',
+      'worker_runner.alive',
+      'worker_runner.canary_target_health',
+      'worker_runner.live',
+      'worker_runner.metrics',
+      'worker_runner.ready',
     ]);
   });
 

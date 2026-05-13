@@ -141,3 +141,72 @@ describe('scanMissingContracts', () => {
     expect(a).toEqual(b);
   });
 });
+
+// VTID-02978 (M1): worker-runner namespacing.
+describe('scanMissingContracts(service)', () => {
+  it('namespaces capability slugs with the worker_runner_ prefix when service=worker-runner', () => {
+    const gaps = scanMissingContracts(
+      { '/alive': 'services/worker-runner/src/index.ts' },
+      [],
+      'worker-runner',
+    );
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].capability).toBe('worker_runner_alive');
+    expect(gaps[0].service).toBe('worker-runner');
+    expect(gaps[0].suggested_command_key).toBe('worker_runner.alive');
+    expect(gaps[0].dedupe_key).toBe('worker_runner_alive:worker-runner:live_probe');
+  });
+
+  it('worker-runner /alive does NOT collide with gateway /alive (different services in the dedupe triple)', () => {
+    const existing: ExistingContractRef[] = [
+      // Gateway already has 'alive'
+      { capability: 'alive', service: 'gateway', contract_type: 'live_probe' },
+    ];
+    const gaps = scanMissingContracts(
+      { '/alive': 'services/worker-runner/src/index.ts' },
+      existing,
+      'worker-runner',
+    );
+    // Worker-runner /alive should still be a gap — different (capability, service).
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].service).toBe('worker-runner');
+  });
+
+  it('default service argument is gateway (backward compat with PR-L2 callers)', () => {
+    const [gap] = scanMissingContracts({ '/foo': 'src/foo.ts' }, []);
+    expect(gap.service).toBe('gateway');
+    expect(gap.capability).toBe('foo');
+  });
+});
+
+describe('suggestedCommandKey', () => {
+  it('returns gateway.<slug> by default', () => {
+    expect(suggestedCommandKey('auth_health')).toBe('gateway.auth_health');
+  });
+
+  it('returns worker_runner.<slug> when service=worker-runner (strips the namespace prefix)', () => {
+    expect(suggestedCommandKey('worker_runner_alive', 'worker-runner')).toBe('worker_runner.alive');
+    expect(suggestedCommandKey('worker_runner_metrics', 'worker-runner')).toBe('worker_runner.metrics');
+  });
+
+  it('handles bare slugs gracefully when service=worker-runner but capability has no prefix', () => {
+    expect(suggestedCommandKey('something', 'worker-runner')).toBe('worker_runner.something');
+  });
+});
+
+describe('scanMissingContractsAgainstLiveRegistry (M1)', () => {
+  // Re-imports the module to access the live ENDPOINT_FILE_MAP +
+  // WORKER_RUNNER_ENDPOINT_FILE_MAP so we don't drift if either changes.
+  it('walks BOTH gateway and worker-runner endpoint maps + sorts by endpoint path', () => {
+    const { scanMissingContractsAgainstLiveRegistry, WORKER_RUNNER_ENDPOINT_FILE_MAP } = require('../src/services/missing-test-scanner');
+    const gaps = scanMissingContractsAgainstLiveRegistry([]);
+    // We expect AT LEAST every worker-runner endpoint to appear (5 of them
+    // in the M1 seed). The gateway side has ~50 endpoints from PR-L2,
+    // so just check the worker-runner ones are present.
+    for (const endpoint of Object.keys(WORKER_RUNNER_ENDPOINT_FILE_MAP)) {
+      const g = gaps.find((x: any) => x.target_endpoint === endpoint && x.service === 'worker-runner');
+      expect(g).toBeDefined();
+      expect(g.capability.startsWith('worker_runner_')).toBe(true);
+    }
+  });
+});

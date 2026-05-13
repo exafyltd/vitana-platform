@@ -12,7 +12,7 @@
  * for jest/typecheck contracts (long-running; need async execution).
  */
 
-import { contractGatewayBaseUrl } from './test-contract-config';
+import { contractGatewayBaseUrl, contractWorkerRunnerBaseUrl } from './test-contract-config';
 
 export type TestContractDispatchKind = 'sync_http' | 'cloud_run_job' | 'workflow_dispatch';
 
@@ -70,8 +70,11 @@ async function probeHttp(
   path: string,
   expected: ExpectedHttp,
   body?: Record<string, unknown>,
+  // VTID-02978 (M1): per-service base URL. Defaults to gateway for
+  // backward compat with PR-L1 allowlist entries.
+  baseUrl: () => string = contractGatewayBaseUrl,
 ): Promise<TestContractRunResult> {
-  const url = `${contractGatewayBaseUrl()}${path}`;
+  const url = `${baseUrl()}${path}`;
   const t0 = Date.now();
   const ran_at = new Date().toISOString();
   try {
@@ -215,6 +218,78 @@ export const COMMAND_ALLOWLIST: Record<string, AllowlistedCommand> = {
         '/api/v1/worker/orchestrator/await-autopilot-execution',
         isExpectedHttp(expected) ? expected : {},
         {},
+      ),
+  },
+
+  // VTID-02978 (M1): worker-runner contract coverage. Targets the
+  // worker-runner Cloud Run service instead of gateway.
+  'worker_runner.alive': {
+    command_key: 'worker_runner.alive',
+    contract_type: 'live_probe',
+    dispatch: 'sync_http',
+    resolve: (expected) =>
+      probeHttp(
+        'GET',
+        '/alive',
+        isExpectedHttp(expected) ? expected : {},
+        undefined,
+        contractWorkerRunnerBaseUrl,
+      ),
+  },
+  'worker_runner.ready': {
+    command_key: 'worker_runner.ready',
+    contract_type: 'live_probe',
+    dispatch: 'sync_http',
+    resolve: (expected) =>
+      probeHttp(
+        'GET',
+        '/ready',
+        isExpectedHttp(expected) ? expected : {},
+        undefined,
+        contractWorkerRunnerBaseUrl,
+      ),
+  },
+  'worker_runner.live': {
+    command_key: 'worker_runner.live',
+    contract_type: 'live_probe',
+    dispatch: 'sync_http',
+    resolve: (expected) =>
+      probeHttp(
+        'GET',
+        '/live',
+        isExpectedHttp(expected) ? expected : {},
+        undefined,
+        contractWorkerRunnerBaseUrl,
+      ),
+  },
+  'worker_runner.metrics': {
+    command_key: 'worker_runner.metrics',
+    contract_type: 'live_probe',
+    dispatch: 'sync_http',
+    resolve: (expected) =>
+      probeHttp(
+        'GET',
+        '/metrics',
+        isExpectedHttp(expected) ? expected : {},
+        undefined,
+        contractWorkerRunnerBaseUrl,
+      ),
+  },
+  // Operator-armed canary on worker-runner. Mirrors the gateway canary
+  // pattern (PR-I) — when system_config.worker_runner_canary_armed=true,
+  // the route throws WorkerRunnerCanaryArmedFault which surfaces as 500.
+  // Used to prove the M1 repair-loop green path end-to-end.
+  'worker_runner.canary_target_health': {
+    command_key: 'worker_runner.canary_target_health',
+    contract_type: 'live_probe',
+    dispatch: 'sync_http',
+    resolve: (expected) =>
+      probeHttp(
+        'GET',
+        '/api/v1/canary-target/health',
+        isExpectedHttp(expected) ? expected : {},
+        undefined,
+        contractWorkerRunnerBaseUrl,
       ),
   },
 };
