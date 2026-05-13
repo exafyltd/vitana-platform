@@ -223,8 +223,13 @@ function getActiveRole(req: Request): string | null {
 
 // =============================================================================
 // Helper: Direct PostgREST query for role-filtered recommendations
+//
+// VTID-02969: Exported so other voice / proactive surfaces (e.g.
+// tool_send_chat_message → next_actions) can reuse the EXACT same query
+// the Autopilot popup hits. There must be only one canonical "which
+// recommendations does this user see" source.
 // =============================================================================
-async function queryRecommendationsByRole(
+export async function queryRecommendationsByRole(
   role: string,
   userId: string | null,
   statuses: string[],
