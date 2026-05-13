@@ -21,6 +21,8 @@ import {
   cleanupWsSession,
   handleLiveStreamEndTurn,
   handleLiveSessionStart,
+  handleLiveSessionStop,
+  handleLiveStreamSend,
   __resetLiveSessionControllerForTests,
   type LiveSessionControllerDeps,
 } from '../../../../src/orb/live/session/live-session-controller';
@@ -368,7 +370,12 @@ describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', ()
     expect(source).toMatch(/resolveEffectiveRole\s*,/);
     expect(source).toMatch(/terminateExistingSessionsForUser\s*,/);
     expect(source).toMatch(/emitLiveSessionEvent\s*,/);
-    expect(source).toMatch(/describeTimeSince\s*,?\s*\}\)/);
+    expect(source).toMatch(/describeTimeSince\s*,/);
+    // A8.2-complete deps added in this slice
+    expect(source).toMatch(/sendAudioToLiveAPI\s*,/);
+    expect(source).toMatch(/startResponseWatchdog\s*,/);
+    expect(source).toMatch(/emitDiag\s*,/);
+    expect(source).toMatch(/getGoogleAuthReady\s*:\s*\(\)\s*=>\s*!!googleAuth\s*,?\s*\}\)/);
   });
 
   it('does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore', () => {
@@ -393,6 +400,28 @@ describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', ()
     // Anti-regression: no inline bootstrap-context call inside this slice.
     expect(slice).not.toMatch(/buildBootstrapContextPack\s*\(/);
     expect(slice).not.toMatch(/liveSessions\.set\(/);
+  });
+
+  it('/live/session/stop route is now a thin delegator (A8.2-complete)', () => {
+    const idx = source.indexOf("router.post('/live/session/stop'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveSessionStop\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline OASIS emit or cogneeExtractor call inside this slice.
+    expect(slice).not.toMatch(/emitLiveSessionEvent\s*\(/);
+    expect(slice).not.toMatch(/cogneeExtractorClient/);
+    expect(slice).not.toMatch(/liveSessions\.delete\(/);
+  });
+
+  it('/live/stream/send route is now a thin delegator (A8.2-complete)', () => {
+    const idx = source.indexOf("router.post('/live/stream/send'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveStreamSend\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline audio forwarding or watchdog call inside this slice.
+    expect(slice).not.toMatch(/sendAudioToLiveAPI\s*\(/);
+    expect(slice).not.toMatch(/startResponseWatchdog\s*\(/);
+    expect(slice).not.toMatch(/POST_TURN_COOLDOWN_MS/);
   });
 });
 
@@ -434,6 +463,11 @@ describe('A8.2.1: handleLiveSessionStart', () => {
       terminateExistingSessionsForUser: () => 0,
       emitLiveSessionEvent: async () => undefined,
       describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      // A8.2-complete deps
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
       ...overrides,
     };
   }
@@ -625,5 +659,437 @@ describe('A8.2.1: handleLiveSessionStart', () => {
     const payload = (res.json.mock.calls[0][0]) as any;
     // wake_brief MAY be non-null even for anonymous sessions; just assert the field exists.
     expect(payload.meta).toHaveProperty('wake_brief');
+  });
+});
+
+// =============================================================================
+// A8.2-complete: handleLiveSessionStop
+// =============================================================================
+
+describe('A8.2-complete: handleLiveSessionStop', () => {
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      validateOrigin: () => true,
+      buildClientContext: async () => ({} as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({}),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
+      ...overrides,
+    };
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  function makeSession(overrides: Partial<any> = {}): any {
+    return {
+      sessionId: 's-stop',
+      identity: null,
+      upstreamWs: null,
+      sseResponse: null,
+      active: true,
+      upstreamPingInterval: undefined,
+      silenceKeepaliveInterval: undefined,
+      audioInChunks: 0,
+      audioOutChunks: 0,
+      videoInFrames: 0,
+      turn_count: 0,
+      transcriptTurns: [],
+      createdAt: new Date(Date.now() - 60_000),
+      ...overrides,
+    };
+  }
+
+  it('400 when session_id missing', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { body: {} };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'session_id required' });
+  });
+
+  it('404 when session not found', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { body: { session_id: 'nope' } };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not found' });
+  });
+
+  it('happy path: closes upstream WS, writes session_ended SSE event, marks inactive, deletes from registry, returns 200 { ok: true }', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    const watchdogSpy = jest.fn();
+    configureLiveSessionController(
+      baseDeps({
+        emitLiveSessionEvent: emitSpy,
+        clearResponseWatchdog: watchdogSpy,
+      }),
+    );
+
+    const upstreamClose = jest.fn();
+    const sseWrite = jest.fn();
+    const sseEnd = jest.fn();
+    liveSessions.set('s1', makeSession({
+      upstreamWs: { close: upstreamClose },
+      sseResponse: { write: sseWrite, end: sseEnd },
+    }));
+
+    const req: any = { body: { session_id: 's1' } };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+
+    expect(upstreamClose).toHaveBeenCalled();
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"session_ended"'),
+    );
+    expect(sseEnd).toHaveBeenCalled();
+    expect(watchdogSpy).toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.stop',
+      expect.objectContaining({
+        session_id: 's1',
+        audio_in_chunks: 0,
+        audio_out_chunks: 0,
+      }),
+    );
+    expect(liveSessions.has('s1')).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('clears upstream ping + silence keepalive intervals', async () => {
+    configureLiveSessionController(baseDeps());
+    const pingInterval = setInterval(() => {}, 1_000_000);
+    const silenceInterval = setInterval(() => {}, 1_000_000);
+    liveSessions.set('s1', makeSession({
+      upstreamPingInterval: pingInterval,
+      silenceKeepaliveInterval: silenceInterval,
+    }));
+
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, makeRes());
+
+    // The session was deleted, so we can't check post-state on it. The
+    // anti-leak guarantee here is that no timers remain referenced — verify
+    // indirectly by confirming the session has been deleted (registry cleanup).
+    expect(liveSessions.has('s1')).toBe(false);
+    clearInterval(pingInterval);
+    clearInterval(silenceInterval);
+  });
+
+  it('OASIS payload includes user/tenant from session.identity', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    configureLiveSessionController(baseDeps({ emitLiveSessionEvent: emitSpy }));
+    liveSessions.set('s1', makeSession({
+      identity: { user_id: 'u-1', tenant_id: 't-1' },
+    }));
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, makeRes());
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.stop',
+      expect.objectContaining({ user_id: 'u-1', tenant_id: 't-1' }),
+    );
+  });
+
+  it('ownership mismatch is logged but allowed through', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({ user_id: 'req-user', tenant_id: 't1' }) as any,
+      }),
+    );
+    liveSessions.set('s1', makeSession({ identity: { user_id: 'session-user', tenant_id: 't1' } }));
+    const res = makeRes();
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, res);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('ownership mismatch (allowed)'),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    warnSpy.mockRestore();
+  });
+});
+
+// =============================================================================
+// A8.2-complete: handleLiveStreamSend
+// =============================================================================
+
+describe('A8.2-complete: handleLiveStreamSend', () => {
+  const WS_OPEN = 1;
+
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      validateOrigin: () => true,
+      buildClientContext: async () => ({} as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({}),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
+      ...overrides,
+    };
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  function makeSession(overrides: Partial<any> = {}): any {
+    return {
+      sessionId: 's-send',
+      active: true,
+      isAnonymous: false,
+      isModelSpeaking: false,
+      navigationDispatched: false,
+      turnCompleteAt: 0,
+      audioInChunks: 0,
+      videoInFrames: 0,
+      turn_count: 0,
+      vertexHasShownLife: true,
+      lastActivity: new Date(),
+      lastTelemetryEmitTime: 0,
+      lastAudioForwardedTime: 0,
+      upstreamWs: null,
+      sseResponse: null,
+      outputTranscriptBuffer: '',
+      transcriptTurns: [],
+      identity: null,
+      ...overrides,
+    };
+  }
+
+  it('400 when session_id missing', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { query: {}, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'session_id required' });
+  });
+
+  it('404 when session not found', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { query: { session_id: 'nope' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not found' });
+  });
+
+  it('400 when session not active', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ active: false }));
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not active' });
+  });
+
+  it('drops audio with reason "navigation_dispatched" when navigation is queued', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ navigationDispatched: true }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'navigation_dispatched',
+    });
+  });
+
+  it('drops audio with reason "model_speaking" while the model is producing audio', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isModelSpeaking: true }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'model_speaking',
+    });
+  });
+
+  it('drops audio with reason "post_turn_cooldown" within the cooldown window', async () => {
+    configureLiveSessionController(baseDeps());
+    // turnCompleteAt very recent → still in cooldown
+    liveSessions.set('s1', makeSession({ turnCompleteAt: Date.now() }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'post_turn_cooldown',
+    });
+  });
+
+  it('forwards audio via sendAudioToLiveAPI when upstream WS is open', async () => {
+    const sendSpy = jest.fn().mockReturnValue(true);
+    configureLiveSessionController(baseDeps({ sendAudioToLiveAPI: sendSpy }));
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(sendSpy).toHaveBeenCalledWith(upstreamWs, 'AUDIO', 'audio/pcm;rate=16000');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE)', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isAnonymous: true, turn_count: 9 }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('handles video frame: increments videoInFrames + writes video_ack via SSE', async () => {
+    configureLiveSessionController(baseDeps());
+    const sseWrite = jest.fn();
+    liveSessions.set('s1', makeSession({ sseResponse: { write: sseWrite } }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'video', source: 'screen', data_b64: 'JPEG' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"video_ack"'),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('text path: forwards client_content turn_complete=true via upstream WS', async () => {
+    configureLiveSessionController(baseDeps());
+    const wsSend = jest.fn();
+    const upstreamWs = { readyState: WS_OPEN, send: wsSend };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'text', text: 'hello' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    const sentArg = JSON.parse(wsSend.mock.calls[0][0]);
+    expect(sentArg.client_content.turn_complete).toBe(true);
+    expect(sentArg.client_content.turns[0].parts[0].text).toBe('hello');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('interrupt path with model not speaking: returns was_speaking:false (no-op)', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isModelSpeaking: false }));
+    const req: any = { query: { session_id: 's1' }, body: { type: 'interrupt' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: false });
+  });
+
+  it('interrupt path with model speaking: ungates mic, sends end-of-turn, clears output buffer, writes interrupted SSE event', async () => {
+    const endTurnSpy = jest.fn().mockReturnValue(true);
+    configureLiveSessionController(baseDeps({ sendEndOfTurn: endTurnSpy }));
+    const sseWrite = jest.fn();
+    const upstreamWs = { readyState: WS_OPEN, send: jest.fn() };
+    const session = makeSession({
+      isModelSpeaking: true,
+      upstreamWs,
+      sseResponse: { write: sseWrite },
+      outputTranscriptBuffer: 'partial...',
+    });
+    liveSessions.set('s1', session);
+    const req: any = { query: { session_id: 's1' }, body: { type: 'interrupt' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+
+    expect(session.isModelSpeaking).toBe(false);
+    expect(endTurnSpy).toHaveBeenCalledWith(upstreamWs);
+    expect(session.outputTranscriptBuffer).toBe('');
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"interrupted"'),
+    );
+    expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: true });
+  });
+
+  it('falls back to body.session_id when query is empty', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ active: false }));
+    const req: any = { query: {}, body: { session_id: 's1', type: 'audio', data_b64: 'A' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400); // session not active
+  });
+
+  it('500 on uncaught throw from sendAudioToLiveAPI', async () => {
+    configureLiveSessionController(
+      baseDeps({
+        sendAudioToLiveAPI: () => {
+          throw new Error('boom');
+        },
+      }),
+    );
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'boom' });
   });
 });

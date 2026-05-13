@@ -36,17 +36,26 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type {
   ClientContext,
   LiveSessionStartRequest,
+  LiveStreamMessage,
+  LiveStreamVideoFrame,
 } from '../types';
 import type { ContextPack } from '../../../types/conversation';
-import { SESSION_TIMEOUT_MS } from '../config';
+import { SESSION_TIMEOUT_MS, VERTEX_PROJECT_ID } from '../config';
 import { VERTEX_LIVE_MODEL } from '../protocol';
-import { VAD_SILENCE_DURATION_MS_DEFAULT } from '../../upstream/constants';
+import {
+  VAD_SILENCE_DURATION_MS_DEFAULT,
+  POST_TURN_COOLDOWN_MS,
+  FORWARDING_ACK_TIMEOUT_MS,
+} from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
 import {
   deduplicatedExtract,
   clearExtractionState,
 } from '../../../services/extraction-dedup-manager';
-import { DEV_IDENTITY } from '../../../services/orb-memory-bridge';
+import {
+  DEV_IDENTITY,
+  fetchRecentConversationForCognee,
+} from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
@@ -55,6 +64,8 @@ import {
   fetchAdminBriefingBlock,
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
+import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
+import { cogneeExtractorClient } from '../../../services/cognee-extractor-client';
 import {
   sessions,
   liveSessions,
@@ -137,6 +148,28 @@ export interface LiveSessionControllerDeps {
     payload: Record<string, unknown>,
     status?: 'info' | 'warning' | 'error',
   ) => Promise<void>;
+
+  // A8.2-complete — used by handleLiveStreamSend
+  /** Forwards a base64 audio chunk to the upstream Vertex Live WS. */
+  sendAudioToLiveAPI: (ws: WebSocket, audioB64: string, mimeType: string) => boolean;
+  /** Arms the response watchdog. Body lives in orb-live.ts. */
+  startResponseWatchdog: (
+    session: GeminiLiveSession,
+    timeoutMs: number,
+    reason: string,
+  ) => void;
+  /** Lightweight pipeline diag — fires an OASIS event with session snapshot. */
+  emitDiag: (
+    session: GeminiLiveSession,
+    stage: string,
+    extra?: Record<string, unknown>,
+  ) => void;
+  /**
+   * Reports whether the gateway's Google Auth client initialized at startup.
+   * Used by stream/send's no-Live-API fallback log line. Exposed as a getter
+   * so the controller never holds a stale snapshot.
+   */
+  getGoogleAuthReady: () => boolean;
 }
 
 let configuredDeps: LiveSessionControllerDeps | null = null;
@@ -761,4 +794,469 @@ export async function handleLiveSessionStart(
         : null,
     },
   });
+}
+
+/**
+ * `POST /api/v1/orb/live/session/stop` — close the Gemini Live session and
+ * trigger session-end side effects. Originally inline at orb-live.ts:~11153.
+ *
+ * Behavior parity (lifted verbatim):
+ *   - 400 when `session_id` missing.
+ *   - 404 when session not found in `liveSessions`.
+ *   - VTID-ORBC ownership-mismatch warning (allowed through).
+ *   - Closes upstream WS + writes `{type:'session_ended'}` to SSE + ends SSE.
+ *   - Marks `session.active=false`.
+ *   - VTID-STREAM-KEEPALIVE: clears upstream ping + silence keepalive intervals.
+ *   - VTID-WATCHDOG: clears response watchdog.
+ *   - OASIS event `vtid.live.session.stop` (with VTID-NAV-TIMEJOURNEY user_id).
+ *   - VTID-01959/VTID-01994: voice self-healing dispatch with session metrics.
+ *   - VTID-01225: fire-and-forget Cognee extraction (transcriptTurns first,
+ *     memory_items fallback). VTID-01230 dedup pass on the same transcript.
+ *   - VTID-01230: destroySessionBuffer + clearExtractionState.
+ *   - Removes from `liveSessions`.
+ *   - VTID-02917: wake-timeline disconnect event + endSession.
+ *   - 200 `{ ok: true }`.
+ */
+export async function handleLiveSessionStop(
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<Response> {
+  const deps = getDeps();
+  console.log('[VTID-ORBC] POST /orb/live/session/stop');
+
+  const { session_id } = req.body;
+  const orbIdentity = await deps.resolveOrbIdentity(req);
+
+  if (!session_id) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(session_id);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
+  if (
+    session.identity &&
+    orbIdentity &&
+    orbIdentity.user_id !== DEV_IDENTITY.USER_ID &&
+    session.identity.user_id !== orbIdentity.user_id
+  ) {
+    console.warn(
+      `[VTID-ORBC] /session/stop ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${orbIdentity.user_id}, sessionId=${session_id}`,
+    );
+  }
+
+  // Close upstream WebSocket if exists
+  if (session.upstreamWs) {
+    try {
+      session.upstreamWs.close();
+    } catch (e) {
+      // Ignore close errors
+    }
+    session.upstreamWs = null;
+  }
+
+  // Close SSE response if exists
+  if (session.sseResponse) {
+    try {
+      session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_ended' })}\n\n`);
+      session.sseResponse.end();
+    } catch (e) {
+      // Ignore
+    }
+    session.sseResponse = null;
+  }
+
+  session.active = false;
+
+  // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
+  if (session.upstreamPingInterval) {
+    clearInterval(session.upstreamPingInterval);
+    session.upstreamPingInterval = undefined;
+  }
+  if (session.silenceKeepaliveInterval) {
+    clearInterval(session.silenceKeepaliveInterval);
+    session.silenceKeepaliveInterval = undefined;
+  }
+  // VTID-WATCHDOG: Clear response watchdog on session stop
+  deps.clearResponseWatchdog(session);
+
+  // Emit OASIS event
+  // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
+  // this event when the user next opens the ORB.
+  await deps.emitLiveSessionEvent('vtid.live.session.stop', {
+    session_id,
+    user_id: session.identity?.user_id || null,
+    tenant_id: session.identity?.tenant_id || null,
+    audio_in_chunks: session.audioInChunks,
+    video_in_frames: session.videoInFrames,
+    audio_out_chunks: session.audioOutChunks,
+    duration_ms: Date.now() - session.createdAt.getTime(),
+    turn_count: session.turn_count,
+    user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
+    model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
+  });
+
+  // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+  // VTID-01994: pass session metrics for mode-independent quality classifier.
+  dispatchVoiceFailureFireAndForget({
+    sessionId: session_id,
+    tenantScope: session.identity?.tenant_id || 'global',
+    metadata: { synthetic: (session as any).synthetic === true },
+    sessionMetrics: {
+      audio_in_chunks: session.audioInChunks,
+      audio_out_chunks: session.audioOutChunks,
+      duration_ms: Date.now() - session.createdAt.getTime(),
+      turn_count: session.turn_count,
+      user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
+      model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
+    },
+  });
+
+  // VTID-01225: Fire-and-forget entity extraction from live session.
+  // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items.
+  // Falls back to memory_items query only if transcriptTurns is empty.
+  if (session.identity && session.identity.tenant_id) {
+    const tenantId = session.identity.tenant_id;
+    const userId = session.identity.user_id;
+
+    if (session.transcriptTurns.length > 0) {
+      const fullTranscript = session.transcriptTurns
+        .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
+        .join('\n');
+
+      if (fullTranscript.length > 50) {
+        if (cogneeExtractorClient.isEnabled()) {
+          cogneeExtractorClient.extractAsync({
+            transcript: fullTranscript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id,
+            active_role: session.active_role || 'community',
+          });
+          console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
+        }
+
+        // VTID-01230: Deduplicated extraction (force on session end)
+        deduplicatedExtract({
+          conversationText: fullTranscript,
+          tenant_id: tenantId,
+          user_id: userId,
+          session_id,
+          force: true,
+        });
+      }
+    } else {
+      // Fallback: query memory_items if no in-memory transcript available
+      fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+        .then((transcript) => {
+          if (transcript && transcript.length > 50) {
+            if (cogneeExtractorClient.isEnabled()) {
+              cogneeExtractorClient.extractAsync({
+                transcript,
+                tenant_id: tenantId,
+                user_id: userId,
+                session_id,
+                active_role: session.active_role || 'community',
+              });
+              console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
+            }
+
+            // VTID-01230: Deduplicated extraction from memory_items fallback
+            deduplicatedExtract({
+              conversationText: transcript,
+              tenant_id: tenantId,
+              user_id: userId,
+              session_id,
+              force: true,
+            });
+          } else {
+            console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`[VTID-01225] Failed to fetch conversation for extraction: ${err.message}`);
+        });
+    }
+  }
+  // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
+
+  // VTID-01230: Clean up session buffer and extraction state on session stop
+  destroySessionBuffer(session_id);
+  clearExtractionState(session_id);
+
+  // Remove from store
+  liveSessions.delete(session_id);
+
+  // VTID-02917 (B0d.3): record disconnect + flush the wake timeline.
+  // Best-effort: never block the stop path.
+  try {
+    defaultWakeTimelineRecorder.recordEvent({
+      sessionId: session_id,
+      name: 'disconnect',
+      metadata: {
+        disconnect_reason: 'session_stop_requested',
+        transport: 'sse',
+      },
+    });
+    void defaultWakeTimelineRecorder.endSession(session_id).catch(() => {
+      // swallow — debugging tool must not break the stop path.
+    });
+  } catch {
+    // ignore
+  }
+
+  console.log(`[VTID-01155] Live session stopped: ${session_id}`);
+
+  return res.status(200).json({ ok: true });
+}
+
+/**
+ * `POST /api/v1/orb/live/stream/send` — receive audio / video / text /
+ * interrupt frames from the ORB client and forward to the upstream Vertex
+ * Live WS. Originally inline at orb-live.ts:~11693.
+ *
+ * Behavior parity (lifted verbatim — see commit for the exhaustive VTID list):
+ *   - 400 missing session_id, 404 session not found, 400 session not active.
+ *   - VTID-ANON-NUDGE: silently drops audio/text after turn limit on
+ *     anonymous sessions or once signupIntentDetected fires.
+ *   - VTID-NAV: drops audio while a navigation is queued.
+ *   - VTID-VOICE-INIT: echo prevention gate (drops mic audio while model
+ *     speaks).
+ *   - VTID-ECHO-COOLDOWN: post-turn cooldown drops audio for
+ *     POST_TURN_COOLDOWN_MS after turn_complete.
+ *   - VTID-01219: forwards audio chunks via `sendAudioToLiveAPI`.
+ *   - VTID-FORWARDING-WATCHDOG / VTID-01984: sliding watchdog when Vertex
+ *     hasn't shown life yet.
+ *   - 10s telemetry batching for audio.in.chunk + video.in.frame.
+ *   - VTID-VOICE-INIT text: forwards text turns as client_content
+ *     turn_complete=true.
+ *   - VTID-VOICE-INIT interrupt: ungates mic + sendEndOfTurn + clears
+ *     output buffer + emits SSE `{type:'interrupted'}`.
+ *   - 500 on uncaught error.
+ *   - 200 `{ ok: true }` (or `{ ok:true, dropped:true, reason:... }` /
+ *     `{ ok:true, was_speaking }`) on success.
+ */
+export async function handleLiveStreamSend(
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<Response> {
+  const deps = getDeps();
+  const { session_id } = req.query;
+  const body = req.body as LiveStreamMessage & { session_id?: string };
+  const effectiveSessionId = (session_id as string) || body.session_id;
+
+  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
+  const identity = await deps.resolveOrbIdentity(req);
+
+  if (!effectiveSessionId) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(effectiveSessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  if (!session.active) {
+    return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
+  if (
+    identity &&
+    session.identity &&
+    session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+    session.identity.user_id !== identity.user_id
+  ) {
+    console.warn(
+      `[VTID-ORBC] /send ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, session_tenant=${session.identity.tenant_id}, request_tenant=${identity.tenant_id}, sessionId=${effectiveSessionId}`,
+    );
+  }
+
+  session.lastActivity = new Date();
+
+  // VTID-ANON-NUDGE: Block all input after turn limit on anonymous sessions.
+  if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
+    return res.json({ ok: true });
+  }
+
+  try {
+    if (body.type === 'audio') {
+      // VTID-NAV: Drop mic audio once navigation is queued.
+      if (session.navigationDispatched) {
+        session.audioInChunks++;
+        return res.json({ ok: true, dropped: true, reason: 'navigation_dispatched' });
+      }
+
+      // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
+      if (session.isModelSpeaking) {
+        session.audioInChunks++;
+        if (session.audioInChunks % 50 === 0) {
+          console.log(`[VTID-VOICE-INIT] SSE path: dropping mic audio — model is speaking: session=${effectiveSessionId}`);
+        }
+        return res.json({ ok: true, dropped: true, reason: 'model_speaking' });
+      }
+
+      // VTID-ECHO-COOLDOWN: Post-turn cooldown drops mic for N ms.
+      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
+        session.audioInChunks++;
+        return res.json({ ok: true, dropped: true, reason: 'post_turn_cooldown' });
+      }
+
+      session.audioInChunks++;
+
+      // Telemetry: 10s window batching
+      const now = Date.now();
+      if (now - session.lastTelemetryEmitTime >= 10_000) {
+        session.lastTelemetryEmitTime = now;
+        deps.emitLiveSessionEvent('vtid.live.audio.in.chunk', {
+          session_id: effectiveSessionId,
+          chunk_number: session.audioInChunks,
+          bytes: body.data_b64.length,
+          rate: 16000,
+        }).catch(() => {});
+      }
+
+      // VTID-01219: Forward audio to Vertex Live API WebSocket
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocketPkg.OPEN) {
+        const sent = deps.sendAudioToLiveAPI(
+          session.upstreamWs,
+          body.data_b64,
+          body.mime || 'audio/pcm;rate=16000',
+        );
+        if (sent) {
+          session.lastAudioForwardedTime = Date.now();
+          // VTID-FORWARDING-WATCHDOG + VTID-01984 (R5) sliding logic
+          if (!session.isModelSpeaking) {
+            if (session.vertexHasShownLife) {
+              if (session.audioInChunks % 200 === 0) {
+                deps.emitDiag(session, 'watchdog_skipped', { reason: 'vertex_alive' });
+              }
+            } else {
+              const canSlide = !session.responseWatchdogTimer
+                || session.responseWatchdogReason === 'forwarding_no_ack';
+              if (canSlide) {
+                deps.startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+              }
+            }
+          }
+          // Periodic forward diagnostic
+          if (session.audioInChunks % 100 === 0) {
+            deps.emitDiag(session, 'audio_forwarding', { chunk: session.audioInChunks });
+          }
+        } else {
+          console.warn(`[VTID-01219] Failed to forward audio chunk: session=${effectiveSessionId}`);
+          if (session.audioInChunks % 50 === 0) {
+            deps.emitDiag(session, 'audio_forward_failed', {
+              chunk: session.audioInChunks,
+              ws_state: session.upstreamWs?.readyState ?? -1,
+            });
+          }
+        }
+      } else {
+        // Fallback: Log when Live API not connected
+        if (session.audioInChunks % 50 === 0) {
+          console.log(`[VTID-ORBC] Audio NO-LIVE-API: session=${effectiveSessionId}, chunk=${session.audioInChunks}, wsState=${session.upstreamWs?.readyState ?? 'NULL'}, projectId=${VERTEX_PROJECT_ID || 'EMPTY'}, hasAuth=${deps.getGoogleAuthReady()}`);
+          deps.emitDiag(session, 'audio_no_ws', { chunk: session.audioInChunks });
+        }
+
+        // Send acknowledgment via SSE (fallback behavior)
+        if (session.sseResponse && session.audioInChunks % 5 === 0) {
+          session.sseResponse.write(`data: ${JSON.stringify({
+            type: 'audio_ack',
+            chunk_number: session.audioInChunks,
+            live_api: false,
+          })}\n\n`);
+        }
+      }
+    } else if (body.type === 'video') {
+      // Handle video frame
+      session.videoInFrames++;
+      const videoBody = body as LiveStreamVideoFrame;
+
+      // Telemetry: reuse the same 10s window as audio
+      const vidNow = Date.now();
+      if (vidNow - session.lastTelemetryEmitTime >= 10_000) {
+        session.lastTelemetryEmitTime = vidNow;
+        deps.emitLiveSessionEvent('vtid.live.video.in.frame', {
+          session_id: effectiveSessionId,
+          source: videoBody.source,
+          frame_number: session.videoInFrames,
+          bytes: videoBody.data_b64.length,
+          fps: 1,
+        }).catch(() => {});
+      }
+
+      console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
+
+      // Acknowledge frame receipt via SSE
+      if (session.sseResponse) {
+        session.sseResponse.write(`data: ${JSON.stringify({
+          type: 'video_ack',
+          source: videoBody.source,
+          frame_number: session.videoInFrames,
+        })}\n\n`);
+      }
+    } else if ((body as any).type === 'text' && (body as any).text) {
+      // Handle text message - forward to Live API as client_content
+      const textContent = (body as any).text as string;
+
+      // VTID-ANON-NUDGE: Block text input after turn limit (SSE text path)
+      if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
+        return res.json({ ok: true });
+      }
+
+      // If this is a client-side greeting request and server already sent one, skip it
+      if (session.greetingSent && textContent.toLowerCase().includes('greet')) {
+        console.log(`[VTID-VOICE-INIT] Skipping client greeting request - server greeting already sent`);
+        return res.status(200).json({ ok: true, note: 'Server greeting already in progress' });
+      }
+
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocketPkg.OPEN) {
+        const textMessage = {
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: textContent }] }],
+            turn_complete: true,
+          },
+        };
+        session.upstreamWs.send(JSON.stringify(textMessage));
+        console.log(`[VTID-VOICE-INIT] Text message forwarded to Live API: "${textContent.substring(0, 80)}..."`);
+      } else {
+        console.warn(`[VTID-VOICE-INIT] Cannot forward text - Live API not connected`);
+      }
+    } else if ((body as any).type === 'interrupt') {
+      // VTID-VOICE-INIT: Client-side VAD detected real user speech during model playback
+      if (!session.isModelSpeaking) {
+        return res.json({ ok: true, was_speaking: false });
+      }
+
+      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
+
+      // Ungate mic audio
+      session.isModelSpeaking = false;
+
+      // Tell Gemini to stop generating
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocketPkg.OPEN) {
+        deps.sendEndOfTurn(session.upstreamWs);
+      }
+
+      // Clear incomplete output transcript
+      session.outputTranscriptBuffer = '';
+
+      // Send interrupted event to client via SSE
+      if (session.sseResponse) {
+        session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+      }
+
+      return res.json({ ok: true, was_speaking: true });
+    }
+
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    console.error(`[VTID-01155] Stream send error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
 }
