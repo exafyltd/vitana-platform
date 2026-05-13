@@ -1164,6 +1164,15 @@ import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-m
 // A8.3b.2 will rename / remove this adapter; for now it remains the active
 // call path so frontends + transparent reconnect see no behavior change.
 import { VertexLiveClient } from '../orb/live/upstream/vertex-live-client';
+// L1 (VTID-02976): provider-selection plumbing for the upstream live client.
+// Pure selector — `connectToLiveAPI` reads env + voice.active_provider, then
+// asks the selector which provider to use, then emits OASIS events for the
+// decision. L1 always pins to Vertex; L2 (canary) will honor LiveKit.
+import {
+  selectUpstreamProvider,
+  type UpstreamSelectionDecision,
+} from '../orb/live/upstream/upstream-provider-selector';
+// NOTE: `getVoiceConfig` is already imported above (line ~92).
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -5530,6 +5539,70 @@ async function connectToLiveAPI(
   // VTID-01222: Fail fast if project/location missing
   if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
     throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
+  }
+
+  // L1 (VTID-02976): consult the upstream provider selector. The selector
+  // is a pure function — it never reads env / DB / OASIS. We gather inputs
+  // here, hand them in, and emit OASIS based on the returned decision.
+  // L1 always pins to Vertex; the decision tells operators what *would*
+  // happen once L2 lifts the pin.
+  let __upstreamDecision: UpstreamSelectionDecision;
+  try {
+    const __voiceCfg = await getVoiceConfig();
+    __upstreamDecision = selectUpstreamProvider({
+      envProviderOverride: process.env.ORB_LIVE_PROVIDER,
+      systemConfigActiveProvider: __voiceCfg.active_provider,
+      livekitCredentials: {
+        url: process.env.LIVEKIT_URL,
+        apiKey: process.env.LIVEKIT_API_KEY,
+        apiSecret: process.env.LIVEKIT_API_SECRET,
+      },
+    });
+  } catch (e) {
+    // Voice config read failure must NOT block the session start; default
+    // to Vertex so production behavior matches today.
+    console.warn(`[VTID-02976] voice-config read failed; falling back to vertex defaults: ${(e as Error).message}`);
+    __upstreamDecision = {
+      provider: 'vertex',
+      requested: null,
+      reason: 'default',
+      livekitReady: false,
+    };
+  }
+  console.log(
+    `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
+      ` requested=${__upstreamDecision.requested ?? 'none'}` +
+      ` reason=${__upstreamDecision.reason}` +
+      ` livekit_ready=${__upstreamDecision.livekitReady}`,
+  );
+  // OASIS emission — every connect call emits a single `selected` event.
+  // When the request was LiveKit but the path degraded (config invalid or
+  // pinned_to_vertex_l1), also emit a `selection_error` event with the
+  // typed error string so the Improve cockpit can surface it.
+  void emitOasisEvent({
+    type: 'orb.upstream.provider.selected',
+    vtid: 'VTID-02976',
+    payload: {
+      session_id: session.sessionId,
+      provider: __upstreamDecision.provider,
+      requested: __upstreamDecision.requested,
+      reason: __upstreamDecision.reason,
+      livekit_ready: __upstreamDecision.livekitReady,
+    } as any,
+  } as any).catch(() => { /* best-effort */ });
+  if (__upstreamDecision.error) {
+    void emitOasisEvent({
+      type: 'orb.upstream.provider.selection_error',
+      vtid: 'VTID-02976',
+      payload: {
+        session_id: session.sessionId,
+        provider: __upstreamDecision.provider,
+        requested: __upstreamDecision.requested,
+        reason: __upstreamDecision.reason,
+        livekit_ready: __upstreamDecision.livekitReady,
+        error: __upstreamDecision.error,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
   }
 
   // A8.3b.2 (VTID-02972): the legacy raw-WebSocket scaffolding is gone.
