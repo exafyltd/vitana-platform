@@ -1106,6 +1106,11 @@ import { VERTEX_PROJECT_ID, VERTEX_LOCATION } from '../orb/live/config';
 // orb/live/protocol.ts. Same values, same callers; the constants now live
 // in a shared module so A3/A7/A9 don't have to re-declare them.
 import { VERTEX_LIVE_MODEL, VERTEX_TTS_MODEL } from '../orb/live/protocol';
+// A9.1 (orb-live-refactor / VTID-02957): WebSocket transport attach lifted
+// to orb/live/transport/websocket-handler.ts. `initializeOrbWebSocket`
+// below now delegates the WSS construction + connection dispatch to the
+// new module. Wire protocol byte-for-byte identical; mount path unchanged.
+import { mountOrbWebSocketTransport } from '../orb/live/transport/websocket-handler';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -12914,23 +12919,19 @@ const wsClientSessions = new Map<string, WsClientSession>();
 export function initializeOrbWebSocket(server: HttpServer): void {
   console.log('[VTID-01222] Initializing ORB WebSocket server...');
 
-  // Create WebSocket server attached to HTTP server
-  const wss = new WebSocketServer({
-    server,
-    path: '/api/v1/orb/live/ws'
-  });
-
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    handleWebSocketConnection(ws, req);
-  });
-
-  wss.on('error', (error) => {
-    console.error('[VTID-01222] WebSocket server error:', error);
+  // A9.1 (VTID-02957): WSS attach + connection/error dispatch lifted to
+  // orb/live/transport/websocket-handler.ts. Wire protocol unchanged —
+  // same mount path, same single-port attachment, same handler signature.
+  mountOrbWebSocketTransport(server, {
+    handleConnection: (ws, req) => handleWebSocketConnection(ws, req),
+    onServerError: (err) => console.error('[VTID-01222] WebSocket server error:', err),
   });
 
   console.log('[VTID-01222] ORB WebSocket server initialized at /api/v1/orb/live/ws');
 
-  // Cleanup expired WebSocket sessions every 5 minutes
+  // Cleanup expired WebSocket sessions every 5 minutes.
+  // (Stays here for A9.1 — iterates over session-level state that
+  // moves into orb/live/session/* under A8.)
   setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of wsClientSessions.entries()) {
