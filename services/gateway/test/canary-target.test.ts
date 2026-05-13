@@ -21,6 +21,10 @@
 import express from 'express';
 import request from 'supertest';
 
+jest.mock('../src/services/oasis-event-service', () => ({
+  emitOasisEvent: jest.fn().mockResolvedValue({ ok: true })
+}));
+
 const ORIGINAL_FETCH = global.fetch;
 
 // Reload the route module fresh between tests so the in-module armed-state
@@ -61,6 +65,7 @@ beforeEach(() => {
   // Bust the route's 5-second cache between tests by jumping the clock.
   jest.useFakeTimers({ now: Date.now() + 60_000 });
   jest.useRealTimers();
+  jest.clearAllMocks();
 });
 
 afterEach(() => {
@@ -109,5 +114,11 @@ describe('canary-target — armed fault (repaired behavior)', () => {
       fault_class: 'CANARY_ARMED',
       remediation: 'Canary armed fault handled gracefully.'
     });
+
+    const { emitOasisEvent } = require('../src/services/oasis-event-service');
+    expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'self-healing.fix.applied',
+      vtid: 'VTID-02951'
+    }));
   });
 });
