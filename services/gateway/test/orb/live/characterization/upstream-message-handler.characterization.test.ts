@@ -1,104 +1,152 @@
 /**
- * A8.3a.1 (VTID-02965): structural characterization for the upstream Live
- * message-handler closure.
+ * Originally A8.3a.1 — structural characterization for the upstream Live
+ * message-handler closure inside `routes/orb-live.ts`.
+ * Updated 2026-05-13 (A8.3a.2 / VTID-02968): the named function body was
+ * lifted into `orb/live/session/upstream-message-handler.ts` as a factory
+ * (`createUpstreamLiveMessageHandler`). orb-live.ts now calls the factory
+ * with a deps-bag + context-bag and registers the returned handler.
  *
- * Purpose: lock the seam created when the anonymous `ws.on('message', ...)`
- * arrow inside `connectToLiveAPI` was named `handleUpstreamLiveMessage`.
- * This is the entry point that A8.3a.2 moves to
- * `orb/live/session/upstream-message-handler.ts` and A8.3b swaps from
- * `connectToLiveAPI`'s callback pattern to `VertexLiveClient`'s typed-event
- * pattern.
+ * Assertions now read from BOTH files:
+ *   - The new module owns the function body — all upstream event paths
+ *     and dispatch calls live there.
+ *   - orb-live.ts is the consumer — its connectToLiveAPI body must call
+ *     `createUpstreamLiveMessageHandler({...})` and register the returned
+ *     handler via `ws.on('message', handleUpstreamLiveMessage)`.
  *
- * Why structural rather than runtime: the function closes over
- * `setupComplete`, `connectionTimeout`, `resolve` / `reject`, and the
- * `onAudioResponse` / `onTextResponse` / `onError` / `onTurnComplete` /
- * `onInterrupted` callbacks defined inside `connectToLiveAPI`. Runtime
- * tests against the function require also reproducing that closure, which
- * is exactly the surface A8.3a.2 + A8.3b refactor. Until then, the
- * structural lock is the right boundary.
+ * Runtime behavior is preserved (same body, same dispatches, same SSE
+ * writes through `writeSseEvent`). Closure variables flow through
+ * `ctx.onSetupComplete()` / `ctx.isSetupComplete()` instead of direct
+ * mutation, but the orb-live.ts wiring calls these callbacks in the same
+ * order the original closure mutated them.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
 const ORB_LIVE_PATH = path.resolve(__dirname, '../../../../src/routes/orb-live.ts');
+const HANDLER_PATH = path.resolve(
+  __dirname,
+  '../../../../src/orb/live/session/upstream-message-handler.ts',
+);
 
-let source: string;
-let functionBody: string;
+let orbLiveSrc: string;
+let handlerSrc: string;
+let handlerBody: string;
 
 beforeAll(() => {
-  source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
+  orbLiveSrc = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
+  handlerSrc = fs.readFileSync(HANDLER_PATH, 'utf8');
 
-  // Slice the named function body. The function declaration sits inside
-  // the `new Promise((resolve, reject) => { ... })` body of
-  // `connectToLiveAPI`, terminated by the `ws.on('message', ...)`
-  // registration line.
-  const fnStart = source.indexOf('function handleUpstreamLiveMessage');
+  // Slice from `function handleUpstreamLiveMessage` (the inner function
+  // declared by the factory) to the factory's `return handleUpstreamLiveMessage;`.
+  const fnStart = handlerSrc.indexOf('function handleUpstreamLiveMessage');
   expect(fnStart).toBeGreaterThan(0);
-
-  // The function is followed by `ws.on('message', handleUpstreamLiveMessage)`
-  // — slice up to that registration.
-  const registration = source.indexOf("ws.on('message', handleUpstreamLiveMessage)", fnStart);
-  expect(registration).toBeGreaterThan(fnStart);
-
-  functionBody = source.slice(fnStart, registration);
+  const fnEnd = handlerSrc.indexOf(
+    'return handleUpstreamLiveMessage;',
+    fnStart,
+  );
+  expect(fnEnd).toBeGreaterThan(fnStart);
+  handlerBody = handlerSrc.slice(fnStart, fnEnd);
 });
 
-describe('A8.3a.1: handleUpstreamLiveMessage named function', () => {
-  it('is declared as a named function (not an anonymous arrow)', () => {
-    expect(functionBody).toMatch(
+describe('A8.3a.2: upstream-message-handler module owns the function body', () => {
+  it('exports the factory `createUpstreamLiveMessageHandler`', () => {
+    expect(handlerSrc).toMatch(
+      /export\s+function\s+createUpstreamLiveMessageHandler\s*\(/,
+    );
+  });
+
+  it('declares the inner handler with the canonical name + signature', () => {
+    expect(handlerBody).toMatch(
       /function\s+handleUpstreamLiveMessage\s*\(\s*data\s*:\s*WebSocket\.Data\s*\)/,
     );
   });
 
-  it('is registered via ws.on("message", handleUpstreamLiveMessage)', () => {
-    expect(source).toMatch(
+  it('still handles every event path (setup_complete, server_content, tool_call, interruption, turn_complete, transcripts)', () => {
+    expect(handlerBody).toMatch(/setup_complete\b/);
+    expect(handlerBody).toMatch(/server_content\b/);
+    expect(handlerBody).toMatch(/tool_call\b/);
+    expect(handlerBody).toMatch(/interrupted\b/);
+    expect(handlerBody).toMatch(/turn_complete\b/);
+    expect(handlerBody).toMatch(/input_transcription\b/);
+    expect(handlerBody).toMatch(/output_transcription\b/);
+  });
+
+  it('invokes user callbacks via ctx.callbacks (audio, interrupted, turn-complete)', () => {
+    expect(handlerBody).toMatch(/ctx\.callbacks\.onAudioResponse\s*\(/);
+    expect(handlerBody).toMatch(/ctx\.callbacks\.onInterrupted\?\.\(/);
+    expect(handlerBody).toMatch(/ctx\.callbacks\.onTurnComplete\?\.\(/);
+  });
+
+  it('uses ctx.onSetupComplete() on the setup_complete branch (replaces inline setupComplete / clearTimeout / resolve)', () => {
+    expect(handlerBody).toMatch(/ctx\.onSetupComplete\s*\(\s*\)/);
+    // Anti-regression: original closure-variable mutations must NOT
+    // reappear inside the lifted body.
+    expect(handlerBody).not.toMatch(/setupComplete\s*=\s*true/);
+    expect(handlerBody).not.toMatch(/clearTimeout\s*\(\s*connectionTimeout\s*\)/);
+  });
+
+  it('uses writeSseEvent for SSE output (A9.2 wire helper)', () => {
+    expect(handlerBody).not.toMatch(/session\.sseResponse\.write\s*\(/);
+    expect(handlerBody).toMatch(/writeSseEvent\s*\(\s*session\.sseResponse\s*,/);
+  });
+
+  it('routes all orb-live.ts-local helpers through ctx.deps.*', () => {
+    // Spot-check a handful of dep names — they must NOT appear unprefixed
+    // inside the body (which would mean an unresolved module-level ref).
+    const depsToCheck = [
+      'clearResponseWatchdog',
+      'emitDiag',
+      'emitLiveSessionEvent',
+      'sendAudioToLiveAPI',
+      'startResponseWatchdog',
+    ];
+    for (const name of depsToCheck) {
+      expect(handlerBody).toMatch(new RegExp(`ctx\\.deps\\.${name}\\s*\\(`));
+    }
+  });
+});
+
+describe('A8.3a.2: orb-live.ts is a thin consumer of the factory', () => {
+  it('imports createUpstreamLiveMessageHandler from the new module', () => {
+    expect(orbLiveSrc).toMatch(
+      /from\s*['"`][^'"`]*\/orb\/live\/session\/upstream-message-handler['"`]/,
+    );
+    expect(orbLiveSrc).toMatch(/\bcreateUpstreamLiveMessageHandler\b/);
+  });
+
+  it('builds the handler via the factory with session, ws, callbacks, onSetupComplete, isSetupComplete, deps', () => {
+    expect(orbLiveSrc).toMatch(
+      /createUpstreamLiveMessageHandler\s*\(\s*\{[\s\S]*?session[\s\S]*?ws[\s\S]*?callbacks[\s\S]*?onSetupComplete[\s\S]*?isSetupComplete[\s\S]*?deps[\s\S]*?\}\s*\)/,
+    );
+  });
+
+  it('still registers via ws.on("message", handleUpstreamLiveMessage)', () => {
+    expect(orbLiveSrc).toMatch(
       /ws\.on\(\s*['"`]message['"`]\s*,\s*handleUpstreamLiveMessage\s*\)/,
     );
   });
 
-  it('does NOT register an anonymous arrow as the message handler', () => {
-    // Anti-regression: a future drift back to inline anon arrow would
-    // erase the seam A8.3a.2 / A8.3b consume.
-    expect(source).not.toMatch(
-      /ws\.on\(\s*['"`]message['"`]\s*,\s*\(\s*data\s*:\s*WebSocket\.Data\s*\)\s*=>/,
+  it('does NOT declare the message-handler body locally anymore', () => {
+    // Anti-regression: the body must NOT live in orb-live.ts anymore.
+    // We allow one declaration site of the *name* inside orb-live.ts
+    // (the `const handleUpstreamLiveMessage = createUpstreamLiveMessageHandler(...)`
+    // line), but not a function declaration with the body inline.
+    expect(orbLiveSrc).not.toMatch(
+      /function\s+handleUpstreamLiveMessage\s*\(/,
     );
   });
 
-  it('still handles every event the closure dispatched (setup_complete, server_content, tool_call, interruption, turn_complete, transcripts)', () => {
-    // These are the upstream-event paths the function MUST keep dispatching.
-    expect(functionBody).toMatch(/setup_complete\b/);
-    expect(functionBody).toMatch(/server_content\b/);
-    expect(functionBody).toMatch(/tool_call\b/);
-    expect(functionBody).toMatch(/interrupted\b/);
-    expect(functionBody).toMatch(/turn_complete\b/);
-    expect(functionBody).toMatch(/input_transcription\b/);
-    expect(functionBody).toMatch(/output_transcription\b/);
-  });
-
-  it('still invokes the connectToLiveAPI callbacks (closure preservation)', () => {
-    // The function closes over onAudioResponse / onTextResponse / onError /
-    // onTurnComplete / onInterrupted. Removing any of these calls would
-    // break the legacy connectToLiveAPI consumer.
-    expect(functionBody).toMatch(/\bonAudioResponse\s*\(/);
-    expect(functionBody).toMatch(/\bonInterrupted\s*\?\.\s*\(/);
-    expect(functionBody).toMatch(/\bonTurnComplete\s*\?\.\s*\(/);
-    // setup_complete path mutates the outer `setupComplete` let-binding.
-    expect(functionBody).toMatch(/\bsetupComplete\s*=\s*true/);
-  });
-
-  it('uses writeSseEvent for SSE output (A9.2 wire helper), not inline res.write', () => {
-    // Anti-regression: a future drift back to inline
-    // `session.sseResponse.write(\`data: ${JSON.stringify(...)}\n\n\`)`
-    // would re-fragment the wire-format ownership we just consolidated.
-    expect(functionBody).not.toMatch(/session\.sseResponse\.write\s*\(/);
-    expect(functionBody).toMatch(/writeSseEvent\s*\(\s*session\.sseResponse\s*,/);
-  });
-
-  it('orb-live.ts imports writeSseEvent from the A9.2 transport helper', () => {
-    expect(source).toMatch(
-      /from\s*['"`][^'"`]*\/orb\/live\/transport\/sse-handler['"`]/,
+  it('passes the connectToLiveAPI Promise-closure state through onSetupComplete (setupComplete + clearTimeout + resolve)', () => {
+    // The wiring callback in orb-live.ts must still mutate setupComplete,
+    // clear the connectionTimeout, and resolve(ws). The lifted body no
+    // longer touches these directly — only the wiring does.
+    const wiring = orbLiveSrc.slice(
+      orbLiveSrc.indexOf('onSetupComplete:'),
+      orbLiveSrc.indexOf('isSetupComplete:'),
     );
-    expect(source).toMatch(/\bwriteSseEvent\b/);
+    expect(wiring).toMatch(/setupComplete\s*=\s*true/);
+    expect(wiring).toMatch(/clearTimeout\s*\(\s*connectionTimeout\s*\)/);
+    expect(wiring).toMatch(/resolve\s*\(\s*ws\s*\)/);
   });
 });
