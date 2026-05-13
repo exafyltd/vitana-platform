@@ -612,6 +612,9 @@ export type CicdEventType =
   | 'test-contract.run.passed'
   | 'test-contract.run.failed'
   | 'test-contract.run.dispatched'
+  // PR-L2 (VTID-02957): Missing-Test Scanner. Emitted when the scanner
+  // allocates a VTID for a capability that has no test_contracts row.
+  | 'missing-test.scanner.allocated'
   | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'
