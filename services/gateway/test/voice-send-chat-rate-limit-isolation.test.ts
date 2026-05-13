@@ -49,11 +49,27 @@ interface CapturedInsert {
   row: Record<string, unknown>;
 }
 
+interface AppUserRow {
+  user_id: string;
+  tenant_id?: string | null;
+  display_name?: string | null;
+  vitana_id?: string | null;
+  email?: string | null;
+}
+
 function makeStubSupabase(opts: {
   inserts: CapturedInsert[];
   rpcResponses?: Record<string, { data: unknown; error?: unknown }>;
-  appUsersTenantId?: string | null;
+  /**
+   * Map of user_id → app_users row. Each call to
+   * `app_users.select().eq('user_id', X).maybeSingle()` returns
+   * `appUsers[X] ?? null`. Tests that need the receiver-exists guard to
+   * pass must populate the receiver's row.
+   */
+  appUsers?: Record<string, AppUserRow>;
+  appUsersError?: { message: string } | null;
   insertError?: { message: string } | null;
+  insertedId?: string;
 }) {
   const inserts = opts.inserts;
   return {
@@ -61,18 +77,26 @@ function makeStubSupabase(opts: {
       if (table === 'app_users') {
         return {
           select: () => ({
-            eq: () => ({
+            eq: (_col: string, value: string) => ({
               maybeSingle: async () => ({
-                data: opts.appUsersTenantId ? { tenant_id: opts.appUsersTenantId } : null,
+                data: opts.appUsers?.[value] ?? null,
+                error: opts.appUsersError ?? null,
               }),
             }),
           }),
         } as unknown;
       }
       return {
-        insert: async (row: Record<string, unknown>) => {
+        insert: (row: Record<string, unknown>) => {
           inserts.push({ table, row });
-          return { error: opts.insertError ?? null };
+          return {
+            select: () => ({
+              single: async () => ({
+                data: opts.insertError ? null : { id: opts.insertedId ?? 'msg-stub-id' },
+                error: opts.insertError ?? null,
+              }),
+            }),
+          };
         },
       } as unknown;
     },
@@ -81,6 +105,34 @@ function makeStubSupabase(opts: {
       return resp;
     },
   } as never;
+}
+
+/**
+ * Sensible default receiver row keyed on RECIPIENT_UUID — used by tests
+ * that just want the happy path through the receiver-exists guard.
+ */
+function defaultAppUsers(): Record<string, AppUserRow> {
+  return {
+    [SENDER_UUID]: {
+      user_id: SENDER_UUID,
+      tenant_id: 'tenant-1',
+      display_name: 'Test Sender',
+      vitana_id: 'vit_send',
+      email: 'sender@vitana.test',
+    },
+    [RECIPIENT_UUID]: {
+      user_id: RECIPIENT_UUID,
+      tenant_id: 'tenant-1',
+      display_name: 'Dragan Red',
+      vitana_id: 'dragan_red',
+    },
+    [RECIPIENT_UUID_2]: {
+      user_id: RECIPIENT_UUID_2,
+      tenant_id: 'tenant-1',
+      display_name: 'Another User',
+      vitana_id: 'another_user',
+    },
+  };
 }
 
 describe('VTID-02963 — send_chat_message rate-limit key uses real session id', () => {
@@ -150,10 +202,10 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
   // ─── Test 3: missing session_id path is explicit ───────────────────────
   test('missing session_id triggers explicit fallback path + telemetry', async () => {
     const inserts: CapturedInsert[] = [];
-    const sb = makeStubSupabase({ inserts });
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'recv', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hello' },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -188,10 +240,10 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
   // ─── Test 4: regression guard — key MUST be real session when present ──
   test('regression: rate-limit key is NOT `${user_id}:send_chat_message` when session_id is present', async () => {
     const inserts: CapturedInsert[] = [];
-    const sb = makeStubSupabase({ inserts });
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'recv', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'Another User', body: 'hello' },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -232,9 +284,10 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       const inserts: CapturedInsert[] = [];
       const sb = makeStubSupabase({
         inserts,
+        appUsers: defaultAppUsers(),
         rpcResponses: {
           resolve_recipient_candidates: {
-            data: [{ user_id: RECIPIENT_UUID, vitana_id: 'vit_recv', score: 0.95 }],
+            data: [{ user_id: RECIPIENT_UUID, vitana_id: 'dragan_red', score: 0.95 }],
             error: null,
           },
         },
@@ -260,10 +313,19 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
 
     test('tenant backfill from app_users when identity.tenant_id is null', async () => {
       const inserts: CapturedInsert[] = [];
-      const sb = makeStubSupabase({ inserts, appUsersTenantId: 'tenant-backfilled' });
+      // Sender's tenant_id is what we want backfilled; receiver row also
+      // populated so the receiver-exists guard (VTID-02966) passes.
+      const appUsers = defaultAppUsers();
+      appUsers[SENDER_UUID] = {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-backfilled',
+        display_name: 'Test Sender',
+        vitana_id: 'vit_send',
+      };
+      const sb = makeStubSupabase({ inserts, appUsers });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'recv', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
         {
           user_id: SENDER_UUID,
           tenant_id: null,
@@ -282,11 +344,12 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       const inserts: CapturedInsert[] = [];
       const sb = makeStubSupabase({
         inserts,
+        appUsers: defaultAppUsers(),
         insertError: { message: 'simulated db failure' },
       });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'recv', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -309,5 +372,240 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       expect(failEvents.length).toBe(1);
       expect((failEvents[0].payload as { reason: string }).reason).toBe('chat_messages_insert_error');
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02966 — Parity with REST /chat: receiver-exists guard + label/id
+// consistency check + push notification + post-send proactive directive.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('VTID-02966 — receiver guard + push notification parity', () => {
+  let emitSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _resetSendCountersForTests();
+    emitSpy = jest
+      .spyOn(oasisEventService, 'emitOasisEvent')
+      .mockResolvedValue({ ok: true, event_id: 'evt-stub' });
+  });
+
+  afterEach(() => {
+    emitSpy.mockRestore();
+  });
+
+  // ─── Issue #1a: receiver_user_id that doesn't exist → "Unknown User" bug ─
+  test('receiver_not_found fails with voice-friendly text + send_failed OASIS', async () => {
+    const inserts: CapturedInsert[] = [];
+    // appUsers map has sender but NO receiver row — Gemini hallucinated a
+    // UUID that doesn't map to any account. Previously this would insert
+    // a chat_messages row with an orphan receiver_id and the user would
+    // see "Unknown User" in their chat history.
+    const sb = makeStubSupabase({
+      inserts,
+      appUsers: {
+        [SENDER_UUID]: {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          display_name: 'Test Sender',
+          vitana_id: 'vit_send',
+        },
+      },
+    });
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok === false) {
+      expect(result.error).toMatch(/Dragan Red/);
+      expect(result.error).toMatch(/community/);
+    }
+    expect(inserts).toHaveLength(0); // CRITICAL — no row written
+
+    const failEvents = emitSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e: { type?: string }) => e.type === 'voice.chat_message.send_failed');
+    const reasons = failEvents.map((e: { payload: { reason: string } }) => e.payload.reason);
+    expect(reasons).toContain('receiver_not_found');
+  });
+
+  // ─── Issue #1b: label says one person, UUID points to another ──────────
+  test('label_id_mismatch fails when recipient_label does not match receiver display_name or vitana_id', async () => {
+    const inserts: CapturedInsert[] = [];
+    // Receiver EXISTS but is a completely different person from the
+    // label the user spoke. Voice should refuse to send rather than
+    // deliver the message to the wrong inbox.
+    const sb = makeStubSupabase({
+      inserts,
+      appUsers: {
+        [SENDER_UUID]: {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          display_name: 'Test Sender',
+          vitana_id: 'vit_send',
+        },
+        [RECIPIENT_UUID]: {
+          user_id: RECIPIENT_UUID,
+          tenant_id: 'tenant-1',
+          display_name: 'Completely Different Name',
+          vitana_id: 'totally_unrelated',
+        },
+      },
+    });
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok === false) {
+      expect(result.error).toMatch(/not sure I got the right person/);
+    }
+    expect(inserts).toHaveLength(0); // no message sent to wrong person
+
+    const failEvents = emitSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e: { type?: string }) => e.type === 'voice.chat_message.send_failed');
+    const reasons = failEvents.map((e: { payload: { reason: string } }) => e.payload.reason);
+    expect(reasons).toContain('label_id_mismatch');
+  });
+
+  // ─── Issue #3: push notification mirrors chat.ts REST path ─────────────
+  test('successful send dispatches push notification with correct payload', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'msg-uuid-42' });
+
+    // Spy on notifyUserAsync — it's dynamically imported inside the tool.
+    const notifyService = await import('../src/services/notification-service');
+    const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+    try {
+      const result = await tool_send_chat_message(
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Good evening' },
+        {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          role: 'user',
+          vitana_id: 'vit_send',
+          session_id: REAL_UUID_A,
+        },
+        sb,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(notifySpy).toHaveBeenCalledTimes(1);
+      const [recvId, tenantId, type, payload] = notifySpy.mock.calls[0];
+      expect(recvId).toBe(RECIPIENT_UUID);
+      expect(tenantId).toBe('tenant-1');
+      expect(type).toBe('new_chat_message');
+      expect(payload).toMatchObject({
+        title: 'Test Sender',
+        body: 'Good evening',
+        data: {
+          type: 'new_chat_message',
+          sender_id: SENDER_UUID,
+          sender_name: 'Test Sender',
+          message_id: 'msg-uuid-42',
+          thread_id: SENDER_UUID,
+          url: `/inbox?thread=${SENDER_UUID}&context=global`,
+          source: 'voice',
+        },
+      });
+    } finally {
+      notifySpy.mockRestore();
+    }
+  });
+
+  test('notification body is truncated to 100 chars (with ellipsis at 97)', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'm1' });
+
+    const notifyService = await import('../src/services/notification-service');
+    const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+    const longBody = 'X'.repeat(150);
+    try {
+      await tool_send_chat_message(
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: longBody },
+        {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          role: 'user',
+          vitana_id: 'vit_send',
+          session_id: REAL_UUID_A,
+        },
+        sb,
+      );
+
+      const [, , , payload] = notifySpy.mock.calls[0];
+      expect((payload as { body: string }).body).toBe('X'.repeat(97) + '...');
+      expect((payload as { body: string }).body.length).toBe(100);
+    } finally {
+      notifySpy.mockRestore();
+    }
+  });
+
+  // ─── Vitana bot recipient: no push, matches chat.ts behavior ───────────
+  test('Vitana bot recipient is excluded from push notification', async () => {
+    const inserts: CapturedInsert[] = [];
+    const { VITANA_BOT_USER_ID } = await import('../src/lib/vitana-bot');
+    const sb = makeStubSupabase({
+      inserts,
+      appUsers: {
+        [SENDER_UUID]: {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          display_name: 'Test Sender',
+          vitana_id: 'vit_send',
+        },
+        [VITANA_BOT_USER_ID]: {
+          user_id: VITANA_BOT_USER_ID,
+          tenant_id: 'tenant-1',
+          display_name: 'Vitana',
+          vitana_id: 'vitana',
+        },
+      },
+      insertedId: 'm-bot',
+    });
+
+    const notifyService = await import('../src/services/notification-service');
+    const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+    try {
+      const result = await tool_send_chat_message(
+        { recipient_user_id: VITANA_BOT_USER_ID, recipient_label: 'Vitana', body: 'hi' },
+        {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          role: 'user',
+          vitana_id: 'vit_send',
+          session_id: REAL_UUID_A,
+        },
+        sb,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(notifySpy).not.toHaveBeenCalled(); // Vitana bot bypass
+    } finally {
+      notifySpy.mockRestore();
+    }
   });
 });
