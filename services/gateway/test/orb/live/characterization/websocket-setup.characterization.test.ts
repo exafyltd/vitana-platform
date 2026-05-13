@@ -18,10 +18,10 @@ import * as path from 'path';
 const ORB_LIVE_PATH = path.resolve(__dirname, '../../../../src/routes/orb-live.ts');
 
 let setupBody: string;
-let registryDecl: string;
+let source: string;
 
 beforeAll(() => {
-  const source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
+  source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
 
   const setupStart = source.indexOf('export function initializeOrbWebSocket');
   expect(setupStart).toBeGreaterThan(0);
@@ -30,10 +30,6 @@ beforeAll(() => {
   setupBody = nextExport >= 0
     ? source.slice(setupStart, setupStart + 1 + nextExport)
     : source.slice(setupStart);
-
-  const registryStart = source.indexOf('wsClientSessions = new Map');
-  expect(registryStart).toBeGreaterThan(0);
-  registryDecl = source.slice(Math.max(0, registryStart - 100), registryStart + 200);
 });
 
 describe('A9.1 characterization: initializeOrbWebSocket delegates to the transport module', () => {
@@ -69,11 +65,18 @@ describe('A9.1 characterization: initializeOrbWebSocket delegates to the transpo
   });
 });
 
-describe('A9.1 characterization: per-session registry remains in orb-live.ts', () => {
-  it('declares wsClientSessions as a Map', () => {
-    // The Map type matters — the cleanup interval iterates over it.
-    // Per-session state moves to orb/live/session/* under A8, NOT A9.1.
-    expect(registryDecl).toMatch(/wsClientSessions\s*=\s*new\s+Map\s*</);
+describe('A8.1 update: per-session registry now lives in orb/live/session/live-session-registry.ts', () => {
+  it('orb-live.ts imports wsClientSessions from the registry module (not a local declaration)', () => {
+    expect(source).toMatch(
+      /from\s*['"`][^'"`]*\/orb\/live\/session\/live-session-registry['"`]/,
+    );
+    expect(source).toMatch(/\bwsClientSessions\b/);
+  });
+
+  it('orb-live.ts no longer declares wsClientSessions = new Map(...) locally', () => {
+    expect(source).not.toMatch(
+      /^\s*(const|let|var)\s+wsClientSessions\s*=\s*new\s+Map\s*</m,
+    );
   });
 });
 
