@@ -1,6 +1,6 @@
 /**
  * VTID-02941 (B0b-min) + VTID-02950 (F2) + VTID-02954 (F3) +
- * VTID-02955 (B5) — compileAssistantDecisionContext.
+ * VTID-02955 (B5) + VTID-02962 (B6) — compileAssistantDecisionContext.
  *
  * Acceptance:
  *   #1 — empty providers produce a valid AssistantDecisionContext with
@@ -20,6 +20,7 @@ import { compileAssistantDecisionContext } from '../../../src/orb/context/compil
 import type {
   DecisionConceptMastery,
   DecisionContinuity,
+  DecisionInteractionStyle,
   DecisionJourneyStage,
   DecisionPillarMomentum,
 } from '../../../src/orb/context/types';
@@ -78,8 +79,17 @@ const stubPillarMomentum: DecisionPillarMomentum = {
   warnings: ['low_pillar_confidence', 'no_recent_pillar_data'],
 };
 
+const stubInteractionStyle: DecisionInteractionStyle = {
+  preferred_response_style: 'unknown',
+  interaction_pace: 'unknown',
+  tone_preference: 'unknown',
+  explanation_depth_hint: 'normal',
+  confidence_bucket: 'unknown',
+  warnings: ['no_recorded_preferences', 'low_signal_confidence'],
+};
+
 describe('compileAssistantDecisionContext', () => {
-  describe('happy path with all four provider overrides', () => {
+  describe('happy path with all five provider overrides', () => {
     it('attaches each provider output to its field', async () => {
       const out = await compileAssistantDecisionContext({
         userId: 'u',
@@ -89,16 +99,19 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => stubConceptMastery,
           journeyStage: async () => stubJourneyStage,
           pillarMomentum: async () => stubPillarMomentum,
+          interactionStyle: async () => stubInteractionStyle,
         },
       });
       expect(out.continuity).toEqual(stubContinuity);
       expect(out.concept_mastery).toEqual(stubConceptMastery);
       expect(out.journey_stage).toEqual(stubJourneyStage);
       expect(out.pillar_momentum).toEqual(stubPillarMomentum);
+      expect(out.interaction_style).toEqual(stubInteractionStyle);
       expect(out.source_health.continuity.ok).toBe(true);
       expect(out.source_health.concept_mastery.ok).toBe(true);
       expect(out.source_health.journey_stage.ok).toBe(true);
       expect(out.source_health.pillar_momentum.ok).toBe(true);
+      expect(out.source_health.interaction_style.ok).toBe(true);
     });
   });
 
@@ -114,6 +127,7 @@ describe('compileAssistantDecisionContext', () => {
           pillarMomentum: async () => {
             throw new Error('pillar_boom');
           },
+          interactionStyle: async () => stubInteractionStyle,
         },
       });
       expect(out.pillar_momentum).toBeNull();
@@ -122,9 +136,31 @@ describe('compileAssistantDecisionContext', () => {
       expect(out.continuity).toEqual(stubContinuity);
       expect(out.concept_mastery).toEqual(stubConceptMastery);
       expect(out.journey_stage).toEqual(stubJourneyStage);
+      expect(out.interaction_style).toEqual(stubInteractionStyle);
     });
 
-    it('all four providers throw → all null but no crash', async () => {
+    it('interaction_style throws → null + others still flow (acceptance: B6)', async () => {
+      const out = await compileAssistantDecisionContext({
+        userId: 'u',
+        tenantId: 't',
+        providers: {
+          continuity: async () => stubContinuity,
+          conceptMastery: async () => stubConceptMastery,
+          journeyStage: async () => stubJourneyStage,
+          pillarMomentum: async () => stubPillarMomentum,
+          interactionStyle: async () => { throw new Error('interaction_boom'); },
+        },
+      });
+      expect(out.interaction_style).toBeNull();
+      expect(out.source_health.interaction_style.ok).toBe(false);
+      expect(out.source_health.interaction_style.reason).toBe('interaction_boom');
+      expect(out.continuity).toEqual(stubContinuity);
+      expect(out.concept_mastery).toEqual(stubConceptMastery);
+      expect(out.journey_stage).toEqual(stubJourneyStage);
+      expect(out.pillar_momentum).toEqual(stubPillarMomentum);
+    });
+
+    it('all five providers throw → all null but no crash', async () => {
       const out = await compileAssistantDecisionContext({
         userId: 'u',
         tenantId: 't',
@@ -133,16 +169,19 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => { throw new Error('m_boom'); },
           journeyStage: async () => { throw new Error('j_boom'); },
           pillarMomentum: async () => { throw new Error('p_boom'); },
+          interactionStyle: async () => { throw new Error('i_boom'); },
         },
       });
       expect(out.continuity).toBeNull();
       expect(out.concept_mastery).toBeNull();
       expect(out.journey_stage).toBeNull();
       expect(out.pillar_momentum).toBeNull();
+      expect(out.interaction_style).toBeNull();
       expect(out.source_health.continuity.reason).toBe('c_boom');
       expect(out.source_health.concept_mastery.reason).toBe('m_boom');
       expect(out.source_health.journey_stage.reason).toBe('j_boom');
       expect(out.source_health.pillar_momentum.reason).toBe('p_boom');
+      expect(out.source_health.interaction_style.reason).toBe('i_boom');
     });
 
     it('one provider throws does not block the rest (continuity case)', async () => {
@@ -154,17 +193,19 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => stubConceptMastery,
           journeyStage: async () => stubJourneyStage,
           pillarMomentum: async () => stubPillarMomentum,
+          interactionStyle: async () => stubInteractionStyle,
         },
       });
       expect(out.continuity).toBeNull();
       expect(out.concept_mastery).toEqual(stubConceptMastery);
       expect(out.journey_stage).toEqual(stubJourneyStage);
       expect(out.pillar_momentum).toEqual(stubPillarMomentum);
+      expect(out.interaction_style).toEqual(stubInteractionStyle);
     });
   });
 
   describe('provider returns null (acceptance #1)', () => {
-    it('attaches null + ok:true for all four (provider deliberately suppressed)', async () => {
+    it('attaches null + ok:true for all five (provider deliberately suppressed)', async () => {
       const out = await compileAssistantDecisionContext({
         userId: 'u',
         tenantId: 't',
@@ -173,21 +214,24 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => null,
           journeyStage: async () => null,
           pillarMomentum: async () => null,
+          interactionStyle: async () => null,
         },
       });
       expect(out.continuity).toBeNull();
       expect(out.concept_mastery).toBeNull();
       expect(out.journey_stage).toBeNull();
       expect(out.pillar_momentum).toBeNull();
+      expect(out.interaction_style).toBeNull();
       expect(out.source_health.continuity.ok).toBe(true);
       expect(out.source_health.concept_mastery.ok).toBe(true);
       expect(out.source_health.journey_stage.ok).toBe(true);
       expect(out.source_health.pillar_momentum.ok).toBe(true);
+      expect(out.source_health.interaction_style.ok).toBe(true);
     });
   });
 
   describe('always returns a typed shape', () => {
-    it('all four source_health entries are always present', async () => {
+    it('all five source_health entries are always present', async () => {
       const out = await compileAssistantDecisionContext({
         userId: 'u',
         tenantId: 't',
@@ -196,6 +240,7 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => null,
           journeyStage: async () => null,
           pillarMomentum: async () => null,
+          interactionStyle: async () => null,
         },
       });
       expect(out.source_health).toBeDefined();
@@ -203,9 +248,10 @@ describe('compileAssistantDecisionContext', () => {
       expect(out.source_health.concept_mastery).toBeDefined();
       expect(out.source_health.journey_stage).toBeDefined();
       expect(out.source_health.pillar_momentum).toBeDefined();
+      expect(out.source_health.interaction_style).toBeDefined();
     });
 
-    it('result has exactly five top-level keys (no leakage, no extras)', async () => {
+    it('result has exactly six top-level keys (no leakage, no extras)', async () => {
       const out = await compileAssistantDecisionContext({
         userId: 'u',
         tenantId: 't',
@@ -214,12 +260,14 @@ describe('compileAssistantDecisionContext', () => {
           conceptMastery: async () => null,
           journeyStage: async () => null,
           pillarMomentum: async () => null,
+          interactionStyle: async () => null,
         },
       });
       const keys = Object.keys(out).sort();
       expect(keys).toEqual([
         'concept_mastery',
         'continuity',
+        'interaction_style',
         'journey_stage',
         'pillar_momentum',
         'source_health',
@@ -228,14 +276,14 @@ describe('compileAssistantDecisionContext', () => {
   });
 
   describe('parallel execution', () => {
-    it('runs all four providers concurrently (slowest determines total time)', async () => {
+    it('runs all five providers concurrently (slowest determines total time)', async () => {
       const order: string[] = [];
       const out = await compileAssistantDecisionContext({
         userId: 'u',
         tenantId: 't',
         providers: {
           continuity: async () => {
-            await new Promise(r => setTimeout(r, 20));
+            await new Promise(r => setTimeout(r, 25));
             order.push('continuity');
             return stubContinuity;
           },
@@ -254,15 +302,22 @@ describe('compileAssistantDecisionContext', () => {
             order.push('pillar');
             return stubPillarMomentum;
           },
+          interactionStyle: async () => {
+            await new Promise(r => setTimeout(r, 20));
+            order.push('interaction');
+            return stubInteractionStyle;
+          },
         },
       });
-      // Order: concept (5ms) → journey (10ms) → pillar (15ms) → continuity (20ms),
-      // proving all four providers ran in parallel.
-      expect(order).toEqual(['concept', 'journey', 'pillar', 'continuity']);
+      // Order: concept (5ms) → journey (10ms) → pillar (15ms) →
+      // interaction (20ms) → continuity (25ms), proving all five
+      // providers ran in parallel.
+      expect(order).toEqual(['concept', 'journey', 'pillar', 'interaction', 'continuity']);
       expect(out.continuity).toEqual(stubContinuity);
       expect(out.concept_mastery).toEqual(stubConceptMastery);
       expect(out.journey_stage).toEqual(stubJourneyStage);
       expect(out.pillar_momentum).toEqual(stubPillarMomentum);
+      expect(out.interaction_style).toEqual(stubInteractionStyle);
     });
   });
 });

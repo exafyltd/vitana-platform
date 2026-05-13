@@ -3,6 +3,7 @@
  * VTID-02950 (F2)     — adds conceptMastery provider.
  * VTID-02954 (F3)     — adds journeyStage provider.
  * VTID-02955 (B5)     — adds pillarMomentum provider.
+ * VTID-02962 (B6)     — adds interactionStyle provider.
  *
  * The orchestrator. Calls each registered provider, collects their
  * distilled output, and produces ONE `AssistantDecisionContext` the
@@ -27,6 +28,8 @@ import { defaultJourneyStageFetcher } from '../../services/journey-stage/journey
 import { compileJourneyStageContext } from '../../services/journey-stage/compile-journey-stage-context';
 import { defaultPillarMomentumFetcher } from '../../services/pillar-momentum/pillar-momentum-fetcher';
 import { compilePillarMomentumContext } from '../../services/pillar-momentum/compile-pillar-momentum-context';
+import { defaultInteractionStyleFetcher } from '../../services/interaction-style/interaction-style-fetcher';
+import { compileInteractionStyleContext } from '../../services/interaction-style/compile-interaction-style-context';
 import {
   distillContinuityForDecision,
 } from './providers/continuity-decision-provider';
@@ -39,10 +42,14 @@ import {
 import {
   distillPillarMomentumForDecision,
 } from './providers/pillar-momentum-decision-provider';
+import {
+  distillInteractionStyleForDecision,
+} from './providers/interaction-style-decision-provider';
 import type {
   AssistantDecisionContext,
   DecisionConceptMastery,
   DecisionContinuity,
+  DecisionInteractionStyle,
   DecisionJourneyStage,
   DecisionPillarMomentum,
 } from './types';
@@ -61,6 +68,7 @@ export interface CompileAssistantDecisionContextInputs {
     conceptMastery: () => Promise<DecisionConceptMastery | null>;
     journeyStage: () => Promise<DecisionJourneyStage | null>;
     pillarMomentum: () => Promise<DecisionPillarMomentum | null>;
+    interactionStyle: () => Promise<DecisionInteractionStyle | null>;
   }>;
   /**
    * Source-health reporter override for tests — when the provider
@@ -72,17 +80,25 @@ export interface CompileAssistantDecisionContextInputs {
     conceptMastery: string;
     journeyStage: string;
     pillarMomentum: string;
+    interactionStyle: string;
   }>;
 }
 
 export async function compileAssistantDecisionContext(
   input: CompileAssistantDecisionContextInputs,
 ): Promise<AssistantDecisionContext> {
-  const [continuityRun, conceptMasteryRun, journeyStageRun, pillarMomentumRun] = await Promise.all([
+  const [
+    continuityRun,
+    conceptMasteryRun,
+    journeyStageRun,
+    pillarMomentumRun,
+    interactionStyleRun,
+  ] = await Promise.all([
     runContinuityProvider(input),
     runConceptMasteryProvider(input),
     runJourneyStageProvider(input),
     runPillarMomentumProvider(input),
+    runInteractionStyleProvider(input),
   ]);
 
   return {
@@ -90,11 +106,13 @@ export async function compileAssistantDecisionContext(
     concept_mastery: conceptMasteryRun.value,
     journey_stage: journeyStageRun.value,
     pillar_momentum: pillarMomentumRun.value,
+    interaction_style: interactionStyleRun.value,
     source_health: {
       continuity: continuityRun.health,
       concept_mastery: conceptMasteryRun.health,
       journey_stage: journeyStageRun.health,
       pillar_momentum: pillarMomentumRun.health,
+      interaction_style: interactionStyleRun.health,
     },
   };
 }
@@ -289,6 +307,42 @@ async function runPillarMomentumProvider(
     return { value: decisionView, health: { ok: true } };
   } catch (e) {
     const reason = input.reasons?.pillarMomentum ?? (e as Error).message;
+    return { value: null, health: { ok: false, reason } };
+  }
+}
+
+async function runInteractionStyleProvider(
+  input: CompileAssistantDecisionContextInputs,
+): Promise<ProviderRun<DecisionInteractionStyle>> {
+  const override = input.providers?.interactionStyle;
+  if (override) {
+    try {
+      const value = await override();
+      return { value, health: { ok: true } };
+    } catch (e) {
+      return {
+        value: null,
+        health: { ok: false, reason: (e as Error).message },
+      };
+    }
+  }
+
+  try {
+    const fetchResult = await defaultInteractionStyleFetcher.fetchInteractionStyleRow({
+      tenantId: input.tenantId,
+      userId: input.userId,
+    });
+
+    if (!fetchResult.ok) {
+      const reason = fetchResult.reason ?? 'interaction_style_unavailable';
+      return { value: null, health: { ok: false, reason } };
+    }
+
+    const interactionStyle = compileInteractionStyleContext({ fetchResult });
+    const decisionView = distillInteractionStyleForDecision({ interactionStyle });
+    return { value: decisionView, health: { ok: true } };
+  } catch (e) {
+    const reason = input.reasons?.interactionStyle ?? (e as Error).message;
     return { value: null, health: { ok: false, reason } };
   }
 }

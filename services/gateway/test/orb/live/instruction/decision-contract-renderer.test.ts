@@ -49,11 +49,13 @@ function emptyContext(over: Partial<AssistantDecisionContext> = {}): AssistantDe
     concept_mastery: null,
     journey_stage: null,
     pillar_momentum: null,
+    interaction_style: null,
     source_health: {
       continuity: { ok: true },
       concept_mastery: { ok: true },
       journey_stage: { ok: true },
       pillar_momentum: { ok: true },
+      interaction_style: { ok: true },
     },
     ...over,
   };
@@ -109,6 +111,7 @@ describe('B0b-min — decision-contract-renderer', () => {
             concept_mastery: { ok: true },
             journey_stage: { ok: true },
             pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
           },
         }),
       );
@@ -287,6 +290,7 @@ describe('B0b-min — decision-contract-renderer', () => {
             concept_mastery: { ok: false, reason: 'supabase_unconfigured' },
             journey_stage: { ok: true },
             pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
           },
         }),
       );
@@ -503,6 +507,7 @@ describe('B0b-min — decision-contract-renderer', () => {
             concept_mastery: { ok: true },
             journey_stage: { ok: false, reason: 'supabase_unconfigured' },
             pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
           },
         }),
       );
@@ -700,6 +705,7 @@ describe('B0b-min — decision-contract-renderer', () => {
             concept_mastery: { ok: true },
             journey_stage: { ok: true },
             pillar_momentum: { ok: false, reason: 'supabase_unconfigured' },
+            interaction_style: { ok: true },
           },
         }),
       );

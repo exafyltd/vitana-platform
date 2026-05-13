@@ -3,6 +3,7 @@
  * VTID-02950 (F2)     — adds concept-mastery section.
  * VTID-02954 (F3)     — adds journey-stage section.
  * VTID-02955 (B5)     — adds pillar-momentum section.
+ * VTID-02962 (B6)     — adds interaction-style section.
  *
  * Single responsibility: take an `AssistantDecisionContext` and
  * produce a prompt section string the static system instruction can
@@ -15,7 +16,7 @@
  *   - touch Supabase directly
  *   - import from `services/continuity/*`, `services/concept-mastery/*`,
  *     `services/journey-stage/*`, `services/pillar-momentum/*`,
- *     or any compiler module
+ *     `services/interaction-style/*`, or any compiler module
  *
  * Type-level enforcement: the only argument is `AssistantDecisionContext`.
  * A test asserts the renderer source file contains no `import` from
@@ -24,6 +25,10 @@
  * NEVER carries medical interpretation, diagnoses, or treatment
  * advice through the pillar-momentum section. Pillars are coaching
  * axes, not clinical categories.
+ *
+ * NEVER carries free-text psychological summaries, diagnostic-feeling
+ * personality labels, or mental-health inference through the
+ * interaction-style section. Preferences are coarse enums only.
  *
  * Empty / degraded handling:
  *   - `decision.<field> === null` → no section for that field is emitted.
@@ -38,6 +43,7 @@ import type {
   AssistantDecisionContext,
   DecisionConceptMastery,
   DecisionContinuity,
+  DecisionInteractionStyle,
   DecisionJourneyStage,
   DecisionPillarMomentum,
 } from '../../context/types';
@@ -109,6 +115,18 @@ export function renderDecisionContract(
   } else if (pillarHealth && pillarHealth.ok === false) {
     lines.push(
       `[pillar_momentum: source degraded — ${pillarHealth.reason ?? 'unknown_reason'}]`,
+    );
+  }
+
+  // ---- interaction style (B6) ----
+  const interactionSection = renderInteractionStyle(decision.interaction_style);
+  const interactionHealth = decision.source_health.interaction_style;
+
+  if (interactionSection) {
+    lines.push(interactionSection);
+  } else if (interactionHealth && interactionHealth.ok === false) {
+    lines.push(
+      `[interaction_style: source degraded — ${interactionHealth.reason ?? 'unknown_reason'}]`,
     );
   }
 
@@ -291,4 +309,48 @@ function renderPillarMomentum(pm: DecisionPillarMomentum | null): string {
   if (!hasAnyContent && pm.warnings.length === 0) return '';
 
   return ['Pillar momentum:', ...lines].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Interaction Style sub-section (B6)
+// ---------------------------------------------------------------------------
+
+function renderInteractionStyle(is: DecisionInteractionStyle | null): string {
+  if (!is) return '';
+
+  // Compact line list — pure enums, no raw numbers, no timestamps.
+  // 'unknown' enums are deliberately omitted so the section doesn't
+  // pad the prompt with no-information rows.
+  const lines: string[] = [];
+
+  if (is.preferred_response_style !== 'unknown') {
+    lines.push(`  - response style: ${is.preferred_response_style}`);
+  }
+  if (is.interaction_pace !== 'unknown') {
+    lines.push(`  - pace: ${is.interaction_pace}`);
+  }
+  if (is.tone_preference !== 'unknown') {
+    lines.push(`  - tone: ${is.tone_preference}`);
+  }
+  // explanation_depth_hint always has a usable value ('normal' is the
+  // no-signal default), so it's always informative.
+  lines.push(`  - explanation depth: ${is.explanation_depth_hint}`);
+  lines.push(`  - confidence: ${is.confidence_bucket}`);
+
+  if (is.warnings.length > 0) {
+    lines.push(`  - warnings: ${is.warnings.join(', ')}`);
+  }
+
+  // If only the always-on lines (depth + confidence) plus warnings
+  // remain AND warnings include 'no_recorded_preferences', the section
+  // adds no real signal — suppress it to keep the prompt tight.
+  const hasPreferenceContent =
+    is.preferred_response_style !== 'unknown' ||
+    is.interaction_pace !== 'unknown' ||
+    is.tone_preference !== 'unknown';
+  if (!hasPreferenceContent && is.confidence_bucket === 'unknown') {
+    return '';
+  }
+
+  return ['Interaction style:', ...lines].join('\n');
 }

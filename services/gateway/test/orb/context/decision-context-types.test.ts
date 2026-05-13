@@ -258,4 +258,93 @@ describe('B0b-min — AssistantDecisionContext type guards', () => {
       expect(enumBody.toLowerCase()).not.toContain(word);
     }
   });
+
+  // B6: interaction-style type guards.
+  describe('forbidden raw fields are NOT declared in DecisionInteractionStyle', () => {
+    const forbiddenInteractionFields = [
+      'last_updated_at',
+      'last_seen_at',
+      'updated_at',
+      'created_at',
+      'raw_messages',
+      'transcript',
+      'route_history',
+      'behavioral_history',
+      'profile_payload',
+      'psychological_summary',
+      'personality',
+    ];
+
+    it.each(forbiddenInteractionFields)(
+      'does not declare %s in DecisionInteractionStyle',
+      (field) => {
+        const ifaceMatch = typesSrc.match(
+          /export interface DecisionInteractionStyle\s*\{([\s\S]*?)\n\}/,
+        );
+        expect(ifaceMatch).toBeTruthy();
+        const ifaceBody = ifaceMatch![1];
+        const decl = new RegExp(`\\b${field}\\s*\\??:`, 'g');
+        expect(ifaceBody).not.toMatch(decl);
+      },
+    );
+
+    it('declares interaction-style fields as bucketed enums, NEVER raw numbers', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionInteractionStyle\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      expect(ifaceBody).not.toMatch(/:\s*number/);
+      expect(ifaceBody).toMatch(/preferred_response_style:\s*PreferredResponseStyle/);
+      expect(ifaceBody).toMatch(/interaction_pace:\s*InteractionPace/);
+      expect(ifaceBody).toMatch(/tone_preference:\s*TonePreference/);
+      expect(ifaceBody).toMatch(/explanation_depth_hint:\s*InteractionExplanationDepth/);
+      expect(ifaceBody).toMatch(/confidence_bucket:\s*InteractionStyleConfidenceBucket/);
+    });
+
+    it('warnings are an enum-only ReadonlyArray', () => {
+      const ifaceMatch = typesSrc.match(
+        /export interface DecisionInteractionStyle\s*\{([\s\S]*?)\n\}/,
+      );
+      const ifaceBody = ifaceMatch![1];
+      expect(ifaceBody).toMatch(/warnings:\s*ReadonlyArray<InteractionStyleWarning>/);
+      expect(ifaceBody).not.toMatch(/warnings:\s*ReadonlyArray<string>/);
+      expect(ifaceBody).not.toMatch(/warnings:\s*string\[\]/);
+    });
+  });
+
+  it('AssistantDecisionContext.interaction_style is optional null', () => {
+    expect(typesSrc).toMatch(/interaction_style:\s*DecisionInteractionStyle\s*\|\s*null/);
+  });
+
+  it('DecisionSourceHealth declares interaction_style health entry', () => {
+    expect(typesSrc).toMatch(/interaction_style:\s*\{\s*ok:\s*boolean/);
+  });
+
+  it('InteractionStyleWarning enum does NOT include diagnostic / medical labels', () => {
+    const enumMatch = typesSrc.match(/export type InteractionStyleWarning\s*=([\s\S]*?);/);
+    expect(enumMatch).toBeTruthy();
+    const enumBody = enumMatch![1];
+    const banned = [
+      'diagnos', 'symptom', 'disease', 'illness', 'treatment',
+      'prescription', 'medication', 'clinical', 'anxious', 'depress',
+      'avoidant', 'narcissist', 'borderline', 'bipolar', 'mania',
+      'trauma', 'addict',
+    ];
+    for (const word of banned) {
+      expect(enumBody.toLowerCase()).not.toContain(word);
+    }
+  });
+
+  it('TonePreference enum does NOT include diagnostic personality labels', () => {
+    const enumMatch = typesSrc.match(/export type TonePreference\s*=([\s\S]*?);/);
+    expect(enumMatch).toBeTruthy();
+    const enumBody = enumMatch![1];
+    const banned = [
+      'anxious', 'depress', 'avoidant', 'narcissist',
+      'borderline', 'bipolar', 'paranoid',
+    ];
+    for (const word of banned) {
+      expect(enumBody.toLowerCase()).not.toContain(word);
+    }
+  });
 });
