@@ -5532,16 +5532,10 @@ async function connectToLiveAPI(
     throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
   }
 
-  // Get access token
-  const accessToken = await getAccessToken();
-  console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
-
-  // Build WebSocket URL for Vertex AI Live API
-  // VTID-01222: Correct endpoint per Google documentation
-  // https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/intro_multimodal_live_api.ipynb
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
-
-  console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
+  // A8.3b.2 (VTID-02972): the legacy raw-WebSocket scaffolding is gone.
+  // `VertexLiveClient.connect()` owns the access-token fetch, the WSS URL
+  // construction, the headers attach, and the open-handshake. We only need
+  // to log what we're about to ask it to do.
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
 
@@ -5794,9 +5788,8 @@ async function connectToLiveAPI(
         responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
         vadSilenceMs: session.vadSilenceMs,
         systemInstruction: 'overridden',
-        // Reuse the already-fetched OAuth token for this connect; the
-        // builder type expects a `() => Promise<string>` shape.
-        getAccessToken: async () => accessToken,
+        // A8.3b.2: VertexLiveClient.connect() invokes this directly.
+        getAccessToken,
         connectTimeoutMs: 15000,
         customSetupMessage: buildOrbVertexSetupEnvelope,
       });
