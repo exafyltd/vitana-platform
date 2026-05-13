@@ -78,7 +78,14 @@ async function supaGet<T>(s: SupaConfig, path: string): Promise<{ ok: boolean; d
 // Types (normalized feed item)
 // =============================================================================
 
-export type PulseSource = 'dev_autopilot_finding' | 'self_healing' | 'autonomous_execution';
+export type PulseSource =
+  | 'dev_autopilot_finding'
+  | 'self_healing'
+  | 'autonomous_execution'
+  // VTID-02956 (PR-L1.5): failing test contracts surface here so Pulse
+  // becomes the single "what needs my attention" view across detectors,
+  // self-healing, executions, AND runtime contract regressions.
+  | 'test_contract_failure';
 export type PulseSeverity = 'critical' | 'warning' | 'info';
 export type PulseAction =
   | 'approve'            // dev_autopilot finding → approve-auto-execute
@@ -89,7 +96,9 @@ export type PulseAction =
   | 'apply_heal'         // self_healing → apply fix spec
   | 'discard_heal'       // self_healing → mark won't-fix
   | 'cancel'             // autonomous_execution → cancel during cooldown
-  | 'view_trace';        // autonomous_execution → open lineage
+  | 'view_trace'         // autonomous_execution → open lineage
+  | 'rerun_contract'     // test_contract_failure → manually re-run the probe
+  | 'open_contract';     // test_contract_failure → open contract panel
 
 export interface PulseItem {
   id: string;                          // stable across reloads: `${source}:${row.id}`
@@ -144,6 +153,21 @@ interface ExecRow {
   self_healing_vtid: string | null;
   created_at: string;
   updated_at: string | null;
+}
+
+// VTID-02956 (PR-L1.5): Failing test contracts row.
+interface ContractRow {
+  id: string;
+  capability: string;
+  service: string;
+  environment: string;
+  target_endpoint: string | null;
+  target_file: string | null;
+  owner: string;
+  status: 'fail' | 'quarantined';
+  last_status: string | null;       // previous status — for regression detection
+  last_run_at: string | null;
+  last_failure_signature: string | null;
 }
 
 // =============================================================================
@@ -216,6 +240,44 @@ function normalizeHeal(row: HealRow): PulseItem {
       failure_class: row.failure_class,
       attempt_number: row.attempt_number,
       confidence,
+    },
+  };
+}
+
+// VTID-02956 (PR-L1.5): a failing or quarantined test contract is a
+// runtime regression — it's the most actionable signal Pulse can carry
+// because the assertion is precise (the contract's expected_behavior
+// states exactly what "healthy" means). A `regressed: pass→fail`
+// transition is treated as critical; a still-failing or quarantined
+// contract is warning (already on the queue, no new news).
+function normalizeContract(row: ContractRow): PulseItem {
+  const regressed = row.status === 'fail' && row.last_status === 'pass';
+  const severity: PulseSeverity = row.status === 'quarantined' || regressed ? 'critical' : 'warning';
+  const ts = row.last_run_at || new Date().toISOString();
+  const headlineSuffix = regressed ? ' (regressed)' : row.status === 'quarantined' ? ' (quarantined)' : '';
+  return {
+    id: `test_contract_failure:${row.id}`,
+    source: 'test_contract_failure',
+    title: `Contract failing: ${row.capability}${headlineSuffix}`,
+    description: row.last_failure_signature
+      || `${row.target_endpoint || row.target_file || row.service} no longer satisfies its test contract.`,
+    severity,
+    created_at: ts,
+    age_minutes: ageMinutes(ts),
+    actions: ['rerun_contract', 'open_contract', 'investigate'],
+    source_url: `/command-hub/voice/test-contracts/?capability=${encodeURIComponent(row.capability)}`,
+    metadata: {
+      contract_id: row.id,
+      capability: row.capability,
+      service: row.service,
+      environment: row.environment,
+      target_endpoint: row.target_endpoint,
+      target_file: row.target_file,
+      owner: row.owner,
+      status: row.status,
+      previous_status: row.last_status,
+      regressed,
+      failure_signature: row.last_failure_signature,
     },
   };
 }
@@ -294,6 +356,16 @@ async function fetchExecutions(s: SupaConfig, limit: number): Promise<ExecRow[]>
   return r.ok && r.data ? r.data : [];
 }
 
+async function fetchFailingContracts(s: SupaConfig, limit: number): Promise<ContractRow[]> {
+  const r = await supaGet<ContractRow[]>(
+    s,
+    `/rest/v1/test_contracts?status=in.(fail,quarantined)` +
+    `&select=id,capability,service,environment,target_endpoint,target_file,owner,status,last_status,last_run_at,last_failure_signature` +
+    `&order=last_run_at.desc.nullslast&limit=${limit}`,
+  );
+  return r.ok && r.data ? r.data : [];
+}
+
 // =============================================================================
 // Pure aggregator — unit-testable (no network)
 // =============================================================================
@@ -302,11 +374,13 @@ export function aggregatePulse(
   findings: FindingRow[],
   heals: HealRow[],
   executions: ExecRow[],
+  contracts: ContractRow[] = [],
 ): PulseItem[] {
   const items = [
     ...findings.map(normalizeFinding),
     ...heals.map(normalizeHeal),
     ...executions.map(normalizeExecution),
+    ...contracts.map(normalizeContract),
   ];
   // Sort: critical first, then newer first within same severity.
   const sevRank: Record<PulseSeverity, number> = { critical: 0, warning: 1, info: 2 };
@@ -327,10 +401,10 @@ router.get('/pulse', requireDevRole, async (req: Request, res: Response) => {
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
   const perSourceLimit = Math.min(parseInt(String(req.query.limit || '50'), 10), 200);
-  const filter = String(req.query.filter || 'all') as 'all' | 'findings' | 'heals' | 'executions';
+  const filter = String(req.query.filter || 'all') as 'all' | 'findings' | 'heals' | 'executions' | 'contracts';
 
   try {
-    const [findings, heals, executions] = await Promise.all([
+    const [findings, heals, executions, contracts] = await Promise.all([
       filter === 'all' || filter === 'findings'
         ? fetchFindings(supa, perSourceLimit)
         : Promise.resolve<FindingRow[]>([]),
@@ -340,9 +414,12 @@ router.get('/pulse', requireDevRole, async (req: Request, res: Response) => {
       filter === 'all' || filter === 'executions'
         ? fetchExecutions(supa, perSourceLimit)
         : Promise.resolve<ExecRow[]>([]),
+      filter === 'all' || filter === 'contracts'
+        ? fetchFailingContracts(supa, perSourceLimit)
+        : Promise.resolve<ContractRow[]>([]),
     ]);
 
-    const items = aggregatePulse(findings, heals, executions);
+    const items = aggregatePulse(findings, heals, executions, contracts);
     return res.json({
       ok: true,
       items,
@@ -350,6 +427,7 @@ router.get('/pulse', requireDevRole, async (req: Request, res: Response) => {
         findings: findings.length,
         heals: heals.length,
         executions: executions.length,
+        contracts: contracts.length,
         total: items.length,
         critical: items.filter((i) => i.severity === 'critical').length,
         warning: items.filter((i) => i.severity === 'warning').length,
@@ -369,10 +447,11 @@ router.get('/pulse/counts', requireDevRole, async (_req: Request, res: Response)
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
   try {
-    const [findings, heals, executions] = await Promise.all([
+    const [findings, heals, executions, contracts] = await Promise.all([
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new&select=id&limit=1000`),
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/self_healing_log?outcome=eq.pending&select=id&limit=1000`),
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,ci,merging,deploying,verifying)&select=id&limit=1000`),
+      supaGet<Array<{ id: string }>>(supa, `/rest/v1/test_contracts?status=in.(fail,quarantined)&select=id&limit=1000`),
     ]);
 
     return res.json({
@@ -381,10 +460,12 @@ router.get('/pulse/counts', requireDevRole, async (_req: Request, res: Response)
         findings: findings.data?.length || 0,
         heals: heals.data?.length || 0,
         executions: executions.data?.length || 0,
+        contracts: contracts.data?.length || 0,
         total:
           (findings.data?.length || 0) +
           (heals.data?.length || 0) +
-          (executions.data?.length || 0),
+          (executions.data?.length || 0) +
+          (contracts.data?.length || 0),
       },
     });
   } catch (err) {
