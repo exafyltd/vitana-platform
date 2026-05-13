@@ -1,6 +1,7 @@
 /**
  * VTID-02941 (B0b-min) — decision-contract-renderer.
  * VTID-02950 (F2)     — adds concept-mastery section.
+ * VTID-02954 (F3)     — adds journey-stage section.
  *
  * Single responsibility: take an `AssistantDecisionContext` and
  * produce a prompt section string the static system instruction can
@@ -12,7 +13,7 @@
  *   - read memory tables
  *   - touch Supabase directly
  *   - import from `services/continuity/*`, `services/concept-mastery/*`,
- *     or any compiler module
+ *     `services/journey-stage/*`, or any compiler module
  *
  * Type-level enforcement: the only argument is `AssistantDecisionContext`.
  * A test asserts the renderer source file contains no `import` from
@@ -31,6 +32,7 @@ import type {
   AssistantDecisionContext,
   DecisionConceptMastery,
   DecisionContinuity,
+  DecisionJourneyStage,
 } from '../../context/types';
 
 export interface RenderDecisionContractOptions {
@@ -76,6 +78,18 @@ export function renderDecisionContract(
   } else if (conceptHealth && conceptHealth.ok === false) {
     lines.push(
       `[concept_mastery: source degraded — ${conceptHealth.reason ?? 'unknown_reason'}]`,
+    );
+  }
+
+  // ---- journey stage (F3) ----
+  const journeySection = renderJourneyStage(decision.journey_stage);
+  const journeyHealth = decision.source_health.journey_stage;
+
+  if (journeySection) {
+    lines.push(journeySection);
+  } else if (journeyHealth && journeyHealth.ok === false) {
+    lines.push(
+      `[journey_stage: source degraded — ${journeyHealth.reason ?? 'unknown_reason'}]`,
     );
   }
 
@@ -170,4 +184,41 @@ function renderConceptMastery(cm: DecisionConceptMastery | null): string {
 
   if (subs.length === 0) return '';
   return ['Concept mastery:', ...subs].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Journey Stage sub-section (F3)
+// ---------------------------------------------------------------------------
+
+function renderJourneyStage(js: DecisionJourneyStage | null): string {
+  if (!js) return '';
+
+  // Single compact line covers the most important signals; warnings
+  // and lower-priority buckets append below if present. No raw
+  // numbers, no raw timestamps, no free-text — all enum buckets.
+  const lines: string[] = [
+    `  - stage: ${js.stage}`,
+    `  - tone: ${js.tone_hint}`,
+    `  - explanation depth: ${js.explanation_depth}`,
+  ];
+
+  if (js.vitana_index_tier !== 'unknown') {
+    lines.push(`  - Vitana Index tier: ${js.vitana_index_tier} [${js.tier_tenure}]`);
+  }
+
+  if (js.activity_recency !== 'unknown') {
+    lines.push(`  - activity recency: ${js.activity_recency}`);
+  }
+
+  if (js.usage_volume !== 'none') {
+    lines.push(`  - usage volume: ${js.usage_volume}`);
+  }
+
+  lines.push(`  - confidence: ${js.journey_confidence}`);
+
+  if (js.warnings.length > 0) {
+    lines.push(`  - warnings: ${js.warnings.join(', ')}`);
+  }
+
+  return ['Journey stage:', ...lines].join('\n');
 }

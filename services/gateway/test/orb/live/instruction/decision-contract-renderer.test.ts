@@ -47,9 +47,11 @@ function emptyContext(over: Partial<AssistantDecisionContext> = {}): AssistantDe
   return {
     continuity: null,
     concept_mastery: null,
+    journey_stage: null,
     source_health: {
       continuity: { ok: true },
       concept_mastery: { ok: true },
+      journey_stage: { ok: true },
     },
     ...over,
   };
@@ -103,6 +105,7 @@ describe('B0b-min — decision-contract-renderer', () => {
           source_health: {
             continuity: { ok: false, reason: 'supabase_unconfigured' },
             concept_mastery: { ok: true },
+            journey_stage: { ok: true },
           },
         }),
       );
@@ -279,6 +282,7 @@ describe('B0b-min — decision-contract-renderer', () => {
           source_health: {
             continuity: { ok: true },
             concept_mastery: { ok: false, reason: 'supabase_unconfigured' },
+            journey_stage: { ok: true },
           },
         }),
       );
@@ -462,6 +466,200 @@ describe('B0b-min — decision-contract-renderer', () => {
       expect(continuityIdx).toBeGreaterThan(-1);
       expect(conceptIdx).toBeGreaterThan(-1);
       expect(continuityIdx).toBeLessThan(conceptIdx);
+    });
+  });
+
+  // F3: journey-stage rendering + degraded handling + raw-field ignorance.
+  describe('journey stage (F3)', () => {
+    function makeStage(over: any = {}): any {
+      return {
+        stage: 'first_session',
+        tenure_bucket: 'first_session',
+        explanation_depth: 'deep',
+        tone_hint: 'warm_welcoming',
+        vitana_index_tier: 'unknown',
+        tier_tenure: 'unknown',
+        activity_recency: 'unknown',
+        usage_volume: 'none',
+        journey_confidence: 'low',
+        warnings: [],
+        ...over,
+      };
+    }
+
+    it('returns empty string when all three fields null and all sources healthy', () => {
+      expect(renderDecisionContract(emptyContext())).toBe('');
+    });
+
+    it('emits degraded hint when journey_stage null AND source degraded', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          source_health: {
+            continuity: { ok: true },
+            concept_mastery: { ok: true },
+            journey_stage: { ok: false, reason: 'supabase_unconfigured' },
+          },
+        }),
+      );
+      expect(out).toContain('journey_stage: source degraded');
+      expect(out).toContain('supabase_unconfigured');
+    });
+
+    it('renders stage + tone + depth always (core fields)', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            stage: 'first_week',
+            tenure_bucket: 'first_week',
+            explanation_depth: 'standard',
+            tone_hint: 'collaborative',
+          }),
+        }),
+      );
+      expect(out).toContain('Journey stage:');
+      expect(out).toContain('stage: first_week');
+      expect(out).toContain('tone: collaborative');
+      expect(out).toContain('explanation depth: standard');
+    });
+
+    it('renders Vitana Index tier + tenure when not unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            vitana_index_tier: 'momentum',
+            tier_tenure: 'settled',
+          }),
+        }),
+      );
+      expect(out).toContain('Vitana Index tier: momentum [settled]');
+    });
+
+    it('omits Vitana Index line when tier is unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ vitana_index_tier: 'unknown' }),
+        }),
+      );
+      expect(out).not.toContain('Vitana Index tier');
+    });
+
+    it('renders activity_recency when not unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ activity_recency: 'recent' }),
+        }),
+      );
+      expect(out).toContain('activity recency: recent');
+    });
+
+    it('renders usage_volume when not none', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ usage_volume: 'regular' }),
+        }),
+      );
+      expect(out).toContain('usage volume: regular');
+    });
+
+    it('renders warnings list when non-empty', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            warnings: ['long_inactivity', 'unknown_tier'],
+          }),
+        }),
+      );
+      expect(out).toContain('warnings: long_inactivity, unknown_tier');
+    });
+
+    it('omits warnings line when empty', () => {
+      const out = renderDecisionContract(
+        emptyContext({ journey_stage: makeStage({ warnings: [] }) }),
+      );
+      expect(out).not.toContain('warnings:');
+    });
+
+    it('raw-field ignorance: smuggled raw fields are NOT in output', () => {
+      const sneakyStage = {
+        ...makeStage({ stage: 'established', tenure_bucket: 'established' }),
+        // smuggled raw fields:
+        tenure_days: 365,
+        last_active_date: '2026-05-10',
+        score_total: 712,
+        tier_days_held: 90,
+        usage_days_count: 250,
+        raw_profile_bio: 'user lives in Berlin and likes hiking',
+      };
+      const out = renderDecisionContract(
+        emptyContext({ journey_stage: sneakyStage as any }),
+      );
+      expect(out).not.toContain('365');
+      expect(out).not.toContain('2026-05-10');
+      expect(out).not.toContain('712');
+      expect(out).not.toContain('250');
+      expect(out).not.toContain('Berlin');
+      expect(out).not.toContain('hiking');
+      expect(out).not.toContain('raw_profile_bio');
+    });
+  });
+
+  describe('all three sections coexist', () => {
+    it('renders continuity → concept_mastery → journey_stage, in that order', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          continuity: {
+            open_threads: [
+              { thread_id: 't1', topic: 'magnesium', summary: null, days_since_last_mention: 1 },
+            ],
+            promises_owed: [],
+            promises_kept_recently: [],
+            counts: {
+              open_threads_total: 1,
+              promises_owed_total: 0,
+              promises_overdue: 0,
+              threads_mentioned_today: 0,
+            },
+            recommended_follow_up: 'mention_open_thread',
+          },
+          concept_mastery: {
+            concepts_explained: [{
+              concept_key: 'vitana_index',
+              frequency: 'once',
+              days_since_last_explained: 2,
+              repetition_hint: 'one_liner',
+            }],
+            concepts_mastered: [],
+            dyk_cards_seen: [],
+            counts: {
+              concepts_explained_total: 1,
+              concepts_mastered_total: 0,
+              dyk_cards_seen_total: 0,
+              concepts_explained_in_last_24h: 0,
+            },
+            recommended_cadence: 'use_one_liner',
+          },
+          journey_stage: {
+            stage: 'first_month',
+            tenure_bucket: 'first_month',
+            explanation_depth: 'standard',
+            tone_hint: 'collaborative',
+            vitana_index_tier: 'momentum',
+            tier_tenure: 'settled',
+            activity_recency: 'today',
+            usage_volume: 'regular',
+            journey_confidence: 'high',
+            warnings: [],
+          },
+        }),
+      );
+      const continuityIdx = out.indexOf('Continuity:');
+      const conceptIdx = out.indexOf('Concept mastery:');
+      const journeyIdx = out.indexOf('Journey stage:');
+      expect(continuityIdx).toBeGreaterThan(-1);
+      expect(conceptIdx).toBeGreaterThan(-1);
+      expect(journeyIdx).toBeGreaterThan(-1);
+      expect(continuityIdx).toBeLessThan(conceptIdx);
+      expect(conceptIdx).toBeLessThan(journeyIdx);
     });
   });
 });
