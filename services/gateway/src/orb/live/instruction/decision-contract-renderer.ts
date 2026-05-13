@@ -1,5 +1,6 @@
 /**
  * VTID-02941 (B0b-min) — decision-contract-renderer.
+ * VTID-02950 (F2)     — adds concept-mastery section.
  *
  * Single responsibility: take an `AssistantDecisionContext` and
  * produce a prompt section string the static system instruction can
@@ -10,17 +11,17 @@
  *   - query the database
  *   - read memory tables
  *   - touch Supabase directly
- *   - import from `services/continuity/*` or any compiler module
+ *   - import from `services/continuity/*`, `services/concept-mastery/*`,
+ *     or any compiler module
  *
  * Type-level enforcement: the only argument is `AssistantDecisionContext`.
  * A test asserts the renderer source file contains no `import` from
  * `services/`, `lib/supabase`, or `fetch`.
  *
  * Empty / degraded handling:
- *   - `decision.continuity === null` → no continuity section is emitted
- *     (acceptance #1 + #6).
- *   - `source_health.continuity.ok === false` → a small "[continuity:
- *     source degraded — <reason>]" hint appears so the prompt remains
+ *   - `decision.<field> === null` → no section for that field is emitted.
+ *   - `source_health.<field>.ok === false` → a small "[<field>: source
+ *     degraded — <reason>]" hint appears so the prompt remains
  *     informative without inventing data.
  *   - Empty arrays → that subsection is omitted, but the overall
  *     section still renders if any subsection has content.
@@ -28,6 +29,7 @@
 
 import type {
   AssistantDecisionContext,
+  DecisionConceptMastery,
   DecisionContinuity,
 } from '../../context/types';
 
@@ -62,6 +64,18 @@ export function renderDecisionContract(
   } else if (continuityHealth && continuityHealth.ok === false) {
     lines.push(
       `[continuity: source degraded — ${continuityHealth.reason ?? 'unknown_reason'}]`,
+    );
+  }
+
+  // ---- concept mastery (F2) ----
+  const conceptSection = renderConceptMastery(decision.concept_mastery);
+  const conceptHealth = decision.source_health.concept_mastery;
+
+  if (conceptSection) {
+    lines.push(conceptSection);
+  } else if (conceptHealth && conceptHealth.ok === false) {
+    lines.push(
+      `[concept_mastery: source degraded — ${conceptHealth.reason ?? 'unknown_reason'}]`,
     );
   }
 
@@ -112,4 +126,48 @@ function renderContinuity(continuity: DecisionContinuity | null): string {
 
   if (subs.length === 0) return '';
   return ['Continuity:', ...subs].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Concept Mastery sub-section (F2)
+// ---------------------------------------------------------------------------
+
+function renderConceptMastery(cm: DecisionConceptMastery | null): string {
+  if (!cm) return '';
+
+  const subs: string[] = [];
+
+  if (cm.concepts_explained.length > 0) {
+    const lines = cm.concepts_explained.map((c) => {
+      const age = c.days_since_last_explained === null
+        ? ''
+        : ` (${c.days_since_last_explained}d ago)`;
+      return `  - ${c.concept_key} [${c.frequency}, hint=${c.repetition_hint}]${age}`;
+    });
+    subs.push(['Concepts explained:', ...lines].join('\n'));
+  }
+
+  if (cm.concepts_mastered.length > 0) {
+    const lines = cm.concepts_mastered.map(
+      (c) => `  - ${c.concept_key} [confidence=${c.confidence}]`,
+    );
+    subs.push(['Concepts mastered:', ...lines].join('\n'));
+  }
+
+  if (cm.dyk_cards_seen.length > 0) {
+    const lines = cm.dyk_cards_seen.map((d) => {
+      const age = d.days_since_last_seen === null
+        ? ''
+        : ` (${d.days_since_last_seen}d ago)`;
+      return `  - ${d.card_key} [${d.frequency}]${age}`;
+    });
+    subs.push(['DYK cards seen:', ...lines].join('\n'));
+  }
+
+  if (cm.recommended_cadence !== 'none') {
+    subs.push(`Recommended cadence: ${cm.recommended_cadence}`);
+  }
+
+  if (subs.length === 0) return '';
+  return ['Concept mastery:', ...subs].join('\n');
 }
