@@ -208,9 +208,11 @@ export const ENDPOINT_FILE_MAP: Record<string, string> = {
   '/api/v1/assistant/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/assistant/knowledge/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/orb/health': 'services/gateway/src/routes/orb-live.ts',
-  // PR-A (VTID-02922): operator-armed canary for end-to-end self-healing
-  // smoke tests. Endpoint returns 500 iff system_config.self_healing_canary_armed=true.
-  '/api/v1/self-healing/canary/failing-health': 'services/gateway/src/routes/self-healing-canary.ts',
+  // PR-I (VTID-02949): operator-armed canary at a CONVENTIONAL mount
+  // path so diagnosis lands on the route file (canary-target.ts), not
+  // services/gateway/src/index.ts. Replaces the PR-A canary which
+  // mounted at `/` and made the endpoint→file mapping ambiguous.
+  '/api/v1/canary-target/health': 'services/gateway/src/routes/canary-target.ts',
   '/api/v1/voice-lab/health': 'services/gateway/src/routes/voice-lab.ts',
   '/api/v1/conversation/health': 'services/gateway/src/routes/conversation.ts',
   '/api/v1/conversation/tool-health': 'services/gateway/src/routes/conversation.ts',
