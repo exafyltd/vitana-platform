@@ -718,6 +718,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
 
+  // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
+  // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
+  const testContractsRouter = require('./routes/test-contracts').default;
+  mountRouterSync(app, '/api/v1', testContractsRouter, { owner: 'test-contracts' });
+
   // VTID-02909 (B0c): Journey Context inspection (Voice / Journey Context tab)
   // GET /api/v1/voice/journey-context/preview + GET /api/v1/voice/journey-context/state
   const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;
