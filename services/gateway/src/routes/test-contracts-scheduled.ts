@@ -300,7 +300,10 @@ ${patternMd}
                   effort_score: 4,
                   auto_exec_eligible: true,
                   domain: 'gateway',
-                  scanner: 'test-contract-failure-scanner',
+                  // VTID-02979 (PR-M1.1 hotfix): `scanner` is NOT a column on
+                  // autopilot_recommendations — it lives in spec_snapshot.scanner.
+                  // The top-level field caused PostgREST to reject the entire
+                  // INSERT with PGRST204, leaving repair VTIDs orphaned.
                   spec_snapshot: {
                     spec_markdown: specMarkdown,
                     files_referenced: [
