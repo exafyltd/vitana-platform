@@ -1137,6 +1137,18 @@ import {
   liveSessions,
   wsClientSessions,
 } from '../orb/live/session/live-session-registry';
+// A8.2 (orb-live-refactor / VTID-02961): session lifecycle helpers +
+// smallest session-action handler lifted into the controller module.
+// `cleanupExpiredSessions`, `cleanupWsSession`, `handleLiveStreamEndTurn`
+// now live in orb/live/session/live-session-controller.ts. orb-live.ts
+// configures the controller with its locals (resolveOrbIdentity,
+// clearResponseWatchdog, sendEndOfTurn) at module-init below.
+import {
+  configureLiveSessionController,
+  cleanupExpiredSessions,
+  cleanupWsSession,
+  handleLiveStreamEndTurn,
+} from '../orb/live/session/live-session-controller';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -8381,24 +8393,20 @@ You KNOW this user. You REMEMBER their name, their hometown, their family, and t
   }
 }
 
-function cleanupExpiredSessions(): void {
-  const now = Date.now();
-  for (const [sessionId, session] of sessions.entries()) {
-    if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
-      console.log(`[ORB-LIVE] Session expired: ${sessionId}`);
-      if (session.sseResponse) {
-        try {
-          session.sseResponse.end();
-        } catch (e) {
-          // Ignore
-        }
-      }
-      sessions.delete(sessionId);
-    }
-  }
-}
+// A8.2 (VTID-02961): wire orb-live.ts locals into the session controller.
+// MUST happen before any session-action handler fires. Function
+// declarations (resolveOrbIdentity / clearResponseWatchdog / sendEndOfTurn)
+// are hoisted, so the references resolve at this module-load point even
+// though the bodies appear later in the file.
+configureLiveSessionController({
+  resolveOrbIdentity,
+  clearResponseWatchdog,
+  sendEndOfTurn,
+});
 
-// Cleanup expired sessions every 5 minutes
+// A8.2: cleanupExpiredSessions body lifted to
+// orb/live/session/live-session-controller.ts. The setInterval schedule
+// stays here — orb-live.ts owns the cleanup timer lifecycle.
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
 
 /**
@@ -12413,45 +12421,9 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
+// A8.2: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const { session_id } = req.query;
-  const body = req.body as { session_id?: string };
-  const effectiveSessionId = (session_id as string) || body.session_id;
-
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
-  // Allow anonymous requests for lovable/external frontends.
-  const identity = await resolveOrbIdentity(req);
-
-  if (!effectiveSessionId) {
-    return res.status(400).json({ ok: false, error: 'session_id required' });
-  }
-
-  const session = liveSessions.get(effectiveSessionId);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: 'Session not found' });
-  }
-
-  if (!session.active) {
-    return res.status(400).json({ ok: false, error: 'Session not active' });
-  }
-
-  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
-  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
-      session.identity.user_id !== identity.user_id) {
-    console.warn(`[VTID-ORBC] /end-turn ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, sessionId=${effectiveSessionId}`);
-  }
-
-  // VTID-01219: Send end of turn to Live API
-  if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-    const sent = sendEndOfTurn(session.upstreamWs);
-    if (sent) {
-      console.log(`[VTID-01219] End of turn sent to Live API: session=${effectiveSessionId}`);
-      return res.status(200).json({ ok: true, message: 'End of turn signaled' });
-    }
-  }
-
-  console.log(`[VTID-01219] End of turn (no Live API): session=${effectiveSessionId}`);
-  return res.status(200).json({ ok: true, message: 'End of turn acknowledged (no Live API)' });
+  await handleLiveStreamEndTurn(req, res);
 });
 
 /**
@@ -13925,69 +13897,9 @@ function handleWsStopSession(clientSession: WsClientSession): void {
   });
 }
 
-/**
- * VTID-01222: Cleanup WebSocket session
- */
-function cleanupWsSession(sessionId: string): void {
-  const clientSession = wsClientSessions.get(sessionId);
-  if (!clientSession) return;
-
-  // Close Live API session if active
-  if (clientSession.liveSession) {
-    // VTID-01230: Deduplicated extraction on WebSocket disconnect
-    const ls = clientSession.liveSession;
-    if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
-      const fullTranscript = ls.transcriptTurns
-        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: ls.identity.tenant_id,
-        user_id: ls.identity.user_id,
-        session_id: sessionId,
-        force: true,
-      });
-      destroySessionBuffer(sessionId);
-      clearExtractionState(sessionId);
-    }
-
-    clientSession.liveSession.active = false;
-
-    // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on cleanup
-    if (clientSession.liveSession.upstreamPingInterval) {
-      clearInterval(clientSession.liveSession.upstreamPingInterval);
-      clientSession.liveSession.upstreamPingInterval = undefined;
-    }
-    if (clientSession.liveSession.silenceKeepaliveInterval) {
-      clearInterval(clientSession.liveSession.silenceKeepaliveInterval);
-      clientSession.liveSession.silenceKeepaliveInterval = undefined;
-    }
-    // VTID-WATCHDOG: Clear response watchdog on cleanup
-    clearResponseWatchdog(clientSession.liveSession);
-
-    if (clientSession.liveSession.upstreamWs) {
-      try {
-        clientSession.liveSession.upstreamWs.close();
-      } catch (e) {
-        // Ignore
-      }
-    }
-
-    liveSessions.delete(sessionId);
-  }
-
-  // Close client WebSocket if open
-  if (clientSession.clientWs.readyState === WebSocket.OPEN) {
-    try {
-      clientSession.clientWs.close(1000, 'Session cleanup');
-    } catch (e) {
-      // Ignore
-    }
-  }
-
-  wsClientSessions.delete(sessionId);
-  console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
-}
+// VTID-01222: Cleanup WebSocket session
+// A8.2: body lifted to orb/live/session/live-session-controller.ts.
+// cleanupWsSession is imported above and called from the same sites.
 
 /**
  * VTID-01222: Send message to WebSocket client
