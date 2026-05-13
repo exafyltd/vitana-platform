@@ -8214,6 +8214,7 @@ If the user mentions sending a message, sharing a link, texting, inviting, or te
 1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
 2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
 3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+4. AFTER send_chat_message returns ok:true (VTID-02966): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn immediately offer the next likely action in ONE short sentence. Do NOT go silent — close the loop with a forward prompt. Example: "Sent to @dragan_red. Want to message anyone else, or shall I open your matches?" Tailor the suggestion to where the user is: if on /inbox, suggest reading replies; if on /matches, suggest reviewing them; otherwise offer two or three plausible next steps grounded in their current screen.
 
 If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
 

@@ -1743,7 +1743,77 @@ export async function tool_send_chat_message(
       }
     }
 
-    const recipientVitanaId = await resolveVitanaId(recipientUserId);
+    // VTID-02966 (Issue #1): verify the receiver actually exists AND the
+    // spoken label still resolves to them before we insert. Two failure
+    // modes this catches that previously left "Unknown User" messages in
+    // chat history:
+    //   - Gemini Live hallucinated a UUID that doesn't map to a Vitana
+    //     account (silent insert succeeded; profile lookup later 404s).
+    //   - Gemini swapped recipient_user_id mid-flow so the verbal label
+    //     ("Dragan Red") and the persisted receiver_id diverged — message
+    //     lands in the wrong person's inbox.
+    // One round-trip gives us both checks.
+    const { data: receiverRow, error: receiverErr } = await sb
+      .from('app_users')
+      .select('user_id, display_name, vitana_id')
+      .eq('user_id', recipientUserId)
+      .maybeSingle();
+    if (receiverErr) {
+      await emitChatSendFailure('receiver_lookup_error', id, args, {
+        recipient_user_id: recipientUserId,
+        db_error: receiverErr.message,
+      });
+      return {
+        ok: false,
+        error: `I had a problem checking who you meant. Want me to try once more?`,
+      };
+    }
+    if (!receiverRow) {
+      await emitChatSendFailure('receiver_not_found', id, args, {
+        recipient_user_id: recipientUserId,
+        recipient_label: recipientLabel || null,
+      });
+      return {
+        ok: false,
+        error: recipientLabel
+          ? `I couldn't find ${recipientLabel} — they may have left the community.`
+          : `I couldn't find that person — they may have left the community.`,
+      };
+    }
+    const recipientVitanaId =
+      (receiverRow as { vitana_id?: string | null }).vitana_id ?? null;
+    const recipientDisplayName =
+      (receiverRow as { display_name?: string | null }).display_name ?? null;
+
+    // Label/identity consistency: if a spoken label was provided, at least
+    // one 3+ char token of it must appear in the resolved user's display
+    // name OR vitana_id. Single-name labels ("Dragan") count. Mismatch
+    // means the verbal handle and persisted UUID drifted — refuse to
+    // deliver to the wrong person.
+    if (recipientLabel) {
+      const lbl = recipientLabel.toLowerCase().trim();
+      const dn = (recipientDisplayName ?? '').toLowerCase();
+      const vid = (recipientVitanaId ?? '').toLowerCase();
+      const tokens = lbl.split(/\s+/).filter((t) => t.length >= 3);
+      const anyMatch =
+        tokens.length === 0 ||
+        tokens.some((t) => dn.includes(t) || vid.includes(t)) ||
+        dn === lbl ||
+        vid === lbl;
+      if (!anyMatch) {
+        await emitChatSendFailure('label_id_mismatch', id, args, {
+          recipient_user_id: recipientUserId,
+          recipient_label: recipientLabel,
+          resolved_display_name: recipientDisplayName,
+          resolved_vitana_id: recipientVitanaId,
+        });
+        return {
+          ok: false,
+          error: `I'm not sure I got the right person — can you say their name again?`,
+        };
+      }
+    }
+
     const quota = await checkVoiceSendQuota({
       session_id: rateLimitKey,
       actor_id: id.user_id,
@@ -1763,20 +1833,24 @@ export async function tool_send_chat_message(
     }
 
     const senderVitanaId = id.vitana_id ?? (await resolveVitanaId(id.user_id));
-    const { error: insErr } = await sb.from('chat_messages').insert({
-      tenant_id: tenantId,
-      sender_id: id.user_id,
-      receiver_id: recipientUserId,
-      content: body,
-      ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-      ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-      metadata: {
-        source: 'voice',
-        session_id: rateLimitKey,
-        key_type: keyType,
-        recipient_label: recipientLabel || recipientVitanaId,
-      },
-    });
+    const { data: inserted, error: insErr } = await sb
+      .from('chat_messages')
+      .insert({
+        tenant_id: tenantId,
+        sender_id: id.user_id,
+        receiver_id: recipientUserId,
+        content: body,
+        ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+        ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+        metadata: {
+          source: 'voice',
+          session_id: rateLimitKey,
+          key_type: keyType,
+          recipient_label: recipientLabel || recipientVitanaId,
+        },
+      })
+      .select('id')
+      .single();
     if (insErr) {
       await emitChatSendFailure('chat_messages_insert_error', id, args, {
         db_error: insErr.message,
@@ -1787,11 +1861,67 @@ export async function tool_send_chat_message(
         error: `I couldn't send the message just now — want me to try once more?`,
       };
     }
-    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+
+    // VTID-02966 (Issue #3): push-notify the receiver. Mirrors chat.ts:80-135
+    // exactly — same payload shape (title=sender display name, body=trimmed
+    // content with 100-char cap, data.url deep-links to /inbox?thread=...).
+    // Skipped for the Vitana bot (its replies go through handleVitanaTextReply
+    // already, no push needed). Fire-and-forget; notification failures must
+    // never break the voice flow.
+    try {
+      const { isVitanaBot } = await import('../lib/vitana-bot');
+      if (!isVitanaBot(recipientUserId)) {
+        let senderName = 'New message';
+        try {
+          const { data: senderProfile } = await sb
+            .from('app_users')
+            .select('display_name, email')
+            .eq('user_id', id.user_id)
+            .maybeSingle();
+          if (senderProfile) {
+            const sp = senderProfile as { display_name?: string | null; email?: string | null };
+            senderName =
+              sp.display_name ||
+              (sp.email ? sp.email.split('@')[0] : 'New message');
+          }
+        } catch {
+          // sender lookup is best-effort
+        }
+        const truncatedBody = body.length > 100 ? body.slice(0, 97) + '...' : body;
+        const insertedId = (inserted as { id?: string } | null)?.id ?? null;
+        const { notifyUserAsync } = await import('./notification-service');
+        notifyUserAsync(
+          recipientUserId,
+          tenantId,
+          'new_chat_message',
+          {
+            title: senderName,
+            body: truncatedBody,
+            data: {
+              type: 'new_chat_message',
+              sender_id: id.user_id,
+              sender_name: senderName,
+              ...(insertedId && { message_id: insertedId }),
+              thread_id: id.user_id,
+              url: `/inbox?thread=${id.user_id}&context=global`,
+              source: 'voice',
+            },
+          },
+          sb,
+        );
+      }
+    } catch (notifyErr: unknown) {
+      const m = notifyErr instanceof Error ? notifyErr.message : 'notify dispatch failed';
+      console.warn('[VTID-02966] voice send notify dispatch error (non-fatal):', m);
+    }
+
+    const recipDisplay =
+      recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
     return {
       ok: true,
       result: {
         recipient_label: recipDisplay,
+        recipient_vitana_id: recipientVitanaId,
         remaining: quota.remaining,
       },
       text: `Sent to ${recipDisplay}.`,
