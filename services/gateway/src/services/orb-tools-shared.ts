@@ -1548,6 +1548,39 @@ export async function tool_resolve_recipient(
   };
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function emitChatSendFailure(
+  reason: string,
+  id: OrbToolIdentity,
+  args: OrbToolArgs,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-01967',
+      type: 'voice.chat_message.send_failed',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `send_chat_message failed: ${reason}`,
+      payload: {
+        reason,
+        recipient_user_id_arg: typeof args.recipient_user_id === 'string' ? args.recipient_user_id : null,
+        recipient_label_arg: typeof args.recipient_label === 'string' ? args.recipient_label : null,
+        has_body: Boolean(args.body ?? args.body_text),
+        ...extra,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+      vitana_id: id.vitana_id ?? undefined,
+    });
+  } catch {
+    // OASIS failures must not break voice flow — swallow.
+  }
+}
+
 export async function tool_send_chat_message(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -1560,20 +1593,113 @@ export async function tool_send_chat_message(
   // schema, so any LiveKit-sent message was silently dropped.
   // Accepts both Vertex args (recipient_user_id, body, recipient_label) and
   // legacy LiveKit (recipient_id, body_text).
-  const recipientUserId = String(args.recipient_user_id ?? args.recipient_id ?? '').trim();
-  const recipientLabel = String(args.recipient_label ?? '').trim();
+  let recipientUserId = String(args.recipient_user_id ?? args.recipient_id ?? '').trim();
+  const recipientLabel = String(
+    args.recipient_label ?? args.recipient_name ?? args.spoken_name ?? '',
+  ).trim();
   const body = String(args.body ?? args.body_text ?? '').trim();
 
-  if (!recipientUserId || !body) {
-    return { ok: false, error: 'recipient_user_id and body are required' };
+  if (!body) {
+    await emitChatSendFailure('missing_body', id, args);
+    return { ok: false, error: "I didn't catch the message — what would you like me to send?" };
+  }
+
+  // SAFETY NET: Gemini Live occasionally loses the recipient_user_id across
+  // turn boundaries (between readback and confirmation) and either omits it
+  // or passes the recipient_label as the id. If recipient_user_id isn't a
+  // UUID but we DO have a label, try to re-resolve that label to a single
+  // high-confidence candidate via the same RPC resolve_recipient uses.
+  // We use a stricter threshold (0.90) than resolve_recipient's 0.85 to
+  // avoid silently sending to a wrong fuzzy match. If ambiguous or empty,
+  // we return a clarification text so Gemini asks the user again.
+  if (!UUID_REGEX.test(recipientUserId) && recipientLabel) {
+    try {
+      const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+        p_actor: id.user_id,
+        p_token: recipientLabel,
+        p_limit: 3,
+        p_global: false,
+      });
+      if (error) {
+        await emitChatSendFailure('label_recovery_rpc_error', id, args, {
+          rpc_error: error.message,
+          label: recipientLabel,
+        });
+        return {
+          ok: false,
+          error: `I had a problem looking up ${recipientLabel}. Want me to try once more?`,
+        };
+      }
+      const candidates = (data || []) as Array<{ user_id: string; vitana_id: string | null; score: number }>;
+      const top = candidates[0];
+      const secondScore = candidates[1] ? Number(candidates[1].score) : 0;
+      const topScore = top ? Number(top.score) : 0;
+      const recoverable = top && topScore >= 0.9 && secondScore / Math.max(topScore, 0.0001) < 0.85;
+      if (!recoverable) {
+        await emitChatSendFailure(
+          candidates.length === 0 ? 'label_recovery_no_match' : 'label_recovery_ambiguous',
+          id,
+          args,
+          { label: recipientLabel, candidate_count: candidates.length, top_score: topScore },
+        );
+        return {
+          ok: false,
+          error:
+            candidates.length === 0
+              ? `I couldn't find ${recipientLabel} in the community right now.`
+              : `I'm not sure which ${recipientLabel} you meant — can you say their Vitana ID?`,
+        };
+      }
+      recipientUserId = top.user_id;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'label resolve failed';
+      await emitChatSendFailure('label_recovery_exception', id, args, { error: msg, label: recipientLabel });
+      return {
+        ok: false,
+        error: `I had a problem looking up ${recipientLabel}. Want me to try once more?`,
+      };
+    }
+  }
+
+  if (!recipientUserId) {
+    await emitChatSendFailure('missing_recipient', id, args);
+    return { ok: false, error: 'Who would you like me to send this to?' };
+  }
+  if (!UUID_REGEX.test(recipientUserId)) {
+    await emitChatSendFailure('recipient_not_uuid', id, args, { recipient_value: recipientUserId });
+    return {
+      ok: false,
+      error: `I lost track of who you meant — can you say their name again?`,
+    };
   }
   if (recipientUserId === id.user_id) {
+    await emitChatSendFailure('self_message', id, args);
     return { ok: false, error: 'cannot message yourself' };
   }
 
   try {
     const { checkVoiceSendQuota } = await import('./voice-message-guard');
     const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
+
+    // Tenant backfill: voice sessions sometimes carry a null tenant_id on
+    // identity even when the user has one in app_users. chat_messages.tenant_id
+    // is NOT NULL, so we attempt to recover from app_users before failing.
+    let tenantId = id.tenant_id;
+    if (!tenantId) {
+      const { data: appUser } = await sb
+        .from('app_users')
+        .select('tenant_id')
+        .eq('user_id', id.user_id)
+        .maybeSingle();
+      tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
+      if (!tenantId) {
+        await emitChatSendFailure('missing_tenant', id, args);
+        return {
+          ok: false,
+          error: `I can't send right now — I'm missing some account context. Try once more in a moment.`,
+        };
+      }
+    }
 
     const recipientVitanaId = await resolveVitanaId(recipientUserId);
     const quota = await checkVoiceSendQuota({
@@ -1595,7 +1721,7 @@ export async function tool_send_chat_message(
 
     const senderVitanaId = id.vitana_id ?? (await resolveVitanaId(id.user_id));
     const { error: insErr } = await sb.from('chat_messages').insert({
-      tenant_id: id.tenant_id,
+      tenant_id: tenantId,
       sender_id: id.user_id,
       receiver_id: recipientUserId,
       content: body,
@@ -1608,7 +1734,14 @@ export async function tool_send_chat_message(
       },
     });
     if (insErr) {
-      return { ok: false, error: insErr.message };
+      await emitChatSendFailure('chat_messages_insert_error', id, args, {
+        db_error: insErr.message,
+        recipient_user_id: recipientUserId,
+      });
+      return {
+        ok: false,
+        error: `I couldn't send the message just now — want me to try once more?`,
+      };
     }
     const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
     return {
@@ -1621,7 +1754,11 @@ export async function tool_send_chat_message(
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'send_chat_message error';
-    return { ok: false, error: msg };
+    await emitChatSendFailure('unexpected_exception', id, args, { error: msg });
+    return {
+      ok: false,
+      error: `I hit a snag sending that — want me to try once more?`,
+    };
   }
 }
 

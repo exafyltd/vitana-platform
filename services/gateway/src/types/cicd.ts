@@ -747,6 +747,7 @@ export type CicdEventType =
   | 'voice.message.rate_limited'
   | 'voice.message.misroute'
   | 'voice.message.share_link_sent'
+  | 'voice.chat_message.send_failed'
   | 'vitana_id.confirmed'
   // VTID-02047: Unified Feedback Pipeline events
   | 'feedback.ticket.created'
