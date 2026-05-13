@@ -608,4 +608,266 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
       notifySpy.mockRestore();
     }
   });
+
+  // VTID-02966 strengthened (per user instruction): prove production uses
+  // the real sender app_users.display_name lookup — never a hardcoded /
+  // test-fixture string. We use an unusual unique display_name and assert
+  // it propagates verbatim to the notification title; also assert the
+  // 'New message' fallback only fires when there's nothing to look up.
+  describe('notification sender display_name is sourced from app_users (not hardcoded)', () => {
+    test('production path uses real sender display_name from app_users', async () => {
+      const inserts: CapturedInsert[] = [];
+      // Unusual unique value — if production hardcoded any sender name,
+      // this assertion would fail.
+      const unusualName = 'Dejan-Stevanović-Unicode-€©®';
+      const appUsers = defaultAppUsers();
+      appUsers[SENDER_UUID] = {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        display_name: unusualName,
+        vitana_id: 'vit_send',
+        email: 'real.sender@vitana.test',
+      };
+      const sb = makeStubSupabase({ inserts, appUsers, insertedId: 'm1' });
+      const notifyService = await import('../src/services/notification-service');
+      const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+      try {
+        await tool_send_chat_message(
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          {
+            user_id: SENDER_UUID,
+            tenant_id: 'tenant-1',
+            role: 'user',
+            vitana_id: 'vit_send',
+            session_id: REAL_UUID_A,
+          },
+          sb,
+        );
+
+        expect(notifySpy).toHaveBeenCalledTimes(1);
+        const [, , , payload] = notifySpy.mock.calls[0];
+        const title = (payload as { title: string }).title;
+        const senderNameInData = (payload as { data: { sender_name: string } }).data.sender_name;
+
+        // Strong assertion — the title is the ACTUAL looked-up name.
+        expect(title).toBe(unusualName);
+        expect(senderNameInData).toBe(unusualName);
+
+        // Negative assertions — must NOT be any hardcoded common value.
+        expect(title).not.toBe('Test Sender');
+        expect(title).not.toBe('New message');
+        expect(title).not.toBe('Sender');
+        expect(title).not.toBe('Anonymous');
+        expect(title).not.toBe('Vitana');
+      } finally {
+        notifySpy.mockRestore();
+      }
+    });
+
+    test('email-prefix fallback fires when display_name is null', async () => {
+      const inserts: CapturedInsert[] = [];
+      const appUsers = defaultAppUsers();
+      appUsers[SENDER_UUID] = {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        display_name: null,
+        vitana_id: 'vit_send',
+        email: 'jane.doe@example.com',
+      };
+      const sb = makeStubSupabase({ inserts, appUsers, insertedId: 'm1' });
+      const notifyService = await import('../src/services/notification-service');
+      const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+      try {
+        await tool_send_chat_message(
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          {
+            user_id: SENDER_UUID,
+            tenant_id: 'tenant-1',
+            role: 'user',
+            vitana_id: 'vit_send',
+            session_id: REAL_UUID_A,
+          },
+          sb,
+        );
+
+        const [, , , payload] = notifySpy.mock.calls[0];
+        expect((payload as { title: string }).title).toBe('jane.doe');
+        // 'New message' fallback only when even email is missing — not here.
+        expect((payload as { title: string }).title).not.toBe('New message');
+      } finally {
+        notifySpy.mockRestore();
+      }
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02969 — Voice send next_actions sourced from existing autopilot
+// recommendations system. The prompt-band-aid from VTID-02966 is replaced
+// with structured next_actions on the tool result. Gemini is instructed
+// to verbalize only tool-provided next_actions, never to invent one.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('VTID-02969 — voice send next_actions from existing autopilot system', () => {
+  let emitSpy: jest.SpyInstance;
+  let nextActionsSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _resetSendCountersForTests();
+    emitSpy = jest
+      .spyOn(oasisEventService, 'emitOasisEvent')
+      .mockResolvedValue({ ok: true, event_id: 'evt-stub' });
+  });
+
+  afterEach(() => {
+    emitSpy.mockRestore();
+    if (nextActionsSpy) nextActionsSpy.mockRestore();
+  });
+
+  // Acceptance #1: recommendation available — next_actions populated.
+  test('recommendation available → next_actions returned on tool result', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'm1' });
+
+    const nextActions = await import('../src/services/autopilot-voice-next-actions');
+    nextActionsSpy = jest.spyOn(nextActions, 'getTopAutopilotNextActions').mockResolvedValue([
+      {
+        id: 'rec-uuid-1',
+        type: 'activate_recommendation',
+        label: 'Log your evening walk',
+        source: 'autopilot',
+      },
+    ]);
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok === true) {
+      const r = result.result as { next_actions: Array<{ id: string; type: string; label: string; source: string }> };
+      expect(r.next_actions).toHaveLength(1);
+      expect(r.next_actions[0]).toEqual({
+        id: 'rec-uuid-1',
+        type: 'activate_recommendation',
+        label: 'Log your evening walk',
+        source: 'autopilot',
+      });
+    }
+    // Helper was called with the sender's id + community role.
+    expect(nextActionsSpy).toHaveBeenCalledTimes(1);
+    expect(nextActionsSpy.mock.calls[0][0]).toMatchObject({
+      user_id: SENDER_UUID,
+      role: 'user',
+      limit: 1,
+    });
+  });
+
+  // Acceptance #2: no recommendation available — next_actions is empty,
+  // tool still succeeds, Gemini will fall through to plain acknowledgement.
+  test('no recommendation available → next_actions is empty, send still succeeds', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'm2' });
+
+    const nextActions = await import('../src/services/autopilot-voice-next-actions');
+    nextActionsSpy = jest.spyOn(nextActions, 'getTopAutopilotNextActions').mockResolvedValue([]);
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok === true) {
+      const r = result.result as { next_actions: unknown[] };
+      expect(r.next_actions).toEqual([]);
+    }
+  });
+
+  // Acceptance #3: recommendation fetch error — send still succeeds with
+  // empty next_actions (degrade silently, never fail the message).
+  test('recommendation fetch error → next_actions empty, send still succeeds', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'm3' });
+
+    const nextActions = await import('../src/services/autopilot-voice-next-actions');
+    nextActionsSpy = jest
+      .spyOn(nextActions, 'getTopAutopilotNextActions')
+      .mockRejectedValue(new Error('simulated autopilot service outage'));
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(true); // CRITICAL — message still sent
+    if (result.ok === true) {
+      const r = result.result as { next_actions: unknown[]; recipient_label: string };
+      expect(r.next_actions).toEqual([]);
+      expect(r.recipient_label).toBe('Dragan Red');
+    }
+    // Row was still inserted — the send is real, not skipped.
+    expect(inserts).toHaveLength(1);
+  });
+
+  // Acceptance #4: notification still fires when next_actions are returned.
+  test('notification still dispatches when next_actions are populated', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers(), insertedId: 'm4' });
+
+    const nextActions = await import('../src/services/autopilot-voice-next-actions');
+    nextActionsSpy = jest.spyOn(nextActions, 'getTopAutopilotNextActions').mockResolvedValue([
+      { id: 'rec-x', type: 'activate_recommendation', label: 'Try this', source: 'autopilot' },
+    ]);
+
+    const notifyService = await import('../src/services/notification-service');
+    const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+    try {
+      const result = await tool_send_chat_message(
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          role: 'user',
+          vitana_id: 'vit_send',
+          session_id: REAL_UUID_A,
+        },
+        sb,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(notifySpy).toHaveBeenCalledTimes(1);
+      // Notification path is unchanged and unrelated to next_actions.
+      const [recvId, , type] = notifySpy.mock.calls[0];
+      expect(recvId).toBe(RECIPIENT_UUID);
+      expect(type).toBe('new_chat_message');
+    } finally {
+      notifySpy.mockRestore();
+    }
+  });
 });

@@ -1915,6 +1915,26 @@ export async function tool_send_chat_message(
       console.warn('[VTID-02966] voice send notify dispatch error (non-fatal):', m);
     }
 
+    // VTID-02969: structured post-send next_actions, sourced from the
+    // canonical autopilot recommendations system. Gemini's MESSAGING_CONTRACT
+    // bullet #4 instructs it to verbalize ONLY tool-provided next_actions
+    // and never to invent one off-the-cuff. Degrades silently to [] on any
+    // failure — the send itself succeeded, follow-up suggestions are
+    // best-effort.
+    let nextActions: Array<{ id: string; type: string; label: string; source: string }> = [];
+    try {
+      const { getTopAutopilotNextActions } = await import('./autopilot-voice-next-actions');
+      nextActions = await getTopAutopilotNextActions({
+        user_id: id.user_id,
+        role: id.role ?? 'community',
+        limit: 1,
+      });
+    } catch (nextErr: unknown) {
+      const m = nextErr instanceof Error ? nextErr.message : 'next_actions resolve failed';
+      console.warn('[VTID-02969] next_actions resolve error (non-fatal):', m);
+      nextActions = [];
+    }
+
     const recipDisplay =
       recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
     return {
@@ -1923,6 +1943,7 @@ export async function tool_send_chat_message(
         recipient_label: recipDisplay,
         recipient_vitana_id: recipientVitanaId,
         remaining: quota.remaining,
+        next_actions: nextActions,
       },
       text: `Sent to ${recipDisplay}.`,
     };
