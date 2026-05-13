@@ -728,6 +728,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const testContractsMissingRouter = require('./routes/test-contracts-missing').default;
   mountRouterSync(app, '/api/v1', testContractsMissingRouter, { owner: 'test-contracts-missing' });
 
+  // VTID-02958 (PR-L3): Failure Scanner — scheduled tick that runs every
+  // live_probe contract, debounces flake, allocates repair VTIDs on real
+  // failures, quarantines after 3 repair attempts in 24h.
+  // POST /api/v1/test-contracts/scheduled-run (internal/admin)
+  // GET  /api/v1/test-contracts/:id/runs (dev access)
+  const testContractsScheduledRouter = require('./routes/test-contracts-scheduled').default;
+  mountRouterSync(app, '/api/v1', testContractsScheduledRouter, { owner: 'test-contracts-scheduled' });
+
   // VTID-02909 (B0c): Journey Context inspection (Voice / Journey Context tab)
   // GET /api/v1/voice/journey-context/preview + GET /api/v1/voice/journey-context/state
   const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;
