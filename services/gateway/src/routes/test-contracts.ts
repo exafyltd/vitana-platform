@@ -27,6 +27,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { resolveCommand } from '../services/test-contract-commands';
+import { getDeployedSha } from '../services/self-healing-diagnosis-service';
 
 const router = Router();
 const VTID = 'VTID-02954';
@@ -246,10 +247,14 @@ router.post(
       last_failure_signature: failureSignature,
     };
     if (result.passed) {
-      // Last-passing SHA tracking requires a known SHA. PR-L1 doesn't have
-      // that yet — Phase 3's failure scanner runs against deployed revisions
-      // and will pass in the deployed SHA. For now we leave last_passing_sha
-      // alone and only update it when the caller provides it.
+      // VTID-02967 (PR-L4): stamp last_passing_sha from BUILD_INFO so
+      // any future failure can fetch the file at this SHA via known-good
+      // recovery context.
+      const sha = getDeployedSha();
+      if (sha) {
+        patchBody.last_passing_sha = sha;
+        patchBody.branch_or_sha = sha;
+      }
     }
     await fetch(`${SUPABASE_URL}/rest/v1/test_contracts?id=eq.${id}`, {
       method: 'PATCH',

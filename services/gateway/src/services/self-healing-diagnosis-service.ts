@@ -59,7 +59,9 @@ function githubAuthEnv(): { owner: string; repo: string; token: string } {
 
 // Read every call so tests + operators can override at runtime; the work
 // is cheap (env read + at most one fs.readFileSync of a tiny JSON file).
-function getDeployedSha(): string | null {
+// VTID-02967 (PR-L4): exported so the test-contract scheduled-runner can
+// stamp last_passing_sha on every passing run.
+export function getDeployedSha(): string | null {
   // 1. Explicit env override (set by EXEC-DEPLOY.yml when known).
   if (process.env.DEPLOYED_GIT_SHA) return process.env.DEPLOYED_GIT_SHA;
   if (process.env.BUILD_SHA) return process.env.BUILD_SHA;
@@ -90,7 +92,9 @@ interface LoadedSource {
   source: 'fs' | 'github_deployed_sha' | 'github_main';
 }
 
-async function fetchFromGithub(
+// VTID-02967 (PR-L4): export so test-contract-repair-context can fetch a
+// file at a specific last_passing_sha. Same auth + same encoding rules.
+export async function fetchFromGithub(
   relativeFile: string,
   ref: string,
 ): Promise<{ ok: boolean; content?: string; sha?: string }> {
