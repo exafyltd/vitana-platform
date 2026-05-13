@@ -266,7 +266,7 @@ const router = Router();
 // Types & Constants
 // =============================================================================
 
-interface OrbLiveSession {
+export interface OrbLiveSession {
   sessionId: string;
   tenant: string;
   role: string;
@@ -308,8 +308,9 @@ interface StopMessage {
   sessionId: string;
 }
 
-// In-memory session store (dev sandbox only)
-const sessions = new Map<string, OrbLiveSession>();
+// In-memory session store (dev sandbox only).
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `sessions` symbol used below is imported at the top of this file.
 
 // A2 (orb-live-refactor): SESSION_TIMEOUT_MS lifted to orb/live/config.ts.
 import { SESSION_TIMEOUT_MS } from '../orb/live/config';
@@ -754,7 +755,7 @@ import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
  * VTID-01155: Gemini Live session state
  * VTID-01224: Extended with identity and context fields for intelligence stack
  */
-interface GeminiLiveSession {
+export interface GeminiLiveSession {
   sessionId: string;
   lang: string;
   voiceStyle?: string;
@@ -957,8 +958,9 @@ import type {
 } from '../orb/live/types';
 export type { ClientContext } from '../orb/live/types';
 
-// VTID-01155: In-memory Live session store
-const liveSessions = new Map<string, GeminiLiveSession>();
+// VTID-01155: In-memory Live session store.
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `liveSessions` symbol used below is imported at the top of this file.
 
 // VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
 // Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
@@ -1125,6 +1127,16 @@ import {
   writeSseEvent,
   startSseHeartbeat,
 } from '../orb/live/transport/sse-handler';
+// A8.1 (orb-live-refactor / VTID-02959): session registries lifted to
+// orb/live/session/live-session-registry.ts. Same Map instances, same
+// identity — only the declaration location moves. orb-live.ts continues
+// to mutate `sessions`, `liveSessions`, `wsClientSessions` in place;
+// A8.2 + A8.3 lift the lifecycle methods that operate on these Maps.
+import {
+  sessions,
+  liveSessions,
+  wsClientSessions,
+} from '../orb/live/session/live-session-registry';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -12888,7 +12900,7 @@ interface WsClientMessage {
  * VTID-01222: WebSocket session state
  * VTID-01224: Added identity for context retrieval
  */
-interface WsClientSession {
+export interface WsClientSession {
   sessionId: string;
   clientWs: WebSocket;
   liveSession: GeminiLiveSession | null;
@@ -12902,8 +12914,9 @@ interface WsClientSession {
   originUrl: string | null;
 }
 
-// Track WebSocket client sessions
-const wsClientSessions = new Map<string, WsClientSession>();
+// Track WebSocket client sessions.
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `wsClientSessions` symbol used below is imported at the top of this file.
 
 /**
  * VTID-01222: Initialize WebSocket server for ORB client connections
