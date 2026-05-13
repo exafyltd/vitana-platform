@@ -605,6 +605,13 @@ export type CicdEventType =
   // (vtid-terminalize.ts emits the same topic via a local fetch helper,
   // so it didn't need the type-system entry.)
   | 'self-healing.terminalize.blocked'
+  // PR-L1 (VTID-02954): Test Contract Registry run events. Emitted by
+  // /api/v1/test-contracts/:id/run for every contract execution so the
+  // cockpit can show pass/fail history and Phase 3's failure scanner
+  // can detect regressions from the event stream.
+  | 'test-contract.run.passed'
+  | 'test-contract.run.failed'
+  | 'test-contract.run.dispatched'
   | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'

@@ -2743,6 +2743,7 @@ const NAVIGATION_CONFIG = [
             { "key": "journey-context", "label": "Journey Context",    "path": "/command-hub/voice/journey-context/" },
             { "key": "tools",           "label": "Tool Catalog",       "path": "/command-hub/voice/tools/" },
             { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
+            { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
             { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
             { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
         ]
@@ -6185,6 +6186,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
         // Voice slice extracted from autonomy/self-healing
         container.appendChild(renderVoiceSelfHealingPanel());
+    } else if (moduleKey === 'voice' && tab === 'test-contracts') {
+        // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
+        container.appendChild(renderTestContractsPanel());
     } else if (moduleKey === 'voice' && tab === 'livekit-test') {
         container.appendChild(renderLivekitTestView());
     } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
@@ -43826,6 +43830,157 @@ function renderVoiceSelfHealingPanel() {
     });
 
     return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02954 (PR-L1): Test Contract Registry — read-only status panel.
+//
+// Fetches /api/v1/test-contracts and renders a table of (capability, status,
+// last_run_at, owner). Each row has a manual "Run now" button (admin-only;
+// the backend rejects non-admins). PR-L1 is read+run only — no edit/delete
+// from this surface yet.
+// ─────────────────────────────────────────────────────────────────────────
+function renderTestContractsPanel() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:16px;';
+
+    var tcState = state.testContracts || (state.testContracts = { rows: null, error: null, running: {} });
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:16px;';
+    header.innerHTML =
+        '<h2 style="margin:0;color:var(--color-text-primary);">Test Contracts</h2>' +
+        '<p style="margin:4px 0 0 0;color:var(--color-text-secondary);font-size:0.85rem;">' +
+        'The autonomy spine. Every capability has a contract defining "healthy". If a contract fails, self-healing repairs the system back to known-good behavior. ' +
+        '<strong>VTID-02954 (PR-L1)</strong> — read-only registry + sync_http run surface. ' +
+        'Missing-test scanner (PR-L2), failure scanner (PR-L3), and known-good recovery (PR-L4) plug into this same table.' +
+        '</p>';
+    container.appendChild(header);
+
+    if (tcState.rows === null && tcState.error === null) {
+        fetch('/api/v1/test-contracts', { headers: buildContextHeaders() })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                tcState.rows = data.contracts || [];
+                tcState.error = null;
+                renderApp();
+            })
+            .catch(function (e) {
+                tcState.error = e.message;
+                tcState.rows = [];
+                renderApp();
+            });
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading test contracts...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (tcState.error) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:24px;background:rgba(220,38,38,0.1);border:1px solid #dc2626;border-radius:6px;color:#fca5a5;';
+        err.textContent = 'Failed to load test contracts: ' + tcState.error;
+        container.appendChild(err);
+        return container;
+    }
+
+    if (!tcState.rows || tcState.rows.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+        none.textContent = 'No test contracts registered yet. Migration 20260521000000 seeds 6 contracts.';
+        container.appendChild(none);
+        return container;
+    }
+
+    // Summary band
+    var summary = document.createElement('div');
+    summary.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:6px;';
+    var byStatus = { pass: 0, fail: 0, pending: 0, unknown: 0, quarantined: 0 };
+    tcState.rows.forEach(function (r) {
+        if (byStatus.hasOwnProperty(r.status)) byStatus[r.status] += 1;
+    });
+    summary.innerHTML =
+        '<div><strong style="color:var(--color-text-primary);">' + tcState.rows.length + '</strong> contracts</div>' +
+        '<div style="color:#16a34a;"><strong>' + byStatus.pass + '</strong> passing</div>' +
+        '<div style="color:#dc2626;"><strong>' + byStatus.fail + '</strong> failing</div>' +
+        '<div style="color:#94a3b8;"><strong>' + byStatus.unknown + '</strong> never run</div>' +
+        '<div style="color:#fbbf24;"><strong>' + byStatus.pending + '</strong> pending</div>' +
+        '<div style="color:#f87171;"><strong>' + byStatus.quarantined + '</strong> quarantined</div>';
+    container.appendChild(summary);
+
+    // Rows
+    tcState.rows.forEach(function (row) {
+        var card = document.createElement('section');
+        var statusColor = row.status === 'pass' ? '#16a34a' : row.status === 'fail' ? '#dc2626' : row.status === 'quarantined' ? '#f87171' : row.status === 'pending' ? '#fbbf24' : '#94a3b8';
+        var regressed = row.status === 'fail' && row.last_status === 'pass';
+        card.style.cssText = 'margin-bottom:8px;padding:12px 14px;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + statusColor + ';border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:12px;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        var statusBadge = '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:' + statusColor + ';background:' + statusColor + '22;text-transform:uppercase;margin-right:0.4rem;">' + row.status + '</span>';
+        var regressedBadge = regressed ? '<span style="display:inline-block;font-size:0.6rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:4px;color:#dc2626;background:#dc262622;margin-right:0.4rem;">REGRESSED</span>' : '';
+        info.innerHTML =
+            '<div style="font-weight:600;font-size:0.9rem;">' + statusBadge + regressedBadge + escapeHtml(row.capability) + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                escapeHtml(row.contract_type) + ' · ' +
+                escapeHtml(row.service) + '/' + escapeHtml(row.environment) + ' · ' +
+                'owner: ' + escapeHtml(row.owner) +
+                (row.target_endpoint ? ' · ' + escapeHtml(row.target_endpoint) : '') +
+            '</div>' +
+            '<div style="font-size:0.7rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                'last run: ' + (row.last_run_at ? new Date(row.last_run_at).toLocaleString() : 'never') +
+                (row.last_failure_signature ? ' · <span style="color:#dc2626;">' + escapeHtml(row.last_failure_signature).slice(0, 120) + '</span>' : '') +
+            '</div>';
+        card.appendChild(info);
+
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+        var runBtn = document.createElement('button');
+        runBtn.style.cssText = 'padding:6px 12px;font-size:0.75rem;border-radius:4px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);cursor:pointer;';
+        runBtn.disabled = tcState.running[row.id] === true;
+        runBtn.textContent = runBtn.disabled ? 'Running...' : 'Run now';
+        runBtn.onclick = function () {
+            tcState.running[row.id] = true;
+            renderApp();
+            fetch('/api/v1/test-contracts/' + encodeURIComponent(row.id) + '/run', {
+                method: 'POST',
+                headers: buildContextHeaders(),
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    tcState.running[row.id] = false;
+                    if (data.ok && data.result) {
+                        // Update row in place
+                        for (var i = 0; i < tcState.rows.length; i++) {
+                            if (tcState.rows[i].id === row.id) {
+                                tcState.rows[i].status = data.new_status;
+                                tcState.rows[i].last_status = data.previous_status;
+                                tcState.rows[i].last_run_at = data.result.ran_at;
+                                tcState.rows[i].last_failure_signature = data.result.failure_reason
+                                    ? row.command_key + ':' + data.result.failure_reason
+                                    : null;
+                            }
+                        }
+                    }
+                    renderApp();
+                })
+                .catch(function (e) {
+                    tcState.running[row.id] = false;
+                    alert('Run failed: ' + e.message);
+                    renderApp();
+                });
+        };
+        actions.appendChild(runBtn);
+        card.appendChild(actions);
+
+        container.appendChild(card);
+    });
+
+    return container;
 }
 
 function renderSelfHealingView() {
