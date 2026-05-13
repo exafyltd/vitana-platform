@@ -520,6 +520,11 @@ export type CicdEventType =
   | 'tenant.weekly.review.ready'
   // BOOTSTRAP-ADMIN-DD: admin voice tool side-effects
   | 'admin.autopilot.pause_requested'
+  // L1 (VTID-02976): upstream provider selection — pure-selector decisions.
+  // `selected` fires once per `connectToLiveAPI` call; `selection_error` fires
+  // ONLY when a LiveKit request was downgraded (config invalid or pinned_to_vertex_l1).
+  | 'orb.upstream.provider.selected'
+  | 'orb.upstream.provider.selection_error'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events

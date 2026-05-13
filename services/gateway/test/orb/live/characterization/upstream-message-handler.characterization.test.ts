@@ -201,4 +201,28 @@ describe('A8.3a.2: orb-live.ts is a thin consumer of the factory', () => {
     expect(fnBody).toMatch(/vertex\.connect\s*\(/);
     expect(fnBody).toMatch(/getAccessToken\b/);
   });
+
+  it('L1: connectToLiveAPI calls selectUpstreamProvider before constructing the upstream client', () => {
+    // L1 (VTID-02976): the upstream provider must flow through the pure
+    // selector, NOT be hard-coded to Vertex inline. The selector returns
+    // a decision the consumer emits to OASIS via
+    // `orb.upstream.provider.selected` and (when LiveKit was requested
+    // and downgraded) `orb.upstream.provider.selection_error`.
+    //
+    // Anti-regression: assert the wiring exists inside connectToLiveAPI's
+    // body. The selector itself is unit-tested by
+    // test/orb/live/upstream/upstream-provider-selector.test.ts — this
+    // test ONLY proves the consumer is wired through it.
+    const fnStart = orbLiveSrc.indexOf('async function connectToLiveAPI');
+    expect(fnStart).toBeGreaterThan(0);
+    const fnEnd = orbLiveSrc.indexOf('\nasync function ', fnStart + 1);
+    const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
+    expect(fnBody).toMatch(/selectUpstreamProvider\s*\(/);
+    expect(fnBody).toMatch(/orb\.upstream\.provider\.selected/);
+    expect(fnBody).toMatch(/orb\.upstream\.provider\.selection_error/);
+    // The selector reads env override + system_config + LiveKit creds.
+    expect(fnBody).toMatch(/envProviderOverride\s*:\s*process\.env\.ORB_LIVE_PROVIDER/);
+    expect(fnBody).toMatch(/systemConfigActiveProvider\s*:/);
+    expect(fnBody).toMatch(/livekitCredentials\s*:/);
+  });
 });
