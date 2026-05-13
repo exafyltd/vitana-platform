@@ -68,4 +68,56 @@ describe('B0b-min — AssistantDecisionContext type guards', () => {
     // The type must allow null to enable empty-degrades.
     expect(typesSrc).toMatch(/continuity:\s*DecisionContinuity\s*\|\s*null/);
   });
+
+  // F2: concept-mastery type guards.
+  describe('forbidden raw fields are NOT declared in DecisionConceptMastery', () => {
+    // These fields exist in the underlying ConceptMasteryContext but MUST
+    // NOT appear in DecisionConceptMastery. If a future change adds any
+    // of them, this test fails — that's the wall.
+    const forbiddenConceptFields = [
+      'last_explained_at',
+      'last_observed_at',
+      'last_seen_at',
+    ];
+
+    it.each(forbiddenConceptFields)('does not declare %s anywhere', (field) => {
+      const decl = new RegExp(`\\b${field}\\s*\\??:`, 'g');
+      expect(typesSrc).not.toMatch(decl);
+    });
+
+    it('declares frequency as a bucket type, NEVER as a raw number', () => {
+      // The bucket types are FrequencyBucket / MasteryConfidenceBucket.
+      // Searching for `frequency: number` would be a regression.
+      expect(typesSrc).not.toMatch(/frequency\s*:\s*number/);
+      expect(typesSrc).toMatch(/frequency:\s*FrequencyBucket/);
+    });
+
+    it('declares confidence as a bucket type, NEVER as a raw number', () => {
+      // Confidence in DecisionConceptMastery is bucketed; the underlying
+      // ConceptMasteryRow type is in services/ and can keep the raw
+      // float, but THIS shape must not expose it.
+      expect(typesSrc).toMatch(/confidence:\s*MasteryConfidenceBucket\s*\|\s*'unknown'/);
+      // No `confidence: number` on the decision shape.
+      const decisionShape = typesSrc.slice(
+        typesSrc.indexOf('export interface DecisionConceptMastery'),
+        typesSrc.indexOf('export interface DecisionSourceHealth'),
+      );
+      expect(decisionShape).not.toMatch(/confidence\s*:\s*number/);
+    });
+  });
+
+  it('declares the concept-mastery surfaces + recommended_cadence', () => {
+    expect(typesSrc).toContain('concepts_explained');
+    expect(typesSrc).toContain('concepts_mastered');
+    expect(typesSrc).toContain('dyk_cards_seen');
+    expect(typesSrc).toContain('recommended_cadence');
+  });
+
+  it('AssistantDecisionContext.concept_mastery is optional null', () => {
+    expect(typesSrc).toMatch(/concept_mastery:\s*DecisionConceptMastery\s*\|\s*null/);
+  });
+
+  it('DecisionSourceHealth declares concept_mastery health entry', () => {
+    expect(typesSrc).toMatch(/concept_mastery:\s*\{\s*ok:\s*boolean/);
+  });
 });

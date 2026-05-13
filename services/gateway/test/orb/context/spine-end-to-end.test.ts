@@ -95,7 +95,11 @@ describe('B0b-min — end-to-end spine', () => {
 
     const decision: AssistantDecisionContext = {
       continuity: distillContinuityForDecision({ continuity: continuityCtx }),
-      source_health: { continuity: { ok: true } },
+      concept_mastery: null,
+      source_health: {
+        continuity: { ok: true },
+        concept_mastery: { ok: true },
+      },
     };
     const rendered = renderDecisionContract(decision);
 
@@ -132,7 +136,11 @@ describe('B0b-min — end-to-end spine', () => {
     });
     const decision: AssistantDecisionContext = {
       continuity: distillContinuityForDecision({ continuity: continuityCtx }),
-      source_health: { continuity: { ok: true } },
+      concept_mastery: null,
+      source_health: {
+        continuity: { ok: true },
+        concept_mastery: { ok: true },
+      },
     };
     expect(renderDecisionContract(decision)).toBe('');
   });
@@ -148,7 +156,11 @@ describe('B0b-min — end-to-end spine', () => {
     // pass a degraded shape directly.
     const decision: AssistantDecisionContext = {
       continuity: null,
-      source_health: { continuity: { ok: false, reason: 'supabase_unconfigured' } },
+      concept_mastery: null,
+      source_health: {
+        continuity: { ok: false, reason: 'supabase_unconfigured' },
+        concept_mastery: { ok: true },
+      },
     };
     const rendered = renderDecisionContract(decision);
     expect(rendered).toContain('continuity: source degraded');

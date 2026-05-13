@@ -46,7 +46,11 @@ function emptyContinuity(): DecisionContinuity {
 function emptyContext(over: Partial<AssistantDecisionContext> = {}): AssistantDecisionContext {
   return {
     continuity: null,
-    source_health: { continuity: { ok: true } },
+    concept_mastery: null,
+    source_health: {
+      continuity: { ok: true },
+      concept_mastery: { ok: true },
+    },
     ...over,
   };
 }
@@ -96,7 +100,10 @@ describe('B0b-min — decision-contract-renderer', () => {
     it('emits a degraded hint when continuity is null AND source_health is degraded', () => {
       const out = renderDecisionContract(
         emptyContext({
-          source_health: { continuity: { ok: false, reason: 'supabase_unconfigured' } },
+          source_health: {
+            continuity: { ok: false, reason: 'supabase_unconfigured' },
+            concept_mastery: { ok: true },
+          },
         }),
       );
       expect(out).toContain('continuity: source degraded');
@@ -242,6 +249,219 @@ describe('B0b-min — decision-contract-renderer', () => {
       expect(out).not.toContain('2026-05-10T12:00:00Z');
       expect(out).not.toContain('sess-A');
       expect(out).not.toContain('user said this exact sentence');
+    });
+  });
+
+  // F2: concept-mastery rendering + degraded handling + raw-field ignorance.
+  describe('concept mastery (F2)', () => {
+    function emptyConcept() {
+      return {
+        concepts_explained: [] as any[],
+        concepts_mastered: [] as any[],
+        dyk_cards_seen: [] as any[],
+        counts: {
+          concepts_explained_total: 0,
+          concepts_mastered_total: 0,
+          dyk_cards_seen_total: 0,
+          concepts_explained_in_last_24h: 0,
+        },
+        recommended_cadence: 'none' as const,
+      };
+    }
+
+    it('returns empty string when both fields null and both sources healthy', () => {
+      expect(renderDecisionContract(emptyContext())).toBe('');
+    });
+
+    it('emits degraded hint when concept_mastery null AND source degraded', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          source_health: {
+            continuity: { ok: true },
+            concept_mastery: { ok: false, reason: 'supabase_unconfigured' },
+          },
+        }),
+      );
+      expect(out).toContain('concept_mastery: source degraded');
+      expect(out).toContain('supabase_unconfigured');
+    });
+
+    it('renders explained concepts with bucket + hint + recency', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          concept_mastery: {
+            ...emptyConcept(),
+            concepts_explained: [{
+              concept_key: 'vitana_index',
+              frequency: 'twice',
+              days_since_last_explained: 2,
+              repetition_hint: 'one_liner',
+            }],
+          },
+        }),
+      );
+      expect(out).toContain('Concept mastery:');
+      expect(out).toContain('Concepts explained:');
+      expect(out).toContain('vitana_index [twice, hint=one_liner] (2d ago)');
+    });
+
+    it('renders mastered concepts with bucketed confidence', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          concept_mastery: {
+            ...emptyConcept(),
+            concepts_mastered: [{
+              concept_key: 'life_compass',
+              confidence: 'high',
+            }],
+          },
+        }),
+      );
+      expect(out).toContain('Concepts mastered:');
+      expect(out).toContain('life_compass [confidence=high]');
+    });
+
+    it('renders DYK cards with bucket + recency', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          concept_mastery: {
+            ...emptyConcept(),
+            dyk_cards_seen: [{
+              card_key: 'dyk_index_intro',
+              frequency: 'once',
+              days_since_last_seen: 5,
+            }],
+          },
+        }),
+      );
+      expect(out).toContain('DYK cards seen:');
+      expect(out).toContain('dyk_index_intro [once] (5d ago)');
+    });
+
+    it('renders recommended_cadence when non-none', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          concept_mastery: {
+            ...emptyConcept(),
+            concepts_explained: [{
+              concept_key: 'x',
+              frequency: 'many',
+              days_since_last_explained: 1,
+              repetition_hint: 'skip',
+            }],
+            recommended_cadence: 'suppress_over_explained',
+          },
+        }),
+      );
+      expect(out).toContain('Recommended cadence: suppress_over_explained');
+    });
+
+    it('omits cadence line when "none"', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          concept_mastery: {
+            ...emptyConcept(),
+            concepts_explained: [{
+              concept_key: 'x',
+              frequency: 'once',
+              days_since_last_explained: null,
+              repetition_hint: 'one_liner',
+            }],
+            recommended_cadence: 'none',
+          },
+        }),
+      );
+      expect(out).not.toContain('Recommended cadence');
+    });
+
+    it('raw-field ignorance: smuggled raw fields are NOT in output', () => {
+      const sneakyConcept = {
+        concepts_explained: [{
+          concept_key: 'vitana_index',
+          frequency: 'once',
+          days_since_last_explained: 1,
+          repetition_hint: 'one_liner',
+          // smuggled raw fields:
+          last_explained_at: '2026-05-12T12:00:00Z',
+          count: 42,
+          raw_score: 0.851234,
+        }],
+        concepts_mastered: [{
+          concept_key: 'm',
+          confidence: 'medium',
+          // smuggled:
+          last_observed_at: '2026-05-11T08:00:00Z',
+          raw_confidence_float: 0.85,
+        }],
+        dyk_cards_seen: [{
+          card_key: 'd',
+          frequency: 'many',
+          days_since_last_seen: 3,
+          // smuggled:
+          last_seen_at: '2026-05-09T20:00:00Z',
+        }],
+        counts: {
+          concepts_explained_total: 1,
+          concepts_mastered_total: 1,
+          dyk_cards_seen_total: 1,
+          concepts_explained_in_last_24h: 0,
+        },
+        recommended_cadence: 'use_one_liner' as const,
+      };
+      const out = renderDecisionContract(
+        emptyContext({ concept_mastery: sneakyConcept as any }),
+      );
+      expect(out).not.toContain('2026-05-12T12:00:00Z');
+      expect(out).not.toContain('2026-05-11T08:00:00Z');
+      expect(out).not.toContain('2026-05-09T20:00:00Z');
+      expect(out).not.toContain('0.851234');
+      expect(out).not.toContain('0.85');
+      expect(out).not.toContain('42'); // raw count
+    });
+  });
+
+  describe('both sections coexist', () => {
+    it('renders continuity then concept_mastery, in that order', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          continuity: {
+            open_threads: [
+              { thread_id: 't1', topic: 'magnesium', summary: null, days_since_last_mention: 1 },
+            ],
+            promises_owed: [],
+            promises_kept_recently: [],
+            counts: {
+              open_threads_total: 1,
+              promises_owed_total: 0,
+              promises_overdue: 0,
+              threads_mentioned_today: 0,
+            },
+            recommended_follow_up: 'mention_open_thread',
+          },
+          concept_mastery: {
+            concepts_explained: [{
+              concept_key: 'vitana_index',
+              frequency: 'once',
+              days_since_last_explained: 2,
+              repetition_hint: 'one_liner',
+            }],
+            concepts_mastered: [],
+            dyk_cards_seen: [],
+            counts: {
+              concepts_explained_total: 1,
+              concepts_mastered_total: 0,
+              dyk_cards_seen_total: 0,
+              concepts_explained_in_last_24h: 0,
+            },
+            recommended_cadence: 'use_one_liner',
+          },
+        }),
+      );
+      const continuityIdx = out.indexOf('Continuity:');
+      const conceptIdx = out.indexOf('Concept mastery:');
+      expect(continuityIdx).toBeGreaterThan(-1);
+      expect(conceptIdx).toBeGreaterThan(-1);
+      expect(continuityIdx).toBeLessThan(conceptIdx);
     });
   });
 });
