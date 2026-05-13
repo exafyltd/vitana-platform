@@ -4283,76 +4283,31 @@ async function executeLiveApiToolInner(
       // the authoritative path and runs on its own when the user opens the
       // app. This tool dispatch only covers the voice-handshake case.
       case 'activate_recommendation': {
-        const recId = String(args.id || '').trim();
-        if (!recId) {
-          return { success: false, result: '', error: 'id is required' };
+        // VTID-02975: lifted to services/orb-tools-shared.ts. The shared
+        // handler verifies ownership, flips new→activated only if needed,
+        // emits guide.initiative.executed telemetry, and returns a result
+        // with title + already_active for the celebratory close. Reachable
+        // identically via /api/v1/orb/tool now that it's in ORB_TOOL_REGISTRY.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-
-          // Verify ownership + fetch title for the celebratory close.
-          const { data: rec, error: fetchErr } = await supabase
-            .from('autopilot_recommendations')
-            .select('id, title, summary, status, user_id')
-            .eq('id', recId)
-            .maybeSingle();
-
-          if (fetchErr) {
-            return { success: false, result: '', error: fetchErr.message };
-          }
-          if (!rec) {
-            return { success: false, result: '', error: 'recommendation_not_found' };
-          }
-          if (rec.user_id && rec.user_id !== session.identity!.user_id) {
-            return {
-              success: false,
-              result: '',
-              error: 'recommendation_belongs_to_another_user',
-            };
-          }
-
-          const alreadyActive = rec.status === 'activated';
-          if (!alreadyActive) {
-            const { error: updErr } = await supabase
-              .from('autopilot_recommendations')
-              .update({ status: 'activated', updated_at: new Date().toISOString() })
-              .eq('id', recId);
-            if (updErr) {
-              return { success: false, result: '', error: updErr.message };
-            }
-          }
-
-          // Telemetry — fire-and-forget. Mirrors the consented/executed split
-          // from the initiative-engine plan so dashboards can compute funnel.
-          import('../services/guide').then(({ emitGuideTelemetry }) => {
-            emitGuideTelemetry('guide.initiative.executed', {
-              user_id: session.identity!.user_id,
-              initiative_key: 'autopilot_top_recommendation',
-              on_yes_tool: 'activate_recommendation',
-              recommendation_id: recId,
-              already_active: alreadyActive,
-            }).catch(() => {});
-          }).catch(() => {});
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              title: rec.title,
-              already_active: alreadyActive,
-              completion_message: alreadyActive
-                ? `"${rec.title}" was already on your active list — I'll keep it there.`
-                : `Done — "${rec.title}" is on your active list. Open Autopilot when you're ready to start it.`,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[V2-INITIATIVE] activate_recommendation error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'activate_recommendation',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'share_link': {

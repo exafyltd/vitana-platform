@@ -1957,6 +1957,90 @@ export async function tool_send_chat_message(
   }
 }
 
+/**
+ * VTID-02975: lifted from orb-live.ts:4285 (V2 Proactive Initiative Engine).
+ *
+ * Activates an Autopilot recommendation on the user's behalf. The voice
+ * "yes" handoff after a send_chat_message next_actions[0] suggestion lands
+ * here; the HTTP /api/v1/orb/tool endpoint dispatches to it via the shared
+ * registry; LiveKit's tool runner uses it via the same registry. Single
+ * source — no per-pipeline divergence.
+ *
+ * Verifies ownership (rec.user_id must match the actor or be null),
+ * flips status new→activated only if not already activated, and emits
+ * guide.initiative.executed telemetry fire-and-forget so the funnel
+ * dashboards stay accurate regardless of which surface drove activation.
+ */
+export async function tool_activate_recommendation(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const recId = String(args.id ?? '').trim();
+  if (!recId) {
+    return { ok: false, error: 'id is required' };
+  }
+  try {
+    const { data: rec, error: fetchErr } = await sb
+      .from('autopilot_recommendations')
+      .select('id, title, summary, status, user_id')
+      .eq('id', recId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      return { ok: false, error: fetchErr.message };
+    }
+    if (!rec) {
+      return { ok: false, error: 'recommendation_not_found' };
+    }
+    const recRow = rec as { id: string; title: string | null; summary: string | null; status: string | null; user_id: string | null };
+    if (recRow.user_id && recRow.user_id !== id.user_id) {
+      return { ok: false, error: 'recommendation_belongs_to_another_user' };
+    }
+
+    const alreadyActive = recRow.status === 'activated';
+    if (!alreadyActive) {
+      const { error: updErr } = await sb
+        .from('autopilot_recommendations')
+        .update({ status: 'activated', updated_at: new Date().toISOString() })
+        .eq('id', recId);
+      if (updErr) {
+        return { ok: false, error: updErr.message };
+      }
+    }
+
+    // Fire-and-forget telemetry. Mirrors the inline Vertex case path so
+    // funnel dashboards (`guide.initiative.executed`) keep counting both
+    // voice and REST activations under the same event type.
+    import('./guide')
+      .then(({ emitGuideTelemetry }) => {
+        emitGuideTelemetry('guide.initiative.executed', {
+          user_id: id.user_id,
+          initiative_key: 'autopilot_top_recommendation',
+          on_yes_tool: 'activate_recommendation',
+          recommendation_id: recId,
+          already_active: alreadyActive,
+        }).catch(() => {});
+      })
+      .catch(() => {});
+
+    const title = recRow.title ?? 'that recommendation';
+    return {
+      ok: true,
+      result: {
+        title: recRow.title,
+        already_active: alreadyActive,
+      },
+      text: alreadyActive
+        ? `"${title}" was already on your active list — I'll keep it there.`
+        : `Done — "${title}" is on your active list. Open Autopilot when you're ready to start it.`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'activate_recommendation error';
+    return { ok: false, error: msg };
+  }
+}
+
 export async function tool_share_link(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -3370,6 +3454,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   resolve_recipient: tool_resolve_recipient,
   send_chat_message: tool_send_chat_message,
   share_link: tool_share_link,
+  // VTID-02975: lifted from orb-live.ts inline. Reachable via Vertex,
+  // LiveKit, AND /api/v1/orb/tool now that it's in the shared registry.
+  activate_recommendation: tool_activate_recommendation,
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
