@@ -598,6 +598,13 @@ export type CicdEventType =
   | 'self-healing.execution.bridge_failed'
   | 'self-healing.execution.deferred'
   | 'self-healing.execution.failed'
+  // PR-J (VTID-02952): close the third terminal-write bypass.
+  // Emitted by autopilot-controller.updateLedgerTerminal when it
+  // refuses to mark a self-healing VTID success because the linked
+  // dev_autopilot_executions row has not reached status='completed'.
+  // (vtid-terminalize.ts emits the same topic via a local fetch helper,
+  // so it didn't need the type-system entry.)
+  | 'self-healing.terminalize.blocked'
   | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'
