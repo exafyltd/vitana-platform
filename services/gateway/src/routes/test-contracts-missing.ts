@@ -280,7 +280,10 @@ The capability \`${gap.capability}\` (endpoint \`${gap.target_endpoint}\`, file 
         effort_score: 3,
         auto_exec_eligible: true,
         domain: 'gateway',
-        scanner: 'missing-test-scanner',
+        // VTID-02979 (PR-M1.1 hotfix): `scanner` is NOT a column on
+        // autopilot_recommendations — it lives in spec_snapshot.scanner.
+        // The top-level field caused PostgREST to reject the entire INSERT
+        // with PGRST204, leaving allocated VTIDs orphaned without a recommendation.
         spec_snapshot: {
           spec_markdown,
           files_referenced: [
