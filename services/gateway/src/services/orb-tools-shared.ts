@@ -1701,15 +1701,58 @@ export async function tool_send_chat_message(
       }
     }
 
+    // VTID-02963: Restore per-voice-session rate-limit isolation.
+    // PR B-6 (VTID-02817) lifted this function from orb-live.ts inline and
+    // replaced `session.sessionId` with the synthetic key
+    // `${id.user_id}:send_chat_message`. That made the 5-send cap shared
+    // across every orb open for a user until the 30-min TTL expired —
+    // users who'd hit the cap once couldn't send via voice again for half
+    // an hour, even from a brand-new session. Restore the real session id
+    // as the key; fall back to a clearly-tagged synthetic key only when
+    // the session id is genuinely missing (LiveKit identity may not yet
+    // populate it during early bootstrap), and emit telemetry when that
+    // happens so we can see fallback usage.
+    const realSessionId = (id.session_id ?? '').trim();
+    const usingFallbackKey = !realSessionId;
+    const rateLimitKey = usingFallbackKey
+      ? `${id.user_id}:send_chat_message:no_session`
+      : realSessionId;
+    const keyType = usingFallbackKey ? 'missing_session_fallback' : 'real_session';
+    if (usingFallbackKey) {
+      try {
+        const { emitOasisEvent } = await import('./oasis-event-service');
+        await emitOasisEvent({
+          vtid: 'VTID-02963',
+          type: 'voice.chat_message.missing_session_fallback',
+          source: 'orb-tools-shared',
+          status: 'warning',
+          message:
+            'send_chat_message called without OrbToolIdentity.session_id; rate-limit key fell back to per-user synthetic',
+          payload: {
+            fallback_key: rateLimitKey,
+            recipient_user_id: recipientUserId,
+            tool: 'send_chat_message',
+          },
+          actor_id: id.user_id,
+          actor_role: 'user',
+          surface: 'orb',
+          vitana_id: id.vitana_id ?? undefined,
+        });
+      } catch {
+        // Telemetry must not break voice flow.
+      }
+    }
+
     const recipientVitanaId = await resolveVitanaId(recipientUserId);
     const quota = await checkVoiceSendQuota({
-      session_id: `${id.user_id}:send_chat_message`,
+      session_id: rateLimitKey,
       actor_id: id.user_id,
       vitana_id: id.vitana_id ?? null,
       recipient_user_id: recipientUserId,
       recipient_vitana_id: recipientVitanaId,
       kind: 'message',
       body_length: body.length,
+      key_type: keyType,
     });
     if (!quota.allowed) {
       return {
@@ -1729,7 +1772,8 @@ export async function tool_send_chat_message(
       ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
       metadata: {
         source: 'voice',
-        session_id: `${id.user_id}:send_chat_message`,
+        session_id: rateLimitKey,
+        key_type: keyType,
         recipient_label: recipientLabel || recipientVitanaId,
       },
     });
