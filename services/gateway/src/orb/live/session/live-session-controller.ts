@@ -1,46 +1,60 @@
 /**
- * A8.2 (orb-live-refactor / VTID-02961): session lifecycle controller —
- * slice 2 of 3.
+ * Session lifecycle controller for the ORB voice path.
  *
  * A8 is split per the spec's risk warning:
  *   A8.1 (shipped) — registry shell (Maps + types).
- *   A8.2 (this slice) — lifecycle/cleanup helpers + smallest session-action
- *                       handler (`/live/stream/end-turn`). Establishes the
- *                       controller module + deps-bag pattern. Per the
- *                       direction's "Keep scope tight" rule, the larger
- *                       handlers (`/live/session/start`, `/live/session/stop`,
- *                       `/live/stream/send`) follow in subsequent slices
- *                       using the same pattern.
- *   A8.3 (next)   — LiveAPI message-handler closure migration to
- *                   VertexLiveClient (A7); migrates per-event SSE writes to
- *                   `writeSseEvent` from A9.2; lifts remaining handlers.
+ *   A8.2 (shipped) — lifecycle/cleanup helpers + smallest session-action
+ *                    handler (`/live/stream/end-turn`). Established the
+ *                    deps-bag pattern.
+ *   A8.2.1 (this)  — lift `/live/session/start` into the controller using
+ *                    the same deps-bag pattern.
+ *   A8.2.2 (next)  — lift `/live/session/stop`.
+ *   A8.2.3 (next)  — lift `/live/stream/send`.
+ *   A8.3 (after)   — LiveAPI message-handler closure migration to
+ *                    VertexLiveClient (A7); migrate per-event SSE writes to
+ *                    `writeSseEvent` from A9.2.
  *
- * Hard rules (carried from A7 / A9.1 / A9.2 / A8.1):
+ * Hard rules (carried from A7 / A9.1 / A9.2 / A8.1 / A8.2):
  *   1. Zero behavior change. The lifted helpers operate on the SAME Map
  *      instances that orb-live.ts mutates, via the A8.1 registry.
  *   2. Deps are injected once via `configureLiveSessionController`. Helpers
  *      that read deps after configuration call `getDeps()`. Configuring twice
- *      is an explicit error (caught early so misconfigured tests / wiring
- *      fail loudly).
+ *      is an explicit error.
  *   3. No LiveAPI message-handler closure here — that's A8.3.
- *   4. No LiveKit adapter, no provider selection — those are L-lane work.
+ *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
 import type { Response } from 'express';
 import type WebSocket from 'ws';
 import WebSocketPkg from 'ws';
+import { randomUUID } from 'crypto';
 import type {
   AuthenticatedRequest,
   SupabaseIdentity,
 } from '../../../middleware/auth-supabase-jwt';
 import type { GeminiLiveSession } from '../../../routes/orb-live';
+import type {
+  ClientContext,
+  LiveSessionStartRequest,
+} from '../types';
+import type { ContextPack } from '../../../types/conversation';
 import { SESSION_TIMEOUT_MS } from '../config';
+import { VERTEX_LIVE_MODEL } from '../protocol';
+import { VAD_SILENCE_DURATION_MS_DEFAULT } from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
 import {
   deduplicatedExtract,
   clearExtractionState,
 } from '../../../services/extraction-dedup-manager';
 import { DEV_IDENTITY } from '../../../services/orb-memory-bridge';
+import { emitOasisEvent } from '../../../services/oasis-event-service';
+import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
+import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
+import { recordAgentHeartbeat } from '../../../routes/agents-registry';
+import {
+  fetchAdminBriefingBlock,
+  isAdminRole,
+} from '../../../services/admin-scanners/briefing';
 import {
   sessions,
   liveSessions,
@@ -53,16 +67,76 @@ import {
  * `configureLiveSessionController` so the controller module has no
  * runtime import cycle with orb-live.ts.
  *
- * Each dep maps 1:1 to a private function in orb-live.ts that A8.3 (or
- * later) will lift out independently:
- *   - `resolveOrbIdentity` lives at routes/orb-live.ts:~458.
- *   - `clearResponseWatchdog` lives at routes/orb-live.ts:~7201.
- *   - `sendEndOfTurn` lives at routes/orb-live.ts:~7104.
+ * Each dep maps 1:1 to a private function in orb-live.ts. Future slices
+ * (A8.3 and beyond) may lift these out independently — until then the
+ * deps-bag is the seam.
  */
+export interface BootstrapContextResult {
+  contextInstruction?: string;
+  contextPack?: ContextPack;
+  latencyMs?: number;
+  skippedReason?: string;
+}
+
 export interface LiveSessionControllerDeps {
+  // A8.2 — used by cleanupWsSession + handleLiveStreamEndTurn
   resolveOrbIdentity: (req: AuthenticatedRequest) => Promise<SupabaseIdentity | null>;
   clearResponseWatchdog: (session: GeminiLiveSession) => void;
   sendEndOfTurn: (ws: WebSocket) => boolean;
+
+  // A8.2.1 — used by handleLiveSessionStart
+  validateOrigin: (req: AuthenticatedRequest) => boolean;
+  buildClientContext: (req: AuthenticatedRequest) => Promise<ClientContext>;
+  normalizeLang: (lang: string) => string;
+  getVoiceForLang: (lang: string) => string;
+  getStoredLanguagePreference: (tenantId: string, userId: string) => Promise<string | null>;
+  persistLanguagePreference: (tenantId: string, userId: string, lang: string) => void;
+  fetchLastSessionInfo: (
+    userId: string,
+  ) => Promise<{ time: string; wasFailure: boolean } | null>;
+  fetchOnboardingCohortBlock: (
+    userId: string | null | undefined,
+  ) => Promise<string>;
+  buildBootstrapContextPack: (
+    identity: SupabaseIdentity,
+    sessionId: string,
+  ) => Promise<BootstrapContextResult>;
+  resolveEffectiveRole: (
+    userId: string,
+    tenantId: string,
+  ) => Promise<string | null>;
+  terminateExistingSessionsForUser: (
+    userId: string,
+    excludeSessionId?: string,
+  ) => number;
+  /**
+   * Computes a temporal "time-since-last-session" bucket. Lives in
+   * `orb/live/instruction/live-system-instruction.ts` but is passed
+   * through the deps bag (instead of imported directly) because that
+   * module imports `routes/orb-live.ts`, which would form a circular
+   * import at module-load against the controller.
+   */
+  describeTimeSince: (
+    lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
+  ) => { bucket: string; wasFailure: boolean };
+  emitLiveSessionEvent: (
+    eventType:
+      | 'vtid.live.session.start'
+      | 'vtid.live.session.stop'
+      | 'vtid.live.audio.in.chunk'
+      | 'vtid.live.video.in.frame'
+      | 'vtid.live.audio.out.chunk'
+      | 'orb.live.config_missing'
+      | 'orb.live.connection_failed'
+      | 'orb.live.stall_detected'
+      | 'orb.live.diag'
+      | 'orb.live.fallback_used'
+      | 'orb.live.fallback_error'
+      | 'orb.live.tool_loop_guard_activated'
+      | 'orb.live.greeting.delivered',
+    payload: Record<string, unknown>,
+    status?: 'info' | 'warning' | 'error',
+  ) => Promise<void>;
 }
 
 let configuredDeps: LiveSessionControllerDeps | null = null;
@@ -267,4 +341,424 @@ export async function handleLiveStreamEndTurn(
 
   console.log(`[VTID-01219] End of turn (no Live API): session=${effectiveSessionId}`);
   return res.status(200).json({ ok: true, message: 'End of turn acknowledged (no Live API)' });
+}
+
+/**
+ * `POST /api/v1/orb/live/session/start` — create a new Gemini Live session
+ * for the ORB voice path. Originally inline at orb-live.ts:~11113.
+ *
+ * Behavior parity (lifted verbatim — see commit message for the exhaustive
+ * VTID inventory):
+ *   - 403 when origin fails `validateOrigin`.
+ *   - 401 (`AUTH_TOKEN_INVALID`) when Bearer header present but `req.identity`
+ *     is unset (VTID-AUTH-BACKEND-REJECT).
+ *   - Builds clientContext, resolves identity, decides anonymous vs JWT.
+ *   - Language priority: client-requested > stored > Accept-Language > 'en'.
+ *   - Context bootstrap (Brain or legacy) kicked off in parallel for
+ *     authenticated sessions, awaited later in connectToLiveAPI's ws.on(open).
+ *   - VTID-SESSION-LIMIT: terminates any existing active sessions for user
+ *     (except DEV_IDENTITY, which is shared across anonymous sessions).
+ *   - VTID-02020: conversation_id pinning + resumedFromHistory flag.
+ *   - VTID-02917: wake-timeline session_start_received event.
+ *   - VTID-02918: wake-brief continuation decision (attached to response +
+ *     session for observability; does NOT yet drive the spoken greeting).
+ *   - OASIS event `vtid.live.session.start`.
+ *   - 200 response with `{ ok, session_id, conversation_id, meta }`.
+ */
+export async function handleLiveSessionStart(
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<Response> {
+  const deps = getDeps();
+  console.log('[VTID-ORBC] POST /orb/live/session/start');
+
+  // Validate origin
+  if (!deps.validateOrigin(req)) {
+    return res.status(403).json({ ok: false, error: 'Origin not allowed' });
+  }
+
+  // VTID-AUTH-BACKEND-REJECT: If a Bearer token was provided but the JWT
+  // failed verification, reject with 401 so the client knows to re-auth.
+  // optionalAuth silently drops invalid tokens, which is fine for truly
+  // anonymous widget requests on public pages (no Authorization header),
+  // but lets stale authenticated sessions degrade into anonymous greetings —
+  // which is how logged-in users ended up hearing the first-time intro
+  // speech after their JWT expired in the background.
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ') && !req.identity) {
+    console.warn('[VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401');
+    return res.status(401).json({
+      ok: false,
+      error: 'AUTH_TOKEN_INVALID',
+      message: 'Session expired or invalid — please re-authenticate',
+    });
+  }
+
+  const body = req.body as LiveSessionStartRequest;
+  const clientRequestedLang = body.lang;
+  console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
+  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
+  const responseModalities = body.response_modalities || ['audio', 'text'];
+  const conversationSummary = body.conversation_summary || undefined;
+  const reconnectTranscriptHistory: Array<{ role: 'user' | 'assistant'; text: string }> =
+    Array.isArray((body as any).transcript_history)
+      ? ((body as any).transcript_history as any[])
+          .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
+          .slice(-20)
+      : [];
+  const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
+    typeof (body as any).reconnect_stage === 'string'
+    && ((body as any).reconnect_stage === 'idle' || (body as any).reconnect_stage === 'listening_user_speaking'
+        || (body as any).reconnect_stage === 'thinking' || (body as any).reconnect_stage === 'speaking')
+      ? (body as any).reconnect_stage
+      : 'idle';
+  const incomingConversationId: string | null =
+    typeof (body as any).conversation_id === 'string' && (body as any).conversation_id.length > 0
+      ? (body as any).conversation_id : null;
+  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
+  const resolvedConversationId = incomingConversationId || randomUUID();
+  if (isReconnectStart) {
+    console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
+  }
+
+  // Generate session ID
+  const sessionId = `live-${randomUUID()}`;
+
+  // VTID-01224: Build bootstrap context pack (memory + knowledge) for system instruction
+  let contextInstruction: string | undefined;
+  let contextPack: ContextPack | undefined;
+  let contextBootstrapLatencyMs: number | undefined;
+  let contextBootstrapSkippedReason: string | undefined;
+
+  // VTID-ANON: Anonymous = no verified JWT on the request.
+  const hasJwtIdentity = !!(req.identity && req.identity.user_id);
+  const isAnonymousSession = !hasJwtIdentity;
+
+  // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback)
+  const orbIdentity = await deps.resolveOrbIdentity(req);
+  const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
+
+  // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
+  const clientContext = await deps.buildClientContext(req);
+  console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
+  console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
+
+  // Resolve language priority:
+  // 1. Client-requested lang
+  // 2. Stored preference (parallel fetch)
+  // 3. Accept-Language header
+  // 4. 'en'
+  let lang = deps.normalizeLang(clientRequestedLang || 'en');
+  const needsStoredLang = !clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id;
+  const storedLangPromise: Promise<string | null> = needsStoredLang
+    ? deps.getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id)
+    : Promise.resolve(null);
+  if (clientRequestedLang) {
+    console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
+  }
+  if (isAnonymousSession && !clientRequestedLang && clientContext.lang) {
+    const browserLang = deps.normalizeLang(clientContext.lang);
+    if (browserLang !== 'en' || !clientRequestedLang) {
+      lang = browserLang;
+      console.log(`[LANG-PREF] Anonymous session using Accept-Language: ${lang}`);
+    }
+  }
+
+  // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
+  let sseActiveRole: string | null = null;
+  // VTID-01224-FIX: Last session info for context-aware greeting
+  let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
+  // BOOTSTRAP-ORB-CRITICAL-PATH: Promise resolving once context assembly has
+  // populated the session fields below. Attached to the session object and
+  // awaited by connectToLiveAPI's ws.on('open') handler.
+  let contextReadyPromise: Promise<void> | undefined;
+
+  if (isAnonymousSession) {
+    contextBootstrapSkippedReason = 'anonymous_session';
+    console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
+  } else if (bootstrapIdentity) {
+    const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
+    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
+
+    const { isVitanaBrainOrbEnabled } = await import('../../../services/system-controls-service');
+    const useOrbBrain = await isVitanaBrainOrbEnabled();
+    const contextBuildStart = Date.now();
+
+    const bootstrapWork = Promise.all([
+      useOrbBrain
+        ? (async () => {
+            const brainStart = Date.now();
+            try {
+              const { buildBrainSystemInstruction } = await import('../../../services/vitana-brain');
+              const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+              const brainRole = clientContext.isMobile
+                ? 'community'
+                : bodyRoute.startsWith('/command-hub')
+                  ? 'developer'
+                  : ((bootstrapIdentity as any).active_role || 'community');
+              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
+                user_id: bootstrapIdentity.user_id,
+                tenant_id: bootstrapIdentity.tenant_id || 'default',
+                role: brainRole,
+                channel: 'orb',
+                thread_id: sessionId,
+                user_timezone: clientContext?.timezone,
+              });
+              console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
+              return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
+            } catch (err: any) {
+              console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
+              return deps.buildBootstrapContextPack(bootstrapIdentity, sessionId);
+            }
+          })()
+        : deps.buildBootstrapContextPack(bootstrapIdentity, sessionId),
+      usingDevFallback
+        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
+        : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
+      deps.fetchLastSessionInfo(bootstrapIdentity.user_id),
+      storedLangPromise,
+      bootstrapIdentity.tenant_id
+        ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
+            console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
+            return null;
+          })
+        : Promise.resolve(null),
+    ]);
+
+    contextReadyPromise = bootstrapWork
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+        let resolvedRole = fetchedSseRole;
+        const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
+          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
+          resolvedRole = 'developer';
+        }
+        if (clientContext.isMobile && resolvedRole !== 'community') {
+          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
+          resolvedRole = 'community';
+        }
+
+        let finalContext = bootstrapResult.contextInstruction || '';
+        if (isAdminRole(resolvedRole) && adminBriefing) {
+          finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
+          emitOasisEvent({
+            vtid: 'BOOTSTRAP-ADMIN-EE',
+            type: 'admin.briefing.injected',
+            source: 'orb-live',
+            status: 'info',
+            message: `Admin briefing injected into SSE session ${sessionId}`,
+            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: resolvedRole, chars: adminBriefing.length },
+            actor_id: bootstrapIdentity.user_id,
+            actor_role: 'admin',
+            surface: 'orb',
+          }).catch(() => {});
+        }
+
+        if (bootstrapResult.skippedReason) {
+          console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
+        } else {
+          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${finalContext.length}`);
+        }
+
+        let finalLang = lang;
+        if (storedLangResult && !clientRequestedLang) {
+          finalLang = storedLangResult;
+          console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
+        }
+
+        session.active_role = resolvedRole;
+        session.lastSessionInfo = fetchedSessionInfo;
+        session.contextInstruction = finalContext;
+        session.contextPack = bootstrapResult.contextPack;
+        session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
+        session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+        session.contextBootstrapBuiltAt = Date.now();
+        try {
+          (session as any).onboardingCohortBlock = await deps.fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
+        } catch { /* non-blocking */ }
+        if (finalLang !== session.lang) {
+          session.lang = finalLang;
+        }
+
+        if (bootstrapIdentity.user_id && bootstrapIdentity.tenant_id) {
+          deps.persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, finalLang);
+        }
+
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
+      })
+      .catch((err) => {
+        console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
+      });
+  } else {
+    contextBootstrapSkippedReason = 'no_identity';
+    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
+  }
+
+  // Create session object
+  const session: GeminiLiveSession = {
+    sessionId,
+    lang,
+    voiceStyle,
+    responseModalities,
+    upstreamWs: null,
+    sseResponse: null,
+    active: true,
+    createdAt: new Date(),
+    lastActivity: new Date(),
+    audioInChunks: 0,
+    videoInFrames: 0,
+    audioOutChunks: 0,
+    turn_count: 0,
+    contextInstruction,
+    contextPack,
+    contextBootstrapLatencyMs,
+    contextBootstrapSkippedReason,
+    contextBootstrapBuiltAt: Date.now(),
+    contextReadyPromise,
+    transcriptTurns: reconnectTranscriptHistory.length > 0
+      ? reconnectTranscriptHistory.map((t) => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
+      : [],
+    outputTranscriptBuffer: '',
+    pendingEventLinks: [],
+    inputTranscriptBuffer: '',
+    isModelSpeaking: false,
+    turnCompleteAt: 0,
+    identity: hasJwtIdentity ? orbIdentity || undefined : undefined,
+    conversationSummary,
+    active_role: sseActiveRole,
+    lastAudioForwardedTime: Date.now(),
+    lastTelemetryEmitTime: 0,
+    vadSilenceMs: (body as any).vad_silence_ms && (body as any).vad_silence_ms >= 500 && (body as any).vad_silence_ms <= 3000
+      ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+    greetingDeferred: false,
+    lastSessionInfo,
+    consecutiveModelTurns: 0,
+    consecutiveToolCalls: 0,
+    isAnonymous: isAnonymousSession,
+    clientContext,
+    current_route: typeof (body as any).current_route === 'string'
+      ? (body as any).current_route
+      : undefined,
+    recent_routes: Array.isArray((body as any).recent_routes)
+      ? ((body as any).recent_routes as any[])
+          .filter((r): r is string => typeof r === 'string')
+          .slice(0, 5)
+      : undefined,
+    is_mobile: typeof (body as any).is_mobile === 'boolean'
+      ? (body as any).is_mobile
+      : undefined,
+  };
+
+  // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
+  let terminatedCount = 0;
+  const isDevIdentity = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
+  if (orbIdentity?.user_id && !isDevIdentity) {
+    terminatedCount = deps.terminateExistingSessionsForUser(orbIdentity.user_id, sessionId);
+    if (terminatedCount > 0) {
+      console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
+    }
+  }
+
+  // VTID-02020: pin the conversation_id + mark resumed-from-history
+  session.conversation_id = resolvedConversationId;
+  if (isReconnectStart) {
+    (session as any).resumedFromHistory = true;
+    (session as any).reconnectStage = reconnectStage;
+  }
+
+  // Store session
+  liveSessions.set(sessionId, session);
+
+  // VTID-02917 (B0d.3): wake-timeline session_start_received event
+  try {
+    defaultWakeTimelineRecorder.startSession({
+      sessionId,
+      tenantId: orbIdentity?.tenant_id ?? null,
+      userId: orbIdentity?.user_id ?? null,
+      surface: 'orb_wake',
+      transport: 'sse',
+    });
+    defaultWakeTimelineRecorder.recordEvent({
+      sessionId,
+      name: 'session_start_received',
+      metadata: {
+        isReconnect: isReconnectStart,
+        reconnectStage,
+        lang: clientRequestedLang ?? null,
+      },
+    });
+  } catch {
+    // Best-effort; never block the wake path on telemetry.
+  }
+
+  // VTID-02918 (B0d.4): wake-brief continuation decision
+  let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+  try {
+    const temporal = deps.describeTimeSince(session.lastSessionInfo);
+    wakeBriefDecision = await decideWakeBriefForSession({
+      sessionId,
+      tenantId: orbIdentity?.tenant_id ?? null,
+      userId: orbIdentity?.user_id ?? null,
+      bucket: temporal.bucket,
+      wasFailure: temporal.wasFailure,
+      isReconnect: isReconnectStart,
+      lang,
+    });
+    (session as any).wakeBriefDecision = wakeBriefDecision;
+  } catch (e) {
+    console.warn(
+      `[VTID-02918] wake-brief decision failed for ${sessionId}: ${(e as Error).message}`,
+    );
+  }
+
+  // Emit OASIS event with identity context
+  await deps.emitLiveSessionEvent('vtid.live.session.start', {
+    session_id: sessionId,
+    user_id: orbIdentity?.user_id || 'anonymous',
+    tenant_id: orbIdentity?.tenant_id || null,
+    email: orbIdentity?.email || null,
+    active_role: sseActiveRole || null,
+    user_agent: req.headers['user-agent'] || null,
+    origin: req.headers['origin'] || req.headers['referer'] || null,
+    transport: 'sse',
+    lang,
+    modalities: responseModalities,
+    voice: deps.getVoiceForLang(lang),
+  });
+
+  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
+
+  // BOOTSTRAP-VOICE-DEMO: real heartbeat
+  recordAgentHeartbeat('orb-live').catch(() => {});
+
+  return res.status(200).json({
+    ok: true,
+    session_id: sessionId,
+    conversation_id: resolvedConversationId,
+    meta: {
+      lang,
+      voice: deps.getVoiceForLang(lang),
+      modalities: responseModalities,
+      model: VERTEX_LIVE_MODEL,
+      context_bootstrap: {
+        latency_ms: contextBootstrapLatencyMs ?? null,
+        context_chars: null,
+        skipped_reason: contextBootstrapSkippedReason || null,
+        deferred: !!contextReadyPromise,
+      },
+      wake_brief: wakeBriefDecision
+        ? {
+            decision_id: wakeBriefDecision.decisionId,
+            selected_kind:
+              wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
+            user_facing_line:
+              wakeBriefDecision.selectedContinuation?.userFacingLine ?? '',
+            suppression_reason:
+              wakeBriefDecision.selectedContinuation?.kind === 'none_with_reason'
+                ? wakeBriefDecision.selectedContinuation.suppressReason
+                : wakeBriefDecision.suppressionReason ?? null,
+          }
+        : null,
+    },
+  });
 }

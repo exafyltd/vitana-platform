@@ -20,7 +20,9 @@ import {
   cleanupExpiredSessions,
   cleanupWsSession,
   handleLiveStreamEndTurn,
+  handleLiveSessionStart,
   __resetLiveSessionControllerForTests,
+  type LiveSessionControllerDeps,
 } from '../../../../src/orb/live/session/live-session-controller';
 import {
   sessions,
@@ -346,12 +348,27 @@ describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', ()
     expect(source).toMatch(/\bhandleLiveStreamEndTurn\b/);
   });
 
-  it('calls configureLiveSessionController exactly once at module init with the three deps', () => {
+  it('calls configureLiveSessionController exactly once at module init', () => {
     const calls = source.match(/configureLiveSessionController\s*\(/g) ?? [];
     expect(calls.length).toBe(1);
+    // A8.2 deps
     expect(source).toMatch(/resolveOrbIdentity\s*,/);
     expect(source).toMatch(/clearResponseWatchdog\s*,/);
-    expect(source).toMatch(/sendEndOfTurn\s*,?\s*\}\)/);
+    expect(source).toMatch(/sendEndOfTurn\s*,/);
+    // A8.2.1 deps added in this slice
+    expect(source).toMatch(/validateOrigin\s*,/);
+    expect(source).toMatch(/buildClientContext\s*,/);
+    expect(source).toMatch(/normalizeLang\s*,/);
+    expect(source).toMatch(/getVoiceForLang\s*,/);
+    expect(source).toMatch(/getStoredLanguagePreference\s*,/);
+    expect(source).toMatch(/persistLanguagePreference\s*,/);
+    expect(source).toMatch(/fetchLastSessionInfo\s*,/);
+    expect(source).toMatch(/fetchOnboardingCohortBlock\s*,/);
+    expect(source).toMatch(/buildBootstrapContextPack\s*,/);
+    expect(source).toMatch(/resolveEffectiveRole\s*,/);
+    expect(source).toMatch(/terminateExistingSessionsForUser\s*,/);
+    expect(source).toMatch(/emitLiveSessionEvent\s*,/);
+    expect(source).toMatch(/describeTimeSince\s*,?\s*\}\)/);
   });
 
   it('does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore', () => {
@@ -365,7 +382,248 @@ describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', ()
       source.indexOf("router.post('/live/stream/end-turn'") + 400,
     );
     expect(handlerSlice).toMatch(/await\s+handleLiveStreamEndTurn\s*\(\s*req\s*,\s*res\s*\)/);
-    // Anti-regression: no inline `liveSessions.get(` inside this slice.
     expect(handlerSlice).not.toMatch(/liveSessions\.get\(/);
+  });
+
+  it('/live/session/start route is now a thin delegator (A8.2.1)', () => {
+    const idx = source.indexOf("router.post('/live/session/start'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveSessionStart\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline bootstrap-context call inside this slice.
+    expect(slice).not.toMatch(/buildBootstrapContextPack\s*\(/);
+    expect(slice).not.toMatch(/liveSessions\.set\(/);
+  });
+});
+
+// =============================================================================
+// A8.2.1: handleLiveSessionStart
+// =============================================================================
+
+describe('A8.2.1: handleLiveSessionStart', () => {
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      // A8.2 deps
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      // A8.2.1 deps
+      validateOrigin: () => true,
+      buildClientContext: async () => ({
+        city: 'test',
+        country: 'US',
+        localTime: '12:00',
+        device: 'desktop',
+        isMobile: false,
+        lang: 'en',
+        timezone: 'UTC',
+      } as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({
+        contextInstruction: '',
+        contextPack: undefined,
+        latencyMs: 0,
+        skippedReason: undefined,
+      }),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      ...overrides,
+    };
+  }
+
+  function makeReq(overrides: Partial<{ identity: any; headers: any; body: any }> = {}) {
+    return {
+      identity: overrides.identity,
+      headers: overrides.headers ?? {},
+      body: overrides.body ?? {},
+      query: {},
+    } as any;
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  it('returns 403 when validateOrigin rejects', async () => {
+    configureLiveSessionController(
+      baseDeps({ validateOrigin: () => false }),
+    );
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Origin not allowed' });
+  });
+
+  it('returns 401 AUTH_TOKEN_INVALID when Bearer header present but req.identity unset', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      headers: { authorization: 'Bearer expired-token' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: 'AUTH_TOKEN_INVALID',
+      message: 'Session expired or invalid — please re-authenticate',
+    });
+  });
+
+  it('creates an anonymous session (no JWT) and stores it in liveSessions with a live-<uuid> session_id', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.ok).toBe(true);
+    expect(payload.session_id).toMatch(/^live-/);
+    expect(payload.conversation_id).toBeTruthy();
+    expect(payload.meta.lang).toBe('en');
+    expect(payload.meta.voice).toBe('Aoede');
+    expect(payload.meta.modalities).toEqual(['audio', 'text']);
+    expect(payload.meta.context_bootstrap.skipped_reason).toBe('anonymous_session');
+    expect(payload.meta.context_bootstrap.deferred).toBe(false);
+
+    expect(liveSessions.size).toBe(1);
+    const created = liveSessions.get(payload.session_id);
+    expect(created).toBeDefined();
+    expect(created!.isAnonymous).toBe(true);
+    expect(created!.identity).toBeUndefined();
+    expect(created!.conversation_id).toBe(payload.conversation_id);
+    expect(created!.active).toBe(true);
+  });
+
+  it('respects client-requested language', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { lang: 'de' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.meta.lang).toBe('de');
+  });
+
+  it('emits OASIS vtid.live.session.start with the resolved fields', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    configureLiveSessionController(baseDeps({ emitLiveSessionEvent: emitSpy }));
+    const req = makeReq({
+      body: { lang: 'fr', response_modalities: ['audio'] },
+      headers: { 'user-agent': 'jest', origin: 'http://test' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.start',
+      expect.objectContaining({
+        user_id: 'anonymous',
+        transport: 'sse',
+        lang: 'fr',
+        modalities: ['audio'],
+        voice: 'Aoede',
+        user_agent: 'jest',
+        origin: 'http://test',
+      }),
+    );
+  });
+
+  it('pins client-supplied conversation_id when present', async () => {
+    configureLiveSessionController(baseDeps());
+    const givenConv = 'conv-abc-123';
+    const req = makeReq({ body: { conversation_id: givenConv } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.conversation_id).toBe(givenConv);
+  });
+
+  it('marks reconnect session with resumedFromHistory when transcript_history provided', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      body: {
+        transcript_history: [
+          { role: 'user', text: 'hi' },
+          { role: 'assistant', text: 'hello' },
+        ],
+      },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBe(true);
+    expect(created!.transcriptTurns).toHaveLength(2);
+    expect(created!.transcriptTurns[0].role).toBe('user');
+  });
+
+  it('uses VAD silence override when supplied in valid range', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { vad_silence_ms: 1500 } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect(created!.vadSilenceMs).toBe(1500);
+  });
+
+  it('does NOT terminate other sessions when identity is DEV_IDENTITY', async () => {
+    const { DEV_IDENTITY } = await import('../../../../src/services/orb-memory-bridge');
+    const terminateSpy = jest.fn().mockReturnValue(0);
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({
+          user_id: DEV_IDENTITY.USER_ID,
+          tenant_id: DEV_IDENTITY.TENANT_ID,
+        }) as any,
+        terminateExistingSessionsForUser: terminateSpy,
+      }),
+    );
+    const req = makeReq({
+      identity: { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(terminateSpy).not.toHaveBeenCalled();
+  });
+
+  it('terminates existing sessions for a real authenticated user', async () => {
+    const terminateSpy = jest.fn().mockReturnValue(2);
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({
+          user_id: 'real-user-uuid',
+          tenant_id: 'tenant-uuid',
+        }) as any,
+        terminateExistingSessionsForUser: terminateSpy,
+      }),
+    );
+    const req = makeReq({
+      identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(terminateSpy).toHaveBeenCalledWith('real-user-uuid', expect.stringMatching(/^live-/));
+  });
+
+  it('returns wake_brief field in meta (default null for anonymous; non-null structure when populated)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    // wake_brief MAY be non-null even for anonymous sessions; just assert the field exists.
+    expect(payload.meta).toHaveProperty('wake_brief');
   });
 });

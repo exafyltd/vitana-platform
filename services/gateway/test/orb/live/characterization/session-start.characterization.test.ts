@@ -1,40 +1,36 @@
 /**
- * A0.2 — Characterization test for the /live/session/start request contract.
+ * Originally A0.2 — characterization for the `/live/session/start` request
+ * contract. Updated 2026-05-13 (A8.2.1 / VTID-02962): the handler body was
+ * lifted from `routes/orb-live.ts` into the session controller at
+ * `orb/live/session/live-session-controller.ts` (`handleLiveSessionStart`).
  *
- * Purpose: lock the body-field contract that the session-start route handler
- * reads, plus the inline reconnect-detection formula. Both are about to
- * move when A8 extracts session lifecycle into orb/live/session/.
+ * Assertions now follow the body into the controller module. The structural
+ * regressions this test guards against — lost body field, shifted reconnect
+ * formula, dropped reconnect_stage value — still apply, just against a
+ * different file.
  *
- * Approach: structural assertions over orb-live.ts source text. The route
- * handler is too entangled with Express + auth + Supabase + Live API to
- * mock cleanly in a "tests-only" PR. The structural form catches the
- * regressions that matter for the refactor:
- *   - lost body field (a UI sends X but the new handler doesn't read X)
- *   - shifted reconnect detection (subtle change to the boolean formula)
- *   - dropped reconnect_stage value from the validation list
- *
- * When A8 produces a typed RequestParser module, this test should be
- * replaced with a runtime assertion against that parser.
+ * Runtime behavior is covered by
+ * `test/orb/live/session/live-session-controller.test.ts`.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ORB_LIVE_PATH = path.resolve(__dirname, '../../../../src/routes/orb-live.ts');
+const CONTROLLER_PATH = path.resolve(
+  __dirname,
+  '../../../../src/orb/live/session/live-session-controller.ts',
+);
 
-let source: string;
+let controllerSrc: string;
 let handlerBody: string;
 
 beforeAll(() => {
-  source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
-  // Slice the file from the route registration down to the next route or
-  // top-level export. `router.post('/live/session/stop'` is the next route
-  // in the file and serves as a safe terminator.
-  const startIdx = source.indexOf("router.post('/live/session/start'");
-  const stopIdx = source.indexOf("router.post('/live/session/stop'");
+  controllerSrc = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+  // Slice from `handleLiveSessionStart` to the end of the controller file —
+  // it is the LAST exported function so end-of-file is the safe terminator.
+  const startIdx = controllerSrc.indexOf('export async function handleLiveSessionStart');
   expect(startIdx).toBeGreaterThan(0);
-  expect(stopIdx).toBeGreaterThan(startIdx);
-  handlerBody = source.slice(startIdx, stopIdx);
+  handlerBody = controllerSrc.slice(startIdx);
 });
 
 describe('A0.2 characterization: /live/session/start request contract', () => {
@@ -54,8 +50,13 @@ describe('A0.2 characterization: /live/session/start request contract', () => {
     ];
 
     it.each(REQUIRED_BODY_FIELDS)('handler reads "body.%s"', (field) => {
-      // Tolerate spacing variation around the dot.
-      const re = new RegExp(`body\\s*\\.\\s*${field}\\b`);
+      // Tolerate spacing variation around the dot AND the `(body as any).X`
+      // pattern the lift uses for fields that were not strictly typed on
+      // `LiveSessionStartRequest` (they live on the request as ad-hoc
+      // properties — same runtime behavior, narrower TS type).
+      const re = new RegExp(
+        `(?:body\\s*\\.\\s*${field}\\b|\\(body\\s*as\\s*any\\)\\s*\\.\\s*${field}\\b)`,
+      );
       expect(handlerBody).toMatch(re);
     });
   });
@@ -103,6 +104,7 @@ describe('A0.2 characterization: /live/session/start request contract', () => {
       // The first observable gate is validateOrigin(req). If any work happens
       // before it (e.g. a side-effecting log of session metadata), an
       // attacker can probe the gateway via the orb endpoint.
+      // A8.2.1: now invoked via `deps.validateOrigin` from the controller.
       const validateIdx = handlerBody.indexOf('validateOrigin');
       expect(validateIdx).toBeGreaterThan(0);
 
