@@ -35,6 +35,7 @@ import {
   buildRepairContext,
   renderRepairContextMarkdown,
 } from '../services/test-contract-repair-context';
+import { findPatternBySignature, type RepairPattern } from '../services/repair-pattern-store';
 
 const router = Router();
 const VTID = 'VTID-02958';
@@ -103,6 +104,47 @@ async function requireDevAccess(req: Request, res: Response, next: NextFunction)
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function renderPatternMatchMarkdown(pattern: RepairPattern | null): string {
+  if (!pattern) {
+    return `## Pattern memory
+
+_No prior pattern recorded for this fault_signature._ This is either a new failure mode or the first time we've seen it on this contract.`;
+  }
+  const trust =
+    pattern.success_count >= 3
+      ? 'high'
+      : pattern.success_count >= 2
+        ? 'medium'
+        : 'low';
+  const trustGuidance =
+    trust === 'high'
+      ? 'This fix has worked **3+ times**. Strong default — apply unless you see a clear reason it does not fit this case.'
+      : trust === 'medium'
+        ? 'This fix has worked **2 times**. Reasonable default — adapt if needed.'
+        : 'This fix has worked **once**. Use as a hint, not a recipe — verify it actually applies to this failure before adopting verbatim.';
+  return `## Pattern memory
+
+A prior repair for the EXACT same fault_signature exists. **success_count=${pattern.success_count}**, **failure_count=${pattern.failure_count}**, last_used: ${pattern.last_used_at || 'never'}.
+
+**Trust**: ${trust} — ${trustGuidance}
+
+**Source**: ${pattern.source_pr_url || `repair_vtid ${pattern.source_repair_vtid || '(unknown)'}`} (capability: \`${pattern.capability}\`${pattern.target_file ? `, file: \`${pattern.target_file}\`` : ''})
+
+### Prior fix_diff
+
+\`\`\`diff
+${pattern.fix_diff.slice(0, 4000)}${pattern.fix_diff.length > 4000 ? '\n... [truncated]' : ''}
+\`\`\`
+
+**Repair guidance**: this is reference material, not a mandate. The LLM should:
+1. Read the prior diff in full.
+2. Compare it to the current failure context above (failure_reason, body_excerpt, expected_behavior).
+3. If the same fix applies cleanly, propose it adapted to the current target_file.
+4. If the contexts differ, explain WHY the prior diff does not apply and write a fresh fix.
+5. Never apply a stored diff blindly — the contract test is the ultimate arbiter.
+`;
+}
 
 async function fetchScheduledContracts(): Promise<ContractRow[]> {
   const r = await fetch(
@@ -187,6 +229,24 @@ router.post(
               });
               const knownGoodMd = renderRepairContextMarkdown(repairContext);
 
+              // VTID-02970 (PR-L5): Pattern memory lookup. If we've
+              // successfully repaired this exact failure_signature
+              // before (>=2 successes), embed the prior fix_diff in the
+              // spec as a reference. The LLM can choose to apply it
+              // verbatim, adapt it, or ignore it if it sees a reason —
+              // we don't skip the LLM. Direct application without LLM
+              // review is a v1.1 follow-up that needs higher confidence
+              // gates than v1 has.
+              let patternMatch: RepairPattern | null = null;
+              try {
+                patternMatch = decision.failure_signature
+                  ? await findPatternBySignature(decision.failure_signature)
+                  : null;
+              } catch (patternErr) {
+                console.warn(`[${VTID}] pattern lookup failed for ${decision.failure_signature}: ${patternErr}`);
+              }
+              const patternMd = renderPatternMatchMarkdown(patternMatch);
+
               const specMarkdown = `# Failing test contract: ${contract.capability}
 
 The contract \`${contract.capability}\` (\`${contract.command_key}\`, live_probe) is failing in production.
@@ -206,6 +266,8 @@ ${expectedExcerpt}
 \`\`\`
 
 ${knownGoodMd}
+
+${patternMd}
 
 ## Repair contract — HARD RULES (worker-runner enforces)
 

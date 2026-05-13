@@ -736,6 +736,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const testContractsScheduledRouter = require('./routes/test-contracts-scheduled').default;
   mountRouterSync(app, '/api/v1', testContractsScheduledRouter, { owner: 'test-contracts-scheduled' });
 
+  // VTID-02970 (PR-L5): Repair pattern memory — every verified successful
+  // repair anchored to (fault_signature, capability) so the failure
+  // scanner can fast-track recurrences.
+  // GET /api/v1/test-contracts/patterns + POST + POST /:id/quarantine
+  const repairPatternsRouter = require('./routes/repair-patterns').default;
+  mountRouterSync(app, '/api/v1', repairPatternsRouter, { owner: 'repair-patterns' });
+
   // VTID-02909 (B0c): Journey Context inspection (Voice / Journey Context tab)
   // GET /api/v1/voice/journey-context/preview + GET /api/v1/voice/journey-context/state
   const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;

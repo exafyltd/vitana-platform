@@ -620,6 +620,9 @@ export type CicdEventType =
   | 'test-contract.scheduled_run.completed'
   | 'test-contract.repair.allocated'
   | 'test-contract.quarantined'
+  // PR-L5 (VTID-02970): Repair pattern memory.
+  | 'repair-pattern.recorded'
+  | 'repair-pattern.quarantine.toggled'
   | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'
