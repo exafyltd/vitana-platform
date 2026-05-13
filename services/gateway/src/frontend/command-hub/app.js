@@ -43980,7 +43980,146 @@ function renderTestContractsPanel() {
         container.appendChild(card);
     });
 
+    // VTID-02957 (PR-L2): missing-contract gaps appended below the existing
+    // contracts. Each row has an "Allocate VTID" button that kicks off the
+    // dev_autopilot pipeline to write the test + allowlist entry.
+    container.appendChild(renderMissingContractsSection());
+
     return container;
+}
+
+function renderMissingContractsSection() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-top:32px;padding-top:24px;border-top:1px solid var(--color-border);';
+
+    var mState = state.missingContracts || (state.missingContracts = { gaps: null, error: null, allocating: {}, allocated: {} });
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:16px;';
+    header.innerHTML =
+        '<h3 style="margin:0;color:var(--color-text-primary);">Missing Contracts</h3>' +
+        '<p style="margin:4px 0 0 0;color:var(--color-text-secondary);font-size:0.85rem;">' +
+        'Endpoints with NO contract row. Self-healing cannot detect regressions on these capabilities until contracts exist. ' +
+        'Click "Allocate VTID" to dispatch the dev_autopilot pipeline to write a test + allowlist entry. ' +
+        '<strong>VTID-02957 (PR-L2)</strong> — discovery only, no auto-allocation yet.' +
+        '</p>';
+    section.appendChild(header);
+
+    if (mState.gaps === null && mState.error === null) {
+        fetch('/api/v1/test-contracts/missing', { headers: buildContextHeaders() })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (data) {
+                mState.gaps = data.gaps || [];
+                mState.totals = { total: data.total_endpoints, covered: data.covered, missing: data.missing };
+                mState.error = null;
+                renderApp();
+            })
+            .catch(function (e) {
+                mState.error = e.message;
+                mState.gaps = [];
+                renderApp();
+            });
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:16px;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Scanning for missing contracts...';
+        section.appendChild(loading);
+        return section;
+    }
+
+    if (mState.error) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:16px;background:rgba(220,38,38,0.1);border:1px solid #dc2626;border-radius:6px;color:#fca5a5;';
+        err.textContent = 'Scan failed: ' + mState.error;
+        section.appendChild(err);
+        return section;
+    }
+
+    if (!mState.gaps || mState.gaps.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'padding:16px;text-align:center;color:#16a34a;';
+        none.textContent = '✓ Every registered endpoint has a contract. Nothing to scan.';
+        section.appendChild(none);
+        return section;
+    }
+
+    var summary = document.createElement('div');
+    summary.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:6px;font-size:0.8rem;';
+    var t = mState.totals || { total: 0, covered: 0, missing: 0 };
+    summary.innerHTML =
+        '<div><strong style="color:var(--color-text-primary);">' + t.total + '</strong> endpoints in ENDPOINT_FILE_MAP</div>' +
+        '<div style="color:#16a34a;"><strong>' + t.covered + '</strong> have contracts</div>' +
+        '<div style="color:#f59e0b;"><strong>' + t.missing + '</strong> missing</div>';
+    section.appendChild(summary);
+
+    mState.gaps.forEach(function (gap) {
+        var card = document.createElement('section');
+        var alreadyAllocated = mState.allocated[gap.dedupe_key];
+        var sevColor = alreadyAllocated ? '#16a34a' : '#f59e0b';
+        card.style.cssText = 'margin-bottom:8px;padding:12px 14px;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + sevColor + ';border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:12px;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        var statusBadge = alreadyAllocated
+            ? '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:#16a34a;background:rgba(22,163,74,0.12);text-transform:uppercase;margin-right:0.4rem;">VTID ALLOCATED</span>'
+            : '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:#f59e0b;background:rgba(245,158,11,0.12);text-transform:uppercase;margin-right:0.4rem;">MISSING</span>';
+        info.innerHTML =
+            '<div style="font-weight:600;font-size:0.9rem;">' + statusBadge + escapeHtml(gap.capability) + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                escapeHtml(gap.contract_type) + ' · ' +
+                escapeHtml(gap.service) + '/' + escapeHtml(gap.environment) + ' · ' +
+                escapeHtml(gap.target_endpoint) +
+            '</div>' +
+            '<div style="font-size:0.7rem;color:var(--color-text-secondary);margin-top:0.2rem;font-family:ui-monospace,monospace;">' +
+                'file: ' + escapeHtml(gap.target_file) + ' · ' +
+                'suggested command_key: ' + escapeHtml(gap.suggested_command_key) +
+                (alreadyAllocated ? ' · VTID: ' + escapeHtml(alreadyAllocated) : '') +
+            '</div>';
+        card.appendChild(info);
+
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+        var allocBtn = document.createElement('button');
+        allocBtn.style.cssText = 'padding:6px 12px;font-size:0.75rem;border-radius:4px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);cursor:pointer;';
+        var busy = mState.allocating[gap.dedupe_key] === true;
+        allocBtn.disabled = busy || !!alreadyAllocated;
+        allocBtn.textContent = busy ? 'Allocating...' : alreadyAllocated ? 'Open VTID' : 'Allocate VTID';
+        allocBtn.onclick = function () {
+            if (alreadyAllocated) {
+                history.pushState(null, '', '/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(alreadyAllocated));
+                renderApp();
+                return;
+            }
+            mState.allocating[gap.dedupe_key] = true;
+            renderApp();
+            fetch('/api/v1/test-contracts/missing/' + encodeURIComponent(gap.dedupe_key) + '/allocate', {
+                method: 'POST',
+                headers: buildContextHeaders(),
+            })
+                .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+                .then(function (resp) {
+                    mState.allocating[gap.dedupe_key] = false;
+                    if (resp.status === 201 && resp.body.allocated_vtid) {
+                        mState.allocated[gap.dedupe_key] = resp.body.allocated_vtid;
+                    } else if (resp.status === 200 && resp.body.deduped && resp.body.existing_vtid) {
+                        mState.allocated[gap.dedupe_key] = resp.body.existing_vtid;
+                    } else {
+                        alert('Allocation failed: ' + (resp.body.error || resp.body.message || resp.status));
+                    }
+                    renderApp();
+                })
+                .catch(function (e) {
+                    mState.allocating[gap.dedupe_key] = false;
+                    alert('Allocation error: ' + e.message);
+                    renderApp();
+                });
+        };
+        actions.appendChild(allocBtn);
+        card.appendChild(actions);
+
+        section.appendChild(card);
+    });
+
+    return section;
 }
 
 function renderSelfHealingView() {
