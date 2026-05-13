@@ -5758,8 +5758,18 @@ async function connectToLiveAPI(
       console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
     });
 
-    // Handle incoming messages from Gemini
-    ws.on('message', (data: WebSocket.Data) => {
+    // A8.3a.1 (VTID-02965): The upstream message dispatcher is now a NAMED
+    // function rather than an anonymous arrow. Behavior is unchanged — the
+    // function still closes over `setupComplete`, `connectionTimeout`,
+    // `resolve` / `reject`, `onAudioResponse`, `onTextResponse`, `onError`,
+    // `onTurnComplete`, `onInterrupted`, and `session`. Naming it gives
+    // A8.3a.2 a locatable seam to move to `orb/live/session/` and A8.3b a
+    // single function body to swap from `connectToLiveAPI`'s callback
+    // pattern to `VertexLiveClient`'s typed-event pattern. Inline
+    // `session.sseResponse.write(...)` calls inside this function were
+    // migrated to `writeSseEvent` (from A9.2) so the wire format is owned
+    // by one helper everywhere.
+    function handleUpstreamLiveMessage(data: WebSocket.Data): void {
       try {
         const rawData = data.toString();
         const message = JSON.parse(rawData);
@@ -5842,7 +5852,7 @@ async function connectToLiveAPI(
             session.pendingEventLinks = [];
             // Notify SSE client
             if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+              writeSseEvent(session.sseResponse, { type: 'interrupted' });
             }
             // Notify WS client via callback
             onInterrupted?.();
@@ -5947,7 +5957,7 @@ async function connectToLiveAPI(
                   }
                   const limitMsg = JSON.stringify(payload);
                   if (session.sseResponse) {
-                    session.sseResponse.write(`data: ${limitMsg}\n\n`);
+                    writeSseEvent(session.sseResponse, payload);
                   }
                   if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                     try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
@@ -6006,17 +6016,17 @@ async function connectToLiveAPI(
                   );
                   // Push the redirect-target event to the connected client so the
                   // frontend opens the right screen and focuses the right field.
-                  const redirectMsg = JSON.stringify({
+                  const redirectPayload = {
                     type: 'identity_redirect',
                     redirect_target: result.redirect_target,
                     fact_key: result.detected_fact_key,
                     pattern: result.detected_pattern,
-                  });
+                  };
                   if (session.sseResponse) {
-                    try { session.sseResponse.write(`data: ${redirectMsg}\n\n`); } catch (_e) { /* socket closing */ }
+                    writeSseEvent(session.sseResponse, redirectPayload);
                   }
                   if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                    try { sendWsMessage((session as any).clientWs, JSON.parse(redirectMsg)); } catch (_e) { /* ignore */ }
+                    try { sendWsMessage((session as any).clientWs, redirectPayload); } catch (_e) { /* ignore */ }
                   }
                 }).catch((err) => {
                   console.warn('[VTID-01953] handleIdentityIntent failed (non-fatal):', err);
@@ -6110,7 +6120,7 @@ async function connectToLiveAPI(
 
               // Send the formatted block as a single output_transcript SSE event
               if (session.sseResponse) {
-                try { session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: formattedBlock })}\n\n`); } catch (_e) { /* SSE closed */ }
+                writeSseEvent(session.sseResponse, { type: 'output_transcript', text: formattedBlock });
               }
               if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
                 try { sendWsMessage(session.clientWs, { type: 'output_transcript', text: formattedBlock }); } catch (_e) { /* WS closed */ }
@@ -6344,9 +6354,8 @@ async function connectToLiveAPI(
                 reason: nav.reason,
                 vtid: 'VTID-NAV-01',
               };
-              const directiveJson = JSON.stringify(directive);
               if (session.sseResponse) {
-                try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+                writeSseEvent(session.sseResponse, directive);
               }
               if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                 try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
@@ -6380,10 +6389,10 @@ async function connectToLiveAPI(
 
             // Notify client that response is complete
             if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({
+              writeSseEvent(session.sseResponse, {
                 type: 'turn_complete',
-                is_greeting: isGreetingTurn
-              })}\n\n`);
+                is_greeting: isGreetingTurn,
+              });
             }
             // Notify WS client via callback
             onTurnComplete?.();
@@ -6511,7 +6520,7 @@ async function connectToLiveAPI(
               session.vertexHasShownLife = true;
               emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
-                session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
+                writeSseEvent(session.sseResponse, { type: 'input_transcript', text: inputTranscription });
               }
               // VTID-01225-THROTTLE: Buffer user input transcription instead of writing per-fragment.
               // Vertex Live API sends transcription incrementally (multiple fragments per utterance).
@@ -6547,7 +6556,7 @@ async function connectToLiveAPI(
               if (!session.isModelSpeaking) {
                 const thinkingMsg = { type: 'thinking' };
                 if (session.sseResponse) {
-                  try { session.sseResponse.write(`data: ${JSON.stringify(thinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+                  writeSseEvent(session.sseResponse, thinkingMsg);
                 }
                 if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
                   try { sendWsMessage(session.clientWs, thinkingMsg); } catch (_e) { /* WS closed */ }
@@ -6564,7 +6573,7 @@ async function connectToLiveAPI(
             } else {
               console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
               if (session.sseResponse) {
-                session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
+                writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
               }
               // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
               session.outputTranscriptBuffer += outputTranscription;
@@ -6584,7 +6593,7 @@ async function connectToLiveAPI(
           // Shows "Thinking..." while memory search, event search etc. execute.
           const toolThinkingMsg = { type: 'thinking', reason: 'tool_call', tools: toolNames };
           if (session.sseResponse) {
-            try { session.sseResponse.write(`data: ${JSON.stringify(toolThinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+            writeSseEvent(session.sseResponse, toolThinkingMsg);
           }
           if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
             try { sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
@@ -6666,7 +6675,7 @@ async function connectToLiveAPI(
                     for (const { url } of linkPairs) {
                       const linkMsg = { type: 'link', url, tool: toolName };
                       if (session.sseResponse) {
-                        try { session.sseResponse.write(`data: ${JSON.stringify(linkMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+                        writeSseEvent(session.sseResponse, linkMsg);
                       }
                       if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
                         try { sendWsMessage(session.clientWs, linkMsg); } catch (_e) { /* WS closed */ }
@@ -6720,7 +6729,10 @@ async function connectToLiveAPI(
       } catch (err) {
         console.error(`[VTID-01219] Error parsing Live API message:`, err);
       }
-    });
+    }
+
+    // A8.3a.1: register the named handler.
+    ws.on('message', handleUpstreamLiveMessage);
 
     // Handle WebSocket errors
     ws.on('error', (error) => {
