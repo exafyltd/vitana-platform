@@ -556,3 +556,81 @@ describe('A7 characterization: VertexLiveClient', () => {
     });
   });
 });
+
+// =============================================================================
+// A8.3b.1 (VTID-02971): customSetupMessage + getSocket() extensions
+// =============================================================================
+
+describe('A8.3b.1: customSetupMessage override + getSocket() accessor', () => {
+  it('uses customSetupMessage when provided (skips default buildSetupMessage envelope)', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    const customEnvelope = {
+      setup: {
+        model: 'projects/orb-custom/locations/us-central1/publishers/google/models/foo',
+        marker: 'A8.3b.1-custom',
+      },
+    };
+    await connectClient(client, socket, baseOptions({
+      customSetupMessage: () => customEnvelope,
+    }));
+    expect(socket.sent.length).toBeGreaterThanOrEqual(1);
+    const sent = JSON.parse(socket.sent[0]);
+    expect(sent).toEqual(customEnvelope);
+    // Anti-regression: default envelope's model path must NOT appear when
+    // customSetupMessage is set.
+    expect(sent.setup.model).not.toContain('gemini-live-2.5-flash-native-audio');
+  });
+
+  it('awaits an async customSetupMessage before sending', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    let resolveBuilder!: (envelope: Record<string, unknown>) => void;
+    const builderPromise = new Promise<Record<string, unknown>>((r) => {
+      resolveBuilder = r;
+    });
+    const connectPromise = client.connect(baseOptions({
+      customSetupMessage: () => builderPromise,
+    }));
+    // Allow the async getAccessToken + factory call to settle.
+    await new Promise((resolve) => setImmediate(resolve));
+    socket.fireOpen();
+    await new Promise((resolve) => setImmediate(resolve));
+    // Builder has NOT resolved yet — no setup envelope should have been
+    // sent.
+    expect(socket.sent).toHaveLength(0);
+    // Resolve the builder. The handler awaits it inside ws.on('open').
+    resolveBuilder({ setup: { marker: 'A8.3b.1-async' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(socket.sent).toHaveLength(1);
+    const sent = JSON.parse(socket.sent[0]);
+    expect(sent).toEqual({ setup: { marker: 'A8.3b.1-async' } });
+    socket.fireMessage({ setup_complete: {} });
+    await connectPromise;
+  });
+
+  it('getSocket() returns null before connect()', () => {
+    const client = new VertexLiveClient({ createSocket: () => new MockSocket() });
+    expect(client.getSocket()).toBeNull();
+  });
+
+  it('getSocket() returns the underlying socket after connect() opens it', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+    // The factory returned the mock; getSocket() must hand the same
+    // instance back so orb-live.ts's adapter can attach the legacy
+    // message/error/close handlers to it.
+    expect(client.getSocket()).toBe(socket);
+  });
+
+  it('default buildSetupMessage path still works when customSetupMessage is omitted', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+    const sent = JSON.parse(socket.sent[0]);
+    // Default builder includes the canonical Vertex model path + AUDIO modality.
+    expect(sent.setup.model).toContain('gemini-live-2.5-flash-native-audio');
+    expect(sent.setup.generation_config.response_modalities).toEqual(['AUDIO']);
+  });
+});

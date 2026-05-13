@@ -104,6 +104,24 @@ export class VertexLiveClient implements UpstreamLiveClient {
     return this.state;
   }
 
+  /**
+   * A8.3b.1 (VTID-02971) — accessor for the underlying raw WebSocket.
+   *
+   * Returns `null` before `connect()` has been called, the raw socket
+   * after construction. Used by the orb-live.ts adapter to register
+   * additional ws-level handlers (error / close / message) so the
+   * existing connectToLiveAPI consumers keep getting back a
+   * `Promise<WebSocket>` with all legacy lifecycle callbacks attached.
+   *
+   * Cast through `unknown` because internally the mock test path uses
+   * `VertexWebSocketLike` while production uses the real `ws.WebSocket`
+   * instance — both satisfy the runtime shape callers depend on
+   * (`readyState`, `send`, `close`, `on`).
+   */
+  getSocket(): WebSocket | null {
+    return this.ws as unknown as WebSocket | null;
+  }
+
   onAudioOutput(handler: (event: AudioOutputEvent) => void): void {
     this.audioOutputHandler = handler;
   }
@@ -167,9 +185,19 @@ export class VertexLiveClient implements UpstreamLiveClient {
         reject(new Error('Live API connection timeout'));
       }, timeoutMs);
 
-      ws.on('open', () => {
+      ws.on('open', async () => {
         try {
-          ws.send(JSON.stringify(buildSetupMessage(options)));
+          // A8.3b.1 (VTID-02971): if the caller provided a custom setup-
+          // message builder (e.g. orb-live.ts's persona-aware envelope),
+          // await it and send that envelope instead of the default
+          // buildSetupMessage(options). Sync builders return the envelope
+          // directly; async builders are awaited (used by the orb
+          // adapter to wait for the context-build promise before
+          // shaping the system instruction).
+          const envelope = options.customSetupMessage
+            ? await Promise.resolve(options.customSetupMessage())
+            : buildSetupMessage(options);
+          ws.send(JSON.stringify(envelope));
         } catch (err) {
           if (settled) return;
           settled = true;

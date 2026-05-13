@@ -137,16 +137,40 @@ describe('A8.3a.2: orb-live.ts is a thin consumer of the factory', () => {
     );
   });
 
-  it('passes the connectToLiveAPI Promise-closure state through onSetupComplete (setupComplete + clearTimeout + resolve)', () => {
-    // The wiring callback in orb-live.ts must still mutate setupComplete,
-    // clear the connectionTimeout, and resolve(ws). The lifted body no
-    // longer touches these directly — only the wiring does.
-    const wiring = orbLiveSrc.slice(
-      orbLiveSrc.indexOf('onSetupComplete:'),
-      orbLiveSrc.indexOf('isSetupComplete:'),
-    );
-    expect(wiring).toMatch(/setupComplete\s*=\s*true/);
-    expect(wiring).toMatch(/clearTimeout\s*\(\s*connectionTimeout\s*\)/);
-    expect(wiring).toMatch(/resolve\s*\(\s*ws\s*\)/);
+  it('preserves the connectToLiveAPI Promise-closure state semantics (setupComplete + clearTimeout + resolve)', () => {
+    // A8.3a.2: the wiring originally mutated setupComplete + cleared
+    // connectionTimeout + called resolve(ws) inside the `onSetupComplete`
+    // callback passed to createUpstreamLiveMessageHandler.
+    //
+    // A8.3b.1: those three mutations move OUT of the `onSetupComplete`
+    // callback (which is now a no-op for the Vertex path because
+    // VertexLiveClient consumes setup_complete) and into the post-
+    // `vertex.connect()` block. Observable behavior is unchanged: when
+    // setup_complete arrives, setupComplete flips true, the timeout
+    // clears, and the outer Promise resolves with ws.
+    //
+    // This test asserts the three mutations still exist SOMEWHERE in
+    // connectToLiveAPI's body — the seam is preserved, just relocated.
+    const fnStart = orbLiveSrc.indexOf('async function connectToLiveAPI');
+    expect(fnStart).toBeGreaterThan(0);
+    const fnEnd = orbLiveSrc.indexOf('\nasync function ', fnStart + 1);
+    const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
+    expect(fnBody).toMatch(/setupComplete\s*=\s*true/);
+    expect(fnBody).toMatch(/clearTimeout\s*\(\s*connectionTimeout\s*\)/);
+    expect(fnBody).toMatch(/resolve\s*\(\s*ws\s*\)/);
+    // A8.3b.1: VertexLiveClient is the active path.
+    expect(fnBody).toMatch(/new\s+VertexLiveClient\s*\(\s*\)/);
+    expect(fnBody).toMatch(/vertex\.connect\s*\(/);
+    expect(fnBody).toMatch(/vertex\.getSocket\s*\(\s*\)/);
+    expect(fnBody).toMatch(/customSetupMessage/);
+  });
+
+  it('does NOT inline `new WebSocket(wsUrl, { headers: ... })` anymore', () => {
+    // Anti-regression: pre-A8.3b.1 connectToLiveAPI constructed the raw
+    // WebSocket inline. After A8.3b.1, VertexLiveClient owns that path.
+    const fnStart = orbLiveSrc.indexOf('async function connectToLiveAPI');
+    const fnEnd = orbLiveSrc.indexOf('\nasync function ', fnStart + 1);
+    const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
+    expect(fnBody).not.toMatch(/new\s+WebSocket\s*\(\s*wsUrl/);
   });
 });
