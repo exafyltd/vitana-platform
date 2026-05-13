@@ -1,15 +1,15 @@
 /**
- * A0.3 — Characterization test for the WebSocket transport setup.
+ * Originally A0.3 — structural characterization for `initializeOrbWebSocket`
+ * in `routes/orb-live.ts`. Replaced 2026-05-13 (A9.1 / VTID-02957) when the
+ * WSS attach + connection/error dispatch was lifted into
+ * `orb/live/transport/websocket-handler.ts`.
  *
- * Purpose: lock the WebSocket initialization contract — registry, upgrade
- * path, connection + error handler registration — before step A9 splits
- * transport into orb/live/transport/websocket-handler.ts.
+ * Now: structural check that orb-live.ts is a thin delegator over the new
+ * transport module + the per-session registry remains a Map (the cleanup
+ * interval depends on Map iteration semantics).
  *
- * Approach: structural over orb-live.ts, scoped to the
- * `initializeOrbWebSocket` function block only.
- *
- * Will be replaced/augmented by A9 with a runtime test against
- * orb/live/transport/websocket-handler.ts.
+ * Runtime assertions on the transport behavior live in
+ * `test/orb/live/transport/websocket-handler.test.ts`.
  */
 
 import * as fs from 'fs';
@@ -23,9 +23,6 @@ let registryDecl: string;
 beforeAll(() => {
   const source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
 
-  // Slice the WebSocket setup function. It is the only `export function`
-  // whose name begins with `initializeOrb`, so the next `export function`
-  // (or end-of-file) is a safe terminator.
   const setupStart = source.indexOf('export function initializeOrbWebSocket');
   expect(setupStart).toBeGreaterThan(0);
   const afterStart = source.slice(setupStart + 1);
@@ -34,65 +31,57 @@ beforeAll(() => {
     ? source.slice(setupStart, setupStart + 1 + nextExport)
     : source.slice(setupStart);
 
-  // Find the registry declaration. It is module-level, not inside the
-  // setup function, so we capture it separately.
   const registryStart = source.indexOf('wsClientSessions = new Map');
   expect(registryStart).toBeGreaterThan(0);
-  // Take ~500 chars around the declaration as context.
   registryDecl = source.slice(Math.max(0, registryStart - 100), registryStart + 200);
 });
 
-describe('A0.3 characterization: WebSocket transport setup contract', () => {
-  describe('initializeOrbWebSocket() function', () => {
-    it('is exported (so the gateway entrypoint can wire it)', () => {
-      // Already implied by the slice succeeding, but assert explicitly so
-      // a refactor that drops the export breaks loudly.
-      expect(setupBody).toMatch(/^export\s+function\s+initializeOrbWebSocket/);
-    });
-
-    it('accepts an HttpServer parameter (Express HTTP server instance)', () => {
-      expect(setupBody).toMatch(/initializeOrbWebSocket\s*\(\s*server\s*:\s*HttpServer\s*\)/);
-    });
-
-    it('mounts the WebSocket server at /api/v1/orb/live/ws', () => {
-      // The orb-widget reconnects to this exact path. Any change to the
-      // path breaks every existing client.
-      expect(setupBody).toMatch(
-        /path\s*:\s*['"`]\/api\/v1\/orb\/live\/ws['"`]/
-      );
-    });
-
-    it('attaches the WebSocketServer to the HTTP server (single-port, not separate)', () => {
-      // `server: <param>` in the WebSocketServer options means it shares
-      // the HTTP listener — no separate port, no separate listen() call.
-      // A1+ refactor must preserve the same attachment model.
-      expect(setupBody).toMatch(/new\s+WebSocketServer\s*\(\s*\{[\s\S]*?\bserver\b[\s\S]*?\}\s*\)/);
-    });
-
-    it("registers a 'connection' handler", () => {
-      expect(setupBody).toMatch(/wss\.on\(\s*['"`]connection['"`]\s*,/);
-    });
-
-    it("registers an 'error' handler (server-level error, separate from per-connection errors)", () => {
-      expect(setupBody).toMatch(/wss\.on\(\s*['"`]error['"`]\s*,/);
-    });
+describe('A9.1 characterization: initializeOrbWebSocket delegates to the transport module', () => {
+  it('is exported (so the gateway entrypoint can wire it)', () => {
+    expect(setupBody).toMatch(/^export\s+function\s+initializeOrbWebSocket/);
   });
 
-  describe('per-session registry', () => {
-    it('declares wsClientSessions as a Map', () => {
-      // The Map type matters — the cleanup interval iterates over it.
-      // A switch to a different container (Set, plain object, WeakMap)
-      // would silently break iteration semantics.
-      expect(registryDecl).toMatch(/wsClientSessions\s*=\s*new\s+Map\s*</);
-    });
+  it('accepts an HttpServer parameter (Express HTTP server instance)', () => {
+    expect(setupBody).toMatch(/initializeOrbWebSocket\s*\(\s*server\s*:\s*HttpServer\s*\)/);
   });
 
-  describe('connection handler delegates to handleWebSocketConnection', () => {
-    // The setup function should NOT inline the per-connection logic —
-    // that lives in handleWebSocketConnection, which A9 will move.
-    // Lock the delegation so an inline rewrite doesn't sneak in here.
-    it('forwards the (ws, req) tuple to handleWebSocketConnection', () => {
-      expect(setupBody).toMatch(/handleWebSocketConnection\s*\(\s*ws\s*,\s*req\s*\)/);
-    });
+  it('delegates WSS setup to mountOrbWebSocketTransport', () => {
+    // The body must call mountOrbWebSocketTransport — that is the seam.
+    expect(setupBody).toMatch(/mountOrbWebSocketTransport\s*\(\s*server\s*,/);
+  });
+
+  it('passes a handleConnection wrapper that forwards to handleWebSocketConnection', () => {
+    expect(setupBody).toMatch(
+      /handleConnection\s*:\s*\([^)]*\)\s*=>\s*handleWebSocketConnection\s*\(/,
+    );
+  });
+
+  it('passes an onServerError hook for server-level WebSocket errors', () => {
+    expect(setupBody).toMatch(/onServerError\s*:/);
+  });
+
+  it('does NOT inline `new WebSocketServer(`, `wss.on(`, or a literal mount path', () => {
+    // Anti-regression: the legacy inline impl is what A9.1 lifted out.
+    // If a future refactor re-inlines it here, this test fails loudly.
+    expect(setupBody).not.toMatch(/new\s+WebSocketServer\s*\(/);
+    expect(setupBody).not.toMatch(/wss\.on\(/);
+    expect(setupBody).not.toMatch(/['"`]\/api\/v1\/orb\/live\/ws['"`]/);
+  });
+});
+
+describe('A9.1 characterization: per-session registry remains in orb-live.ts', () => {
+  it('declares wsClientSessions as a Map', () => {
+    // The Map type matters — the cleanup interval iterates over it.
+    // Per-session state moves to orb/live/session/* under A8, NOT A9.1.
+    expect(registryDecl).toMatch(/wsClientSessions\s*=\s*new\s+Map\s*</);
+  });
+});
+
+describe('A9.1 characterization: import wiring', () => {
+  it('imports mountOrbWebSocketTransport from the transport module', () => {
+    const source = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
+    expect(source).toMatch(
+      /import\s*\{\s*mountOrbWebSocketTransport\s*\}\s*from\s*['"`][^'"`]*\/orb\/live\/transport\/websocket-handler['"`]/,
+    );
   });
 });
