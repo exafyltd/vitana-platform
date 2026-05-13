@@ -818,13 +818,94 @@ async function updateLedgerStatus(vtid: string, status: string): Promise<void> {
 /**
  * Update vtid_ledger to terminal state
  */
-async function updateLedgerTerminal(vtid: string, outcome: 'success' | 'failed'): Promise<void> {
+export async function updateLedgerTerminal(vtid: string, outcome: 'success' | 'failed'): Promise<void> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
   if (!supabaseUrl || !supabaseKey) {
     console.warn(`[VTID-01178] Cannot update ledger terminal: missing Supabase credentials`);
     return;
+  }
+
+  // PR-J (VTID-02952): self-healing terminal-write gate.
+  // The autopilot run state machine's `verification_passed` step fires
+  // on `/api/v1/autopilot/controller/runs/:vtid/verify`, which uses a
+  // generic /alive probe — NOT the actual self-healed endpoint. For
+  // self-healing VTIDs the only authorized writer of terminal_outcome
+  // is the self-healing reconciler, AFTER dev_autopilot_executions
+  // reaches status='completed' (CI green + merge + EXEC-DEPLOY + live
+  // probe). PR-E gated the worker-runner's /api/v1/oasis/vtid/terminalize
+  // path. PR-J closes the third bypass: this function, called by
+  // markCompleted/markFailed in this controller. Without this gate,
+  // autopilot can mark a self-healing VTID 'success' before its repair
+  // PR has even been opened (observed live on VTID-02951 at 00:40:39
+  // when dev_autopilot_executions.status was still 'running').
+  if (outcome === 'success') {
+    try {
+      const ledgerResp = await fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=metadata&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        },
+      );
+      if (ledgerResp.ok) {
+        const rows = (await ledgerResp.json()) as Array<{ metadata?: Record<string, unknown> | null }>;
+        const metadata = rows[0]?.metadata || {};
+        if (metadata.source === 'self-healing') {
+          const execId =
+            typeof metadata.autopilot_execution_id === 'string'
+              ? metadata.autopilot_execution_id
+              : null;
+          let execStatus: string = 'missing';
+          if (execId) {
+            const execResp = await fetch(
+              `${supabaseUrl}/rest/v1/dev_autopilot_executions?id=eq.${encodeURIComponent(execId)}&select=status&limit=1`,
+              {
+                headers: {
+                  apikey: supabaseKey,
+                  Authorization: `Bearer ${supabaseKey}`,
+                },
+              },
+            );
+            if (execResp.ok) {
+              const execRows = (await execResp.json()) as Array<{ status: string }>;
+              execStatus = execRows[0]?.status || 'missing';
+            }
+          }
+          if (execStatus !== 'completed') {
+            console.warn(
+              `[VTID-01178] BLOCKED (PR-J/VTID-02952): refusing to write terminal_outcome='success' for self-healing VTID ${vtid} via autopilot-controller — execution status='${execStatus}', need 'completed'. Reconciler is the only authorized writer.`,
+            );
+            try {
+              await emitOasisEvent({
+                vtid,
+                type: 'self-healing.terminalize.blocked',
+                source: 'autopilot-controller',
+                status: 'warning',
+                message: `Refusing terminal_outcome='success' for ${vtid} via autopilot-controller.updateLedgerTerminal: execution status='${execStatus}', not 'completed'`,
+                payload: {
+                  vtid,
+                  outcome,
+                  caller: 'autopilot-controller.updateLedgerTerminal',
+                  reason: execId ? 'autopilot_not_completed' : 'missing_autopilot_execution_id',
+                  autopilot_execution_id: execId,
+                  autopilot_status: execStatus,
+                  blocked_at: new Date().toISOString(),
+                  governance_vtid: 'VTID-02952',
+                },
+              });
+            } catch { /* non-fatal */ }
+            return;
+          }
+        }
+      }
+    } catch (gateErr) {
+      console.warn(`[VTID-01178] PR-J gate check failed for ${vtid} (allowing through): ${gateErr}`);
+    }
   }
 
   const timestamp = new Date().toISOString();
