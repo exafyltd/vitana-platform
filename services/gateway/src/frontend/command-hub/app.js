@@ -43847,14 +43847,54 @@ function renderTestContractsPanel() {
     var tcState = state.testContracts || (state.testContracts = { rows: null, error: null, running: {} });
 
     var header = document.createElement('div');
-    header.style.cssText = 'margin-bottom:16px;';
-    header.innerHTML =
+    header.style.cssText = 'margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;';
+
+    var headerText = document.createElement('div');
+    headerText.style.cssText = 'flex:1;';
+    headerText.innerHTML =
         '<h2 style="margin:0;color:var(--color-text-primary);">Test Contracts</h2>' +
         '<p style="margin:4px 0 0 0;color:var(--color-text-secondary);font-size:0.85rem;">' +
         'The autonomy spine. Every capability has a contract defining "healthy". If a contract fails, self-healing repairs the system back to known-good behavior. ' +
-        '<strong>VTID-02954 (PR-L1)</strong> — read-only registry + sync_http run surface. ' +
-        'Missing-test scanner (PR-L2), failure scanner (PR-L3), and known-good recovery (PR-L4) plug into this same table.' +
+        '<strong>VTID-02958 (PR-L3)</strong> — failure scanner with debounce (2 same-signature failures) + auto-repair VTID + quarantine (3 attempts/24h).' +
         '</p>';
+    header.appendChild(headerText);
+
+    // VTID-02958 (PR-L3): top-of-panel scheduled-run trigger. Runs every
+    // live_probe contract, persists test_contract_runs, and (per the
+    // debounce + quarantine rules) allocates repair VTIDs as needed.
+    var scanBtn = document.createElement('button');
+    scanBtn.style.cssText = 'padding:8px 14px;font-size:0.8rem;border-radius:4px;border:1px solid #3b82f6;background:rgba(59,130,246,0.1);color:#93c5fd;cursor:pointer;font-weight:600;flex-shrink:0;';
+    scanBtn.disabled = tcState.scanRunning === true;
+    scanBtn.textContent = scanBtn.disabled ? 'Scanning...' : 'Run scheduled scan';
+    scanBtn.onclick = function () {
+        tcState.scanRunning = true;
+        renderApp();
+        fetch('/api/v1/test-contracts/scheduled-run', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                tcState.scanRunning = false;
+                tcState.lastScan = data;
+                if (data.ok) {
+                    // Force a contracts re-fetch so statuses reflect what just happened
+                    tcState.rows = null;
+                }
+                renderApp();
+                var msg = 'Scan complete: ' + (data.passed_count || 0) + ' passed, ' + (data.failed_count || 0) + ' failed';
+                if (data.repairs_allocated) msg += ', ' + data.repairs_allocated + ' repair VTID(s) allocated';
+                if (data.quarantines) msg += ', ' + data.quarantines + ' quarantined';
+                alert(msg);
+            })
+            .catch(function (e) {
+                tcState.scanRunning = false;
+                alert('Scan failed: ' + e.message);
+                renderApp();
+            });
+    };
+    header.appendChild(scanBtn);
+
     container.appendChild(header);
 
     if (tcState.rows === null && tcState.error === null) {
