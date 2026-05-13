@@ -30,6 +30,11 @@ import {
   type RecentRunRow,
 } from '../services/test-contract-failure-scanner';
 import { allocateVtid } from '../services/operator-service';
+import { getDeployedSha } from '../services/self-healing-diagnosis-service';
+import {
+  buildRepairContext,
+  renderRepairContextMarkdown,
+} from '../services/test-contract-repair-context';
 
 const router = Router();
 const VTID = 'VTID-02958';
@@ -170,6 +175,18 @@ router.post(
               repairVtid = alloc.vtid;
               repairRecommendationId = randomUUID();
               const expectedExcerpt = JSON.stringify(contract.expected_behavior).slice(0, 500);
+
+              // VTID-02967 (PR-L4): Known-good recovery context. Fetches
+              // the file at last_passing_sha + current main and embeds
+              // both versions + a diff summary into the spec_markdown so
+              // the repair LLM can choose between revert / compensate /
+              // investigate instead of guessing from scratch.
+              const repairContext = await buildRepairContext({
+                targetFile: contract.target_file,
+                lastPassingSha: contract.last_passing_sha,
+              });
+              const knownGoodMd = renderRepairContextMarkdown(repairContext);
+
               const specMarkdown = `# Failing test contract: ${contract.capability}
 
 The contract \`${contract.capability}\` (\`${contract.command_key}\`, live_probe) is failing in production.
@@ -187,6 +204,8 @@ The contract \`${contract.capability}\` (\`${contract.command_key}\`, live_probe
 \`\`\`json
 ${expectedExcerpt}
 \`\`\`
+
+${knownGoodMd}
 
 ## Repair contract — HARD RULES (worker-runner enforces)
 
@@ -307,12 +326,22 @@ ${expectedExcerpt}
           });
 
           // PATCH test_contracts.{status, last_status, last_failure_signature, last_run_at}
+          // VTID-02967 (PR-L4): on a passing run, stamp last_passing_sha
+          // so the next failure can pull a real diff vs the known-good
+          // version. Source: BUILD_INFO / DEPLOYED_GIT_SHA per PR-C.
           const patchBody: Record<string, unknown> = {
             status: decision.new_status,
             last_run_at: result.ran_at,
             last_status: contract.status,
             last_failure_signature: result.passed ? null : decision.failure_signature,
           };
+          if (result.passed) {
+            const sha = getDeployedSha();
+            if (sha) {
+              patchBody.last_passing_sha = sha;
+              patchBody.branch_or_sha = sha;
+            }
+          }
           await fetch(`${SUPABASE_URL}/rest/v1/test_contracts?id=eq.${contract.id}`, {
             method: 'PATCH',
             headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
