@@ -94,3 +94,63 @@ export type MountOrbWebSocketTransport = (
   httpServer: HttpServer,
   deps: OrbWebSocketTransportDeps,
 ) => OrbWebSocketTransport;
+
+// =============================================================================
+// A9.2 (orb-live-refactor / VTID-02958): SSE transport
+// =============================================================================
+
+/**
+ * Minimal Express-Response surface the SSE helpers touch. Declared instead of
+ * importing the full `express` type so the transport module compiles in
+ * test contexts that mock Response without dragging in the express type
+ * graph.
+ *
+ * `setHeader` / `write` / `flushHeaders` mirror the real Response shape.
+ * `writableEnded` is consulted to short-circuit writes after the client
+ * disconnected — Express' Response inherits that from ServerResponse.
+ */
+export interface SseResponseLike {
+  setHeader(name: string, value: string): void;
+  write(chunk: string): boolean;
+  flushHeaders?: () => void;
+  writableEnded?: boolean;
+}
+
+/**
+ * SSE event payload. Sent as `data: ${JSON.stringify(payload)}\n\n`.
+ *
+ * The ORB protocol uses a flat envelope with `type` discriminator —
+ * `{ type: 'ready' | 'heartbeat' | 'audio' | 'transcript' | ... }`.
+ * Transport modules do not interpret `type`; the per-route handler in
+ * orb-live.ts (and later orb/live/session/*) decides which to send.
+ */
+export type SseEventPayload = Record<string, unknown>;
+
+/**
+ * Handle returned by `startSseHeartbeat`. Idempotent — calling `clear()`
+ * more than once is a no-op.
+ */
+export interface SseHeartbeatHandle {
+  /** Clear the heartbeat interval. Safe to call multiple times. */
+  clear(): void;
+  /** Whether the heartbeat is still ticking. */
+  readonly active: boolean;
+}
+
+/**
+ * Options for `startSseHeartbeat`. The default interval (10 000 ms) matches
+ * the legacy `[VTID-HEARTBEAT-FIX]` cadence — change it on a per-call
+ * basis only.
+ */
+export interface SseHeartbeatOptions {
+  /** Heartbeat interval in ms. Default: 10 000. */
+  intervalMs?: number;
+  /** Event type discriminator. Default: `'heartbeat'`. */
+  type?: string;
+  /**
+   * Optional payload extender. Called each tick to merge additional
+   * fields into the heartbeat event (e.g., a sequence counter).
+   * The default heartbeat sends `{ type, ts: Date.now() }`.
+   */
+  extend?: () => SseEventPayload;
+}

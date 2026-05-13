@@ -1111,6 +1111,20 @@ import { VERTEX_LIVE_MODEL, VERTEX_TTS_MODEL } from '../orb/live/protocol';
 // below now delegates the WSS construction + connection dispatch to the
 // new module. Wire protocol byte-for-byte identical; mount path unchanged.
 import { mountOrbWebSocketTransport } from '../orb/live/transport/websocket-handler';
+// A9.2 (orb-live-refactor / VTID-02958): SSE transport helpers lifted to
+// orb/live/transport/sse-handler.ts. The two SSE upgrade points below
+// (`GET /orb/live`, `GET /orb/live/stream`) call attachSseHeaders +
+// writeSseEvent + startSseHeartbeat. Wire format byte-for-byte identical:
+// 4 SSE headers + flushHeaders, `data: ${JSON}\n\n` events, 10 s data
+// heartbeat (NOT an SSE comment — that's the legacy [VTID-HEARTBEAT-FIX]).
+// Session-lifecycle (session.sseResponse = res, context-pack rebuild,
+// upstream WS connect, transcript extract on disconnect) stays here and
+// moves under A8.
+import {
+  attachSseHeaders,
+  writeSseEvent,
+  startSseHeartbeat,
+} from '../orb/live/transport/sse-handler';
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
 // TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
@@ -8574,12 +8588,9 @@ router.get('/live', (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'Session not found' });
   }
 
-  // Setup SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
+  // A9.2 (VTID-02958): SSE upgrade lifted to orb/live/transport/sse-handler.ts.
+  // Same 4 headers + flushHeaders + ready event + 10 s data heartbeat.
+  attachSseHeaders(res);
 
   // Track connection
   incrementConnection(clientIP);
@@ -8587,22 +8598,16 @@ router.get('/live', (req: Request, res: Response) => {
   session.lastActivity = new Date();
 
   // Send ready event
-  res.write(`data: ${JSON.stringify({ type: 'ready', meta: { model: GEMINI_MODEL } })}\n\n`);
+  writeSseEvent(res, { type: 'ready', meta: { model: GEMINI_MODEL } });
 
-  // VTID-HEARTBEAT-FIX: Send actual data heartbeats (not SSE comments) so client
-  // watchdog resets properly. SSE comments don't trigger EventSource.onmessage.
-  const heartbeatInterval = setInterval(() => {
-    try {
-      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
-    } catch (e) {
-      clearInterval(heartbeatInterval);
-    }
-  }, 10000);
+  // VTID-HEARTBEAT-FIX: data-message heartbeat (NOT an SSE comment) so
+  // client EventSource.onmessage fires and resets its watchdog.
+  const heartbeat = startSseHeartbeat(res);
 
   // Handle client disconnect
   req.on('close', () => {
     console.log(`[ORB-LIVE] SSE connection closed for session: ${sessionId}`);
-    clearInterval(heartbeatInterval);
+    heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
@@ -11875,12 +11880,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     return res.status(429).json({ ok: false, error: 'Too many connections' });
   }
 
-  // Setup SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
+  // A9.2 (VTID-02958): SSE upgrade lifted to orb/live/transport/sse-handler.ts.
+  // Same 4 SSE headers + flushHeaders. Session-lifecycle assignment of
+  // session.sseResponse stays here (A8 territory).
+  attachSseHeaders(res);
 
   // Track connection
   incrementConnection(clientIP);
@@ -11921,7 +11924,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
 
   // VTID-INSTANT-FEEDBACK: Send ready event IMMEDIATELY so client transitions UI
   // and can play the activation chime before Live API connects.
-  res.write(`data: ${JSON.stringify({
+  writeSseEvent(res, {
     type: 'ready',
     session_id: sessionId,
     live_api_connected: false, // Live API connects in parallel
@@ -11930,9 +11933,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       lang: session.lang,
       voice: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] || getVoiceForLang(session.lang),
       audio_out_rate: 24000,
-      audio_in_rate: 16000
-    }
-  })}\n\n`);
+      audio_in_rate: 16000,
+    },
+  });
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
@@ -12075,24 +12078,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     });
   }
 
-  // VTID-HEARTBEAT-FIX: Send actual data heartbeats, not SSE comments.
-  // SSE comments (`:heartbeat`) keep the HTTP connection alive but do NOT trigger
-  // EventSource.onmessage on the client. The client watchdog only resets on
-  // onmessage events, so after the greeting turn_complete, if the user doesn't
-  // speak for 12s the watchdog fires → "No response from server" → disconnect.
-  // Sending { type: 'heartbeat' } as a data message fixes this.
-  const heartbeatInterval = setInterval(() => {
-    try {
-      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
-    } catch (e) {
-      clearInterval(heartbeatInterval);
-    }
-  }, 10000);
+  // VTID-HEARTBEAT-FIX: 10 s data-message heartbeat (NOT an SSE comment) so
+  // client EventSource.onmessage fires and resets its watchdog. A9.2 lifted
+  // the implementation into orb/live/transport/sse-handler.ts; same cadence,
+  // same payload shape, same auto-clear-on-write-failure behavior.
+  const heartbeat = startSseHeartbeat(res);
 
   // Handle client disconnect
   req.on('close', () => {
     console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
-    clearInterval(heartbeatInterval);
+    heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
