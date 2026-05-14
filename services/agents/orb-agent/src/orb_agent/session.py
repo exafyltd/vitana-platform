@@ -37,6 +37,11 @@ from .instructions import (
     build_live_system_instruction,
 )
 from .oasis import (
+    TOPIC_AGENT_DISCONNECTED,
+    TOPIC_AGENT_ROOM_JOIN_FAILED,
+    TOPIC_AGENT_ROOM_JOIN_STARTED,
+    TOPIC_AGENT_ROOM_JOIN_SUCCEEDED,
+    TOPIC_AGENT_STARTING,
     TOPIC_HANDOFF_COMPLETE,
     TOPIC_HANDOFF_START,
     TOPIC_PERSONA_SWAP,
@@ -124,10 +129,58 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         gateway_url=cfg.gateway_url, service_token=cfg.gateway_service_token
     )
 
+    # L2.2b.1 (VTID-02987): emit agent-lifecycle telemetry at the earliest
+    # possible points so any failure joining the LiveKit room is visible
+    # in OASIS without scraping logs. The 5 events are: starting →
+    # room_join_started → (room_join_succeeded | room_join_failed) →
+    # disconnected (from the shutdown_callback below). Every emit is
+    # fire-and-forget; OasisEmitter swallows network errors so telemetry
+    # never blocks the voice path.
+    _room_name = None
+    try:
+        _room_name = getattr(getattr(ctx, "room", None), "name", None)
+    except Exception:  # noqa: BLE001
+        pass
+    _agent_lifecycle_base = {
+        "room_name": _room_name,
+        "code_version": CODE_VERSION,
+        "vtid": "VTID-02987",
+    }
+    await oasis.emit(
+        topic=TOPIC_AGENT_STARTING,
+        payload=dict(_agent_lifecycle_base, phase="starting"),
+        vtid="VTID-02987",
+    )
+    await oasis.emit(
+        topic=TOPIC_AGENT_ROOM_JOIN_STARTED,
+        payload=dict(_agent_lifecycle_base, phase="room_join_started"),
+        vtid="VTID-02987",
+    )
+
     # Connect to the room first — required to read remote participant
     # metadata. The orb-agent itself does not publish; the user is the
     # publisher.
-    await ctx.connect()
+    try:
+        await ctx.connect()
+    except Exception as _join_exc:  # noqa: BLE001
+        await oasis.emit(
+            topic=TOPIC_AGENT_ROOM_JOIN_FAILED,
+            payload=dict(
+                _agent_lifecycle_base,
+                phase="room_join_failed",
+                error=str(_join_exc),
+                error_type=type(_join_exc).__name__,
+            ),
+            vtid="VTID-02987",
+        )
+        # Re-raise so the worker dispatcher knows the job failed; no audio
+        # path is wired yet so there's nothing to clean up here.
+        raise
+    await oasis.emit(
+        topic=TOPIC_AGENT_ROOM_JOIN_SUCCEEDED,
+        payload=dict(_agent_lifecycle_base, phase="room_join_succeeded"),
+        vtid="VTID-02987",
+    )
 
     # ── Identity metadata lives on the USER PARTICIPANT, not the room. ──
     # The gateway's /api/v1/orb/livekit/token mints a LiveKit AccessToken
@@ -405,6 +458,24 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     disconnected_evt = asyncio.Event()
 
     async def _teardown() -> None:
+        # L2.2b.1: emit the lifecycle `disconnected` event FIRST (it pairs
+        # with the room_join_succeeded event from session start). The
+        # legacy `livekit.session.stop` event follows for back-compat with
+        # consumers that already filter on it.
+        try:
+            await oasis.emit(
+                topic=TOPIC_AGENT_DISCONNECTED,
+                payload=dict(
+                    _agent_lifecycle_base,
+                    phase="disconnected",
+                    user_id=identity.user_id,
+                    agent_id=agent_id,
+                    orb_session_id=orb_session_id,
+                ),
+                vtid="VTID-02987",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent.disconnected oasis emit failed: %s", exc)
         try:
             await oasis.emit(
                 topic=TOPIC_SESSION_STOP,
