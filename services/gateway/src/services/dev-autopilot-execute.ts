@@ -2801,10 +2801,14 @@ export async function lazyPlanTick(): Promise<void> {
   if (pendingR.ok && pendingR.data && pendingR.data.length > 0) return;
 
   // Find planless findings ordered by impact_score desc.
+  // VTID-02988 (PR-M1.x'): filter through the shared executor-source-type
+  // allowlist so test-contract-failure-scanner / missing-test-scanner recs
+  // also receive lazy plans. Without this, autoApproveTick can never approve
+  // them — they sit at status='new' with no plan forever.
   const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
   const findingsR = await supa<Array<{ id: string }>>(
     s,
-    `/rest/v1/autopilot_recommendations?source_type=in.(dev_autopilot,dev_autopilot_impact)`
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})`
     + `&status=eq.new&risk_class=in.${riskFilter}`
     + `&order=impact_score.desc&limit=${LAZY_PLAN_BATCH_SIZE * 4}&select=id`,
   );
@@ -2872,9 +2876,12 @@ async function activationReaperTick(): Promise<void> {
   const cutoff = new Date(Date.now() - REAPER_GRACE_MS).toISOString();
   // Pull a small batch — we want to recover steadily, not flood the LLM
   // budget with weeks of accumulated activations on the first tick.
+  // VTID-02988 (PR-M1.x'): scope through the shared executor-source-type
+  // allowlist so orphaned activations from any executable scanner can be
+  // recovered, not just dev_autopilot lineage.
   const orphanedR = await supa<Array<{ id: string; activated_vtid: string | null; activated_at: string }>>(
     s,
-    `/rest/v1/autopilot_recommendations?source_type=in.(dev_autopilot,dev_autopilot_impact)` +
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})` +
     `&status=eq.activated&activated_at=lt.${cutoff}` +
     `&select=id,activated_vtid,activated_at&order=activated_at.asc&limit=5`,
   );
