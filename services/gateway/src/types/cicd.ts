@@ -525,6 +525,15 @@ export type CicdEventType =
   // ONLY when a LiveKit request was downgraded (config invalid or pinned_to_vertex_l1).
   | 'orb.upstream.provider.selected'
   | 'orb.upstream.provider.selection_error'
+  // L2.1 (VTID-02980): LiveKit internal-canary observability.
+  // `canary.selection_unlocked` fires when the selector returns
+  // `provider='livekit'` via the canary path (all hard gates pass: env/sys
+  // request + creds + canary.enabled + identity allowlisted). In L2.1 the
+  // consumer still pins to Vertex and emits `canary.consumer_pinned_vertex_l21`
+  // to make that pin explicit; L2.2 removes the consumer-side pin + adds
+  // connect_started/succeeded/failed events for the real media path.
+  | 'orb.upstream.canary.selection_unlocked'
+  | 'orb.upstream.canary.consumer_pinned_vertex_l21'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
