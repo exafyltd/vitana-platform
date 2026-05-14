@@ -70,3 +70,14 @@ TOPIC_HANDOFF_START = "voice.handoff.start"
 TOPIC_HANDOFF_COMPLETE = "voice.handoff.complete"
 TOPIC_HANDOFF_FAILED = "voice.handoff.failed"
 TOPIC_PERSONA_SWAP = "agent.voice.persona_swap"
+
+# L2.2b.1 (VTID-02987): backend orb-agent lifecycle observability. Emitted at
+# the earliest possible points in `agent_entrypoint` so any failure joining
+# the LiveKit room is visible in OASIS without needing logs. These 5 topics
+# are also added to the gateway's CicdEventType union; the gateway's
+# POST /api/v1/oasis/emit route allowlists the `orb.livekit.` prefix.
+TOPIC_AGENT_STARTING = "orb.livekit.agent.starting"
+TOPIC_AGENT_ROOM_JOIN_STARTED = "orb.livekit.agent.room_join_started"
+TOPIC_AGENT_ROOM_JOIN_SUCCEEDED = "orb.livekit.agent.room_join_succeeded"
+TOPIC_AGENT_ROOM_JOIN_FAILED = "orb.livekit.agent.room_join_failed"
+TOPIC_AGENT_DISCONNECTED = "orb.livekit.agent.disconnected"

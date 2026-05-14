@@ -27,6 +27,55 @@ def test_oasis_imports() -> None:
     assert TOPIC_PERSONA_SWAP == "agent.voice.persona_swap"
 
 
+def test_l22b1_lifecycle_topics() -> None:
+    """L2.2b.1 (VTID-02987): the 5 new lifecycle topics MUST exist as
+    module-level string literals, MUST use the `orb.livekit.agent.*` prefix,
+    and MUST match the gateway-side CicdEventType union exactly."""
+    from src.orb_agent.oasis import (
+        TOPIC_AGENT_DISCONNECTED,
+        TOPIC_AGENT_ROOM_JOIN_FAILED,
+        TOPIC_AGENT_ROOM_JOIN_STARTED,
+        TOPIC_AGENT_ROOM_JOIN_SUCCEEDED,
+        TOPIC_AGENT_STARTING,
+    )
+
+    assert TOPIC_AGENT_STARTING == "orb.livekit.agent.starting"
+    assert TOPIC_AGENT_ROOM_JOIN_STARTED == "orb.livekit.agent.room_join_started"
+    assert TOPIC_AGENT_ROOM_JOIN_SUCCEEDED == "orb.livekit.agent.room_join_succeeded"
+    assert TOPIC_AGENT_ROOM_JOIN_FAILED == "orb.livekit.agent.room_join_failed"
+    assert TOPIC_AGENT_DISCONNECTED == "orb.livekit.agent.disconnected"
+
+    # All 5 share the orb.livekit.agent.* prefix (gateway allowlist).
+    for topic in [
+        TOPIC_AGENT_STARTING,
+        TOPIC_AGENT_ROOM_JOIN_STARTED,
+        TOPIC_AGENT_ROOM_JOIN_SUCCEEDED,
+        TOPIC_AGENT_ROOM_JOIN_FAILED,
+        TOPIC_AGENT_DISCONNECTED,
+    ]:
+        assert topic.startswith("orb.livekit.agent."), topic
+
+
+def test_l22b1_session_wires_lifecycle_topics() -> None:
+    """session.py must reference all 5 lifecycle topics (the room-join
+    proof loop) so they fire from the entrypoint. Structural / grep-style
+    assertion — no livekit-agents SDK is invoked."""
+    import pathlib
+
+    session_src = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "src" / "orb_agent" / "session.py"
+    ).read_text(encoding="utf-8")
+    for topic_const in [
+        "TOPIC_AGENT_STARTING",
+        "TOPIC_AGENT_ROOM_JOIN_STARTED",
+        "TOPIC_AGENT_ROOM_JOIN_SUCCEEDED",
+        "TOPIC_AGENT_ROOM_JOIN_FAILED",
+        "TOPIC_AGENT_DISCONNECTED",
+    ]:
+        assert topic_const in session_src, f"session.py is missing {topic_const}"
+
+
 def test_instructions_signatures() -> None:
     """The signatures of build_live / build_anonymous match the parity spec."""
     import inspect

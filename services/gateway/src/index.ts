@@ -88,6 +88,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
   const orbLivekitRouter = require('./routes/orb-livekit').default;
+  // L2.2b.1 (VTID-02987): /api/v1/oasis/emit — service-token + admin-JWT
+  // gated proxy so the Python orb-agent can emit lifecycle telemetry via the
+  // same OASIS pipeline the gateway uses.
+  const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
   const orbToolRouter = require('./routes/orb-tool').default;
   const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
@@ -679,6 +683,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Mounted at /api/v1 because its routes span /orb/*, /voice-providers/*,
   // /agents/*/voice-config — the leaf paths inside the router carry the prefix.
   mountRouterSync(app, '/api/v1', orbLivekitRouter, { owner: 'orb-livekit' });
+  mountRouterSync(app, '/api/v1', oasisEmitRouter, { owner: 'oasis-emit' });
 
   // VTID-LIVEKIT-TOOLS: Vitana Index endpoints used by the LiveKit tool catalogue
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the

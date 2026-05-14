@@ -541,6 +541,16 @@ export type CicdEventType =
   // the caller on Vertex — this event tells operators "you have a canary
   // user waiting; flip `voice.livekit_agent_enabled` once L2.2b lands."
   | 'orb.upstream.active_provider.pinned_until_agent_ready'
+  // L2.2b.1 (VTID-02987): backend orb-agent lifecycle observability.
+  // Emitted by the Python `services/agents/orb-agent` worker via
+  // POST /api/v1/oasis/emit. These 5 events form the room-join proof loop
+  // for the canary path. Audio / LLM / tool events are deferred to
+  // subsequent L2.2b.x phases.
+  | 'orb.livekit.agent.starting'
+  | 'orb.livekit.agent.room_join_started'
+  | 'orb.livekit.agent.room_join_succeeded'
+  | 'orb.livekit.agent.room_join_failed'
+  | 'orb.livekit.agent.disconnected'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
