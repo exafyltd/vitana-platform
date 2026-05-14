@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any
 
 from .bootstrap import ContextBootstrap
@@ -327,18 +328,36 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     )
 
     # OASIS session start.
+    # VTID-02986: payload shape mirrors Vertex's orb-live.ts:11838 emit so
+    # Voice Lab's /api/v1/voice-lab/live/sessions can build a unified
+    # LiveSessionSummary from a single query. Key fields the route reads:
+    # session_id, transport, lang, user_id, tenant_id, email, user_agent,
+    # origin, is_mobile, voice. `transport: 'livekit'` is the new value the
+    # UI badges to distinguish LiveKit vs Vertex (websocket/sse) sessions.
+    session_started_at_ms = int(time.time() * 1000)
+    voice_cfg = bootstrap.voice_config or {}
     await oasis.emit(
         topic=TOPIC_SESSION_START,
         payload={
+            "session_id": orb_session_id,
+            "transport": "livekit",
             "user_id": identity.user_id,
             "tenant_id": identity.tenant_id,
             "agent_id": agent_id,
             "lang": identity.lang,
             "is_mobile": identity.is_mobile,
+            "is_anonymous": identity.is_anonymous,
+            "vitana_id": bootstrap.vitana_id or identity.vitana_id,
+            "email": getattr(identity, "email", None),
             "orb_session_id": orb_session_id,
-            "stt": (bootstrap.voice_config or {}).get("stt_provider"),
-            "llm": (bootstrap.voice_config or {}).get("llm_provider"),
-            "tts": (bootstrap.voice_config or {}).get("tts_provider"),
+            "stt_provider": voice_cfg.get("stt_provider"),
+            "stt_model": voice_cfg.get("stt_model"),
+            "llm_provider": voice_cfg.get("llm_provider"),
+            "llm_model": voice_cfg.get("llm_model"),
+            "tts_provider": voice_cfg.get("tts_provider"),
+            "tts_model": voice_cfg.get("tts_model"),
+            "voice": voice_cfg.get("tts_model"),  # Vertex parity: `voice` = TTS model name
+            "active_role": bootstrap.active_role,
         },
     )
 
@@ -457,11 +476,23 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # cleanup to ctx.add_shutdown_callback so it fires when the room ends.
     disconnected_evt = asyncio.Event()
 
+    # VTID-02986: per-session counters feed the gateway's session-stop
+    # metrics so classifyQualityFromSessionStop (voice-failure-taxonomy.ts)
+    # can return a failure_class for LiveKit sessions identical to Vertex.
+    # Counters are read at _teardown time below. Defined here (not inside
+    # the hook closures) so both the user_input_transcribed handler AND
+    # the speech_created handler can mutate them. `stall_count` is hoisted
+    # too so _teardown can include it in the stop payload — the watchdog
+    # binds the same dict instance later via stall_count["n"] += 1.
+    user_turns_counter = {"n": 0}
+    model_turns_counter = {"n": 0}
+    stall_count = {"n": 0}
+
     async def _teardown() -> None:
         # L2.2b.1: emit the lifecycle `disconnected` event FIRST (it pairs
         # with the room_join_succeeded event from session start). The
-        # legacy `livekit.session.stop` event follows for back-compat with
-        # consumers that already filter on it.
+        # vtid.live.session.stop event follows with the full quality-metrics
+        # payload that the Voice Lab classifier needs.
         try:
             await oasis.emit(
                 topic=TOPIC_AGENT_DISCONNECTED,
@@ -476,13 +507,40 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent.disconnected oasis emit failed: %s", exc)
+        # VTID-02986: full session-stop payload — same shape Vertex emits
+        # at orb-live.ts:12207 so the Voice Lab quality classifier picks
+        # the right failure_class. audio_in_chunks / audio_out_chunks are
+        # approximations from turn counts (livekit-agents doesn't expose
+        # raw frame counts on AgentSession). The classifier thresholds
+        # (ai>=20 for no_engagement, ai>=100 for model_under_responds,
+        # ai>=50 for low_turn_progression) still trigger correctly with
+        # turn-derived approximations.
+        duration_ms = max(0, int(time.time() * 1000) - session_started_at_ms)
+        user_turns = user_turns_counter["n"]
+        model_turns = model_turns_counter["n"]
+        turn_count = user_turns + model_turns
+        # ~50 chunks per turn = ~1s of 20ms-frame audio. Conservative; real
+        # utterances are longer but the classifier only checks lower bounds.
+        approx_in_chunks = user_turns * 50
+        approx_out_chunks = model_turns * 50
         try:
             await oasis.emit(
                 topic=TOPIC_SESSION_STOP,
                 payload={
+                    "session_id": orb_session_id,
+                    "transport": "livekit",
                     "user_id": identity.user_id,
+                    "tenant_id": identity.tenant_id,
                     "agent_id": agent_id,
                     "orb_session_id": orb_session_id,
+                    "duration_ms": duration_ms,
+                    "turn_count": turn_count,
+                    "user_turns": user_turns,
+                    "model_turns": model_turns,
+                    "audio_in_chunks": approx_in_chunks,
+                    "audio_out_chunks": approx_out_chunks,
+                    "video_frames": 0,
+                    "stall_count": stall_count["n"],
                 },
             )
         except Exception as exc:  # noqa: BLE001
@@ -576,7 +634,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # 1-2 min recovery the user observed before my watchdog) handle it.
     # Future option: add a soft pipeline-reset path that resets STT/LLM
     # without dropping the room. For now: telemetry-only.
-    stall_count = {"n": 0}
+    # stall_count was hoisted above _teardown so the stop-payload sees it.
     stall = StallWatchdog(threshold_ms=STALL_THRESHOLD_MS)
 
     async def _on_stall() -> None:
@@ -607,6 +665,10 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     try:
         @session.on("speech_created")  # type: ignore[misc]
         def _on_speech(ev: Any) -> None:  # noqa: ARG001
+            # VTID-02986: increment model_turns counter for the session.stop
+            # quality classifier in addition to feeding the watchdog +
+            # firehose trace.
+            model_turns_counter["n"] += 1
             stall.feed()
             asyncio.create_task(
                 _early_trace_heartbeat(
@@ -627,7 +689,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # watchdog, and a long silent agent (waiting for user input) doesn't
     # either. We don't know which exact event names AgentSession emits in
     # this version of livekit-agents, so subscribe defensively.
-    for ev_name in ("user_state_changed", "agent_state_changed", "user_input_transcribed"):
+    #
+    # VTID-02986: user_input_transcribed also increments user_turns counter
+    # so the quality classifier sees both sides of the conversation. Other
+    # hooks stay watchdog-only.
+    def _on_user_transcribed(_ev: Any = None) -> None:
+        user_turns_counter["n"] += 1
+        stall.feed()
+
+    try:
+        session.on("user_input_transcribed")(_on_user_transcribed)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook user_input_transcribed: %s", exc)
+
+    for ev_name in ("user_state_changed", "agent_state_changed"):
         try:
             session.on(ev_name)(lambda _ev=None: stall.feed())  # type: ignore[misc]
         except Exception as exc:  # noqa: BLE001

@@ -72,7 +72,10 @@ interface LiveSessionSummary {
   audio_in_chunks: number;
   audio_out_chunks: number;
   lang?: string;
-  transport: 'websocket' | 'sse';
+  // VTID-02986: 'livekit' added so orb-agent sessions can ship through the
+  // same shape. Vertex still emits 'websocket' or 'sse'; the UI badges by
+  // value so 'livekit' is distinguishable from those.
+  transport: 'websocket' | 'sse' | 'livekit';
   error_count: number;
   interrupted_count: number;
   user_id?: string;
@@ -194,7 +197,10 @@ async function queryVoiceLabEvents(
     // VTID filter: VTID-01218A (legacy voice-lab) + VTID-01155 (orb-live emitter)
     // + VTID-VOICE-HEALING (autonomous self-healing loop events: dispatched,
     // verdict, rollback, suppressed, spec_memory.blocked, investigation.completed)
-    params.push(`vtid=in.("VTID-01218A","VTID-01155","VTID-VOICE-HEALING")`);
+    // + VTID-LIVEKIT-AGENT (VTID-02986: orb-agent emits vtid.live.session.start/stop
+    //   with this VTID; required for LiveKit sessions to appear next to Vertex
+    //   in the unified Voice Lab list).
+    params.push(`vtid=in.("VTID-01218A","VTID-01155","VTID-VOICE-HEALING","VTID-LIVEKIT-AGENT")`);
 
     // Ordering and pagination
     params.push('order=created_at.desc');
