@@ -1172,6 +1172,10 @@ import {
   selectUpstreamProvider,
   type UpstreamSelectionDecision,
 } from '../orb/live/upstream/upstream-provider-selector';
+// L2.1 (VTID-02980): LiveKit internal-canary config reader. Reads
+// `ORB_LIVEKIT_CANARY_ENABLED` env + `voice.livekit_canary_enabled`/
+// `voice.livekit_canary_allowlist` system_config rows. NEVER throws.
+import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
 // NOTE: `getVoiceConfig` is already imported above (line ~92).
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
@@ -5496,14 +5500,24 @@ async function connectToLiveAPI(
     throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
   }
 
-  // L1 (VTID-02976): consult the upstream provider selector. The selector
-  // is a pure function — it never reads env / DB / OASIS. We gather inputs
-  // here, hand them in, and emit OASIS based on the returned decision.
-  // L1 always pins to Vertex; the decision tells operators what *would*
-  // happen once L2 lifts the pin.
+  // L1 (VTID-02976) / L2.1 (VTID-02980): consult the upstream provider
+  // selector. The selector is a pure function — it never reads env / DB /
+  // OASIS. We gather inputs here (voice config + canary config + session
+  // identity), hand them in, and emit OASIS based on the returned decision.
+  //
+  // L1 pinned every LiveKit request to Vertex. L2.1 lifts that pin INSIDE
+  // the canary gate only (env+sys request + creds + canary.enabled +
+  // identity in allowlist). Everywhere else the L1 pin still holds.
+  //
+  // L2.1 caveat: even when the selector returns `provider='livekit'` via
+  // the canary path, this consumer ALSO pins to Vertex (the LiveKit media
+  // client isn't wired yet — that's L2.2). The pin is recorded as a
+  // distinct OASIS event so it's never silent. L2.2 removes the consumer
+  // pin and adds connect_started / connect_succeeded / connect_failed.
   let __upstreamDecision: UpstreamSelectionDecision;
   try {
     const __voiceCfg = await getVoiceConfig();
+    const __canary = await getLiveKitCanaryConfig();
     __upstreamDecision = selectUpstreamProvider({
       envProviderOverride: process.env.ORB_LIVE_PROVIDER,
       systemConfigActiveProvider: __voiceCfg.active_provider,
@@ -5512,50 +5526,100 @@ async function connectToLiveAPI(
         apiKey: process.env.LIVEKIT_API_KEY,
         apiSecret: process.env.LIVEKIT_API_SECRET,
       },
+      canary: {
+        enabled: __canary.enabled,
+        allowedTenants: __canary.allowedTenants,
+        allowedUsers: __canary.allowedUsers,
+      },
+      identity: {
+        tenantId: session.identity?.tenant_id ?? null,
+        userId: session.identity?.user_id ?? null,
+      },
     });
   } catch (e) {
-    // Voice config read failure must NOT block the session start; default
-    // to Vertex so production behavior matches today.
-    console.warn(`[VTID-02976] voice-config read failed; falling back to vertex defaults: ${(e as Error).message}`);
+    // Voice/canary config read failure must NOT block the session start;
+    // default to Vertex so production behavior matches today.
+    console.warn(`[VTID-02976] voice/canary config read failed; falling back to vertex defaults: ${(e as Error).message}`);
     __upstreamDecision = {
       provider: 'vertex',
       requested: null,
       reason: 'default',
       livekitReady: false,
+      canary: false,
     };
   }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
       ` requested=${__upstreamDecision.requested ?? 'none'}` +
       ` reason=${__upstreamDecision.reason}` +
-      ` livekit_ready=${__upstreamDecision.livekitReady}`,
+      ` livekit_ready=${__upstreamDecision.livekitReady}` +
+      ` canary=${__upstreamDecision.canary}`,
   );
   // OASIS emission — every connect call emits a single `selected` event.
   // When the request was LiveKit but the path degraded (config invalid or
-  // pinned_to_vertex_l1), also emit a `selection_error` event with the
-  // typed error string so the Improve cockpit can surface it.
+  // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
+  // `selection_error` with the typed error string so the Improve cockpit
+  // can surface it.
   void emitOasisEvent({
     type: 'orb.upstream.provider.selected',
-    vtid: 'VTID-02976',
+    vtid: 'VTID-02980',
     payload: {
       session_id: session.sessionId,
       provider: __upstreamDecision.provider,
       requested: __upstreamDecision.requested,
       reason: __upstreamDecision.reason,
       livekit_ready: __upstreamDecision.livekitReady,
+      canary: __upstreamDecision.canary,
     } as any,
   } as any).catch(() => { /* best-effort */ });
   if (__upstreamDecision.error) {
     void emitOasisEvent({
       type: 'orb.upstream.provider.selection_error',
-      vtid: 'VTID-02976',
+      vtid: 'VTID-02980',
       payload: {
         session_id: session.sessionId,
         provider: __upstreamDecision.provider,
         requested: __upstreamDecision.requested,
         reason: __upstreamDecision.reason,
         livekit_ready: __upstreamDecision.livekitReady,
+        canary: __upstreamDecision.canary,
         error: __upstreamDecision.error,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+  }
+
+  // L2.1 (VTID-02980): canary observability. When the selector returns
+  // `provider='livekit'` via the canary path, the L1 pin has been lifted
+  // — but L2.1's consumer doesn't have a LiveKit media client yet. Emit
+  // an explicit `canary.selection_unlocked` event (the decision happened)
+  // followed by a `canary.consumer_pinned_vertex_l21` event (the
+  // consumer-side pin is what's keeping the session on Vertex). L2.2
+  // will remove the consumer pin and replace `consumer_pinned_vertex_l21`
+  // with `canary.connect_started` + `canary.connect_succeeded` /
+  // `canary.connect_failed`.
+  if (__upstreamDecision.provider === 'livekit' && __upstreamDecision.canary) {
+    void emitOasisEvent({
+      type: 'orb.upstream.canary.selection_unlocked',
+      vtid: 'VTID-02980',
+      payload: {
+        session_id: session.sessionId,
+        tenant_id: session.identity?.tenant_id ?? null,
+        user_id: session.identity?.user_id ?? null,
+        reason: __upstreamDecision.reason,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+    void emitOasisEvent({
+      type: 'orb.upstream.canary.consumer_pinned_vertex_l21',
+      vtid: 'VTID-02980',
+      payload: {
+        session_id: session.sessionId,
+        tenant_id: session.identity?.tenant_id ?? null,
+        user_id: session.identity?.user_id ?? null,
+        reason: __upstreamDecision.reason,
+        note:
+          'L2.1 selector unlocked LiveKit for this canary identity, but ' +
+          'the consumer still constructs VertexLiveClient. L2.2 will lift ' +
+          'this consumer-side pin and wire the real LiveKit media client.',
       } as any,
     } as any).catch(() => { /* best-effort */ });
   }

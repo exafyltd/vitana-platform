@@ -225,4 +225,34 @@ describe('A8.3a.2: orb-live.ts is a thin consumer of the factory', () => {
     expect(fnBody).toMatch(/systemConfigActiveProvider\s*:/);
     expect(fnBody).toMatch(/livekitCredentials\s*:/);
   });
+
+  it('L2.1: connectToLiveAPI passes canary config + identity to the selector and emits canary OASIS events', () => {
+    // L2.1 (VTID-02980): the connect path must also read the LiveKit
+    // canary config (env + system_config) and pass it — along with the
+    // session identity — to the selector. When the selector returns
+    // `provider='livekit'` via the canary path, two distinct OASIS
+    // events fire:
+    //   1. `orb.upstream.canary.selection_unlocked` — the decision happened.
+    //   2. `orb.upstream.canary.consumer_pinned_vertex_l21` — L2.1's
+    //      consumer is still pinned to Vertex (the LiveKit media client
+    //      isn't wired yet; L2.2 lifts this pin and replaces this event
+    //      with connect_started / succeeded / failed events).
+    const fnStart = orbLiveSrc.indexOf('async function connectToLiveAPI');
+    expect(fnStart).toBeGreaterThan(0);
+    const fnEnd = orbLiveSrc.indexOf('\nasync function ', fnStart + 1);
+    const fnBody = orbLiveSrc.slice(fnStart, fnEnd >= 0 ? fnEnd : undefined);
+    // Reads the canary config.
+    expect(fnBody).toMatch(/getLiveKitCanaryConfig\s*\(/);
+    // Passes the canary + identity bags to the selector.
+    expect(fnBody).toMatch(/canary\s*:\s*\{[\s\S]*?enabled\s*:[\s\S]*?allowedTenants[\s\S]*?allowedUsers/);
+    expect(fnBody).toMatch(/identity\s*:\s*\{[\s\S]*?tenantId[\s\S]*?session\.identity\?\.tenant_id/);
+    expect(fnBody).toMatch(/identity\s*:\s*\{[\s\S]*?userId[\s\S]*?session\.identity\?\.user_id/);
+    // Emits both canary OASIS event types.
+    expect(fnBody).toMatch(/orb\.upstream\.canary\.selection_unlocked/);
+    expect(fnBody).toMatch(/orb\.upstream\.canary\.consumer_pinned_vertex_l21/);
+    // Canary events fire ONLY when the decision is livekit AND canary=true.
+    expect(fnBody).toMatch(
+      /__upstreamDecision\.provider\s*===\s*['"]livekit['"]\s*&&\s*__upstreamDecision\.canary/,
+    );
+  });
 });
