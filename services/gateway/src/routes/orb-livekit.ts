@@ -53,6 +53,12 @@ import {
   AuthenticatedRequest,
   SupabaseIdentity,
 } from '../middleware/auth-supabase-jwt';
+// L2.2a (VTID-02982): per-identity active-provider resolution + LiveKit
+// Agent readiness flag. The resolver pins to Vertex unless the backend
+// agent is enabled (the no-empty-room invariant).
+import { resolveActiveProviderForCaller } from '../orb/live/upstream/active-provider-resolver';
+import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
+import { getLiveKitAgentReadiness } from '../orb/live/upstream/livekit-agent-config';
 
 const router = Router();
 
@@ -223,14 +229,85 @@ async function writeActiveProvider(
   return { ok: true, previous: current.active_provider };
 }
 
-router.get('/orb/active-provider', async (_req: Request, res: Response) => {
-  try {
-    const state = await readActiveProvider();
-    res.json({ ok: true, ...state, vtid: VTID });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: (e as Error).message, vtid: VTID });
-  }
-});
+// L2.2a (VTID-02982): `/orb/active-provider` is now per-identity canary-aware.
+//
+// Legacy field `active_provider` carries the EFFECTIVE provider for the
+// caller — the existing frontend `useActiveVoiceProvider()` hook reads only
+// that field, so this change is back-compat without any frontend edit.
+//
+// Hard pin: until `voice.livekit_agent_enabled` is true (the L2.2b backend
+// agent isn't built yet), the resolver returns `effectiveProvider=vertex`
+// for EVERY caller regardless of allowlist. No empty LiveKit rooms.
+router.get(
+  '/orb/active-provider',
+  optionalAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const state = await readActiveProvider();
+      const canary = await getLiveKitCanaryConfig();
+      const agent = await getLiveKitAgentReadiness();
+      const livekitCredsValid = !!(
+        process.env.LIVEKIT_URL &&
+        process.env.LIVEKIT_API_KEY &&
+        process.env.LIVEKIT_API_SECRET
+      );
+
+      const resolution = resolveActiveProviderForCaller({
+        globalActiveProvider: state.active_provider,
+        canary: {
+          enabled: canary.enabled,
+          allowedTenants: canary.allowedTenants,
+          allowedUsers: canary.allowedUsers,
+        },
+        livekitCredsValid,
+        agentReady: agent.enabled,
+        identity: req.identity
+          ? {
+              tenantId: req.identity.tenant_id ?? null,
+              userId: req.identity.user_id ?? null,
+            }
+          : null,
+      });
+
+      // Emit OASIS when a canary user reaches the agent-pinned state — this
+      // is the signal "we have someone we'd flip if the agent were ready."
+      if (resolution.reason === 'pinned_until_agent_ready') {
+        void emitOasisEvent({
+          type: 'orb.upstream.active_provider.pinned_until_agent_ready',
+          vtid: 'VTID-02982',
+          payload: {
+            tenant_id: req.identity?.tenant_id ?? null,
+            user_id: req.identity?.user_id ?? null,
+            requested_provider: resolution.requestedProvider,
+            livekit_ready: resolution.livekitReady,
+            canary_eligible: resolution.canaryEligible,
+            agent_ready: resolution.agentReady,
+          },
+        } as never).catch(() => { /* best-effort */ });
+      }
+
+      res.json({
+        ok: true,
+        // Legacy fields (backwards-compatible with useActiveVoiceProvider).
+        // `active_provider` now carries the per-caller effective provider.
+        active_provider: resolution.effectiveProvider,
+        last_flipped_at: state.last_flipped_at,
+        flipped_by: state.flipped_by,
+        cooldown_remaining_s: state.cooldown_remaining_s,
+        // L2.2a additions — diagnostic fields for ops + Improve cockpit.
+        requestedProvider: resolution.requestedProvider,
+        effectiveProvider: resolution.effectiveProvider,
+        livekitReady: resolution.livekitReady,
+        canaryEligible: resolution.canaryEligible,
+        agentReady: resolution.agentReady,
+        reason: resolution.reason,
+        vtid: VTID,
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: (e as Error).message, vtid: VTID });
+    }
+  },
+);
 
 router.post(
   '/orb/active-provider',

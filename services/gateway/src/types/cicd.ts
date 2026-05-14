@@ -534,6 +534,13 @@ export type CicdEventType =
   // connect_started/succeeded/failed events for the real media path.
   | 'orb.upstream.canary.selection_unlocked'
   | 'orb.upstream.canary.consumer_pinned_vertex_l21'
+  // L2.2a (VTID-02982): per-identity active-provider gate.
+  // Fires from `GET /api/v1/orb/active-provider` when a caller would have
+  // routed to LiveKit (creds valid, canary enabled, identity allowlisted)
+  // BUT the backend LiveKit Agent flag is off. The L2.2a safety pin keeps
+  // the caller on Vertex — this event tells operators "you have a canary
+  // user waiting; flip `voice.livekit_agent_enabled` once L2.2b lands."
+  | 'orb.upstream.active_provider.pinned_until_agent_ready'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
