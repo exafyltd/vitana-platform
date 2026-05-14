@@ -91,7 +91,7 @@ jobs:
             --allow-unauthenticated \
             --labels=vtid=vtid-livekit-foundation,vt_layer=aicor,vt_module=voice \
             --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest \
-            --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=global
+            --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=us-central1,ORB_AGENT_TEXT_ONLY=true
 
       - name: Delete prior revisions (force only-latest worker connects to LiveKit)
         run: |

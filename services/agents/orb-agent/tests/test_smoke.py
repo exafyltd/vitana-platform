@@ -107,6 +107,124 @@ def test_l22b1_session_wires_lifecycle_topics() -> None:
         assert topic_const in session_src, f"session.py is missing {topic_const}"
 
 
+def test_l22b2_model_request_topics() -> None:
+    """L2.2b.2 (VTID-02990): the 3 model_request_* topics MUST exist as
+    module-level string literals and MUST share the `orb.livekit.agent.*`
+    prefix so the gateway's POST /api/v1/oasis/emit allowlist accepts
+    them. Strings MUST match the gateway-side CicdEventType union."""
+    from src.orb_agent.oasis import (
+        TOPIC_AGENT_MODEL_REQUEST_FAILED,
+        TOPIC_AGENT_MODEL_REQUEST_STARTED,
+        TOPIC_AGENT_MODEL_REQUEST_SUCCEEDED,
+    )
+
+    assert TOPIC_AGENT_MODEL_REQUEST_STARTED == "orb.livekit.agent.model_request_started"
+    assert TOPIC_AGENT_MODEL_REQUEST_SUCCEEDED == "orb.livekit.agent.model_request_succeeded"
+    assert TOPIC_AGENT_MODEL_REQUEST_FAILED == "orb.livekit.agent.model_request_failed"
+    for topic in [
+        TOPIC_AGENT_MODEL_REQUEST_STARTED,
+        TOPIC_AGENT_MODEL_REQUEST_SUCCEEDED,
+        TOPIC_AGENT_MODEL_REQUEST_FAILED,
+    ]:
+        assert topic.startswith("orb.livekit.agent."), topic
+
+
+def test_l22b2_session_wires_text_only_loop() -> None:
+    """session.py must import + branch on `text_only_mode_enabled` so the
+    Anthropic self-test runs INSTEAD of the cascade when the flag is on.
+    Structural / grep-style assertion — no livekit-agents SDK is invoked."""
+    import pathlib
+
+    session_src = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "src" / "orb_agent" / "session.py"
+    ).read_text(encoding="utf-8")
+    assert "from .text_only_loop import" in session_src
+    assert "text_only_mode_enabled" in session_src
+    assert "run_text_only_self_test" in session_src
+
+
+def test_l22b2_text_only_mode_flag_parsing() -> None:
+    """L2.2b.2: `text_only_mode_enabled()` is the env-flag reader. Default
+    is True during the L2.2b.2 phase so the agent never tries to build the
+    full STT/TTS cascade against missing Deepgram/Cartesia secrets."""
+    from src.orb_agent.text_only_loop import text_only_mode_enabled
+
+    # Default ON (no env set).
+    assert text_only_mode_enabled(env={}) is True
+
+    # Truthy variants ON.
+    for v in ["true", "True", "TRUE", "1", "yes", "  true  "]:
+        assert text_only_mode_enabled(env={"ORB_AGENT_TEXT_ONLY": v}) is True, v
+
+    # Explicit OFF (anything other than truthy variants).
+    for v in ["false", "False", "0", "no", "off", ""]:
+        assert (
+            text_only_mode_enabled(env={"ORB_AGENT_TEXT_ONLY": v}) is False
+        ), v
+
+
+def test_l22b2_self_test_genai_missing_emits_typed_failure() -> None:
+    """L2.2b.2: `run_text_only_self_test` MUST emit a typed
+    `model_request_failed` event with `reason='genai_sdk_not_installed'`
+    when the `google-genai` SDK is unavailable, NOT raise an exception.
+    Production-safe default: the agent stays in the room, telemetry
+    shows the cause, no crash.
+
+    Strategy: insert `None` into sys.modules for `google.genai` so the
+    in-function `from google import genai` lookup raises ImportError.
+    """
+    import asyncio
+    import sys
+
+    # Stash + sabotage the import so the test is hermetic regardless of
+    # whether google-genai is installed in the test env.
+    saved_genai = sys.modules.get("google.genai")
+    saved_google = sys.modules.get("google")
+    sys.modules["google.genai"] = None  # type: ignore[assignment]
+    # If `google` package isn't already imported, leaving it absent makes
+    # `from google import genai` raise ImportError on the parent.
+    try:
+        from src.orb_agent.text_only_loop import run_text_only_self_test
+
+        captured: list[dict] = []
+
+        class _StubOasis:
+            async def emit(self, *, topic: str, payload: dict, vtid: str) -> None:
+                captured.append({"topic": topic, "payload": payload, "vtid": vtid})
+
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                run_text_only_self_test(
+                    oasis=_StubOasis(),  # type: ignore[arg-type]
+                    room_name="test-room",
+                    code_version="test-version",
+                )
+            )
+        finally:
+            loop.close()
+
+        assert result["ok"] is False
+        assert result["reason"] == "genai_sdk_not_installed"
+        # Exactly ONE event fired: the failure. No started/succeeded.
+        assert len(captured) == 1, captured
+        assert captured[0]["topic"] == "orb.livekit.agent.model_request_failed"
+        assert captured[0]["payload"]["reason"] == "genai_sdk_not_installed"
+        assert captured[0]["payload"]["room_name"] == "test-room"
+        assert captured[0]["payload"]["provider"] == "gemini-vertex"
+        assert captured[0]["vtid"] == "VTID-02990"
+    finally:
+        # Restore sys.modules so we don't poison sibling tests.
+        if saved_genai is not None:
+            sys.modules["google.genai"] = saved_genai
+        else:
+            sys.modules.pop("google.genai", None)
+        if saved_google is None:
+            sys.modules.pop("google", None)
+
+
+
 def test_instructions_signatures() -> None:
     """The signatures of build_live / build_anonymous match the parity spec."""
     import inspect
