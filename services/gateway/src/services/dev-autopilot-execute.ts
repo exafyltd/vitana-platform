@@ -41,6 +41,12 @@ import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuc
 import { writeAutopilotFailure, writeAutopilotSuccess } from './dev-autopilot-self-heal-log';
 import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
 import { loadAutopilotContext } from './dev-autopilot/context-loader';
+// VTID-02984 (PR-M1.x): shared allowlist for executable source_types so
+// test-contract scanner recommendations (PR-L2/L3) reach the executor.
+import {
+  isExecutableSourceType,
+  executableSourceTypesPostgrestIn,
+} from './autopilot-executable-source-types';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -333,10 +339,12 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
   const rec = recR.data[0];
   if (!rec) return { ok: false, error: 'finding not found' };
-  // Accept both baseline and impact-scan findings — both flow through the
-  // same plan→approve→execute path. Reject anything else (community, system).
-  if (rec.source_type !== 'dev_autopilot' && rec.source_type !== 'dev_autopilot_impact') {
-    return { ok: false, error: `not a dev_autopilot finding (source_type=${rec.source_type})` };
+  // Accept any source_type from the shared executor allowlist
+  // (autopilot-executable-source-types.ts). Reject anything else
+  // (community, system, or future scanner shapes that haven't been
+  // code-reviewed into the allowlist).
+  if (!isExecutableSourceType(rec.source_type)) {
+    return { ok: false, error: `not an executable source_type (source_type=${rec.source_type})` };
   }
   // VTID-02639 defense-in-depth: refuse to re-approve a finding that has
   // already shipped (status='completed') or been manually closed
@@ -636,8 +644,9 @@ export async function bridgeActivationToExecution(
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
 
-  // 1. Verify this is a dev_autopilot* finding (the activate route only
-  //    bridges those — community recs don't go through the executor).
+  // 1. Verify this source_type is in the executor allowlist (the
+  //    activate route only bridges allowlisted recs — community / system
+  //    rows don't go through the executor).
   const recR = await supa<Array<{ id: string; source_type: string; status: string }>>(
     s,
     `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=id,source_type,status&limit=1`,
@@ -646,7 +655,7 @@ export async function bridgeActivationToExecution(
     return { ok: false, error: 'finding lookup failed' };
   }
   const rec = recR.data[0];
-  if (rec.source_type !== 'dev_autopilot' && rec.source_type !== 'dev_autopilot_impact') {
+  if (!isExecutableSourceType(rec.source_type)) {
     return { ok: false, skipped: `source_type=${rec.source_type} not bridgeable` };
   }
 
@@ -2538,7 +2547,11 @@ export async function autoApproveTick(): Promise<void> {
     spec_snapshot: { scanner?: string } | null;
   }>>(
     s,
-    `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new`
+    // VTID-02984 (PR-M1.x): widen the source_type filter from
+    // `eq.dev_autopilot` to the shared executor allowlist so PR-L2 /
+    // PR-L3 / M1 test-contract scanners flow through. Unknown
+    // source_types stay rejected via the executor's per-row guards.
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})&status=eq.new`
       + `&risk_class=in.(${riskList})`
       + `&effort_score=lte.${maxEffort}`
       + `&spec_snapshot->>scanner=in.(${scannerList})`
