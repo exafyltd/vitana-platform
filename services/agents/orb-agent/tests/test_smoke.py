@@ -10,21 +10,52 @@ def test_config_imports() -> None:
 
 def test_oasis_imports() -> None:
     from src.orb_agent.oasis import (
+        DEFAULT_VTID,
         TOPIC_HANDOFF_COMPLETE,
         TOPIC_HANDOFF_START,
         TOPIC_PERSONA_SWAP,
         TOPIC_SESSION_START,
         TOPIC_SESSION_STOP,
+        TOPIC_STALL_DETECTED,
         OasisEmitter,
     )
 
     assert OasisEmitter is not None
-    # Topic strings must be the canonical literals from the parity spec.
-    assert TOPIC_SESSION_START == "livekit.session.start"
-    assert TOPIC_SESSION_STOP == "livekit.session.stop"
+    # VTID-02986: session-lifecycle topics aligned to Vertex's vtid.live.*
+    # namespace so Voice Lab's /api/v1/voice-lab/live/sessions endpoint
+    # surfaces LiveKit sessions in the same panel as Vertex sessions.
+    assert TOPIC_SESSION_START == "vtid.live.session.start"
+    assert TOPIC_SESSION_STOP == "vtid.live.session.stop"
+    assert TOPIC_STALL_DETECTED == "vtid.live.stall_detected"
     assert TOPIC_HANDOFF_START == "voice.handoff.start"
     assert TOPIC_HANDOFF_COMPLETE == "voice.handoff.complete"
     assert TOPIC_PERSONA_SWAP == "agent.voice.persona_swap"
+    # VTID-02986: default VTID stamped on every emit so Voice Lab's vtid
+    # IN-filter (voice-lab.ts:197) returns the row.
+    assert DEFAULT_VTID == "VTID-LIVEKIT-AGENT"
+
+
+def test_oasis_emitter_loud_on_missing_token(caplog) -> None:  # type: ignore[no-untyped-def]
+    """VTID-02986: emitter must log WARN (not silent-return) when token is
+    unset, so the missing-telemetry failure mode is visible in Cloud Run
+    logs. The silent path is how livekit.stall_detected events disappeared
+    during the 2026-05-14 disconnect investigation."""
+    import asyncio
+    import logging
+
+    from src.orb_agent.oasis import OasisEmitter
+
+    with caplog.at_level(logging.WARNING, logger="src.orb_agent.oasis"):
+        emitter = OasisEmitter(gateway_url="https://example.test", service_token="")
+        # Constructor-time WARN — operator sees this immediately at boot.
+        assert any("GATEWAY_SERVICE_TOKEN not set" in r.message for r in caplog.records)
+        caplog.clear()
+
+        asyncio.run(emitter.emit(topic="vtid.live.session.start", payload={"x": 1}))
+        # Per-emit WARN with the skipped topic name + reason.
+        records = [r.message for r in caplog.records]
+        assert any("oasis emit skipped (token_missing)" in m for m in records), records
+        assert any("vtid.live.session.start" in m for m in records), records
 
 
 def test_l22b1_lifecycle_topics() -> None:
