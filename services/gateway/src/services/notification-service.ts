@@ -537,22 +537,38 @@ export async function notifyUser(
   }
 
   // ── 5. Send push — FCM first, Appilix as fallback ──────
-  // Single dispatch policy: FCM first, Appilix fallback.
-  //
-  // Historically chat-category notifications routed through Appilix first
-  // because we only had web-push FCM tokens (which open the browser, not
-  // the app). Per Appilix support, their iOS wrapper exposes the native
-  // FCM token via a JS bridge (appilix.postMessage({type:"firebase_token"}))
-  // which the frontend now registers in user_device_tokens. With native
-  // tokens stored, Firebase Admin SDK delivers via APNs straight to the
-  // installed app — bypassing Appilix's user_identity routing layer
-  // entirely. Appilix remains as fallback for users whose token isn't
-  // registered yet.
+  // Dispatch policy:
+  //   1. Always try FCM first via user_device_tokens (covers Android native
+  //      app, iOS native app once bridge captures token, web push).
+  //   2. If the notification has a deep-link URL AND we have no
+  //      Appilix-wrapped (native mobile) token registered for the user,
+  //      ALSO fire Appilix legacy user_identity push so the installed app
+  //      receives it. Web-push FCM tokens open the browser, not the app,
+  //      so without this branch users whose iOS/Android bridge hasn't
+  //      captured the native token yet would silently miss chat pushes.
+  //      Frontend registerAppilixDevice() tags native tokens with a
+  //      "Appilix " prefix on device_label — that's our detection signal.
+  //   3. If FCM delivered to zero tokens overall, also try Appilix as a
+  //      last-resort fallback (original behavior).
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
     pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-    if (pushed === 0) {
+
+    if (payload.data?.url) {
+      const { count: nativeMobileCount } = await supabase
+        .from('user_device_tokens')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .like('device_label', 'Appilix %');
+
+      if (!nativeMobileCount) {
+        appilixSent = await sendAppilixPush(userId, payload);
+      }
+    }
+
+    if (pushed === 0 && !appilixSent) {
       appilixSent = await sendAppilixPush(userId, payload);
     }
   }
