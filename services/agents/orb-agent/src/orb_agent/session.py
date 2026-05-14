@@ -183,6 +183,80 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         vtid="VTID-02987",
     )
 
+    # L2.2b.2 (VTID-02990): text-only model loop. When `ORB_AGENT_TEXT_ONLY`
+    # is true (default during the L2.2b.2 phase), skip the STT/LLM/TTS
+    # cascade build + AgentSession start — those need Deepgram + Cartesia
+    # secrets which haven't been populated yet. Instead, run a single
+    # Anthropic round-trip self-test to prove the agent/model boundary
+    # works from canary room context, emit the 3 model_request_* lifecycle
+    # events, and idle until the room disconnects.
+    #
+    # When ops flips `ORB_AGENT_TEXT_ONLY=false` (after Deepgram + Cartesia
+    # secrets land in L2.2b.3), this branch is skipped and the existing
+    # cascade path below runs.
+    from .text_only_loop import run_text_only_self_test, text_only_mode_enabled
+
+    if text_only_mode_enabled():
+        logger.info(
+            "L2.2b.2: ORB_AGENT_TEXT_ONLY enabled — running Anthropic self-test, "
+            "skipping cascade build"
+        )
+
+        # Register a small teardown for the text-only path that mirrors the
+        # L2.2b.1 disconnected-event semantics — emit `agent.disconnected`
+        # then close OasisEmitter + ctx_fetcher. The full cascade teardown
+        # (GatewayClient, AgentSession finalization) is NOT needed here
+        # because those resources are never created in text-only mode.
+        async def _text_only_teardown() -> None:
+            try:
+                await oasis.emit(
+                    topic=TOPIC_AGENT_DISCONNECTED,
+                    payload=dict(
+                        _agent_lifecycle_base,
+                        phase="disconnected",
+                        mode="text_only",
+                    ),
+                    vtid="VTID-02987",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("L2.2b.2: agent.disconnected emit failed: %s", exc)
+            try:
+                await oasis.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                await ctx_fetcher.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+        try:
+            ctx.add_shutdown_callback(_text_only_teardown)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "L2.2b.2: add_shutdown_callback unavailable; disconnect event "
+                "may not fire. err=%s",
+                exc,
+            )
+
+        try:
+            result = await run_text_only_self_test(
+                oasis=oasis,
+                room_name=_room_name,
+                code_version=CODE_VERSION,
+            )
+            logger.info("L2.2b.2: self-test result=%s", result)
+        except Exception as exc:  # noqa: BLE001
+            # run_text_only_self_test should NEVER raise (it catches its own
+            # errors and emits typed failure events). This guard is purely
+            # defensive — if something does escape, log it and continue so
+            # the agent doesn't fail the room dispatch.
+            logger.exception("L2.2b.2: unexpected self-test exception: %s", exc)
+
+        # Stay in the room until LiveKit disconnects us (the shutdown_callback
+        # above emits `agent.disconnected` on teardown). The agent worker
+        # process tears itself down when the SFU closes the room.
+        return
+
     # ── Identity metadata lives on the USER PARTICIPANT, not the room. ──
     # The gateway's /api/v1/orb/livekit/token mints a LiveKit AccessToken
     # with `metadata: JSON.stringify({user_id, tenant_id, vitana_id,

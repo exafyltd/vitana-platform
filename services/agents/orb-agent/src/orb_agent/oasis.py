@@ -130,3 +130,16 @@ TOPIC_AGENT_ROOM_JOIN_STARTED = "orb.livekit.agent.room_join_started"
 TOPIC_AGENT_ROOM_JOIN_SUCCEEDED = "orb.livekit.agent.room_join_succeeded"
 TOPIC_AGENT_ROOM_JOIN_FAILED = "orb.livekit.agent.room_join_failed"
 TOPIC_AGENT_DISCONNECTED = "orb.livekit.agent.disconnected"
+
+# L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop telemetry.
+# Emitted by the agent's text-only self-test path (`ORB_AGENT_TEXT_ONLY=true`)
+# so the agent/model boundary is provable without any STT/TTS providers and
+# without any new API keys (Cloud Run's default service account provides
+# Vertex ADC). The 3 events fire in order:
+#   model_request_started → (model_request_succeeded | model_request_failed)
+# Failure payload includes a typed `reason` (genai_sdk_not_installed,
+# vertex_client_init_error, vertex_api_error, timeout) plus the underlying
+# error string.
+TOPIC_AGENT_MODEL_REQUEST_STARTED = "orb.livekit.agent.model_request_started"
+TOPIC_AGENT_MODEL_REQUEST_SUCCEEDED = "orb.livekit.agent.model_request_succeeded"
+TOPIC_AGENT_MODEL_REQUEST_FAILED = "orb.livekit.agent.model_request_failed"

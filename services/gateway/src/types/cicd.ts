@@ -551,6 +551,16 @@ export type CicdEventType =
   | 'orb.livekit.agent.room_join_succeeded'
   | 'orb.livekit.agent.room_join_failed'
   | 'orb.livekit.agent.disconnected'
+  // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
+  // agent can reach a model from canary room context using Cloud Run's
+  // default service account (ADC, no API key). Emitted by the orb-agent's
+  // text-only self-test path (`ORB_AGENT_TEXT_ONLY=true`). No STT/TTS yet
+  // — that's L2.2b.3. Failure reason (e.g. `genai_sdk_not_installed`,
+  // `vertex_client_init_error`, `vertex_api_error`, `timeout`) is carried
+  // in the payload.
+  | 'orb.livekit.agent.model_request_started'
+  | 'orb.livekit.agent.model_request_succeeded'
+  | 'orb.livekit.agent.model_request_failed'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
