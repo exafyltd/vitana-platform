@@ -16273,7 +16273,10 @@ function fetchVoiceLabSessions(append) {
     }
 
     var offset = append ? state.voiceLab.sessions.length : 0;
-    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset)
+    // VTID-02983: requireAuth on /voice-lab/* reads Bearer-only — without
+    // buildContextHeaders the request 401s and the catch silently empties
+    // the list. Same fix applies to /:id, /:id/turns, /:id/diagnostics below.
+    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset, { headers: buildContextHeaders() })
         .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
@@ -16335,10 +16338,12 @@ function fetchVoiceLabSessionDetails(sessionId) {
     renderApp();
 
     // Fetch session details, turns, and pipeline diagnostics in parallel
+    // VTID-02983: same auth requirement as fetchVoiceLabSessions above.
+    var vlHeaders = { headers: buildContextHeaders() };
     Promise.all([
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function (r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function (r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics').then(function (r) { return r.json(); }).catch(function () { return null; })
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId, vlHeaders).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns', vlHeaders).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics', vlHeaders).then(function (r) { return r.json(); }).catch(function () { return null; })
     ])
         .then(function (results) {
             var detailsResp = results[0];
@@ -16414,7 +16419,8 @@ function stopVoiceLabAutoRefresh() {
  * VTID-01218B: Silent fetch (no loading state, for auto-refresh)
  */
 function fetchVoiceLabSessionsSilent() {
-    fetch('/api/v1/voice-lab/live/sessions')
+    // VTID-02983: auth headers required — see fetchVoiceLabSessions.
+    fetch('/api/v1/voice-lab/live/sessions', { headers: buildContextHeaders() })
         .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
