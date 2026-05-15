@@ -35156,6 +35156,34 @@ function renderLivekitTestView() {
         + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
     container.appendChild(statusPanel);
 
+    // VTID-02996: live mic level meter + audio-autoplay-block recovery +
+    // mic-permission banner. The page used to show "MIC: on" the moment
+    // setMicrophoneEnabled resolved, even if the OS-level permission was
+    // denied or the audio track was producing silence — operators had no
+    // way to know whether their speech was being captured. The meter polls
+    // a Web Audio analyser hooked to the local mic track via
+    // attachLocalMicMeter() (see below). The audio-gate banner appears
+    // when Chrome's autoplay policy blocks the agent's remote audio after
+    // the Connect gesture's "user-activation" expires.
+    var diagBar = document.createElement('div');
+    diagBar.className = 'lkt-diag-bar';
+    diagBar.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
+    diagBar.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0b1220;border:1px solid #1e293b;border-radius:8px;">'
+        +   '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;min-width:90px;">MIC LEVEL</span>'
+        +   '<div style="flex:1;height:10px;background:#0f172a;border:1px solid #1e293b;border-radius:5px;overflow:hidden;">'
+        +     '<div class="lkt-mic-meter-fill" style="height:100%;width:0%;background:#475569;transition:width 60ms linear;"></div>'
+        +   '</div>'
+        +   '<span class="lkt-mic-meter-label" style="color:#94a3b8;font-size:12px;font-family:monospace;min-width:120px;text-align:right;">idle</span>'
+        + '</div>'
+        + '<div class="lkt-audio-gate" style="display:none;align-items:center;gap:12px;padding:12px 14px;background:#3a2a12;border-left:3px solid #facc15;border-radius:6px;">'
+        +   '<span style="font-size:13px;color:#fef9c3;flex:1;">Browser blocked audio playback. Click to hear the agent.</span>'
+        +   '<button class="lkt-audio-gate-btn" style="padding:8px 16px;background:#facc15;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Enable audio</button>'
+        + '</div>'
+        + '<div class="lkt-mic-permission" style="display:none;padding:10px 14px;background:#3a1212;border-left:3px solid #ef4444;border-radius:6px;font-size:13px;color:#fecaca;">'
+        +   '<strong>Microphone permission denied.</strong> Allow microphone access in your browser address bar, then disconnect and reconnect.'
+        + '</div>';
+    container.appendChild(diagBar);
 
     // VTID-02995: explicit MODE block. Replaces the old <select> that defaulted
     // to "Production token (active provider must be livekit)" — which made the
@@ -35941,6 +35969,136 @@ function renderLivekitTestView() {
     function setState(s) { stateEl.textContent = s; stateEl.style.color = s === 'connected' ? '#22c55e' : s === 'connecting' ? '#facc15' : '#94a3b8'; }
     function setMic(on) { micEl.textContent = on ? 'on' : 'off'; micEl.style.color = on ? '#22c55e' : '#94a3b8'; }
     function setSpeaking(on) { speakingEl.textContent = on ? 'yes' : 'no'; speakingEl.style.color = on ? '#22c55e' : '#94a3b8'; }
+
+    // VTID-02996: the page is otherwise a black box — no way to see whether
+    // the mic is actually capturing, no way to recover when the browser
+    // silently blocks autoplay of the agent's audio, no way to see what the
+    // STT thinks you said. The helpers below address each of those.
+    var liveAudioCtx = null;
+    var liveMicAnalyser = null;
+    var liveMicAnimId = null;
+    var liveRemoteAnalysers = [];
+
+    function ensureAudioCtx() {
+        if (liveAudioCtx) {
+            // Some browsers re-suspend the context (e.g. on tab visibility); kick it.
+            if (liveAudioCtx.state === 'suspended' && typeof liveAudioCtx.resume === 'function') {
+                liveAudioCtx.resume().catch(function () {});
+            }
+            return liveAudioCtx;
+        }
+        try {
+            var Ctor = window.AudioContext || window.webkitAudioContext;
+            if (!Ctor) return null;
+            liveAudioCtx = new Ctor();
+            if (liveAudioCtx.state === 'suspended' && typeof liveAudioCtx.resume === 'function') {
+                liveAudioCtx.resume().catch(function () {});
+            }
+            return liveAudioCtx;
+        } catch (e) { return null; }
+    }
+
+    function attachLocalMicMeter(track) {
+        var ctx = ensureAudioCtx();
+        if (!ctx || !track) return;
+        try {
+            var stream = track.mediaStream
+                || (track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+            if (!stream) return;
+            var src = ctx.createMediaStreamSource(stream);
+            liveMicAnalyser = ctx.createAnalyser();
+            liveMicAnalyser.fftSize = 1024;
+            src.connect(liveMicAnalyser);
+            var data = new Uint8Array(liveMicAnalyser.frequencyBinCount);
+            var meter = document.querySelector('.lkt-mic-meter-fill');
+            var label = document.querySelector('.lkt-mic-meter-label');
+            function loop() {
+                if (!liveMicAnalyser) return;
+                liveMicAnalyser.getByteTimeDomainData(data);
+                // RMS-ish level (Uint8 centered on 128).
+                var sum = 0;
+                for (var i = 0; i < data.length; i++) { var v = (data[i] - 128) / 128; sum += v * v; }
+                var rms = Math.sqrt(sum / data.length);
+                var pct = Math.min(100, Math.max(0, Math.round(rms * 400)));
+                if (meter) {
+                    meter.style.width = pct + '%';
+                    meter.style.background = pct > 40 ? '#22c55e' : pct > 10 ? '#facc15' : '#475569';
+                }
+                if (label) {
+                    label.textContent = pct > 5 ? ('capturing ' + pct + '%') : 'silent';
+                    label.style.color = pct > 5 ? '#22c55e' : '#94a3b8';
+                }
+                liveMicAnimId = requestAnimationFrame(loop);
+            }
+            loop();
+            log('info', 'mic meter attached');
+        } catch (e) {
+            log('warn', 'mic meter attach failed', { err: String(e) });
+        }
+    }
+
+    function attachRemoteAudioMeter(track) {
+        var ctx = ensureAudioCtx();
+        if (!ctx || !track) return;
+        try {
+            var stream = track.mediaStream
+                || (track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+            if (!stream) return;
+            var src = ctx.createMediaStreamSource(stream);
+            var analyser = ctx.createAnalyser();
+            analyser.fftSize = 512;
+            src.connect(analyser);
+            liveRemoteAnalysers.push(analyser);
+            var data = new Uint8Array(analyser.frequencyBinCount);
+            (function tick() {
+                if (liveRemoteAnalysers.indexOf(analyser) === -1) return;
+                analyser.getByteTimeDomainData(data);
+                var sum = 0;
+                for (var i = 0; i < data.length; i++) { var v = (data[i] - 128) / 128; sum += v * v; }
+                var rms = Math.sqrt(sum / data.length);
+                // 0.02 threshold ≈ very quiet speech; below that count as silent.
+                setSpeaking(rms > 0.02);
+                requestAnimationFrame(tick);
+            })();
+        } catch (e) {
+            log('warn', 'remote audio meter attach failed', { err: String(e) });
+        }
+    }
+
+    function stopAudioMeters() {
+        if (liveMicAnimId) {
+            try { cancelAnimationFrame(liveMicAnimId); } catch (e) {}
+            liveMicAnimId = null;
+        }
+        liveMicAnalyser = null;
+        liveRemoteAnalysers = [];
+        var meter = document.querySelector('.lkt-mic-meter-fill');
+        if (meter) meter.style.width = '0%';
+        var label = document.querySelector('.lkt-mic-meter-label');
+        if (label) { label.textContent = 'idle'; label.style.color = '#94a3b8'; }
+    }
+
+    function showAudioGateBanner(onClick) {
+        var banner = container.querySelector('.lkt-audio-gate');
+        if (!banner) return;
+        banner.style.display = 'flex';
+        var btn = banner.querySelector('.lkt-audio-gate-btn');
+        if (btn) {
+            btn.onclick = function () {
+                banner.style.display = 'none';
+                if (onClick) onClick();
+            };
+        }
+    }
+
+    function showMicPermissionBanner() {
+        var banner = container.querySelector('.lkt-mic-permission');
+        if (banner) banner.style.display = 'block';
+    }
+    function hideMicPermissionBanner() {
+        var banner = container.querySelector('.lkt-mic-permission');
+        if (banner) banner.style.display = 'none';
+    }
     function appendTranscript(who, text) {
         if (transcriptEl.textContent === '— no transcript yet —') transcriptEl.textContent = '';
         var line = document.createElement('div');
@@ -36115,14 +36273,63 @@ function renderLivekitTestView() {
             room.on(LivekitClient.RoomEvent.TrackSubscribed, function (track, _pub, participant) {
                 log('event', 'TrackSubscribed', { kind: track.kind, participant: participant.identity });
                 if (track.kind === LivekitClient.Track.Kind.Audio) {
+                    // VTID-02996: the previous handler attached the audio element
+                    // with display:none and never called .play() — Chrome's autoplay
+                    // policy silently rejected playback after the Connect gesture
+                    // expired. Now: explicitly play, surface the failure as a big
+                    // "🔊 Click to hear agent" button instead of dead silence, and
+                    // attach a Web Audio analyser so the speaking indicator
+                    // reflects actual remote audio energy (not just track lifecycle
+                    // events that fire once and never refresh).
                     var el = track.attach();
                     el.style.display = 'none';
+                    el.autoplay = true;
                     document.body.appendChild(el);
                     attachedAudio.push(el);
                     track.on('started', function () { setSpeaking(true); });
                     track.on('ended', function () { setSpeaking(false); });
+                    try {
+                        var p = el.play();
+                        if (p && typeof p.then === 'function') {
+                            p.catch(function (err) {
+                                log('warn', 'audio autoplay blocked — click ENABLE AUDIO', { err: String(err && err.message || err) });
+                                showAudioGateBanner(function () {
+                                    Promise.all(attachedAudio.map(function (a) { return a.play().catch(function () {}); }))
+                                        .then(function () { log('info', 'audio enabled by user gesture'); });
+                                });
+                            });
+                        }
+                    } catch (pErr) {
+                        log('warn', 'audio play() threw', { err: String(pErr) });
+                    }
+                    attachRemoteAudioMeter(track);
                 }
             });
+
+            // VTID-02996: live STT/TTS transcripts straight from LiveKit. Both
+            // sides (agent TTS + user STT, when the agent is configured for
+            // server-side STT) come through RoomEvent.TranscriptionReceived as
+            // arrays of { text, final, participantIdentity }. Surface them in
+            // the TRANSCRIPT pane so the operator can see what the agent
+            // actually heard vs what they spoke — the single biggest reason
+            // this page felt "dead" before this PR.
+            if (LivekitClient.RoomEvent.TranscriptionReceived) {
+                room.on(LivekitClient.RoomEvent.TranscriptionReceived, function (segments, participant /*, publication */) {
+                    if (!segments || !segments.length) return;
+                    var who = (participant && participant.identity && participant.identity.indexOf('agent-') === 0) ? 'agent' : 'user';
+                    for (var ti = 0; ti < segments.length; ti++) {
+                        var seg = segments[ti];
+                        if (!seg || !seg.text) continue;
+                        // Only show final segments to avoid streaming-flicker;
+                        // interim updates are debug-only.
+                        if (seg.final === false) {
+                            log('event', 'transcript (interim)', { who: who, text: seg.text });
+                        } else {
+                            appendTranscript(who, String(seg.text));
+                        }
+                    }
+                });
+            }
 
             room.on(LivekitClient.RoomEvent.DataReceived, function (payload, _participant, _kind, topic) {
                 try {
@@ -36147,9 +36354,30 @@ function renderLivekitTestView() {
 
             await room.connect(minted.url, minted.token);
             log('info', 'room.connect resolved');
-            await room.localParticipant.setMicrophoneEnabled(true);
-            setMic(true);
-            log('info', 'mic enabled — speak now');
+            // VTID-02996: take the actual mic publication so we can wire a
+            // live level meter on it (Web Audio analyser). If the browser
+            // denies the mic permission, setMicrophoneEnabled rejects and
+            // the catch shows the user a clear "mic permission needed"
+            // banner instead of silently leaving MIC: on but capturing
+            // nothing.
+            try {
+                var micPub = await room.localParticipant.setMicrophoneEnabled(true);
+                setMic(true);
+                log('info', 'mic enabled — speak now');
+                var micTrack = (micPub && micPub.track) ||
+                    (room.localParticipant.getTrackPublication &&
+                        (room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone) || {}).track) ||
+                    null;
+                if (micTrack) {
+                    attachLocalMicMeter(micTrack);
+                } else {
+                    log('warn', 'mic track not retrievable for meter — mic still publishing');
+                }
+            } catch (micErr) {
+                setMic(false);
+                log('error', 'mic permission denied or unavailable', { err: String(micErr && micErr.message || micErr) });
+                showMicPermissionBanner();
+            }
         } catch (e) {
             log('error', e.message || String(e));
             setState('disconnected');
@@ -36165,6 +36393,8 @@ function renderLivekitTestView() {
         }
         attachedAudio.forEach(function (el) { try { el.remove(); } catch (e) {} });
         attachedAudio = [];
+        stopAudioMeters(); // VTID-02996: tear down analysers + reset meter UI
+        hideMicPermissionBanner();
         setState('disconnected');
         setMic(false);
         setSpeaking(false);
