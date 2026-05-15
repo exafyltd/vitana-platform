@@ -511,6 +511,39 @@ async function runMilestoneScanner(ctx: AutomationContext) {
 }
 
 // =============================================================================
+// AP-0510: Upcoming Events Today Push (BOOTSTRAP-NOTIF-SYSTEM-EVENTS)
+// Daily cron — delegates to /scheduled-notifications/upcoming-events which
+// dispatches the `upcoming_event_today` push for each user's first
+// calendar_events entry of the day.
+// =============================================================================
+
+async function runUpcomingEventsToday(ctx: AutomationContext) {
+  ctx.log('Upcoming events today — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/upcoming-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Upcoming events endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Upcoming events dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Upcoming events error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+}
+
+// =============================================================================
 // AP-1000: Platform Operations
 // =============================================================================
 
@@ -546,6 +579,7 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runWeeklyReflection', runWeeklyReflection);
   registerHandler('runConversationContinuityNudge', runConversationContinuityNudge);
   registerHandler('runMilestoneScanner', runMilestoneScanner);
+  registerHandler('runUpcomingEventsToday', runUpcomingEventsToday);
 
   // Platform Operations (AP-1000)
   registerHandler('runVtidLifecycle', runVtidLifecycle);

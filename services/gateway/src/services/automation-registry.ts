@@ -387,6 +387,16 @@ const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runMilestoneScanner',
   },
+  {
+    // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: pairs with `upcoming_event_today`
+    // (channel='push' in TYPE_META). Fires once per user per day for their
+    // first calendar_events entry of the day.
+    id: 'AP-0510', name: 'Upcoming Events Today Push', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runUpcomingEventsToday',
+  },
 ];
 
 // =============================================================================
