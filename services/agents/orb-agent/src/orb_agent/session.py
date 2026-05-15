@@ -326,12 +326,6 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     identity = resolve_identity_from_room_metadata(metadata)
     agent_id = str(metadata.get("agent_id", "vitana"))
     orb_session_id = str(metadata.get("orb_session_id", ""))
-    # VTID-03001: test-session-only diagnostic. The LiveKit Test Bench
-    # mints a token with `is_test_session=true`; production tokens omit
-    # the field. Used below to gate an instrumented session.say() that
-    # bypasses the LLM and proves whether TTS audio can reach the
-    # browser at all. Removed once the playback bug is root-caused.
-    is_test_session = bool(metadata.get("is_test_session"))
     # PR-VTID-02853: per-session voice override from the LiveKit test page
     # dropdown. None / empty string means "use the language default from
     # LANG_DEFAULTS." Operators experiment with different Chirp3-HD
@@ -750,157 +744,120 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # stall_count was hoisted above _teardown so the stop-payload sees it.
     stall = StallWatchdog(threshold_ms=STALL_THRESHOLD_MS)
 
-    # VTID-03004: bounded soft-reset on stall. After N stalls in one
-    # session, fall back to telemetry-only — don't loop forever rebuilding
-    # STT if the user is just genuinely idle.
-    MAX_SOFT_RESETS = 3
+    # VTID-03007: unbounded soft-reset on stall. The earlier cap
+    # (VTID-03004 MAX_SOFT_RESETS=3) was pure paranoia — once VTID-03005
+    # proved the _stt swap works cleanly (3/3 in test bench), there is
+    # no reason to ever GIVE UP on recovery: a dead agent is strictly
+    # worse than rebuilding STT one more time. Telemetry is preserved
+    # via soft_reset_count so we can still see how often it fires.
     soft_reset_count = {"n": 0}
 
     async def _on_stall() -> None:
         stall_count["n"] += 1
-        attempts_left = MAX_SOFT_RESETS - soft_reset_count["n"]
+        soft_reset_count["n"] += 1
         logger.warning(
-            "StallWatchdog: no activity in %ds (count=%d, soft_resets=%d/%d) for orb_session_id=%s",
+            "StallWatchdog: no activity in %ds (count=%d, soft_resets=%d) for orb_session_id=%s",
             int(STALL_THRESHOLD_MS / 1000),
             stall_count["n"],
             soft_reset_count["n"],
-            MAX_SOFT_RESETS,
             orb_session_id,
         )
 
-        # VTID-03004: soft STT hot-swap. Closes the recovery gap left by
-        # VTID-02856 (telemetry-only watchdog). The most common cause of
-        # mid-session stalls is the cascade STT plugin going stale —
-        # Google Cloud Speech-to-Text streaming sessions cap at ~5 min,
-        # Silero VAD inference state can drift, etc. Rebuilding STT
-        # in place gives the audio pipeline a clean state without
-        # dropping the LiveKit room. STT/LLM/TTS plugin replacement
-        # mid-session is already proven by perform_handoff() below.
-        should_soft_reset = soft_reset_count["n"] < MAX_SOFT_RESETS
-        action = "soft_reset_stt" if should_soft_reset else "telemetry_only"
+        # Rebuild the cascade and hot-swap STT in place. Same pattern
+        # perform_handoff() uses for LLM/TTS during persona swap.
+        # VTID-03005 proved Strategy B (session._stt) is the working
+        # path on the deployed livekit-agents. Other strategies kept
+        # as fallback in case the SDK version changes.
         reset_status = "not_attempted"
         reset_error: str | None = None
-        if should_soft_reset:
-            soft_reset_count["n"] += 1
-            strategy_results: list[str] = []
-            try:
-                fresh_cascade = build_cascade(
-                    bootstrap.voice_config,
-                    lang=identity.lang,
-                    voice_override=voice_override,
-                )
-                if fresh_cascade.stt is None:
-                    reset_status = "rebuild_returned_none"
-                    reset_error = f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300]
-                else:
-                    # VTID-03005: AgentSession.stt is a read-only @property in
-                    # current livekit-agents (>=0.12), so the direct attribute
-                    # assignment that VTID-03004 attempted fails with
-                    # "property 'stt' of 'AgentSession' object has no setter".
-                    # Try a sequence of plausible internal paths. Each strategy
-                    # is bracketed in its own try/except so a single failure
-                    # doesn't abort the rest. Telemetry reports which strategy
-                    # took.
-                    new_stt = fresh_cascade.stt
+        strategy_results: list[str] = []
+        try:
+            fresh_cascade = build_cascade(
+                bootstrap.voice_config,
+                lang=identity.lang,
+                voice_override=voice_override,
+            )
+            if fresh_cascade.stt is None:
+                reset_status = "rebuild_returned_none"
+                reset_error = f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300]
+            else:
+                new_stt = fresh_cascade.stt
 
-                    def _verify_swap() -> bool:
-                        """Did the swap actually take? Check both public and
-                        private slots."""
-                        candidates = [
-                            getattr(session, "stt", None),
-                            getattr(getattr(session, "_activity", None), "stt", None),
-                            getattr(session, "_stt", None),
-                        ]
-                        return any(c is new_stt for c in candidates if c is not None)
+                def _verify_swap() -> bool:
+                    """Did the swap actually take?"""
+                    candidates = [
+                        getattr(session, "stt", None),
+                        getattr(getattr(session, "_activity", None), "stt", None),
+                        getattr(session, "_stt", None),
+                    ]
+                    return any(c is new_stt for c in candidates if c is not None)
 
-                    # Strategy A: livekit-agents 0.12+ pattern — activity holds
-                    # the actual pipeline objects, session.stt is a passthrough
-                    # property that reads from there.
+                # Strategy A: livekit-agents 0.12+ pattern via _activity.
+                try:
+                    activity = getattr(session, "_activity", None)
+                    if activity is not None:
+                        setattr(activity, "stt", new_stt)
+                        strategy_results.append("_activity.stt:assigned")
+                        if _verify_swap():
+                            reset_status = "swapped"
+                            strategy_results.append("_activity.stt:verified")
+                except Exception as exc:  # noqa: BLE001
+                    strategy_results.append(f"_activity.stt:err={type(exc).__name__}")
+
+                # Strategy B: private slot. Proven path on deployed SDK.
+                if reset_status != "swapped":
                     try:
-                        activity = getattr(session, "_activity", None)
-                        if activity is not None:
-                            setattr(activity, "stt", new_stt)
-                            strategy_results.append("_activity.stt:assigned")
-                            if _verify_swap():
-                                reset_status = "swapped"
-                                strategy_results.append("_activity.stt:verified")
+                        setattr(session, "_stt", new_stt)
+                        strategy_results.append("_stt:assigned")
+                        if _verify_swap():
+                            reset_status = "swapped"
+                            strategy_results.append("_stt:verified")
                     except Exception as exc:  # noqa: BLE001
-                        strategy_results.append(f"_activity.stt:err={type(exc).__name__}")
+                        strategy_results.append(f"_stt:err={type(exc).__name__}")
 
-                    # Strategy B: older 0.10/0.11 path — private slot on
-                    # AgentSession itself.
-                    if reset_status != "swapped":
+                # Strategy C: explicit update method, if SDK adds one.
+                if reset_status != "swapped":
+                    update_fn = getattr(session, "update_stt", None) or getattr(session, "set_stt", None)
+                    if callable(update_fn):
                         try:
-                            setattr(session, "_stt", new_stt)
-                            strategy_results.append("_stt:assigned")
+                            update_fn(new_stt)
+                            strategy_results.append("update_stt:called")
                             if _verify_swap():
                                 reset_status = "swapped"
-                                strategy_results.append("_stt:verified")
+                                strategy_results.append("update_stt:verified")
                         except Exception as exc:  # noqa: BLE001
-                            strategy_results.append(f"_stt:err={type(exc).__name__}")
+                            strategy_results.append(f"update_stt:err={type(exc).__name__}")
 
-                    # Strategy C: explicit update method, if any.
-                    if reset_status != "swapped":
-                        update_fn = getattr(session, "update_stt", None) or getattr(session, "set_stt", None)
-                        if callable(update_fn):
-                            try:
-                                update_fn(new_stt)
-                                strategy_results.append("update_stt:called")
-                                if _verify_swap():
-                                    reset_status = "swapped"
-                                    strategy_results.append("update_stt:verified")
-                            except Exception as exc:  # noqa: BLE001
-                                strategy_results.append(f"update_stt:err={type(exc).__name__}")
-                        else:
-                            strategy_results.append("update_stt:absent")
+                # Strategy D: bypass the @property — last resort.
+                if reset_status != "swapped":
+                    try:
+                        object.__setattr__(session, "stt", new_stt)
+                        strategy_results.append("__setattr__:applied")
+                        if _verify_swap():
+                            reset_status = "swapped"
+                            strategy_results.append("__setattr__:verified")
+                    except Exception as exc:  # noqa: BLE001
+                        strategy_results.append(f"__setattr__:err={type(exc).__name__}")
 
-                    # Strategy D: bypass the @property with object.__setattr__
-                    # — last-resort, may still raise if the class uses
-                    # __slots__ or descriptors with no fallback.
-                    if reset_status != "swapped":
-                        try:
-                            object.__setattr__(session, "stt", new_stt)
-                            strategy_results.append("__setattr__:applied")
-                            if _verify_swap():
-                                reset_status = "swapped"
-                                strategy_results.append("__setattr__:verified")
-                        except Exception as exc:  # noqa: BLE001
-                            strategy_results.append(f"__setattr__:err={type(exc).__name__}")
+                if reset_status != "swapped":
+                    reset_status = "swap_failed"
+                    reset_error = f"strategies={strategy_results}"[:500]
+                else:
+                    reset_error = f"strategies={strategy_results}"[:300]
+                    logger.info(
+                        "soft-reset swapped STT (n=%d) orb_session_id=%s via %s",
+                        soft_reset_count["n"],
+                        orb_session_id,
+                        strategy_results[-2] if len(strategy_results) >= 2 else strategy_results[-1],
+                    )
+        except Exception as exc:  # noqa: BLE001
+            reset_status = "rebuild_crashed"
+            reset_error = f"strategies={strategy_results} rebuild_err={exc}"[:500]
+            logger.warning("STT rebuild crashed: %s", exc)
 
-                    if reset_status != "swapped":
-                        reset_status = "swap_failed"
-                        # Dump session shape so the NEXT test tells us which
-                        # internal path is real on the deployed
-                        # livekit-agents version.
-                        try:
-                            attr_names = sorted(a for a in dir(session) if "stt" in a.lower())
-                            activity_attrs = sorted(
-                                a for a in dir(getattr(session, "_activity", object()))
-                                if "stt" in a.lower()
-                            )
-                            reset_error = (
-                                f"strategies={strategy_results} "
-                                f"session_stt_attrs={attr_names[:8]} "
-                                f"activity_stt_attrs={activity_attrs[:8]}"
-                            )[:500]
-                        except Exception as exc:  # noqa: BLE001
-                            reset_error = f"strategies={strategy_results} introspect_failed={exc}"[:500]
-                    else:
-                        reset_error = f"strategies={strategy_results}"[:300]
-                        logger.info(
-                            "VTID-03005: soft-reset swapped STT (attempt %d/%d) orb_session_id=%s via %s",
-                            soft_reset_count["n"],
-                            MAX_SOFT_RESETS,
-                            orb_session_id,
-                            strategy_results[-2] if len(strategy_results) >= 2 else strategy_results[-1],
-                        )
-            except Exception as exc:  # noqa: BLE001
-                reset_status = "rebuild_crashed"
-                reset_error = f"strategies={strategy_results} rebuild_err={exc}"[:500]
-                logger.warning("VTID-03005: STT rebuild crashed: %s", exc)
-            # feed the watchdog so the next stall fires after a fresh
-            # STALL_THRESHOLD_MS window, not immediately after this attempt.
-            stall.feed()
+        # Feed the watchdog so the next stall fires after a fresh
+        # STALL_THRESHOLD_MS window, not immediately after this attempt.
+        stall.feed()
 
         try:
             await oasis.emit(
@@ -911,12 +868,10 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "agent_id": agent_id,
                     "stall_count": stall_count["n"],
                     "threshold_ms": STALL_THRESHOLD_MS,
-                    "action": action,
+                    "action": "soft_reset_stt",
                     "soft_reset_count": soft_reset_count["n"],
-                    "soft_reset_max": MAX_SOFT_RESETS,
                     "soft_reset_status": reset_status,
                     "soft_reset_error": reset_error,
-                    "soft_reset_attempts_remaining": max(0, attempts_left - (1 if should_soft_reset else 0)),
                 },
             )
         except Exception:  # noqa: BLE001
@@ -1063,61 +1018,6 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             pass
 
     ctx.add_shutdown_callback(_stop_stall_on_shutdown)
-
-    # VTID-03001: TEST-SESSION DIAGNOSTIC ONLY. Bypasses the LLM with a
-    # hardcoded session.say() so we can prove whether TTS audio can
-    # reach the browser at all. Gated to is_test_session — production
-    # tokens omit the field, so production rooms are unaffected.
-    # Outcome interpretation:
-    #   - hear the phrase  → TTS publish + browser playback work;
-    #                        next failure is in LLM/generate_reply.
-    #   - no audio + say_after fires → publish/subscription/playback.
-    #   - say_failed fires → TTS provider config (the say() itself
-    #                        raised before any audio could be made).
-    # Remove this block once the root cause is identified.
-    if is_test_session:
-        try:
-            await _early_trace_heartbeat(
-                cfg.gateway_url,
-                {
-                    "user_id": identity.user_id or "unknown",
-                    "code_version": CODE_VERSION,
-                    "phase": "diagnostic_say_before",
-                    "orb_session_id": orb_session_id,
-                },
-            )
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            await session.say(
-                "LiveKit diagnostic test one two three",
-                add_to_chat_ctx=False,
-            )
-            asyncio.create_task(
-                _early_trace_heartbeat(
-                    cfg.gateway_url,
-                    {
-                        "user_id": identity.user_id or "unknown",
-                        "code_version": CODE_VERSION,
-                        "phase": "diagnostic_say_after",
-                        "orb_session_id": orb_session_id,
-                    },
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("VTID-03001 diagnostic session.say failed: %s", exc)
-            asyncio.create_task(
-                _early_trace_heartbeat(
-                    cfg.gateway_url,
-                    {
-                        "user_id": identity.user_id or "unknown",
-                        "code_version": CODE_VERSION,
-                        "phase": "diagnostic_say_failed",
-                        "orb_session_id": orb_session_id,
-                        "error": str(exc)[:500],
-                    },
-                )
-            )
 
     # Initial greeting — uses the LLM (via generate_reply) so the agent reads
     # the user's name and verified facts from the system-prompt's WHO YOU ARE
