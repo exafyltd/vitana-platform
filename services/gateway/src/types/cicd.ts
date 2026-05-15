@@ -501,6 +501,10 @@ export type CicdEventType =
   | 'orb.live.connection_failed'
   // VTID-WATCHDOG: ORB stall detection events
   | 'orb.live.stall_detected'
+  // VTID-02986: LiveKit (orb-agent) stall detection, namespaced under
+  // vtid.live.* so Voice Lab's /api/v1/voice-lab/live/sessions query
+  // surfaces it next to Vertex's stall events.
+  | 'vtid.live.stall_detected'
   // VTID-TOOLGUARD: Tool loop guard activation
   | 'orb.live.tool_loop_guard_activated'
   // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start

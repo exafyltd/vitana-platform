@@ -139,6 +139,21 @@ describe('POST /api/v1/oasis/emit — topic allowlist', () => {
     expect(mockEmit).toHaveBeenCalledTimes(1);
   });
 
+  // VTID-02992: vtid.live.* matches Vertex's session-lifecycle namespace,
+  // which Voice Lab's /api/v1/voice-lab/live/sessions query already filters
+  // on. The orb-agent (VTID-02986) emits vtid.live.session.start/stop and
+  // vtid.live.stall_detected through this route — they must NOT 400.
+  it('3c. service token + `vtid.live.*` topic also allowed (VTID-02992)', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/v1/oasis/emit')
+      .set('Authorization', 'Bearer svc-secret-token-xyz')
+      .send({ topic: 'vtid.live.session.start', payload: { transport: 'livekit' } });
+    expect(res.status).toBe(200);
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls[0][0].type).toBe('vtid.live.session.start');
+  });
+
   it('4. service token + disallowed topic (orb.live.*) → 400, NOT emitted', async () => {
     const app = buildApp();
     const res = await request(app)

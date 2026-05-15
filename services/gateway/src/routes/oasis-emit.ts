@@ -11,9 +11,11 @@
  *
  * Hard rules:
  *   - NO unauthenticated access. The route is service+admin only.
- *   - Topic prefix allowlist: ONLY `orb.livekit.` and `livekit.` topics are
- *     accepted. Arbitrary topics would let the agent forge events from other
- *     surfaces (gateway, autopilot, etc.) — refuse them.
+ *   - Topic prefix allowlist: ONLY `orb.livekit.`, `livekit.`, and
+ *     `vtid.live.` (VTID-02992: matches Vertex's vtid.live.session.*
+ *     namespace so the agent's session-lifecycle emits land in the same
+ *     Voice Lab query) topics are accepted. Arbitrary topics would let
+ *     the agent forge events from other surfaces — refuse them.
  *   - Body size cap (16 KiB) — telemetry payloads are tiny by design.
  *   - The route delegates to `emitOasisEvent` (the same function the gateway
  *     uses internally), so OASIS persistence stays unified.
@@ -41,7 +43,15 @@ const VTID = 'VTID-02987';
 const MAX_BODY_BYTES = 16 * 1024;
 
 // Allowed topic prefixes — refuse everything else.
-const ALLOWED_PREFIXES = ['orb.livekit.', 'livekit.'] as const;
+// VTID-02992: `vtid.live.` added so the orb-agent's session-lifecycle
+// emits from VTID-02986 (vtid.live.session.start/stop +
+// vtid.live.stall_detected) reach oasis_events. Voice Lab's
+// /api/v1/voice-lab/live/sessions query filters on the same prefix to
+// surface LiveKit sessions next to Vertex's vtid.live.session.* rows in
+// the same panel. Without this entry the topics 400 here and silently
+// disappear — Voice Lab stays empty for LiveKit, and the failure
+// classifier sees no session-stop metrics.
+const ALLOWED_PREFIXES = ['orb.livekit.', 'livekit.', 'vtid.live.'] as const;
 
 function isAllowedTopic(topic: unknown): topic is string {
   if (typeof topic !== 'string') return false;
