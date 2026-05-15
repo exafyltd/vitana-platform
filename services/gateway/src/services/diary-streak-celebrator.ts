@@ -24,6 +24,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import { notifyUserAsync } from './notification-service';
 
 export interface StreakCelebration {
   current_streak_days: number;
@@ -122,6 +123,19 @@ export async function celebrateDiaryStreak(
     } catch (evErr: any) {
       console.warn(`[diary-streak] oasis emit failed: ${evErr?.message ?? evErr}`);
     }
+
+    // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: fire push + in-app notification so the
+    // user sees the streak celebration on their device, not just in the
+    // morning brief. Respects user_notification_preferences + DND.
+    notifyUserAsync(userId, tenantId, 'diary_streak_milestone', {
+      title: `${tier.days}-day diary streak!`,
+      body: `${tier.message} +${tier.reward} VTN credited.`,
+      data: {
+        url: '/diary',
+        streak_days: String(tier.days),
+        reward_vtn: String(tier.reward),
+      },
+    }, admin);
 
     console.log(`[diary-streak] user=${userId.slice(0, 8)} hit ${tier.days}-day streak +${tier.reward} VTN`);
     return {

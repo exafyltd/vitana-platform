@@ -11,6 +11,7 @@
  *   POST /api/v1/scheduled-notifications/weekly-summary
  *   POST /api/v1/scheduled-notifications/weekly-reflection
  *   POST /api/v1/scheduled-notifications/meetup-reminders
+ *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
  */
@@ -525,6 +526,70 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
   }
 
   console.log(`[Scheduled] meetup_reminders → ${dispatched} notifications`);
+  return res.status(200).json({ ok: true, dispatched });
+});
+
+// =============================================================================
+// POST /upcoming-events — Daily 8 AM UTC (BOOTSTRAP-NOTIF-SYSTEM-EVENTS)
+// Fires `upcoming_event_today` per user for each calendar event scheduled
+// today. Push-only (channel='push' in TYPE_META) so it doesn't clutter the
+// in-app inbox.
+// =============================================================================
+// public-route
+router.post('/upcoming-events', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis
+  // Fan-out only — reads calendar_events and dispatches push notifications.
+  // No state transition worth recording; mirrors the other scheduled-
+  // notification handlers in this file (morning-briefing, diary-reminder).
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  // Calendar events: fetch every user's events for today in one query so we
+  // don't N+1 per user. Sort ascending so each user's first scheduled event
+  // surfaces first.
+  const { data: events, error } = await supa
+    .from('calendar_events')
+    .select('id, user_id, title, start_time, status')
+    .neq('status', 'cancelled')
+    .gte('start_time', todayStart.toISOString())
+    .lte('start_time', todayEnd.toISOString())
+    .order('start_time', { ascending: true });
+
+  if (error) {
+    console.error('[Scheduled] upcoming-events query error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // Deduplicate to one notification per user (their first event of the day).
+  // Multiple events on the same day would otherwise spam the lock screen.
+  const seenUsers = new Set<string>();
+  let dispatched = 0;
+
+  for (const ev of events || []) {
+    if (seenUsers.has(ev.user_id)) continue;
+    seenUsers.add(ev.user_id);
+
+    const start = new Date(ev.start_time);
+    const hhmm = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
+
+    notifyUserAsync(ev.user_id, tenantId, 'upcoming_event_today', {
+      title: 'You have an event today',
+      body: `"${ev.title || 'Event'}" at ${hhmm}.`,
+      data: { url: '/calendar', entity_id: ev.id, event_id: ev.id, start_time: ev.start_time },
+    }, supa);
+    dispatched++;
+  }
+
+  console.log(`[Scheduled] upcoming_event_today → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
