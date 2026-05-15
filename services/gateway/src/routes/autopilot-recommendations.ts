@@ -1443,6 +1443,34 @@ router.post('/generate', async (req: Request, res: Response) => {
             body: 'Autopilot found new actions to improve your wellbeing.',
             data: { url: '/autopilot', count: String(result.generated) },
           }, supa);
+
+          // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: surface the highest-impact rec
+          // from this run as a P0 push so users see critical
+          // recommendations even outside the in-app inbox. Threshold of 8+
+          // matches the engine's reserved tier (see recommendation-
+          // generator impact_score mapping where 8 is "strong signal").
+          const { data: highImpact } = await supa
+            .from('autopilot_recommendations')
+            .select('id, title, summary, impact_score')
+            .eq('user_id', userId)
+            .eq('tenant_id', tenantRow.tenant_id)
+            .gte('impact_score', 8)
+            .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+            .order('impact_score', { ascending: false })
+            .limit(1);
+          const topRec = highImpact?.[0];
+          if (topRec) {
+            notifyUserAsync(userId, tenantRow.tenant_id, 'high_impact_recommendation', {
+              title: topRec.title || 'High-impact recommendation',
+              body: topRec.summary || 'Autopilot flagged a high-impact action for you.',
+              data: {
+                url: `/autopilot?rec=${topRec.id}`,
+                entity_id: topRec.id,
+                recommendation_id: topRec.id,
+                impact_score: String(topRec.impact_score ?? ''),
+              },
+            }, supa);
+          }
         }
       } catch (notifErr: any) {
         console.warn(`[Notifications] new_recommendation dispatch error: ${notifErr.message}`);

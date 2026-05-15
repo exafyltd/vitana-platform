@@ -280,6 +280,30 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
         body: 'Check out who you matched with today.',
         data: { url: '/discover', match_count: String(totalMatches) },
       }, supa);
+
+      // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: fan out per-type roll-ups for the
+      // match categories that weren't previously wired. `person` and `event`
+      // are dispatched via automation handlers (connect-people /
+      // engagement-events), so we only add the orphaned types here.
+      const counts = (data.counts || {}) as Record<string, number>;
+      const groupCount = Number(counts.group || 0);
+      const liveRoomCount = Number(counts.live_room || 0);
+
+      if (groupCount > 0) {
+        notifyUserAsync(data.user_id, data.tenant_id, 'group_match_suggested', {
+          title: groupCount > 1 ? `${groupCount} groups for you` : 'A group for you',
+          body: 'Today\'s matches surfaced groups that fit your interests.',
+          data: { url: '/community/groups', match_count: String(groupCount) },
+        }, supa);
+      }
+
+      if (liveRoomCount > 0) {
+        notifyUserAsync(data.user_id, data.tenant_id, 'live_room_match_suggested', {
+          title: liveRoomCount > 1 ? `${liveRoomCount} live rooms for you` : 'A live room for you',
+          body: 'Live rooms matching your interests are scheduled — take a look.',
+          data: { url: '/live', match_count: String(liveRoomCount) },
+        }, supa);
+      }
     }
 
     return res.status(200).json({
