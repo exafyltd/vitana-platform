@@ -535,7 +535,12 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
 // today. Push-only (channel='push' in TYPE_META) so it doesn't clutter the
 // in-app inbox.
 // =============================================================================
+// public-route
 router.post('/upcoming-events', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis
+  // Fan-out only — reads calendar_events and dispatches push notifications.
+  // No state transition worth recording; mirrors the other scheduled-
+  // notification handlers in this file (morning-briefing, diary-reminder).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
