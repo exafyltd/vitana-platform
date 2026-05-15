@@ -313,6 +313,12 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     identity = resolve_identity_from_room_metadata(metadata)
     agent_id = str(metadata.get("agent_id", "vitana"))
     orb_session_id = str(metadata.get("orb_session_id", ""))
+    # VTID-03001: test-session-only diagnostic. The LiveKit Test Bench
+    # mints a token with `is_test_session=true`; production tokens omit
+    # the field. Used below to gate an instrumented session.say() that
+    # bypasses the LLM and proves whether TTS audio can reach the
+    # browser at all. Removed once the playback bug is root-caused.
+    is_test_session = bool(metadata.get("is_test_session"))
     # PR-VTID-02853: per-session voice override from the LiveKit test page
     # dropdown. None / empty string means "use the language default from
     # LANG_DEFAULTS." Operators experiment with different Chirp3-HD
@@ -770,17 +776,102 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     def _on_user_transcribed(_ev: Any = None) -> None:
         user_turns_counter["n"] += 1
         stall.feed()
+        # VTID-03001: also surface the event in the trace firehose so we
+        # can see STT completing user turns even when no audible agent
+        # response follows. Pairs with agent_state_changed below to map
+        # the full turn lifecycle.
+        asyncio.create_task(
+            _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "user_input_transcribed",
+                    "orb_session_id": orb_session_id,
+                },
+            )
+        )
 
     try:
         session.on("user_input_transcribed")(_on_user_transcribed)  # type: ignore[misc]
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook user_input_transcribed: %s", exc)
 
-    for ev_name in ("user_state_changed", "agent_state_changed"):
+    # VTID-03001: trace agent_state_changed so we can see the agent
+    # transition idle → thinking → speaking. If `speaking` never fires
+    # despite speech_created firing, the LLM produced no text (TTS got
+    # nothing to synthesize). If `speaking` fires but no audio reaches
+    # the browser, the break is downstream (TTS publish or playback).
+    def _on_agent_state(ev: Any = None) -> None:
+        stall.feed()
+        new_state = None
         try:
-            session.on(ev_name)(lambda _ev=None: stall.feed())  # type: ignore[misc]
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("could not hook %s: %s", ev_name, exc)
+            new_state = getattr(ev, "new_state", None) or getattr(ev, "state", None)
+        except Exception:
+            pass
+        asyncio.create_task(
+            _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "agent_state_changed",
+                    "orb_session_id": orb_session_id,
+                    "new_state": str(new_state) if new_state is not None else None,
+                },
+            )
+        )
+
+    try:
+        session.on("agent_state_changed")(_on_agent_state)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook agent_state_changed: %s", exc)
+
+    try:
+        session.on("user_state_changed")(lambda _ev=None: stall.feed())  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook user_state_changed: %s", exc)
+
+    # VTID-03001: conversation_item_added fires whenever something is
+    # appended to chat_ctx — LLM responses, tool calls, etc. If we see
+    # `assistant` role items with non-empty text but no audible
+    # output, the LLM is producing text but TTS isn't producing audio.
+    def _on_conversation_item(ev: Any = None) -> None:
+        item = getattr(ev, "item", None) or ev
+        role = None
+        text_len = 0
+        try:
+            role = getattr(item, "role", None) or (
+                item.get("role") if isinstance(item, dict) else None
+            )
+            text = (
+                getattr(item, "text_content", None)
+                or getattr(item, "text", None)
+                or (item.get("text_content") if isinstance(item, dict) else None)
+                or (item.get("text") if isinstance(item, dict) else None)
+                or ""
+            )
+            text_len = len(text) if isinstance(text, str) else 0
+        except Exception:
+            pass
+        asyncio.create_task(
+            _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "conversation_item_added",
+                    "orb_session_id": orb_session_id,
+                    "role": str(role) if role is not None else None,
+                    "text_len": text_len,
+                },
+            )
+        )
+
+    try:
+        session.on("conversation_item_added")(_on_conversation_item)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook conversation_item_added: %s", exc)
 
     # Stop the watchdog when the room disconnects so we don't leak the task.
     async def _stop_stall_on_shutdown() -> None:
@@ -790,6 +881,61 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             pass
 
     ctx.add_shutdown_callback(_stop_stall_on_shutdown)
+
+    # VTID-03001: TEST-SESSION DIAGNOSTIC ONLY. Bypasses the LLM with a
+    # hardcoded session.say() so we can prove whether TTS audio can
+    # reach the browser at all. Gated to is_test_session — production
+    # tokens omit the field, so production rooms are unaffected.
+    # Outcome interpretation:
+    #   - hear the phrase  → TTS publish + browser playback work;
+    #                        next failure is in LLM/generate_reply.
+    #   - no audio + say_after fires → publish/subscription/playback.
+    #   - say_failed fires → TTS provider config (the say() itself
+    #                        raised before any audio could be made).
+    # Remove this block once the root cause is identified.
+    if is_test_session:
+        try:
+            await _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "diagnostic_say_before",
+                    "orb_session_id": orb_session_id,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await session.say(
+                "LiveKit diagnostic test one two three",
+                add_to_chat_ctx=False,
+            )
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "diagnostic_say_after",
+                        "orb_session_id": orb_session_id,
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("VTID-03001 diagnostic session.say failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "diagnostic_say_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
 
     # Initial greeting — uses the LLM (via generate_reply) so the agent reads
     # the user's name and verified facts from the system-prompt's WHO YOU ARE
