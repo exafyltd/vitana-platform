@@ -72,6 +72,19 @@ except ImportError:
     Agent = AgentSession = JobContext = None  # type: ignore[assignment,misc]
     LK_AVAILABLE = False
 
+# VTID-03003: Silero VAD for cascade-pipeline turn detection. Without an
+# explicit VAD, AgentSession's STT-cascade has unreliable turn boundaries
+# — the first user turn happens to align, but subsequent turns drift and
+# the user_input_transcribed event never fires after the agent's reply.
+# `livekit-plugins-silero` is already in requirements.txt. Lazy-imported
+# so tests that don't have the binary plugin still pass.
+try:
+    from livekit.plugins import silero  # type: ignore[import-not-found]
+    SILERO_AVAILABLE = True
+except ImportError:
+    silero = None  # type: ignore[assignment]
+    SILERO_AVAILABLE = False
+
 
 CODE_VERSION = "agent-2026-05-07-name-and-facts"
 
@@ -539,13 +552,33 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     gw.is_mobile = bool(identity.is_mobile)
     gw.is_anonymous = bool(identity.is_anonymous)
 
-    session = AgentSession(
-        stt=cascade.stt,
-        llm=cascade.llm,
-        tts=cascade.tts,
-        userdata=gw,
-        max_tool_steps=MAX_TOOL_STEPS,
-    )
+    # VTID-03003: wire Silero VAD so the cascade-pipeline can detect turn
+    # boundaries reliably. Trace shows that without VAD, the first
+    # user_input_transcribed fires correctly, the agent replies, and
+    # then every subsequent user utterance is dropped (no
+    # user_input_transcribed event ever fires again — STT/turn-detection
+    # gets stuck in an indeterminate state after the agent's reply).
+    # silero.VAD.load() pulls the model on first call and caches it.
+    vad_instance = None
+    if SILERO_AVAILABLE:
+        try:
+            vad_instance = silero.VAD.load()  # type: ignore[union-attr]
+            logger.info("VTID-03003: Silero VAD loaded for cascade turn detection")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("VTID-03003: silero.VAD.load() failed, falling back: %s", exc)
+    else:
+        logger.warning("VTID-03003: livekit-plugins-silero not installed, no VAD")
+
+    session_kwargs: dict[str, Any] = {
+        "stt": cascade.stt,
+        "llm": cascade.llm,
+        "tts": cascade.tts,
+        "userdata": gw,
+        "max_tool_steps": MAX_TOOL_STEPS,
+    }
+    if vad_instance is not None:
+        session_kwargs["vad"] = vad_instance
+    session = AgentSession(**session_kwargs)
 
     # Wire teardown for AFTER the room disconnects, not for after start()
     # returns. AgentSession.start() exits as soon as the room IO and the
