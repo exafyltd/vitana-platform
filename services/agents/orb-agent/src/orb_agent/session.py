@@ -782,35 +782,124 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         reset_error: str | None = None
         if should_soft_reset:
             soft_reset_count["n"] += 1
+            strategy_results: list[str] = []
             try:
                 fresh_cascade = build_cascade(
                     bootstrap.voice_config,
                     lang=identity.lang,
                     voice_override=voice_override,
                 )
-                if fresh_cascade.stt is not None:
+                if fresh_cascade.stt is None:
+                    reset_status = "rebuild_returned_none"
+                    reset_error = f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300]
+                else:
+                    # VTID-03005: AgentSession.stt is a read-only @property in
+                    # current livekit-agents (>=0.12), so the direct attribute
+                    # assignment that VTID-03004 attempted fails with
+                    # "property 'stt' of 'AgentSession' object has no setter".
+                    # Try a sequence of plausible internal paths. Each strategy
+                    # is bracketed in its own try/except so a single failure
+                    # doesn't abort the rest. Telemetry reports which strategy
+                    # took.
+                    new_stt = fresh_cascade.stt
+
+                    def _verify_swap() -> bool:
+                        """Did the swap actually take? Check both public and
+                        private slots."""
+                        candidates = [
+                            getattr(session, "stt", None),
+                            getattr(getattr(session, "_activity", None), "stt", None),
+                            getattr(session, "_stt", None),
+                        ]
+                        return any(c is new_stt for c in candidates if c is not None)
+
+                    # Strategy A: livekit-agents 0.12+ pattern — activity holds
+                    # the actual pipeline objects, session.stt is a passthrough
+                    # property that reads from there.
                     try:
-                        session.stt = fresh_cascade.stt  # type: ignore[assignment]
-                        reset_status = "swapped"
+                        activity = getattr(session, "_activity", None)
+                        if activity is not None:
+                            setattr(activity, "stt", new_stt)
+                            strategy_results.append("_activity.stt:assigned")
+                            if _verify_swap():
+                                reset_status = "swapped"
+                                strategy_results.append("_activity.stt:verified")
+                    except Exception as exc:  # noqa: BLE001
+                        strategy_results.append(f"_activity.stt:err={type(exc).__name__}")
+
+                    # Strategy B: older 0.10/0.11 path — private slot on
+                    # AgentSession itself.
+                    if reset_status != "swapped":
+                        try:
+                            setattr(session, "_stt", new_stt)
+                            strategy_results.append("_stt:assigned")
+                            if _verify_swap():
+                                reset_status = "swapped"
+                                strategy_results.append("_stt:verified")
+                        except Exception as exc:  # noqa: BLE001
+                            strategy_results.append(f"_stt:err={type(exc).__name__}")
+
+                    # Strategy C: explicit update method, if any.
+                    if reset_status != "swapped":
+                        update_fn = getattr(session, "update_stt", None) or getattr(session, "set_stt", None)
+                        if callable(update_fn):
+                            try:
+                                update_fn(new_stt)
+                                strategy_results.append("update_stt:called")
+                                if _verify_swap():
+                                    reset_status = "swapped"
+                                    strategy_results.append("update_stt:verified")
+                            except Exception as exc:  # noqa: BLE001
+                                strategy_results.append(f"update_stt:err={type(exc).__name__}")
+                        else:
+                            strategy_results.append("update_stt:absent")
+
+                    # Strategy D: bypass the @property with object.__setattr__
+                    # — last-resort, may still raise if the class uses
+                    # __slots__ or descriptors with no fallback.
+                    if reset_status != "swapped":
+                        try:
+                            object.__setattr__(session, "stt", new_stt)
+                            strategy_results.append("__setattr__:applied")
+                            if _verify_swap():
+                                reset_status = "swapped"
+                                strategy_results.append("__setattr__:verified")
+                        except Exception as exc:  # noqa: BLE001
+                            strategy_results.append(f"__setattr__:err={type(exc).__name__}")
+
+                    if reset_status != "swapped":
+                        reset_status = "swap_failed"
+                        # Dump session shape so the NEXT test tells us which
+                        # internal path is real on the deployed
+                        # livekit-agents version.
+                        try:
+                            attr_names = sorted(a for a in dir(session) if "stt" in a.lower())
+                            activity_attrs = sorted(
+                                a for a in dir(getattr(session, "_activity", object()))
+                                if "stt" in a.lower()
+                            )
+                            reset_error = (
+                                f"strategies={strategy_results} "
+                                f"session_stt_attrs={attr_names[:8]} "
+                                f"activity_stt_attrs={activity_attrs[:8]}"
+                            )[:500]
+                        except Exception as exc:  # noqa: BLE001
+                            reset_error = f"strategies={strategy_results} introspect_failed={exc}"[:500]
+                    else:
+                        reset_error = f"strategies={strategy_results}"[:300]
                         logger.info(
-                            "VTID-03004: soft-reset swapped STT (attempt %d/%d) orb_session_id=%s",
+                            "VTID-03005: soft-reset swapped STT (attempt %d/%d) orb_session_id=%s via %s",
                             soft_reset_count["n"],
                             MAX_SOFT_RESETS,
                             orb_session_id,
+                            strategy_results[-2] if len(strategy_results) >= 2 else strategy_results[-1],
                         )
-                    except Exception as exc:  # noqa: BLE001
-                        reset_status = "swap_failed"
-                        reset_error = f"assign failed: {exc}"[:300]
-                        logger.warning("VTID-03004: STT swap assignment failed: %s", exc)
-                else:
-                    reset_status = "rebuild_returned_none"
-                    reset_error = f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300]
             except Exception as exc:  # noqa: BLE001
                 reset_status = "rebuild_crashed"
-                reset_error = str(exc)[:300]
-                logger.warning("VTID-03004: STT rebuild crashed: %s", exc)
+                reset_error = f"strategies={strategy_results} rebuild_err={exc}"[:500]
+                logger.warning("VTID-03005: STT rebuild crashed: %s", exc)
             # feed the watchdog so the next stall fires after a fresh
-            # 30s window, not immediately after this recovery attempt.
+            # STALL_THRESHOLD_MS window, not immediately after this attempt.
             stall.feed()
 
         try:
