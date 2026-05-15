@@ -331,6 +331,11 @@ const ALLOWED_ORIGINS = [
   'https://id-preview--vitana-v1.lovable.app',
   'https://vitanaland.com',                            // Production custom domain (mobile app)
   'https://www.vitanaland.com',                        // Production custom domain (www)
+  // VTID-03000: gateway custom-domain origin. Without this, the production
+  // ORB widget on every command-hub page served from gateway.vitanaland.com
+  // gets 403 "Origin not allowed" on /orb/live/session/* — voice path
+  // completely broken for operators using the gateway custom domain.
+  'https://gateway.vitanaland.com',
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',

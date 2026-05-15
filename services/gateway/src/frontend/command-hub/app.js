@@ -36070,21 +36070,9 @@ function renderLivekitTestView() {
         var ctx = ensureAudioCtx();
         if (!ctx || !track) return;
         try {
-            // VTID-02999: clone the MediaStreamTrack before feeding it to Web
-            // Audio. `track.attach()` already put the original track on an
-            // <audio> element for playback; passing the SAME MediaStream to
-            // createMediaStreamSource diverts the audio into Web Audio's
-            // graph and silences the <audio> element (Web Audio "consumes"
-            // the stream). The analyser graph isn't connected to
-            // ctx.destination, so the diverted audio is dropped — that's
-            // why the operator hears nothing even though .play() succeeds
-            // and the agent has actually published audio. Cloning gives
-            // Web Audio its own independent copy of the audio frames so
-            // playback through the <audio> element keeps working.
-            var rawTrack = track.mediaStreamTrack;
-            if (!rawTrack || typeof rawTrack.clone !== 'function') return;
-            var cloned = rawTrack.clone();
-            var stream = new MediaStream([cloned]);
+            var stream = track.mediaStream
+                || (track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+            if (!stream) return;
             var src = ctx.createMediaStreamSource(stream);
             var analyser = ctx.createAnalyser();
             analyser.fftSize = 512;
