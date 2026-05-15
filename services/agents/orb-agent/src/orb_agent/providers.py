@@ -227,7 +227,7 @@ def build_cascade(
         logger.warning("build_cascade: no voice_config — falling back to hardcoded Google cascade")
         voice_config = {
             "stt_provider": "google_stt",  "stt_model": "latest_long", "stt_options": {},
-            "llm_provider": "google_llm",  "llm_model": "gemini-3.1-flash-lite-preview", "llm_options": {},
+            "llm_provider": "google_llm",  "llm_model": "gemini-2.5-flash", "llm_options": {},
             "tts_provider": "google_tts",  "tts_model": "en-US-Chirp3-HD-Aoede", "tts_options": {},
         }
 
@@ -346,8 +346,27 @@ def _build_llm(provider: str | None, model: str | None, options: dict[str, Any],
             # access, so no extra secret needed.
             project = os.environ.get("GOOGLE_CLOUD_PROJECT", "lovable-vitana-vers1")
             location = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+            # VTID-03002: defensive remap. The previous hardcoded fallback
+            # AND the agent_voice_configs.orb-agent row both shipped with
+            # `gemini-3.1-flash-lite-preview` — a model name that does NOT
+            # exist on Vertex AI. The Gemini call returns nothing,
+            # session.generate_reply produces no audio, agent goes
+            # idle → thinking → listening without ever speaking. We
+            # explicitly remap any known-bad Gemini 3.x preview names to
+            # the current realtime default so the row doesn't need a
+            # migration to recover. The fallback below covers the
+            # voice_config=None branch.
+            _KNOWN_BAD_GEMINI = {"gemini-3.1-flash-lite-preview"}
+            _DEFAULT_GEMINI = "gemini-2.5-flash"
+            effective_model = model or _DEFAULT_GEMINI
+            if effective_model in _KNOWN_BAD_GEMINI:
+                notes.append(
+                    f"LLM provider 'google_llm': remapped non-existent model "
+                    f"'{effective_model}' → '{_DEFAULT_GEMINI}'"
+                )
+                effective_model = _DEFAULT_GEMINI
             return google.LLM(
-                model=model or "gemini-3.1-flash-lite-preview",
+                model=effective_model,
                 vertexai=True,
                 project=project,
                 location=location,
