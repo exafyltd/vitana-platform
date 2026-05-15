@@ -750,14 +750,69 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # stall_count was hoisted above _teardown so the stop-payload sees it.
     stall = StallWatchdog(threshold_ms=STALL_THRESHOLD_MS)
 
+    # VTID-03004: bounded soft-reset on stall. After N stalls in one
+    # session, fall back to telemetry-only — don't loop forever rebuilding
+    # STT if the user is just genuinely idle.
+    MAX_SOFT_RESETS = 3
+    soft_reset_count = {"n": 0}
+
     async def _on_stall() -> None:
         stall_count["n"] += 1
+        attempts_left = MAX_SOFT_RESETS - soft_reset_count["n"]
         logger.warning(
-            "StallWatchdog: no activity in %ds (count=%d) for orb_session_id=%s — telemetry only, no disconnect",
+            "StallWatchdog: no activity in %ds (count=%d, soft_resets=%d/%d) for orb_session_id=%s",
             int(STALL_THRESHOLD_MS / 1000),
             stall_count["n"],
+            soft_reset_count["n"],
+            MAX_SOFT_RESETS,
             orb_session_id,
         )
+
+        # VTID-03004: soft STT hot-swap. Closes the recovery gap left by
+        # VTID-02856 (telemetry-only watchdog). The most common cause of
+        # mid-session stalls is the cascade STT plugin going stale —
+        # Google Cloud Speech-to-Text streaming sessions cap at ~5 min,
+        # Silero VAD inference state can drift, etc. Rebuilding STT
+        # in place gives the audio pipeline a clean state without
+        # dropping the LiveKit room. STT/LLM/TTS plugin replacement
+        # mid-session is already proven by perform_handoff() below.
+        should_soft_reset = soft_reset_count["n"] < MAX_SOFT_RESETS
+        action = "soft_reset_stt" if should_soft_reset else "telemetry_only"
+        reset_status = "not_attempted"
+        reset_error: str | None = None
+        if should_soft_reset:
+            soft_reset_count["n"] += 1
+            try:
+                fresh_cascade = build_cascade(
+                    bootstrap.voice_config,
+                    lang=identity.lang,
+                    voice_override=voice_override,
+                )
+                if fresh_cascade.stt is not None:
+                    try:
+                        session.stt = fresh_cascade.stt  # type: ignore[assignment]
+                        reset_status = "swapped"
+                        logger.info(
+                            "VTID-03004: soft-reset swapped STT (attempt %d/%d) orb_session_id=%s",
+                            soft_reset_count["n"],
+                            MAX_SOFT_RESETS,
+                            orb_session_id,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        reset_status = "swap_failed"
+                        reset_error = f"assign failed: {exc}"[:300]
+                        logger.warning("VTID-03004: STT swap assignment failed: %s", exc)
+                else:
+                    reset_status = "rebuild_returned_none"
+                    reset_error = f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300]
+            except Exception as exc:  # noqa: BLE001
+                reset_status = "rebuild_crashed"
+                reset_error = str(exc)[:300]
+                logger.warning("VTID-03004: STT rebuild crashed: %s", exc)
+            # feed the watchdog so the next stall fires after a fresh
+            # 30s window, not immediately after this recovery attempt.
+            stall.feed()
+
         try:
             await oasis.emit(
                 topic=TOPIC_STALL_DETECTED,
@@ -767,7 +822,12 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "agent_id": agent_id,
                     "stall_count": stall_count["n"],
                     "threshold_ms": STALL_THRESHOLD_MS,
-                    "action": "telemetry_only",
+                    "action": action,
+                    "soft_reset_count": soft_reset_count["n"],
+                    "soft_reset_max": MAX_SOFT_RESETS,
+                    "soft_reset_status": reset_status,
+                    "soft_reset_error": reset_error,
+                    "soft_reset_attempts_remaining": max(0, attempts_left - (1 if should_soft_reset else 0)),
                 },
             )
         except Exception:  # noqa: BLE001
