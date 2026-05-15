@@ -35147,10 +35147,47 @@ function renderLivekitTestView() {
     statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
     statusPanel.innerHTML =
           '<div><span style="color:#94a3b8;font-size:11px;">CONNECTION</span><br><span class="lkt-state" style="color:#facc15;font-weight:bold;">disconnected</span></div>'
-        + '<div><span style="color:#94a3b8;font-size:11px;">ACTIVE PROVIDER</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
+        // VTID-02995: relabel — this field shows the PRODUCTION active-provider
+        // (read from /api/v1/orb/active-provider). It only matters for Production
+        // token mode. Test-session mode bypasses it. The current selected mode is
+        // shown explicitly in the MODE block below the action buttons.
+        + '<div><span style="color:#94a3b8;font-size:11px;">PROD PROVIDER (info)</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">MIC</span><br><span class="lkt-mic" style="color:#facc15;font-weight:bold;">off</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
     container.appendChild(statusPanel);
+
+
+    // VTID-02995: explicit MODE block. Replaces the old <select> that defaulted
+    // to "Production token (active provider must be livekit)" — which made the
+    // test bench feel like it required production to be flipped to LiveKit.
+    // Two radio-style buttons; default = test-session (the always-works path
+    // while prod active-provider is Vertex). The hidden input.lkt-mode placed
+    // inside the controls row mirrors the chosen mode for the existing
+    // mintToken() / runDiagnostics() value-read contract.
+    var modeBlock = document.createElement('div');
+    modeBlock.className = 'lkt-mode-block';
+    modeBlock.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;padding:12px;background:#0b1220;border:1px solid #1e293b;border-radius:8px;';
+    modeBlock.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:10px;">'
+        +   '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">MODE</span>'
+        +   '<span class="lkt-mode-route" style="color:#60a5fa;font-family:monospace;font-size:11px;"></span>'
+        + '</div>'
+        + '<div class="lkt-mode-buttons" style="display:flex;gap:8px;flex-wrap:wrap;">'
+        +   '<button class="lkt-mode-btn" data-mode="test-session" '
+        +     'style="flex:1;min-width:240px;padding:10px 12px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:6px;cursor:pointer;text-align:left;">'
+        +     '<div class="lkt-mode-btn-title" style="font-weight:bold;font-size:13px;">Test-session mode (default)</div>'
+        +     '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Bypasses production active-provider gate. Use this to test LiveKit while prod runs Vertex.</div>'
+        +   '</button>'
+        +   '<button class="lkt-mode-btn" data-mode="active" '
+        +     'style="flex:1;min-width:240px;padding:10px 12px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:6px;cursor:pointer;text-align:left;">'
+        +     '<div class="lkt-mode-btn-title" style="font-weight:bold;font-size:13px;">Production-token mode</div>'
+        +     '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Uses the real production gate. Refuses unless active provider is livekit.</div>'
+        +   '</button>'
+        + '</div>'
+        + '<div class="lkt-mode-refusal" style="display:none;padding:8px 10px;background:#3a1212;border-left:3px solid #ef4444;font-size:12px;color:#fecaca;border-radius:4px;">'
+        +   '<strong>Production LiveKit is disabled.</strong> Use Test-session mode or enable LiveKit canary in Voice Lab.'
+        + '</div>';
+    container.appendChild(modeBlock);
 
     var controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;';
@@ -35190,10 +35227,7 @@ function renderLivekitTestView() {
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
         + '<button class="lkt-diagnose" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics</button>'
-        + '<select class="lkt-mode" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
-        +   '<option value="active">Production token (active provider must be livekit)</option>'
-        +   '<option value="test-session">Test-session token (any active provider)</option>'
-        + '</select>'
+        + '<input type="hidden" class="lkt-mode" value="test-session" />'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
         + '<a href="/command-hub/voice/orb-live/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Orb LIVE</a>';
@@ -35304,6 +35338,50 @@ function renderLivekitTestView() {
     var disconnectBtn = container.querySelector('.lkt-disconnect');
     var modeSel = container.querySelector('.lkt-mode');
     var agentInput = container.querySelector('.lkt-agent');
+    // VTID-02995: wire the explicit MODE block. Buttons toggle the hidden
+    // input.lkt-mode that mintToken()/runDiagnostics() read. The route hint +
+    // refusal banner update reactively, and the refusal banner uses the
+    // active-provider state loaded below (default unknown = treat as Vertex
+    // so the banner shows for Production-mode until proven otherwise).
+    var modeButtons = container.querySelectorAll('.lkt-mode-btn');
+    var modeRouteEl = container.querySelector('.lkt-mode-route');
+    var modeRefusalEl = container.querySelector('.lkt-mode-refusal');
+    // Module-scoped active-provider value (filled by the fetch below).
+    // Treated as 'vertex' until loaded so Production mode shows refusal
+    // by default — better than misleading the operator with a green path.
+    var lktActiveProvider = 'vertex';
+    function applyMode(mode) {
+        modeSel.value = mode;
+        for (var i = 0; i < modeButtons.length; i++) {
+            var b = modeButtons[i];
+            var picked = b.getAttribute('data-mode') === mode;
+            b.style.background = picked ? '#1e293b' : '#0f172a';
+            b.style.borderColor = picked ? (mode === 'test-session' ? '#22c55e' : '#facc15') : '#334155';
+            var titleEl = b.querySelector('.lkt-mode-btn-title');
+            if (titleEl) {
+                titleEl.textContent = (picked ? '● ' : '○ ') + (
+                    b.getAttribute('data-mode') === 'test-session'
+                        ? 'Test-session mode (default)'
+                        : 'Production-token mode'
+                );
+            }
+        }
+        if (modeRouteEl) {
+            modeRouteEl.textContent = mode === 'test-session'
+                ? 'POST /api/v1/agents/:id/voice-config/test-session'
+                : 'POST /api/v1/orb/livekit/token';
+        }
+        if (modeRefusalEl) {
+            var refuse = (mode === 'active') && (lktActiveProvider !== 'livekit');
+            modeRefusalEl.style.display = refuse ? 'block' : 'none';
+        }
+    }
+    for (var mi = 0; mi < modeButtons.length; mi++) {
+        modeButtons[mi].addEventListener('click', function (e) {
+            applyMode(e.currentTarget.getAttribute('data-mode'));
+        });
+    }
+    applyMode('test-session');
     var transcriptEl = container.querySelector('.lkt-transcript');
     var eventsEl = container.querySelector('.lkt-events');
 
@@ -35900,14 +35978,25 @@ function renderLivekitTestView() {
     }
 
     // Load active provider on mount.
+    // VTID-02995: also feed the mode block's refusal banner. When the user
+    // picks Production-token mode, the banner appears unless active=livekit.
     fetch((window.GATEWAY_URL || '') + '/api/v1/orb/active-provider')
         .then(function (r) { return r.json(); })
         .then(function (body) {
             var p = body && body.active_provider || 'unknown';
             activeEl.textContent = p;
             activeEl.style.color = p === 'livekit' ? '#22c55e' : '#facc15';
+            lktActiveProvider = (p === 'livekit' || p === 'vertex') ? p : 'vertex';
+            // Re-apply current mode so refusal banner updates with fresh state.
+            applyMode(modeSel.value || 'test-session');
         })
-        .catch(function () { activeEl.textContent = '(unreachable)'; activeEl.style.color = '#ef4444'; });
+        .catch(function () {
+            activeEl.textContent = '(unreachable)';
+            activeEl.style.color = '#ef4444';
+            // Couldn't reach the gate — keep refusal banner visible for Production
+            // mode (we can't prove LiveKit is active).
+            applyMode(modeSel.value || 'test-session');
+        });
 
     function loadLivekitClient() {
         // Load the UMD build from same-origin static assets (CSP-friendly).
@@ -35977,7 +36066,8 @@ function renderLivekitTestView() {
         });
         var json = await res.json();
         if (res.status === 503) {
-            throw new Error('provider_standby — active is "' + (json.active_provider || 'vertex') + '". Flip in Voice Lab first, OR switch the dropdown above to "Test-session token".');
+            // VTID-02995: align the message with the new MODE block labels.
+            throw new Error('Production LiveKit refused (active="' + (json.active_provider || 'vertex') + '"). Switch to Test-session mode (default) or enable LiveKit canary in Voice Lab.');
         }
         if (!res.ok) {
             throw new Error('token mint failed (' + res.status + '): ' + (json.error || JSON.stringify(json)));
@@ -35990,6 +36080,16 @@ function renderLivekitTestView() {
     }
 
     async function connect() {
+        // VTID-02995: pre-flight refusal — if Production mode is selected
+        // but active provider isn't livekit, fail loudly BEFORE the round-trip
+        // and surface the refusal banner. The 503 path in mintToken() is the
+        // fallback for races (active flipped between page-load and click).
+        if (modeSel.value === 'active' && lktActiveProvider !== 'livekit') {
+            if (modeRefusalEl) modeRefusalEl.style.display = 'block';
+            setState('disconnected');
+            log('error', 'Production LiveKit is disabled (active=' + lktActiveProvider + '). Switch to Test-session mode or enable LiveKit canary in Voice Lab.');
+            return;
+        }
         connectBtn.disabled = true;
         setState('connecting');
         try {
