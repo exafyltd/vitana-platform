@@ -35147,11 +35147,13 @@ function renderLivekitTestView() {
     statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
     statusPanel.innerHTML =
           '<div><span style="color:#94a3b8;font-size:11px;">CONNECTION</span><br><span class="lkt-state" style="color:#facc15;font-weight:bold;">disconnected</span></div>'
-        // VTID-02995: relabel — this field shows the PRODUCTION active-provider
-        // (read from /api/v1/orb/active-provider). It only matters for Production
-        // token mode. Test-session mode bypasses it. The current selected mode is
-        // shown explicitly in the MODE block below the action buttons.
-        + '<div><span style="color:#94a3b8;font-size:11px;">PROD PROVIDER (info)</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
+        // VTID-02997: the field shows what's being TESTED. In Test-session
+        // mode (default) it reads "TESTING: LiveKit pipeline" because that's
+        // what this page actually exercises; in Production-token mode it
+        // reverts to "PROD PROVIDER" + the live active-provider value
+        // (vertex/livekit). The label + value are both updated by
+        // applyMode() further down.
+        + '<div><span class="lkt-active-label" style="color:#94a3b8;font-size:11px;">TESTING</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">MIC</span><br><span class="lkt-mic" style="color:#facc15;font-weight:bold;">off</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
     container.appendChild(statusPanel);
@@ -35176,8 +35178,15 @@ function renderLivekitTestView() {
         +   '</div>'
         +   '<span class="lkt-mic-meter-label" style="color:#94a3b8;font-size:12px;font-family:monospace;min-width:120px;text-align:right;">idle</span>'
         + '</div>'
+        // VTID-02997: this button is now ALWAYS visible while a session is
+        // live (not just on autoplay-rejection) — Chrome's play() promise
+        // doesn't always reject when audio is silently muted, so a passive
+        // banner wasn't enough. The button stays visible during the whole
+        // session as a manual fallback the operator can mash if they hear
+        // nothing. Clicking it forces .play() on every attached audio
+        // element + resumes the AudioContext.
         + '<div class="lkt-audio-gate" style="display:none;align-items:center;gap:12px;padding:12px 14px;background:#3a2a12;border-left:3px solid #facc15;border-radius:6px;">'
-        +   '<span style="font-size:13px;color:#fef9c3;flex:1;">Browser blocked audio playback. Click to hear the agent.</span>'
+        +   '<span style="font-size:13px;color:#fef9c3;flex:1;">If you do not hear the agent, click to enable audio playback.</span>'
         +   '<button class="lkt-audio-gate-btn" style="padding:8px 16px;background:#facc15;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Enable audio</button>'
         + '</div>'
         + '<div class="lkt-mic-permission" style="display:none;padding:10px 14px;background:#3a1212;border-left:3px solid #ef4444;border-radius:6px;font-size:13px;color:#fecaca;">'
@@ -35402,6 +35411,26 @@ function renderLivekitTestView() {
         if (modeRefusalEl) {
             var refuse = (mode === 'active') && (lktActiveProvider !== 'livekit');
             modeRefusalEl.style.display = refuse ? 'block' : 'none';
+        }
+        // VTID-02997: the "what is this page testing?" label was the single
+        // most confusing thing about the test bench — operators saw
+        // "vertex" and thought the test was running on Vertex. Now the
+        // label says what's actually being tested under each mode.
+        var activeLabelEl = container.querySelector('.lkt-active-label');
+        if (activeLabelEl && activeEl) {
+            if (mode === 'test-session') {
+                activeLabelEl.textContent = 'TESTING';
+                activeEl.textContent = 'LiveKit pipeline';
+                activeEl.style.color = '#22c55e';
+            } else {
+                activeLabelEl.textContent = 'PROD PROVIDER';
+                // activeEl content/colour is owned by the /orb/active-provider
+                // fetch below; only override here if it hasn't loaded yet.
+                if (!activeEl.textContent || activeEl.textContent === 'LiveKit pipeline') {
+                    activeEl.textContent = lktActiveProvider;
+                    activeEl.style.color = lktActiveProvider === 'livekit' ? '#22c55e' : '#facc15';
+                }
+            }
         }
     }
     for (var mi = 0; mi < modeButtons.length; mi++) {
@@ -36084,11 +36113,36 @@ function renderLivekitTestView() {
         banner.style.display = 'flex';
         var btn = banner.querySelector('.lkt-audio-gate-btn');
         if (btn) {
+            // VTID-02997: keep the banner visible after the click — Chrome may
+            // need multiple .play() attempts and the user shouldn't have to
+            // reconnect to get the button back. The button just re-triggers
+            // playback whenever they hit it.
             btn.onclick = function () {
-                banner.style.display = 'none';
                 if (onClick) onClick();
             };
         }
+    }
+    function hideAudioGateBanner() {
+        var banner = container.querySelector('.lkt-audio-gate');
+        if (banner) banner.style.display = 'none';
+    }
+    // VTID-02997: single re-play function used by both the manual button
+    // and the autoplay-rejection catch path. Resumes AudioContext + calls
+    // .play() on every attached audio element.
+    function forceReplayAllAudio() {
+        var ctx = ensureAudioCtx();
+        if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+            ctx.resume().catch(function () {});
+        }
+        attachedAudio.forEach(function (a) {
+            try {
+                var pp = a.play();
+                if (pp && typeof pp.then === 'function') {
+                    pp.catch(function (err) { log('warn', 'replay still blocked', { err: String(err && err.message || err) }); });
+                }
+            } catch (e) {}
+        });
+        log('info', 'audio re-play forced (' + attachedAudio.length + ' element(s))');
     }
 
     function showMicPermissionBanner() {
@@ -36142,17 +36196,18 @@ function renderLivekitTestView() {
         .then(function (r) { return r.json(); })
         .then(function (body) {
             var p = body && body.active_provider || 'unknown';
-            activeEl.textContent = p;
-            activeEl.style.color = p === 'livekit' ? '#22c55e' : '#facc15';
             lktActiveProvider = (p === 'livekit' || p === 'vertex') ? p : 'vertex';
-            // Re-apply current mode so refusal banner updates with fresh state.
+            // VTID-02997: applyMode owns the activeEl text/colour now — it
+            // writes "LiveKit pipeline" (green) for Test-session and the
+            // raw provider value for Production-token. Re-running it here
+            // refreshes the refusal banner with the new active-provider
+            // value too.
             applyMode(modeSel.value || 'test-session');
         })
         .catch(function () {
-            activeEl.textContent = '(unreachable)';
-            activeEl.style.color = '#ef4444';
             // Couldn't reach the gate — keep refusal banner visible for Production
-            // mode (we can't prove LiveKit is active).
+            // mode (we can't prove LiveKit is active). lktActiveProvider stays
+            // at its 'vertex' default and applyMode renders accordingly.
             applyMode(modeSel.value || 'test-session');
         });
 
@@ -36238,6 +36293,30 @@ function renderLivekitTestView() {
     }
 
     async function connect() {
+        // VTID-02997: PRIME AUDIO inside the click handler's user-gesture
+        // window. Chrome treats the page as "blocked from autoplaying audio"
+        // until a play() succeeds during user activation. The agent's audio
+        // track arrives 1-2s after the click, by which time the gesture is
+        // gone and the SDK's implicit .play() can resolve without actually
+        // producing sound — that's why PR-F's audio-gate banner never
+        // appeared either (no rejection to catch). Play a 1-frame silent
+        // buffer right here, synchronously after the click, to unlock audio
+        // for the rest of the page lifetime. Same trick LiveKit's own UI
+        // examples use.
+        try {
+            var ctx = ensureAudioCtx();
+            if (ctx && typeof ctx.createBuffer === 'function') {
+                var buf = ctx.createBuffer(1, 1, 22050);
+                var src = ctx.createBufferSource();
+                src.buffer = buf;
+                src.connect(ctx.destination);
+                if (typeof src.start === 'function') src.start(0);
+                else if (typeof src.noteOn === 'function') src.noteOn(0);
+            }
+        } catch (audioPrimeErr) {
+            log('warn', 'audio prime failed (continuing)', { err: String(audioPrimeErr) });
+        }
+
         // VTID-02995: pre-flight refusal — if Production mode is selected
         // but active provider isn't livekit, fail loudly BEFORE the round-trip
         // and surface the refusal banner. The 503 path in mintToken() is the
@@ -36293,15 +36372,18 @@ function renderLivekitTestView() {
                         if (p && typeof p.then === 'function') {
                             p.catch(function (err) {
                                 log('warn', 'audio autoplay blocked — click ENABLE AUDIO', { err: String(err && err.message || err) });
-                                showAudioGateBanner(function () {
-                                    Promise.all(attachedAudio.map(function (a) { return a.play().catch(function () {}); }))
-                                        .then(function () { log('info', 'audio enabled by user gesture'); });
-                                });
                             });
                         }
                     } catch (pErr) {
                         log('warn', 'audio play() threw', { err: String(pErr) });
                     }
+                    // VTID-02997: always show the manual re-play button once an
+                    // audio track is attached. Chrome's .play() promise doesn't
+                    // reliably reject when the audio is silently muted, so a
+                    // passive autoplay-catch-only banner was missing the case
+                    // that actually broke the test bench. The button stays
+                    // visible until the user disconnects.
+                    showAudioGateBanner(forceReplayAllAudio);
                     attachRemoteAudioMeter(track);
                 }
             });
@@ -36395,6 +36477,7 @@ function renderLivekitTestView() {
         attachedAudio = [];
         stopAudioMeters(); // VTID-02996: tear down analysers + reset meter UI
         hideMicPermissionBanner();
+        hideAudioGateBanner(); // VTID-02997: hide re-play button when session ends
         setState('disconnected');
         setMic(false);
         setSpeaking(false);
