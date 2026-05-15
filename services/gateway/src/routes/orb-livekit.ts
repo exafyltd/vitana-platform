@@ -746,6 +746,49 @@ router.get(
       console.warn(`[${VTID}] buildClientContext failed: ${(exc as Error).message}`);
     }
 
+    // L2.2b.4 (VTID-03008): context-parity LITE. Compile the same
+    // `AssistantDecisionContext` the Vertex path renders into its
+    // system instruction (continuity / concept_mastery / journey_stage /
+    // pillar_momentum / interaction_style) and append the rendered
+    // section to bootstrap_context so the LiveKit agent's prompt
+    // inherits identical decision-contract intelligence. Anonymous
+    // sessions (userId/tenantId null) skip the compile entirely.
+    //
+    // Architectural rule (matches the L2.2b master design Section 2.5):
+    //   - Compile happens in the gateway, NOT in the agent.
+    //   - The renderer is a pure function — no provider/DB calls here.
+    //   - Agent reads `bootstrap_context` unchanged; no agent code
+    //     change is needed for this slice.
+    //
+    // Best-effort: any compile failure degrades to the pre-L2.2b.4
+    // bootstrap (identity + facts + index + memory + env) without
+    // blocking the session start.
+    let decisionContext: import('../orb/context/types').AssistantDecisionContext | null = null;
+    if (userId && tenantId) {
+      try {
+        const { compileAssistantDecisionContext } = await import(
+          '../orb/context/compile-assistant-decision-context'
+        );
+        decisionContext = await compileAssistantDecisionContext({
+          userId,
+          tenantId,
+        });
+        const { renderDecisionContract } = await import(
+          '../orb/live/instruction/decision-contract-renderer'
+        );
+        const decisionBlock = renderDecisionContract(decisionContext);
+        if (decisionBlock) {
+          ctxParts.push(decisionBlock);
+        }
+      } catch (exc) {
+        // Compile/render failure must NEVER block the bootstrap.
+        // Vertex production users are unaffected by anything here.
+        console.warn(
+          `[${VTID}] decision-context compile failed (LiveKit path falls back to identity-only bootstrap): ${(exc as Error).message}`,
+        );
+      }
+    }
+
     res.json({
       ok: true,
       vtid: VTID,
@@ -770,6 +813,11 @@ router.get(
       identity_facts_count: identityFacts.length,
       voice_config: voiceConfig,
       memory_items: memoryItems,
+      // L2.2b.4 (VTID-03008): structured decision-contract output for
+      // cockpit/operator inspection. The rendered version is already
+      // inlined into `bootstrap_context`; this field is for tooling.
+      // null on anonymous sessions or when compile failed.
+      decision_context: decisionContext,
     });
   },
 );
