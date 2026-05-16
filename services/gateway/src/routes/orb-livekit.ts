@@ -70,6 +70,28 @@ import { getLiveKitAgentReadiness } from '../orb/live/upstream/livekit-agent-con
 const router = Router();
 
 const VTID = 'VTID-LIVEKIT-FOUNDATION';
+
+// VTID-03014: extract the user's real client IP from the request and embed
+// it in LiveKit token metadata. Without this, the orb-agent (running in
+// Cloud Run us-central1) calls /orb/context-bootstrap from its OWN egress
+// IP, so buildClientContext()'s geo-IP lookup returns "United States" no
+// matter where the user actually is. Mirrors the precedence used by
+// orb-live.ts:getClientIP — x-forwarded-for first (Cloud Run sets this
+// with the real client IP), then x-real-ip, then x-appengine-user-ip,
+// then req.ip as a last resort.
+function getRequestClientIP(req: Request): string | null {
+  const xff = req.get('x-forwarded-for');
+  const xri = req.get('x-real-ip');
+  const xaui = req.get('x-appengine-user-ip');
+  const ip = (xff?.split(',')[0]?.trim()) || xri || xaui || req.ip || '';
+  // Skip obviously-local/private addresses so the agent doesn't try to
+  // geo-resolve 127.0.0.1 (which the gateway's bootstrap already filters,
+  // but trimming early keeps the metadata clean).
+  if (!ip || ip === 'unknown' || ip === '::1' || ip.startsWith('127.')) {
+    return null;
+  }
+  return ip;
+}
 const ACTIVE_PROVIDER_KEY = 'voice.active_provider';
 const FLIP_COOLDOWN_SECONDS = 60 * 60; // 1 hour anti-flap
 const TEST_SESSION_TOKEN_TTL_SECONDS = 5 * 60;
@@ -436,6 +458,11 @@ router.post(
     // anonymous traffic anyway).
     const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
 
+    // VTID-03014: capture user's real client IP at mint time so the agent
+    // can forward it to /orb/context-bootstrap and geo-IP resolves the
+    // actual user location, not the agent's us-central1 Cloud Run IP.
+    const clientIp = getRequestClientIP(req);
+
     const at = new AccessToken(apiKey, apiSecret, {
       identity: userId,
       ttl: 60 * 60, // 1 hour session
@@ -455,6 +482,8 @@ router.post(
         // user's normal JWT — existing optionalAuth/requireAuth middleware
         // validates it transparently.
         user_jwt: agentUserJwt,
+        // VTID-03014: forward the user's real IP through to the agent.
+        client_ip: clientIp,
       }),
     });
     at.addGrant({
@@ -712,15 +741,41 @@ router.get(
 
     const vitanaId = req.identity?.vitana_id ?? null;
 
+    // VTID-03014: extract first_name preferring app_users.display_name, then
+    // memory_facts.user_name (the canonical Cognee-extracted name). Without
+    // this, users whose display_name is null but whose user_name fact IS
+    // populated got greeted by @handle instead of their actual name —
+    // exactly the failure mode the L2.2b.6 smoke surfaced.
+    const userNameFactForPrompt = identityFacts.find((f) => f.fact_key === 'user_name');
+    const promptFullName = (
+      (displayName || '').trim() ||
+      (userNameFactForPrompt?.fact_value || '').trim()
+    );
+    const promptFirstName = promptFullName ? promptFullName.split(/\s+/)[0] : '';
+
     const ctxParts: string[] = [];
     // Authoritative identity header — pinned at top so the LLM treats it
     // as ground truth, mirrors the role/vitana-id headers Vertex pins.
-    if (displayName) {
-      ctxParts.push(`The user's first name is ${displayName}. Greet them by this name.`);
-    }
-    if (vitanaId) {
+    //
+    // VTID-03014: when a first_name exists, ONLY emit the first-name line.
+    // The previous "Address them as @handle" line ran alongside it and
+    // gave Gemini two competing addressing signals — sometimes it picked
+    // the handle ("Hi @e2etest33!") instead of the name ("Hi Dragan!").
+    // The handle stays in the AUTHORITATIVE USER VITANA ID block (rendered
+    // by buildLiveSystemInstruction) for when the user explicitly asks
+    // "what's my handle?", but it MUST NOT be promoted as preferred address.
+    if (promptFirstName) {
       ctxParts.push(
-        `The user's Vitana handle is @${vitanaId}. Address them as @${vitanaId}.`,
+        `The user's first name is ${promptFirstName}. ` +
+        `Greet them by this name. Use the first name in conversation, ` +
+        `not their Vitana handle.`,
+      );
+    } else if (vitanaId) {
+      // Fallback: no first_name on file. Handle becomes the preferred
+      // address since there's nothing better.
+      ctxParts.push(
+        `The user has no first name on file. Their Vitana handle is ` +
+        `@${vitanaId} — use it for greetings until they tell you their name.`,
       );
     }
     // Note: deliberately do NOT include the raw UUID — small models read
@@ -1159,6 +1214,13 @@ router.post(
 
     const agentUserJwt = req.identity ? await mintAgentSessionJwt(req.identity) : null;
 
+    // VTID-03014: capture user's real client IP at mint time so the agent
+    // can forward it to /orb/context-bootstrap on the test path too. The
+    // Test Bench is precisely the surface the user has been hitting, so
+    // missing this here would leave the US-location bug intact even
+    // after the production-token fix.
+    const clientIp = getRequestClientIP(req);
+
     const at = new AccessToken(apiKey, apiSecret, {
       identity: userId,
       ttl: TEST_SESSION_TOKEN_TTL_SECONDS,
@@ -1173,6 +1235,9 @@ router.post(
         vitana_id: req.identity?.vitana_id ?? null,
         voice_override: voiceOverride,
         user_jwt: agentUserJwt,
+        // VTID-03014: same shape as /orb/livekit/token — the agent reads
+        // metadata.client_ip and forwards it as X-Real-IP to bootstrap.
+        client_ip: clientIp,
       }),
     });
     at.addGrant({

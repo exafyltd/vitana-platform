@@ -108,7 +108,83 @@ def _get_vad() -> Any:
     return _SHARED_VAD
 
 
-CODE_VERSION = "agent-2026-05-07-name-and-facts"
+CODE_VERSION = "agent-2026-05-16-vtid-03014-localized-greeting"
+
+
+# VTID-03014: localized first-greeting templates. session.say() speaks the
+# literal string we pass — there is NO LLM translation between us and TTS,
+# so the greeting MUST be in the user's language at the source. The system
+# instruction's "LANGUAGE: Respond ONLY in <lang>" only governs LLM-generated
+# turns; it can't translate a hardcoded English string after we've already
+# handed it to TTS.
+#
+# Language coverage matches voice-pipeline-spec/spec.json.supported_languages
+# ("en", "de", "fr", "es", "ar", "zh", "ru", "sr"). Unknown lang falls back
+# to English so the agent never goes silent.
+def _localized_greeting(
+    lang: str,
+    *,
+    first_name: str = "",
+    vitana_handle: str = "",
+) -> str:
+    """Return the agent's first-turn greeting in the user's language.
+
+    Preference order: first_name (drops the @handle so Gemini sees one
+    addressing signal, not two) → @handle → generic.
+    """
+    name = first_name.strip()
+    handle = vitana_handle.strip()
+    code = (lang or "en").lower()[:2]
+    if name:
+        templates = {
+            "en": f"Hi {name}! What can I help with today?",
+            "de": f"Hallo {name}! Womit kann ich dir heute helfen?",
+            "fr": f"Salut {name} ! Comment puis-je t'aider aujourd'hui ?",
+            "es": f"¡Hola {name}! ¿En qué puedo ayudarte hoy?",
+            "ar": f"مرحباً يا {name}! كيف يمكنني مساعدتك اليوم؟",
+            "zh": f"你好 {name}！今天我能为你做些什么？",
+            "ru": f"Привет, {name}! Чем могу помочь сегодня?",
+            "sr": f"Zdravo {name}! Kako mogu da ti pomognem danas?",
+        }
+        return templates.get(code, templates["en"])
+    if handle:
+        templates = {
+            "en": f"Hi @{handle}! What can I help with today?",
+            "de": f"Hallo @{handle}! Womit kann ich dir heute helfen?",
+            "fr": f"Salut @{handle} ! Comment puis-je t'aider aujourd'hui ?",
+            "es": f"¡Hola @{handle}! ¿En qué puedo ayudarte hoy?",
+            "ar": f"مرحباً @{handle}! كيف يمكنني مساعدتك اليوم؟",
+            "zh": f"你好 @{handle}！今天我能为你做些什么？",
+            "ru": f"Привет, @{handle}! Чем могу помочь сегодня?",
+            "sr": f"Zdravo @{handle}! Kako mogu da ti pomognem danas?",
+        }
+        return templates.get(code, templates["en"])
+    templates = {
+        "en": "Hi there! What can I help with today?",
+        "de": "Hallo! Womit kann ich dir heute helfen?",
+        "fr": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+        "es": "¡Hola! ¿En qué puedo ayudarte hoy?",
+        "ar": "مرحباً! كيف يمكنني مساعدتك اليوم؟",
+        "zh": "你好！今天我能为你做些什么？",
+        "ru": "Здравствуйте! Чем могу помочь сегодня?",
+        "sr": "Zdravo! Kako mogu da ti pomognem danas?",
+    }
+    return templates.get(code, templates["en"])
+
+
+def _localized_anonymous_greeting(lang: str) -> str:
+    code = (lang or "en").lower()[:2]
+    templates = {
+        "en": "Hi! How can I help today?",
+        "de": "Hallo! Wie kann ich heute helfen?",
+        "fr": "Bonjour ! Comment puis-je aider aujourd'hui ?",
+        "es": "¡Hola! ¿En qué puedo ayudar hoy?",
+        "ar": "مرحباً! كيف يمكنني المساعدة اليوم؟",
+        "zh": "你好！今天我能帮上什么忙？",
+        "ru": "Здравствуйте! Чем могу помочь?",
+        "sr": "Zdravo! Kako mogu danas da pomognem?",
+    }
+    return templates.get(code, templates["en"])
 
 
 async def _early_trace_heartbeat(gateway_url: str, payload: dict) -> None:
@@ -381,6 +457,10 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         is_reconnect=False,
         last_n_turns=0,
         lang=identity.lang,
+        # VTID-03014: forward the user's real IP captured by the gateway
+        # at token-mint time. Without this header /orb/context-bootstrap
+        # geo-IPs the agent's own Cloud Run egress IP (us-central1 → US).
+        client_ip=identity.client_ip,
     )
 
     # System instruction.
@@ -1048,24 +1128,26 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     ctx.add_shutdown_callback(_stop_stall_on_shutdown)
 
-    # Initial greeting — VTID-03012: use session.say() directly with a
-    # templated string instead of session.generate_reply(). The greeting
-    # was already heavily constrained ("ONE short sentence + brief 'What
-    # can I help with today?'") so the LLM was just rendering a template
-    # — a 1–2s round-trip we don't need. Direct TTS skips straight to
-    # the audio. session.say() defaults to add_to_chat_ctx=True so the
-    # greeting remains part of the conversation history for follow-ups.
+    # Initial greeting — VTID-03014: localize the greeting text to
+    # identity.lang. Before this fix the greeting was always English even
+    # when the user picked German in the Test Bench, because session.say()
+    # speaks the literal string we pass — there is no LLM translation
+    # step between us and TTS. The system_instruction's "LANGUAGE:
+    # Respond ONLY in <lang>" rule only governs LLM-generated turns,
+    # not direct session.say() output.
+    #
+    # Also drops the "@handle as fallback" path when a first_name is
+    # present, so Gemini never sees two competing addressing signals.
     if not identity.is_anonymous:
         vid = (bootstrap.vitana_id or "").strip()
         first_name = (bootstrap.first_name or "").strip()
-        if first_name:
-            greeting_text = f"Hi {first_name}! What can I help with today?"
-        elif vid:
-            greeting_text = f"Hi @{vid}! What can I help with today?"
-        else:
-            greeting_text = "Hi there! What can I help with today?"
+        greeting_text = _localized_greeting(
+            identity.lang,
+            first_name=first_name,
+            vitana_handle=vid,
+        )
     else:
-        greeting_text = "Hi! How can I help today?"
+        greeting_text = _localized_anonymous_greeting(identity.lang)
     try:
         await session.say(greeting_text)
     except Exception as exc:  # noqa: BLE001
@@ -1110,6 +1192,7 @@ async def perform_handoff(
     reason: str,
     context_summary: str,
     lang: str = "en",
+    client_ip: str | None = None,
 ) -> None:
     """Swap to a new specialist mid-session. STT/mic continue; LLM+TTS swap.
 
@@ -1141,7 +1224,13 @@ async def perform_handoff(
 
     # Fetch new agent's context + voice config.
     new_bootstrap = await ctx_fetcher.fetch(
-        user_jwt=user_jwt, agent_id=to_agent_id, is_reconnect=True, last_n_turns=10, lang=lang,
+        user_jwt=user_jwt,
+        agent_id=to_agent_id,
+        is_reconnect=True,
+        last_n_turns=10,
+        lang=lang,
+        # VTID-03014: keep geo accurate through specialist swaps too.
+        client_ip=client_ip,
     )
     new_cascade = build_cascade(new_bootstrap.voice_config, lang=lang)
 
