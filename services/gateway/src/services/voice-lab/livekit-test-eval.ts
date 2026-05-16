@@ -81,6 +81,11 @@ export interface DryRunEvalResult {
 /** UUID hardcoded in CLAUDE.md as the canonical Vitana platform test user. */
 const FALLBACK_TEST_USER_ID = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 
+/** Email of the canonical test account (CLAUDE.md). Used as a 2nd-tier
+ *  fallback when the UUID lookup misses (e.g. the user_id changed but the
+ *  email account still exists). */
+const FALLBACK_TEST_EMAIL = 'e2e-test@vitana.dev';
+
 /**
  * Run one dry-run case end-to-end. Throws on unrecoverable assembly
  * failures (missing test user, no Gemini credentials, etc.). Recoverable
@@ -225,45 +230,72 @@ export async function evaluateLiveKitDryRun(
 
 /**
  * Resolve a complete identity for the dry-run from the caller's partial
- * input + env + DB. Falls back to the hardcoded CLAUDE.md test user.
- * Looks up tenant_id via `app_users` if not supplied.
+ * input + env + DB. Three-tier fallback against `app_users`:
+ *
+ *   1. caller-supplied / env / hardcoded UUID
+ *   2. canonical test EMAIL (`e2e-test@vitana.dev`) — survives UUID rotation
+ *   3. any user with `vitana_id IS NOT NULL` (oldest row) — last resort so
+ *      the eval has *some* real bootstrap to render, even on an unfamiliar
+ *      Supabase project where neither the UUID nor the test email exist
+ *
+ * Throws only if all three tiers miss AND no `VOICE_LAB_TEST_TENANT_ID` is
+ * set — that means the deployed environment genuinely has no usable user.
  */
 async function resolveDryRunIdentity(
   partial?: Partial<DryRunIdentity>,
 ): Promise<DryRunIdentity> {
-  const userId =
+  const requestedUserId =
     partial?.user_id ??
     process.env.VOICE_LAB_TEST_USER_ID ??
     FALLBACK_TEST_USER_ID;
 
+  let userId = requestedUserId;
   let tenantId = partial?.tenant_id ?? process.env.VOICE_LAB_TEST_TENANT_ID ?? null;
   let vitanaId = partial?.vitana_id ?? null;
   let email = partial?.email ?? null;
   let activeRole = partial?.active_role;
 
-  if (!tenantId || !vitanaId || !email) {
-    const sb = getSupabase();
-    if (sb) {
-      const { data } = await sb
+  const sb = getSupabase();
+  const cols = 'user_id, tenant_id, vitana_id, email, role';
+
+  const apply = (data: Record<string, unknown>): void => {
+    userId = (data.user_id as string) ?? userId;
+    if (!tenantId) tenantId = (data.tenant_id as string | null | undefined) ?? null;
+    if (!vitanaId) vitanaId = (data.vitana_id as string | null | undefined) ?? null;
+    if (!email) email = (data.email as string | null | undefined) ?? null;
+    if (!activeRole) activeRole = (data.role as string | undefined) ?? undefined;
+  };
+
+  if (sb && (!tenantId || !vitanaId || !email)) {
+    // Tier 1: by user_id
+    const t1 = await sb.from('app_users').select(cols).eq('user_id', requestedUserId).maybeSingle();
+    if (t1.data) apply(t1.data as Record<string, unknown>);
+
+    // Tier 2: by canonical email
+    if (!tenantId) {
+      const t2 = await sb.from('app_users').select(cols).eq('email', FALLBACK_TEST_EMAIL).maybeSingle();
+      if (t2.data) apply(t2.data as Record<string, unknown>);
+    }
+
+    // Tier 3: any user with a vitana handle (deterministic — oldest row first)
+    if (!tenantId) {
+      const t3 = await sb
         .from('app_users')
-        .select('user_id, tenant_id, vitana_id, email, role')
-        .eq('user_id', userId)
+        .select(cols)
+        .not('vitana_id', 'is', null)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
-      if (data) {
-        if (!tenantId) tenantId = (data as { tenant_id?: string | null }).tenant_id ?? null;
-        if (!vitanaId) vitanaId = (data as { vitana_id?: string | null }).vitana_id ?? null;
-        if (!email) email = (data as { email?: string | null }).email ?? null;
-        if (!activeRole) {
-          activeRole = (data as { role?: string | null }).role ?? undefined;
-        }
-      }
+      if (t3.data) apply(t3.data as Record<string, unknown>);
     }
   }
 
   if (!tenantId) {
     throw new Error(
-      `evaluateLiveKitDryRun: tenant_id unresolved for user ${userId} — ` +
-        'pass identity.tenant_id explicitly or set VOICE_LAB_TEST_TENANT_ID',
+      'evaluateLiveKitDryRun: no usable test identity in app_users ' +
+        `(tried user_id=${requestedUserId}, email=${FALLBACK_TEST_EMAIL}, ` +
+        'and oldest vitana_id user). ' +
+        'Set VOICE_LAB_TEST_USER_ID + VOICE_LAB_TEST_TENANT_ID to override.',
     );
   }
 
