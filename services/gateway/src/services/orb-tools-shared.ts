@@ -3149,10 +3149,22 @@ export async function tool_get_life_compass(
     return { ok: false, error: 'get_life_compass requires an authenticated user.' };
   }
   try {
+    // VTID-03022: corrected schema. Earlier VTID-03010 guessed at column
+    // names (`current_goal`, `why`/`motivation`, `target_date`/`deadline`)
+    // — none of those columns actually exist on `life_compass`. Confirmed
+    // canonical shape from services/gateway/src/services/guide/
+    // awareness-context.ts and services/gateway/src/services/
+    // recommendation-engine/ranking/index-pillar-weighter.ts: the live
+    // columns are `primary_goal`, `category`, `is_active`, `created_at`.
+    // A user can have multiple historical rows; exactly one has
+    // is_active=true and is the current Life Compass.
     const { data, error } = await sb
       .from('life_compass')
-      .select('*')
+      .select('id, primary_goal, category, is_active, created_at')
       .eq('user_id', identity.user_id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (error) {
       if (/relation .* does not exist/i.test(error.message)) {
@@ -3176,27 +3188,30 @@ export async function tool_get_life_compass(
           'Life Compass, or I can walk you through it now.',
       };
     }
-    const row = data as Record<string, unknown>;
-    const goal = (row.current_goal as string | null) ?? null;
-    const why = (row.why as string | null) ?? (row.motivation as string | null) ?? null;
-    const targetDate =
-      (row.target_date as string | null) ?? (row.deadline as string | null) ?? null;
-    const fields: string[] = [];
-    if (goal) fields.push(`Goal: ${goal}`);
-    if (why) fields.push(`Why: ${why}`);
-    if (targetDate) fields.push(`Target date: ${targetDate}`);
-    const text = fields.length
-      ? `Your Life Compass — ${fields.join('. ')}.`
-      : 'Your Life Compass row exists but has no goal text yet.';
+    const row = data as {
+      id: string;
+      primary_goal: string | null;
+      category: string | null;
+      is_active: boolean | null;
+      created_at: string | null;
+    };
+    const goal = (row.primary_goal || '').trim() || null;
+    const category = (row.category || '').trim() || null;
+    if (!goal) {
+      return {
+        ok: true,
+        result: { available: true, goal: null, category, raw: row },
+        text:
+          'You have a Life Compass row but no primary goal text in it — ' +
+          'want me to take you to Settings → Life Compass to fill it in?',
+      };
+    }
+    const text = category
+      ? `Your Life Compass — ${goal}. (Category: ${category}.)`
+      : `Your Life Compass — ${goal}.`;
     return {
       ok: true,
-      result: {
-        available: true,
-        goal,
-        why,
-        target_date: targetDate,
-        raw: row,
-      },
+      result: { available: true, goal, category, raw: row },
       text,
     };
   } catch (e) {

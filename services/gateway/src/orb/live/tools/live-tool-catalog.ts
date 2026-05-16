@@ -924,9 +924,8 @@ export function buildLiveApiTools(
           description: [
             "Return the user's active Life Compass — the one-sentence long-term",
             'direction they set in Settings. Includes:',
-            '  - goal: the current long-term goal text',
-            '  - why: motivation / reasoning',
-            '  - target_date: optional deadline / horizon',
+            '  - goal: the current primary_goal text (the one-sentence direction)',
+            '  - category: the life domain (e.g. longevity, business, family)',
             '',
             'CALL THIS WHEN the user asks any variation of:',
             '  - "What is my Life Compass?" / "Was ist mein Life Compass?"',
