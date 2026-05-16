@@ -23,10 +23,12 @@ spec:
   template:
     metadata:
       annotations:
-        # Scale-to-zero is critical: when LiveKit is the standby provider,
-        # zero instances run, costing zero compute. Cold-start on flip is
-        # ~1-2s on first room join.
-        autoscaling.knative.dev/minScale: "0"
+        # VTID-03016: minScale=1 keeps one warm worker so the click→greeting
+        # cold-start (~1-2s on first room join) doesn't hit real users.
+        # The DEPLOY-ORB-AGENT workflow has been setting --min-instances=1
+        # since the canary rollout; this YAML keeps it consistent so a
+        # manual `gcloud run services replace service.yaml` can't regress.
+        autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "10"
 
         # CPU is not throttled when processing voice (latency-sensitive).
