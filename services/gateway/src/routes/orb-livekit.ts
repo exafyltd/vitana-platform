@@ -599,35 +599,43 @@ router.get(
     if (greetingOnly) {
       let goDisplayName: string | null = null;
       if (sb && userId) {
-        try {
-          const { data: app } = await sb
-            .from('app_users')
-            .select('display_name')
-            .eq('user_id', userId)
-            .maybeSingle();
-          goDisplayName =
-            ((app as Record<string, unknown> | null)?.display_name as string | null) ?? null;
-        } catch {
-          /* best-effort */
-        }
+        // VTID-03030: run both lookups concurrently. Total cost drops from
+        // ~100-200ms (sequential) to ~50-100ms (parallel) since neither
+        // depends on the other and we only use the user_name fallback
+        // when display_name is null.
+        const [appData, factData] = await Promise.all([
+          (async () => {
+            try {
+              const r = await sb
+                .from('app_users')
+                .select('display_name')
+                .eq('user_id', userId)
+                .maybeSingle();
+              return r.data as Record<string, unknown> | null;
+            } catch {
+              return null;
+            }
+          })(),
+          (async () => {
+            try {
+              const r = await sb
+                .from('memory_facts')
+                .select('fact_value')
+                .eq('user_id', userId)
+                .eq('fact_key', 'user_name')
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              return r.data as Record<string, unknown> | null;
+            } catch {
+              return null;
+            }
+          })(),
+        ]);
+        goDisplayName = (appData?.display_name as string | null) ?? null;
         if (!goDisplayName) {
-          // Fallback: memory_facts.user_name (the Cognee-extracted canonical name)
-          try {
-            const { data: fact } = await sb
-              .from('memory_facts')
-              .select('fact_value')
-              .eq('user_id', userId)
-              .eq('fact_key', 'user_name')
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            const userName = (fact as Record<string, unknown> | null)?.fact_value as
-              | string
-              | undefined;
-            if (userName) goDisplayName = userName;
-          } catch {
-            /* best-effort */
-          }
+          const userName = factData?.fact_value as string | undefined;
+          if (userName) goDisplayName = userName;
         }
       }
       const goFirstName = goDisplayName ? goDisplayName.split(/\s+/)[0] : null;
@@ -686,140 +694,195 @@ router.get(
       category: string | null;
     } | null = null;
 
+    // VTID-03030: parallel batch. The 5 user-scoped row lookups +
+    // buildClientContext (geo-IP) are all independent and were previously
+    // serialized at ~600-1000ms total. Running them concurrently brings
+    // total cost down to the slowest single round-trip (~150-300ms).
+    //
+    // buildClientContext is moved INTO this batch from below so its
+    // geo-IP lookup overlaps with the DB queries instead of running after.
+    //
+    // Each promise has its own .catch fallback so a single failure doesn't
+    // reject the batch (matches the prior best-effort try/catch behavior).
+    const IDENTITY_CORE_KEYS = [
+      'user_name', 'user_birthday', 'user_residence', 'user_hometown',
+      'user_company', 'user_occupation', 'user_email',
+      'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
+      'fiancee_birthday',
+      'user_health_condition', 'user_medication', 'user_allergy',
+      'preferred_language',
+    ];
+
+    let envContext: import('./orb-live').ClientContext | null = null;
+
     if (sb && userId) {
-      // Memory items top-5 — note the table is `memory_items`, not `memory_garden`.
-      try {
-        const { data: items } = await sb
-          .from('memory_items')
-          .select('id, content')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(5);
-        if (items) {
-          for (const it of items as Array<Record<string, unknown>>) {
-            const text = String(it.content ?? '').trim();
-            if (text) {
-              memoryItems.push({ id: String(it.id ?? ''), text });
-            }
+      const [
+        memoryItemsData,
+        appUsersData,
+        memoryFactsData,
+        indexData,
+        lifeCompassData,
+        envContextResolved,
+      ] = await Promise.all([
+        // memory_items top-5
+        (async () => {
+          try {
+            const r = await sb
+              .from('memory_items')
+              .select('id, content')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+              .limit(5);
+            return (r.data as Array<Record<string, unknown>> | null) ?? [];
+          } catch {
+            return [] as Array<Record<string, unknown>>;
+          }
+        })(),
+        // app_users — display_name + registration_seq
+        (async () => {
+          try {
+            const r = await sb
+              .from('app_users')
+              .select('display_name, registration_seq')
+              .eq('user_id', userId)
+              .maybeSingle();
+            return r.data as Record<string, unknown> | null;
+          } catch {
+            return null;
+          }
+        })(),
+        // memory_facts — identity-core keys
+        (async () => {
+          try {
+            const r = await sb
+              .from('memory_facts')
+              .select('fact_key, fact_value, entity')
+              .eq('user_id', userId)
+              .in('fact_key', IDENTITY_CORE_KEYS)
+              .is('superseded_by', null)
+              .order('provenance_confidence', { ascending: false })
+              .limit(40);
+            return (
+              (r.data as Array<{ fact_key: string; fact_value: string; entity: string }> | null) ??
+              []
+            );
+          } catch {
+            return [] as Array<{ fact_key: string; fact_value: string; entity: string }>;
+          }
+        })(),
+        // Latest Vitana Index snapshot
+        (async () => {
+          try {
+            const r = await sb
+              .from('vitana_index_scores')
+              .select(
+                'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental',
+              )
+              .eq('user_id', userId)
+              .order('date', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            return r.data as Record<string, number | string | null> | null;
+          } catch {
+            return null;
+          }
+        })(),
+        // Life Compass row
+        (async () => {
+          try {
+            const r = await sb
+              .from('life_compass')
+              .select('id, primary_goal, category, is_active, created_at')
+              .eq('user_id', userId)
+              .eq('is_active', true)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            return r.data as { primary_goal: string | null; category: string | null } | null;
+          } catch {
+            return null;
+          }
+        })(),
+        // VTID-02855: ENVIRONMENT CONTEXT — geo-IP/UA/local time. Moved
+        // into the parallel batch so its lookup overlaps with DB queries
+        // instead of running after, saving another ~100-300ms.
+        (async () => {
+          try {
+            return await buildClientContext(req);
+          } catch (exc) {
+            console.warn(
+              `[${VTID}] buildClientContext failed: ${(exc as Error).message}`,
+            );
+            return null as import('./orb-live').ClientContext | null;
+          }
+        })(),
+      ]);
+
+      // Memory items → flat objects (filter empty content).
+      for (const it of memoryItemsData) {
+        const text = String(it.content ?? '').trim();
+        if (text) {
+          memoryItems.push({ id: String(it.id ?? ''), text });
+        }
+      }
+
+      // app_users
+      if (appUsersData) {
+        displayName = (appUsersData as { display_name?: string | null }).display_name ?? null;
+        registrationSeq =
+          (appUsersData as { registration_seq?: number | null }).registration_seq ?? null;
+      }
+
+      // memory_facts
+      identityFacts = memoryFactsData;
+
+      // Vitana Index — derive tier + weakest pillar from the row.
+      if (indexData) {
+        const row = indexData;
+        const pillars: Record<string, number> = {
+          nutrition: Number(row.score_nutrition ?? 0),
+          hydration: Number(row.score_hydration ?? 0),
+          exercise: Number(row.score_exercise ?? 0),
+          sleep: Number(row.score_sleep ?? 0),
+          mental: Number(row.score_mental ?? 0),
+        };
+        let weakestKey: string | null = null;
+        let weakestVal = Number.POSITIVE_INFINITY;
+        for (const [k, v] of Object.entries(pillars)) {
+          if (v < weakestVal) {
+            weakestVal = v;
+            weakestKey = k;
           }
         }
-      } catch {
-        /* best-effort — table layout varies across environments */
+        const total = Number(row.score_total ?? 0);
+        const tier =
+          total >= 800 ? 'Elite' :
+          total >= 700 ? 'Really good' :
+          total >= 500 ? 'Strong' :
+          total >= 350 ? 'Building' :
+          total >= 150 ? 'Early' : 'Starting';
+        indexSnapshot = { total, tier, pillars, weakest: weakestKey };
       }
 
-      // app_users — display_name + registration_seq for tenure hints.
-      try {
-        const { data: app } = await sb
-          .from('app_users')
-          .select('display_name, registration_seq')
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (app) {
-          displayName = (app as { display_name?: string | null }).display_name ?? null;
-          registrationSeq =
-            (app as { registration_seq?: number | null }).registration_seq ?? null;
-        }
-      } catch {
-        /* best-effort */
+      // Life Compass
+      if (lifeCompassData) {
+        lifeCompass = {
+          goal: (lifeCompassData.primary_goal || '').trim() || null,
+          category: (lifeCompassData.category || '').trim() || null,
+        };
       }
 
-      // memory_facts — identity-core keys (mirrors IDENTITY_CORE_KEYS in
-      // services/gateway/src/services/context-pack-builder.ts:60).
+      // envContext — already resolved above, just save into closure scope
+      envContext = envContextResolved;
+    } else {
+      // Anonymous/no-userId path: still run buildClientContext (no DB queries
+      // needed since they're all user-scoped).
       try {
-        const IDENTITY_CORE_KEYS = [
-          'user_name', 'user_birthday', 'user_residence', 'user_hometown',
-          'user_company', 'user_occupation', 'user_email',
-          'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
-          'fiancee_birthday',
-          'user_health_condition', 'user_medication', 'user_allergy',
-          'preferred_language',
-        ];
-        const { data: facts } = await sb
-          .from('memory_facts')
-          .select('fact_key, fact_value, entity')
-          .eq('user_id', userId)
-          .in('fact_key', IDENTITY_CORE_KEYS)
-          .is('superseded_by', null)
-          .order('provenance_confidence', { ascending: false })
-          .limit(40);
-        identityFacts =
-          (facts as Array<{ fact_key: string; fact_value: string; entity: string }>) ?? [];
-      } catch {
-        /* best-effort */
-      }
-
-      // Latest Vitana Index snapshot — column shape mirrors
-      // INDEX_SELECT_COLUMNS in services/gateway/src/services/user-context-profiler.ts:315.
-      // Per-pillar scores live as flat columns (score_nutrition,
-      // score_hydration, …); the total is `score_total`, not `total_score`;
-      // and there is no `tier` or `weakest_pillar` column — both are
-      // derived. Recompute them here so this route stays self-contained.
-      try {
-        const { data: idx } = await sb
-          .from('vitana_index_scores')
-          .select(
-            'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental',
-          )
-          .eq('user_id', userId)
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (idx) {
-          const row = idx as Record<string, number | string | null>;
-          const pillars: Record<string, number> = {
-            nutrition: Number(row.score_nutrition ?? 0),
-            hydration: Number(row.score_hydration ?? 0),
-            exercise: Number(row.score_exercise ?? 0),
-            sleep: Number(row.score_sleep ?? 0),
-            mental: Number(row.score_mental ?? 0),
-          };
-          let weakestKey: string | null = null;
-          let weakestVal = Number.POSITIVE_INFINITY;
-          for (const [k, v] of Object.entries(pillars)) {
-            if (v < weakestVal) {
-              weakestVal = v;
-              weakestKey = k;
-            }
-          }
-          const total = Number(row.score_total ?? 0);
-          // Tier ladder mirrors the lib/vitana-pillars.ts boundaries.
-          const tier =
-            total >= 800 ? 'Elite' :
-            total >= 700 ? 'Really good' :
-            total >= 500 ? 'Strong' :
-            total >= 350 ? 'Building' :
-            total >= 150 ? 'Early' : 'Starting';
-          indexSnapshot = { total, tier, pillars, weakest: weakestKey };
-        }
-      } catch {
-        /* best-effort */
-      }
-
-      // L2.2b.6 (VTID-03010) + VTID-03022: Life Compass row. Live schema:
-      // `primary_goal`, `category`, `is_active`, `created_at`. Earlier
-      // VTID-03010 read `current_goal/why/target_date` — none of those
-      // columns exist; every fetch returned a row with all-null fields,
-      // so the Life Compass block was never rendered into the system
-      // instruction. Confirmed canonical shape via guide/awareness-context.ts
-      // and recommendation-engine/ranking/index-pillar-weighter.ts.
-      try {
-        const { data: lc } = await sb
-          .from('life_compass')
-          .select('id, primary_goal, category, is_active, created_at')
-          .eq('user_id', userId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (lc) {
-          const row = lc as { primary_goal: string | null; category: string | null };
-          lifeCompass = {
-            goal: (row.primary_goal || '').trim() || null,
-            category: (row.category || '').trim() || null,
-          };
-        }
-      } catch {
-        /* table may not exist in all envs */
+        envContext = await buildClientContext(req);
+      } catch (exc) {
+        console.warn(
+          `[${VTID}] buildClientContext failed: ${(exc as Error).message}`,
+        );
       }
     }
 
@@ -922,17 +985,17 @@ router.get(
     const firstName = fullName ? fullName.split(/\s+/)[0] : null;
 
     // VTID-02855: ENVIRONMENT CONTEXT — geo-IP + UA + local time, mirrors
-    // Vertex's orb-live.ts:14026 path. Without this, LiveKit's LLM has
-    // no idea where the user is or what time it is. The block goes at
-    // the END of bootstrap_context so identity facts come first.
-    let envContext: import('./orb-live').ClientContext | null = null;
-    try {
-      envContext = await buildClientContext(req);
-      const envBlock = formatClientContextForInstruction(envContext);
-      if (envBlock) ctxParts.push(envBlock);
-    } catch (exc) {
-      // Geo lookup is best-effort; never fail the bootstrap on it.
-      console.warn(`[${VTID}] buildClientContext failed: ${(exc as Error).message}`);
+    // Vertex's orb-live.ts:14026 path. The fetch itself was moved INTO
+    // the parallel batch above (VTID-03030); this block just appends
+    // the formatted result to bootstrap_context. Order matters — runs
+    // AFTER identity facts so the env block lands at the end.
+    if (envContext) {
+      try {
+        const envBlock = formatClientContextForInstruction(envContext);
+        if (envBlock) ctxParts.push(envBlock);
+      } catch (exc) {
+        console.warn(`[${VTID}] formatClientContextForInstruction failed: ${(exc as Error).message}`);
+      }
     }
 
     // L2.2b.4 (VTID-03008): context-parity LITE. Compile the same
