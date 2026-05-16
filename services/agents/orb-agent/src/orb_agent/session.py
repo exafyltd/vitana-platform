@@ -736,6 +736,24 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     gw.is_mobile = bool(identity.is_mobile)
     gw.is_anonymous = bool(identity.is_anonymous)
 
+    # VTID-03027: stash everything the report_to_specialist tool body
+    # needs to SIGNAL a persona rebuild (handoff_event). The main loop
+    # below watches the event; on set, it gracefully stops the current
+    # session, fetches the persona's bootstrap, and starts a fresh
+    # AgentSession in the same room. Vertex-parity flow.
+    gw.oasis_emitter = oasis
+    gw.ctx_fetcher = ctx_fetcher
+    gw.user_jwt = user_jwt or ""
+    gw.user_id = identity.user_id or ""
+    gw.orb_session_id = orb_session_id
+    gw.identity_lang = identity.lang
+    gw.identity_client_ip = identity.client_ip
+    gw.current_agent_id = agent_id
+    gw.handoff_event = asyncio.Event()
+    gw.handoff_target = None
+    gw.handoff_summary = None
+    gw.handoff_reason = None
+
     # VTID-03003: wire Silero VAD so the cascade-pipeline can detect turn
     # boundaries reliably. VTID-03012: VAD is now module-level cached
     # (loaded once, reused across sessions) so first-time PyTorch model
@@ -754,6 +772,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     if vad_instance is not None:
         session_kwargs["vad"] = vad_instance
     session = AgentSession(**session_kwargs)
+    # VTID-03027: live session reference for the handoff main loop below.
+    # The loop replaces this when a persona rebuild fires.
+    gw.live_session = session
 
     # Wire teardown for AFTER the room disconnects, not for after start()
     # returns. AgentSession.start() exits as soon as the room IO and the
@@ -1247,11 +1268,169 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # above — no runtime swap needed, no SDK-API research needed, no
     # `applied_instructions:false` failure mode. Correctness > 500ms latency.
 
-    # Park here until the room disconnects. The AgentSession keeps running
-    # autonomously via the tasks it spawned in start(); we just need to
-    # keep the entrypoint alive so the shutdown callback above fires at
-    # the right moment.
-    await disconnected_evt.wait()
+    # VTID-03027: PERSONA REBUILD LOOP — Vertex-parity for report_to_specialist.
+    #
+    # Vertex's transparent-reconnect approach: when user reports a bug,
+    # Vitana files the ticket and triggers attemptTransparentReconnect
+    # with Devon's system_prompt + Devon's voice config. The Gemini Live
+    # WebSocket is torn down and rebuilt with the new persona — same
+    # room, new identity, new voice.
+    #
+    # LiveKit equivalent: the tool wrapper sets gw.handoff_event with
+    # gw.handoff_target = 'devon' + gw.handoff_summary = <bug_brief>.
+    # The loop here:
+    #   1. Waits for EITHER disconnect OR handoff event.
+    #   2. On disconnect: break out, normal cleanup runs.
+    #   3. On handoff: stops the current AgentSession (so the current
+    #      voice's audio frame queue drains), fetches the new persona's
+    #      bootstrap with handoff_summary= so the gateway renders
+    #      Devon's system_instruction with [HANDOFF NOTE] injected,
+    #      builds Devon's cascade, starts a fresh AgentSession in the
+    #      same room. Then calls session.generate_reply(...) to trigger
+    #      Devon's first turn in Devon's voice referencing the brief.
+    #   4. Loop back — Devon's session can also handoff (e.g. back to
+    #      Vitana, or laterally), or eventually the user disconnects.
+    while True:
+        disc_task = asyncio.create_task(disconnected_evt.wait())
+        handoff_task = asyncio.create_task(gw.handoff_event.wait())
+        done, pending = await asyncio.wait(
+            {disc_task, handoff_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+
+        if disconnected_evt.is_set():
+            break
+
+        # Handoff signal fired. Capture targets, clear event, run rebuild.
+        target = (gw.handoff_target or "").strip().lower()
+        handoff_brief = (gw.handoff_summary or "").strip()
+        reason = (gw.handoff_reason or "").strip() or "handoff"
+        gw.handoff_event.clear()
+        gw.handoff_target = None
+        gw.handoff_summary = None
+        gw.handoff_reason = None
+        if not target or target not in {"devon", "sage", "atlas", "mira", "vitana"}:
+            logger.warning(
+                "agent_entrypoint: handoff signal with invalid target %r — ignored",
+                target,
+            )
+            continue
+
+        from_agent_id = gw.current_agent_id
+        logger.info(
+            "agent_entrypoint: rebuilding session for handoff %s → %s",
+            from_agent_id,
+            target,
+        )
+        try:
+            await oasis.emit(
+                topic=TOPIC_HANDOFF_START,
+                payload={
+                    "from_agent_id": from_agent_id,
+                    "to_agent_id": target,
+                    "reason": reason,
+                    "context_summary": handoff_brief,
+                    "user_id": identity.user_id,
+                    "orb_session_id": orb_session_id,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Close the current session so its audio stream stops cleanly.
+        try:
+            close_method = getattr(session, "aclose", None) or getattr(session, "close", None)
+            if close_method is not None:
+                res = close_method()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_entrypoint: session.aclose failed: %s", exc)
+
+        # Fetch the new persona's bootstrap. handoff_summary injects the
+        # [HANDOFF NOTE] into the gateway-rendered persona system_instruction.
+        try:
+            new_bootstrap = await ctx_fetcher.fetch(
+                user_jwt=user_jwt or "",
+                agent_id=target,
+                is_reconnect=True,
+                last_n_turns=10,
+                lang=identity.lang,
+                client_ip=identity.client_ip,
+                handoff_summary=handoff_brief or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("agent_entrypoint: new persona bootstrap fetch failed: %s", exc)
+            break
+
+        # Build Devon's cascade (STT/LLM/TTS) — Devon's voice is in
+        # bootstrap.voice_config (agent_voice_configs row for agent_id=devon).
+        new_cascade = build_cascade(
+            new_bootstrap.voice_config,
+            lang=identity.lang,
+            voice_override=voice_override,
+        )
+        new_sys_prompt = new_bootstrap.system_instruction or (
+            "You are a Vitana specialist. The gateway did not render your "
+            "system instruction. Greet the user and help them as best you can."
+        )
+        new_tool_list = all_tools()
+        if (new_bootstrap.voice_config or {}).get("llm_provider") == "google_llm":
+            try:
+                from livekit.plugins.google.tools import GoogleSearch  # type: ignore[import-not-found]
+                new_tool_list.append(GoogleSearch())
+            except ImportError:
+                pass
+        new_agent = Agent(instructions=new_sys_prompt, tools=new_tool_list)
+        new_session_kwargs: dict[str, Any] = {
+            "stt": new_cascade.stt,
+            "llm": new_cascade.llm,
+            "tts": new_cascade.tts,
+            "userdata": gw,
+            "max_tool_steps": MAX_TOOL_STEPS,
+        }
+        if vad_instance is not None:
+            new_session_kwargs["vad"] = vad_instance
+        session = AgentSession(**new_session_kwargs)
+        gw.live_session = session
+        gw.current_agent_id = target
+
+        try:
+            await session.start(agent=new_agent, room=ctx.room)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("agent_entrypoint: new session.start failed: %s", exc)
+            break
+
+        # Trigger persona's first turn — the LLM speaks as the persona,
+        # referencing the handoff brief from its system_instruction.
+        try:
+            await session.generate_reply(
+                instructions=(
+                    "Open this conversation as yourself (the persona described in your "
+                    "system instruction). Greet the user warmly in their language with "
+                    "ONE short sentence introducing yourself by role. If a HANDOFF NOTE "
+                    "is present in your system instruction, synthesize it in ONE sentence "
+                    "in your own words and confirm. If not, ask the user what you can help "
+                    "with. Vary your phrasing. NEVER speak as Vitana."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_entrypoint: persona first turn failed: %s", exc)
+
+        try:
+            await oasis.emit(
+                topic=TOPIC_HANDOFF_COMPLETE,
+                payload={
+                    "from_agent_id": from_agent_id,
+                    "to_agent_id": target,
+                    "user_id": identity.user_id,
+                    "orb_session_id": orb_session_id,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ---------------------------------------------------------------------------
