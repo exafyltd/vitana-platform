@@ -1,8 +1,12 @@
 # CLAUDE.md - Vitana Platform Development Guide
-**CANONICAL REFERENCE - Last Updated: 2026-01-21**
+**CANONICAL REFERENCE - Last Updated: 2026-05-11**
 
 This file contains critical information for AI assistants working on the Vitana platform.
 **READ THIS BEFORE MAKING ANY CHANGES.**
+
+> Volatile, fast-moving notes (recent incidents, in-flight projects, shipped feature pointers)
+> live in `~/.claude/projects/-home-dstev/memory/MEMORY.md`. This file is the **stable rule set** —
+> conventions, invariants, and protocols that change slowly.
 
 ---
 
@@ -44,32 +48,33 @@ Claude must **always** do the following:
 21. **Always verify source code BEFORE deployment** — grep for critical routes/features in the deploy source to confirm they exist.
 22. **Always verify deployment AFTER deploy** — curl critical endpoints to confirm the new code is live (check for JSON responses, not HTML 404s).
 23. **Always verify Cloud Shell is on latest `origin/main`** before deploying — run `git log --oneline -3` and compare with local repo.
+24. **Always run `npm run build` (not `npm run typecheck`)** before pushing gateway / TypeScript service code. `tsc --noEmit` (typecheck) silently misses errors that `tsc` build mode catches.
+25. **Always work in a git worktree** on `vitana-platform`. Multiple Claude sessions run in parallel against this repo; committing directly to `main` from the shared checkout creates collisions.
+26. **Always pre-allocate a VTID** via `POST /api/v1/vtid/allocate` before opening a PR that touches deployable services (gateway, worker-runner, orb-agent, etc.). EXEC-DEPLOY blocks merges whose commit-SHA VTID is absent from `vtid_ledger`. SQL-only PRs are exempt.
+27. **Always front the gateway via `https://gateway.vitanaland.com`** in CI/CD scripts, governance probes, and frontend env. The Cloud Run `*.run.app` URL still works but is being phased out behind Cloudflare.
 
 ### Database & Memory
 
 21. **Always use Supabase as the persistent data store.**
 22. **Always enforce tenant isolation (RLS).**
 23. **Always use snake_case table names.**
-24. **Always update `DATABASE_SCHEMA.md` when schema changes.**
-25. **Always route DB mutations through Gateway APIs.**
-26. **Always treat `memory_items` as canonical infinite memory.**
-27. **Always use pgvector for semantic memory.**
-28. **Always scope memory by tenant + role.**
-29. **Always retrieve memory selectively (relevance-based).**
-30. **Always log memory debug snapshots in dev.**
+24. **Always route DB mutations through Gateway APIs.**
+25. **Always treat `memory_items` as canonical infinite memory.**
+26. **Always use pgvector for semantic memory.**
+27. **Always scope memory by tenant + role.**
+28. **Always retrieve memory selectively (relevance-based).**
+29. **Always log memory debug snapshots in dev.**
 
 ### Frontend & UX
 
-31. **Always preserve sidebar structure and order.**
-32. **Always keep exactly 10 sidebar items.**
-33. **Always keep Start Stream in the sidebar utility zone.**
-34. **Always treat Start Stream as private AI + screen share.**
-35. **Always treat ORB as voice-first, multimodal.**
-36. **Always comply with CSP (no inline scripts/styles).**
-37. **Always bundle JS locally.**
-38. **Always respect fixed layout regions.**
-39. **Always use Markdown specs (no Figma).**
-40. **Always maintain WCAG 2.2 AA compliance.**
+31. **Always preserve Command Hub module/tab structure and order** (defined by `NAVIGATION_CONFIG` in `app.js`; regenerated into `navigation-config.js`).
+32. **Always treat ORB as voice-first, multimodal.**
+33. **Always comply with CSP** (no inline scripts/styles).
+34. **Always bundle JS locally** (no CDN script loads).
+35. **Always respect fixed layout regions.**
+36. **Always use Markdown specs** (no Figma).
+37. **Always maintain WCAG 2.2 AA compliance.**
+38. **Always use Command Hub design-system tokens** (CSS custom properties) — no hex literals in new screens.
 
 ---
 
@@ -102,19 +107,23 @@ Claude must **never** do the following:
 18. **Never assume deployment success without verification.**
 19. **Never silence errors.**
 20. **Never auto-fix without explaining root cause.**
+41. **Never reintroduce `LOVABLE_SUPABASE_*` env vars.** Events use platform `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE` as of 2026-04-17.
+42. **Never resurrect `APPLY-MIGRATIONS.yml`.** It was deleted 2026-04-11 because it silently swallowed `ROLLBACK`. Use `RUN-MIGRATION.yml` (one file at a time).
+43. **Never edit the legacy frontend in `temp_vitana_v1/`.** That directory is gitignored stale content; the real frontend lives in a separate repo `exafyltd/vitana-v1` (working copy at `/home/dstev/vitana-v1`).
+44. **Never commit gateway code that builds clean under `tsc --noEmit` but fails `tsc` build mode.** Always `npm run build` before push.
+45. **Never claim a fix is verified using `e2e-test@vitana.dev`** when the user reports a real-user issue. Mint the affected user's session via admin `generate_link` and exercise the same endpoint the UI calls.
+46. **Never return `degraded:true` / `partial:true` / `warning:` in voice-tool responses.** Gemini Live reads them as failure and apologizes even when `ok:true`. Keep telemetry server-side; tool JSON must match full-success shape.
 
 ### Frontend & UX
 
-21. **Never move Start Stream outside the sidebar.**
-22. **Never confuse Start Stream with Go Live / Live Rooms.**
-23. **Never change sidebar navigation.**
-24. **Never introduce inline JS or CSS.**
-25. **Never load JS from CDNs.**
-26. **Never add new Wallet routes.**
-27. **Never invent UI screens.**
-28. **Never break layout invariants.**
-29. **Never ship experimental UI to prod.**
-30. **Never violate CSP, even temporarily.**
+21. **Never reorder or remove existing Command Hub modules/tabs without an approved spec.**
+22. **Never introduce inline JS or CSS.**
+23. **Never load JS from CDNs.**
+24. **Never invent UI screens.** Add them via the navigation catalog regen pipeline.
+25. **Never break layout invariants.**
+26. **Never ship experimental UI to prod** without a feature flag.
+27. **Never violate CSP, even temporarily.**
+28. **Never hex-code colors in new screens.** Use design-system tokens.
 
 ### AI & Autonomy
 
@@ -161,11 +170,9 @@ Claude must apply the following **conditional logic**:
 
 ### Deployment Verification
 
-16. **IF** deploying to Cloud Run → **THEN grep source for critical routes/features BEFORE `gcloud builds submit`.**
-17. **IF** deploy completes → **THEN curl critical endpoints and confirm JSON response (not HTML 404).**
-18. **IF** curl returns `text/html` content-type → **THEN the route does NOT exist on deployed code — deploy failed or wrong code.**
-19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
-20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
+16. **IF** EXEC-DEPLOY completes → **THEN curl the most-changed endpoint at `https://gateway.vitanaland.com` and confirm JSON response (not HTML 404). See Section 15 for the full protocol.**
+17. **IF** curl returns `text/html` content-type → **THEN the route does NOT exist on the deployed revision** — wrong code shipped or build failed silently.
+18. **IF** ever tempted to run `gcloud builds submit` / `gcloud run deploy` by hand → **THEN STOP.** That bypasses governance (NEVER rule 2). Dispatch `EXEC-DEPLOY.yml` instead.
 
 ### Targeted Visual Verification (MANDATORY - Updated 2026-04-14)
 
@@ -237,6 +244,28 @@ await page.reload();
 23. **IF** merging a PR to main → **THEN ALWAYS verify EXEC-DEPLOY is running after merge. Do NOT assume Auto Deploy handled it.**
 24. **IF** EXEC-DEPLOY was not dispatched → **THEN manually dispatch it via GitHub API with `BOOTSTRAP-<description>` as the VTID.**
 25. **IF** making frontend CSS/JS changes → **THEN bump the `?v=` cache-busting parameter in index.html AND verify EXEC-DEPLOY completes.**
+26. **IF** EXEC-DEPLOY shows "failure" on the Terminal Gate step → **THEN check Service URL + Smoke Tests logs first. Often the deploy succeeded but OASIS bookkeeping POST got UNAUTHENTICATED — do NOT redeploy automatically.**
+27. **IF** `gh run view --json status` shows `in_progress` 30-90s after every step is green → **THEN drop to job-step inspection (`gh run view --log`) before telling the user to wait again. GH Actions run-status lags step-status.**
+28. **IF** a PR touches deployable code (gateway / worker-runner / orb-agent / openclaw-bridge / oasis-*) → **THEN pre-allocate a VTID via `POST /api/v1/vtid/allocate` and include it in the merge commit message. SQL-only PRs are exempt.**
+
+### Frontend & Repo Layout (Added 2026-05-11)
+
+31. **IF** the change is to the community frontend (vitanaland.com / mobile WebView) → **THEN open the PR against `exafyltd/vitana-v1` (NOT `vitana-platform`). The frontend is a separate repo.**
+32. **IF** the change is to Command Hub UI → **THEN edit `services/gateway/src/frontend/command-hub/` in `vitana-platform`. Command Hub is gateway-served, NOT in vitana-v1.**
+33. **IF** working on a phone / Appilix WebView session → **THEN treat the user role as `community` regardless of DB role. Guard every role-reading path on both frontend and gateway.**
+34. **IF** editing `firebase.ts` or `pushNotifications.ts` in vitana-v1 → **THEN verify imports compile before commit. A broken import here crashes the entire app after login.**
+
+### Voice & Tools (Added 2026-05-11)
+
+35. **IF** adding a new ORB voice tool → **THEN add it via the shared `orb-tool-dispatcher` (services/gateway/src/services/orb-tools/), NOT inline in `orb-live.ts`. The lift-not-duplicate scanner enforces this.**
+36. **IF** a voice-tool response would set `degraded:true` / `partial:true` / `warning:` → **THEN keep telemetry server-side instead. Gemini Live treats those fields as failure even with `ok:true`.**
+37. **IF** investigating ORB voice symptoms on iOS → **THEN production orb is gateway-served `services/gateway/src/frontend/command-hub/orb-widget.js`. The vitana-v1 React orb chain (`VitanaAudioOverlay` → `useOrbVoiceClient` → `instantGreeting` → `iosAudioUnlock`) is DEAD CODE — Vite tree-shakes it.**
+
+### Database Migrations (Added 2026-05-11)
+
+38. **IF** applying a Supabase migration → **THEN use the `RUN-MIGRATION.yml` workflow (one file at a time). `APPLY-MIGRATIONS.yml` was deleted 2026-04-11 — do not resurrect.**
+39. **IF** a `RUN-MIGRATION.yml` run says "applied successfully" → **THEN grep the logs for `ROLLBACK` and verify schema after every run. `psql -f` does NOT `ON_ERROR_STOP`, so SQL errors silently roll back while the workflow reports success.**
+40. **IF** writing direct SQL against `oasis_events` → **THEN use the `topic` column (no `type` column exists; the TS `emitOasisEvent()` helper masks this). No `tenant_id` column either — don't propose tenant-scoped queries/indexes.**
 
 ### Memory
 
@@ -256,11 +285,11 @@ await page.reload();
 
 ### AI & Autonomy
 
-26. **IF** planner is needed → **THEN use Gemini Pro.**
-27. **IF** worker is needed → **THEN use Gemini Flash.**
-28. **IF** validation is needed → **THEN use Claude.**
-29. **IF** model fallback occurs → **THEN log explicitly.**
-30. **IF** TTS is used → **THEN specify model_name explicitly.**
+26. **IF** routing an LLM call → **THEN go through the gateway LLM router** (`services/gateway/src/services/llm-router*.ts`). It owns provider/model selection across Vertex, Gemini API, DeepSeek, and the `claude_subscription` worker queue.
+27. **IF** a model fallback occurs → **THEN log provider + model + reason explicitly** to OASIS. Silent fallback is forbidden.
+28. **IF** TTS is used → **THEN specify `model_name` explicitly.** Operator-tunable `speakingRate` lives in `system_config['tts.speaking_rate']`.
+29. **IF** routing through `claude_subscription` → **THEN the request is queued to `autopilot-worker` which runs `claude -p` against the Pro/Max plan.** Do not call Anthropic API keys from the gateway.
+30. **IF** a preview model is used (e.g. `gemini-3.1-pro-preview`) → **THEN it must route through AI Studio, not Vertex.** Vertex 404s on preview model IDs (VTID-02689/02690).
 
 ---
 
@@ -294,24 +323,41 @@ gcloud run deploy <service> \
 ## 2. SERVICES ARCHITECTURE
 
 ### Deployable Services (Cloud Run)
-| Service | Source Path | Cloud Run Name |
-|---------|-------------|----------------|
-| Gateway | `services/gateway/` | `gateway` |
-| OASIS Operator | `services/oasis-operator/` | `oasis-operator` |
-| OASIS Projector | `services/oasis-projector/` | `oasis-projector` |
-| Verification Engine | `services/agents/vitana-orchestrator/` | `vitana-verification-engine` |
-| Worker Runner | `services/worker-runner/` | `worker-runner` |
+| Service | Source Path | Cloud Run Name | Runtime | Purpose |
+|---------|-------------|----------------|---------|---------|
+| Gateway | `services/gateway/` | `gateway` | Node/TS | Main API, Command Hub frontend, ORB Vertex Live |
+| OASIS Operator | `services/oasis-operator/` | `oasis-operator` | Node/TS | OASIS state machine |
+| OASIS Projector | `services/oasis-projector/` | `oasis-projector` | Node/TS | OASIS read-model projection |
+| Verification Engine | `services/agents/vitana-orchestrator/` | `vitana-verification-engine` | Node/TS | Spec validation pipeline |
+| Worker Runner | `services/worker-runner/` | `worker-runner` | Node/TS | VTID worker execution plane |
+| ORB Agent | `services/agents/orb-agent/` | `orb-agent` | **Python** | LiveKit voice agent (parity track with Vertex Live in gateway) |
+| OpenClaw Bridge | `services/openclaw-bridge/` | `openclaw-bridge` | Node/TS | Bridges OpenClaw skills + heartbeat into OASIS governance |
+| MCP Gateway | `services/mcp-gateway/` | `mcp-gateway` | Node/TS | MCP protocol gateway |
+| OASIS | `services/oasis/` | `oasis` | Node/TS | OASIS core API |
 
-### Non-Deployable Services (Libraries/Local)
-- `services/agents/` - Agent implementations
-- `services/mcp/` - MCP protocol
-- `services/mcp-gateway/` - MCP gateway
-- `services/deploy-watcher/` - Deploy watcher
-- `services/oasis/` - OASIS core
-- `services/validators/` - Validators
+### Non-Deployable Services (Libraries / In-Process / Scaffold)
+- `services/agents/cognee-extractor/` — entity-extraction worker library
+- `services/agents/conductor/` — Python LLM router (Gemini/Claude/DeepSeek)
+- `services/agents/memory-indexer/` — pgvector backfill / embedding worker
+- `services/agents/validator-core/` — validator primitives
+- `services/agents/workforce/` — agent registry helpers
+- `services/agents/crewai-gcp/` — CrewAI experiment harness
+- `services/agents/shared/` — shared agent code
+- `services/autopilot-worker/` — Dev Autopilot LLM worker (runs `claude -p` against the Pro/Max subscription, off the gateway's pay-per-token key)
+- `services/mcp/` — MCP protocol primitives
+- `services/deploy-watcher/` — Deploy watcher
+- `services/validators/` — Validators
+- `services/vaea/` — VTID-02401 Vitana Autonomous Economic Actor (Phase 0 scaffold; `deployable=false` until Phase 1)
+
+### Cloudflare Workers (separate deploy)
+Source: `cloudflare/`. Workers:
+- `cloudflare/email-intake-worker/` — inbound email → gateway intake
+- `cloudflare/vitanaland-og-proxy/` — OG-image proxy for shared profile/intent links
+
+Deployed via `.github/workflows/DEPLOY-CLOUDFLARE-WORKERS.yml`.
 
 ### Service Path Map
-Located at: `config/service-path-map.json`
+Canonical mapping: `config/service-path-map.json` (drives AUTO-DEPLOY service detection)
 
 ---
 
@@ -320,7 +366,7 @@ Located at: `config/service-path-map.json`
 ### Critical Rules
 1. **PostgreSQL tables MUST use `snake_case`** (vtid_ledger, oasis_events)
 2. **TypeScript code MUST reference EXACT table names**
-3. **Check DATABASE_SCHEMA.md before creating any table**
+3. **Inspect the live schema** via Supabase MCP `list_tables` / `execute_sql` before creating any table. (`DATABASE_SCHEMA.md` exists but is not actively maintained — treat as historical reference, not source of truth.)
 
 ### Core Tables
 | Table | Purpose |
@@ -487,13 +533,39 @@ OPENAI_API_KEY=xxx
 ### Key Workflows
 | File | Purpose |
 |------|---------|
-| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance) |
+| `AUTO-DEPLOY.yml` | Detects merges to `main`, parses VTID + service from commit, dispatches EXEC-DEPLOY |
+| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance, smoke tests, OASIS bookkeeping) |
+| `RUN-MIGRATION.yml` | Manual Supabase migration runner (one file at a time) |
+| `DEPLOY-ORB-AGENT.yml` | LiveKit Python voice agent deploy |
+| `DEPLOY-CLOUDFLARE-WORKERS.yml` | Email intake + OG proxy workers |
+| `DEPLOY-AUTOPILOT-JOB.yml` | Cloud Run Job runtime for Dev Autopilot executor (VTID-02703) |
+| `DEV-AUTOPILOT.yml` | Dev Autopilot polling + LLM execution loop |
+| `DEV-AUTOPILOT-IMPACT.yml` | Autopilot blast-radius analyzer |
+| `E2E-ORB-MONITOR.yml` | Scheduled ORB voice smoke test |
+| `E2E-TEST-RUN.yml` | E2E test runner |
+| `COMMAND-HUB-GUARDRAILS.yml` | Frontend guardrails (CSP, sidebar invariants) |
+| `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml` | Block frontend edits in the wrong repo / path |
+| `ORB-TOOLS-LIFT-SCANNER.yml` | Enforces voice-tool lift-not-duplicate (shared dispatcher) |
+| `PHASE-2B-DOC-GATE.yml` | Doc-gate for governance documentation |
+| `PHASE-2B-NAMING-ENFORCEMENT.yml` | snake_case enforcement |
+| `CICDL-GATEWAY-CI.yml` | Gateway CI (lint, typecheck, build, test) |
+| `CICDL-CORE-LINT-SERVICES.yml` | Cross-service lint |
+| `CICDL-CORE-OPENAPI-ENFORCE.yml` | OpenAPI schema enforcement |
 | `MCP-GATEWAY-CI.yml` | MCP Gateway CI |
+| `OASIS-PERSISTENCE.yml` | OASIS persistence backfill |
+| `MARKETPLACE-SYNC-CRON.yml` | Marketplace sync schedule |
+| `REGEN-SCREENS-CATALOG.yml` | Regenerate navigator screens catalog from vitana-v1 manifest |
+| `REUSABLE-NOTIFY.yml` | Reusable notify-on-fail callable workflow |
+
+### Retired
+
+- `APPLY-MIGRATIONS.yml` — deleted 2026-04-11 (silently swallowed ROLLBACK).
 
 ### Deployment Requirements
-1. VTID must exist in OASIS ledger before deploy (VTID-0542)
-2. Governance evaluation must pass (VTID-0416)
-3. All deploys go through governed CI pipeline
+1. VTID must exist in `vtid_ledger` before deploy (VTID-0542). Pre-allocate via `POST /api/v1/vtid/allocate` for code-touching PRs.
+2. Governance evaluation must pass (VTID-0416).
+3. All deploys go through the governed CI pipeline.
+4. Smoke tests + Terminal Gate must pass against `https://gateway.vitanaland.com` (Cloudflare-fronted).
 
 ---
 
@@ -535,16 +607,13 @@ gcloud run services describe gateway \
 ```
 
 ### Deploy a Service
-```bash
-cd services/<service>
-gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --project lovable-vitana-vers1
-gcloud run deploy <service> \
-  --image us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --region us-central1 \
-  --project lovable-vitana-vers1
-```
+
+**Do NOT run `gcloud builds submit` / `gcloud run deploy` directly.** That bypasses VTID governance, smoke tests, and OASIS bookkeeping (NEVER rule 2). The canonical path is:
+
+1. Pre-allocate a VTID for the change: `POST /api/v1/vtid/allocate`
+2. Open + merge a PR with that VTID in the commit message
+3. `AUTO-DEPLOY.yml` parses the VTID and dispatches `EXEC-DEPLOY.yml`
+4. If `AUTO-DEPLOY` skips (no VTID found), manually dispatch `EXEC-DEPLOY.yml` via the GitHub API or CLI with `BOOTSTRAP-<description>` as the VTID
 
 ### Check Service Logs
 ```bash
@@ -802,42 +871,35 @@ write_fact(
 
 **This is mandatory for EVERY deployment. No exceptions.**
 
-Deployments have repeatedly failed because Cloud Shell had stale code, or the wrong branch was deployed. This protocol prevents that.
+Deployments have repeatedly failed because the wrong branch was merged or the build silently dropped a route. This protocol prevents that.
 
-### Pre-Deploy Verification (BEFORE `gcloud builds submit`)
+### Pre-Deploy Verification (BEFORE merging the PR that triggers EXEC-DEPLOY)
 
 1. **Verify source code has the expected changes:**
    ```bash
-   # Example: Verify sessions route exists before deploying Gateway
+   # Example: confirm a new route exists on the branch being merged
    grep -r "sessions" services/gateway/src/routes/live.ts | head -5
    ```
-2. **If deploying from Cloud Shell, verify it's on latest main:**
-   ```bash
-   git fetch origin
-   git log --oneline origin/main -3   # Compare with local repo
-   git log --oneline HEAD -3          # Should match
-   # If behind:
-   git reset --hard origin/main
-   ```
-3. **Verify the build succeeds locally (TypeScript compiles):**
+2. **Verify the build succeeds (not just typecheck):**
    ```bash
    cd services/<service> && npm run build
    ```
+   `tsc --noEmit` is NOT sufficient — it misses errors that `tsc` build mode catches.
 
-### Post-Deploy Verification (AFTER `gcloud run deploy` succeeds)
+### Post-Deploy Verification (AFTER EXEC-DEPLOY reports success)
 
 1. **Curl a critical endpoint that only exists in the new code:**
    ```bash
    # Check content-type: must be application/json, NOT text/html
    curl -s -o /dev/null -w "%{http_code} %{content_type}" \
-     -X POST "https://gateway-86804897789.us-central1.run.app/api/v1/live/rooms/test/sessions" \
+     -X POST "https://gateway.vitanaland.com/api/v1/live/rooms/test/sessions" \
      -H "Content-Type: application/json" -d '{}'
    # Expected: "401 application/json..." (auth required, but JSON = route exists)
    # FAILURE: "404 text/html..." (Express default = route does NOT exist)
    ```
 2. **Check the /alive endpoint:**
    ```bash
-   curl -s "https://gateway-86804897789.us-central1.run.app/alive"
+   curl -s "https://gateway.vitanaland.com/alive"
    ```
 3. **Check the latest revision is serving:**
    ```bash
@@ -872,46 +934,36 @@ The `AUTO-DEPLOY.yml` workflow triggers on pushes to `main` under `services/gate
 
 **This is deceptive**: The GitHub Actions UI shows Auto Deploy as "success" even when nothing was deployed.
 
-### End-to-End Deployment Checklist (MANDATORY)
+### Post-Merge Deployment Checklist
 
-When fixing bugs and deploying changes, you MUST complete ALL steps:
+After merging a deployable PR:
 
-1. **Code fix** — Make the change on the feature branch
-2. **Commit** — Include a VTID in the commit message (e.g., `fix: description (VTID-XXXXX)`)
-   - If no VTID exists, use `BOOTSTRAP-<description>` prefix
-3. **Push** — Push to the `claude/` branch
-4. **Create PR** — Via GitHub API using the Vitana Platform PAT
-5. **Merge PR** — Via GitHub API (squash merge)
-6. **Verify EXEC-DEPLOY was dispatched** — Check if Auto Deploy actually dispatched EXEC-DEPLOY:
+1. **Verify EXEC-DEPLOY was dispatched** by AUTO-DEPLOY:
+   ```bash
+   gh run list --workflow=EXEC-DEPLOY.yml --limit=3
    ```
-   GET /repos/exafyltd/vitana-platform/actions/workflows/EXEC-DEPLOY.yml/runs?per_page=3
-   ```
-   If the latest EXEC-DEPLOY run is NOT `in_progress`, the deploy was NOT dispatched.
-7. **Manually trigger EXEC-DEPLOY if needed**:
-   ```
-   POST /repos/exafyltd/vitana-platform/actions/workflows/EXEC-DEPLOY.yml/dispatches
-   {
-     "ref": "main",
-     "inputs": {
-       "vtid": "BOOTSTRAP-<description>",
-       "service": "gateway",
-       "environment": "dev",
-       "health_path": "/alive",
-       "initiator": "auto"
-     }
-   }
-   ```
-8. **Wait for EXEC-DEPLOY to complete** — This does the actual `gcloud run deploy` to Cloud Run
-9. **Verify the deployment** — Confirm the fix is live on the deployed URL
+   If the latest run is NOT `in_progress`, AUTO-DEPLOY did NOT dispatch.
 
-### Why Auto Deploy May Silently Skip Deployment
+2. **If not dispatched, manually trigger** (the merge commit lacked a recognized VTID):
+   ```bash
+   gh workflow run EXEC-DEPLOY.yml \
+     -f vtid=BOOTSTRAP-<description> \
+     -f service=gateway \
+     -f environment=dev \
+     -f health_path=/alive \
+     -f initiator=auto
+   ```
 
-The Auto Deploy workflow extracts VTIDs from commit messages using this pattern:
+3. **Wait for completion + verify** per Section 15.
+
+### Why AUTO-DEPLOY May Silently Skip Deployment
+
+AUTO-DEPLOY extracts VTIDs from commit messages using:
 ```
 (DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)
 ```
 
-If your commit message does NOT contain a VTID matching this pattern, the workflow logs "No VTID found" and exits cleanly — **without deploying**.
+If the commit message does NOT match this pattern, the workflow logs "No VTID found" and exits `success` — **without deploying**. This is why ALWAYS rule 26 (pre-allocate VTID) exists.
 
 ### CSS/JS Cache-Busting
 
@@ -921,12 +973,130 @@ The Gateway serves static files with `Cache-Control: no-cache, no-store, must-re
 <script src="/command-hub/app.js?v=YYYYMMDD-HHMM"></script>
 ```
 
-### GitHub PATs for API Access
+### GitHub Authentication
 
-- **Vitana Platform**: `github_pat_11BI6FN3I0...` (use for PR creation, merging, workflow dispatch)
-- **Lovable (Vitana v1)**: `ghp_vCNFyyrr...` (use for Lovable repo access)
+Use `gh` CLI (already authenticated as the operator) for all `vitana-platform` and `exafyltd/vitana-v1` operations. Per-repo PATs are stored outside the repo; never embed them in code, docs, or commit messages. The Lovable PAT is retired.
 
-Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deployment operations.
+---
+
+## 17. MULTI-REPO ARCHITECTURE (Updated 2026-05-11)
+
+Vitana is split across **two GitHub repos**. Knowing which one owns a file is the single most common source of wasted edits.
+
+### Repo Map
+
+| Repo | Working Copy | Owns | Deploy Target |
+|------|--------------|------|---------------|
+| `exafyltd/vitana-platform` | `/home/dstev/vitana-platform` | Gateway, OASIS, agents, workers, Command Hub frontend, Supabase migrations, all Cloud Run services | Cloud Run (`us-central1`) via EXEC-DEPLOY |
+| `exafyltd/vitana-v1` | `/home/dstev/vitana-v1` | Community frontend (vitanaland.com, mobile Appilix WebView) — React + Vite | Cloud Run `community-app` (auto-deploy on push to `main`) |
+
+### Routing Rules
+
+- **Community user-facing UI** (My Index, Diary, Autopilot popup, ORB overlay copy, profile, marketplace) → `exafyltd/vitana-v1`
+- **Command Hub** (operator surface: `/command-hub/*`) → `vitana-platform`, served by the gateway from `services/gateway/src/frontend/command-hub/`
+- **Voice / ORB pipeline backend** → `vitana-platform` (`services/gateway/src/routes/orb-live.ts` + `services/agents/orb-agent/`)
+- **Voice / ORB frontend widget (production)** → `vitana-platform`, file `services/gateway/src/frontend/command-hub/orb-widget.js`. The vitana-v1 React orb chain is dead code (tree-shaken).
+- **Supabase migrations** → `vitana-platform/supabase/migrations/`
+- **Cloudflare workers** → `vitana-platform/cloudflare/`
+
+### Retired
+
+- **Lovable** (the no-code visual editor for the frontend) is fully retired as of 2026-04-10. Edit the React source in `vitana-v1` directly; PRs against `main`.
+- **`temp_vitana_v1/`** inside `vitana-platform` is gitignored stale content — never edit.
+- **Capacitor** (native wrapper) is retired; the mobile app is an Appilix WebView wrapper around vitanaland.com.
+
+### Multi-Agent Safety on `vitana-platform`
+
+Multiple Claude Code sessions run in parallel against this repo. To avoid stomping on each other:
+
+1. **Always work in a git worktree** (`git worktree add ../vitana-platform-<task> -b <branch>`). Do not commit directly to `main` from the shared checkout.
+2. **One PR per VTID.** Don't bundle unrelated changes — EXEC-DEPLOY can only attribute one VTID per merge SHA.
+3. **Pre-allocate the VTID** before pushing: `POST /api/v1/vtid/allocate` returns the ID. Put it in the merge commit message.
+
+### Frontend Verification URL
+
+The community-app preview deploys to:
+```
+https://community-app-q74ibpv6ia-uc.a.run.app/
+```
+Every push to `main` of `exafyltd/vitana-v1` auto-deploys here in ~3 minutes. Always verify frontend fixes against this URL, not against `vitanaland.com` (which may still be on the old origin during the DNS migration).
+
+---
+
+## 18. DIAGNOSE BEFORE EDIT (Added 2026-05-11)
+
+A pattern of repeated failures over March–May 2026 shows that almost all "stuck" symptoms have a structural root cause that is invisible until you check it. The following protocol is mandatory before opening a PR for a bug report:
+
+### The 6-Step Triage
+
+1. **Reproduce as the real user.** When the user reports something broken, mint *their* session via admin `generate_link` (Supabase Admin API) and call the same endpoint the UI calls. Never claim a fix is verified using the `e2e-test@vitana.dev` fixture — fixture sessions miss role-scoped failures, tenant-isolation bugs, and onboarding-state bugs.
+2. **Exercise the actual screen, not just the API.** API success ≠ user success. Watch for `fetch()` calls in `app.js` that skip `buildContextHeaders()` and silently 401.
+3. **Check observability first.** `get_logs` + `get_advisors` (Supabase MCP) and OASIS events (`oasis_events.topic`) before making changes. The topic ≠ a column called `type`; the TS helper masks this.
+4. **Confirm which repo owns the file.** Mis-routed edits to the dead vitana-v1 React orb chain or to `temp_vitana_v1/` are a recurring waste.
+5. **Identify which voice path is in play.** Two voice pipelines exist in parallel:
+   - **Vertex Live** (gateway-owned, SSE+WebSocket, `orb-live.ts`)
+   - **LiveKit + orb-agent** (Python agent in `services/agents/orb-agent/`, room-based)
+   Per North Star, both must perform identically — but they fail differently. Establish which one the user is hitting before patching.
+6. **Check memory for prior incidents.** Many symptoms have been "fixed" multiple times because they share a symptom across distinct failure modes (e.g., ORB iOS first-greeting silence has 5+ documented modes). Search `~/.claude/projects/-home-dstev/memory/` before drafting a fix.
+
+### Anti-Pattern: Symptom-First Patching
+
+When the LLM apologizes ("I had a problem"), the first instinct is to rewrite the prompt. That has been the wrong root cause every single time so far — the actual cause has been:
+- Voice tool returning `degraded:true` / `partial:true` / `warning:`
+- Reconnect-bucket prompt instructing apology on transparent reconnects
+- Stale connector token surfacing as silent failure
+- Identity inject missing on a reconnect path
+- Gemini Live treating any non-success field shape as failure
+
+Fix the upstream signal, not the prompt.
+
+---
+
+## 19. LiveKit ORB VOICE — PARITY TRACK (Added 2026-05-11)
+
+The platform runs **two voice pipelines in parallel** and both are held to the same bar.
+
+| Pipeline | Owner | Transport | Source of Truth |
+|----------|-------|-----------|-----------------|
+| Vertex Live | Gateway (`orb-live.ts`) | SSE + WebSocket | `orb-live.ts` constants — provider, model, tool catalog, prompt buckets |
+| LiveKit | `orb-agent/` (Python) | LiveKit room | Phase 1.B Feature Parity Matrix |
+
+### Rules
+
+1. **LiveKit must mirror Vertex behavior** — same tool catalog, same identity-inject, same reconnect copy, same fallback ladder. Don't substitute generic implementations.
+2. **Voice tools live in a shared dispatcher** — `services/gateway/src/services/orb-tools/`. Both pipelines call into it. The lift-not-duplicate scanner (`scripts/orb-tools-lift-scanner.mjs`) enforces this.
+3. **Tool JSON response shape must match full-success.** No `degraded:true` / `partial:true` / `warning:` keys ever. Telemetry stays server-side.
+4. **Voice operations surface in Command Hub** at `/command-hub/voice/*` (7 tabs: Orb LIVE, Providers & Voice, Awareness, Tool Catalog, Self-Healing, LiveKit Test Bench, Orb UI Monitor).
+
+### Voice Tool Catalog Screen
+
+`GET /api/v1/voice-tools/manifest` powers the Command Hub Voice Tool Catalog (DEV-COMHU-2700). Live status reflects which dispatcher tools are wired vs planned. Use design-system tokens, not hex.
+
+---
+
+## 20. SUPABASE MIGRATION WORKFLOW (Added 2026-05-11)
+
+### Canonical Path
+
+```
+1. Write migration file:     supabase/migrations/YYYYMMDDHHMMSS_<vtid>_<slug>.sql
+2. Open PR (SQL-only PRs do NOT need a code VTID — but include one in the filename for traceability)
+3. Merge to main
+4. Dispatch RUN-MIGRATION.yml manually with the migration filename
+5. Verify: grep logs for ROLLBACK, then check schema with list_tables / execute_sql
+```
+
+### Critical Caveats
+
+- **`psql -f` does NOT `ON_ERROR_STOP`.** SQL errors silently `ROLLBACK` while the workflow logs "applied successfully". Always check the logs.
+- **PostgREST schema cache must be reloaded** — RUN-MIGRATION.yml does this via `NOTIFY pgrst, 'reload schema';` after each apply. If new RPC isn't visible, that step failed.
+- **There is no `type` column on `oasis_events`** — use `topic`. The TS helper `emitOasisEvent()` masks this.
+- **There is no `tenant_id` column on `oasis_events`** — don't propose tenant-scoped queries/indexes against it.
+- **Two RPCs sound the same but only one exists:** `memory_semantic_search` (1536d, live) vs `semantic_memory_search` (768d, never migrated). Always use the former. Do NOT apply `20260221000000` — it would wipe the 1536d backfill.
+
+### Retired
+
+- `APPLY-MIGRATIONS.yml` was deleted 2026-04-11. Do not resurrect.
 
 ---
 
@@ -934,6 +1104,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-05-11 | Added Sections 17 (Multi-Repo Architecture), 18 (Diagnose Before Edit), 19 (LiveKit ORB Parity Track), 20 (Supabase Migration Workflow). Updated Section 2 services list (orb-agent / openclaw-bridge / worker-runner / autopilot-worker / vaea / Cloudflare workers). Added ALWAYS 24–27, NEVER 41–46, IF-THEN 26–40. Lovable retirement + Cloudflare migration + npm-run-build rule formalized. **Removed** stale rules: sidebar Start Stream (retired), "exactly 10 sidebar items" (now module/tab structure), hardcoded LLM routing (Gemini Pro=planner/Flash=worker — router now spans Vertex/Gemini/DeepSeek/claude_subscription), manual `gcloud builds submit` deploy commands (bypassed governance), `DATABASE_SCHEMA.md` upkeep rule (file 6 months stale), embedded PAT token references. Section 15/16 rewritten to point at EXEC-DEPLOY + `gateway.vitanaland.com` instead of direct Cloud Run URL. | n/a (doc refresh) |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
