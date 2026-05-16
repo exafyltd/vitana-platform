@@ -61,6 +61,39 @@ class ContextBootstrap:
             self._headers["Authorization"] = f"Bearer {service_token}"
         self._client = httpx.AsyncClient(timeout=CONTEXT_BOOTSTRAP_TIMEOUT_S)
 
+    async def fetch_greeting(
+        self,
+        *,
+        user_jwt: str,
+        agent_id: str = "vitana",
+        lang: str | None = None,
+        client_ip: str | None = None,
+    ) -> BootstrapResult:
+        """VTID-03017: greeting-critical fast path.
+
+        Calls /orb/context-bootstrap?greeting_only=true so the gateway skips
+        the slow render work (bootstrap_context compile, system_instruction
+        render, identity_facts compile, life_compass, decision_context).
+        Returns a BootstrapResult populated with ONLY:
+          - voice_config (per-agent STT/LLM/TTS row, needed for cascade)
+          - first_name + display_name + vitana_id (for the templated greeting)
+          - active_role (for the placeholder system prompt)
+        Slow-context fields are left empty; caller is expected to background
+        a separate `.fetch(...)` call to hydrate them post-greeting.
+
+        Total cost: ~150–300ms (2 Supabase row lookups). Compare to the full
+        fetch at 500ms–1s.
+        """
+        return await self._do_fetch(
+            user_jwt=user_jwt,
+            agent_id=agent_id,
+            lang=lang,
+            client_ip=client_ip,
+            is_reconnect=False,
+            last_n_turns=0,
+            greeting_only=True,
+        )
+
     async def fetch(
         self,
         *,
@@ -71,11 +104,34 @@ class ContextBootstrap:
         lang: str | None = None,
         client_ip: str | None = None,
     ) -> BootstrapResult:
+        return await self._do_fetch(
+            user_jwt=user_jwt,
+            agent_id=agent_id,
+            lang=lang,
+            client_ip=client_ip,
+            is_reconnect=is_reconnect,
+            last_n_turns=last_n_turns,
+            greeting_only=False,
+        )
+
+    async def _do_fetch(
+        self,
+        *,
+        user_jwt: str,
+        agent_id: str,
+        lang: str | None,
+        client_ip: str | None,
+        is_reconnect: bool,
+        last_n_turns: int,
+        greeting_only: bool,
+    ) -> BootstrapResult:
         params: dict[str, str | int | bool] = {
             "agent_id": agent_id,
             "is_reconnect": is_reconnect,
             "last_n_turns": last_n_turns,
         }
+        if greeting_only:
+            params["greeting_only"] = True
         # VTID-LIVEKIT-AGENT-JWT: prefer the per-session user JWT in the
         # standard Authorization header (the gateway's optionalAuth checks
         # only Bearer). Fall back to the service-token header pre-built in
