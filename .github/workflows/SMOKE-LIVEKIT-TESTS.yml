@@ -1,0 +1,91 @@
+name: Smoke — LiveKit hourly tests (manual)
+
+# VTID-03025 (Slice 1a follow-up): operator-dispatchable smoke for the
+# voice-lab livekit dry-run suite. NOT the hourly cron — that lands in
+# Slice 1b. This workflow exists so the suite can be executed from CI
+# (where GATEWAY_SERVICE_TOKEN is in secrets) without needing Cloud Shell.
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_key:
+        description: 'Restrict to a single case key (optional, e.g. life_compass_query). Leave blank for full suite.'
+        required: false
+        default: ''
+      trigger:
+        description: 'trigger field stored on the run row'
+        required: false
+        default: 'admin'
+
+concurrency:
+  group: smoke-livekit-tests
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run /api/v1/voice-lab/tests/run + dump full per-case results
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          GATEWAY_URL: https://gateway.vitanaland.com
+          CASE_KEY: ${{ inputs.case_key }}
+          TRIGGER: ${{ inputs.trigger }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN secret is not set"
+            exit 1
+          fi
+
+          # Build request body
+          if [ -n "${CASE_KEY}" ]; then
+            BODY="$(jq -nc --arg t "$TRIGGER" --arg k "$CASE_KEY" '{trigger:$t,case_key:$k}')"
+          else
+            BODY="$(jq -nc --arg t "$TRIGGER" '{trigger:$t}')"
+          fi
+          echo "::group::Request body"
+          echo "$BODY"
+          echo "::endgroup::"
+
+          # Invoke /tests/run
+          echo "::group::POST /api/v1/voice-lab/tests/run"
+          HTTP_CODE=$(curl -sS -o /tmp/run.json -w '%{http_code}' \
+            -X POST "$GATEWAY_URL/api/v1/voice-lab/tests/run" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+          echo "HTTP $HTTP_CODE"
+          echo "::endgroup::"
+
+          echo "::group::Run summary"
+          jq '.summary | {run_id, total, passed, failed, errored, duration_ms}' /tmp/run.json
+          echo "::endgroup::"
+
+          echo "::group::Per-case results (full detail incl. error + tool_calls)"
+          jq '.summary.results[] | {case_key, status, error, failure_reasons, tool_calls, latency_ms, instruction_chars, retried, reply_text: (.reply_text // "" | .[0:300])}' /tmp/run.json
+          echo "::endgroup::"
+
+          # Also fetch the persisted run row (proves DB writes worked)
+          RUN_ID=$(jq -r '.summary.run_id' /tmp/run.json)
+          if [ "$RUN_ID" != "null" ] && [ -n "$RUN_ID" ]; then
+            echo "::group::GET /api/v1/voice-lab/tests/runs/$RUN_ID"
+            curl -sS "$GATEWAY_URL/api/v1/voice-lab/tests/runs/$RUN_ID" \
+              -H "Authorization: Bearer $SERVICE_TOKEN" \
+            | jq '.run, (.results[] | {case_key, status, error, failure_reasons})'
+            echo "::endgroup::"
+          fi
+
+          # Surface a clear PASS/FAIL summary for the workflow log
+          PASSED=$(jq -r '.summary.passed' /tmp/run.json)
+          FAILED=$(jq -r '.summary.failed' /tmp/run.json)
+          ERRORED=$(jq -r '.summary.errored' /tmp/run.json)
+          TOTAL=$(jq -r '.summary.total' /tmp/run.json)
+          echo "================================================="
+          echo "Smoke result: $PASSED/$TOTAL passed, $FAILED failed, $ERRORED errored"
+          echo "================================================="
+          if [ "$ERRORED" != "0" ]; then
+            echo "::error::$ERRORED case(s) errored — see per-case detail above"
+            exit 1
+          fi
