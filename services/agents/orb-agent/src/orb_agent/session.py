@@ -736,6 +736,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     gw.is_mobile = bool(identity.is_mobile)
     gw.is_anonymous = bool(identity.is_anonymous)
 
+    # VTID-03026: stash everything the report_to_specialist @function_tool
+    # needs to trigger perform_handoff() (audible Devon voice swap on
+    # LiveKit). Without this the tool body can't reach the AgentSession,
+    # OasisEmitter, ContextBootstrap, or identity values.
+    gw.oasis_emitter = oasis
+    gw.ctx_fetcher = ctx_fetcher
+    gw.user_jwt = user_jwt or ""
+    gw.user_id = identity.user_id or ""
+    gw.orb_session_id = orb_session_id
+    gw.identity_lang = identity.lang
+    gw.identity_client_ip = identity.client_ip
+    # The live AgentSession reference is stashed AFTER session = AgentSession(...)
+    # is constructed below (gw.live_session = session).
+
     # VTID-03003: wire Silero VAD so the cascade-pipeline can detect turn
     # boundaries reliably. VTID-03012: VAD is now module-level cached
     # (loaded once, reused across sessions) so first-time PyTorch model
@@ -754,6 +768,10 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     if vad_instance is not None:
         session_kwargs["vad"] = vad_instance
     session = AgentSession(**session_kwargs)
+    # VTID-03026: report_to_specialist @function_tool reaches the live
+    # AgentSession through gw.live_session to invoke perform_handoff().
+    gw.live_session = session
+    gw.current_agent_id = agent_id
 
     # Wire teardown for AFTER the room disconnects, not for after start()
     # returns. AgentSession.start() exits as soon as the room IO and the
@@ -1317,16 +1335,24 @@ async def perform_handoff(
     new_cascade = build_cascade(new_bootstrap.voice_config, lang=lang)
 
     # Swap LLM + TTS instances. STT untouched.
+    # VTID-03026: track whether the in-place swap actually took (Python
+    # `setattr` succeeds even when livekit-agents internally caches the
+    # original reference; a False applied_* flag means the swap silently
+    # failed and the next turn will still use the previous voice).
+    applied_llm = False
+    applied_tts = False
     if new_cascade.llm is not None:
         try:
             session.llm = new_cascade.llm  # type: ignore[assignment]
-        except Exception:
-            pass
+            applied_llm = True
+        except Exception as _exc_llm:  # noqa: BLE001
+            logger.warning("VTID-03026: session.llm setattr failed: %s", _exc_llm)
     if new_cascade.tts is not None:
         try:
             session.tts = new_cascade.tts  # type: ignore[assignment]
-        except Exception:
-            pass
+            applied_tts = True
+        except Exception as _exc_tts:  # noqa: BLE001
+            logger.warning("VTID-03026: session.tts setattr failed: %s", _exc_tts)
 
     await oasis.emit(
         topic=TOPIC_PERSONA_SWAP,
@@ -1335,6 +1361,9 @@ async def perform_handoff(
             "agent_id": to_agent_id,
             "tts_provider": (new_bootstrap.voice_config or {}).get("tts_provider"),
             "tts_model": (new_bootstrap.voice_config or {}).get("tts_model"),
+            # VTID-03026: diagnostic — proves whether the audible swap took.
+            "applied_llm_swap": applied_llm,
+            "applied_tts_swap": applied_tts,
         },
     )
     await oasis.emit(

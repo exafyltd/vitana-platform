@@ -207,23 +207,94 @@ async def switch_persona(context: RunContext, persona: str) -> str:
 
 @function_tool
 async def report_to_specialist(
-    context: RunContext, specialist: str, reason: str, context_summary: str
+    context: RunContext,
+    kind: str,
+    summary: str,
+    specialist_hint: str | None = None,
 ) -> str:
-    """Hand off to a specialist (Sage / Devon / Atlas / Mira / Vitana).
+    """File a customer-support ticket and hand the call to a specialist.
 
-    Triggers the persona-swap flow in session.py. Each specialist has its own
-    voice configured in agent_voice_configs.
+    Mirrors Vertex's tool schema (voice-pipeline-spec/spec.json). The
+    gateway helper creates a real feedback_tickets row + handoff event
+    + OASIS emit. If the response includes a `persona`, this wrapper
+    then swaps the LiveKit AgentSession's LLM + TTS to the specialist's
+    voice (so Devon answers in Devon's voice — matches the Vertex
+    transparent-reconnect behavior).
 
     Args:
-        specialist: One of: 'sage' | 'devon' | 'atlas' | 'mira' | 'vitana'.
-        reason: Why the user is being handed off.
-        context_summary: Short summary the specialist needs to pick up the conversation.
+        kind: Best classification of what's being reported. One of:
+            'bug', 'ux_issue', 'support_question', 'account_issue',
+            'marketplace_claim', 'feature_request', 'feedback'.
+        summary: Concrete description in the user's own words (>= 15
+            words). Must include what broke, on which screen/feature,
+            with specifics. NO placeholder summaries.
+        specialist_hint: Optional persona key — backend re-checks via
+            the keyword router and falls back to a kind→persona match.
     """
-    body = await _dispatch(
-        context,
-        "report_to_specialist",
-        {"specialist": specialist, "reason": reason, "context_summary": context_summary},
-    )
+    args: dict[str, Any] = {"kind": kind, "summary": summary}
+    if specialist_hint:
+        args["specialist_hint"] = specialist_hint
+    body = await _dispatch(context, "report_to_specialist", args)
+
+    # VTID-03026: audible Devon voice swap on LiveKit. Vertex achieves
+    # the same effect via session.pendingPersonaSwap + transparent
+    # reconnect (orb-live.ts). On LiveKit we use perform_handoff() in
+    # session.py: emits handoff_start telemetry, plays a bridge cue in
+    # Vitana's voice, fetches Devon's voice_config from agent_voice_configs,
+    # builds Devon's cascade, swaps session.llm + session.tts in place.
+    #
+    # Only swap when the gateway helper returned decision='created'
+    # with a non-empty `persona`. vague / stay_inline / failed → no
+    # swap; Vitana keeps the user.
+    try:
+        result = body.get("result") if isinstance(body, dict) else None
+        decision = result.get("decision") if isinstance(result, dict) else None
+        persona = result.get("persona") if isinstance(result, dict) else None
+        if decision == "created" and persona and persona in {"devon", "sage", "atlas", "mira"}:
+            gw = _gw(context)
+            session_ref = getattr(gw, "live_session", None)
+            oasis_ref = getattr(gw, "oasis_emitter", None)
+            ctx_fetcher_ref = getattr(gw, "ctx_fetcher", None)
+            current_agent_id = getattr(gw, "current_agent_id", "vitana") or "vitana"
+            if session_ref is not None and oasis_ref is not None and ctx_fetcher_ref is not None:
+                # Import inside the wrapper to avoid the tools.py → session.py
+                # import cycle at module load.
+                from .session import perform_handoff
+
+                await perform_handoff(
+                    session=session_ref,
+                    oasis=oasis_ref,
+                    ctx_fetcher=ctx_fetcher_ref,
+                    user_jwt=getattr(gw, "user_jwt", "") or "",
+                    user_id=getattr(gw, "user_id", "") or "",
+                    orb_session_id=getattr(gw, "orb_session_id", "") or "",
+                    from_agent_id=current_agent_id,
+                    to_agent_id=persona,
+                    reason=f"user reported {kind}",
+                    context_summary=summary,
+                    lang=(getattr(gw, "identity_lang", "en") or "en"),
+                    client_ip=getattr(gw, "identity_client_ip", None),
+                )
+                gw.current_agent_id = persona
+                logger.info(
+                    "report_to_specialist: audible persona swap fired %s → %s",
+                    current_agent_id,
+                    persona,
+                )
+            else:
+                logger.warning(
+                    "report_to_specialist: missing handoff plumbing on gw "
+                    "(session=%s, oasis=%s, ctx_fetcher=%s) — ticket filed but no voice swap",
+                    session_ref is not None,
+                    oasis_ref is not None,
+                    ctx_fetcher_ref is not None,
+                )
+    except Exception as exc:  # noqa: BLE001
+        # Never let the swap failure mask the ticket-creation success.
+        # The LLM-facing response from the gateway is already correct;
+        # we just log so the trace shows what happened.
+        logger.warning("report_to_specialist: perform_handoff failed: %s", exc)
+
     return summarize(body)
 
 
