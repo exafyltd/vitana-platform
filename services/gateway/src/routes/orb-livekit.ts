@@ -991,8 +991,60 @@ router.get(
     // Best-effort: if rendering throws, the agent still gets the structured
     // bootstrap_context + identity fields and can fall back to its
     // pre-L2.2b.6 builder. Never block the bootstrap on a render error.
+    // VTID-03027: when agent_id is a SPECIALIST persona (devon/sage/atlas/
+    // mira), the agent is asking for the persona-specific system
+    // instruction — not Vitana's. Mirror Vertex's persona-swap path which
+    // loads `agent_personas.system_prompt` for the target persona and
+    // composes the persona's full prompt with language directive +
+    // optional handoff brief. Without this, LiveKit handoff returns
+    // Vitana's 65KB IDENTITY-LOCK'd prompt for Devon — costume Devon.
+    const SPECIALIST_PERSONAS = new Set(['devon', 'sage', 'atlas', 'mira']);
+    const handoffSummary = typeof req.query.handoff_summary === 'string'
+      ? (req.query.handoff_summary as string).trim()
+      : '';
     let systemInstruction: string | null = null;
+    if (SPECIALIST_PERSONAS.has(agentId.toLowerCase())) {
+      try {
+        const { data: personaRow } = await sb!
+          .from('agent_personas')
+          .select('system_prompt, display_name')
+          .eq('key', agentId.toLowerCase())
+          .maybeSingle();
+        const personaPrompt = (personaRow as { system_prompt?: string } | null)?.system_prompt?.trim() || '';
+        if (personaPrompt) {
+          const langNames: Record<string, string> = {
+            en: 'English', de: 'German', fr: 'French', es: 'Spanish',
+            ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
+          };
+          const langName = langNames[lang] || 'English';
+          const personaParts: string[] = [];
+          personaParts.push(personaPrompt);
+          personaParts.push(
+            `[LANGUAGE LOCK]\nRespond ONLY in ${langName}. Match the user's language exactly. Do NOT switch to English. Do NOT mix languages. The user has been speaking ${langName} with Vitana already; continue in the same language without acknowledging the switch.`,
+          );
+          if (bootstrapContext) {
+            personaParts.push(
+              `## USER CONTEXT (carried over from Vitana)\n\n${bootstrapContext}`,
+            );
+          }
+          if (handoffSummary) {
+            personaParts.push(
+              `[HANDOFF NOTE] Vitana captured this brief at handoff: "${handoffSummary}". Synthesize what the user reported in ONE sentence (your own words, not theirs) and confirm. Do NOT echo their wording back. Then ask any clarifying question you need. Open the conversation in your own voice and persona — never speak as Vitana, never quote her.`,
+            );
+          }
+          personaParts.push(
+            '[BEHAVIORAL RULE] Speak in your OWN persona. Greet the user warmly in the user\'s language with ONE short sentence introducing yourself by role (e.g. "I\'m the tech support colleague Vitana brought in"). Then either reference the handoff brief above OR ask "what can I help you with?" if no brief is present. Vary your phrasing every call. Never apologize for the handoff.',
+          );
+          systemInstruction = personaParts.join('\n\n');
+          console.log(`[VTID-03027] persona system_instruction rendered for ${agentId} (${systemInstruction.length} chars, handoff_summary=${handoffSummary ? `${handoffSummary.length} chars` : 'none'})`);
+        }
+      } catch (exc) {
+        console.warn(`[VTID-03027] persona prompt fetch failed for ${agentId}: ${(exc as Error).message}`);
+      }
+    }
+    // Vitana path: full 65KB system instruction with IDENTITY LOCK etc.
     try {
+      if (systemInstruction === null) {
       const voiceStyle =
         (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
         'friendly, calm, empathetic';
@@ -1010,6 +1062,7 @@ router.get(
         envContext ?? undefined,
         req.identity?.vitana_id ?? null,
       );
+      }
     } catch (exc) {
       console.warn(
         `[${VTID}] system_instruction render failed (agent falls back to its own builder): ${(exc as Error).message}`,

@@ -207,23 +207,74 @@ async def switch_persona(context: RunContext, persona: str) -> str:
 
 @function_tool
 async def report_to_specialist(
-    context: RunContext, specialist: str, reason: str, context_summary: str
+    context: RunContext,
+    kind: str,
+    summary: str,
+    specialist_hint: str | None = None,
 ) -> str:
-    """Hand off to a specialist (Sage / Devon / Atlas / Mira / Vitana).
+    """File a customer-support ticket and hand the call to a specialist.
 
-    Triggers the persona-swap flow in session.py. Each specialist has its own
-    voice configured in agent_voice_configs.
+    Mirrors Vertex's tool schema (voice-pipeline-spec/spec.json). The
+    gateway creates a real feedback_tickets row + handoff event + OASIS
+    emit. If the response includes a `persona`, this wrapper SIGNALS the
+    agent's main loop to rebuild the AgentSession for that persona —
+    Devon answers in Devon's voice with Devon's system_instruction.
 
     Args:
-        specialist: One of: 'sage' | 'devon' | 'atlas' | 'mira' | 'vitana'.
-        reason: Why the user is being handed off.
-        context_summary: Short summary the specialist needs to pick up the conversation.
+        kind: Best classification of what's being reported. One of:
+            'bug', 'ux_issue', 'support_question', 'account_issue',
+            'marketplace_claim', 'feature_request', 'feedback'.
+        summary: Concrete description in the user's own words (>= 15
+            words). What broke, on which screen/feature, with specifics.
+        specialist_hint: Optional persona key.
     """
-    body = await _dispatch(
-        context,
-        "report_to_specialist",
-        {"specialist": specialist, "reason": reason, "context_summary": context_summary},
-    )
+    args: dict[str, Any] = {"kind": kind, "summary": summary}
+    if specialist_hint:
+        args["specialist_hint"] = specialist_hint
+    body = await _dispatch(context, "report_to_specialist", args)
+
+    # VTID-03027: signal the agent main loop to rebuild the AgentSession
+    # for the new persona. We DON'T call perform_handoff() here (that did
+    # an in-place setattr swap which can't change the LLM's bound
+    # system_instruction — VTID-03017 lesson). Instead the main loop in
+    # session.py:agent_entrypoint watches gw.handoff_event; when it
+    # fires, it gracefully stops the current session, fetches the
+    # persona's bootstrap (gateway returns persona-specific system
+    # instruction with [HANDOFF NOTE] injected via handoff_summary
+    # query param), builds Devon's full cascade (STT/LLM/TTS), and
+    # restarts AgentSession in the same room. From the user's
+    # perspective: Vitana's bridge sentence in her voice, brief gap,
+    # Devon answers in Devon's voice with the brief in his prompt.
+    try:
+        result = body.get("result") if isinstance(body, dict) else None
+        decision = result.get("decision") if isinstance(result, dict) else None
+        persona = result.get("persona") if isinstance(result, dict) else None
+        if (
+            decision == "created"
+            and persona
+            and persona in {"devon", "sage", "atlas", "mira"}
+        ):
+            gw = _gw(context)
+            handoff_event = getattr(gw, "handoff_event", None)
+            if handoff_event is not None:
+                gw.handoff_target = persona
+                gw.handoff_summary = summary
+                gw.handoff_reason = f"user reported {kind}"
+                handoff_event.set()
+                logger.info(
+                    "report_to_specialist: handoff signal set → %s "
+                    "(main loop will rebuild AgentSession)",
+                    persona,
+                )
+            else:
+                logger.warning(
+                    "report_to_specialist: gw.handoff_event missing — "
+                    "ticket filed but no persona rebuild will fire",
+                )
+    except Exception as exc:  # noqa: BLE001
+        # Never let the signal failure mask the ticket-creation success.
+        logger.warning("report_to_specialist: handoff signal failed: %s", exc)
+
     return summarize(body)
 
 

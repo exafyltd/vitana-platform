@@ -103,6 +103,7 @@ class ContextBootstrap:
         last_n_turns: int = 0,
         lang: str | None = None,
         client_ip: str | None = None,
+        handoff_summary: str | None = None,
     ) -> BootstrapResult:
         return await self._do_fetch(
             user_jwt=user_jwt,
@@ -112,6 +113,7 @@ class ContextBootstrap:
             is_reconnect=is_reconnect,
             last_n_turns=last_n_turns,
             greeting_only=False,
+            handoff_summary=handoff_summary,
         )
 
     async def _do_fetch(
@@ -124,6 +126,7 @@ class ContextBootstrap:
         is_reconnect: bool,
         last_n_turns: int,
         greeting_only: bool,
+        handoff_summary: str | None = None,
     ) -> BootstrapResult:
         params: dict[str, str | int | bool] = {
             "agent_id": agent_id,
@@ -132,6 +135,14 @@ class ContextBootstrap:
         }
         if greeting_only:
             params["greeting_only"] = True
+        # VTID-03027: when the agent is rebuilding the session for a
+        # specialist persona after a report_to_specialist handoff, pass
+        # the user's brief through to the gateway so the persona's
+        # rendered system_instruction includes a [HANDOFF NOTE] section.
+        # Without this, Devon would have to ask "what's the issue?" again,
+        # since he wouldn't know what Vitana already heard.
+        if handoff_summary:
+            params["handoff_summary"] = handoff_summary[:2000]
         # VTID-LIVEKIT-AGENT-JWT: prefer the per-session user JWT in the
         # standard Authorization header (the gateway's optionalAuth checks
         # only Bearer). Fall back to the service-token header pre-built in
