@@ -2,8 +2,14 @@ name: Smoke — LiveKit hourly tests (manual)
 
 # VTID-03025 (Slice 1a follow-up): operator-dispatchable smoke for the
 # voice-lab livekit dry-run suite. NOT the hourly cron — that lands in
-# Slice 1b. This workflow exists so the suite can be executed from CI
-# (where GATEWAY_SERVICE_TOKEN is in secrets) without needing Cloud Shell.
+# Slice 1b.
+#
+# Auth: fetches GATEWAY_SERVICE_TOKEN from Secret Manager via Workload
+# Identity Federation (same path Cloud Shell uses) so the call always
+# matches the gateway's runtime env. Using `secrets.GATEWAY_SERVICE_TOKEN`
+# as a GH-repo secret turned out to be out-of-sync with Secret Manager
+# (both have the same name but different values), so fetching from the
+# source of truth is the only reliable path.
 
 on:
   workflow_dispatch:
@@ -21,26 +27,39 @@ concurrency:
   group: smoke-livekit-tests
   cancel-in-progress: false
 
+permissions:
+  id-token: write   # required for Workload Identity Federation
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Run /api/v1/voice-lab/tests/run + dump full per-case results
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fetch GATEWAY_SERVICE_TOKEN from Secret Manager + run smoke
         env:
-          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
-          # Direct Cloud Run URL (bypasses Cloudflare). Same URL resolves
-          # from `gcloud run services describe gateway`. The public domain
-          # gateway.vitanaland.com sometimes wraps the token in a way that
-          # the bearer-comparison gate rejects — direct URL is the safe path
-          # for service-to-service calls.
+          PROJECT: lovable-vitana-vers1
           GATEWAY_URL: https://gateway-86804897789.us-central1.run.app
           CASE_KEY: ${{ inputs.case_key }}
           TRIGGER: ${{ inputs.trigger }}
         run: |
           set -euo pipefail
-          if [ -z "${SERVICE_TOKEN:-}" ]; then
-            echo "::error::GATEWAY_SERVICE_TOKEN secret is not set"
+
+          # Source of truth: Secret Manager. Same secret the gateway mounts
+          # as env GATEWAY_SERVICE_TOKEN at boot.
+          SERVICE_TOKEN=$(gcloud secrets versions access latest \
+            --secret=GATEWAY_SERVICE_TOKEN --project="$PROJECT")
+          if [ -z "$SERVICE_TOKEN" ]; then
+            echo "::error::Failed to fetch GATEWAY_SERVICE_TOKEN from Secret Manager"
             exit 1
           fi
 
@@ -64,17 +83,24 @@ jobs:
           echo "HTTP $HTTP_CODE"
           echo "::endgroup::"
 
+          # If the response wasn't JSON we want to see why before jq blows up.
+          if ! jq -e . /tmp/run.json >/dev/null 2>&1; then
+            echo "::error::Response is not valid JSON. Raw body:"
+            cat /tmp/run.json
+            exit 1
+          fi
+
           echo "::group::Run summary"
-          jq '.summary | {run_id, total, passed, failed, errored, duration_ms}' /tmp/run.json
+          jq '.summary // . | {run_id, total, passed, failed, errored, duration_ms, error}' /tmp/run.json
           echo "::endgroup::"
 
           echo "::group::Per-case results (full detail incl. error + tool_calls)"
-          jq '.summary.results[] | {case_key, status, error, failure_reasons, tool_calls, latency_ms, instruction_chars, retried, reply_text: (.reply_text // "" | .[0:300])}' /tmp/run.json
+          jq '.summary.results[]? | {case_key, status, error, failure_reasons, tool_calls, latency_ms, instruction_chars, retried, reply_text: (.reply_text // "" | .[0:300])}' /tmp/run.json
           echo "::endgroup::"
 
           # Also fetch the persisted run row (proves DB writes worked)
-          RUN_ID=$(jq -r '.summary.run_id' /tmp/run.json)
-          if [ "$RUN_ID" != "null" ] && [ -n "$RUN_ID" ]; then
+          RUN_ID=$(jq -r '.summary.run_id // empty' /tmp/run.json)
+          if [ -n "$RUN_ID" ]; then
             echo "::group::GET /api/v1/voice-lab/tests/runs/$RUN_ID"
             curl -sS "$GATEWAY_URL/api/v1/voice-lab/tests/runs/$RUN_ID" \
               -H "Authorization: Bearer $SERVICE_TOKEN" \
@@ -83,14 +109,14 @@ jobs:
           fi
 
           # Surface a clear PASS/FAIL summary for the workflow log
-          PASSED=$(jq -r '.summary.passed' /tmp/run.json)
-          FAILED=$(jq -r '.summary.failed' /tmp/run.json)
-          ERRORED=$(jq -r '.summary.errored' /tmp/run.json)
-          TOTAL=$(jq -r '.summary.total' /tmp/run.json)
+          PASSED=$(jq -r '.summary.passed // 0' /tmp/run.json)
+          FAILED=$(jq -r '.summary.failed // 0' /tmp/run.json)
+          ERRORED=$(jq -r '.summary.errored // 0' /tmp/run.json)
+          TOTAL=$(jq -r '.summary.total // 0' /tmp/run.json)
           echo "================================================="
           echo "Smoke result: $PASSED/$TOTAL passed, $FAILED failed, $ERRORED errored"
           echo "================================================="
-          if [ "$ERRORED" != "0" ]; then
-            echo "::error::$ERRORED case(s) errored — see per-case detail above"
+          if [ "$ERRORED" != "0" ] || [ "$TOTAL" = "0" ]; then
+            echo "::error::$ERRORED case(s) errored or run did not execute — see per-case detail above"
             exit 1
           fi
