@@ -196,12 +196,46 @@ async def recall_conversation_at_time(context: RunContext, when: str) -> str:
 
 @function_tool
 async def switch_persona(context: RunContext, persona: str) -> str:
-    """Switch within-Vitana voice/style persona (NOT specialist handoff).
+    """Switch to a different agent persona — used by SPECIALISTS to hand
+    the user back to Vitana once their intake is complete.
+
+    Mirrors Vertex behavior (orb-live.ts: switch_persona case arm).
+    Specialists (Devon/Sage/Atlas/Mira) call this with persona='vitana'
+    after they ask "anything else?" and the user says no.
 
     Args:
-        persona: Target persona name (e.g. "warm", "concise", "playful").
+        persona: Target persona key. The only valid value from a specialist
+            is 'vitana' (returning the user to the receptionist). Lateral
+            specialist↔specialist swaps are NOT allowed.
     """
     body = await _dispatch(context, "switch_persona", {"persona": persona})
+
+    # VTID-03028: when called with persona='vitana', signal the agent main
+    # loop to rebuild the AgentSession back to Vitana — same mechanism
+    # report_to_specialist uses to swap TO a specialist. Without this the
+    # specialist (Devon) says "I'll hand you back" but the AgentSession
+    # never actually rebuilds, leaving Devon's voice still active.
+    try:
+        target = (persona or "").strip().lower()
+        if target == "vitana":
+            gw = _gw(context)
+            handoff_event = getattr(gw, "handoff_event", None)
+            if handoff_event is not None:
+                gw.handoff_target = "vitana"
+                gw.handoff_summary = None  # No new brief on swap-back
+                gw.handoff_reason = "specialist returning user to receptionist"
+                handoff_event.set()
+                logger.info(
+                    "switch_persona: handoff signal set → vitana "
+                    "(main loop will rebuild AgentSession)"
+                )
+            else:
+                logger.warning(
+                    "switch_persona: gw.handoff_event missing — no rebuild fired"
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("switch_persona: handoff signal failed: %s", exc)
+
     return summarize(body)
 
 

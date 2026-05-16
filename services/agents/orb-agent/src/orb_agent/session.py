@@ -1365,12 +1365,21 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             logger.exception("agent_entrypoint: new persona bootstrap fetch failed: %s", exc)
             break
 
-        # Build Devon's cascade (STT/LLM/TTS) — Devon's voice is in
-        # bootstrap.voice_config (agent_voice_configs row for agent_id=devon).
+        # VTID-03028: build the new persona's cascade. Their voice lives in
+        # bootstrap.voice_config (agent_voice_configs row for agent_id=devon/sage/…).
+        #
+        # CRITICAL: do NOT forward voice_override to specialists. That
+        # variable is the Test Bench's user-picked voice (Vitana's female
+        # voice in our smoke testing). Forwarding it overrides Devon's
+        # male voice → Devon answers in Vitana's voice. When swapping
+        # BACK to Vitana, keep the override (the user picked her voice
+        # intentionally).
+        target_is_specialist = target in {"devon", "sage", "atlas", "mira"}
+        cascade_voice_override = None if target_is_specialist else voice_override
         new_cascade = build_cascade(
             new_bootstrap.voice_config,
             lang=identity.lang,
-            voice_override=voice_override,
+            voice_override=cascade_voice_override,
         )
         new_sys_prompt = new_bootstrap.system_instruction or (
             "You are a Vitana specialist. The gateway did not render your "
@@ -1405,17 +1414,34 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
         # Trigger persona's first turn — the LLM speaks as the persona,
         # referencing the handoff brief from its system_instruction.
+        # VTID-03028: when the target is Vitana (swap-back from a
+        # specialist), the open should be a brief continuity greeting,
+        # not a fresh "hi I'm Vitana" — the user already spoke with her.
         try:
-            await session.generate_reply(
-                instructions=(
+            if target == "vitana" and from_agent_id in {"devon", "sage", "atlas", "mira"}:
+                first_turn_instr = (
+                    "The user just came back from a specialist colleague "
+                    f"({from_agent_id.capitalize()}) who handled their request. "
+                    "Speak ONE short, warm continuity sentence acknowledging they're "
+                    "back with you in their language — vary phrasing every call "
+                    "(EN: 'Alright, I'm back with you.' / DE: 'Alles klar, ich bin wieder da.'). "
+                    "Then ask one open follow-up question (e.g. 'is there anything else "
+                    "I can help with?'). Do NOT introduce yourself ('I'm Vitana') — "
+                    "the user already knows who you are. Do NOT ask what was discussed "
+                    "with the specialist — they've heard enough."
+                )
+            else:
+                first_turn_instr = (
                     "Open this conversation as yourself (the persona described in your "
                     "system instruction). Greet the user warmly in their language with "
                     "ONE short sentence introducing yourself by role. If a HANDOFF NOTE "
                     "is present in your system instruction, synthesize it in ONE sentence "
-                    "in your own words and confirm. If not, ask the user what you can help "
-                    "with. Vary your phrasing. NEVER speak as Vitana."
-                ),
-            )
+                    "in your own words and confirm. Then follow the [BEHAVIORAL RULE] "
+                    "sections in your system instruction (confirm ticket logged, ask "
+                    "'anything else?', and hand back to Vitana when the user is done). "
+                    "Vary your phrasing. NEVER speak as Vitana."
+                )
+            await session.generate_reply(instructions=first_turn_instr)
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent_entrypoint: persona first turn failed: %s", exc)
 
