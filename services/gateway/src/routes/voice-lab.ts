@@ -9,9 +9,9 @@
  * - GET /api/v1/voice-lab/live/sessions/:sessionId/turns - Get session turns
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth-supabase-jwt';
+import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
 import {
@@ -30,6 +30,16 @@ import {
   buildShadowComparison,
   buildLiveMonitor,
 } from '../services/voice-healing-summary';
+// VTID-03025: LiveKit hourly tests — Slice 1a foundation.
+import {
+  runLiveKitTestSuite,
+  listRecentRuns as listLivekitTestRuns,
+  getRunDetail as getLivekitTestRunDetail,
+  listCases as listLivekitTestCases,
+} from '../services/voice-lab/livekit-test-runner';
+import {
+  evaluateLiveKitDryRun,
+} from '../services/voice-lab/livekit-test-eval';
 
 const router = Router();
 
@@ -52,6 +62,207 @@ router.get('/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// =============================================================================
+// VTID-03025: LiveKit hourly tests — Slice 1a foundation.
+//
+// Routes registered BEFORE `router.use(requireAuth)` because they accept
+// EITHER the GitHub Actions cron's service token OR an admin Supabase JWT.
+// The same dual gate is used by `routes/oasis-emit.ts`.
+//
+// POST /tests/run    — execute all enabled cases serially, return summary
+// POST /tests/eval   — execute ONE ad-hoc prompt; for debug/admin probing
+// GET  /tests/runs   — list recent run summaries
+// GET  /tests/runs/:id — full results for one run
+// GET  /tests/cases  — list registered cases
+// =============================================================================
+
+const LIVEKIT_TESTS_VTID = 'VTID-03025';
+
+function livekitTestsAuthGate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const header = req.header('authorization') ?? req.header('Authorization');
+  if (!header || !header.toLowerCase().startsWith('bearer ')) {
+    res.status(401).json({
+      ok: false,
+      error: 'missing bearer token',
+      vtid: LIVEKIT_TESTS_VTID,
+    });
+    return;
+  }
+  const token = header.slice('bearer '.length).trim();
+  if (!token) {
+    res.status(401).json({
+      ok: false,
+      error: 'empty bearer token',
+      vtid: LIVEKIT_TESTS_VTID,
+    });
+    return;
+  }
+
+  const serviceToken = process.env.GATEWAY_SERVICE_TOKEN ?? '';
+  if (serviceToken.length > 0 && token === serviceToken) {
+    (req as AuthenticatedRequest).identity = undefined;
+    (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+      'service:cron';
+    next();
+    return;
+  }
+
+  // JWT path → must be exafy_admin.
+  optionalAuth(req as AuthenticatedRequest, res, () => {
+    const id = (req as AuthenticatedRequest).identity;
+    if (id && id.exafy_admin === true) {
+      (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+        `admin:${id.user_id ?? 'unknown'}`;
+      next();
+      return;
+    }
+    res.status(401).json({
+      ok: false,
+      error: 'unauthorized — service token or exafy_admin JWT required',
+      vtid: LIVEKIT_TESTS_VTID,
+    });
+  });
+}
+
+const RunPostSchema = z.object({
+  trigger: z.enum(['manual', 'cron', 'admin', 'test']).default('manual'),
+  case_key: z.string().min(1).max(128).optional(),
+  layer: z.enum(['A', 'B']).default('A'),
+});
+
+router.post(
+  '/tests/run',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const parsed = RunPostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid request body',
+        issues: parsed.error.issues,
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+    try {
+      const summary = await runLiveKitTestSuite({
+        trigger: parsed.data.trigger,
+        caseKey: parsed.data.case_key,
+        layer: parsed.data.layer,
+      });
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, summary });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+const EvalPostSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+  language: z.string().min(2).max(8).optional(),
+  current_route: z.string().max(256).nullable().optional(),
+  active_role: z.string().max(64).optional(),
+});
+
+router.post(
+  '/tests/eval',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const parsed = EvalPostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid request body',
+        issues: parsed.error.issues,
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+    try {
+      const result = await evaluateLiveKitDryRun({
+        prompt: parsed.data.prompt,
+        language: parsed.data.language,
+        currentRoute: parsed.data.current_route,
+        activeRole: parsed.data.active_role,
+      });
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, result });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/runs',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const limitRaw = req.query.limit;
+    const limit = typeof limitRaw === 'string' ? Number(limitRaw) : 50;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
+    try {
+      const runs = await listLivekitTestRuns(safeLimit);
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, runs });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/runs/:id',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    try {
+      const detail = await getLivekitTestRunDetail(req.params.id);
+      if (!detail) {
+        return res.status(404).json({
+          ok: false,
+          error: 'run not found',
+          vtid: LIVEKIT_TESTS_VTID,
+        });
+      }
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, ...detail });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/cases',
+  livekitTestsAuthGate,
+  async (_req: Request, res: Response) => {
+    try {
+      const cases = await listLivekitTestCases();
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, cases });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
 
 router.use(requireAuth);
 

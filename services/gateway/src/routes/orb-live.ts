@@ -1871,7 +1871,10 @@ function buildPersonaBehavioralRule(personaKey: string): string {
   return lines.join('\n');
 }
 
-async function buildBootstrapContextPack(
+// VTID-03025: exported so the voice-lab dry-run evaluator can mirror the
+// exact bootstrap-context fetch the live session uses. No behavior change —
+// only the visibility modifier was added.
+export async function buildBootstrapContextPack(
   identity: SupabaseIdentity,
   sessionId: string
 ): Promise<{
