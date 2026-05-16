@@ -27,12 +27,19 @@
 import { randomUUID } from 'crypto';
 
 import { getSupabase } from '../../lib/supabase';
-import {
-  buildBootstrapContextPack,
-  buildLiveApiTools,
-} from '../../routes/orb-live';
-import { buildLiveSystemInstruction } from '../../orb/live/instruction/live-system-instruction';
 import type { SupabaseIdentity } from '../../middleware/auth-supabase-jwt';
+
+// NB: `buildBootstrapContextPack` / `buildLiveApiTools` (from routes/orb-live)
+// AND `buildLiveSystemInstruction` (from orb/live/instruction/, which itself
+// re-imports buildNavigatorPolicySection from routes/orb-live) are all
+// imported LAZILY inside `evaluateLiveKitDryRun()` rather than statically
+// here. Pulling them in at module-load time drags ALL of `routes/orb-live.ts`
+// (14k+ lines, 30+ middleware/route registrations) into the dependency
+// graph, which then breaks any test that mocks `auth-supabase-jwt`
+// (e.g. `test/routes/voice-lab.test.ts`) — express barfs at module-init
+// with "Route.post() requires a callback function but got a [object
+// Undefined]" because the mock doesn't supply `optionalAuth`. Lazy import
+// defers the load until first eval call, leaving existing test mocks alone.
 
 export interface DryRunIdentity {
   user_id: string;
@@ -110,6 +117,14 @@ export async function evaluateLiveKitDryRun(
     iat: null,
     vitana_id: identity.vitana_id ?? null,
   };
+
+  // Lazy load — see file header for the reason.
+  const [orbLiveModule, instructionModule] = await Promise.all([
+    import('../../routes/orb-live'),
+    import('../../orb/live/instruction/live-system-instruction'),
+  ]);
+  const { buildBootstrapContextPack, buildLiveApiTools } = orbLiveModule;
+  const { buildLiveSystemInstruction } = instructionModule;
 
   const bootstrapResult = await buildBootstrapContextPack(
     supabaseIdentity,
