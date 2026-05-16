@@ -632,6 +632,32 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             "tools_first_name_in_first_chars": bool(
                 bootstrap.first_name and bootstrap.first_name.lower() in sys_prompt[:600].lower()
             ),
+            # VTID-03015: diagnostic — directly expose the values needed to
+            # debug "ENVIRONMENT CONTEXT still says United States" after
+            # VTID-03014 wired client_ip end-to-end. Three questions to
+            # answer from one trace:
+            #   1. Did the gateway embed client_ip in LiveKit metadata?
+            #      → identity_client_ip non-null = yes; null = gateway gap.
+            #   2. Did the agent forward X-Real-IP to bootstrap?
+            #      → bootstrap.fetch is called with identity.client_ip already
+            #        (verified in code); this just records what got sent.
+            #   3. Did the gateway's bootstrap geo-resolve correctly?
+            #      → bootstrap_client_context_{city,country,timezone}.
+            "identity_client_ip": identity.client_ip,
+            "bootstrap_client_context_city": (bootstrap.client_context or {}).get("city"),
+            "bootstrap_client_context_country": (bootstrap.client_context or {}).get("country"),
+            "bootstrap_client_context_timezone": (bootstrap.client_context or {}).get("timezone"),
+            # Full ENVIRONMENT CONTEXT block from the rendered system_instruction.
+            # This is the literal text the LLM sees. If it says "United States"
+            # the geo resolved to us-central1; if it says the user's real city
+            # the X-Real-IP forwarding worked.
+            "system_prompt_env_context_excerpt": (
+                (sys_prompt[sys_prompt.find("ENVIRONMENT CONTEXT"):sys_prompt.find("ENVIRONMENT CONTEXT") + 500]
+                 if "ENVIRONMENT CONTEXT" in sys_prompt else "")
+            ),
+            # Full bootstrap_context so we can see the full ENV block even
+            # when it's past the first 1500 chars (which truncates).
+            "bootstrap_context_full": bootstrap.bootstrap_context or "",
         }
         # VTID-03012: fire-and-forget — this trace is observability-only,
         # nothing downstream blocks on it. Awaiting it was adding 200-500ms
