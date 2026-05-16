@@ -2779,36 +2779,13 @@ async function executeLiveApiToolInner(
           };
         }
 
-        // v2e: server-side block on vague summaries. The LLM tool description
-        // forbids placeholder summaries like "user wants to report a bug",
-        // but we enforce server-side too. A vague summary causes the receiving
-        // specialist to invent the issue (the user's most-recent complaint:
-        // Devon hallucinated a "language switch" bug because Vitana's summary
-        // was just "user wants to report a technical bug").
-        //
-        // Heuristics: too short OR matches a placeholder pattern.
-        const wordCount = summary.split(/\s+/).filter(Boolean).length;
-        const VAGUE_PATTERNS = [
-          /^user (wants|would like|wishes) to report (a|an|the)?\s*(technical |bug|issue|problem|claim|complaint|account|support)?\s*(report|issue|problem|claim|bug|complaint|question|something)\.?$/i,
-          /^user has (a|an|the)?\s*(bug|issue|problem|claim|complaint|account|support|technical)\s*(report|issue|problem|claim|bug|complaint|question|matter)\.?$/i,
-          /^report a (bug|issue|problem|claim|complaint|technical)\s*\.?$/i,
-          /^bug report\.?$/i,
-          /^something is broken\.?$/i,
-          /^(user|customer)\s+(needs help|wants help|has a question)\.?$/i,
-        ];
-        const isVague = wordCount < 12 || VAGUE_PATTERNS.some(re => re.test(summary));
-        if (isVague) {
-          console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${wordCount} words). Asking model to collect specifics.`);
-          return {
-            success: true,
-            result: `ASK_FOR_SPECIFICS: Your summary "${summary}" is too vague. Do NOT call this tool again until you have a concrete description. Speak ONE follow-up question to the user IN THEIR LANGUAGE asking what specifically broke (which screen / feature / error message / what they were doing). Vary your phrasing every call. Then wait for their answer. Only after you have specifics, call this tool again with a real description (>= 12 words, in the user's own words). Do NOT mention this internal routing — just ask the question naturally.`,
-          };
-        }
-
         // Loop guard: hard cap of 1 forward per conversation. Once swap count
         // hits 2 (one forward + one return), block re-forward regardless of
         // what the LLM decides. Also a cooldown period after swap-back-to-
         // Vitana — prevents the immediate re-forward loop the user reported.
+        // VTID-03024: stays Vertex-only because it relies on
+        // session.swapCount + session.swapCooldownUntil (WebSocket state).
+        // LiveKit has no per-session swap counter yet.
         const swapCountForReport = ((session as any).swapCount as number | undefined) ?? 0;
         const swapCooldownUntil = ((session as any).swapCooldownUntil as number | undefined) ?? 0;
         if (swapCountForReport >= 2) {
@@ -2828,152 +2805,82 @@ async function executeLiveApiToolInner(
         }
 
         try {
-          const url = process.env.SUPABASE_URL!;
-          const key = process.env.SUPABASE_SERVICE_ROLE!;
-
-          // Resolve specialist via keyword router unless hinted explicitly.
-          // VTID-02653 Phase 6: when the session has a tenant context, use
-          // the tenant-aware RPC pick_specialist_for_text_tenant which
-          // UNIONs platform handoff_keywords with the tenant's own routing
-          // keywords (and respects tenant disable). Falls back to the
-          // platform-only RPC when no tenant context (anonymous sessions).
-          let pickedPersona = specialistHint;
-          let matchedKeyword: string | null = null;
-          let confidence: number | null = null;
-          let rpcDecision: string | null = null;
-          let rpcGate: string | null = null;
+          // VTID-03024: lift the SHARED data-layer work (vague block + gate
+          // RPC + feedback_tickets insert + handoff event + OASIS emit) into
+          // a helper both Vertex and LiveKit call. Below the helper call,
+          // Vertex layers its session-state mutations (pendingPersonaSwap,
+          // personaSystemOverride, SSE/WS notify, swapCount increment) on
+          // top — those stay here because they touch the live WebSocket
+          // session.
           const _reportTenantId = session.identity?.tenant_id;
-          if (!pickedPersona) {
-            try {
-              const rpcName = _reportTenantId
-                ? 'pick_specialist_for_text_tenant'
-                : 'pick_specialist_for_text';
-              // Gate A reads the user's RAW transcript, not the LLM-rewritten
-              // summary. The LLM compresses "how does X work?" into business-
-              // language like "user is asking about X feature", which bypasses
-              // stay-inline phrases. Raw user words preserve "how does", etc.
-              const gateInput = buildGateInputFromTranscript(session.transcriptTurns, summary);
-              const rpcBody = _reportTenantId
-                ? { p_text: gateInput, p_tenant_id: _reportTenantId }
-                : { p_text: gateInput };
-              const rpcResp = await fetch(`${url}/rest/v1/rpc/${rpcName}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
-                body: JSON.stringify(rpcBody),
-              });
-              const rpcJson = await rpcResp.json().catch(() => null);
-              const row = Array.isArray(rpcJson) ? rpcJson[0] : rpcJson;
-              rpcDecision = row?.decision ?? null;
-              rpcGate = row?.gate ?? null;
-              if (row?.persona_key) {
-                pickedPersona = row.persona_key;
-                // Two-gate RPC returns matched_phrase; legacy/tenant variant returns matched_keyword.
-                matchedKeyword = row.matched_phrase ?? row.matched_keyword ?? null;
-                confidence = row.confidence ?? null;
-              }
-            } catch { /* keep empty hint, fall through */ }
+          const sbForReport = getSupabase();
+          if (!sbForReport) {
+            return { success: false, result: '', error: 'supabase_not_configured' };
           }
-
-          // Two-gate routing: if Gate A said stay-inline, OR Gate A failed
-          // (no explicit forward-request signal), Vitana keeps the user.
-          // No ticket. No swap. The model already received the user's words —
-          // it just needs to answer them.
-          if (rpcDecision === 'answer_inline') {
-            const gateLabel = rpcGate === 'stay_inline'
-              ? 'stay-inline override'
-              : (rpcGate === 'unrouted' ? 'no enabled specialist' : 'no explicit forward request');
-            console.log(`[VTID-02660] report_to_specialist suppressed (gate=${rpcGate}) — answering inline`);
-            return {
-              success: true,
-              result: `Stay with the user — this is not a customer-support handoff (${gateLabel}). Answer the question yourself as Vitana, the user's life companion. Do NOT mention this routing decision out loud.`,
-            };
-          }
-          // VTID-02651: kind→persona mapping is data-driven from
-          // agent_personas.handles_kinds. VTID-02653: tenant variant skips
-          // personas the tenant has disabled. Falls back to '' (caller
-          // skips swap) if no active persona claims the kind.
-          if (!pickedPersona) {
-            pickedPersona = _reportTenantId
-              ? ((await registryPickPersonaForKindForTenant(kind, _reportTenantId)) ?? '')
-              : ((await registryPickPersonaForKind(kind)) ?? '');
-          }
-
-          const insertResp = await fetch(`${url}/rest/v1/feedback_tickets`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: key,
-              Authorization: `Bearer ${key}`,
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify({
+          const { executeReportToSpecialist } = await import('../services/report-to-specialist-core');
+          // Gate A reads the user's RAW transcript, not the LLM-rewritten
+          // summary. The LLM compresses "how does X work?" into business-
+          // language like "user is asking about X feature", which bypasses
+          // stay-inline phrases. Raw user words preserve "how does", etc.
+          const gateInput = buildGateInputFromTranscript(session.transcriptTurns, summary);
+          const helperResult = await executeReportToSpecialist(
+            { kind, summary, specialist_hint: specialistHint },
+            {
               user_id: session.identity.user_id,
+              tenant_id: _reportTenantId ?? null,
               vitana_id: session.identity.vitana_id ?? null,
-              kind,
-              status: pickedPersona ? 'triaged' : 'new',
-              raw_transcript: summary,
-              intake_messages: [
-                { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
-              ],
-              structured_fields: {
-                specialist_hint: specialistHint || null,
-                voice_origin: true,
-              },
-              screen_path: '/orb/voice',
-              resolver_agent: pickedPersona || null,
-              triaged_at: pickedPersona ? new Date().toISOString() : null,
-            }),
-          });
-          if (!insertResp.ok) {
-            const errText = await insertResp.text().catch(() => '');
-            console.error(`[VTID-02047] feedback_tickets insert failed:`, insertResp.status, errText);
-            return { success: false, result: '', error: `insert failed: ${insertResp.status}` };
-          }
-          const created = await insertResp.json().catch(() => null);
-          const ticket = Array.isArray(created) ? created[0] : created;
-
-          // Log handoff event for Live Handoffs panel
-          if (pickedPersona) {
-            await fetch(`${url}/rest/v1/feedback_handoff_events`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
-              body: JSON.stringify({
-                conversation_id: session.sessionId,
-                ticket_id: ticket?.id,
-                user_id: session.identity.user_id,
-                vitana_id: session.identity.vitana_id ?? null,
-                from_agent: 'vitana',
-                to_agent: pickedPersona,
-                reason: 'off_domain_intent',
-                detected_intent: kind,
-                matched_keyword: matchedKeyword,
-                confidence: confidence,
-              }),
-            }).catch(() => undefined);
-          }
-
-          // Emit OASIS event so it shows in the inbox + KPIs
-          try {
-            const { emitOasisEvent } = await import('../services/oasis-event-service');
-            await emitOasisEvent({
-              vtid: 'VTID-02047',
-              type: 'feedback.ticket.created' as any,
+              lang: session.lang ?? null,
+            },
+            sbForReport,
+            {
+              gate_input: gateInput,
               source: 'orb-voice-tool',
-              status: 'info',
-              message: `Voice tool report_to_specialist created ticket ${ticket?.ticket_number} (${kind}) → ${pickedPersona || 'unrouted'}`,
-              payload: {
-                ticket_id: ticket?.id,
-                ticket_number: ticket?.ticket_number,
-                kind,
-                specialist: pickedPersona,
-                voice_origin: true,
+              screen_path: '/orb/voice',
+            },
+          );
+
+          // Branch on the helper's decision. vague + stay_inline both
+          // return the LLM instruction the model speaks; failed surfaces
+          // as a tool error; created continues to the session-state work.
+          if (helperResult.decision === 'failed') {
+            console.error(`[VTID-02047] report_to_specialist failed: ${helperResult.error}`);
+            return { success: false, result: '', error: helperResult.error };
+          }
+          if (helperResult.decision === 'vague') {
+            console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${helperResult.word_count} words). Asking model to collect specifics.`);
+            return { success: true, result: helperResult.llm_instruction };
+          }
+          if (helperResult.decision === 'stay_inline') {
+            console.log(`[VTID-02660] report_to_specialist suppressed (gate=${helperResult.rpc_gate}) — answering inline`);
+            return { success: true, result: helperResult.llm_instruction };
+          }
+
+          // helperResult.decision === 'created' — proceed with session-state swap.
+          const ticket = {
+            id: helperResult.ticket.id,
+            ticket_number: helperResult.ticket.ticket_number,
+          };
+          const pickedPersona = helperResult.persona ?? '';
+          // Vertex augments the helper's handoff_event insert with
+          // conversation_id (tied to the WebSocket session) so the Live
+          // Handoffs panel can correlate handoff → live session.
+          // The helper can't see session.sessionId; PATCH adds it after.
+          if (pickedPersona && session.sessionId) {
+            const url = process.env.SUPABASE_URL!;
+            const key = process.env.SUPABASE_SERVICE_ROLE!;
+            await fetch(
+              `${url}/rest/v1/feedback_handoff_events?ticket_id=eq.${encodeURIComponent(ticket.id)}`,
+              {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  apikey: key,
+                  Authorization: `Bearer ${key}`,
+                },
+                body: JSON.stringify({ conversation_id: session.sessionId }),
               },
-              actor_id: session.identity.user_id,
-              actor_role: 'user',
-              surface: 'orb',
-              vitana_id: session.identity.vitana_id ?? undefined,
-            });
-          } catch { /* non-blocking */ }
+            ).catch(() => undefined);
+          }
 
           const personaLabel: Record<string, string> = {
             devon: 'Devon (tech support)',
