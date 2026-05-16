@@ -679,10 +679,11 @@ router.get(
     // target_date) and inline it into bootstrap_context so the Vertex prompt
     // renderer's [HEALTH] / activity-awareness blocks have ground truth for
     // "what am I working toward?" questions without requiring a tool call.
+    // VTID-03022: corrected shape — life_compass actually has primary_goal +
+    // category + is_active + created_at, not goal/why/target_date.
     let lifeCompass: {
       goal: string | null;
-      why: string | null;
-      target_date: string | null;
+      category: string | null;
     } | null = null;
 
     if (sb && userId) {
@@ -794,23 +795,27 @@ router.get(
         /* best-effort */
       }
 
-      // L2.2b.6 (VTID-03010): Life Compass row. Surfaces the user's
-      // long-term goal verbatim into the system prompt. The table may
-      // legitimately be missing or empty for users who haven't set one
-      // up yet — both cases degrade silently.
+      // L2.2b.6 (VTID-03010) + VTID-03022: Life Compass row. Live schema:
+      // `primary_goal`, `category`, `is_active`, `created_at`. Earlier
+      // VTID-03010 read `current_goal/why/target_date` — none of those
+      // columns exist; every fetch returned a row with all-null fields,
+      // so the Life Compass block was never rendered into the system
+      // instruction. Confirmed canonical shape via guide/awareness-context.ts
+      // and recommendation-engine/ranking/index-pillar-weighter.ts.
       try {
         const { data: lc } = await sb
           .from('life_compass')
-          .select('*')
+          .select('id, primary_goal, category, is_active, created_at')
           .eq('user_id', userId)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         if (lc) {
-          const row = lc as Record<string, unknown>;
+          const row = lc as { primary_goal: string | null; category: string | null };
           lifeCompass = {
-            goal: (row.current_goal as string | null) ?? null,
-            why: (row.why as string | null) ?? (row.motivation as string | null) ?? null,
-            target_date:
-              (row.target_date as string | null) ?? (row.deadline as string | null) ?? null,
+            goal: (row.primary_goal || '').trim() || null,
+            category: (row.category || '').trim() || null,
           };
         }
       } catch {
@@ -894,11 +899,10 @@ router.get(
     // long-term direction is visible to the model before transient recent
     // turns. The `goal` line is the high-signal one — the model uses it for
     // "what am I working toward?" answers and as a frame for activity nudges.
-    if (lifeCompass && (lifeCompass.goal || lifeCompass.why || lifeCompass.target_date)) {
+    if (lifeCompass && (lifeCompass.goal || lifeCompass.category)) {
       const lcLines: string[] = [];
       if (lifeCompass.goal) lcLines.push(`Goal: ${lifeCompass.goal}`);
-      if (lifeCompass.why) lcLines.push(`Why: ${lifeCompass.why}`);
-      if (lifeCompass.target_date) lcLines.push(`Target date: ${lifeCompass.target_date}`);
+      if (lifeCompass.category) lcLines.push(`Category: ${lifeCompass.category}`);
       ctxParts.push(`## Life Compass\n${lcLines.join('\n')}`);
     }
 

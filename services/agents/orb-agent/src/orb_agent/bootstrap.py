@@ -145,14 +145,30 @@ class ContextBootstrap:
         # LLM keeps responding in English even when the user speaks German.
         if lang:
             request_headers["Accept-Language"] = lang
-        # VTID-03014: forward the user's real client IP captured at token
-        # mint time. The gateway's /orb/context-bootstrap calls
-        # buildClientContext(req), which runs orb-live.ts:getClientIP that
-        # already reads X-Real-IP. Without this header the bootstrap geo-IP
-        # resolves the AGENT's us-central1 Cloud Run egress IP, producing
-        # "ENVIRONMENT CONTEXT: User location: United States" for every
-        # session regardless of where the user actually is.
+        # VTID-03014 + VTID-03022: forward the user's real client IP captured
+        # at token mint time. Sent via BOTH X-Forwarded-For AND X-Real-IP.
+        #
+        # Why both:
+        # The agent→gateway hop traverses Cloud Run's internal load balancer,
+        # which AUTOMATICALLY adds an X-Forwarded-For header on every request
+        # naming the AGENT's us-central1 egress IP. The gateway's
+        # orb-live.ts:getClientIP reads X-Forwarded-For FIRST (splits on
+        # comma, takes [0]):
+        #
+        #   - X-Real-IP only: Cloud Run synthesizes XFF = "<agent_google_ip>"
+        #     and X-Real-IP gets ignored by getClientIP precedence
+        #     → gateway resolves "Council Bluffs, United States"
+        #       (us-central1 datacenter, observed in VTID-03021 traces).
+        #
+        #   - X-Forwarded-For set explicitly: Cloud Run preserves and
+        #     APPENDS its IP → XFF = "<user_ip>, <agent_google_ip>".
+        #     getClientIP splits on comma, takes [0] = user's IP.
+        #     → gateway resolves the user's real city.
+        #
+        # X-Real-IP stays as a redundant fallback for environments where
+        # XFF gets stripped or rewritten.
         if client_ip:
+            request_headers["X-Forwarded-For"] = client_ip
             request_headers["X-Real-IP"] = client_ip
         try:
             r = await self._client.get(
