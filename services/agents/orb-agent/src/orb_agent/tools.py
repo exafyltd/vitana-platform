@@ -20,9 +20,49 @@ voice-pipeline-spec/spec.json.tools[].name exactly.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .gateway_client import GatewayClient, summarize
+
+
+# VTID-03011: convert agent-side calendar args (when_iso + duration_min) into
+# the gateway route shape (start_time + end_time ISO). The agent's
+# @function_tool signatures expose `when_iso` + `duration_min` to the LLM
+# (clean, simple), but the gateway's `/api/v1/calendar/events` zod schema
+# requires `start_time` + `end_time` as ISO 8601 datetimes. Without this
+# translator the route always returned 400 "start_time Required" — caught
+# during L2.2b.6 smoke. Vertex's path is unaffected (its calendar tool is
+# inline in orb-live.ts and writes directly).
+#
+# Output format: full ISO 8601 with UTC `Z` suffix. Zod's `.datetime()` by
+# default requires UTC (no offset), so we normalize to UTC before emitting.
+# Naive (no-tz) input is interpreted as UTC — best effort; LLMs commonly
+# omit the offset for "tomorrow at 15:00" style asks.
+def _to_calendar_payload(
+    title: str,
+    when_iso: str,
+    duration_min: int = 60,
+) -> dict[str, Any]:
+    try:
+        start_dt = datetime.fromisoformat(when_iso)
+    except ValueError as exc:
+        raise ValueError(
+            f"when_iso must be ISO 8601 (e.g. '2026-05-17T15:00:00Z' "
+            f"or '2026-05-17T15:00:00+02:00'), got {when_iso!r}"
+        ) from exc
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    end_dt = start_dt + timedelta(minutes=max(1, int(duration_min)))
+
+    def _utc_z(dt: datetime) -> str:
+        return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+    return {
+        "title": title,
+        "start_time": _utc_z(start_dt),
+        "end_time": _utc_z(end_dt),
+    }
 
 # livekit-agents plumbing — `@function_tool` decorator + RunContext.
 # In livekit-agents 1.x, `RunContext` lives at `livekit.agents` (it moved out
@@ -206,10 +246,17 @@ async def search_calendar(context: RunContext, query: str, days_ahead: int = 14)
 async def create_calendar_event(
     context: RunContext, title: str, when_iso: str, duration_min: int = 60
 ) -> str:
-    """Create a calendar event."""
+    """Create a calendar event.
+
+    Args:
+        title: Event title.
+        when_iso: Start time in ISO 8601 (e.g. "2026-05-17T15:00:00+02:00").
+        duration_min: Duration in minutes (default 60).
+    """
+    # VTID-03011: translate to gateway shape (start_time + end_time).
     body = await _gw(context).post(
         "/api/v1/calendar/events",
-        {"title": title, "when_iso": when_iso, "duration_min": duration_min},
+        _to_calendar_payload(title, when_iso, duration_min),
     )
     return summarize(body)
 
@@ -217,9 +264,10 @@ async def create_calendar_event(
 @function_tool
 async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str:
     """Add an event to the user's calendar (VTID-01943)."""
+    # VTID-03011: translate to gateway shape (start_time + end_time, +60min default).
     body = await _gw(context).post(
         "/api/v1/calendar/events",
-        {"title": title, "when_iso": when_iso},
+        _to_calendar_payload(title, when_iso, 60),
     )
     return summarize(body)
 
