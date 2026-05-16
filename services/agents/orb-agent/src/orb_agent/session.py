@@ -447,21 +447,59 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         active_role=identity.role or None,
     )
 
-    # Fetch the merged context (memory + role + agent voice config).
-    # PR 1.B-Lang-4: pass identity.lang so the system prompt is built in
-    # the user's language. Without this the gateway falls back to 'en'
-    # and the LLM keeps responding in English even for German users.
-    bootstrap = await ctx_fetcher.fetch(
-        user_jwt=user_jwt or "",
-        agent_id=agent_id,
-        is_reconnect=False,
-        last_n_turns=0,
-        lang=identity.lang,
-        # VTID-03014: forward the user's real IP captured by the gateway
-        # at token-mint time. Without this header /orb/context-bootstrap
-        # geo-IPs the agent's own Cloud Run egress IP (us-central1 → US).
-        client_ip=identity.client_ip,
+    # VTID-03017: greeting-critical fast path + background full-context hydration.
+    #
+    # Old:  await ctx_fetcher.fetch()           # 500–1000ms blocking
+    #       → build cascade, sys_prompt, agent
+    #       → session.start, session.say(LLM-generated greeting)
+    #
+    # New:  bootstrap_task = create_task(fetch()) # full, in background
+    #       greeting_ctx = await fetch_greeting() # ~150–300ms
+    #       → build cascade (real voice_config from greeting_ctx)
+    #       → minimal sys_prompt (template; full one overwrites on hydration)
+    #       → agent + session.start
+    #       → session.say(deterministic template, add_to_chat_ctx=False)
+    #       → background task awaits bootstrap_task and updates
+    #         agent.instructions with the rendered system_instruction so
+    #         subsequent turns get the full context.
+    #
+    # Net: greeting fires ~1s sooner; the LLM never blocks the greeting.
+    bootstrap_task = asyncio.create_task(
+        ctx_fetcher.fetch(
+            user_jwt=user_jwt or "",
+            agent_id=agent_id,
+            is_reconnect=False,
+            last_n_turns=0,
+            lang=identity.lang,
+            client_ip=identity.client_ip,
+        )
     )
+    try:
+        bootstrap = await ctx_fetcher.fetch_greeting(
+            user_jwt=user_jwt or "",
+            agent_id=agent_id,
+            lang=identity.lang,
+            client_ip=identity.client_ip,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("VTID-03017: greeting-critical fetch failed, using degraded fallback: %s", exc)
+        # Build a minimal in-memory BootstrapResult so cascade/agent setup
+        # can proceed; voice_config=None triggers the hardcoded Google
+        # cascade in providers.build_cascade.
+        from .bootstrap import BootstrapResult
+        bootstrap = BootstrapResult(
+            bootstrap_context="",
+            active_role=None,
+            conversation_summary=None,
+            last_turns=None,
+            last_session_info=None,
+            current_route=None,
+            recent_routes=[],
+            client_context={},
+            vitana_id=identity.vitana_id,
+            voice_config=None,
+            is_degraded=True,
+        )
 
     # System instruction.
     #
@@ -1149,7 +1187,12 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     else:
         greeting_text = _localized_anonymous_greeting(identity.lang)
     try:
-        await session.say(greeting_text)
+        # VTID-03017: add_to_chat_ctx=False — the greeting is a deterministic
+        # template, not an LLM turn, so it shouldn't pollute chat_ctx as if
+        # the model authored it. The LLM still knows the user is freshly
+        # greeted via the placeholder system prompt + (after hydration) the
+        # rendered system_instruction.
+        await session.say(greeting_text, add_to_chat_ctx=False)
     except Exception as exc:  # noqa: BLE001
         logger.warning("initial greeting session.say failed: %s", exc)
         asyncio.create_task(
@@ -1164,6 +1207,66 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 },
             )
         )
+
+    # VTID-03017: hydrate the full system instruction in the background.
+    # The greeting already fired with the placeholder prompt; subsequent
+    # user turns get the full Vertex-rendered system_instruction once
+    # bootstrap_task resolves (~500ms-1s after click). Best-effort: if the
+    # livekit-agents Agent class doesn't accept attribute reassignment on
+    # `instructions`, the placeholder stays for the session; conversation
+    # still works, just without the memory-rich context.
+    async def _hydrate_full_context_in_background() -> None:
+        try:
+            full = await bootstrap_task
+            full_sys_prompt: str | None = full.system_instruction
+            if not full_sys_prompt and not identity.is_anonymous:
+                try:
+                    full_sys_prompt = build_live_system_instruction(
+                        lang=identity.lang,
+                        voice_style="warm",
+                        bootstrap_context=full.bootstrap_context,
+                        active_role=full.active_role or identity.role,
+                        conversation_summary=full.conversation_summary,
+                        conversation_history=full.last_turns,
+                        is_reconnect=False,
+                        last_session_info=None,
+                        current_route=full.current_route,
+                        recent_routes=full.recent_routes,
+                        client_context=full.client_context,
+                        vitana_id=full.vitana_id or identity.vitana_id,
+                        first_name=full.first_name,
+                        display_name=full.display_name,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("VTID-03017: full sys_prompt build failed: %s", exc)
+            applied = False
+            if full_sys_prompt:
+                try:
+                    setattr(agent, "instructions", full_sys_prompt)
+                    applied = True
+                except Exception:
+                    try:
+                        object.__setattr__(agent, "instructions", full_sys_prompt)
+                        applied = True
+                    except Exception:
+                        pass
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "context_hydrated",
+                        "orb_session_id": orb_session_id,
+                        "applied_instructions": applied,
+                        "system_prompt_length": len(full_sys_prompt or ""),
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("VTID-03017: background context hydration failed: %s", exc)
+
+    asyncio.create_task(_hydrate_full_context_in_background())
 
     # Park here until the room disconnects. The AgentSession keeps running
     # autonomously via the tasks it spawned in start(); we just need to

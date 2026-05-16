@@ -580,6 +580,85 @@ router.get(
       voiceConfig = (data as Record<string, unknown> | null) ?? null;
     }
 
+    // VTID-03017: greeting-critical fast path. When the agent calls with
+    // ?greeting_only=true, return ONLY the fields needed to build the cascade
+    // and emit a deterministic templated greeting:
+    //   - voice_config        (per-agent STT/LLM/TTS row)
+    //   - first_name          (preferred address — from app_users.display_name,
+    //                          falling back to memory_facts.user_name)
+    //   - display_name        (full name for fallback)
+    //   - vitana_id           (handle, as a fallback greeting form)
+    //   - active_role         (so the placeholder prompt knows the role)
+    //   - lang                (echo back for the agent)
+    // Skips the slow work: memory_items, identity_facts compile, life_compass,
+    // bootstrap_context render, decision_context compile, system_instruction
+    // render. The agent runs this in the click→greeting path and runs the full
+    // /orb/context-bootstrap (without the flag) as a background task to
+    // hydrate the system instruction for subsequent turns.
+    const greetingOnly = String(req.query.greeting_only ?? 'false') === 'true';
+    if (greetingOnly) {
+      let goDisplayName: string | null = null;
+      if (sb && userId) {
+        try {
+          const { data: app } = await sb
+            .from('app_users')
+            .select('display_name')
+            .eq('user_id', userId)
+            .maybeSingle();
+          goDisplayName =
+            ((app as Record<string, unknown> | null)?.display_name as string | null) ?? null;
+        } catch {
+          /* best-effort */
+        }
+        if (!goDisplayName) {
+          // Fallback: memory_facts.user_name (the Cognee-extracted canonical name)
+          try {
+            const { data: fact } = await sb
+              .from('memory_facts')
+              .select('fact_value')
+              .eq('user_id', userId)
+              .eq('fact_key', 'user_name')
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const userName = (fact as Record<string, unknown> | null)?.fact_value as
+              | string
+              | undefined;
+            if (userName) goDisplayName = userName;
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+      const goFirstName = goDisplayName ? goDisplayName.split(/\s+/)[0] : null;
+      return res.json({
+        // Greeting-critical fields (populated)
+        voice_config: voiceConfig,
+        active_role: role,
+        vitana_id: req.identity?.vitana_id ?? null,
+        display_name: goDisplayName,
+        first_name: goFirstName,
+        // Echoed back so the agent has lang in one place
+        lang,
+        greeting_only: true,
+        // Slow-context fields (left empty — agent will get them from a
+        // second non-greeting-only call)
+        bootstrap_context: '',
+        system_instruction: null,
+        identity_facts: [],
+        identity_facts_count: 0,
+        memory_items: [],
+        life_compass: null,
+        decision_context: null,
+        conversation_summary: null,
+        last_turns: null,
+        last_session_info: null,
+        current_route: null,
+        recent_routes: [],
+        client_context: { user_agent: req.headers['user-agent'] ?? null },
+      });
+    }
+
     // VTID-LIVEKIT-BOOTSTRAP-IDENTITY: enrich the bootstrap context with the
     // user's identity facts so the agent's system prompt can answer "do you
     // know who I am?" correctly. Vertex's full system instruction builder
