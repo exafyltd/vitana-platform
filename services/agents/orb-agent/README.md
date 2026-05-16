@@ -6,7 +6,7 @@ LiveKit-based ORB voice agent worker.
 
 A Python `livekit-agents` worker that joins LiveKit rooms as a participant, runs a configurable STT → LLM → TTS cascade, dispatches the same ~40 tools the Vertex Live pipeline exposes, and emits OASIS events with the same semantics. It is the **standby alternative** to the Vertex Live pipeline at `services/gateway/src/routes/orb-live.ts`.
 
-The two pipelines are **mutually exclusive** at runtime — exactly one is active at any moment, controlled by `system_config.voice.active_provider` ∈ `{vertex, livekit}`. When this service is the standby, Cloud Run runs zero instances (`min_instances=0`).
+The two pipelines are **mutually exclusive** at runtime — exactly one is active at any moment, controlled by `system_config.voice.active_provider` ∈ `{vertex, livekit}`. With LiveKit promoted to a primary path, Cloud Run keeps one warm worker (`min_instances=1`) so the first room join doesn't hit cold-start latency (~1-2s) for real users. See VTID-03016.
 
 See `.claude/plans/here-is-what-our-valiant-stearns.md` for the full architecture rationale.
 
@@ -81,9 +81,9 @@ This is why the skeleton matters: it gives the Python extractor real symbols to 
 
 ## Deployment
 
-Cloud Run service `vitana-orb-agent` in `us-central1`, `min-instances=0`, `max-instances=10`. EXEC-DEPLOY workflow gates on the `/health` probe responding 200 with `{"livekit_reachable": true, "providers": {...}}`.
+Cloud Run service `vitana-orb-agent` in `us-central1`, `min-instances=1`, `max-instances=10`. EXEC-DEPLOY workflow gates on the `/health` probe responding 200 with `{"livekit_reachable": true, "providers": {...}}`.
 
-Standby cost is near-zero: `min-instances=0` means no idle compute. The only standing costs are the LiveKit SFU pair (separate workload) and the Artifact Registry image (~$0.20/mo).
+One warm worker is kept hot so the click→greeting path doesn't pay Cloud Run cold-start (~1-2s) on first room join (VTID-03016). The standing cost is one always-on `cpu=2 / memory=4Gi` instance — accepted as the price of acceptable voice latency. The LiveKit SFU pair (separate workload) and the Artifact Registry image (~$0.20/mo) are additional.
 
 ## Memory anchors
 
