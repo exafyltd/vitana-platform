@@ -85,6 +85,28 @@ except ImportError:
     silero = None  # type: ignore[assignment]
     SILERO_AVAILABLE = False
 
+# VTID-03012: module-level Silero VAD instance. Loading PyTorch models is
+# slow (1.5–3s observed in tests) and was happening on every new room
+# dispatch — directly inflating the click-to-greeting latency. The model
+# is stateless across sessions (Silero VAD just classifies short audio
+# frames); sharing one instance is safe and the canonical livekit-agents
+# pattern. `_get_vad()` lazy-loads on first call, then returns the cached
+# instance to every subsequent agent_entrypoint.
+_SHARED_VAD: Any = None
+
+def _get_vad() -> Any:
+    global _SHARED_VAD
+    if _SHARED_VAD is not None:
+        return _SHARED_VAD
+    if not SILERO_AVAILABLE:
+        return None
+    try:
+        _SHARED_VAD = silero.VAD.load()  # type: ignore[union-attr]
+        logger.info("VTID-03012: module-level Silero VAD loaded (reused across sessions)")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("VTID-03012: silero.VAD.load() failed: %s", exc)
+    return _SHARED_VAD
+
 
 CODE_VERSION = "agent-2026-05-07-name-and-facts"
 
@@ -531,9 +553,13 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 bootstrap.first_name and bootstrap.first_name.lower() in sys_prompt[:600].lower()
             ),
         }
-        await gw.post("/api/v1/orb/agent-trace", trace_payload)
+        # VTID-03012: fire-and-forget — this trace is observability-only,
+        # nothing downstream blocks on it. Awaiting it was adding 200-500ms
+        # of gateway round-trip to every session before the greeting could
+        # fire.
+        asyncio.create_task(gw.post("/api/v1/orb/agent-trace", trace_payload))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("agent-trace post failed: %s", exc)
+        logger.warning("agent-trace payload build failed: %s", exc)
 
     # AgentSession glues together STT + LLM + TTS + the room. userdata
     # carries the per-session GatewayClient so each tool body can pull it off
@@ -559,21 +585,12 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     gw.is_anonymous = bool(identity.is_anonymous)
 
     # VTID-03003: wire Silero VAD so the cascade-pipeline can detect turn
-    # boundaries reliably. Trace shows that without VAD, the first
-    # user_input_transcribed fires correctly, the agent replies, and
-    # then every subsequent user utterance is dropped (no
-    # user_input_transcribed event ever fires again — STT/turn-detection
-    # gets stuck in an indeterminate state after the agent's reply).
-    # silero.VAD.load() pulls the model on first call and caches it.
-    vad_instance = None
-    if SILERO_AVAILABLE:
-        try:
-            vad_instance = silero.VAD.load()  # type: ignore[union-attr]
-            logger.info("VTID-03003: Silero VAD loaded for cascade turn detection")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("VTID-03003: silero.VAD.load() failed, falling back: %s", exc)
-    else:
-        logger.warning("VTID-03003: livekit-plugins-silero not installed, no VAD")
+    # boundaries reliably. VTID-03012: VAD is now module-level cached
+    # (loaded once, reused across sessions) so first-time PyTorch model
+    # init no longer adds 1.5–3s to every new agent_entrypoint call.
+    vad_instance = _get_vad()
+    if vad_instance is None and not SILERO_AVAILABLE:
+        logger.warning("livekit-plugins-silero not installed, no VAD")
 
     session_kwargs: dict[str, Any] = {
         "stt": cascade.stt,
@@ -1031,58 +1048,40 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     ctx.add_shutdown_callback(_stop_stall_on_shutdown)
 
-    # Initial greeting — uses the LLM (via generate_reply) so the agent reads
-    # the user's name and verified facts from the system-prompt's WHO YOU ARE
-    # TALKING TO block. The TTS bug that caused 25s of dead air on every
-    # session is fixed in providers.py (language_code → language).
+    # Initial greeting — VTID-03012: use session.say() directly with a
+    # templated string instead of session.generate_reply(). The greeting
+    # was already heavily constrained ("ONE short sentence + brief 'What
+    # can I help with today?'") so the LLM was just rendering a template
+    # — a 1–2s round-trip we don't need. Direct TTS skips straight to
+    # the audio. session.say() defaults to add_to_chat_ctx=True so the
+    # greeting remains part of the conversation history for follow-ups.
     if not identity.is_anonymous:
         vid = (bootstrap.vitana_id or "").strip()
         first_name = (bootstrap.first_name or "").strip()
         if first_name:
-            greeting_instructions = (
-                f"Greet the user warmly RIGHT NOW by their first name: '{first_name}'. "
-                f"Examples: 'Hi {first_name}!' or 'Hey {first_name}, good to hear from you.' "
-                f"Their Vitana handle ({'@' + vid if vid else '<no handle>'}) is "
-                f"available as a fallback but DO NOT lead with it — '{first_name}' is "
-                f"the natural way a real person would address them. ONE short sentence "
-                f"+ brief 'What can I help with today?'. NEVER say you don't know them — "
-                f"you do. NEVER apologize for anything in the greeting."
-            )
+            greeting_text = f"Hi {first_name}! What can I help with today?"
+        elif vid:
+            greeting_text = f"Hi @{vid}! What can I help with today?"
         else:
-            greeting_instructions = (
-                f"Greet the user warmly RIGHT NOW using their @vitana_id handle "
-                f"(it is @{vid or 'their handle'}). Example: 'Hi @{vid or 'there'}!'. "
-                f"ONE short sentence + brief 'What can I help with today?'. NEVER say "
-                f"you don't know them — you do. NEVER apologize for anything in the greeting."
-            )
-        try:
-            await session.generate_reply(instructions=greeting_instructions)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("initial greeting generate_reply failed: %s", exc)
-            asyncio.create_task(
-                _early_trace_heartbeat(
-                    cfg.gateway_url,
-                    {
-                        "user_id": identity.user_id or "unknown",
-                        "code_version": CODE_VERSION,
-                        "phase": "greeting_failed",
-                        "orb_session_id": orb_session_id,
-                        "error": str(exc)[:500],
-                    },
-                )
-            )
+            greeting_text = "Hi there! What can I help with today?"
     else:
-        try:
-            await session.generate_reply(
-                instructions=(
-                    "Greet the visitor briefly as Vitana. They are not signed "
-                    "in, so do not invent personal details. Offer to help with "
-                    "general questions or guide them to sign in for personalized "
-                    "answers. One short sentence."
-                ),
+        greeting_text = "Hi! How can I help today?"
+    try:
+        await session.say(greeting_text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("initial greeting session.say failed: %s", exc)
+        asyncio.create_task(
+            _early_trace_heartbeat(
+                cfg.gateway_url,
+                {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "phase": "greeting_failed",
+                    "orb_session_id": orb_session_id,
+                    "error": str(exc)[:500],
+                },
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("anonymous greeting generate_reply failed: %s", exc)
+        )
 
     # Park here until the room disconnects. The AgentSession keeps running
     # autonomously via the tasks it spawned in start(); we just need to
