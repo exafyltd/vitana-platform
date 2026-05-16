@@ -36327,6 +36327,16 @@ function renderLivekitTestView() {
             log('error', 'Production LiveKit is disabled (active=' + lktActiveProvider + '). Switch to Test-session mode or enable LiveKit canary in Voice Lab.');
             return;
         }
+        // Parallel-connect guard: if a Room already exists, refuse to spawn
+        // a second one. Without this guard, a stale Connect button (e.g.
+        // because room.connect() rejected even though the room is alive,
+        // see the catch block below) lets the user start a second
+        // WebRTC session on top of the first — both rooms publish the mic
+        // and play remote audio, producing two overlapping conversations.
+        if (room) {
+            log('warn', 'connect ignored — a session is already active. Click Disconnect first.');
+            return;
+        }
         connectBtn.disabled = true;
         setState('connecting');
         try {
@@ -36363,15 +36373,27 @@ function renderLivekitTestView() {
 
             room.on(LivekitClient.RoomEvent.ConnectionStateChanged, function (s) {
                 log('event', 'ConnectionStateChanged', { state: s });
-                if (s === LivekitClient.ConnectionState.Connected) {
+                // String compare (not the enum) so the listener stays correct
+                // even if a future bundle update relocates ConnectionState.
+                // Bundle values verified: 'connected' / 'connecting' /
+                // 'disconnected' / 'reconnecting' / 'signalReconnecting'.
+                if (s === 'connected') {
                     setState('connected');
                     disconnectBtn.disabled = false;
-                } else if (s === LivekitClient.ConnectionState.Disconnected) {
+                } else if (s === 'disconnected') {
                     setState('disconnected');
                     setMic(false);
                     setSpeaking(false);
                     connectBtn.disabled = false;
                     disconnectBtn.disabled = true;
+                    // Server-initiated tear-down: drop attached audio and
+                    // null the room reference so the parallel-connect guard
+                    // releases for the next Connect click.
+                    attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
+                    attachedAudio = [];
+                    room = null;
+                } else if (s === 'reconnecting' || s === 'signalReconnecting') {
+                    setState(s);
                 }
             });
 
@@ -36488,9 +36510,26 @@ function renderLivekitTestView() {
             }
         } catch (e) {
             log('error', e.message || String(e));
+            // If room.connect() rejected but the room actually reached the
+            // Connected state (post-connect setup hiccup — late timeout,
+            // track-publish race, etc.), don't lie to the user about the
+            // state. The ConnectionStateChanged listener already painted
+            // 'connected'; keep it. The session is usable.
+            if (room && room.state === 'connected') {
+                log('warn', 'connect() rejected but room.state === connected; leaving session active', { err: e && e.message });
+                return;
+            }
             setState('disconnected');
             connectBtn.disabled = false;
             disconnectBtn.disabled = true;
+            // Tear down a partially-created room so the parallel-connect
+            // guard releases and the next click starts from a clean slate.
+            if (room) {
+                try { room.disconnect().catch(function () {}); } catch (_) {}
+                room = null;
+            }
+            attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
+            attachedAudio = [];
         }
     }
 
