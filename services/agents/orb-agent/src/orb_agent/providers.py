@@ -483,11 +483,20 @@ def _build_tts(
             dropped = sorted(set(opts.keys()) - allowed)
             if dropped:
                 notes.append(f"google_tts: dropped unsupported tts_options keys: {dropped}")
-            # User-tuned speaking rate (default 1.1 = 10% faster than the
-            # plugin default; the Chirp3-HD voices ship at a slow baseline,
-            # particularly noticeable on German). Operators can override per
-            # agent via tts_options.speaking_rate.
-            forwarded.setdefault("speaking_rate", 1.1)
+            # User-tuned speaking rate. VTID-03019: bumped 1.1 → 1.15 — at
+            # 1.1 the Chirp3-HD voices still feel slow against real-time
+            # voice expectations; 1.15 sits in the conversational sweet
+            # spot (~50-60wpm faster than baseline) without sounding
+            # rushed. Operators can override per agent via
+            # tts_options.speaking_rate.
+            forwarded.setdefault("speaking_rate", 1.15)
+            # VTID-03019: enable streaming synthesis by default so audio
+            # frames start flowing as soon as the first phoneme is
+            # synthesized, instead of waiting for the full utterance to
+            # be generated. Cuts time-to-first-audio on the agent's
+            # responses by a few hundred ms per turn. livekit-plugins-google
+            # supports use_streaming on Google Cloud TTS REST (Chirp3 path).
+            forwarded.setdefault("use_streaming", True)
             # Google Cloud Text-to-Speech via ADC (no API key needed).
             return google.TTS(voice_name=voice_name, language=language, **forwarded)
         except ImportError:

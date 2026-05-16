@@ -1018,7 +1018,7 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 1200
+        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
       };
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);

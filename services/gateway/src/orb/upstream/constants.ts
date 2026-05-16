@@ -20,8 +20,18 @@
 // How long Vertex waits after user stops speaking before triggering a response.
 // Default Vertex VAD is ~100ms which is too aggressive — the model starts
 // responding while users are still mid-thought or pausing between sentences.
-// 1200ms provides natural pause tolerance for conversational speech.
-export const VAD_SILENCE_DURATION_MS_DEFAULT = 1_200;
+//
+// Tuning history:
+//   100ms   (Vertex default)  — too aggressive, cut off the user mid-thought
+//   1_200ms (VTID-RESPONSE-DELAY)  — safe, but felt sluggish
+//   850ms   (VTID-03019)            — current; trims ~350ms off end-of-turn
+//                                     latency while still tolerating short
+//                                     conversational pauses (sub-sentence
+//                                     breaths, "uh", "let me think…").
+//                                     Watch for false turn-takes when users
+//                                     pause >850ms between thoughts; if seen,
+//                                     bump back toward 1_000ms.
+export const VAD_SILENCE_DURATION_MS_DEFAULT = 850;
 
 // =============================================================================
 // VTID-ECHO-COOLDOWN: Post-turn mic audio cooldown
