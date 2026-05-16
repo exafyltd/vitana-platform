@@ -69,6 +69,7 @@ class ContextBootstrap:
         is_reconnect: bool = False,
         last_n_turns: int = 0,
         lang: str | None = None,
+        client_ip: str | None = None,
     ) -> BootstrapResult:
         params: dict[str, str | int | bool] = {
             "agent_id": agent_id,
@@ -88,6 +89,15 @@ class ContextBootstrap:
         # LLM keeps responding in English even when the user speaks German.
         if lang:
             request_headers["Accept-Language"] = lang
+        # VTID-03014: forward the user's real client IP captured at token
+        # mint time. The gateway's /orb/context-bootstrap calls
+        # buildClientContext(req), which runs orb-live.ts:getClientIP that
+        # already reads X-Real-IP. Without this header the bootstrap geo-IP
+        # resolves the AGENT's us-central1 Cloud Run egress IP, producing
+        # "ENVIRONMENT CONTEXT: User location: United States" for every
+        # session regardless of where the user actually is.
+        if client_ip:
+            request_headers["X-Real-IP"] = client_ip
         try:
             r = await self._client.get(
                 self._endpoint,
