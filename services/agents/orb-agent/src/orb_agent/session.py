@@ -362,12 +362,24 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     )
 
     # System instruction.
+    #
+    # L2.2b.6 (VTID-03010): the gateway now renders the full Vertex
+    # buildLiveSystemInstruction output and returns it under
+    # `bootstrap.system_instruction`. Use it verbatim when present —
+    # this is the only way the LiveKit and Vertex pipelines share a
+    # single source of truth for the ~17-section prompt (greeting policy,
+    # identity lock, intent classifier, route integrity, retired-pillar
+    # handling, diary-logging rules, AVAILABLE TOOLS catalog, etc.).
+    # When the field is None (pre-L2.2b.6 gateway, or render exception),
+    # fall back to the legacy Python builder.
     if identity.is_anonymous:
         sys_prompt = build_anonymous_system_instruction(
             lang=identity.lang,
             voice_style="warm",
             ctx=bootstrap.client_context,
         )
+    elif bootstrap.system_instruction:
+        sys_prompt = bootstrap.system_instruction
     else:
         sys_prompt = build_live_system_instruction(
             lang=identity.lang,

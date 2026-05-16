@@ -405,6 +405,19 @@ async def consult_external_ai(
 
 
 @function_tool
+async def get_life_compass(context: RunContext) -> str:
+    """Return the user's active Life Compass — goal, why, target date (VTID-03010).
+
+    Call this when the user asks "what is my Life Compass?", "what am I
+    working toward?", "remind me what my goal is", or any variation about
+    their long-term direction. The Life Compass is the user-authored
+    one-sentence goal anchored in Settings.
+    """
+    body = await _dispatch(context, "get_life_compass", {})
+    return summarize(body)
+
+
+@function_tool
 async def get_vitana_index(context: RunContext) -> str:
     """Return the user's current Vitana Index score + per-pillar breakdown (VTID-01983)."""
     body = await _gw(context).get("/api/v1/vitana-index")
@@ -931,6 +944,8 @@ def all_tool_names() -> list[str]:
         "read_email", "find_contact",
         # External AI bridge (1)
         "consult_external_ai",
+        # Life Compass (1) — VTID-03010 (L2.2b.6)
+        "get_life_compass",
         # Vitana Index (3)
         "get_vitana_index", "get_index_improvement_suggestions", "create_index_improvement_plan",
         # Diary (1)

@@ -38,6 +38,14 @@ class BootstrapResult:
     display_name: str | None = None  # full display name from app_users.display_name
     first_name: str | None = None  # first token of display_name (or memory_facts.user_name)
     identity_facts: list[dict[str, Any]] | None = None  # raw memory_facts whitelisted by identity-core keys
+    # L2.2b.6 (VTID-03010): the gateway now renders the full Vertex
+    # buildLiveSystemInstruction output and returns it here. session.py
+    # uses this verbatim — no parallel Python builder. None if the gateway
+    # render failed or the field isn't present (pre-L2.2b.6 gateway).
+    system_instruction: str | None = None
+    # L2.2b.6 (VTID-03010): Life Compass row for cockpit / tooling inspection.
+    # Already inlined into bootstrap_context; this field is for tooling.
+    life_compass: dict[str, Any] | None = None
     is_degraded: bool = False
 
 
@@ -102,6 +110,12 @@ class ContextBootstrap:
                 display_name=data.get("display_name"),
                 first_name=data.get("first_name"),
                 identity_facts=data.get("identity_facts") or [],
+                # L2.2b.6 (VTID-03010): full Vertex-rendered system instruction.
+                # Pre-L2.2b.6 gateways won't include this field — `.get()`
+                # defaults to None and session.py falls back to the legacy
+                # build_live_system_instruction passthrough.
+                system_instruction=data.get("system_instruction"),
+                life_compass=data.get("life_compass"),
                 is_degraded=False,
             )
         except (httpx.TimeoutException, httpx.HTTPError) as exc:

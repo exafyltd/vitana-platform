@@ -33,6 +33,14 @@ import { pickShortGapGreetings } from '../../instruction/greeting-pools';
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
 import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+// L2.2b.6 (VTID-03010): tool-catalog renderer. Embeds the tool catalog into
+// the prompt as a prose block so the LiveKit path (where the Python
+// livekit-plugins-google plugin does NOT fully serialize @function_tool
+// decorators into Gemini's function_declarations) has a backup directory
+// the LLM can read directly. Vertex sees the same prose block AND the
+// structured function_declarations via the BidiGenerate setup message —
+// redundancy is harmless for Vertex and load-bearing for LiveKit.
+import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
@@ -1142,6 +1150,36 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
    "Physical" / "Social" / "Environmental" / "Prosperity" — DON'T.
    Always speak the canonical name (Exercise / Mental).`;
     }
+  }
+
+  // L2.2b.6 (VTID-03010): ## AVAILABLE TOOLS — prose directory of every
+  // tool declaration, rendered from buildLiveApiTools(mode, route, role).
+  // Two reasons this section exists:
+  //
+  //   1. The LiveKit (Python) path uses livekit-plugins-google + @function_tool
+  //      decorators. That plugin chain does NOT fully serialize the decorator
+  //      metadata into Gemini's function_declarations on the wire — many
+  //      tools the agent knows about never reach the LLM as callable
+  //      functions. The text catalog ensures Gemini KNOWS the tool exists
+  //      and what it does even when the wire-level declaration is missing.
+  //
+  //   2. Vertex's own path always carries the structured function_declarations
+  //      in the BidiGenerate setup message, so the prose block is redundant
+  //      on Vertex but harmless — same description text Gemini already sees
+  //      from the declarations, just rendered once more.
+  //
+  // Bracketed by an explicit `## AVAILABLE TOOLS` header so the model can
+  // index by section name and so operators reading the prompt audit can
+  // find it quickly. Appended near the end so it has recency primacy in
+  // Gemini's attention window for "what can I do?" decisions.
+  const toolsMode: 'anonymous' | 'authenticated' = activeRole ? 'authenticated' : 'anonymous';
+  const toolsBlock = renderAvailableToolsSection(
+    toolsMode,
+    currentRoute ?? undefined,
+    activeRole ?? undefined,
+  );
+  if (toolsBlock) {
+    instruction += `\n\n## AVAILABLE TOOLS\n\nYou have the following tools available. Call the matching tool immediately when the user asks about anything in its description — do NOT say "I don't have access" or "I can't do that". Tools you didn't see in your own function-declarations array but DO see described below are still callable; the runtime resolves the call through the shared dispatcher. Never invent a tool name not listed here.\n\n${toolsBlock}`;
   }
 
   return instruction;

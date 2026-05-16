@@ -3128,6 +3128,83 @@ async function tool_get_pillar_subscores(
 // "not yet computed" reason so the orb can speak it.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// L2.2b.6 (VTID-03010) — get_life_compass
+//
+// Returns the user's active Life Compass row (current goal, why, target
+// date, optional steps). The Life Compass is the user's authoritative
+// long-term direction; ORB Vertex prompts already reference it via the
+// embedded user-context profile, but there was no dedicated tool either
+// pipeline could call to fetch the row on demand. Without it, the LLM
+// has no way to answer "what is my Life Compass goal?" / "remind me
+// what I'm working toward" with the canonical value — it either invents
+// one from prior conversation or denies access.
+// ---------------------------------------------------------------------------
+export async function tool_get_life_compass(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'get_life_compass requires an authenticated user.' };
+  }
+  try {
+    const { data, error } = await sb
+      .from('life_compass')
+      .select('*')
+      .eq('user_id', identity.user_id)
+      .maybeSingle();
+    if (error) {
+      if (/relation .* does not exist/i.test(error.message)) {
+        return {
+          ok: true,
+          result: { available: false, reason: 'life_compass_not_deployed' },
+          text:
+            'The Life Compass feature is not enabled in this environment yet — ' +
+            'no record on file.',
+        };
+      }
+      return { ok: false, error: `get_life_compass failed: ${error.message}` };
+    }
+    if (!data) {
+      return {
+        ok: true,
+        result: { available: false, reason: 'not_set' },
+        text:
+          'You have not set up your Life Compass yet. It is the one-sentence ' +
+          'direction we anchor your plans to — you can set it in Settings → ' +
+          'Life Compass, or I can walk you through it now.',
+      };
+    }
+    const row = data as Record<string, unknown>;
+    const goal = (row.current_goal as string | null) ?? null;
+    const why = (row.why as string | null) ?? (row.motivation as string | null) ?? null;
+    const targetDate =
+      (row.target_date as string | null) ?? (row.deadline as string | null) ?? null;
+    const fields: string[] = [];
+    if (goal) fields.push(`Goal: ${goal}`);
+    if (why) fields.push(`Why: ${why}`);
+    if (targetDate) fields.push(`Target date: ${targetDate}`);
+    const text = fields.length
+      ? `Your Life Compass — ${fields.join('. ')}.`
+      : 'Your Life Compass row exists but has no goal text yet.';
+    return {
+      ok: true,
+      result: {
+        available: true,
+        goal,
+        why,
+        target_date: targetDate,
+        raw: row,
+      },
+      text,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'get_life_compass_exception';
+    return { ok: false, error: msg };
+  }
+}
+
 async function _getWeakestPillarAndGoal(
   sb: SupabaseClient,
   userId: string,
@@ -3476,6 +3553,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
   find_perfect_product: tool_find_perfect_product,
   find_perfect_practitioner: tool_find_perfect_practitioner,
+  // L2.2b.6 (VTID-03010) — Life Compass read tool. Used by both pipelines so
+  // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
+  // working toward" with the canonical value instead of inventing one.
+  get_life_compass: tool_get_life_compass,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);

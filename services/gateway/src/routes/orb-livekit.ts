@@ -47,6 +47,13 @@ import {
   buildClientContext,
   formatClientContextForInstruction,
 } from './orb-live';
+// L2.2b.6 (VTID-03010): render the full Vertex system instruction for LiveKit.
+// Until this slice, the LiveKit agent built its own ~7-section Python prompt
+// while Vertex sent a ~17-section TypeScript prompt — the LLM had radically
+// different rules depending on which pipeline served the session. Bootstrap
+// now returns the rendered Vertex instruction verbatim under a new
+// `system_instruction` field; the agent reads it directly.
+import { buildLiveSystemInstruction } from '../orb/live/instruction/live-system-instruction';
 import {
   optionalAuth,
   requireAuthWithTenant,
@@ -560,6 +567,15 @@ router.get(
       pillars: Record<string, number>;
       weakest: string | null;
     } | null = null;
+    // L2.2b.6 (VTID-03010): fetch the user's Life Compass row (goal + why +
+    // target_date) and inline it into bootstrap_context so the Vertex prompt
+    // renderer's [HEALTH] / activity-awareness blocks have ground truth for
+    // "what am I working toward?" questions without requiring a tool call.
+    let lifeCompass: {
+      goal: string | null;
+      why: string | null;
+      target_date: string | null;
+    } | null = null;
 
     if (sb && userId) {
       // Memory items top-5 — note the table is `memory_items`, not `memory_garden`.
@@ -669,6 +685,29 @@ router.get(
       } catch {
         /* best-effort */
       }
+
+      // L2.2b.6 (VTID-03010): Life Compass row. Surfaces the user's
+      // long-term goal verbatim into the system prompt. The table may
+      // legitimately be missing or empty for users who haven't set one
+      // up yet — both cases degrade silently.
+      try {
+        const { data: lc } = await sb
+          .from('life_compass')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (lc) {
+          const row = lc as Record<string, unknown>;
+          lifeCompass = {
+            goal: (row.current_goal as string | null) ?? null,
+            why: (row.why as string | null) ?? (row.motivation as string | null) ?? null,
+            target_date:
+              (row.target_date as string | null) ?? (row.deadline as string | null) ?? null,
+          };
+        }
+      } catch {
+        /* table may not exist in all envs */
+      }
     }
 
     const vitanaId = req.identity?.vitana_id ?? null;
@@ -715,6 +754,18 @@ router.get(
           indexSnapshot.weakest ? ` Weakest pillar: ${indexSnapshot.weakest}.` : ''
         }\nPillars:\n${pillarLines}`,
       );
+    }
+
+    // L2.2b.6 (VTID-03010): Life Compass block. Goes ABOVE memory items so the
+    // long-term direction is visible to the model before transient recent
+    // turns. The `goal` line is the high-signal one — the model uses it for
+    // "what am I working toward?" answers and as a frame for activity nudges.
+    if (lifeCompass && (lifeCompass.goal || lifeCompass.why || lifeCompass.target_date)) {
+      const lcLines: string[] = [];
+      if (lifeCompass.goal) lcLines.push(`Goal: ${lifeCompass.goal}`);
+      if (lifeCompass.why) lcLines.push(`Why: ${lifeCompass.why}`);
+      if (lifeCompass.target_date) lcLines.push(`Target date: ${lifeCompass.target_date}`);
+      ctxParts.push(`## Life Compass\n${lcLines.join('\n')}`);
     }
 
     if (memoryItems.length) {
@@ -789,13 +840,57 @@ router.get(
       }
     }
 
+    const bootstrapContext = ctxParts.join('\n');
+
+    // L2.2b.6 (VTID-03010): render the SAME system instruction Vertex
+    // renders, so the LiveKit agent uses byte-identical prompt rules.
+    // Until this slice, the LiveKit agent had its own ~7-section Python
+    // builder while Vertex carried ~17 sections (greeting policy,
+    // identity lock, activity awareness, intent classifier, route
+    // integrity, retired-pillar handling, diary-logging tool rules,
+    // etc.). The model behaved radically differently per pipeline.
+    //
+    // Best-effort: if rendering throws, the agent still gets the structured
+    // bootstrap_context + identity fields and can fall back to its
+    // pre-L2.2b.6 builder. Never block the bootstrap on a render error.
+    let systemInstruction: string | null = null;
+    try {
+      const voiceStyle =
+        (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
+        'friendly, calm, empathetic';
+      systemInstruction = buildLiveSystemInstruction(
+        lang,
+        voiceStyle,
+        bootstrapContext,
+        role,
+        undefined,           // conversationSummary — not surfaced through bootstrap yet
+        undefined,           // conversationHistory — agent reconnect path will populate later
+        isReconnect,
+        null,                // lastSessionInfo — not surfaced through bootstrap yet
+        null,                // currentRoute — LiveKit path doesn't carry the React route
+        null,                // recentRoutes
+        envContext ?? undefined,
+        req.identity?.vitana_id ?? null,
+      );
+    } catch (exc) {
+      console.warn(
+        `[${VTID}] system_instruction render failed (agent falls back to its own builder): ${(exc as Error).message}`,
+      );
+    }
+
     res.json({
       ok: true,
       vtid: VTID,
       agent_id: agentId,
       is_reconnect: isReconnect,
       last_n_requested: lastN,
-      bootstrap_context: ctxParts.join('\n'),
+      bootstrap_context: bootstrapContext,
+      // L2.2b.6 (VTID-03010): rendered full Vertex system instruction.
+      // The agent's session.py uses this verbatim — no parallel Python
+      // builder, no template drift. When null (rare: render exception),
+      // the agent's instructions.py passthrough falls back to a minimal
+      // bootstrap_context-based prompt.
+      system_instruction: systemInstruction,
       active_role: role,
       conversation_summary: null,
       last_turns: null,
@@ -813,6 +908,9 @@ router.get(
       identity_facts_count: identityFacts.length,
       voice_config: voiceConfig,
       memory_items: memoryItems,
+      // L2.2b.6 (VTID-03010): Life Compass row surfaced for tooling / cockpit
+      // inspection. The rendered value is already inside bootstrap_context.
+      life_compass: lifeCompass,
       // L2.2b.4 (VTID-03008): structured decision-contract output for
       // cockpit/operator inspection. The rendered version is already
       // inlined into `bootstrap_context`; this field is for tooling.

@@ -23,6 +23,57 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 
 
 /**
+ * L2.2b.6 (VTID-03010): Render the same tool catalog as a prose block for
+ * embedding in the system instruction. Vertex's Gemini Live receives the
+ * structured `tools[0].function_declarations` array via the BidiGenerate
+ * setup message, but the LiveKit / livekit-plugins-google path does NOT
+ * fully serialize @function_tool decorators into Gemini's
+ * function_declarations (smoke-tested: many tool calls never fire even
+ * when the agent has the decorator). Embedding the tool catalog as text
+ * inside the prompt gives the LLM a backup directory it can read directly
+ * — names + descriptions, no parameter schemas (those are still on the
+ * @function_tool side; the prompt block exists to make the LLM AWARE the
+ * tool exists and what it does).
+ *
+ * Output shape (one tool per block, blank line between):
+ *
+ *   ### <name>
+ *   <multi-line description>
+ *
+ * Returns empty string when no tools are declared (anonymous-on-landing).
+ * The caller appends a `## AVAILABLE TOOLS` header before this output so
+ * the section is discoverable in the prompt.
+ */
+export function renderAvailableToolsSection(
+  mode: 'anonymous' | 'authenticated' = 'authenticated',
+  currentRoute?: string,
+  activeRole?: string,
+): string {
+  const tools = buildLiveApiTools(mode, currentRoute, activeRole);
+  const decls: Array<{ name?: unknown; description?: unknown }> = [];
+  for (const entry of tools as Array<Record<string, unknown>>) {
+    const fnDecls = (entry as { function_declarations?: unknown }).function_declarations;
+    if (Array.isArray(fnDecls)) {
+      for (const d of fnDecls) {
+        if (d && typeof d === 'object') decls.push(d as { name?: unknown; description?: unknown });
+      }
+    }
+  }
+  if (decls.length === 0) return '';
+  const lines: string[] = [];
+  for (const d of decls) {
+    const name = typeof d.name === 'string' ? d.name : '';
+    const description = typeof d.description === 'string' ? d.description : '';
+    if (!name) continue;
+    lines.push(`### ${name}`);
+    if (description) lines.push(description);
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
+
+/**
  * VTID-01224: Build Live API tool declarations for function calling
  * These tools enable dynamic context retrieval during the conversation
  *
@@ -861,6 +912,39 @@ export function buildLiveApiTools(
               },
             },
             required: ['question'],
+          },
+        },
+        // L2.2b.6 (VTID-03010) — Life Compass read tool. The Life Compass is
+        // the user's authoritative long-term direction (goal + why + target
+        // date). Without this tool the model has no way to answer "what is
+        // my Life Compass goal?" with the canonical value — it either
+        // invents one from prior conversation or denies access.
+        {
+          name: 'get_life_compass',
+          description: [
+            "Return the user's active Life Compass — the one-sentence long-term",
+            'direction they set in Settings. Includes:',
+            '  - goal: the current long-term goal text',
+            '  - why: motivation / reasoning',
+            '  - target_date: optional deadline / horizon',
+            '',
+            'CALL THIS WHEN the user asks any variation of:',
+            '  - "What is my Life Compass?" / "Was ist mein Life Compass?"',
+            '  - "What\'s my Life Compass goal?" / "Was ist mein Lebenskompass-Ziel?"',
+            '  - "What am I working toward?" / "Worauf arbeite ich hin?"',
+            '  - "Remind me what my goal is" / "Erinnere mich an mein Ziel"',
+            '  - "What\'s my long-term direction?"',
+            '',
+            'If the row exists with a goal, narrate it warmly and connect the',
+            "user's question or current plan back to the goal. If `available:",
+            'false` with reason `not_set`, gently offer to walk them through',
+            "setting one up — do NOT say 'I don't have access'. If reason is",
+            '`life_compass_not_deployed`, the feature is off in this environment',
+            "— acknowledge honestly that the feature isn't enabled here.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {},
           },
         },
         // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
