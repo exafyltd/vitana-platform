@@ -103,6 +103,8 @@ function livekitTestsAuthGate(
     return;
   }
 
+  // Path 1: app-level service-token compare — cheapest path, used by Cloud
+  // Shell + by future hourly cron when the GH-Actions secret is in sync.
   const serviceToken = process.env.GATEWAY_SERVICE_TOKEN ?? '';
   if (serviceToken.length > 0 && token === serviceToken) {
     (req as AuthenticatedRequest).identity = undefined;
@@ -112,21 +114,53 @@ function livekitTestsAuthGate(
     return;
   }
 
-  // JWT path → must be exafy_admin.
-  optionalAuth(req as AuthenticatedRequest, res, () => {
-    const id = (req as AuthenticatedRequest).identity;
-    if (id && id.exafy_admin === true) {
-      (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
-        `admin:${id.user_id ?? 'unknown'}`;
-      next();
-      return;
+  // Path 2: Google id_token from a GCP service account (Workload Identity
+  // Federation, Cloud Scheduler with OIDC, etc.). Robust to the GH-secret /
+  // Secret-Manager value drifting out of sync because the caller mints a
+  // fresh id_token each call. Audience must match this gateway's URL.
+  // Email is required to end in .iam.gserviceaccount.com so user OAuth
+  // tokens can never satisfy this path.
+  void (async (): Promise<void> => {
+    try {
+      const { OAuth2Client } = await import('google-auth-library');
+      const audience =
+        process.env.LIVEKIT_TESTS_GCP_AUDIENCE ??
+        process.env.GATEWAY_SELF_URL ??
+        'https://gateway-86804897789.us-central1.run.app';
+      const client = new OAuth2Client();
+      const ticket = await client.verifyIdToken({ idToken: token, audience });
+      const payload = ticket.getPayload();
+      if (
+        payload?.email &&
+        payload.email_verified === true &&
+        /\.iam\.gserviceaccount\.com$/i.test(payload.email)
+      ) {
+        (req as AuthenticatedRequest).identity = undefined;
+        (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+          `gcp_sa:${payload.email}`;
+        next();
+        return;
+      }
+    } catch {
+      // Not a valid Google id_token / audience mismatch — fall through to JWT.
     }
-    res.status(401).json({
-      ok: false,
-      error: 'unauthorized — service token or exafy_admin JWT required',
-      vtid: LIVEKIT_TESTS_VTID,
+
+    // Path 3: exafy_admin Supabase JWT (Command Hub operators).
+    optionalAuth(req as AuthenticatedRequest, res, () => {
+      const id = (req as AuthenticatedRequest).identity;
+      if (id && id.exafy_admin === true) {
+        (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+          `admin:${id.user_id ?? 'unknown'}`;
+        next();
+        return;
+      }
+      res.status(401).json({
+        ok: false,
+        error: 'unauthorized — service token, GCP SA id_token, or exafy_admin JWT required',
+        vtid: LIVEKIT_TESTS_VTID,
+      });
     });
-  });
+  })();
 }
 
 const RunPostSchema = z.object({
