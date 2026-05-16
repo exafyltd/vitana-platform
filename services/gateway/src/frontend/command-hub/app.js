@@ -35103,6 +35103,28 @@ async function triggerOrbMonitor(btn) {
  * "Disconnect" tears down the Room + microphone.
  */
 function renderLivekitTestView() {
+    // VTID-03029: Survive renderApp() re-mounts.
+    //
+    // _renderAppCore() does `root.innerHTML = ''` (line ~5234) before
+    // rebuilding the tree from every render*View(). Anything that touches
+    // global state and re-renders mid-session — showToast() at line 5136
+    // and 5141 is the loudest culprit, but every background poll / role
+    // switch / notification dispatch does it too — wipes this view's DOM
+    // off-screen. The original closures keep running (Room stays alive,
+    // mic stays published, audio keeps playing) but the listener's
+    // stateEl reference is now detached, so setState('connected') paints
+    // a node nobody sees. The freshly-rendered DOM shows the initial
+    // "disconnected" HTML, and `room` in the new closure is null — so a
+    // second Connect click spawns a parallel WebRTC session on top of the
+    // first.
+    //
+    // Fix: while a LiveKit session is alive, cache this view's container
+    // on `window` and return the same DOM node on subsequent renders.
+    // Original closures + listener refs + audio elements stay intact;
+    // on-screen state matches the live session truthfully.
+    if (window._lktSurviveContainer && window._lktSurviveContainer._lktActive) {
+        return window._lktSurviveContainer;
+    }
     var container = document.createElement('div');
     container.className = 'livekit-test-view';
     container.style.cssText = 'padding:24px;max-width:1100px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#e5e7eb;';
@@ -36370,6 +36392,11 @@ function renderLivekitTestView() {
             // disconnect/reconnect cycle.
             if (pre && pre.consumeAndRearm) pre.consumeAndRearm();
             room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+            // VTID-03029: mark this container as having a live session so
+            // subsequent renderApp() re-mounts (showToast, polls, etc.)
+            // return this DOM node instead of building a fresh one.
+            container._lktActive = true;
+            window._lktSurviveContainer = container;
 
             room.on(LivekitClient.RoomEvent.ConnectionStateChanged, function (s) {
                 log('event', 'ConnectionStateChanged', { state: s });
@@ -36392,6 +36419,10 @@ function renderLivekitTestView() {
                     attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
                     attachedAudio = [];
                     room = null;
+                    // VTID-03029: session is gone; release the survival
+                    // cache so the next renderApp() rebuilds the view fresh.
+                    container._lktActive = false;
+                    if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
                 } else if (s === 'reconnecting' || s === 'signalReconnecting') {
                     setState(s);
                 }
@@ -36530,6 +36561,9 @@ function renderLivekitTestView() {
             }
             attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
             attachedAudio = [];
+            // VTID-03029: connect truly failed; release the survival cache.
+            container._lktActive = false;
+            if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
         }
     }
 
@@ -36540,6 +36574,10 @@ function renderLivekitTestView() {
         }
         attachedAudio.forEach(function (el) { try { el.remove(); } catch (e) {} });
         attachedAudio = [];
+        // VTID-03029: user-initiated tear-down; release the survival cache
+        // so the next renderApp() rebuilds the view fresh.
+        container._lktActive = false;
+        if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
         stopAudioMeters(); // VTID-02996: tear down analysers + reset meter UI
         hideMicPermissionBanner();
         hideAudioGateBanner(); // VTID-02997: hide re-play button when session ends
