@@ -29,7 +29,12 @@ jobs:
       - name: Run /api/v1/voice-lab/tests/run + dump full per-case results
         env:
           SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
-          GATEWAY_URL: https://gateway.vitanaland.com
+          # Direct Cloud Run URL (bypasses Cloudflare). Same URL resolves
+          # from `gcloud run services describe gateway`. The public domain
+          # gateway.vitanaland.com sometimes wraps the token in a way that
+          # the bearer-comparison gate rejects — direct URL is the safe path
+          # for service-to-service calls.
+          GATEWAY_URL: https://gateway-86804897789.us-central1.run.app
           CASE_KEY: ${{ inputs.case_key }}
           TRIGGER: ${{ inputs.trigger }}
         run: |
