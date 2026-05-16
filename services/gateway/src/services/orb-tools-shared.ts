@@ -321,18 +321,88 @@ export async function tool_switch_persona(args: OrbToolArgs): Promise<OrbToolRes
   };
 }
 
-export async function tool_report_to_specialist(args: OrbToolArgs): Promise<OrbToolResult> {
-  const specialist = String(args.specialist ?? '').trim();
-  const reason = String(args.reason ?? '').trim();
-  return {
-    ok: true,
-    result: { specialist, reason, status: 'acknowledged' },
-    text:
-      `Handoff to ${specialist || 'a specialist'} acknowledged. The full ` +
-      `live persona swap (audible voice change) lands in a follow-up; for ` +
-      `now, please continue with me and I'll pass the context forward when ` +
-      `that ships.`,
-  };
+// VTID-03024: real ticket creation for LiveKit. Was previously a stub
+// that returned "acknowledged" and dropped the user's report on the
+// floor — Vertex's case arm in orb-live.ts did all the actual work.
+// The shared helper `executeReportToSpecialist` lifts the DATA layer
+// (vague block + gate RPC + feedback_tickets insert + handoff event +
+// OASIS emit) so both pipelines create real tickets.
+//
+// The audible Devon voice swap on LiveKit is a separate concern handled
+// by the orb-agent's `perform_handoff` function — wired in a follow-up
+// VTID. This handler returns the persona key in the result so the agent
+// can decide whether to invoke that handoff.
+export async function tool_report_to_specialist(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { executeReportToSpecialist } = await import('./report-to-specialist-core');
+  const result = await executeReportToSpecialist(
+    {
+      kind: typeof args.kind === 'string' ? args.kind : undefined,
+      summary: typeof args.summary === 'string' ? args.summary : undefined,
+      specialist_hint:
+        typeof args.specialist_hint === 'string' ? args.specialist_hint : undefined,
+    },
+    {
+      user_id: identity.user_id,
+      tenant_id: identity.tenant_id ?? null,
+      vitana_id: identity.vitana_id ?? null,
+      lang: identity.lang ?? null,
+    },
+    sb,
+    {
+      source: 'orb-livekit-tool',
+      screen_path: '/orb/livekit-voice',
+    },
+  );
+
+  switch (result.decision) {
+    case 'failed':
+      return { ok: false, error: result.error };
+    case 'vague':
+      return {
+        ok: true,
+        result: { decision: 'vague', word_count: result.word_count },
+        text: result.llm_instruction,
+      };
+    case 'stay_inline':
+      return {
+        ok: true,
+        result: { decision: 'stay_inline', rpc_gate: result.rpc_gate },
+        text: result.llm_instruction,
+      };
+    case 'created': {
+      const personaLabel: Record<string, string> = {
+        devon: 'tech support',
+        sage: 'customer support',
+        atlas: 'finance / marketplace',
+        mira: 'account',
+      };
+      const roleLabel = result.persona
+        ? personaLabel[result.persona] ?? 'a specialist colleague'
+        : 'our team';
+      const ticketNum = result.ticket.ticket_number ?? '(pending)';
+      const llmInstruction = result.persona
+        ? `Ticket ${ticketNum} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call): "I'll connect you with ${roleLabel}." / "Let me bring ${roleLabel} in." / "Einen Moment, ${roleLabel} übernimmt." Then STOP — do NOT introduce the colleague yourself.`
+        : `Ticket ${ticketNum} created. Our team will look at this. Tell the user warmly that you've filed the report and they'll hear back — vary your phrasing. Then STOP.`;
+      return {
+        ok: true,
+        result: {
+          decision: 'created',
+          ticket_id: result.ticket.id,
+          ticket_number: result.ticket.ticket_number,
+          persona: result.persona,
+          matched_keyword: result.matched_keyword,
+          confidence: result.confidence,
+          rpc_decision: result.rpc_decision,
+          rpc_gate: result.rpc_gate,
+        },
+        text: llmInstruction,
+      };
+    }
+  }
 }
 
 export async function tool_search_events(
@@ -3522,7 +3592,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
-  report_to_specialist: (args) => tool_report_to_specialist(args),
+  report_to_specialist: tool_report_to_specialist,
   search_events: tool_search_events,
   search_community: tool_search_community,
   // VTID-02754 — auto-redirecting community member search (PR 1.B-1)
