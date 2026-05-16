@@ -4972,6 +4972,31 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // L2.2b.6 (VTID-03010) — Life Compass read tool, shared dispatcher.
+      // Pure DB read; no WebSocket session-state coupling. Same shape as
+      // find_perfect_product above.
+      case 'get_life_compass': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
+
       default: {
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that

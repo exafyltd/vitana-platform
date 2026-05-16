@@ -929,6 +929,32 @@ connected an external AI yet") and answer yourself.",
         },
       },
       {
+        "description": "Return the user's active Life Compass — the one-sentence long-term
+direction they set in Settings. Includes:
+  - goal: the current long-term goal text
+  - why: motivation / reasoning
+  - target_date: optional deadline / horizon
+
+CALL THIS WHEN the user asks any variation of:
+  - "What is my Life Compass?" / "Was ist mein Life Compass?"
+  - "What's my Life Compass goal?" / "Was ist mein Lebenskompass-Ziel?"
+  - "What am I working toward?" / "Worauf arbeite ich hin?"
+  - "Remind me what my goal is" / "Erinnere mich an mein Ziel"
+  - "What's my long-term direction?"
+
+If the row exists with a goal, narrate it warmly and connect the
+user's question or current plan back to the goal. If \`available:
+false\` with reason \`not_set\`, gently offer to walk them through
+setting one up — do NOT say 'I don't have access'. If reason is
+\`life_compass_not_deployed\`, the feature is off in this environment
+— acknowledge honestly that the feature isn't enabled here.",
+        "name": "get_life_compass",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
         "description": "Return the user's current Vitana Index with the canonical 5-pillar
 breakdown: total score (0-999), tier (Starting / Early / Building /
 Strong / Really good / Elite), all 5 pillars (Nutrition, Hydration,
@@ -2988,6 +3014,32 @@ connected an external AI yet") and answer yourself.",
           "required": [
             "question",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Return the user's active Life Compass — the one-sentence long-term
+direction they set in Settings. Includes:
+  - goal: the current long-term goal text
+  - why: motivation / reasoning
+  - target_date: optional deadline / horizon
+
+CALL THIS WHEN the user asks any variation of:
+  - "What is my Life Compass?" / "Was ist mein Life Compass?"
+  - "What's my Life Compass goal?" / "Was ist mein Lebenskompass-Ziel?"
+  - "What am I working toward?" / "Worauf arbeite ich hin?"
+  - "Remind me what my goal is" / "Erinnere mich an mein Ziel"
+  - "What's my long-term direction?"
+
+If the row exists with a goal, narrate it warmly and connect the
+user's question or current plan back to the goal. If \`available:
+false\` with reason \`not_set\`, gently offer to walk them through
+setting one up — do NOT say 'I don't have access'. If reason is
+\`life_compass_not_deployed\`, the feature is off in this environment
+— acknowledge honestly that the feature isn't enabled here.",
+        "name": "get_life_compass",
+        "parameters": {
+          "properties": {},
           "type": "object",
         },
       },

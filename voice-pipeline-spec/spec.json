@@ -37,6 +37,7 @@
 
     { "name": "consult_external_ai",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null,         "notes": "Forward to user's connected ChatGPT/Claude/Gemini account." },
 
+    { "name": "get_life_compass",                 "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03010", "notes": "Returns the user's active Life Compass row (goal + why + target_date). Read-only. Shared dispatcher route." },
     { "name": "get_vitana_index",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
     { "name": "get_index_improvement_suggestions","implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
     { "name": "create_index_improvement_plan",    "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
