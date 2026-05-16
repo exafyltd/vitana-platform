@@ -229,17 +229,23 @@ export async function evaluateLiveKitDryRun(
 }
 
 /**
- * Resolve a complete identity for the dry-run from the caller's partial
- * input + env + DB. Three-tier fallback against `app_users`:
+ * Resolve a complete identity for the dry-run.
  *
- *   1. caller-supplied / env / hardcoded UUID
- *   2. canonical test EMAIL (`e2e-test@vitana.dev`) — survives UUID rotation
- *   3. any user with `vitana_id IS NOT NULL` (oldest row) — last resort so
- *      the eval has *some* real bootstrap to render, even on an unfamiliar
- *      Supabase project where neither the UUID nor the test email exist
+ * Schema reality: `app_users` carries (user_id, email, display_name,
+ * vitana_id, ...) but NOT tenant_id/role — those live on the M:N
+ * `user_tenants` table (tenant_id, user_id, active_role, is_primary).
  *
- * Throws only if all three tiers miss AND no `VOICE_LAB_TEST_TENANT_ID` is
- * set — that means the deployed environment genuinely has no usable user.
+ * Strategy: start from `user_tenants` (which is the only place tenant_id
+ * lives) and embed `app_users` so we get email + vitana_id in one query.
+ * Three tiers, each terminating as soon as we have a tenant_id:
+ *
+ *   1. caller-supplied / env-overridden / CLAUDE.md UUID — by user_tenants.user_id
+ *   2. canonical test EMAIL (`e2e-test@vitana.dev`) — by user_tenants → app_users.email
+ *   3. any user_tenants row whose embedded app_users has vitana_id (oldest
+ *      created_at, deterministic) — last-resort so the eval has SOME real
+ *      bootstrap to render on an unfamiliar Supabase project
+ *
+ * Throws only if all three tiers miss AND VOICE_LAB_TEST_TENANT_ID is unset.
  */
 async function resolveDryRunIdentity(
   partial?: Partial<DryRunIdentity>,
@@ -255,46 +261,68 @@ async function resolveDryRunIdentity(
   let email = partial?.email ?? null;
   let activeRole = partial?.active_role;
 
-  const sb = getSupabase();
-  const cols = 'user_id, tenant_id, vitana_id, email, role';
-
-  const apply = (data: Record<string, unknown>): void => {
-    userId = (data.user_id as string) ?? userId;
-    if (!tenantId) tenantId = (data.tenant_id as string | null | undefined) ?? null;
-    if (!vitanaId) vitanaId = (data.vitana_id as string | null | undefined) ?? null;
-    if (!email) email = (data.email as string | null | undefined) ?? null;
-    if (!activeRole) activeRole = (data.role as string | undefined) ?? undefined;
+  // user_tenants → embedded app_users. PostgREST resource-embedding syntax:
+  // `app_users(email, vitana_id)` returns the joined row inline.
+  type Row = {
+    user_id: string;
+    tenant_id: string;
+    active_role: string | null;
+    app_users?: { email?: string | null; vitana_id?: string | null } | null;
   };
 
-  if (sb && (!tenantId || !vitanaId || !email)) {
-    // Tier 1: by user_id
-    const t1 = await sb.from('app_users').select(cols).eq('user_id', requestedUserId).maybeSingle();
-    if (t1.data) apply(t1.data as Record<string, unknown>);
+  const SELECT = 'user_id, tenant_id, active_role, app_users(email, vitana_id)';
 
-    // Tier 2: by canonical email
+  const apply = (row: Row): void => {
+    userId = row.user_id ?? userId;
+    if (!tenantId) tenantId = row.tenant_id ?? null;
+    if (!activeRole) activeRole = row.active_role ?? undefined;
+    if (!vitanaId) vitanaId = row.app_users?.vitana_id ?? null;
+    if (!email) email = row.app_users?.email ?? null;
+  };
+
+  const sb = getSupabase();
+  if (sb && (!tenantId || !vitanaId || !email)) {
+    // Tier 1: by user_id, preferring primary membership when multi-tenant.
+    const t1 = await sb
+      .from('user_tenants')
+      .select(SELECT)
+      .eq('user_id', requestedUserId)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (t1.data) apply(t1.data as unknown as Row);
+
+    // Tier 2: by canonical email on the embedded app_users.
     if (!tenantId) {
-      const t2 = await sb.from('app_users').select(cols).eq('email', FALLBACK_TEST_EMAIL).maybeSingle();
-      if (t2.data) apply(t2.data as Record<string, unknown>);
+      const t2 = await sb
+        .from('user_tenants')
+        .select(SELECT)
+        .eq('app_users.email', FALLBACK_TEST_EMAIL)
+        .not('app_users', 'is', null)
+        .order('is_primary', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (t2.data) apply(t2.data as unknown as Row);
     }
 
-    // Tier 3: any user with a vitana handle (deterministic — oldest row first)
+    // Tier 3: any user with a vitana_id (oldest created_at on user_tenants).
     if (!tenantId) {
       const t3 = await sb
-        .from('app_users')
-        .select(cols)
-        .not('vitana_id', 'is', null)
+        .from('user_tenants')
+        .select(SELECT)
+        .not('app_users.vitana_id', 'is', null)
         .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle();
-      if (t3.data) apply(t3.data as Record<string, unknown>);
+      if (t3.data) apply(t3.data as unknown as Row);
     }
   }
 
   if (!tenantId) {
     throw new Error(
-      'evaluateLiveKitDryRun: no usable test identity in app_users ' +
+      'evaluateLiveKitDryRun: no usable test identity in user_tenants/app_users ' +
         `(tried user_id=${requestedUserId}, email=${FALLBACK_TEST_EMAIL}, ` +
-        'and oldest vitana_id user). ' +
+        'and oldest vitana_id user via embedded join). ' +
         'Set VOICE_LAB_TEST_USER_ID + VOICE_LAB_TEST_TENANT_ID to override.',
     );
   }
