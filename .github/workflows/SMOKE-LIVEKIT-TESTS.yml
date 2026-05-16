@@ -36,31 +36,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Authenticate to GCP via Workload Identity Federation
+      - name: Authenticate to GCP via Workload Identity Federation (mint id_token)
+        id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          # Request an OIDC id_token (not just access_token) with audience
+          # matching the gateway's Cloud Run URL. The gateway's authn gate
+          # validates this token's audience against its own URL and accepts
+          # any *.iam.gserviceaccount.com email. `gcloud auth
+          # print-identity-token --audiences=...` does NOT work on WIF
+          # external-account credentials; the auth action's `token_format:
+          # 'id_token'` is the supported path.
+          token_format: 'id_token'
+          id_token_audience: 'https://gateway-86804897789.us-central1.run.app'
+          id_token_include_email: true
 
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Mint a Google id_token for the gateway audience + run smoke
+      - name: Run smoke with id_token
         env:
-          PROJECT: lovable-vitana-vers1
           GATEWAY_URL: https://gateway-86804897789.us-central1.run.app
           CASE_KEY: ${{ inputs.case_key }}
           TRIGGER: ${{ inputs.trigger }}
+          SERVICE_TOKEN: ${{ steps.gcp-auth.outputs.id_token }}
         run: |
           set -euo pipefail
 
-          # The gateway accepts EITHER an app-level service token OR a fresh
-          # Google id_token from any *.iam.gserviceaccount.com SA whose audience
-          # matches its own URL. We use the latter so the smoke is robust to
-          # the GH-Actions secret being out of sync with Secret Manager.
-          SERVICE_TOKEN=$(gcloud auth print-identity-token --audiences="$GATEWAY_URL")
-          if [ -z "$SERVICE_TOKEN" ]; then
-            echo "::error::Failed to mint Google id_token (gcloud auth print-identity-token returned empty)"
+          if [ -z "${SERVICE_TOKEN:-}" ]; then
+            echo "::error::id_token output is empty — check auth step"
             exit 1
           fi
 
