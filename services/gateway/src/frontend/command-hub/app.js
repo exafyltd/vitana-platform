@@ -36330,9 +36330,35 @@ function renderLivekitTestView() {
         connectBtn.disabled = true;
         setState('connecting');
         try {
-            var LivekitClient = await loadLivekitClient();
-            log('event', 'livekit-client UMD loaded');
-            var minted = await mintToken();
+            // VTID-03018: consume the prewarmed client+token promises kicked
+            // off when the view first rendered. Falls back to a fresh mint
+            // when prewarm wasn't possible (auth missing at render, settings
+            // changed, prewarm errored, etc.).
+            var pre = container._prewarm;
+            var clientPromise = pre && pre.getClient && pre.getClient();
+            var tokenPromise = pre && pre.getToken && pre.getToken();
+            if (!clientPromise) {
+                clientPromise = loadLivekitClient();
+            }
+            if (!tokenPromise) {
+                if (pre && pre.kick) pre.kick();
+                tokenPromise = (pre && pre.getToken && pre.getToken()) || mintToken();
+            }
+            var LivekitClient = await clientPromise;
+            log('event', 'livekit-client UMD loaded' + (pre && pre.getClient && pre.getClient() === clientPromise ? ' (prewarmed)' : ''));
+            var minted;
+            try {
+                minted = await tokenPromise;
+                log('info', 'token minted', { url: minted.url, room: minted.room });
+            } catch (e) {
+                // Prewarmed token errored at use — retry once with a fresh mint.
+                log('warn', 'prewarmed token failed at use, re-minting', { err: String(e && e.message || e) });
+                minted = await mintToken();
+                log('info', 'token minted (fresh after prewarm fail)', { url: minted.url, room: minted.room });
+            }
+            // Consume the prewarmed token and arm a fresh one for the next
+            // disconnect/reconnect cycle.
+            if (pre && pre.consumeAndRearm) pre.consumeAndRearm();
             room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
 
             room.on(LivekitClient.RoomEvent.ConnectionStateChanged, function (s) {
@@ -36488,6 +36514,110 @@ function renderLivekitTestView() {
 
     connectBtn.addEventListener('click', connect);
     disconnectBtn.addEventListener('click', disconnect);
+
+    // VTID-03018: prewarm — kick off the LiveKit UMD bundle load AND the
+    // token mint as soon as the view renders, so by the time the user
+    // clicks Connect both promises are already resolving (often resolved).
+    // Cached under a fingerprint of the inputs that affect token contents
+    // — if the user changes lang, voice, mode, or agent_id, we invalidate
+    // and re-mint. This pulls ~500-1000ms of token-fetch + ~200-500ms of
+    // UMD load out of the click→greeting critical path.
+    var prewarmKey = null;
+    var prewarmedClientPromise = null;
+    var prewarmedTokenPromise = null;
+
+    function _computePrewarmKey() {
+        var supKey = Object.keys(localStorage).find(function (k) { return /sb-.*-auth-token/.test(k); });
+        var authToken = null;
+        if (supKey) {
+            try {
+                var parsed = JSON.parse(localStorage.getItem(supKey));
+                authToken = parsed && (parsed.access_token || (parsed.currentSession && parsed.currentSession.access_token));
+            } catch (e) {}
+        }
+        authToken = authToken || localStorage.getItem('vitana.authToken') || '';
+        var tokenSig = authToken ? authToken.slice(-32) : 'noauth';
+        var mode = (modeSel && modeSel.value) || 'test-session';
+        var agentId = (agentInput && agentInput.value) || 'orb-agent';
+        var lang = '';
+        try {
+            var langEl = container.querySelector('.lkt-lang');
+            if (langEl) lang = langEl.value || '';
+        } catch (e) {}
+        var voice = '';
+        try {
+            var voiceEl = container.querySelector('.lkt-voice');
+            if (voiceEl) voice = voiceEl.value || '';
+        } catch (e) {}
+        return [tokenSig, mode, agentId, lang, voice].join('|');
+    }
+
+    function _kickPrewarm() {
+        var key = _computePrewarmKey();
+        // Skip auth-less prewarm; user hasn't signed in yet (the sign-in
+        // panel will trigger a re-render when auth lands, and we'll
+        // re-prewarm then).
+        if (key.indexOf('noauth|') === 0) return;
+        // Same fingerprint as an in-flight prewarm? Reuse.
+        if (key === prewarmKey && prewarmedTokenPromise) return;
+        prewarmKey = key;
+        if (!prewarmedClientPromise) {
+            prewarmedClientPromise = loadLivekitClient().catch(function (e) {
+                log('warn', 'prewarm: client load failed (will retry on connect)', { err: String(e && e.message || e) });
+                prewarmedClientPromise = null;
+                throw e;
+            });
+        }
+        var thisKey = key;
+        prewarmedTokenPromise = mintToken().catch(function (e) {
+            log('warn', 'prewarm: token mint failed (will retry on connect)', { err: String(e && e.message || e) });
+            if (prewarmKey === thisKey) prewarmedTokenPromise = null;
+            throw e;
+        });
+        log('info', 'prewarm: client+token kicked off');
+    }
+
+    // Re-prewarm on input changes that affect token contents.
+    try {
+        var langElForWatch = container.querySelector('.lkt-lang');
+        if (langElForWatch) langElForWatch.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        var voiceElForWatch = container.querySelector('.lkt-voice');
+        if (voiceElForWatch) voiceElForWatch.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        if (agentInput) agentInput.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        var modeBtnsForWatch = container.querySelectorAll('.lkt-mode-btn');
+        for (var mbi = 0; mbi < modeBtnsForWatch.length; mbi++) {
+            modeBtnsForWatch[mbi].addEventListener('click', function () {
+                // Mode buttons toggle .lkt-mode hidden input via applyMode();
+                // give it a tick to flip before reading.
+                setTimeout(_kickPrewarm, 0);
+            });
+        }
+    } catch (e) {}
+
+    // Wrap connect() to consume the prewarmed promises and re-arm.
+    // (We can't safely replace the function reference now that it's already
+    // wired to the button; instead, expose the prewarmed promises to it via
+    // closure variables the connect() body reads.)
+    container._prewarm = {
+        getClient: function () { return prewarmedClientPromise; },
+        getToken: function () { return prewarmedTokenPromise; },
+        consumeAndRearm: function () {
+            prewarmedTokenPromise = null;
+            // schedule a fresh prewarm for the next reconnect
+            try { _kickPrewarm(); } catch (e) {}
+        },
+        kick: function () { try { _kickPrewarm(); } catch (e) {} },
+    };
+
+    // Kick off the FIRST prewarm now. We defer one tick so all the DOM
+    // queries above (which the closure uses) are fully attached.
+    setTimeout(_kickPrewarm, 0);
 
     return container;
 }
