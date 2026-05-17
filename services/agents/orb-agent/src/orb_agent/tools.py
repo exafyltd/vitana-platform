@@ -780,8 +780,21 @@ async def create_index_improvement_plan(context: RunContext, target_pillar: str)
 
 @function_tool
 async def save_diary_entry(context: RunContext, text: str) -> str:
-    """Save a diary entry. Triggers Vitana Index recompute via /memory/diary/sync-index (VTID-01983)."""
-    body = await _gw(context).post("/api/v1/memory/diary/sync-index", {"raw_text": text})
+    """Save a diary entry.
+
+    VTID-03042: switched from the legacy `/memory/diary/sync-index` call —
+    which runs the Vitana Index recompute pipeline but does NOT write the
+    user-visible `diary_entries` row — to the shared orb-tool dispatcher
+    so both pipelines:
+      1) insert the diary_entries row the user sees in their daily diary,
+      2) extract health features + recompute the Index,
+      3) celebrate any diary streak.
+
+    Without this, voice "log a diary entry" silently dropped the visible
+    row even though Vitana announced "I've logged it." (parity bug
+    surfaced in the L2.2b.7 real-mic German session, check #5.)
+    """
+    body = await _dispatch(context, "save_diary_entry", {"raw_text": text})
     return summarize(body)
 
 

@@ -3838,115 +3838,32 @@ async function executeLiveApiToolInner(
       }
 
       // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
+      // VTID-03042: lifted to services/orb-tools-shared.ts so the LiveKit
+      // pipeline writes the user-visible diary_entries row AND runs the
+      // extractor+index recompute through the same code path Vertex uses.
       case 'save_diary_entry': {
-        try {
-          const rawText = String(args.raw_text || '').trim();
-          const argDate = args.entry_date as string | undefined;
-          const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
-            ? argDate
-            : new Date().toISOString().slice(0, 10);
-          if (!rawText) {
-            return { success: false, result: '', error: 'INVALID_RAW_TEXT' };
-          }
-
-          const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
-            '../services/diary-health-extractor'
-          );
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-
-          // 1) Insert into diary_entries (frontend-readable table). Best-effort —
-          //    if the row exists, we still proceed with the extractor.
-          try {
-            await admin.from('diary_entries').insert({
-              user_id: lens.user_id,
-              text: rawText,
-              source: 'voice',
-              tags: ['diary', 'voice', 'orb'],
-            });
-          } catch (insertErr: any) {
-            console.warn(`[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr?.message}`);
-          }
-
-          // 2) Read pre-recompute Index for delta math.
-          const { data: beforeRow } = await admin
-            .from('vitana_index_scores')
-            .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-            .eq('user_id', lens.user_id)
-            .eq('date', entryDate)
-            .maybeSingle();
-          const before = beforeRow as Record<string, number | null> | null;
-
-          // 3) Run extractor + persist.
-          const writes = extractHealthFeaturesFromDiary(rawText);
-          const tenantId = lens.tenant_id || '00000000-0000-0000-0000-000000000000';
-          let health_features_written = 0;
-          if (writes.length > 0) {
-            const { written } = await persistDiaryHealthFeatures(
-              admin,
-              lens.user_id,
-              tenantId,
-              entryDate,
-              writes,
-            );
-            health_features_written = written;
-          }
-
-          // 4) Recompute Index.
-          let pillars_after: Record<string, number> | null = null;
-          try {
-            const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
-              p_user_id: lens.user_id,
-              p_date: entryDate,
-            });
-            const r = rec as any;
-            if (r && r.ok !== false) {
-              pillars_after = {
-                total:     Number(r.score_total     ?? 0),
-                nutrition: Number(r.score_nutrition ?? 0),
-                hydration: Number(r.score_hydration ?? 0),
-                exercise:  Number(r.score_exercise  ?? 0),
-                sleep:     Number(r.score_sleep     ?? 0),
-                mental:    Number(r.score_mental    ?? 0),
-              };
-            }
-          } catch (recErr: any) {
-            console.warn(`[save_diary_entry] Index recompute failed: ${recErr?.message}`);
-          }
-
-          const index_delta = pillars_after ? {
-            total:     pillars_after.total     - Number(before?.score_total     ?? 0),
-            nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
-            hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
-            exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
-            sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
-            mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
-          } : null;
-
-          // H.5 — diary streak celebration (best-effort, non-blocking).
-          const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
-          const streak = await celebrateDiaryStreak(admin, lens.user_id, tenantId);
-
-          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} streak=${streak ? streak.tier_days : '-'}`);
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              entry_date: entryDate,
-              health_features_written,
-              pillars_after,
-              index_delta,
-              streak,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[save_diary_entry] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE =
+          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'save_diary_entry',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
