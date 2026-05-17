@@ -52,6 +52,9 @@ import {
   buildBootstrapContextPack,
   buildClientContext,
   formatClientContextForInstruction,
+  buildPersonaBehavioralRule,
+  buildSpecialistLanguageDirective,
+  fetchSpecialistContextSection,
 } from './orb-live';
 // L2.2b.6 (VTID-03010): render the full Vertex system instruction for LiveKit.
 // Until this slice, the LiveKit agent built its own ~7-section Python prompt
@@ -1322,71 +1325,34 @@ router.get(
           .maybeSingle();
         const personaPrompt = (personaRow as { system_prompt?: string } | null)?.system_prompt?.trim() || '';
         if (personaPrompt) {
-          const langNames: Record<string, string> = {
-            en: 'English', de: 'German', fr: 'French', es: 'Spanish',
-            ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
-          };
-          const langName = langNames[lang] || 'English';
-          const personaParts: string[] = [];
-          personaParts.push(personaPrompt);
-          personaParts.push(
-            `[LANGUAGE LOCK]\nRespond ONLY in ${langName}. Match the user's language exactly. Do NOT switch to English. Do NOT mix languages. The user has been speaking ${langName} with Vitana already; continue in the same language without acknowledging the switch.`,
-          );
-          if (bootstrapContext) {
-            personaParts.push(
-              `## USER CONTEXT (carried over from Vitana)\n\n${bootstrapContext}`,
-            );
-          }
-          if (handoffSummary) {
-            personaParts.push(
-              `[HANDOFF NOTE] Vitana captured this brief at handoff: "${handoffSummary}". Synthesize what the user reported in ONE sentence (your own words, not theirs) and confirm. Do NOT echo their wording back. The brief is usually enough — ask AT MOST 2 short clarifying questions, and ONLY if a critical detail is genuinely missing (skip them entirely if not). Then go straight to ticket confirmation + the auto-return question. Open the conversation in your own voice and persona — never speak as Vitana, never quote her.`,
-            );
-          }
-          personaParts.push(
-            '[BEHAVIORAL RULE — opening turn] Speak in your OWN persona. Greet the user warmly in the user\'s language with ONE short sentence introducing yourself by role (e.g. "I\'m the tech support colleague Vitana brought in"). Then either reference the handoff brief above OR ask "what can I help you with?" if no brief is present. Vary your phrasing every call. Never apologize for the handoff. NEVER speak as Vitana.',
-          );
-          // VTID-03028: Vertex-parity flow rules — the specialist must
-          // (a) confirm to the user that a ticket has been filed, (b) when
-          // intake is complete, ASK if the user needs anything else, (c)
-          // on "no" or equivalent, HAND THE USER BACK TO VITANA by calling
-          // switch_persona(persona='vitana'). Without these rules the
-          // specialist goes silent after intake — user-reported bug:
-          // "Devon stops listening instead of asking 'anything else?'".
-          personaParts.push(
-            [
-              '[BEHAVIORAL RULE — ticket confirmation]',
-              'Vitana ALREADY filed the ticket on the user\'s behalf before handing them to you. Confirm warmly that the report is logged ("I\'ve got your report logged — we\'ll come back to you when it\'s fixed" / "Ich habe das aufgenommen — wir melden uns, sobald es behoben ist") in your own words.',
-              'NEVER promise a specific timeline. NEVER say "I\'m creating a ticket" — the ticket already exists.',
-            ].join('\n'),
-          );
-          personaParts.push(
-            [
-              '[BEHAVIORAL RULE — auto-return question]',
-              'After confirming the ticket (or after answering any clarifying question), you MUST ask if there is anything ELSE the user needs from you. Vary the phrasing every call:',
-              '  EN: "Anything else I can help with?" / "Is there anything else on your mind?"',
-              '  DE: "Kann ich noch was für dich tun?" / "Gibt es noch etwas?"',
-              'NEVER skip this question. NEVER end your turn after just confirming the ticket — that leaves the user in awkward silence.',
-            ].join('\n'),
-          );
-          personaParts.push(
-            [
-              '[BEHAVIORAL RULE — swap back to Vitana]',
-              'When the user answers "no / nothing else / nein, danke / das war\'s" (or equivalent) to your auto-return question, your NEXT turn is the LAST thing you ever say in this session. In that single turn you MUST do BOTH actions, in this exact order:',
-              '  1. Speak ONE short bridge sentence in your OWN voice handing them back to Vitana. Vary the phrasing:',
-              '     EN: "Alright — I\'ll hand you back to Vitana." / "Cool — Vitana will take it from here."',
-              '     DE: "Alles klar — ich übergebe dich zurück an Vitana." / "Vitana macht weiter."',
-              '  2. IMMEDIATELY call the `switch_persona` tool with persona=\'vitana\' — in the SAME turn as the bridge sentence, NEVER the turn after.',
-              '  3. STOP speaking after the tool call — the next voice the user hears is Vitana\'s.',
-              'CRITICAL CONTRACT: speaking the goodbye WITHOUT also calling switch_persona leaves the user stranded in your voice. The tool call is NOT optional — it is what physically transfers the call back. A polite goodbye alone is a FAILED handoff. "Thank you, have a nice day" by itself is a BUG.',
-              'NEVER stay silent. NEVER answer further user questions yourself once they say no — that\'s Vitana\'s domain.',
-              'You CANNOT swap laterally to another specialist; you can ONLY return to Vitana via switch_persona.',
-            ].join('\n'),
-          );
-          systemInstruction = personaParts.join('\n\n');
-          console.log(`[VTID-03028] persona system_instruction rendered for ${agentId} (${systemInstruction.length} chars, handoff_summary=${handoffSummary ? `${handoffSummary.length} chars` : 'none'})`);
+          // VTID-03047: assemble the specialist's system instruction by
+          // mirroring Vertex's report_to_specialist handler (orb-live.ts
+          // ~lines 2922-2937). Same helpers, same order, same wording —
+          // so LiveKit Devon's prompt is byte-similar to Vertex Devon's
+          // and the model behaves the same. Previous LiveKit-only
+          // hand-rolled BEHAVIORAL RULE blocks were drifting from Vertex
+          // and bypassing rules that the user already validated for
+          // Vertex (close-question flow, goodbye structure, instruction-
+          // manual protection, swap-back ordering).
+          const userContextSection = await fetchSpecialistContextSection(userId);
+          const behavioralRule = buildPersonaBehavioralRule(agentId.toLowerCase());
+          const languageDirective = buildSpecialistLanguageDirective(lang);
+          const RECEPTIONIST_KEY = 'vitana';
+          const handoffNote = handoffSummary
+            ? `\n\n[HANDOFF NOTE] Vitana captured this brief at handoff: "${handoffSummary}". Synthesize what they reported in ONE sentence (your own words, not theirs) and confirm. Do NOT echo their wording back.`
+            : '';
+          systemInstruction =
+            personaPrompt +
+            `\n\n${languageDirective}` +
+            (userContextSection ? `\n\n${userContextSection}` : '') +
+            (bootstrapContext ? `\n\n## USER CONTEXT (carried over from Vitana)\n\n${bootstrapContext}` : '') +
+            `\n\n${behavioralRule}` +
+            handoffNote +
+            `\n\n[NAVIGATION TOOL] You have a switch_persona tool. You can ONLY pass to='${RECEPTIONIST_KEY}' — you cannot forward sideways to another specialist. If the question is outside your authority, return the user to Vitana with a brief bridge in your own words (vary your phrasing) and STOP — do NOT speak after calling the tool.`;
+          console.log(`[VTID-03047] persona system_instruction rendered for ${agentId} (${systemInstruction.length} chars, handoff_summary=${handoffSummary ? `${handoffSummary.length} chars` : 'none'}, user_context=${userContextSection ? 'yes' : 'no'})`);
         }
       } catch (exc) {
-        console.warn(`[VTID-03027] persona prompt fetch failed for ${agentId}: ${(exc as Error).message}`);
+        console.warn(`[VTID-03047] persona prompt fetch failed for ${agentId}: ${(exc as Error).message}`);
       }
     }
     // Vitana path: full 65KB system instruction with IDENTITY LOCK etc.
@@ -1395,10 +1361,23 @@ router.get(
       const voiceStyle =
         (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
         'friendly, calm, empathetic';
+      // VTID-03047: mirror Vertex's swap-back-to-Vitana assembly
+      // (orb-live.ts:5641-5648). Vertex appends
+      // `buildPersonaBehavioralRule('vitana')` to Vitana's contextInstruction
+      // so she carries the universal behavioral rules — including the
+      // [VITANA — explicit consent before transfer] block that drives
+      // "PROPOSE before transferring, wait for affirmative reply" routing.
+      // Without this LiveKit Vitana lacked the rules and the model fell
+      // back to a "I'll note it for the team" no-op when faced with a
+      // bug-report flow (2026-05-17 user-reported regression).
+      const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
+      const vitanaContextInstruction = bootstrapContext
+        ? `${bootstrapContext}\n\n${vitanaBehavioralRule}`
+        : vitanaBehavioralRule;
       systemInstruction = buildLiveSystemInstruction(
         lang,
         voiceStyle,
-        bootstrapContext,
+        vitanaContextInstruction,
         role,
         undefined,           // conversationSummary — not surfaced through bootstrap yet
         undefined,           // conversationHistory — agent reconnect path will populate later
