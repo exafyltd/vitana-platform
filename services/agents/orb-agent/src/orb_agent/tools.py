@@ -254,6 +254,23 @@ async def report_to_specialist(
     agent's main loop to rebuild the AgentSession for that persona —
     Devon answers in Devon's voice with Devon's system_instruction.
 
+    VTID-03033 — Observability + fail-loud:
+    - Emits `orb.livekit.tool.report_to_specialist.called` before dispatch
+      and `.result` after, so an operator reading OASIS can distinguish:
+        (1) LLM never called the tool — no `called` event for the turn.
+        (2) Tool called, backend returned stay_inline — `.result` payload
+            carries status="stay_inline" + rpc_gate.
+        (3) Tool called, backend created handoff — status="handoff_created"
+            + persona name.
+        (4) Tool called, gateway/network failed — status="failed" or
+            "failed_network" + gateway_status / error.
+    - Returns a deterministic, machine-keyed text to the LLM (replaces
+      the free-text `summarize(body)` that let Gemini hallucinate "I'm
+      connecting you to Devon" even on stay_inline / failed outcomes).
+      The text always opens with `STATUS: <status>.` so the model has a
+      single token to read; the action sentence that follows tells it
+      what to say to the user.
+
     Args:
         kind: Best classification of what's being reported. One of:
             'bug', 'ux_issue', 'support_question', 'account_issue',
@@ -262,39 +279,105 @@ async def report_to_specialist(
             words). What broke, on which screen/feature, with specifics.
         specialist_hint: Optional persona key.
     """
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
     args: dict[str, Any] = {"kind": kind, "summary": summary}
     if specialist_hint:
         args["specialist_hint"] = specialist_hint
+
+    # --- BEFORE DISPATCH ---------------------------------------------------
+    summary_chars = len(summary or "")
+    summary_word_count = len((summary or "").split())
+    logger.info(
+        "report_to_specialist.called: kind=%s summary_chars=%d summary_words=%d "
+        "specialist_hint=%r session=%s user=%s",
+        kind,
+        summary_chars,
+        summary_word_count,
+        specialist_hint,
+        orb_session_id,
+        user_id,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.report_to_specialist.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "kind": kind,
+                    "summary_chars": summary_chars,
+                    "summary_words": summary_word_count,
+                    "specialist_hint": specialist_hint,
+                },
+                vtid="VTID-03033",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("report_to_specialist: oasis .called emit failed: %s", exc)
+
+    # --- DISPATCH ---------------------------------------------------------
     body = await _dispatch(context, "report_to_specialist", args)
 
-    # VTID-03027: signal the agent main loop to rebuild the AgentSession
-    # for the new persona. We DON'T call perform_handoff() here (that did
-    # an in-place setattr swap which can't change the LLM's bound
-    # system_instruction — VTID-03017 lesson). Instead the main loop in
-    # session.py:agent_entrypoint watches gw.handoff_event; when it
-    # fires, it gracefully stops the current session, fetches the
-    # persona's bootstrap (gateway returns persona-specific system
-    # instruction with [HANDOFF NOTE] injected via handoff_summary
-    # query param), builds Devon's full cascade (STT/LLM/TTS), and
-    # restarts AgentSession in the same room. From the user's
-    # perspective: Vitana's bridge sentence in her voice, brief gap,
-    # Devon answers in Devon's voice with the brief in his prompt.
-    try:
-        result = body.get("result") if isinstance(body, dict) else None
-        decision = result.get("decision") if isinstance(result, dict) else None
-        persona = result.get("persona") if isinstance(result, dict) else None
-        if (
-            decision == "created"
-            and persona
-            and persona in {"devon", "sage", "atlas", "mira"}
-        ):
-            gw = _gw(context)
+    # Parse machine-readable outcome from the gateway body.
+    ok = bool(body.get("ok", False)) if isinstance(body, dict) else False
+    transport = (
+        body.get("transport") if isinstance(body, dict) else None
+    )
+    err_msg = body.get("error") if isinstance(body, dict) else None
+    gateway_status = body.get("_status") if isinstance(body, dict) else None
+    result = body.get("result") if isinstance(body, dict) else None
+    decision = (
+        result.get("decision") if isinstance(result, dict) else None
+    )
+    persona = result.get("persona") if isinstance(result, dict) else None
+    rpc_gate = result.get("rpc_gate") if isinstance(result, dict) else None
+    rpc_decision = (
+        result.get("rpc_decision") if isinstance(result, dict) else None
+    )
+    word_count = (
+        result.get("word_count") if isinstance(result, dict) else None
+    )
+    ticket_number = (
+        result.get("ticket_number") if isinstance(result, dict) else None
+    )
+
+    # Map the gateway's decision enum to the machine-readable status the
+    # LLM sees. `handoff_created` is reserved for the case where a real
+    # specialist row was picked — an unrouted ticket is NOT a handoff.
+    status: str
+    if transport == "exception" or not ok:
+        status = "failed_network" if transport == "exception" else "failed"
+    elif decision == "created" and persona in {"devon", "sage", "atlas", "mira"}:
+        status = "handoff_created"
+    elif decision == "created":
+        status = "ticket_filed_no_handoff"
+    elif decision == "stay_inline":
+        status = "stay_inline"
+    elif decision == "vague":
+        status = "vague"
+    elif decision == "failed":
+        status = "failed"
+    else:
+        # Unknown / missing decision shape — treat as failure-loud rather
+        # than silently letting the LLM improvise. This is the catch-all
+        # for "stub_not_implemented"-class regressions.
+        status = "failed"
+
+    handoff_signaled = False
+
+    # --- HANDOFF SIGNAL (only on real handoff_created) --------------------
+    if status == "handoff_created":
+        try:
             handoff_event = getattr(gw, "handoff_event", None)
             if handoff_event is not None:
                 gw.handoff_target = persona
                 gw.handoff_summary = summary
                 gw.handoff_reason = f"user reported {kind}"
                 handoff_event.set()
+                handoff_signaled = True
                 logger.info(
                     "report_to_specialist: handoff signal set → %s "
                     "(main loop will rebuild AgentSession)",
@@ -305,11 +388,130 @@ async def report_to_specialist(
                     "report_to_specialist: gw.handoff_event missing — "
                     "ticket filed but no persona rebuild will fire",
                 )
-    except Exception as exc:  # noqa: BLE001
-        # Never let the signal failure mask the ticket-creation success.
-        logger.warning("report_to_specialist: handoff signal failed: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "report_to_specialist: handoff signal failed: %s", exc
+            )
 
-    return summarize(body)
+    # --- AFTER DISPATCH: structured log + OASIS ---------------------------
+    logger.info(
+        "report_to_specialist.result: status=%s decision=%s persona=%s "
+        "gateway_ok=%s gateway_status=%s rpc_gate=%s rpc_decision=%s "
+        "ticket_number=%s handoff_signaled=%s error=%r",
+        status,
+        decision,
+        persona,
+        ok,
+        gateway_status,
+        rpc_gate,
+        rpc_decision,
+        ticket_number,
+        handoff_signaled,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.report_to_specialist.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "decision": decision,
+                    "persona": persona,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "rpc_gate": rpc_gate,
+                    "rpc_decision": rpc_decision,
+                    "ticket_number": ticket_number,
+                    "handoff_signaled": handoff_signaled,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                    "word_count": word_count,
+                },
+                vtid="VTID-03033",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "report_to_specialist: oasis .result emit failed: %s", exc
+            )
+
+    # --- DETERMINISTIC LLM-FACING TEXT ------------------------------------
+    # Every branch starts with `STATUS: <status>.` so the LLM has a single
+    # machine-readable token. The action sentence after it tells the LLM
+    # what to actually say. Bridge-sentence freedom is preserved ONLY on
+    # handoff_created — every other branch forbids claiming a handoff.
+    if status == "handoff_created":
+        persona_label = {
+            "devon": "tech support",
+            "sage": "customer support",
+            "atlas": "finance / marketplace",
+            "mira": "account",
+        }.get(persona or "", "a specialist colleague")
+        ticket_label = ticket_number or "(pending)"
+        return (
+            f"STATUS: handoff_created. "
+            f"ACTION: Specialist handoff created for {persona_label} (ticket {ticket_label}). "
+            "Speak ONE short bridge sentence in the user's language announcing the ROLE "
+            f"({persona_label}) — vary phrasing every call. Then STOP. "
+            "Do NOT speak the persona's internal name (Devon/Sage/Atlas/Mira) out loud. "
+            "Do NOT introduce the colleague yourself — they will speak next in their own voice. "
+            "Do NOT promise a timeline."
+        )
+
+    if status == "ticket_filed_no_handoff":
+        ticket_label = ticket_number or "(pending)"
+        return (
+            f"STATUS: ticket_filed_no_handoff. "
+            f"ACTION: A ticket has been filed (ticket {ticket_label}) but NO specialist "
+            "was routed to take this live. Tell the user warmly that you've logged the "
+            "report and someone will follow up — vary your phrasing. Do NOT say you are "
+            "connecting them to anyone. Do NOT claim a colleague has joined."
+        )
+
+    if status == "stay_inline":
+        gate_label = rpc_gate or "unspecified"
+        return (
+            f"STATUS: stay_inline. "
+            f"ACTION: No specialist handoff was created (rpc_gate={gate_label}). "
+            "Continue helping the user inline yourself. Do NOT claim that Devon, Sage, "
+            "Atlas, or Mira has joined or is being connected — they have NOT. "
+            "Do NOT mention this routing decision out loud. Answer the user's actual "
+            "question or ask the next clarifying question naturally."
+        )
+
+    if status == "vague":
+        wc = word_count if isinstance(word_count, int) else "unknown"
+        return (
+            f"STATUS: vague. "
+            f"ACTION: Your summary was too vague (word_count={wc}). Do NOT retry this "
+            "tool yet. Ask the user ONE follow-up question in their language for "
+            "specifics (which screen / feature / error message / what they were doing). "
+            "Then wait for their answer and call this tool again with a real description "
+            "(>= 12 words). Do NOT claim anyone is being connected."
+        )
+
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: Specialist handoff request did NOT reach the backend (network "
+            "exception). Tell the user honestly that the report did not go through "
+            "and that you'll try again in a moment. Do NOT claim a specialist has "
+            "joined or is being connected."
+        )
+
+    # status == "failed" (gateway returned ok:false, or unknown shape)
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Specialist handoff failed ({err_label}). Tell the user honestly "
+        "that the report did not go through. Do NOT claim a specialist has joined "
+        "or is being connected. Do NOT promise a timeline."
+    )
 
 
 # ---------------------------------------------------------------------------
