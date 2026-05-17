@@ -152,6 +152,7 @@ export async function evaluateLiveKitDryRun(
     /* recentRoutes */ null,
     /* clientContext */ undefined,
     identity.vitana_id ?? null,
+    /* omitGreetingPolicy */ true, // VTID-03046 step 2 — eval mirrors prod LiveKit
   );
 
   // Tool catalog — Live API shape is `[{ function_declarations: [...] }]`

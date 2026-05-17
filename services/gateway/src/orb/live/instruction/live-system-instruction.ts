@@ -138,6 +138,17 @@ function buildTemporalJourneyContextSection(
   recentRoutes: string[] | null | undefined,
   isReconnect: boolean,
   timeOfDay?: string,
+  // VTID-03046 step 2 — when true, omit the GREETING POLICY / RECONNECT
+  // FINAL OVERRIDE / HARD ANTI-PATTERNS blocks. These ~37 KB of rules only
+  // govern the LLM's FIRST utterance after room-join. The LiveKit cascade
+  // never lets the LLM produce that utterance — `session.say(...)` plays a
+  // pre-rendered localized greeting at room-join (see orb-agent
+  // session.py:_localized_greeting, VTID-03014). For LiveKit those rules
+  // are dead text the LLM has to chew through on every single turn.
+  // Vertex Live still needs them (Gemini Live API does generate the
+  // greeting) so this stays opt-in. TONE RULES + JOURNEY AWARENESS are
+  // kept because they shape ongoing conversation, not just the opener.
+  omitGreetingPolicy?: boolean,
 ): string {
   const temporal = describeTimeSince(lastSessionInfo);
   const current = describeRoute(currentRoute, lang);
@@ -193,6 +204,30 @@ function buildTemporalJourneyContextSection(
     lines.push(`- Journey before opening ORB (newest → oldest): ${trailStr}`);
   } else {
     lines.push('- Journey before opening ORB: (no prior screens reported this session)');
+  }
+
+  // VTID-03046 step 2: skip the entire greeting-policy stack on LiveKit
+  // (caller passes omitGreetingPolicy=true). The early-return jumps over
+  // the GREETING POLICY block (until ## TONE RULES below), the RECONNECT
+  // FINAL OVERRIDE block, and the HARD ANTI-PATTERNS block — all of which
+  // exist solely to constrain the LLM's FIRST utterance. LiveKit's
+  // pre-rendered session.say() greeting bypasses them entirely.
+  if (omitGreetingPolicy) {
+    lines.push('');
+    lines.push('## TONE RULES (CRITICAL)');
+    lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
+    lines.push('- Baseline register: "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
+    lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
+    lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
+    lines.push('');
+    lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
+    lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
+    lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
+    lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
+    lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
+    lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
+    lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
+    return '\n\n' + lines.join('\n');
   }
 
   lines.push('');
@@ -404,6 +439,11 @@ export function buildLiveSystemInstruction(
   // model may emit when asked "what is my user ID?". Null/undefined for
   // sessions where the handle hasn't been provisioned yet.
   vitanaId?: string | null,
+  // VTID-03046 step 2: drop the ~37 KB greeting-policy stack from the
+  // rendered prompt. See buildTemporalJourneyContextSection's parameter
+  // comment for the full rationale. Only LiveKit callers pass true —
+  // Vertex still needs it because Gemini Live generates the greeting.
+  omitGreetingPolicy?: boolean,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -597,6 +637,7 @@ ${trimmedHistory}
     recentRoutes,
     !!isReconnect,
     clientContext?.timeOfDay,
+    omitGreetingPolicy,
   );
 
   // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
