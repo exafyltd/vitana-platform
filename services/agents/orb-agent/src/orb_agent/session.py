@@ -1340,12 +1340,29 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             pass
 
         # Close the current session so its audio stream stops cleanly.
+        # VTID-03045: bounded wait. Session 0adc6ff6 on 2026-05-17 14:23 UTC
+        # hit a 9-minute aclose() hang on a healthy multi-instance FallbackAdapter
+        # session after Devon handoff signal — the old session never returned
+        # from close, the new session never started, the room was effectively
+        # dead. asyncio.wait_for caps the cleanup window at 3s; on timeout we
+        # forfeit graceful tear-down and move on. The room's audio-track
+        # cleanup is handled by LiveKit regardless of whether the AgentSession
+        # closed cleanly, so the worst case is a couple of orphaned coroutines
+        # for the rest of this entrypoint's lifetime (which ends shortly when
+        # the user disconnects). Better than a frozen room.
         try:
             close_method = getattr(session, "aclose", None) or getattr(session, "close", None)
             if close_method is not None:
                 res = close_method()
                 if asyncio.iscoroutine(res):
-                    await res
+                    try:
+                        await asyncio.wait_for(res, timeout=3.0)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "agent_entrypoint: session.aclose did not return in 3s — "
+                            "continuing with persona rebuild, leaving the old session "
+                            "to be reclaimed by GC (VTID-03045 mitigation)"
+                        )
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent_entrypoint: session.aclose failed: %s", exc)
 
