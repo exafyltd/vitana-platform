@@ -1,0 +1,59 @@
+name: Diagnose Autopilot Runtime
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Gateway env vars (look for DEV_AUTOPILOT_*)
+        run: |
+          set -e
+          echo "=== Gateway service: latest revision env (autopilot/job-related only) ==="
+          gcloud run services describe gateway \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format=json | jq -r '.spec.template.spec.containers[0].env[] | select(.name|test("AUTOPILOT|JOB|VERTEX|GCP_PROJECT|WORKER")) | "\(.name)=\(.value // "<secret>")"'
+          echo
+          echo "=== Gateway runtime SA + image ==="
+          gcloud run services describe gateway \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(spec.template.spec.serviceAccountName,spec.template.spec.containers[0].image)'
+
+      - name: autopilot-executor Job state
+        run: |
+          set -e
+          echo "=== Job describe ==="
+          gcloud run jobs describe autopilot-executor \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(name,creationTimestamp,spec.template.spec.template.spec.containers[0].image,spec.template.spec.template.spec.timeoutSeconds)' || echo "JOB NOT FOUND"
+          echo
+          echo "=== Job IAM bindings (run.invoker?) ==="
+          gcloud run jobs get-iam-policy autopilot-executor \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format=json | jq '.bindings'
+          echo
+          echo "=== Recent Job executions ==="
+          gcloud run jobs executions list \
+            --job=autopilot-executor --region=us-central1 --project=lovable-vitana-vers1 \
+            --limit=10 --format='table(name,creationTimestamp,completionTime,succeededCount,failedCount)' || echo "no executions"
+
+      - name: Try dispatching a test execution
+        run: |
+          set -e
+          echo "=== Try dispatch autopilot-executor with EXEC_ID=DIAG ==="
+          gcloud run jobs execute autopilot-executor \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --update-env-vars=EXEC_ID=DIAG-NOOP \
+            --wait=false 2>&1 || echo "DISPATCH FAILED"
