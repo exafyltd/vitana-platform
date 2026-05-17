@@ -71,6 +71,96 @@ const router = Router();
 
 const VTID = 'VTID-LIVEKIT-FOUNDATION';
 
+// ---------------------------------------------------------------------------
+// VTID-03035: bootstrap response cache.
+// ---------------------------------------------------------------------------
+// The /orb/context-bootstrap handler costs 600-800ms per call (down from
+// 1.3-2.0s after VTID-03030 parallelization). On a normal session that's
+// 600-800ms of dead time between agent dispatch and audible greeting.
+//
+// In-memory LRU keyed by {user_id, agent_id, lang}, TTL 60s. The key
+// design lets reconnects within the TTL hit the cache (~10ms response).
+// The 60s window is short enough that stale identity_facts / memory_items
+// risk is negligible — those tables change on order of minutes-to-hours.
+//
+// The bigger win comes from PRE-WARMING the cache: both token-mint
+// endpoints (/orb/livekit/token and /agents/:id/voice-config/test-session)
+// kick off a fire-and-forget cache-fill via `prewarmBootstrap()` so that
+// by the time the agent's bootstrap.fetch() arrives (~1-2s later), the
+// cache is populated and the response is essentially free.
+//
+// Cache size is bounded to 1000 entries — way more than any reasonable
+// active-user count for a single Cloud Run instance.
+// ---------------------------------------------------------------------------
+const BOOTSTRAP_CACHE_TTL_MS = 60_000;
+const BOOTSTRAP_CACHE_MAX_ENTRIES = 1000;
+type BootstrapCacheEntry = { value: Record<string, unknown>; cachedAt: number };
+const BOOTSTRAP_CACHE = new Map<string, BootstrapCacheEntry>();
+
+function bootstrapCacheKey(userId: string | null, agentId: string, lang: string): string {
+  return `${userId ?? 'anon'}|${agentId}|${lang}`;
+}
+
+function getCachedBootstrap(key: string): Record<string, unknown> | null {
+  const entry = BOOTSTRAP_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > BOOTSTRAP_CACHE_TTL_MS) {
+    BOOTSTRAP_CACHE.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCachedBootstrap(key: string, value: Record<string, unknown>): void {
+  // Simple LRU-ish eviction: when full, drop the oldest entry by insertion order.
+  if (BOOTSTRAP_CACHE.size >= BOOTSTRAP_CACHE_MAX_ENTRIES) {
+    const firstKey = BOOTSTRAP_CACHE.keys().next().value;
+    if (firstKey !== undefined) BOOTSTRAP_CACHE.delete(firstKey);
+  }
+  BOOTSTRAP_CACHE.set(key, { value, cachedAt: Date.now() });
+}
+
+/**
+ * Fire-and-forget bootstrap pre-warm. Called from token-mint endpoints to
+ * fill the cache while the LiveKit client + WebRTC handshake are still
+ * in progress on the client side. By the time the agent actually requests
+ * /orb/context-bootstrap, the cache hit makes it a ~10ms response.
+ *
+ * Self-calls the same /orb/context-bootstrap endpoint via an internal
+ * fetch with a placeholder header so the handler sees a normal request.
+ * If the call errors, we silently skip — the agent will then do the
+ * normal uncached fetch (no behavior regression).
+ */
+function prewarmBootstrap(opts: {
+  userJwt: string | null;
+  agentId: string;
+  lang: string;
+  clientIp: string | null;
+  baseUrl: string;
+}): void {
+  const headers: Record<string, string> = {
+    'Accept-Language': opts.lang,
+  };
+  if (opts.userJwt) headers['Authorization'] = `Bearer ${opts.userJwt}`;
+  if (opts.clientIp) headers['X-Real-IP'] = opts.clientIp;
+  const url =
+    opts.baseUrl.replace(/\/+$/, '') +
+    `/api/v1/orb/context-bootstrap?agent_id=${encodeURIComponent(opts.agentId)}`;
+  fetch(url, { method: 'GET', headers })
+    .then(() => {
+      /* fire-and-forget — cache populated by the handler */
+    })
+    .catch((exc: unknown) => {
+      console.warn(
+        `[${VTID}] prewarmBootstrap failed: ${(exc as Error).message ?? exc}`,
+      );
+    });
+}
+
+// Internal port — when a request hits our own Cloud Run service, it
+// reaches us via the LB at port 8080 on localhost.
+const SELF_BASE_URL = process.env.SELF_BASE_URL || 'http://localhost:8080';
+
 // VTID-03014: extract the user's real client IP from the request and embed
 // it in LiveKit token metadata. Without this, the orb-agent (running in
 // Cloud Run us-central1) calls /orb/context-bootstrap from its OWN egress
@@ -496,6 +586,20 @@ router.post(
 
     const token = await at.toJwt();
 
+    // VTID-03035: pre-warm the bootstrap cache so the agent's
+    // /orb/context-bootstrap call (which fires ~1-2s later, while
+    // WebRTC handshake is still happening) hits the cache and returns
+    // in ~10ms instead of ~600-800ms. Fire-and-forget.
+    if (req.identity?.user_id && agentUserJwt) {
+      prewarmBootstrap({
+        userJwt: agentUserJwt,
+        agentId,
+        lang,
+        clientIp,
+        baseUrl: SELF_BASE_URL,
+      });
+    }
+
     return res.json({
       ok: true,
       url: livekitUrl,
@@ -570,6 +674,23 @@ router.get(
       .split(',')[0]
       .split('-')[0];
 
+    // VTID-03035: cache hit short-circuit. Only the full (non-greeting-only)
+    // path is cached — greeting_only is already fast (~150-300ms) and its
+    // freshness matters less. Anonymous sessions skip the cache (key
+    // would collide across visitors).
+    const greetingOnly = String(req.query.greeting_only ?? 'false') === 'true';
+    const cacheKey = userId ? bootstrapCacheKey(userId, agentId, lang) : null;
+    if (cacheKey && !greetingOnly) {
+      const cached = getCachedBootstrap(cacheKey);
+      if (cached) {
+        return res.json({
+          ...cached,
+          cached: true,
+          cache_age_ms: Date.now() - (BOOTSTRAP_CACHE.get(cacheKey)?.cachedAt ?? Date.now()),
+        });
+      }
+    }
+
     let voiceConfig: Record<string, unknown> | null = null;
     if (sb) {
       const { data } = await sb
@@ -595,7 +716,6 @@ router.get(
     // render. The agent runs this in the click→greeting path and runs the full
     // /orb/context-bootstrap (without the flag) as a background task to
     // hydrate the system instruction for subsequent turns.
-    const greetingOnly = String(req.query.greeting_only ?? 'false') === 'true';
     if (greetingOnly) {
       let goDisplayName: string | null = null;
       if (sb && userId) {
@@ -1168,7 +1288,7 @@ router.get(
       );
     }
 
-    res.json({
+    const responsePayload: Record<string, unknown> = {
       ok: true,
       vtid: VTID,
       agent_id: agentId,
@@ -1206,7 +1326,16 @@ router.get(
       // inlined into `bootstrap_context`; this field is for tooling.
       // null on anonymous sessions or when compile failed.
       decision_context: decisionContext,
-    });
+    };
+
+    // VTID-03035: populate cache for the next 60s. Only authenticated full
+    // (non-greeting-only) bootstraps are cached — anonymous keys would
+    // collide across visitors, and greeting_only is already fast enough.
+    if (cacheKey) {
+      setCachedBootstrap(cacheKey, responsePayload);
+    }
+
+    res.json(responsePayload);
   },
 );
 
@@ -1483,6 +1612,17 @@ router.post(
       canPublishData: true,
     });
     const token = await at.toJwt();
+
+    // VTID-03035: pre-warm bootstrap cache (see same block in /orb/livekit/token).
+    if (req.identity?.user_id && agentUserJwt) {
+      prewarmBootstrap({
+        userJwt: agentUserJwt,
+        agentId: id,
+        lang,
+        clientIp,
+        baseUrl: SELF_BASE_URL,
+      });
+    }
 
     res.json({
       ok: true,
