@@ -120,6 +120,64 @@ function setCachedBootstrap(key: string, value: Record<string, unknown>): void {
   BOOTSTRAP_CACHE.set(key, { value, cachedAt: Date.now() });
 }
 
+// ---------------------------------------------------------------------------
+// VTID-03036: shared cross-instance cache via Supabase `bootstrap_cache` table.
+// ---------------------------------------------------------------------------
+// The VTID-03035 in-memory cache only hits when both the token-mint and the
+// agent's bootstrap.fetch() land on the same Cloud Run gateway instance. In
+// production the LB routes those requests across multiple instances, so
+// real-session hit-rate stayed low and bootstrap_latency_ms stuck at ~700ms.
+//
+// This layer mirrors every write to a Supabase row keyed by the same string.
+// On miss the handler checks Supabase before doing the full work; on hit it
+// re-populates the in-memory cache so subsequent same-instance reads are
+// instant.
+//
+// Defensive: ALL Supabase calls are wrapped in try/catch and return
+// null/undefined on any error (table missing, network blip, etc.). The
+// handler always falls back to the existing in-memory + full-work path —
+// no behavior regression if the migration hasn't been applied yet.
+// ---------------------------------------------------------------------------
+
+async function getSharedCachedBootstrap(
+  key: string,
+): Promise<Record<string, unknown> | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb
+      .from('bootstrap_cache')
+      .select('payload, expires_at')
+      .eq('cache_key', key)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { payload: unknown; expires_at: string };
+    return (row.payload as Record<string, unknown>) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function setSharedCachedBootstrap(
+  key: string,
+  value: Record<string, unknown>,
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    const expiresAt = new Date(Date.now() + BOOTSTRAP_CACHE_TTL_MS).toISOString();
+    await sb
+      .from('bootstrap_cache')
+      .upsert(
+        { cache_key: key, payload: value, expires_at: expiresAt },
+        { onConflict: 'cache_key' },
+      );
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
  * Fire-and-forget bootstrap pre-warm. Called from token-mint endpoints to
  * fill the cache while the LiveKit client + WebRTC handshake are still
@@ -674,19 +732,35 @@ router.get(
       .split(',')[0]
       .split('-')[0];
 
-    // VTID-03035: cache hit short-circuit. Only the full (non-greeting-only)
-    // path is cached — greeting_only is already fast (~150-300ms) and its
-    // freshness matters less. Anonymous sessions skip the cache (key
-    // would collide across visitors).
+    // VTID-03035 + VTID-03036: two-layer cache hit short-circuit.
+    //  - L1 in-memory (per Cloud Run instance) — ~0ms when hit
+    //  - L2 Supabase `bootstrap_cache` (shared across instances) — ~30-80ms
+    // Only the full (non-greeting-only) path is cached — greeting_only is
+    // already fast (~150-300ms) and its freshness matters less. Anonymous
+    // sessions skip the cache (key would collide across visitors).
     const greetingOnly = String(req.query.greeting_only ?? 'false') === 'true';
     const cacheKey = userId ? bootstrapCacheKey(userId, agentId, lang) : null;
     if (cacheKey && !greetingOnly) {
-      const cached = getCachedBootstrap(cacheKey);
-      if (cached) {
+      // L1: in-memory
+      const l1Cached = getCachedBootstrap(cacheKey);
+      if (l1Cached) {
         return res.json({
-          ...cached,
+          ...l1Cached,
           cached: true,
+          cache_layer: 'l1_memory',
           cache_age_ms: Date.now() - (BOOTSTRAP_CACHE.get(cacheKey)?.cachedAt ?? Date.now()),
+        });
+      }
+      // L2: shared Supabase (VTID-03036). Best-effort; on any error this
+      // returns null and we fall through to the normal handler work.
+      const l2Cached = await getSharedCachedBootstrap(cacheKey);
+      if (l2Cached) {
+        // Re-populate L1 so the same instance hits in-memory next time.
+        setCachedBootstrap(cacheKey, l2Cached);
+        return res.json({
+          ...l2Cached,
+          cached: true,
+          cache_layer: 'l2_supabase',
         });
       }
     }
@@ -1328,11 +1402,15 @@ router.get(
       decision_context: decisionContext,
     };
 
-    // VTID-03035: populate cache for the next 60s. Only authenticated full
-    // (non-greeting-only) bootstraps are cached — anonymous keys would
-    // collide across visitors, and greeting_only is already fast enough.
+    // VTID-03035 + VTID-03036: populate both cache layers for the next 60s.
+    //  - L1 in-memory: instant hit on same Cloud Run instance.
+    //  - L2 Supabase (fire-and-forget upsert): hit on any instance via the
+    //    `bootstrap_cache` table — required for prewarm→agent to land
+    //    cross-instance under load.
     if (cacheKey) {
       setCachedBootstrap(cacheKey, responsePayload);
+      // Fire-and-forget — don't block the response on the Supabase write.
+      void setSharedCachedBootstrap(cacheKey, responsePayload);
     }
 
     res.json(responsePayload);
