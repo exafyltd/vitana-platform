@@ -24,6 +24,9 @@ import { makeAutopilotRecommendationSource } from './sources/autopilot-recommend
 // VTID-03058 (B0d-real Xc) — second wave of sources.
 import { makeCalendarUpcomingSource } from './sources/calendar-upcoming';
 import { makeLifeCompassAlignmentSource } from './sources/life-compass-alignment';
+// VTID-03059 (B0d-real Xd) — third wave of sources.
+import { makeDiaryMissingRelevantSource } from './sources/diary-missing-relevant';
+import { makeVitanaIndexPillarSource } from './sources/vitana-index-pillar';
 
 let _registered = false;
 
@@ -31,15 +34,19 @@ export function ensureDefaultNextActionSourcesRegistered(): void {
   if (_registered) return;
   _registered = true;
   // Registration order also serves as the deterministic tie-break.
-  // Pick: reminders > calendar > autopilot > life-compass-alignment.
+  // Pick (urgency-first): reminders > calendar > autopilot > diary >
+  // life-compass-alignment > vitana-index-pillar.
   // Each source's bands are tuned so the natural urgency winner wins on
-  // priority alone (e.g. <10min reminder=95 beats calendar bands), but
-  // this order resolves rare ties without the composer needing a
-  // global registry.
+  // priority alone (e.g. <10min reminder=95 beats calendar bands). This
+  // order resolves rare ties without the composer needing a global
+  // registry. Pillar momentum is LAST — the weakest proactive lever
+  // unless nothing more concrete fires.
   defaultNextActionComposer.register(makeReminderDueSource());
   defaultNextActionComposer.register(makeCalendarUpcomingSource());
   defaultNextActionComposer.register(makeAutopilotRecommendationSource());
+  defaultNextActionComposer.register(makeDiaryMissingRelevantSource());
   defaultNextActionComposer.register(makeLifeCompassAlignmentSource());
+  defaultNextActionComposer.register(makeVitanaIndexPillarSource());
 }
 
 // Register on import so consumers don't have to remember.
