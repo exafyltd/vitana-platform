@@ -44,6 +44,10 @@ import {
   NEXT_ACTION_PROVIDER_KEY,
 } from './assistant-continuation/providers/next-action';
 import './assistant-continuation/providers/next-action/register-default-sources';
+// VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
+// .suppressed events when a wake-brief decision lands. Fire-and-forget;
+// never blocks the voice path.
+import { emitNextActionDecisionTelemetry } from './assistant-continuation/providers/next-action/emit-telemetry';
 import { decideGreetingPolicy } from '../orb/live/instruction/greeting-policy';
 import { defaultWakeTimelineRecorder } from './wake-timeline/wake-timeline-recorder';
 import type { AssistantContinuationDecision } from './assistant-continuation/types';
@@ -235,6 +239,19 @@ export async function decideWakeBriefForSession(
       latencyMs: r.latencyMs,
       reason: r.reason,
     })),
+  });
+
+  // VTID-03061 (B0d-real Xf.1): fire-and-forget OASIS emit for the
+  // Contextual Next Action lifecycle. Only emits when the decision
+  // actually involved a B0d-real candidate (suggested) OR the
+  // contextual_next_action provider returned a non-`returned` status
+  // (suppressed). Wake-brief-only decisions don't emit here — those
+  // are tracked by the existing wake_brief_selected timeline event.
+  emitNextActionDecisionTelemetry({
+    decision,
+    userId: args.userId,
+    tenantId: args.tenantId,
+    surface: 'orb_wake',
   });
 
   return decision;
