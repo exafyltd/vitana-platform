@@ -1449,6 +1449,14 @@ router.get(
           // the generic "Hello! How can I help today?" line. Already
           // compiled earlier in this handler at the spine step.
           pillarMomentum: decisionContext?.pillar_momentum ?? null,
+          // VTID-03057 (B0d-real Xb): forward supabase client +
+          // decisionContext so the Contextual Next Action provider can
+          // query its sources (reminders, autopilot_recommendations).
+          // Best-effort: when supabase is null (rare), the next-action
+          // provider skips and voice-wake-brief still fires its
+          // hardcoded fallback line.
+          supabase: sb ?? undefined,
+          decisionContext: decisionContext ?? null,
         });
       } catch (exc) {
         console.warn(
