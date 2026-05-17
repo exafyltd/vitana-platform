@@ -40,6 +40,7 @@ import {
 import {
   evaluateLiveKitDryRun,
 } from '../services/voice-lab/livekit-test-eval';
+import { getCoverage as getLivekitTestCoverage } from '../services/voice-lab/livekit-test-coverage';
 
 const router = Router();
 
@@ -288,6 +289,26 @@ router.get(
     try {
       const cases = await listLivekitTestCases();
       return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, cases });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+// Parity coverage: which live tools in `tool-manifest.json` are NOT yet
+// covered by an enabled test case. Drives the "X / N tools tested" header
+// + "Missing" list in the UI panel. Used by Slice 1c parity guard.
+router.get(
+  '/tests/coverage',
+  livekitTestsAuthGate,
+  async (_req: Request, res: Response) => {
+    try {
+      const coverage = await getLivekitTestCoverage();
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, coverage });
     } catch (err) {
       return res.status(500).json({
         ok: false,

@@ -3896,6 +3896,7 @@ const state = {
         recentRuns: [],
         latestRun: null,           // { run, results: [...] }
         cases: [],
+        coverage: null,            // CoverageReport from /tests/coverage
         loading: false,
         triggering: false,
         error: null,
@@ -35113,17 +35114,20 @@ function renderLivekitHourlyTestsPanel() {
         'Layer-A dry-run via gateway tool-routing · VTID-03025</span>';
     section.appendChild(titleRow);
 
-    // Lazy-fetch latest run + cases on first render.
+    // Lazy-fetch latest run + cases + coverage on first render.
     if (!state.livekitTests.fetched && !state.livekitTests.loading) {
         state.livekitTests.loading = true;
         Promise.all([
             fetch('/api/v1/voice-lab/tests/runs?limit=10', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
             fetch('/api/v1/voice-lab/tests/cases', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-lab/tests/coverage', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         ]).then(function (results) {
             var runsResp = results[0];
             var casesResp = results[1];
+            var covResp = results[2];
             state.livekitTests.recentRuns = (runsResp && runsResp.runs) || [];
             state.livekitTests.cases = (casesResp && casesResp.cases) || [];
+            state.livekitTests.coverage = (covResp && covResp.ok) ? covResp.coverage : null;
             state.livekitTests.loading = false;
             state.livekitTests.fetched = true;
             // Chain-load the latest run's detail.
@@ -35170,6 +35174,57 @@ function renderLivekitHourlyTestsPanel() {
     var recent = state.livekitTests.recentRuns || [];
     var latest = state.livekitTests.latestRun;
     var cases = state.livekitTests.cases || [];
+    var coverage = state.livekitTests.coverage;
+
+    // Parity coverage banner. Renders ONLY when the coverage endpoint
+    // returned a report — drops silently on first deploys before the
+    // tool-manifest read is wired into the prod image.
+    if (coverage) {
+        var covBanner = document.createElement('div');
+        var pct = coverage.coverage_pct || 0;
+        var bannerColor = pct >= 100 ? 'var(--color-bg-secondary)' :
+                          pct >= 80 ? '#3b2f0f' :
+                          '#3b1f1f';
+        var bannerTextColor = pct >= 100 ? 'var(--color-text-secondary)' :
+                              pct >= 80 ? '#fbbf24' :
+                              '#f87171';
+        covBanner.style.cssText = 'display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.85rem;padding:0.5rem 0.75rem;background:' + bannerColor +
+            ';border:1px solid var(--color-border);border-radius:6px;font-size:0.8rem;color:' + bannerTextColor + ';';
+
+        var covSummary = document.createElement('span');
+        covSummary.style.fontWeight = '600';
+        covSummary.textContent = 'Parity: ' + coverage.tested_total + ' / ' + coverage.live_total + ' live tools tested (' + pct + '%)';
+        covBanner.appendChild(covSummary);
+
+        if (coverage.manifest_generated_at) {
+            var manifestStamp = document.createElement('span');
+            manifestStamp.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);';
+            manifestStamp.textContent = '· manifest ' + coverage.manifest_generated_at;
+            covBanner.appendChild(manifestStamp);
+        }
+
+        if (coverage.uncovered_total > 0) {
+            var missingDetails = document.createElement('details');
+            missingDetails.style.cssText = 'margin-left:auto;font-size:0.75rem;';
+            var summary = document.createElement('summary');
+            summary.style.cssText = 'cursor:pointer;color:' + bannerTextColor + ';';
+            summary.textContent = coverage.uncovered_total + ' missing';
+            missingDetails.appendChild(summary);
+
+            var missingList = document.createElement('div');
+            missingList.style.cssText = 'margin-top:0.5rem;padding:0.5rem;background:var(--color-bg-primary);border:1px solid var(--color-border);border-radius:4px;max-height:180px;overflow-y:auto;font-family:var(--font-mono);font-size:0.7rem;color:var(--color-text-secondary);min-width:280px;';
+            (coverage.uncovered || []).forEach(function (u) {
+                var row = document.createElement('div');
+                row.style.padding = '1px 0';
+                row.textContent = u.name + (u.surface ? '  (' + u.surface + ')' : '');
+                missingList.appendChild(row);
+            });
+            missingDetails.appendChild(missingList);
+            covBanner.appendChild(missingDetails);
+        }
+
+        card.appendChild(covBanner);
+    }
 
     if (recent.length === 0) {
         var noRuns = document.createElement('div');
