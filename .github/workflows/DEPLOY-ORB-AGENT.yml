@@ -62,6 +62,49 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
+      # VTID-03040: provision DEEPGRAM_API_KEY in Secret Manager so the orb-agent
+      # can mount it as Cloud Run runtime env. Sync from the GH Actions secret
+      # of the same name (one source of truth). Idempotent — creates the secret
+      # on first run, adds a new version only when the GH value differs from
+      # what's in Secret Manager. The agent's _build_stt picks up the env at
+      # session start and adds Deepgram as the 3rd entry in the FallbackAdapter
+      # chain (after primary Google STT + same-provider mirror), breaking the
+      # all-Google correlation that produced the 50+ stalls in session
+      # 0adc6ff6 at 11:54-12:06 UTC on 2026-05-17.
+      - name: Sync DEEPGRAM_API_KEY into Secret Manager
+        env:
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -z "${DEEPGRAM_API_KEY:-}" ]; then
+            echo "::warning::DEEPGRAM_API_KEY GH secret not set — skipping Secret Manager sync. Cross-provider STT fallback will NOT be active."
+            exit 0
+          fi
+          if ! gcloud secrets describe DEEPGRAM_API_KEY \
+               --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+            echo "Secret DEEPGRAM_API_KEY does not exist — creating."
+            printf '%s' "$DEEPGRAM_API_KEY" | \
+              gcloud secrets create DEEPGRAM_API_KEY \
+                --data-file=- \
+                --replication-policy=automatic \
+                --project="$GCP_PROJECT_ID"
+          else
+            CURRENT_HASH=$(gcloud secrets versions access latest \
+              --secret=DEEPGRAM_API_KEY \
+              --project="$GCP_PROJECT_ID" 2>/dev/null \
+              | sha256sum | cut -d' ' -f1 || echo "absent")
+            NEW_HASH=$(printf '%s' "$DEEPGRAM_API_KEY" | sha256sum | cut -d' ' -f1)
+            if [ "$CURRENT_HASH" != "$NEW_HASH" ]; then
+              echo "DEEPGRAM_API_KEY value changed — adding new version."
+              printf '%s' "$DEEPGRAM_API_KEY" | \
+                gcloud secrets versions add DEEPGRAM_API_KEY \
+                  --data-file=- \
+                  --project="$GCP_PROJECT_ID"
+            else
+              echo "DEEPGRAM_API_KEY already in sync — no new version needed."
+            fi
+          fi
+
       - name: Build image
         working-directory: services/agents/orb-agent
         run: |
@@ -90,7 +133,7 @@ jobs:
             --ingress=all \
             --allow-unauthenticated \
             --labels=vtid=vtid-livekit-foundation,vt_layer=aicor,vt_module=voice \
-            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,GATEWAY_SERVICE_TOKEN=GATEWAY_SERVICE_TOKEN:latest \
+            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,GATEWAY_SERVICE_TOKEN=GATEWAY_SERVICE_TOKEN:latest,DEEPGRAM_API_KEY=DEEPGRAM_API_KEY:latest \
             --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=us-central1,ORB_AGENT_TEXT_ONLY=false
 
       - name: Delete prior revisions (force only-latest worker connects to LiveKit)
