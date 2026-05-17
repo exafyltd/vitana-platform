@@ -1444,6 +1444,11 @@ router.get(
           lang,
           envelopeJourneySurface:
             (envContext as { journeySurface?: string } | undefined)?.journeySurface,
+          // VTID-03053: forward distilled pillar-momentum so the renderer
+          // can emit a proactive opener for slipping pillars instead of
+          // the generic "Hello! How can I help today?" line. Already
+          // compiled earlier in this handler at the spine step.
+          pillarMomentum: decisionContext?.pillar_momentum ?? null,
         });
       } catch (exc) {
         console.warn(

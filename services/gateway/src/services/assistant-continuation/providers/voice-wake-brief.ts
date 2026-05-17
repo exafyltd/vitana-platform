@@ -40,6 +40,10 @@ import type {
   ProviderResult,
 } from '../types';
 import type { GreetingPolicy } from '../../../orb/live/instruction/greeting-policy';
+import type {
+  DecisionPillarMomentum,
+  PillarKey,
+} from '../../../orb/context/types';
 
 // ---------------------------------------------------------------------------
 // Inputs the orchestrator caller forwards via ctx.extra.voiceWakeBrief
@@ -62,6 +66,16 @@ export interface VoiceWakeBriefInputs {
   greetingPolicy: GreetingPolicy;
   /** ISO 639-1 language code. Defaults to `'en'` when absent. */
   lang?: string;
+  /**
+   * VTID-03053 — Distilled pillar-momentum from the AssistantDecisionContext.
+   * When present AND confidence is medium/high AND the suggested focus
+   * pillar has slipping/unknown momentum, the renderer produces a
+   * proactive observation instead of the generic greeting. Null/missing →
+   * the renderer falls through to the generic policy-keyed line.
+   *
+   * Enum-only by contract; no raw scores, no medical interpretation.
+   */
+  pillarMomentum?: DecisionPillarMomentum | null;
 }
 
 export const VOICE_WAKE_BRIEF_EXTRA_KEY = 'voiceWakeBrief' as const;
@@ -91,9 +105,72 @@ const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
   },
 };
 
+/**
+ * VTID-03053 — Per-pillar proactive observation. ONLY used when:
+ *   - pillarMomentum is present
+ *   - confidence is medium or high (low confidence + unknown both fall
+ *     through to the generic line so the orb doesn't speculate)
+ *   - suggested_focus is set AND its momentum band is 'slipping' or
+ *     'unknown' (steady/improving pillars don't warrant proactive nudge)
+ *
+ * Output is ONE short sentence + ONE open question — never a list, never
+ * medical interpretation, never a number. Mirrors the "one next-best
+ * action, not multiple" rule from the original B0d/B0e scope.
+ */
+const PILLAR_PROACTIVE_LINES: Record<PillarKey, Record<string, string>> = {
+  sleep: {
+    en: 'Your sleep pillar has been slipping lately. Want to look at what is getting in the way?',
+    de: 'Deine Schlaf-Säule sackt in letzter Zeit etwas ab. Wollen wir uns anschauen, was da hineinspielt?',
+  },
+  nutrition: {
+    en: 'Your nutrition pillar has been slipping lately. Want help getting it back on track?',
+    de: 'Deine Ernährungs-Säule sackt in letzter Zeit etwas ab. Sollen wir das gemeinsam wieder aufbauen?',
+  },
+  exercise: {
+    en: 'Your exercise pillar has been slipping lately. Want to set up something light for today?',
+    de: 'Deine Bewegungs-Säule sackt in letzter Zeit etwas ab. Sollen wir heute etwas Leichtes einplanen?',
+  },
+  hydration: {
+    en: 'Your hydration pillar has been slipping lately. Want a small step to lift it back up?',
+    de: 'Deine Hydrations-Säule sackt in letzter Zeit etwas ab. Wollen wir einen kleinen Schritt einbauen?',
+  },
+  mental: {
+    en: 'Your mental pillar has been slipping lately. What is weighing on you right now?',
+    de: 'Deine Mental-Säule sackt in letzter Zeit etwas ab. Was beschäftigt dich gerade?',
+  },
+};
+
+/**
+ * Whether the pillar-momentum signal warrants a proactive opener vs the
+ * generic policy-keyed line. Pure; no IO. Exported for tests.
+ */
+export function shouldUsePillarProactiveLine(
+  pm: DecisionPillarMomentum | null | undefined,
+  policy: GreetingPolicy,
+): boolean {
+  // Skip is handled at the provider boundary; never reaches the renderer.
+  // brief_resume keeps its tight "back already?" line — proactive context
+  // would feel out of place mid-thread.
+  if (policy === 'skip' || policy === 'brief_resume') return false;
+  if (!pm) return false;
+  if (pm.confidence === 'low') return false;
+  if (!pm.suggested_focus) return false;
+  const row = pm.per_pillar.find((p) => p.pillar === pm.suggested_focus);
+  if (!row) return false;
+  return row.momentum === 'slipping' || row.momentum === 'unknown';
+}
+
 export const defaultVoiceWakeBriefRenderer: VoiceWakeBriefRenderer = {
   render(inputs) {
     const lang = inputs.lang && inputs.lang.length > 0 ? inputs.lang : 'en';
+
+    if (shouldUsePillarProactiveLine(inputs.pillarMomentum, inputs.greetingPolicy)) {
+      const focus = inputs.pillarMomentum!.suggested_focus as PillarKey;
+      const byLang = PILLAR_PROACTIVE_LINES[focus];
+      const line = byLang[lang] ?? byLang.en;
+      if (line && line.length > 0) return line;
+    }
+
     const byLang = DEFAULT_LINES[inputs.greetingPolicy];
     return byLang[lang] ?? byLang.en ?? '';
   },
@@ -176,6 +253,29 @@ export function makeVoiceWakeBriefProvider(
         };
       }
 
+      const usedPillarProactive = shouldUsePillarProactiveLine(
+        inputs.pillarMomentum,
+        inputs.greetingPolicy,
+      );
+      const evidence: AssistantContinuation['evidence'] = [
+        {
+          kind: 'greeting_policy',
+          detail: inputs.greetingPolicy,
+        },
+      ];
+      let dedupeKey = `wake-brief-${inputs.greetingPolicy}`;
+      if (usedPillarProactive && inputs.pillarMomentum) {
+        evidence.push({
+          kind: 'pillar_momentum_slipping',
+          detail: inputs.pillarMomentum.suggested_focus ?? 'unknown',
+          weight: inputs.pillarMomentum.confidence === 'high' ? 1 : 0.6,
+        });
+        // Distinct dedupe key when the proactive variant fires — same
+        // greeting policy with a different observation should NOT
+        // collide with the generic-line dedupe row.
+        dedupeKey = `wake-brief-${inputs.greetingPolicy}-pillar-${inputs.pillarMomentum.suggested_focus}`;
+      }
+
       const candidate: AssistantContinuation = {
         id: `wake-brief-${newId()}`,
         surface: 'orb_wake',
@@ -183,13 +283,8 @@ export function makeVoiceWakeBriefProvider(
         priority,
         userFacingLine: line,
         cta: { type: 'explain' },
-        evidence: [
-          {
-            kind: 'greeting_policy',
-            detail: inputs.greetingPolicy,
-          },
-        ],
-        dedupeKey: `wake-brief-${inputs.greetingPolicy}`,
+        evidence,
+        dedupeKey,
         privacyMode: 'safe_to_speak',
       };
 
@@ -230,8 +325,17 @@ function readInputs(
   ) {
     return null;
   }
+  // VTID-03053: forward pillarMomentum when present. Defensive: only
+  // accept it as a structured object (the wiring helper always passes
+  // either a DecisionPillarMomentum or null/undefined).
+  const pillarMomentumRaw = obj.pillarMomentum;
+  const pillarMomentum =
+    pillarMomentumRaw && typeof pillarMomentumRaw === 'object'
+      ? (pillarMomentumRaw as VoiceWakeBriefInputs['pillarMomentum'])
+      : null;
   return {
     greetingPolicy: policy,
     lang: typeof obj.lang === 'string' ? obj.lang : undefined,
+    pillarMomentum,
   };
 }
