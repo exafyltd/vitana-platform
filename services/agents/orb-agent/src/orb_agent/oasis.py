@@ -151,3 +151,14 @@ TOPIC_AGENT_MODEL_REQUEST_FAILED = "orb.livekit.agent.model_request_failed"
 # per-turn latency with prompt size and prove (or disprove) that
 # system_instruction growth is what slowed the cascade after 2026-05-16.
 TOPIC_AGENT_TURN_MEASURED = "orb.livekit.agent.turn.measured"
+
+# VTID-03050: STT failure observability. The cascade build_cascade returns a
+# `livekit.agents.stt.FallbackAdapter` wrapping 3 instances (Google primary +
+# Google mirror + Deepgram, from VTID-03038/03041). The adapter is supposed
+# to swap on STT failure — but until now no telemetry surfaced WHEN it
+# swaps, WHICH instance died, or WHAT error class the SDK saw. These three
+# topics close that gap. On the live debugging side, grep oasis_events for
+# `livekit.stt.*` to see the per-instance health timeline of any session.
+TOPIC_STT_ERROR = "livekit.stt.error"                           # SDK ErrorEvent from STT/LLM/TTS, source-typed
+TOPIC_STT_AVAILABILITY_CHANGED = "livekit.stt.availability_changed"  # FallbackAdapter swap or recovery
+TOPIC_STT_METRICS = "livekit.stt.metrics"                       # metrics_collected from STT subsystem
