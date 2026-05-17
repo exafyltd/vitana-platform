@@ -196,18 +196,43 @@ async def recall_conversation_at_time(context: RunContext, when: str) -> str:
 
 @function_tool
 async def switch_persona(context: RunContext, persona: str) -> str:
-    """Switch to a different agent persona — used by SPECIALISTS to hand
-    the user back to Vitana once their intake is complete.
+    """Switch to a different agent persona — used by Devon to hand the user
+    back to Vitana once their intake is complete.
 
     Mirrors Vertex behavior (orb-live.ts: switch_persona case arm).
-    Specialists (Devon/Sage/Atlas/Mira) call this with persona='vitana'
-    after they ask "anything else?" and the user says no.
+    Devon calls this with persona='vitana' after he asks "anything else?"
+    and the user says no.
 
     Args:
-        persona: Target persona key. The only valid value from a specialist
-            is 'vitana' (returning the user to the receptionist). Lateral
-            specialist↔specialist swaps are NOT allowed.
+        persona: Target persona key. The only valid value from Devon is
+            'vitana' (returning the user to the receptionist). Lateral
+            specialist↔specialist swaps are NOT allowed. Sage/Atlas/Mira
+            are disabled in this canary phase (VTID-03044) — never target
+            them.
     """
+    target = (persona or "").strip().lower()
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    user_id = getattr(gw, "user_id", "") or ""
+
+    # VTID-03044 telemetry: emit .called before dispatch so we can SEE
+    # whether the LLM is invoking this tool at all. Across 2026-05-17 we
+    # observed 0 switch_persona.called events even after Devon explicitly
+    # asks "anything else?" — silence didn't tell us if the LLM skipped
+    # the tool or if we just lacked instrumentation.
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.switch_persona.called",
+                payload={
+                    "persona": target,
+                    "user_id": user_id,
+                    "session_id": "",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("switch_persona: oasis .called emit failed: %s", exc)
+
     body = await _dispatch(context, "switch_persona", {"persona": persona})
 
     # VTID-03028: when called with persona='vitana', signal the agent main
@@ -215,16 +240,16 @@ async def switch_persona(context: RunContext, persona: str) -> str:
     # report_to_specialist uses to swap TO a specialist. Without this the
     # specialist (Devon) says "I'll hand you back" but the AgentSession
     # never actually rebuilds, leaving Devon's voice still active.
+    handoff_signaled = False
     try:
-        target = (persona or "").strip().lower()
         if target == "vitana":
-            gw = _gw(context)
             handoff_event = getattr(gw, "handoff_event", None)
             if handoff_event is not None:
                 gw.handoff_target = "vitana"
                 gw.handoff_summary = None  # No new brief on swap-back
                 gw.handoff_reason = "specialist returning user to receptionist"
                 handoff_event.set()
+                handoff_signaled = True
                 logger.info(
                     "switch_persona: handoff signal set → vitana "
                     "(main loop will rebuild AgentSession)"
@@ -235,6 +260,21 @@ async def switch_persona(context: RunContext, persona: str) -> str:
                 )
     except Exception as exc:  # noqa: BLE001
         logger.warning("switch_persona: handoff signal failed: %s", exc)
+
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.switch_persona.result",
+                payload={
+                    "persona": target,
+                    "user_id": user_id,
+                    "session_id": "",
+                    "handoff_signaled": handoff_signaled,
+                    "gateway_ok": isinstance(body, dict) and bool(body.get("ok", True)),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("switch_persona: oasis .result emit failed: %s", exc)
 
     return summarize(body)
 
