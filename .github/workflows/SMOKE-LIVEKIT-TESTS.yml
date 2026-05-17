@@ -34,7 +34,9 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 45 cases × ~5s/case + per-case retry on flap = up to ~10min worst case.
+    # Set to 20 to give comfortable headroom as the suite grows past 50.
+    timeout-minutes: 20
     steps:
       - name: Authenticate to GCP via Workload Identity Federation (mint id_token)
         id: gcp-auth
