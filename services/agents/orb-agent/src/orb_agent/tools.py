@@ -1525,6 +1525,95 @@ async def get_matchmaker_result(context: RunContext, intent_id: str) -> str:  # 
     return summarize(body)
 
 
+# VTID-03048: matchmaker parity — surface Vertex's `find_perfect_product` and
+# `find_perfect_practitioner` tools to the LiveKit agent. Until this slice,
+# only Vertex registered them in its function_declarations catalog
+# (services/gateway/src/orb/live/tools/live-tool-catalog.ts:424-477), even
+# though the shared dispatcher already implemented them
+# (services/gateway/src/services/orb-tools-shared.ts:tool_find_perfect_product,
+# :tool_find_perfect_practitioner). Result: when a LiveKit user asked
+# "find me a tennis partner" / "recommend a supplement", the LLM had only
+# `post_intent` / `share_intent_post` available and skipped straight to
+# posting an intent instead of running the search-first matchmaker flow.
+# Both wrappers _dispatch to the shared registry which already enforces
+# the fact-fusing logic (weakest pillar + Life Compass goal + filters).
+@function_tool
+async def find_perfect_product(
+    context: RunContext,
+    goal_text: str = "",
+    pillar: str = "",
+    max_price: float | None = None,
+    exclude_ingredients: list[str] | None = None,
+) -> str:
+    """Recommend the perfect product for the user (supplement / gear / food).
+
+    Fuses the user's weakest Vitana Index pillar + active Life Compass goal
+    with a free-form ask + optional filters (price cap, ingredients to
+    avoid). Returns top-3 with rationale.
+
+    Use this for PRODUCTS. For services or practitioners use
+    `find_perfect_practitioner`. For people / community matches use
+    `find_community_member`.
+
+    Args:
+        goal_text: Free-form description of what the user wants the product
+            to help with.
+        pillar: OPTIONAL — nutrition / hydration / exercise / sleep / mental.
+            Defaults to the user's weakest pillar.
+        max_price: OPTIONAL — price cap.
+        exclude_ingredients: OPTIONAL — list of ingredient names to avoid.
+    """
+    args: dict[str, Any] = {"goal_text": goal_text}
+    if pillar:
+        args["pillar"] = pillar
+    if max_price is not None:
+        args["max_price"] = max_price
+    if exclude_ingredients:
+        args["exclude_ingredients"] = exclude_ingredients
+    body = await _dispatch(context, "find_perfect_product", args)
+    return summarize(body)
+
+
+@function_tool
+async def find_perfect_practitioner(
+    context: RunContext,
+    specialty: str = "",
+    goal_text: str = "",
+    language: str = "",
+    telehealth_ok: bool | None = None,
+    max_price: float | None = None,
+) -> str:
+    """Recommend the perfect practitioner / coach / doctor for the user.
+
+    Multi-criteria search: specialty, language, telehealth-ok, price cap,
+    fused with the active Life Compass goal. Returns top-3 with rationale.
+
+    Use for: "find me a functional medicine doc who takes telehealth",
+    "who can coach me on sleep?", "I need a German-speaking nutritionist".
+
+    Args:
+        specialty: e.g. "functional medicine", "nutrition", "therapy".
+        goal_text: Free-form description of what the user is working on.
+        language: OPTIONAL — language code or name, e.g. "en", "de".
+        telehealth_ok: OPTIONAL — restrict to practitioners offering
+            telehealth.
+        max_price: OPTIONAL — price cap.
+    """
+    args: dict[str, Any] = {}
+    if specialty:
+        args["specialty"] = specialty
+    if goal_text:
+        args["goal_text"] = goal_text
+    if language:
+        args["language"] = language
+    if telehealth_ok is not None:
+        args["telehealth_ok"] = telehealth_ok
+    if max_price is not None:
+        args["max_price"] = max_price
+    body = await _dispatch(context, "find_perfect_practitioner", args)
+    return summarize(body)
+
+
 # ---------------------------------------------------------------------------
 # Navigation
 # ---------------------------------------------------------------------------
@@ -1702,6 +1791,11 @@ def all_tool_names() -> list[str]:
         "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
         "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches",
         "get_matchmaker_result",
+        # VTID-03048: matchmaker parity — Vertex-catalog tools now exposed
+        # on LiveKit. Implementations live in
+        # services/gateway/src/services/orb-tools-shared.ts (tool_find_perfect_*)
+        # and are reached through the shared dispatcher.
+        "find_perfect_product", "find_perfect_practitioner",
         # Navigation (3)
         "navigate", "navigate_to_screen", "get_current_screen",
     ]
