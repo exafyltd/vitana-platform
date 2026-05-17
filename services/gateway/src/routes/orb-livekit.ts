@@ -1387,6 +1387,14 @@ router.get(
         null,                // recentRoutes
         envContext ?? undefined,
         req.identity?.vitana_id ?? null,
+        true,                // VTID-03046 step 2 — LiveKit's session.say()
+                             // plays a pre-rendered localized greeting at
+                             // room-join; the LLM never generates the first
+                             // utterance, so the ~37 KB GREETING POLICY +
+                             // RECONNECT FINAL OVERRIDE + HARD ANTI-PATTERNS
+                             // blocks are dead text on every per-turn LLM
+                             // call. omitGreetingPolicy=true drops them
+                             // (~107 KB → ~70 KB system_instruction).
       );
       }
     } catch (exc) {
