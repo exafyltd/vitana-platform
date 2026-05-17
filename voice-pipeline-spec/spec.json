@@ -67,6 +67,9 @@
     { "name": "scan_existing_matches",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
     { "name": "get_matchmaker_result",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
 
+    { "name": "find_perfect_product",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a product (supplement/gear/food) fusing weakest pillar + Life Compass goal. Shared dispatcher tool_find_perfect_product. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
+    { "name": "find_perfect_practitioner",    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a practitioner/coach/doctor (specialty + language + telehealth + price). Shared dispatcher tool_find_perfect_practitioner. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
+
     { "name": "navigate_to_screen",           "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Surface-aware navigation. Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule." }
   ],
 
