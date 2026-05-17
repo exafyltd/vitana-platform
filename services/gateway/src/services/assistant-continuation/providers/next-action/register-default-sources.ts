@@ -21,14 +21,25 @@
 import { defaultNextActionComposer } from './composer';
 import { makeReminderDueSource } from './sources/reminder-due';
 import { makeAutopilotRecommendationSource } from './sources/autopilot-recommendation';
+// VTID-03058 (B0d-real Xc) — second wave of sources.
+import { makeCalendarUpcomingSource } from './sources/calendar-upcoming';
+import { makeLifeCompassAlignmentSource } from './sources/life-compass-alignment';
 
 let _registered = false;
 
 export function ensureDefaultNextActionSourcesRegistered(): void {
   if (_registered) return;
   _registered = true;
+  // Registration order also serves as the deterministic tie-break.
+  // Pick: reminders > calendar > autopilot > life-compass-alignment.
+  // Each source's bands are tuned so the natural urgency winner wins on
+  // priority alone (e.g. <10min reminder=95 beats calendar bands), but
+  // this order resolves rare ties without the composer needing a
+  // global registry.
   defaultNextActionComposer.register(makeReminderDueSource());
+  defaultNextActionComposer.register(makeCalendarUpcomingSource());
   defaultNextActionComposer.register(makeAutopilotRecommendationSource());
+  defaultNextActionComposer.register(makeLifeCompassAlignmentSource());
 }
 
 // Register on import so consumers don't have to remember.
