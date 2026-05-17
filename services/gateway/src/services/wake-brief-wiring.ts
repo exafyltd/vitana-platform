@@ -33,9 +33,21 @@ import {
   VOICE_WAKE_BRIEF_PROVIDER_KEY,
   type VoiceWakeBriefInputs,
 } from './assistant-continuation/providers/voice-wake-brief';
+// VTID-03057 (B0d-real slice Xb): import the Contextual Next Action
+// provider + its default-source registration side-effect. The side-effect
+// import registers reminder_due + autopilot_recommendation with the
+// composer; the named import lets us register the provider itself with
+// the framework's defaultProviderRegistry.
+import {
+  makeNextActionProvider,
+  NEXT_ACTION_EXTRA_KEY,
+  NEXT_ACTION_PROVIDER_KEY,
+} from './assistant-continuation/providers/next-action';
+import './assistant-continuation/providers/next-action/register-default-sources';
 import { decideGreetingPolicy } from '../orb/live/instruction/greeting-policy';
 import { defaultWakeTimelineRecorder } from './wake-timeline/wake-timeline-recorder';
 import type { AssistantContinuationDecision } from './assistant-continuation/types';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
 // One-time provider registration. The default registry started empty in
@@ -46,11 +58,19 @@ import type { AssistantContinuationDecision } from './assistant-continuation/typ
 let _registered = false;
 export function ensureWakeBriefProviderRegistered(): void {
   if (_registered) return;
-  if (defaultProviderRegistry.get(VOICE_WAKE_BRIEF_PROVIDER_KEY)) {
-    _registered = true;
-    return;
+  // voice-wake-brief — the B0d-mini fallback (pillar-momentum-only line
+  // when nothing else fires). Priority 80.
+  if (!defaultProviderRegistry.get(VOICE_WAKE_BRIEF_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeVoiceWakeBriefProvider());
   }
-  defaultProviderRegistry.register(makeVoiceWakeBriefProvider());
+  // VTID-03057 (B0d-real): the Contextual Next Action provider —
+  // priority 90, so when ANY registered source produces a candidate
+  // above CROSS_SOURCE_THRESHOLD (50), this one beats the fallback.
+  // When nothing fires, this provider returns `suppressed` and the
+  // framework's decideContinuation picks voice-wake-brief instead.
+  if (!defaultProviderRegistry.get(NEXT_ACTION_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeNextActionProvider());
+  }
   _registered = true;
 }
 
@@ -78,6 +98,25 @@ export interface DecideWakeBriefArgs {
   lang: string;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
+  /**
+   * VTID-03057 (B0d-real slice Xb): supabase service-role client for
+   * the Contextual Next Action provider's source queries (reminders,
+   * autopilot_recommendations, etc.). When omitted, the next-action
+   * provider returns `skipped:no_next_action_inputs` and the framework
+   * falls back to voice-wake-brief.
+   *
+   * Required for B0d-real candidates to fire. Optional in this slice
+   * so existing Vertex wiring (which doesn't yet pass it) keeps working
+   * with no change.
+   */
+  supabase?: SupabaseClient;
+  /**
+   * VTID-03057 (B0d-real slice Xb): full AssistantDecisionContext for
+   * sources that read continuity / journey_stage / pillar_momentum
+   * (Xd+ sources) without re-querying. Optional — sources gate on
+   * presence.
+   */
+  decisionContext?: unknown;
   /**
    * VTID-03053 — Distilled pillar-momentum view from the compiled
    * AssistantDecisionContext. When passed, the wake-brief renderer may
@@ -149,6 +188,20 @@ export async function decideWakeBriefForSession(
     lang: args.lang,
   });
 
+  // VTID-03057 (B0d-real Xb): build the next-action extras when the
+  // caller supplied a Supabase client. Without it the Contextual Next
+  // Action provider returns skipped:no_next_action_inputs and the
+  // framework falls back to voice-wake-brief — same as before this slice.
+  const extra: Record<string, unknown> = {
+    [VOICE_WAKE_BRIEF_EXTRA_KEY]: wakeBriefInputs,
+  };
+  if (args.supabase) {
+    extra[NEXT_ACTION_EXTRA_KEY] = {
+      supabase: args.supabase,
+      decisionContext: args.decisionContext ?? null,
+    };
+  }
+
   const t0 = now();
   const decision = await decideContinuation({
     surface: 'orb_wake',
@@ -157,7 +210,7 @@ export async function decideWakeBriefForSession(
       userId: args.userId ?? undefined,
       tenantId: args.tenantId ?? undefined,
       envelopeJourneySurface: args.envelopeJourneySurface,
-      extra: { [VOICE_WAKE_BRIEF_EXTRA_KEY]: wakeBriefInputs },
+      extra,
     },
   });
 

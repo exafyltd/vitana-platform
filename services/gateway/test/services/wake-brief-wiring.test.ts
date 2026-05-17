@@ -83,11 +83,21 @@ describe('B0d.4 — wake-brief-wiring', () => {
         { recorder },
       );
       expect(decision.selectedContinuation).toBeNull();
-      expect(decision.suppressionReason).toBe('all_providers_suppressed');
-      // The provider's specific reason is preserved on the row.
-      const row = decision.sourceProviderResults[0];
-      expect(row.status).toBe('suppressed');
-      expect(row.reason).toBe('greeting_policy_skip');
+      // VTID-03057 (B0d-real Xb): two providers now register on
+      // orb_wake (voice-wake-brief + contextual_next_action). The
+      // wake-brief test doesn't pass the next-action supabase input,
+      // so next-action returns `skipped:no_next_action_inputs` while
+      // voice-wake-brief returns `suppressed:greeting_policy_skip` —
+      // mixed → rolled-up to `no_provider_returned_a_candidate`. The
+      // important assertion is `selectedContinuation === null` (the
+      // transparent-reconnect silence rule) plus the wake-brief row's
+      // specific reason for diagnosability.
+      expect(decision.suppressionReason).toBe('no_provider_returned_a_candidate');
+      const wakeBriefRow = decision.sourceProviderResults.find(
+        (r) => r.providerKey === VOICE_WAKE_BRIEF_PROVIDER_KEY,
+      );
+      expect(wakeBriefRow?.status).toBe('suppressed');
+      expect(wakeBriefRow?.reason).toBe('greeting_policy_skip');
     });
 
     it('maps bucket=long to fresh_intro (warm new-day greeting)', async () => {
@@ -213,7 +223,10 @@ describe('B0d.4 — wake-brief-wiring', () => {
       const timeline = await recorder.getTimeline('live-ev-none');
       const selected = timeline?.events.find((e) => e.name === 'wake_brief_selected');
       expect(selected?.metadata?.selected_continuation_kind).toBe('none_with_reason');
-      expect(selected?.metadata?.none_with_reason).toBe('all_providers_suppressed');
+      // VTID-03057: two providers now register; voice-wake-brief
+      // suppresses on policy=skip while contextual_next_action skips on
+      // missing inputs → rolled-up to `no_provider_returned_a_candidate`.
+      expect(selected?.metadata?.none_with_reason).toBe('no_provider_returned_a_candidate');
     });
 
     it('continuation_decision_finished carries providerResults summary', async () => {
