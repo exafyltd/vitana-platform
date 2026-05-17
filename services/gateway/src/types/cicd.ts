@@ -565,6 +565,12 @@ export type CicdEventType =
   | 'orb.livekit.agent.model_request_started'
   | 'orb.livekit.agent.model_request_succeeded'
   | 'orb.livekit.agent.model_request_failed'
+  // VTID-03046: per-turn LiveKit-agent latency telemetry. Fires once per
+  // user-then-assistant exchange, with `stt_done_to_speech_created_ms`
+  // (wall-clock wait after the user stops talking) and
+  // `system_instruction_chars` so we can correlate latency with prompt
+  // size. Pure additive — no behavior change to the voice path.
+  | 'orb.livekit.agent.turn.measured'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events

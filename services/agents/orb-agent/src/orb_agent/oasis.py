@@ -143,3 +143,11 @@ TOPIC_AGENT_DISCONNECTED = "orb.livekit.agent.disconnected"
 TOPIC_AGENT_MODEL_REQUEST_STARTED = "orb.livekit.agent.model_request_started"
 TOPIC_AGENT_MODEL_REQUEST_SUCCEEDED = "orb.livekit.agent.model_request_succeeded"
 TOPIC_AGENT_MODEL_REQUEST_FAILED = "orb.livekit.agent.model_request_failed"
+
+# VTID-03046: per-turn diagnostic. Captures the gap between STT-finalize
+# (user_input_transcribed) and the agent's speech_created event — the
+# wall-clock "wait after the user stops talking" the user actually feels.
+# Payload also carries `system_instruction_chars` so we can correlate
+# per-turn latency with prompt size and prove (or disprove) that
+# system_instruction growth is what slowed the cascade after 2026-05-16.
+TOPIC_AGENT_TURN_MEASURED = "orb.livekit.agent.turn.measured"

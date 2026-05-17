@@ -43,6 +43,7 @@ from .oasis import (
     TOPIC_AGENT_ROOM_JOIN_STARTED,
     TOPIC_AGENT_ROOM_JOIN_SUCCEEDED,
     TOPIC_AGENT_STARTING,
+    TOPIC_AGENT_TURN_MEASURED,
     TOPIC_HANDOFF_COMPLETE,
     TOPIC_HANDOFF_START,
     TOPIC_PERSONA_SWAP,
@@ -108,7 +109,7 @@ def _get_vad() -> Any:
     return _SHARED_VAD
 
 
-CODE_VERSION = "agent-2026-05-16-vtid-03014-localized-greeting"
+CODE_VERSION = "agent-2026-05-17-vtid-03046-turn-telemetry"
 
 
 # VTID-03014: localized first-greeting templates. session.say() speaks the
@@ -797,6 +798,22 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     model_turns_counter = {"n": 0}
     stall_count = {"n": 0}
 
+    # VTID-03046: per-turn latency state. user_input_transcribed sets
+    # `user_done_at` and `user_text_len`; the next speech_created reads them,
+    # computes the wait gap, and emits orb.livekit.agent.turn.measured. We
+    # carry `system_instruction_chars` (the rendered prompt size) as a
+    # constant so every emit can correlate latency with prompt size — that's
+    # the whole point of this diagnostic. Cleared on emit so a duplicate
+    # speech_created (handover etc.) doesn't re-fire with stale numbers.
+    turn_state: dict[str, Any] = {
+        "index": 0,
+        "user_done_at": None,
+        "user_text_len": 0,
+        "system_instruction_chars": len(
+            getattr(bootstrap, "system_instruction", None) or ""
+        ),
+    }
+
     async def _teardown() -> None:
         # L2.2b.1: emit the lifecycle `disconnected` event FIRST (it pairs
         # with the room_join_succeeded event from session start). The
@@ -1100,6 +1117,32 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     },
                 )
             )
+            # VTID-03046: per-turn measurement. Only emit if we have a
+            # paired user_input_transcribed timestamp — skips the initial
+            # greeting (session.say at room-join, no preceding user turn).
+            # Null the timestamp on read so a follow-up speech_created in
+            # the same turn (e.g. tool-loop continuation) doesn't re-fire.
+            user_done = turn_state.get("user_done_at")
+            if user_done is not None:
+                wait_ms = int((time.monotonic() - user_done) * 1000)
+                turn_state["index"] += 1
+                payload = {
+                    "user_id": identity.user_id or "unknown",
+                    "code_version": CODE_VERSION,
+                    "room_name": _room_name or "",
+                    "orb_session_id": orb_session_id,
+                    "turn_index": turn_state["index"],
+                    "user_text_len": turn_state.get("user_text_len", 0),
+                    "stt_done_to_speech_created_ms": wait_ms,
+                    "system_instruction_chars": turn_state.get(
+                        "system_instruction_chars", 0,
+                    ),
+                }
+                turn_state["user_done_at"] = None
+                turn_state["user_text_len"] = 0
+                asyncio.create_task(
+                    oasis.emit(topic=TOPIC_AGENT_TURN_MEASURED, payload=payload),
+                )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not hook speech_created: %s", exc)
 
@@ -1115,6 +1158,23 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     def _on_user_transcribed(_ev: Any = None) -> None:
         user_turns_counter["n"] += 1
         stall.feed()
+        # VTID-03046: mark the moment STT considered the user's turn
+        # complete. Paired with the next speech_created in _on_speech
+        # above. Capture transcript length defensively — the field name
+        # varies across livekit-agents versions.
+        turn_state["user_done_at"] = time.monotonic()
+        text_len = 0
+        try:
+            t = (
+                getattr(_ev, "transcript", None)
+                or getattr(_ev, "text", None)
+                or ""
+            )
+            if isinstance(t, str):
+                text_len = len(t)
+        except Exception:  # noqa: BLE001
+            pass
+        turn_state["user_text_len"] = text_len
         # VTID-03001: also surface the event in the trace firehose so we
         # can see STT completing user turns even when no audible agent
         # response follows. Pairs with agent_state_changed below to map
