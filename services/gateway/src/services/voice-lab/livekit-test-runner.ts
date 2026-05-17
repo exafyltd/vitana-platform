@@ -128,11 +128,23 @@ export async function runLiveKitTestSuite(
   }
   const runId: string = (insertRun.data as { id: string }).id;
 
-  // 3. Execute cases serially.
+  // 3. Execute cases in parallel batches. 45+ cases × 3-8s/case ran serially
+  // exceeds Cloud Run's 5-min upstream request timeout; batching keeps the
+  // POST /tests/run round-trip under ~90s even as the suite grows toward
+  // 150 cases. Vertex generateContent handles concurrent calls; each case
+  // writes its own livekit_test_results row — no DB contention.
+  const concurrencyRaw = Number(process.env.LIVEKIT_TESTS_CONCURRENCY);
+  const concurrency =
+    Number.isFinite(concurrencyRaw) && concurrencyRaw > 0
+      ? Math.min(concurrencyRaw, 16)
+      : 5;
   const results: PersistedResult[] = [];
-  for (const c of cases) {
-    const persisted = await runOneCase(c, runId, opts.identity);
-    results.push(persisted);
+  for (let i = 0; i < cases.length; i += concurrency) {
+    const batch = cases.slice(i, i + concurrency);
+    const settled = await Promise.all(
+      batch.map((c) => runOneCase(c, runId, opts.identity)),
+    );
+    results.push(...settled);
   }
 
   // 4. Aggregate + finalize.
