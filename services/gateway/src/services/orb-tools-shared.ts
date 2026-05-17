@@ -1517,12 +1517,41 @@ export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolRe
   const result = explainFeature(topic);
 
   if (!result.found) {
-    // Vertex's not-found path returns guidance text steering voice to
-    // search_knowledge with KB instructions. Mirror that exactly so both
-    // pipelines produce identical fallback behaviour.
+    // VTID-03051: chain to search_knowledge server-side so the LLM never
+    // sees a "tool returned not_found + here's some guidance text"
+    // pattern. The prior contract was: emit `found:false` + guidance and
+    // expect the LLM to make a second tool call to `search_knowledge` on
+    // its own. Gemini Live frequently mis-handled this and narrated the
+    // first response as a definitive "I couldn't find it" — user had to
+    // re-ask the same question to coax the chain.
+    //
+    // Server-side fallback makes both pipelines produce a useful answer
+    // in a single tool round trip: when the pattern matcher misses, we
+    // run the Knowledge Hub search inline and put its answer in `text`.
+    // dispatchOrbToolForVertex prefers `text` over the stringified
+    // result, so Vertex sends the KB answer to Gemini directly; the
+    // LiveKit `summarize()` reads `text` first too. Behavior parity
+    // is preserved: callers that need to distinguish the two paths can
+    // still read `result.knowledge_fallback` + `result.docs`.
+    let knowledgeAnswer = '';
+    let knowledgeDocs: Array<Record<string, unknown>> = [];
+    try {
+      const { searchKnowledge } = await import('./knowledge-hub');
+      const kb = await searchKnowledge({ query: topic, maxResults: 5 });
+      if (kb.ok && Array.isArray(kb.docs) && kb.docs.length > 0) {
+        knowledgeAnswer = (kb.answer ?? '').trim();
+        knowledgeDocs = (kb.docs as unknown) as Array<Record<string, unknown>>;
+      }
+    } catch {
+      // Best-effort: KB failure must never block the explain_feature
+      // tool — the guidance text remains as the LLM-visible fallback.
+    }
+
     const payload = {
       found: false as const,
       reason: result.reason ?? 'no_pattern_match',
+      knowledge_fallback: knowledgeAnswer.length > 0,
+      docs: knowledgeDocs,
       guidance:
         'Voice should fall back to search_knowledge. Search the Maxina ' +
         'Instruction Manual (kb/instruction-manual/maxina/*) first — it covers ' +
@@ -1533,11 +1562,12 @@ export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolRe
     return {
       ok: true,
       result: payload,
-      // Vertex returned JSON.stringify(payload) as `result` (string). For voice
-      // it doesn't actually speak this — the LLM sees the structured fall-back
-      // signal and chooses the next tool. dispatchOrbToolForVertex will
-      // stringify the structured result for Vertex callers.
-      text: '',
+      // When the KB returned a real answer, surface it as `text`.
+      // dispatchOrbToolForVertex prefers `text` over stringified
+      // `result`, and the LiveKit agent's summarize() does the same.
+      // Empty string falls through to the structured-result path
+      // (guidance + the LLM's prior chain-to-search_knowledge behavior).
+      text: knowledgeAnswer,
     };
   }
 
