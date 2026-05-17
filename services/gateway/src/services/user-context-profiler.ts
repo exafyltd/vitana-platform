@@ -188,6 +188,36 @@ async function fetchRoutines(client: SupabaseClient, userId: string): Promise<Ro
   return (data || []) as RoutineRow[];
 }
 
+// VTID-03037: surface community-membership tenure into the profile block so
+// the LiveKit / brain-OFF Vertex paths can answer "how long have I been a
+// member?" without a tool call. Sourced from app_users.created_at which is
+// the canonical registration timestamp (mirrored from profiles by Release A
+// trigger). Returns null on miss so buildAccountSection can skip cleanly.
+export interface AccountRow {
+  createdAt: Date | null;
+}
+
+async function fetchAppUsersAccount(
+  client: SupabaseClient,
+  userId: string,
+): Promise<AccountRow> {
+  try {
+    const { data, error } = await client
+      .from('app_users')
+      .select('created_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error || !data) return { createdAt: null };
+    const raw = (data as { created_at?: string | null }).created_at;
+    if (!raw) return { createdAt: null };
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return { createdAt: null };
+    return { createdAt: parsed };
+  } catch {
+    return { createdAt: null };
+  }
+}
+
 async function fetchPreferences(client: SupabaseClient, userId: string): Promise<PreferenceRow[]> {
   const out: PreferenceRow[] = [];
   const explicit = await client
@@ -855,6 +885,35 @@ function buildFactsSection(facts: { fact_key: string; fact_value: string; proven
   return `[FACTS]\n${top.join('\n')}`;
 }
 
+// VTID-03037: account/tenure section. Rendered at the TOP of the profile so
+// the LLM reads it before activity data. Emits "" when createdAt is missing
+// (anonymous, fetch failed, or a row without created_at) so the rest of the
+// summary degrades gracefully.
+//
+// Phrasing rationale:
+//   - "Joined the Vitana community on ${YYYY-MM-DD}" is the canonical
+//     anchor — date is unambiguous regardless of timezone.
+//   - "Tenure: ${N} days" is the literal answer to "how long have I been a
+//     member?". Phrasing chosen to align with Vertex's brain-path
+//     `Tenure: ${stage} (registered ${N} days ago …)` so the LLM treats
+//     them as the same fact when both blocks are present.
+//   - Tenure cap at 0 handles the rare clock-drift case where created_at
+//     parses to a future timestamp.
+//
+// Exported for unit testing — pure function, no side effects.
+export function buildAccountSection(account: AccountRow, nowMs: number): string {
+  if (!account.createdAt) return '';
+  const ts = account.createdAt.getTime();
+  if (!Number.isFinite(ts)) return '';
+  const days = Math.max(0, Math.floor((nowMs - ts) / 86_400_000));
+  const dateIso = account.createdAt.toISOString().slice(0, 10);
+  return [
+    '[ACCOUNT]',
+    `- Joined the Vitana community on ${dateIso}.`,
+    `- Tenure: ${days} day${days === 1 ? '' : 's'} as a community member.`,
+  ].join('\n');
+}
+
 export async function getUserContextSummary(
   userId: string,
   opts: GetProfileOptions = {}
@@ -915,15 +974,27 @@ export async function getUserContextSummary(
     ? Promise.resolve({ ok: true, facts: [] as any[] })
     : getCurrentFacts({ tenant_id: opts.tenantId, user_id: userId });
 
-  const [activities, routines, prefs, vitana, factsResult] = await Promise.all([
+  // VTID-03037: account/tenure fetch. Always in the batch — no awareness-
+  // registry gate yet; the section itself self-skips when created_at is
+  // missing. The query is cheap (single-row lookup on a PK) and adds no
+  // measurable latency because it parallelizes with the existing five.
+  const fetchAccountPromise = fetchAppUsersAccount(client, userId);
+
+  const [activities, routines, prefs, vitana, factsResult, account] = await Promise.all([
     fetchActivitiesIfWanted,
     fetchRoutinesIfWanted,
     fetchPrefsIfWanted,
     fetchVitanaIfWanted,
     fetchFactsIfWanted,
+    fetchAccountPromise,
   ]);
 
   const sections = [
+    // VTID-03037: account/tenure goes FIRST so the LLM reads "joined on
+    // YYYY-MM-DD, tenure N days" before activity data. Mirrors the brain
+    // path's USER AWARENESS positioning (tenure line at top of awareness
+    // block) so both pipelines agree on the high-signal placement.
+    buildAccountSection(account, now),
     (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
     (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',
     (!cfg || cfg.isEnabled('preferences.explicit.enabled') || cfg.isEnabled('preferences.inferred.enabled'))
