@@ -50,10 +50,12 @@ jobs:
             --limit=10 --format='table(name,creationTimestamp,completionTime,succeededCount,failedCount)' || echo "no executions"
 
       - name: Try dispatching a test execution
+        # --wait=false is rejected by gcloud (boolean flag, no explicit value
+        # allowed). Use --async, which is the supported way to fire-and-forget.
         run: |
           set -e
           echo "=== Try dispatch autopilot-executor with EXEC_ID=DIAG ==="
           gcloud run jobs execute autopilot-executor \
             --region=us-central1 --project=lovable-vitana-vers1 \
             --update-env-vars=EXEC_ID=DIAG-NOOP \
-            --wait=false 2>&1 || echo "DISPATCH FAILED"
+            --async 2>&1 || echo "DISPATCH FAILED"
