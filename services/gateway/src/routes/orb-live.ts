@@ -1438,7 +1438,7 @@ const LIVE_CONTEXT_CONFIG = {
 // any agent can discuss any ticket; only action is scoped via the per-ticket
 // `owner` field. Time-to-resolution is the explicit KPI.
 
-async function fetchSpecialistContextSection(userId: string | null | undefined): Promise<string> {
+export async function fetchSpecialistContextSection(userId: string | null | undefined): Promise<string> {
   if (!userId) return '';
   try {
     const url = process.env.SUPABASE_URL!;
@@ -1533,7 +1533,7 @@ function formatSpecialistContextSection(ctx: any): string {
 // Without this, every new agent restarts cold with "what can I do for you?"
 // and the user has to repeat themselves — the exact failure the user just
 // reported. Cap at last 12 turns so the prompt doesn't bloat.
-function buildTranscriptSection(
+export function buildTranscriptSection(
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }> | undefined,
   fromPersona: string,
   targetPersona?: string,
@@ -1720,7 +1720,7 @@ function buildSpecialistTurnPhaseBlock(firstTurnDelivered: boolean): string {
   ].join('\n');
 }
 
-function buildSpecialistLanguageDirective(lang: string | undefined): string {
+export function buildSpecialistLanguageDirective(lang: string | undefined): string {
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
     ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
@@ -1753,7 +1753,7 @@ function buildGateInputFromTranscript(
   return userTurns.join(' \n ');
 }
 
-function buildPersonaBehavioralRule(personaKey: string): string {
+export function buildPersonaBehavioralRule(personaKey: string): string {
   const isSpecialist = personaKey !== '' && personaKey !== 'vitana';
   const lines: string[] = [];
 
