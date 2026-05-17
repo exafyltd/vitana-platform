@@ -46,6 +46,12 @@ class BootstrapResult:
     # L2.2b.6 (VTID-03010): Life Compass row for cockpit / tooling inspection.
     # Already inlined into bootstrap_context; this field is for tooling.
     life_compass: dict[str, Any] | None = None
+    # VTID-03054: structured wake-brief continuation decision. Carries the
+    # selected user_facing_line + suppression_reason + provider_results so
+    # session.py can speak the proactive opener as the first turn instead
+    # of the generic _localized_greeting() line. None on anonymous sessions,
+    # pre-VTID-03052 gateways, or when the decision was skipped.
+    wake_brief_decision: dict[str, Any] | None = None
     is_degraded: bool = False
 
 
@@ -209,6 +215,11 @@ class ContextBootstrap:
                 # build_live_system_instruction passthrough.
                 system_instruction=data.get("system_instruction"),
                 life_compass=data.get("life_compass"),
+                # VTID-03054: read the wake-brief decision from the bootstrap
+                # response. Pre-VTID-03052 gateways won't include this field
+                # → defaults to None and session.py falls back to the
+                # _localized_greeting() path.
+                wake_brief_decision=data.get("wake_brief_decision"),
                 is_degraded=False,
             )
         except (httpx.TimeoutException, httpx.HTTPError) as exc:

@@ -1453,11 +1453,28 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     if not identity.is_anonymous:
         vid = (bootstrap.vitana_id or "").strip()
         first_name = (bootstrap.first_name or "").strip()
-        greeting_text = _localized_greeting(
-            identity.lang,
-            first_name=first_name,
-            vitana_handle=vid,
-        )
+        # VTID-03054: when the gateway returned a wake-brief decision with a
+        # non-empty user_facing_line, speak THAT instead of the generic
+        # localized greeting. This is the slice that turns the wake-brief
+        # framework from "observable telemetry" into user-visible proactive
+        # behavior. Fully reversible — empty/missing decision falls back to
+        # _localized_greeting() so a degraded bootstrap path never silences
+        # the orb.
+        wake_brief = getattr(bootstrap, "wake_brief_decision", None) or {}
+        wake_line = wake_brief.get("user_facing_line") if isinstance(wake_brief, dict) else None
+        if isinstance(wake_line, str) and wake_line.strip():
+            greeting_text = wake_line.strip()
+            logger.info(
+                "VTID-03054: speaking wake_brief user_facing_line (kind=%s, decision_id=%s)",
+                wake_brief.get("selected_kind") if isinstance(wake_brief, dict) else None,
+                wake_brief.get("decision_id") if isinstance(wake_brief, dict) else None,
+            )
+        else:
+            greeting_text = _localized_greeting(
+                identity.lang,
+                first_name=first_name,
+                vitana_handle=vid,
+            )
     else:
         greeting_text = _localized_anonymous_greeting(identity.lang)
     try:
