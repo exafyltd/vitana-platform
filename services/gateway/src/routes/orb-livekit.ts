@@ -43,7 +43,13 @@ import { getSupabase } from '../lib/supabase';
 // country, timezone, localTime, UTC, device) that Vertex's authenticated
 // system prompt has. Without this, LiveKit's LLM has no location/time
 // awareness and answers "where am I?" / "what time is it?" with garbage.
+// VTID-03036: reuse Vertex's buildBootstrapContextPack so the LiveKit
+// prompt carries the SAME memoryContext.formatted_context + last-3 user
+// turns + USER CONTEXT PROFILE (activity/routines/tenure) block Vertex
+// injects via session.contextInstruction. Closes parity gaps like
+// "how long have I been a member" + "what did I ask last?".
 import {
+  buildBootstrapContextPack,
   buildClientContext,
   formatClientContextForInstruction,
 } from './orb-live';
@@ -834,6 +840,10 @@ router.get(
     ];
 
     let envContext: import('./orb-live').ClientContext | null = null;
+    // VTID-03036: result of buildBootstrapContextPack (memory preamble +
+    // last-3 user turns + USER CONTEXT PROFILE). Held outside the batch
+    // closure so the post-batch ctxParts push can read it.
+    let historyContextPack: Awaited<ReturnType<typeof buildBootstrapContextPack>> | null = null;
 
     if (sb && userId) {
       const [
@@ -843,6 +853,7 @@ router.get(
         indexData,
         lifeCompassData,
         envContextResolved,
+        historyContextPackResolved,
       ] = await Promise.all([
         // memory_items top-5
         (async () => {
@@ -936,6 +947,24 @@ router.get(
             return null as import('./orb-live').ClientContext | null;
           }
         })(),
+        // VTID-03036: history-aware context pack (memory preamble + last-3
+        // user turns + USER CONTEXT PROFILE). Reuses Vertex's exported
+        // buildBootstrapContextPack so both pipelines compose the same
+        // contextInstruction layer. Best-effort; any throw is swallowed
+        // and the LiveKit bootstrap falls back to the prior (thinner)
+        // identity-only context.
+        (async () => {
+          try {
+            if (!req.identity) return null;
+            const sessionId = `livekit-bootstrap-${agentId}-${userId.slice(0, 8)}`;
+            return await buildBootstrapContextPack(req.identity, sessionId);
+          } catch (exc) {
+            console.warn(
+              `[${VTID}] buildBootstrapContextPack failed: ${(exc as Error).message}`,
+            );
+            return null;
+          }
+        })(),
       ]);
 
       // Memory items → flat objects (filter empty content).
@@ -994,6 +1023,9 @@ router.get(
 
       // envContext — already resolved above, just save into closure scope
       envContext = envContextResolved;
+      // VTID-03036: history-aware context pack — saved for the post-
+      // batch ctxParts push below.
+      historyContextPack = historyContextPackResolved;
     } else {
       // Anonymous/no-userId path: still run buildClientContext (no DB queries
       // needed since they're all user-scoped).
@@ -1095,6 +1127,27 @@ router.get(
           .map((m) => `- ${m.text.slice(0, 300)}`)
           .join('\n')}`,
       );
+    }
+
+    // VTID-03036: history-aware context block — the same contextInstruction
+    // Vertex builds via session.contextInstruction (memoryContext.formatted_context
+    // + last-3 user turns + USER CONTEXT PROFILE). Closes parity gaps that the
+    // identity-only bootstrap left open:
+    //   - "how long am I a member of Maxina?" / tenure questions
+    //     → USER CONTEXT PROFILE block carries onboarding/activity-tenure data
+    //   - "what did I ask you last?" / "what were we talking about?"
+    //     → recent-turns block carries the last 3 raw user utterances
+    //   - implicit fact recall ("you said I do walks in the mornings")
+    //     → memoryContext.formatted_context fact preamble
+    // Best-effort: when historyContextPack is null (anonymous, fetch failed)
+    // or its contextInstruction is empty/missing, push nothing — never block
+    // the bootstrap response.
+    if (
+      historyContextPack &&
+      typeof historyContextPack.contextInstruction === 'string' &&
+      historyContextPack.contextInstruction.trim().length > 0
+    ) {
+      ctxParts.push(historyContextPack.contextInstruction);
     }
 
     // Extract first name from display_name OR memory_facts.user_name fact.
@@ -1326,6 +1379,22 @@ router.get(
       // inlined into `bootstrap_context`; this field is for tooling.
       // null on anonymous sessions or when compile failed.
       decision_context: decisionContext,
+      // VTID-03036: structured meta on the history-aware context pack.
+      // The rendered contextInstruction is already inlined into
+      // `bootstrap_context`; this object is for cockpit/operator
+      // inspection (latency timing + skipped-reason for degraded
+      // sources). null on anonymous sessions or when the call failed.
+      context_pack: historyContextPack
+        ? {
+            ok: typeof historyContextPack.contextInstruction === 'string'
+              && historyContextPack.contextInstruction.trim().length > 0,
+            latency_ms: historyContextPack.latencyMs,
+            skipped_reason: historyContextPack.skippedReason ?? null,
+            chars: typeof historyContextPack.contextInstruction === 'string'
+              ? historyContextPack.contextInstruction.length
+              : 0,
+          }
+        : null,
     };
 
     // VTID-03035: populate cache for the next 60s. Only authenticated full
