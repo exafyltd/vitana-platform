@@ -257,35 +257,33 @@ def build_cascade(
     return ResolvedCascade(stt=stt, llm=llm, tts=tts, notes=notes)
 
 
-def _build_stt(
+# VTID-03037: STT FallbackAdapter wiring. Defaults ON; kill switch is
+# ORB_STT_FALLBACK_ENABLED=false. attempt_timeout intentionally sits a
+# couple seconds under watchdogs.STALL_THRESHOLD_MS (10s) so the adapter
+# swaps before the stall watchdog fires its (now-vestigial) soft reset.
+def _fallback_enabled() -> bool:
+    return os.environ.get("ORB_STT_FALLBACK_ENABLED", "true").lower() not in (
+        "false", "0", "no", "off",
+    )
+
+
+def _fallback_attempt_timeout_s() -> float:
+    raw = os.environ.get("ORB_STT_FALLBACK_ATTEMPT_TIMEOUT_MS", "8000")
+    try:
+        return max(1.0, float(raw) / 1000.0)
+    except (TypeError, ValueError):
+        return 8.0
+
+
+def _build_single_stt(
     provider: str | None,
     model: str | None,
-    options: dict[str, Any],
+    opts: dict[str, Any],
     notes: list[str],
     *,
-    bcp47: str = "en-US",
+    bcp47: str,
 ) -> _STTPlugin | None:
-    """Construct the configured STT plugin and inject the user's language.
-
-    `bcp47` is resolved from identity.lang in build_cascade. We always
-    inject (overriding any pre-seeded value in stt_options) — operator
-    overrides for STT language are uncommon and the per-session value
-    matches the user's actual speech. Compare TTS where per-row
-    voices_per_lang overrides are common.
-    """
-    opts = dict(options or {})
-    # Strip the multilingual-routing carrier so it doesn't leak into the
-    # plugin kwargs (it's a TTS-only convention but we drop it defensively).
-    opts.pop("voices_per_lang", None)
-    # PR 1.B-Lang-4: ALWAYS override row-seeded language(s). The agent_voice_configs
-    # row often carries hardcoded English (`languages: ['en-US']` for google_stt,
-    # `language: 'en-US'` for deepgram/assemblyai) from the original Vertex-era
-    # seed. STT language MUST match the user's actual speech, not a per-agent
-    # config — there is no operator override that makes sense here. Drop the row
-    # values; the bcp47 resolved from identity.lang is always correct.
-    opts.pop("language", None)
-    opts.pop("languages", None)
-
+    """Construct ONE STT instance. Caller owns opts hygiene + notes."""
     if provider == "deepgram":
         try:
             from livekit.plugins import deepgram  # type: ignore[import-not-found]
@@ -293,12 +291,18 @@ def _build_stt(
         except ImportError:
             notes.append("STT provider 'deepgram' requested but livekit-plugins-deepgram not installed")
             return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"STT provider 'deepgram' init failed: {exc}")
+            return None
     if provider == "assemblyai":
         try:
             from livekit.plugins import assemblyai  # type: ignore[import-not-found]
             return assemblyai.STT(language=bcp47, **opts)
         except ImportError:
             notes.append("STT provider 'assemblyai' requested but livekit-plugins-assemblyai not installed")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"STT provider 'assemblyai' init failed: {exc}")
             return None
     if provider == "google_stt":
         try:
@@ -320,6 +324,108 @@ def _build_stt(
             return None
     notes.append(f"unknown or unsupported STT provider: {provider}")
     return None
+
+
+def _build_stt(
+    provider: str | None,
+    model: str | None,
+    options: dict[str, Any],
+    notes: list[str],
+    *,
+    bcp47: str = "en-US",
+) -> _STTPlugin | None:
+    """Construct the configured STT plugin and inject the user's language.
+
+    `bcp47` is resolved from identity.lang in build_cascade. We always
+    inject (overriding any pre-seeded value in stt_options) — operator
+    overrides for STT language are uncommon and the per-session value
+    matches the user's actual speech. Compare TTS where per-row
+    voices_per_lang overrides are common.
+
+    VTID-03037: when ORB_STT_FALLBACK_ENABLED (default true) the return
+    value is a livekit-agents FallbackAdapter wrapping
+    [primary, same-provider-mirror, (optional) deepgram-cross-provider].
+    The adapter swaps internally if the primary stops producing
+    transcripts within attempt_timeout (default 8s). The agent watchdog
+    still fires at STALL_THRESHOLD_MS=10s as a backstop, but
+    in-pipeline failover is the first line of defense — the
+    session._activity.stt assignment trick from VTID-03005 writes to a
+    slot the 0.12+ runtime doesn't read, so it can't recover on its
+    own.
+    """
+    opts = dict(options or {})
+    # Strip the multilingual-routing carrier so it doesn't leak into the
+    # plugin kwargs (it's a TTS-only convention but we drop it defensively).
+    opts.pop("voices_per_lang", None)
+    # PR 1.B-Lang-4: ALWAYS override row-seeded language(s). The agent_voice_configs
+    # row often carries hardcoded English (`languages: ['en-US']` for google_stt,
+    # `language: 'en-US'` for deepgram/assemblyai) from the original Vertex-era
+    # seed. STT language MUST match the user's actual speech, not a per-agent
+    # config — there is no operator override that makes sense here. Drop the row
+    # values; the bcp47 resolved from identity.lang is always correct.
+    opts.pop("language", None)
+    opts.pop("languages", None)
+
+    primary = _build_single_stt(provider, model, opts, notes, bcp47=bcp47)
+    if primary is None:
+        return None
+
+    if not _fallback_enabled():
+        return primary
+
+    instances: list[_STTPlugin] = [primary]
+
+    # Same-provider mirror — fresh connection/state. Catches the most
+    # common failure mode we see in production (Google STT gRPC stream
+    # silently stops producing events; a new instance has its own
+    # stream). Uses the same opts so language/model match the primary.
+    mirror = _build_single_stt(provider, model, dict(opts), notes, bcp47=bcp47)
+    if mirror is not None and mirror is not primary:
+        instances.append(mirror)
+        notes.append(f"stt_fallback: added same-provider mirror ({provider})")
+
+    # Cross-provider fallback — only if we have a different vendor's
+    # credentials lying around. DEEPGRAM_API_KEY is the trigger today;
+    # when ASSEMBLYAI_API_KEY plumbing lands, mirror this block.
+    if provider != "deepgram" and os.environ.get("DEEPGRAM_API_KEY"):
+        deep = _build_single_stt("deepgram", "nova-3", {}, notes, bcp47=bcp47)
+        if deep is not None:
+            instances.append(deep)
+            notes.append("stt_fallback: added cross-provider deepgram")
+
+    if len(instances) < 2:
+        # Couldn't build a second instance. The single primary is still
+        # better than nothing — return it unwrapped so we don't pay the
+        # FallbackAdapter overhead for no resilience benefit.
+        notes.append("stt_fallback: only 1 instance built — returning unwrapped primary")
+        return primary
+
+    try:
+        from livekit.agents.stt import FallbackAdapter  # type: ignore[import-not-found]
+        attempt_timeout = _fallback_attempt_timeout_s()
+        adapter = FallbackAdapter(
+            instances,
+            attempt_timeout=attempt_timeout,
+            max_retry_per_stt=1,
+            retry_interval=5.0,
+        )
+        notes.append(
+            f"stt_fallback: wrapped {len(instances)} instances in "
+            f"FallbackAdapter (attempt_timeout={attempt_timeout}s)"
+        )
+        return adapter
+    except ImportError:
+        notes.append(
+            "stt_fallback: livekit.agents.stt.FallbackAdapter unavailable — "
+            "falling back to primary STT only"
+        )
+        return primary
+    except Exception as exc:  # noqa: BLE001
+        notes.append(
+            f"stt_fallback: FallbackAdapter construction failed ({exc}) — "
+            "falling back to primary STT only"
+        )
+        return primary
 
 
 def _build_llm(provider: str | None, model: str | None, options: dict[str, Any], notes: list[str]) -> _LLMPlugin | None:
