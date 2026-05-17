@@ -981,19 +981,366 @@ async def get_pillar_subscores(context: RunContext, pillar: str) -> str:
 
 
 @function_tool
-async def resolve_recipient(context: RunContext, name: str) -> str:
-    """Step 1 of 3-step send-message flow: resolve a name to candidates."""
-    body = await _dispatch(context, "resolve_recipient", {"name": name})
-    return summarize(body)
+async def resolve_recipient(context: RunContext, spoken_name: str) -> str:
+    """Step 1 of the 3-step send-message flow: resolve a spoken name to
+    candidate Vitana users.
+
+    VTID-03043 — Observability + fail-loud:
+      - Emits `orb.livekit.tool.resolve_recipient.called` BEFORE dispatch
+        (spoken_name length, session, user) and `.result` AFTER with a
+        machine-readable status (`resolved` | `ambiguous` | `no_match`
+        | `failed` | `failed_network`).
+      - Returns a deterministic text to the LLM that ALWAYS starts with
+        `STATUS: <status>.` and — critically — surfaces the candidate
+        UUIDs the LLM must pass to `send_chat_message`. The legacy
+        `summarize(body)` dropped the structured candidates and only
+        showed the human-readable "Best match: Maja (95%)" line, so the
+        LLM had no UUID to forward and `send_chat_message` always failed
+        with "recipient_not_uuid". This is the bug surfaced in the
+        L2.2b.7 real-mic German test (check #6: "failed to send,
+        couldn't save the receiver").
+
+    The Vertex tool catalog declares this tool as `spoken_name` (not
+    `name`); aligning the agent signature with the catalog prevents
+    schema drift between pipelines.
+    """
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
+    cleaned = (spoken_name or "").strip()
+    logger.info(
+        "resolve_recipient.called: spoken_name_chars=%d session=%s user=%s",
+        len(cleaned),
+        orb_session_id,
+        user_id,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.resolve_recipient.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "spoken_name_chars": len(cleaned),
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resolve_recipient: oasis .called emit failed: %s", exc)
+
+    body = await _dispatch(context, "resolve_recipient", {"spoken_name": cleaned})
+
+    # Parse the structured response.
+    ok = bool(body.get("ok", False)) if isinstance(body, dict) else False
+    transport = body.get("transport") if isinstance(body, dict) else None
+    err_msg = body.get("error") if isinstance(body, dict) else None
+    gateway_status = body.get("_status") if isinstance(body, dict) else None
+    result = body.get("result") if isinstance(body, dict) else None
+    candidates_raw = result.get("candidates") if isinstance(result, dict) else None
+    top_confidence = result.get("top_confidence") if isinstance(result, dict) else None
+    ambiguous = result.get("ambiguous") if isinstance(result, dict) else None
+    candidates: list[dict[str, Any]] = (
+        candidates_raw if isinstance(candidates_raw, list) else []
+    )
+
+    # Map to machine-readable status.
+    if transport == "exception":
+        status = "failed_network"
+    elif not ok:
+        status = "failed"
+    elif not candidates:
+        status = "no_match"
+    elif ambiguous is True or len(candidates) > 1:
+        status = "ambiguous"
+    else:
+        status = "resolved"
+
+    logger.info(
+        "resolve_recipient.result: status=%s candidates=%d top_confidence=%s "
+        "ambiguous=%s gateway_ok=%s gateway_status=%s error=%r",
+        status,
+        len(candidates),
+        top_confidence,
+        ambiguous,
+        ok,
+        gateway_status,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.resolve_recipient.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "candidate_count": len(candidates),
+                    "top_confidence": top_confidence,
+                    "ambiguous": ambiguous,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resolve_recipient: oasis .result emit failed: %s", exc)
+
+    # Deterministic LLM-facing text. The whole point of this rewrite: the
+    # LLM must SEE the user_id strings to pass them to send_chat_message.
+    def _fmt(c: dict[str, Any]) -> str:
+        uid = c.get("user_id") or "?"
+        vid = c.get("vitana_id") or "(no vitana_id)"
+        name = c.get("display_name") or vid
+        score = c.get("score")
+        score_str = f"{float(score) * 100:.0f}%" if isinstance(score, (int, float)) else "?"
+        return f"  - {name} (vitana_id={vid}, user_id={uid}, confidence={score_str})"
+
+    if status == "resolved":
+        top = candidates[0]
+        uid = top.get("user_id") or ""
+        vid = top.get("vitana_id") or "(no vitana_id)"
+        name = top.get("display_name") or vid
+        return (
+            f"STATUS: resolved. "
+            f"ACTION: One high-confidence match. To send a message, call "
+            f"send_chat_message with recipient_user_id=\"{uid}\", "
+            f"recipient_label=\"{vid}\", and the user's body text. "
+            f"NEVER pass the display name or any other string as recipient_user_id. "
+            f"Best match: {name} (vitana_id={vid}, user_id={uid})."
+        )
+    if status == "ambiguous":
+        listing = "\n".join(_fmt(c) for c in candidates[:3])
+        return (
+            f"STATUS: ambiguous. "
+            f"ACTION: Read the candidates' names (NOT their user_ids) to the user and "
+            f"ask which one they meant. Do NOT call send_chat_message yet. "
+            f"After the user picks, call send_chat_message with that candidate's "
+            f"user_id as recipient_user_id and vitana_id as recipient_label.\n"
+            f"Candidates ({len(candidates)} total, top 3 shown):\n{listing}"
+        )
+    if status == "no_match":
+        return (
+            f"STATUS: no_match. "
+            f"ACTION: Tell the user you couldn't find anyone named \"{cleaned}\" in the "
+            f"community. Ask them to repeat or spell the Vitana ID. Do NOT call "
+            f"send_chat_message — there is no valid recipient."
+        )
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: Recipient lookup did NOT reach the backend (network exception). "
+            "Tell the user honestly that you couldn't look up the recipient and you'll "
+            "try again in a moment. Do NOT call send_chat_message."
+        )
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Recipient lookup failed ({err_label}). Tell the user honestly that "
+        f"the lookup didn't work and you'll try again. Do NOT call send_chat_message."
+    )
 
 
 @function_tool
-async def send_chat_message(context: RunContext, recipient_id: str, body_text: str) -> str:
-    """Step 3: send the message after the user confirms the recipient."""
-    body = await _dispatch(
-        context, "send_chat_message", {"recipient_id": recipient_id, "body_text": body_text}
+async def send_chat_message(
+    context: RunContext,
+    recipient_user_id: str,
+    recipient_label: str,
+    body: str,
+) -> str:
+    """Step 3 of the 3-step send-message flow: dispatch the message.
+
+    VTID-03043 — Schema alignment + observability:
+      - Args now match the Vertex tool catalog
+        (`recipient_user_id`, `recipient_label`, `body`) so the LLM uses
+        the canonical names regardless of pipeline. Legacy
+        `recipient_id`/`body_text` are still accepted by the gateway as a
+        belt-and-braces fallback.
+      - Emits `.called` BEFORE dispatch and `.result` AFTER with a
+        machine-readable status (`sent` | `missing_recipient` |
+        `missing_body` | `recipient_not_uuid` | `rate_limited` |
+        `self_message` | `failed` | `failed_network`).
+      - Returns a deterministic text to the LLM that always opens
+        `STATUS: <status>.` and tells it what to say. Saying "the
+        message has been sent" is forbidden on any status except `sent`.
+    """
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
+    recipient_user_id = (recipient_user_id or "").strip()
+    recipient_label = (recipient_label or "").strip()
+    body = (body or "").strip()
+
+    logger.info(
+        "send_chat_message.called: recipient_user_id_chars=%d label_chars=%d body_chars=%d "
+        "session=%s user=%s",
+        len(recipient_user_id),
+        len(recipient_label),
+        len(body),
+        orb_session_id,
+        user_id,
     )
-    return summarize(body)
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.send_chat_message.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "recipient_user_id_chars": len(recipient_user_id),
+                    "recipient_label_chars": len(recipient_label),
+                    "body_chars": len(body),
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("send_chat_message: oasis .called emit failed: %s", exc)
+
+    response = await _dispatch(
+        context,
+        "send_chat_message",
+        {
+            "recipient_user_id": recipient_user_id,
+            "recipient_label": recipient_label,
+            "body": body,
+        },
+    )
+
+    ok = bool(response.get("ok", False)) if isinstance(response, dict) else False
+    transport = response.get("transport") if isinstance(response, dict) else None
+    err_msg = response.get("error") if isinstance(response, dict) else None
+    gateway_status = response.get("_status") if isinstance(response, dict) else None
+    result = response.get("result") if isinstance(response, dict) else None
+    text_from_gateway = response.get("text") if isinstance(response, dict) else None
+
+    # Derive status. The gateway's send-side returns specific error strings
+    # for each failure mode; we keyword-match to classify so the LLM gets a
+    # single token to read.
+    if transport == "exception":
+        status = "failed_network"
+    elif ok:
+        status = "sent"
+    else:
+        err_lower = str(err_msg or "").lower()
+        if "recipient" in err_lower and ("again" in err_lower or "uuid" in err_lower or "lost track" in err_lower):
+            status = "recipient_not_uuid"
+        elif "didn't catch" in err_lower or "missing_body" in err_lower or "what would you like" in err_lower:
+            status = "missing_body"
+        elif "who would you like" in err_lower or "missing_recipient" in err_lower:
+            status = "missing_recipient"
+        elif "rate" in err_lower or "limit" in err_lower or "too many" in err_lower:
+            status = "rate_limited"
+        elif "self" in err_lower or "yourself" in err_lower:
+            status = "self_message"
+        elif "find " in err_lower or "couldn't find" in err_lower or "ambiguous" in err_lower:
+            status = "recipient_not_resolved"
+        else:
+            status = "failed"
+
+    logger.info(
+        "send_chat_message.result: status=%s gateway_ok=%s gateway_status=%s error=%r",
+        status,
+        ok,
+        gateway_status,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.send_chat_message.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("send_chat_message: oasis .result emit failed: %s", exc)
+
+    # Deterministic LLM-facing text. Only `sent` is allowed to say the
+    # message went through. Every other branch must tell the user the
+    # message did NOT go through.
+    if status == "sent":
+        # Gateway's text on success is "Sent to @vid." — preserve it.
+        if isinstance(text_from_gateway, str) and text_from_gateway:
+            return f"STATUS: sent. ACTION: {text_from_gateway}"
+        return (
+            f"STATUS: sent. "
+            f"ACTION: The message has been sent to @{recipient_label}. "
+            f"Acknowledge briefly to the user (vary phrasing every call)."
+        )
+    if status == "rate_limited":
+        return (
+            "STATUS: rate_limited. "
+            "ACTION: The message did NOT go through — voice-send quota for this session "
+            "is exhausted. Tell the user they can keep going in the app. Do NOT pretend "
+            "the message was sent."
+        )
+    if status == "missing_body":
+        return (
+            "STATUS: missing_body. "
+            "ACTION: You didn't pass a body. Ask the user what they want to say, then "
+            "call send_chat_message again with the body filled in. Do NOT claim a "
+            "message was sent."
+        )
+    if status == "missing_recipient":
+        return (
+            "STATUS: missing_recipient. "
+            "ACTION: You didn't pass a recipient_user_id. Call resolve_recipient first, "
+            "pick the UUID from its result, then call send_chat_message. Do NOT claim "
+            "a message was sent."
+        )
+    if status == "recipient_not_uuid":
+        return (
+            "STATUS: recipient_not_uuid. "
+            "ACTION: The recipient_user_id you passed is not a UUID. Call "
+            "resolve_recipient again and pass that result's user_id field verbatim — "
+            "NOT the display name, NOT the vitana_id. Do NOT claim a message was sent."
+        )
+    if status == "recipient_not_resolved":
+        return (
+            "STATUS: recipient_not_resolved. "
+            "ACTION: The gateway couldn't confirm the recipient. Tell the user you "
+            "lost track of who they meant and ask for the Vitana ID again. Do NOT "
+            "claim a message was sent."
+        )
+    if status == "self_message":
+        return (
+            "STATUS: self_message. "
+            "ACTION: The recipient resolves to the current user — Vitana cannot send "
+            "messages to yourself. Tell the user gently. Do NOT claim a message was sent."
+        )
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: The send did NOT reach the backend (network exception). Tell the "
+            "user the message didn't go through and you'll try again. Do NOT claim a "
+            "message was sent."
+        )
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Send failed ({err_label}). Tell the user honestly the message did "
+        f"NOT go through. Do NOT claim a message was sent."
+    )
 
 
 # ---------------------------------------------------------------------------
