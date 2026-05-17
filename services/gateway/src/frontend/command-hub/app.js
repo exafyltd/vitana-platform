@@ -3891,6 +3891,16 @@ const state = {
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
     orbMonitor: { runs: [], screens: {}, loading: false, error: null, fetched: false },
+    // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
+    livekitTests: {
+        recentRuns: [],
+        latestRun: null,           // { run, results: [...] }
+        cases: [],
+        loading: false,
+        triggering: false,
+        error: null,
+        fetched: false,
+    },
     cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
@@ -6194,6 +6204,8 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
         // Migrated from testing-qa/e2e — scheduled UI E2E test runs
         container.appendChild(renderOrbMonitorSection());
+        // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
+        container.appendChild(renderLivekitHourlyTestsPanel());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -35079,6 +35091,283 @@ async function triggerOrbMonitor(btn) {
     } catch (e) {
         btn.disabled = false;
         btn.textContent = originalLabel;
+        showToast('Network error: ' + (e.message || 'Unknown'), 'error');
+    }
+}
+
+// ─── LiveKit Hourly Tests Panel (VTID-03025) ────────────────────────────
+// Slice 1c surface for the dry-run suite shipped in Slices 1a/1b. Polls
+// the gateway's /api/v1/voice-lab/tests/* read APIs and renders:
+//   - latest run header (passed / failed / errored, duration, age)
+//   - 13-case (or more) result table with status dot + tool_calls preview
+//   - recent-runs strip (last ~10 runs as colored dots)
+//   - Trigger Run button (kicks off SMOKE-LIVEKIT-TESTS.yml via GitHub Actions)
+function renderLivekitHourlyTestsPanel() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:1.5rem;padding-top:1rem;border-top:2px solid var(--color-border);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
+    titleRow.innerHTML = '<h3 style="margin:0;">LiveKit Hourly Tests</h3>' +
+        '<span style="font-size:0.75rem;color:var(--color-text-secondary);">' +
+        'Layer-A dry-run via gateway tool-routing · VTID-03025</span>';
+    section.appendChild(titleRow);
+
+    // Lazy-fetch latest run + cases on first render.
+    if (!state.livekitTests.fetched && !state.livekitTests.loading) {
+        state.livekitTests.loading = true;
+        Promise.all([
+            fetch('/api/v1/voice-lab/tests/runs?limit=10', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-lab/tests/cases', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            var runsResp = results[0];
+            var casesResp = results[1];
+            state.livekitTests.recentRuns = (runsResp && runsResp.runs) || [];
+            state.livekitTests.cases = (casesResp && casesResp.cases) || [];
+            state.livekitTests.loading = false;
+            state.livekitTests.fetched = true;
+            // Chain-load the latest run's detail.
+            if (state.livekitTests.recentRuns.length > 0) {
+                var latestId = state.livekitTests.recentRuns[0].id;
+                fetch('/api/v1/voice-lab/tests/runs/' + latestId, { headers: buildContextHeaders() })
+                    .then(function (r) { return r.json(); })
+                    .then(function (detail) {
+                        if (detail && detail.ok) {
+                            state.livekitTests.latestRun = { run: detail.run, results: detail.results || [] };
+                        }
+                        renderApp();
+                    }).catch(function () { renderApp(); });
+            } else {
+                renderApp();
+            }
+        }).catch(function (err) {
+            state.livekitTests.loading = false;
+            state.livekitTests.error = err.message || String(err);
+            renderApp();
+        });
+    }
+
+    if (state.livekitTests.loading && !state.livekitTests.fetched) {
+        var loader = document.createElement('div');
+        loader.className = 'placeholder-content';
+        loader.textContent = 'Loading LiveKit hourly test grid...';
+        section.appendChild(loader);
+        return section;
+    }
+
+    if (state.livekitTests.error) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'placeholder-content';
+        errDiv.style.color = 'var(--color-text-secondary)';
+        errDiv.textContent = 'Could not load LiveKit hourly tests: ' + state.livekitTests.error;
+        section.appendChild(errDiv);
+        return section;
+    }
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem;';
+
+    var recent = state.livekitTests.recentRuns || [];
+    var latest = state.livekitTests.latestRun;
+    var cases = state.livekitTests.cases || [];
+
+    if (recent.length === 0) {
+        var noRuns = document.createElement('div');
+        noRuns.style.cssText = 'font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+        noRuns.innerHTML = 'No runs yet. Trigger the first one to populate the grid — ' +
+            cases.length + ' enabled case(s) registered.';
+        card.appendChild(noRuns);
+    } else {
+        // Summary header for the latest run.
+        var head = recent[0];
+        var headerRow = document.createElement('div');
+        headerRow.style.cssText = 'display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;';
+
+        var statusDot = document.createElement('span');
+        var dotColor = head.errored > 0 ? '#ef4444' :
+                       head.failed > 0 ? '#f59e0b' :
+                       head.passed === head.total && head.total > 0 ? '#22c55e' : '#6b7280';
+        statusDot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;background:' + dotColor + ';';
+        headerRow.appendChild(statusDot);
+
+        var summary = document.createElement('span');
+        summary.style.cssText = 'font-size:0.95rem;font-weight:600;';
+        summary.textContent = head.passed + ' / ' + head.total + ' passed';
+        headerRow.appendChild(summary);
+
+        var subSummary = document.createElement('span');
+        subSummary.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+        var parts = [];
+        if (head.failed > 0) parts.push(head.failed + ' failed');
+        if (head.errored > 0) parts.push(head.errored + ' errored');
+        if (head.duration_ms) parts.push(Math.round(head.duration_ms / 1000) + 's');
+        if (parts.length > 0) subSummary.textContent = '(' + parts.join(' · ') + ')';
+        headerRow.appendChild(subSummary);
+
+        var ageSpan = document.createElement('span');
+        ageSpan.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-left:auto;';
+        ageSpan.textContent = 'Last run: ' + formatEventTimestamp(head.started_at) + ' (trigger=' + (head.trigger || 'manual') + ')';
+        headerRow.appendChild(ageSpan);
+
+        card.appendChild(headerRow);
+
+        // Recent-runs strip (last ~10 runs as colored dots, leftmost = most recent).
+        var stripRow = document.createElement('div');
+        stripRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.9rem;padding-bottom:0.6rem;border-bottom:1px solid var(--color-border);';
+        var stripLabel = document.createElement('span');
+        stripLabel.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);margin-right:0.4rem;';
+        stripLabel.textContent = 'Recent runs:';
+        stripRow.appendChild(stripLabel);
+        recent.forEach(function (run) {
+            var d = document.createElement('span');
+            var dc = run.errored > 0 ? '#ef4444' :
+                     run.failed > 0 ? '#f59e0b' :
+                     run.passed === run.total && run.total > 0 ? '#22c55e' : '#6b7280';
+            d.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + dc + ';';
+            d.title = formatEventTimestamp(run.started_at) + ' — ' +
+                run.passed + '/' + run.total + ' passed' +
+                (run.failed > 0 ? ', ' + run.failed + ' failed' : '') +
+                (run.errored > 0 ? ', ' + run.errored + ' errored' : '');
+            stripRow.appendChild(d);
+        });
+        card.appendChild(stripRow);
+
+        // Per-case grid for the latest run.
+        if (latest && latest.results && latest.results.length > 0) {
+            var grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:14px minmax(180px, 1.4fr) 1fr 70px 70px;column-gap:0.6rem;row-gap:0.4rem;font-size:0.78rem;';
+
+            // Header row.
+            ['', 'Case', 'Tool calls / failure reason', 'Latency', 'Retried'].forEach(function (h, idx) {
+                var th = document.createElement('div');
+                th.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;padding-bottom:0.25rem;border-bottom:1px solid var(--color-border);';
+                if (idx >= 3) th.style.textAlign = 'right';
+                th.textContent = h;
+                grid.appendChild(th);
+            });
+
+            latest.results.forEach(function (r) {
+                var statusColor = r.status === 'passed' ? '#22c55e' :
+                                  r.status === 'failed' ? '#f59e0b' :
+                                  '#ef4444';
+                var dot = document.createElement('span');
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + statusColor + ';margin-top:5px;';
+                dot.title = r.status;
+                grid.appendChild(dot);
+
+                var key = document.createElement('div');
+                key.style.cssText = 'font-family:var(--font-mono);font-size:0.75rem;color:var(--color-text-primary);';
+                key.textContent = r.case_key;
+                grid.appendChild(key);
+
+                var detail = document.createElement('div');
+                detail.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;';
+                var detailParts = [];
+                if (r.tool_calls && r.tool_calls.length > 0) {
+                    detailParts.push(r.tool_calls.map(function (tc) { return tc.name; }).join(', '));
+                }
+                if (r.failure_reasons && r.failure_reasons.length > 0) {
+                    detailParts.push('× ' + r.failure_reasons.join(', '));
+                }
+                if (r.error) {
+                    detailParts.push('⚠ ' + r.error.substring(0, 140));
+                }
+                if (detailParts.length === 0 && r.reply_text) {
+                    detailParts.push('"' + r.reply_text.substring(0, 80) + (r.reply_text.length > 80 ? '…' : '') + '"');
+                }
+                detail.textContent = detailParts.join(' · ') || '—';
+                detail.title = detailParts.join(' · ');
+                grid.appendChild(detail);
+
+                var lat = document.createElement('div');
+                lat.style.cssText = 'text-align:right;color:var(--color-text-secondary);';
+                lat.textContent = r.latency_ms != null ? r.latency_ms + 'ms' : '—';
+                grid.appendChild(lat);
+
+                var ret = document.createElement('div');
+                ret.style.cssText = 'text-align:right;color:var(--color-text-secondary);';
+                ret.textContent = r.retried ? 'yes' : 'no';
+                grid.appendChild(ret);
+            });
+
+            card.appendChild(grid);
+        } else if (latest === null && recent.length > 0) {
+            var loadingDetail = document.createElement('div');
+            loadingDetail.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-top:0.5rem;';
+            loadingDetail.textContent = 'Loading per-case detail for the latest run…';
+            card.appendChild(loadingDetail);
+        }
+    }
+
+    // Buttons row.
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.5rem;margin-top:1rem;';
+
+    var trigBtn = document.createElement('button');
+    trigBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    trigBtn.style.fontSize = '0.8rem';
+    trigBtn.textContent = state.livekitTests.triggering ? 'Triggering...' : 'Trigger Run';
+    trigBtn.disabled = !!state.livekitTests.triggering;
+    trigBtn.onclick = function () { triggerLivekitHourlyTests(trigBtn); };
+    btnRow.appendChild(trigBtn);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.livekitTests.fetched = false;
+        state.livekitTests.loading = false;
+        state.livekitTests.latestRun = null;
+        renderApp();
+    };
+    btnRow.appendChild(refreshBtn);
+
+    var casesInfo = document.createElement('span');
+    casesInfo.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);margin-left:auto;align-self:center;';
+    casesInfo.textContent = cases.length + ' case(s) enabled · hourly cron lands in Slice 1b';
+    btnRow.appendChild(casesInfo);
+
+    card.appendChild(btnRow);
+    section.appendChild(card);
+    return section;
+}
+
+async function triggerLivekitHourlyTests(btn) {
+    // Hit the same gateway endpoint the smoke workflow uses. We avoid
+    // dispatching the GH Actions workflow from the browser (no PAT) —
+    // the gateway call runs the suite directly, returns results inline,
+    // and persists rows the panel re-fetches.
+    state.livekitTests.triggering = true;
+    btn.disabled = true;
+    btn.textContent = 'Triggering...';
+    try {
+        var response = await fetch('/api/v1/voice-lab/tests/run', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ trigger: 'admin' }),
+        });
+        var result = await response.json();
+        if (response.ok && result && result.ok) {
+            // Re-fetch so the panel shows the run we just kicked off.
+            state.livekitTests.triggering = false;
+            state.livekitTests.fetched = false;
+            state.livekitTests.loading = false;
+            state.livekitTests.latestRun = null;
+            renderApp();
+            showToast('LiveKit hourly tests triggered (run ' +
+                (result.summary && result.summary.run_id ? result.summary.run_id.substring(0, 8) : '?') +
+                ')', 'success');
+        } else {
+            state.livekitTests.triggering = false;
+            btn.disabled = false;
+            btn.textContent = 'Trigger Run';
+            showToast('LiveKit tests failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+        }
+    } catch (e) {
+        state.livekitTests.triggering = false;
+        btn.disabled = false;
+        btn.textContent = 'Trigger Run';
         showToast('Network error: ' + (e.message || 'Unknown'), 'error');
     }
 }
