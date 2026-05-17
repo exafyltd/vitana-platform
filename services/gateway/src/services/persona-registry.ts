@@ -14,6 +14,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+const FF_OPTIMIZE_PERSONA_REGISTRY = process.env.FF_OPTIMIZE_PERSONA_REGISTRY === 'true';
+
 export interface PersonaRecord {
   id: string;
   key: string;
@@ -42,6 +44,9 @@ const CACHE_TTL_MS = 60_000;
 let cache: { at: number; map: Map<string, PersonaRecord> } | null = null;
 let inFlight: Promise<Map<string, PersonaRecord>> | null = null;
 
+const tenantCache = new Map<string, { at: number; map: Map<string, TenantPersonaRecord> }>();
+const tenantInFlight = new Map<string, Promise<Map<string, TenantPersonaRecord>>>();
+
 function getServiceClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -68,10 +73,7 @@ async function loadFromDB(): Promise<Map<string, PersonaRecord>> {
   return map;
 }
 
-export async function loadPersonaRegistry(forceRefresh = false): Promise<Map<string, PersonaRecord>> {
-  if (!forceRefresh && cache && Date.now() - cache.at < CACHE_TTL_MS) {
-    return cache.map;
-  }
+function triggerPlatformReload(): Promise<Map<string, PersonaRecord>> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
@@ -83,6 +85,25 @@ export async function loadPersonaRegistry(forceRefresh = false): Promise<Map<str
     }
   })();
   return inFlight;
+}
+
+export async function loadPersonaRegistry(forceRefresh = false): Promise<Map<string, PersonaRecord>> {
+  if (forceRefresh) {
+    return triggerPlatformReload();
+  }
+  if (cache) {
+    const isStale = Date.now() - cache.at >= CACHE_TTL_MS;
+    if (!isStale) {
+      return cache.map;
+    }
+    if (FF_OPTIMIZE_PERSONA_REGISTRY) {
+      triggerPlatformReload().catch(e => {
+        console.error('[persona-registry] SWR platform fetch failed:', e);
+      });
+      return cache.map;
+    }
+  }
+  return triggerPlatformReload();
 }
 
 export function clearPersonaRegistryCache(): void {
@@ -226,8 +247,6 @@ export interface TenantPersonaRecord extends PersonaRecord {
   intake_schema_extras: Record<string, unknown>;
 }
 
-const tenantCache = new Map<string, { at: number; map: Map<string, TenantPersonaRecord> }>();
-
 async function loadTenantOverrides(tenantId: string): Promise<Map<string, TenantOverridesRecord>> {
   const supabase = getServiceClient();
   const { data, error } = await supabase
@@ -244,6 +263,42 @@ async function loadTenantOverrides(tenantId: string): Promise<Map<string, Tenant
     map.set(r.persona_id, r);
   }
   return map;
+}
+
+function triggerTenantReload(tenantId: string, forceRefresh: boolean): Promise<Map<string, TenantPersonaRecord>> {
+  if (tenantInFlight.has(tenantId)) {
+    return tenantInFlight.get(tenantId)!;
+  }
+  const promise = (async () => {
+    try {
+      const [platform, overrides] = await Promise.all([
+        loadPersonaRegistry(forceRefresh),
+        loadTenantOverrides(tenantId),
+      ]);
+      const merged = new Map<string, TenantPersonaRecord>();
+      for (const [k, p] of platform) {
+        const ov = overrides.get(p.id);
+        const tenant_enabled = ov ? ov.enabled : true;
+        // Merge greeting templates: tenant custom wins over platform per-language
+        const greeting_templates =
+          ov?.custom_greeting_templates && Object.keys(ov.custom_greeting_templates).length > 0
+            ? { ...p.greeting_templates, ...ov.custom_greeting_templates }
+            : p.greeting_templates;
+        merged.set(k, {
+          ...p,
+          greeting_templates,
+          tenant_enabled,
+          intake_schema_extras: ov?.intake_schema_extras ?? {},
+        });
+      }
+      tenantCache.set(tenantId, { at: Date.now(), map: merged });
+      return merged;
+    } finally {
+      tenantInFlight.delete(tenantId);
+    }
+  })();
+  tenantInFlight.set(tenantId, promise);
+  return promise;
 }
 
 /**
@@ -263,32 +318,26 @@ export async function loadPersonaRegistryForTenant(
     }
     return merged;
   }
+
+  if (forceRefresh) {
+    return triggerTenantReload(tenantId, true);
+  }
+
   const cached = tenantCache.get(tenantId);
-  if (!forceRefresh && cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return cached.map;
+  if (cached) {
+    const isStale = Date.now() - cached.at >= CACHE_TTL_MS;
+    if (!isStale) {
+      return cached.map;
+    }
+    if (FF_OPTIMIZE_PERSONA_REGISTRY) {
+      triggerTenantReload(tenantId, false).catch(e => {
+        console.error(`[persona-registry] SWR tenant fetch failed for ${tenantId}:`, e);
+      });
+      return cached.map;
+    }
   }
-  const [platform, overrides] = await Promise.all([
-    loadPersonaRegistry(forceRefresh),
-    loadTenantOverrides(tenantId),
-  ]);
-  const merged = new Map<string, TenantPersonaRecord>();
-  for (const [k, p] of platform) {
-    const ov = overrides.get(p.id);
-    const tenant_enabled = ov ? ov.enabled : true;
-    // Merge greeting templates: tenant custom wins over platform per-language
-    const greeting_templates =
-      ov?.custom_greeting_templates && Object.keys(ov.custom_greeting_templates).length > 0
-        ? { ...p.greeting_templates, ...ov.custom_greeting_templates }
-        : p.greeting_templates;
-    merged.set(k, {
-      ...p,
-      greeting_templates,
-      tenant_enabled,
-      intake_schema_extras: ov?.intake_schema_extras ?? {},
-    });
-  }
-  tenantCache.set(tenantId, { at: Date.now(), map: merged });
-  return merged;
+
+  return triggerTenantReload(tenantId, false);
 }
 
 export function clearTenantPersonaCache(tenantId?: string): void {
