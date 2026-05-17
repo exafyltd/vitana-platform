@@ -3189,6 +3189,167 @@ async function tool_get_pillar_subscores(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-03042 — save_diary_entry
+//
+// Lifted from orb-live.ts case 'save_diary_entry' (VTID-01983) so the
+// LiveKit pipeline can call the canonical write flow instead of the agent's
+// previous direct hit to /memory/diary/sync-index. The sync-index endpoint
+// only runs the health-feature extractor + Index recompute — it explicitly
+// does NOT write the user-visible `diary_entries` row (memory.ts:1776 says
+// so). LiveKit's tool therefore had Vitana announce "I logged it" while no
+// diary row was ever created, so the user saw nothing in the daily diary.
+//
+// This shared handler does the full Vertex flow:
+//   1) insert diary_entries (user-visible)
+//   2) read pre-recompute Index for delta math
+//   3) extract health features + persist
+//   4) recompute Vitana Index
+//   5) compute per-pillar delta
+//   6) celebrate diary streak (non-blocking)
+// ---------------------------------------------------------------------------
+export async function tool_save_diary_entry(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const rawText = typeof args.raw_text === 'string' ? args.raw_text.trim() : '';
+  if (!rawText) {
+    return { ok: false, error: 'raw_text is required' };
+  }
+  if (!identity.user_id) {
+    return { ok: false, error: 'user_id is required' };
+  }
+
+  const argDate = typeof args.entry_date === 'string' ? args.entry_date : undefined;
+  const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
+    ? argDate
+    : new Date().toISOString().slice(0, 10);
+
+  // 1) diary_entries insert — best-effort. If it fails we still proceed with
+  // the extractor/index so the Index reflects the user's words.
+  let diary_entry_written = true;
+  try {
+    const { error: insertErr } = await sb.from('diary_entries').insert({
+      user_id: identity.user_id,
+      text: rawText,
+      source: 'voice',
+      tags: ['diary', 'voice', 'orb'],
+    });
+    if (insertErr) {
+      diary_entry_written = false;
+      console.warn(
+        `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
+      );
+    }
+  } catch (insertErr) {
+    diary_entry_written = false;
+    console.warn(
+      `[save_diary_entry] diary_entries insert exception (non-fatal): ${(insertErr as Error).message}`,
+    );
+  }
+
+  // 2) Pre-recompute Index for delta math.
+  const { data: beforeRow } = await sb
+    .from('vitana_index_scores')
+    .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+    .eq('user_id', identity.user_id)
+    .eq('date', entryDate)
+    .maybeSingle();
+  const before = beforeRow as Record<string, number | null> | null;
+
+  // 3) Extract health features + persist.
+  const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
+    './diary-health-extractor'
+  );
+  const writes = extractHealthFeaturesFromDiary(rawText);
+  const tenantId = identity.tenant_id || '00000000-0000-0000-0000-000000000000';
+  let health_features_written = 0;
+  if (writes.length > 0) {
+    const { written } = await persistDiaryHealthFeatures(
+      sb,
+      identity.user_id,
+      tenantId,
+      entryDate,
+      writes,
+    );
+    health_features_written = written;
+  }
+
+  // 4) Recompute Index.
+  let pillars_after: Record<string, number> | null = null;
+  try {
+    const { data: rec } = await sb.rpc('health_compute_vitana_index_for_user', {
+      p_user_id: identity.user_id,
+      p_date: entryDate,
+    });
+    const r = rec as { ok?: boolean; [k: string]: unknown } | null;
+    if (r && r.ok !== false) {
+      pillars_after = {
+        total: Number(r.score_total ?? 0),
+        nutrition: Number(r.score_nutrition ?? 0),
+        hydration: Number(r.score_hydration ?? 0),
+        exercise: Number(r.score_exercise ?? 0),
+        sleep: Number(r.score_sleep ?? 0),
+        mental: Number(r.score_mental ?? 0),
+      };
+    }
+  } catch (recErr) {
+    console.warn(
+      `[save_diary_entry] Index recompute failed (non-fatal): ${(recErr as Error).message}`,
+    );
+  }
+
+  // 5) Per-pillar delta.
+  const index_delta = pillars_after
+    ? {
+        total: pillars_after.total - Number(before?.score_total ?? 0),
+        nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
+        hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
+        exercise: pillars_after.exercise - Number(before?.score_exercise ?? 0),
+        sleep: pillars_after.sleep - Number(before?.score_sleep ?? 0),
+        mental: pillars_after.mental - Number(before?.score_mental ?? 0),
+      }
+    : null;
+
+  // 6) Streak celebration (best-effort).
+  let streak: Awaited<ReturnType<typeof import('./diary-streak-celebrator').celebrateDiaryStreak>> | null = null;
+  try {
+    const { celebrateDiaryStreak } = await import('./diary-streak-celebrator');
+    streak = await celebrateDiaryStreak(sb, identity.user_id, tenantId);
+  } catch (streakErr) {
+    console.warn(
+      `[save_diary_entry] streak celebrate failed (non-fatal): ${(streakErr as Error).message}`,
+    );
+  }
+
+  console.log(
+    `[save_diary_entry] user=${identity.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} diary_row=${diary_entry_written}`,
+  );
+
+  // Voice-friendly text. The LLM hears this; the structured fields are
+  // available on `result` for non-spoken consumers (cockpit / orb-tool route).
+  const deltaPhrase =
+    index_delta && index_delta.total > 0
+      ? ` Your Vitana Index moved up ${index_delta.total}.`
+      : '';
+  const text = `Diary entry logged for ${entryDate}.${deltaPhrase}`;
+
+  return {
+    ok: true,
+    result: {
+      ok: true,
+      entry_date: entryDate,
+      diary_entry_written,
+      health_features_written,
+      pillars_after,
+      index_delta,
+      streak,
+    },
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
 //
 // Both tools fuse the user's weakest Vitana Index pillar + active Life Compass
@@ -3603,6 +3764,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   log_exercise:     (args, id, sb) => tool_log_health('log_exercise', args, id),
   log_meditation:   (args, id, sb) => tool_log_health('log_meditation', args, id),
   get_pillar_subscores: tool_get_pillar_subscores,
+  // VTID-03042 — save_diary_entry: writes diary_entries (user-visible) +
+  // runs the health-feature extractor + Vitana Index recompute. Both
+  // pipelines now go through this shared handler.
+  save_diary_entry: tool_save_diary_entry,
   play_music: tool_play_music,
   set_capability_preference: tool_set_capability_preference,
   read_email: tool_read_email,
