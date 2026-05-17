@@ -50,6 +50,9 @@ from .oasis import (
     TOPIC_SESSION_START,
     TOPIC_SESSION_STOP,
     TOPIC_STALL_DETECTED,
+    TOPIC_STT_AVAILABILITY_CHANGED,
+    TOPIC_STT_ERROR,
+    TOPIC_STT_METRICS,
     OasisEmitter,
 )
 from .providers import build_cascade
@@ -1271,6 +1274,162 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         session.on("conversation_item_added")(_on_conversation_item)  # type: ignore[misc]
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook conversation_item_added: %s", exc)
+
+    # ------------------------------------------------------------------
+    # VTID-03050: STT FAILURE OBSERVABILITY (DIAGNOSTIC — no behavior
+    # change). Three listeners that surface what was previously invisible:
+    #
+    #   1. `error` (livekit.agents events.ErrorEvent) — fires whenever an
+    #      STT/LLM/TTS/RealtimeModel raises. Source-typed; we extract the
+    #      `_orb_slot` tag set in providers.py so the emitted oasis event
+    #      names *which* instance in the FallbackAdapter chain just died.
+    #
+    #   2. `stt_availability_changed` — emitted by FallbackAdapter on its
+    #      OWN object (not on AgentSession), so we register on cascade.stt
+    #      directly when it's an adapter. Fires every primary→mirror swap
+    #      and every recovery. Closes the "did the chain actually swap?"
+    #      diagnostic gap that VTID-03038/03041 left wide open.
+    #
+    #   3. `metrics_collected` — per-turn STT latency, audio durations,
+    #      VAD confidence. Deprecated for usage tracking per the SDK but
+    #      still the only clean way to see per-turn STT health.
+    #
+    # All three are fire-and-forget oasis emits. They MUST NOT raise back
+    # into the SDK event-emitter loop or they'll desync the session.
+    # ------------------------------------------------------------------
+    def _slot_for(source: Any) -> str:
+        """Best-effort name for an STT/LLM/TTS instance. Reads our
+        provider-side `_orb_slot` tag first (set in providers.py), falls
+        back to the SDK's `.label` property, then the class name."""
+        try:
+            slot = getattr(source, "_orb_slot", None)
+            if isinstance(slot, str) and slot:
+                return slot
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            label = getattr(source, "label", None)
+            if isinstance(label, str) and label:
+                return label
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            return type(source).__name__
+        except Exception:  # noqa: BLE001
+            return "unknown"
+
+    def _source_kind(source: Any) -> str:
+        """STT / LLM / TTS / RealtimeModel — by walking MRO names so we
+        don't need to import the concrete SDK types here."""
+        try:
+            for cls in type(source).__mro__:
+                name = cls.__name__
+                if name in ("STT", "LLM", "TTS", "RealtimeModel"):
+                    return name.lower()
+        except Exception:  # noqa: BLE001
+            pass
+        return "unknown"
+
+    def _on_session_error(ev: Any = None) -> None:
+        try:
+            err = getattr(ev, "error", None)
+            src = getattr(ev, "source", None)
+            err_type = type(err).__name__ if err is not None else "unknown"
+            err_msg = (str(err) if err is not None else "")[:500]
+            slot = _slot_for(src)
+            kind = _source_kind(src)
+            asyncio.create_task(
+                oasis.emit(
+                    topic=TOPIC_STT_ERROR,
+                    payload={
+                        "user_id": identity.user_id,
+                        "orb_session_id": orb_session_id,
+                        "source_kind": kind,           # stt / llm / tts / realtimemodel
+                        "source_slot": slot,           # google_primary / google_mirror / deepgram_crossprovider / …
+                        "error_type": err_type,        # APIError / TimeoutError / AssertionError / …
+                        "error_message": err_msg,
+                        "recoverable": getattr(err, "recoverable", None),
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("on_session_error emit failed: %s", exc)
+
+    try:
+        session.on("error")(_on_session_error)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook session.error: %s", exc)
+
+    def _on_metrics(ev: Any = None) -> None:
+        # Only emit STT-class metrics; LLM/TTS metrics are a separate
+        # discussion and would flood the bus. The SDK exposes the
+        # underlying metric type via `.type` on most plugins.
+        try:
+            m = getattr(ev, "metrics", None)
+            if m is None:
+                return
+            mtype = (
+                getattr(m, "type", None)
+                or type(m).__name__
+                or "unknown"
+            )
+            if "stt" not in str(mtype).lower():
+                return
+            # Compact payload — full metric dump would inflate oasis.
+            payload = {
+                "user_id": identity.user_id,
+                "orb_session_id": orb_session_id,
+                "metric_type": str(mtype),
+                "audio_duration": getattr(m, "audio_duration", None),
+                "duration": getattr(m, "duration", None),
+                "streamed": getattr(m, "streamed", None),
+                "label": getattr(m, "label", None),
+            }
+            asyncio.create_task(
+                oasis.emit(topic=TOPIC_STT_METRICS, payload=payload)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("on_metrics emit failed: %s", exc)
+
+    try:
+        session.on("metrics_collected")(_on_metrics)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook metrics_collected: %s", exc)
+
+    # FallbackAdapter emits `stt_availability_changed` on ITS OWN
+    # EventEmitter, not on AgentSession. Register on the cascade.stt
+    # object directly. Skip cleanly if cascade.stt isn't a FallbackAdapter
+    # (e.g. when ORB_STT_FALLBACK_ENABLED=false or only 1 instance was
+    # built — providers.py returns a single STT unwrapped in those cases).
+    def _on_stt_availability(ev: Any = None) -> None:
+        try:
+            stt_inst = getattr(ev, "stt", None)
+            available = getattr(ev, "available", None)
+            slot = _slot_for(stt_inst)
+            asyncio.create_task(
+                oasis.emit(
+                    topic=TOPIC_STT_AVAILABILITY_CHANGED,
+                    payload={
+                        "user_id": identity.user_id,
+                        "orb_session_id": orb_session_id,
+                        "source_slot": slot,
+                        "available": bool(available) if available is not None else None,
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("on_stt_availability emit failed: %s", exc)
+
+    try:
+        stt_obj = getattr(cascade, "stt", None)
+        # Only FallbackAdapter implements this event; the bare STT classes
+        # have an `on` method but never emit it. Guarding on isinstance is
+        # fragile across SDK versions, so we just try-register; the SDK's
+        # EventEmitter accepts subscribers for any event name.
+        if stt_obj is not None and hasattr(stt_obj, "on"):
+            stt_obj.on("stt_availability_changed")(_on_stt_availability)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook stt_availability_changed: %s", exc)
 
     # Stop the watchdog when the room disconnects so we don't leak the task.
     async def _stop_stall_on_shutdown() -> None:

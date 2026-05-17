@@ -369,6 +369,15 @@ def _build_stt(
     primary = _build_single_stt(provider, model, opts, notes, bcp47=bcp47)
     if primary is None:
         return None
+    # VTID-03050: tag each STT instance with its slot identity so the
+    # session-level error / availability listeners can name *which* one
+    # in the chain (`google_primary` / `google_mirror` / `deepgram`)
+    # failed when the FallbackAdapter swaps. The attribute is informational
+    # only — never read by livekit-agents code, just by orb-agent telemetry.
+    try:
+        setattr(primary, "_orb_slot", f"{provider}_primary")
+    except Exception:  # noqa: BLE001
+        pass
 
     if not _fallback_enabled():
         return primary
@@ -381,6 +390,10 @@ def _build_stt(
     # stream). Uses the same opts so language/model match the primary.
     mirror = _build_single_stt(provider, model, dict(opts), notes, bcp47=bcp47)
     if mirror is not None and mirror is not primary:
+        try:
+            setattr(mirror, "_orb_slot", f"{provider}_mirror")
+        except Exception:  # noqa: BLE001
+            pass
         instances.append(mirror)
         notes.append(f"stt_fallback: added same-provider mirror ({provider})")
 
@@ -390,6 +403,10 @@ def _build_stt(
     if provider != "deepgram" and os.environ.get("DEEPGRAM_API_KEY"):
         deep = _build_single_stt("deepgram", "nova-3", {}, notes, bcp47=bcp47)
         if deep is not None:
+            try:
+                setattr(deep, "_orb_slot", "deepgram_crossprovider")
+            except Exception:  # noqa: BLE001
+                pass
             instances.append(deep)
             notes.append("stt_fallback: added cross-provider deepgram")
 

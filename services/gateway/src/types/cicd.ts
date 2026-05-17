@@ -571,6 +571,14 @@ export type CicdEventType =
   // `system_instruction_chars` so we can correlate latency with prompt
   // size. Pure additive — no behavior change to the voice path.
   | 'orb.livekit.agent.turn.measured'
+  // VTID-03050: STT failure observability. Emitted from session.py when
+  // the SDK's `error` / `metrics_collected` / FallbackAdapter's
+  // `stt_availability_changed` events fire — closes the diagnostic gap
+  // around the cascade STT chain (Google primary + Google mirror +
+  // Deepgram). Pure additive telemetry; no behavior change.
+  | 'livekit.stt.error'
+  | 'livekit.stt.availability_changed'
+  | 'livekit.stt.metrics'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
