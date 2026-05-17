@@ -1339,32 +1339,16 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         except Exception:  # noqa: BLE001
             pass
 
-        # Close the current session so its audio stream stops cleanly.
-        # VTID-03045: bounded wait. Session 0adc6ff6 on 2026-05-17 14:23 UTC
-        # hit a 9-minute aclose() hang on a healthy multi-instance FallbackAdapter
-        # session after Devon handoff signal — the old session never returned
-        # from close, the new session never started, the room was effectively
-        # dead. asyncio.wait_for caps the cleanup window at 3s; on timeout we
-        # forfeit graceful tear-down and move on. The room's audio-track
-        # cleanup is handled by LiveKit regardless of whether the AgentSession
-        # closed cleanly, so the worst case is a couple of orphaned coroutines
-        # for the rest of this entrypoint's lifetime (which ends shortly when
-        # the user disconnects). Better than a frozen room.
-        try:
-            close_method = getattr(session, "aclose", None) or getattr(session, "close", None)
-            if close_method is not None:
-                res = close_method()
-                if asyncio.iscoroutine(res):
-                    try:
-                        await asyncio.wait_for(res, timeout=3.0)
-                    except asyncio.TimeoutError:
-                        logger.warning(
-                            "agent_entrypoint: session.aclose did not return in 3s — "
-                            "continuing with persona rebuild, leaving the old session "
-                            "to be reclaimed by GC (VTID-03045 mitigation)"
-                        )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("agent_entrypoint: session.aclose failed: %s", exc)
+        # VTID-03046: NO aclose, NO new AgentSession, NO session.start.
+        # Replaced the rebuild-from-scratch flow with an in-place
+        # AgentSession.update_agent(...) swap. Same audio pipeline, same
+        # room subscription, same session-level STT (FallbackAdapter from
+        # VTID-03038/03041 — Google + Google mirror + Deepgram). Only
+        # instructions, tools, LLM, and TTS swap with the persona.
+        # The aclose race that hung session 0adc6ff6 for 9 min on
+        # 2026-05-17 14:23 UTC is gone by construction — there's nothing
+        # to close. VTID-03045's 3-second timeout was the mitigation;
+        # this is the proper fix.
 
         # Fetch the new persona's bootstrap. handoff_summary injects the
         # [HANDOFF NOTE] into the gateway-rendered persona system_instruction.
@@ -1409,25 +1393,48 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 new_tool_list.append(GoogleSearch())
             except ImportError:
                 pass
-        new_agent = Agent(instructions=new_sys_prompt, tools=new_tool_list)
-        new_session_kwargs: dict[str, Any] = {
-            "stt": new_cascade.stt,
-            "llm": new_cascade.llm,
-            "tts": new_cascade.tts,
-            "userdata": gw,
-            "max_tool_steps": MAX_TOOL_STEPS,
-        }
-        if vad_instance is not None:
-            new_session_kwargs["vad"] = vad_instance
-        session = AgentSession(**new_session_kwargs)
-        gw.live_session = session
+        # VTID-03046: Agent carries the persona's LLM + TTS as per-agent
+        # overrides. agent_activity.py:3721/3725 resolves LLM/TTS via
+        # `self._agent.llm if is_given(self._agent.llm) else self._session.llm`,
+        # so passing them on the Agent wins over whatever's at the session
+        # level. STT is INTENTIONALLY not passed — the new agent inherits
+        # the session-level FallbackAdapter (Google + Google mirror +
+        # Deepgram from VTID-03038/03041) so the audio pipeline never
+        # disconnects during the persona swap.
+        new_agent = Agent(
+            instructions=new_sys_prompt,
+            tools=new_tool_list,
+            llm=new_cascade.llm,
+            tts=new_cascade.tts,
+        )
         gw.current_agent_id = target
 
+        # In-place swap. update_agent is sync; it sets `_agent` and
+        # schedules `_update_activity_task` in the background. Block on
+        # that task before generate_reply so the first turn is produced
+        # by the new persona's LLM/TTS, not the old. Bounded wait — if
+        # the activity transition wedges, log + proceed; generate_reply
+        # will queue against whatever activity is current.
         try:
-            await session.start(agent=new_agent, room=ctx.room)
+            session.update_agent(new_agent)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("agent_entrypoint: new session.start failed: %s", exc)
+            logger.exception("agent_entrypoint: session.update_agent failed: %s", exc)
             break
+
+        swap_task = getattr(session, "_update_activity_atask", None)
+        if swap_task is not None:
+            try:
+                await asyncio.wait_for(swap_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "agent_entrypoint: activity-swap task didn't finish in 5s — "
+                    "calling generate_reply on whatever's current"
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "agent_entrypoint: activity-swap task raised: %s — continuing",
+                    exc,
+                )
 
         # Trigger persona's first turn — the LLM speaks as the persona,
         # referencing the handoff brief from its system_instruction.
