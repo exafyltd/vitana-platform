@@ -696,12 +696,12 @@ export function buildLiveApiTools(
             'Switch the active persona on this voice call to another colleague',
             '(or back to Vitana). Call ONLY when the user EXPLICITLY asks to',
             'talk to a different person by name — "switch me to Devon", "back',
-            'to Vitana please", "I want to talk to Atlas about my refund',
-            'instead". Voice + persona swap in the same call, no ticket filed.',
+            'to Vitana please". Voice + persona swap in the same call, no',
+            'ticket filed.',
             '',
-            'Personas: vitana (life companion + instruction manual), devon',
-            '(bugs), sage (general support), atlas (marketplace claims), mira',
-            '(account issues).',
+            'Personas (VTID-03044 canary): vitana (life companion + instruction',
+            'manual) and devon (bugs / UX issues, tech support). Sage / Atlas /',
+            'Mira are DISABLED in this phase — never target them.',
             '',
             'AFTER calling: speak ONE short bridge sentence in your own',
             'natural words. ANNOUNCE the handoff — never INTRODUCE the new',
@@ -732,7 +732,7 @@ export function buildLiveApiTools(
                 // newly-added specialist becomes a valid switch target with
                 // zero code change. Default keys: vitana (receptionist),
                 // devon, sage, atlas, mira. New specialists added by INSERT.
-                description: 'Target persona key (e.g. vitana, devon, sage, atlas, mira, or any other active key from agent_personas). Use vitana to hand the user back to the receptionist.',
+                description: 'Target persona key. VTID-03044 canary: only vitana and devon are enabled. Sage / Atlas / Mira exist in agent_personas but are status=\'draft\' — never target them. Use vitana to hand the user back to the receptionist.',
               },
               reason: {
                 type: 'string',
@@ -750,10 +750,11 @@ export function buildLiveApiTools(
         {
           name: 'report_to_specialist',
           description: [
-            'File a customer-support ticket and hand the call to a specialist',
-            '(Devon/Sage/Atlas/Mira). This is RARE — typically less than 5%',
-            'of conversations. You ARE the instruction manual; almost every',
-            'question is yours to answer.',
+            'File a customer-support ticket and hand the call to Devon, our',
+            'tech-support colleague (VTID-03044 canary: Devon is the ONLY',
+            'enabled specialist; Sage / Atlas / Mira are disabled). This is',
+            'RARE — typically less than 5% of conversations. You ARE the',
+            'instruction manual; almost every question is yours to answer.',
             '',
             'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
             'first say something like "Shall I bring in Devon to file this?"',
@@ -815,7 +816,7 @@ export function buildLiveApiTools(
                 // agent_personas registry. Default specialists: devon (bugs/
                 // UX), sage (support), atlas (marketplace/finance), mira
                 // (account). New specialists added by INSERT.
-                description: 'Optional: which specialist should own this (e.g. devon, sage, atlas, mira, or any other active key from agent_personas.handles_kinds). The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
+                description: 'Optional: which specialist should own this. VTID-03044 canary: only devon is enabled — Sage / Atlas / Mira are status=\'draft\' and the backend RPC will not return them. The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
               },
               summary: {
                 type: 'string',
