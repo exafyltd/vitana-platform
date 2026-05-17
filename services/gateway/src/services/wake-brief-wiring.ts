@@ -78,6 +78,20 @@ export interface DecideWakeBriefArgs {
   lang: string;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
+  /**
+   * VTID-03053 — Distilled pillar-momentum view from the compiled
+   * AssistantDecisionContext. When passed, the wake-brief renderer may
+   * fold it into a proactive observation (one short sentence + one
+   * question) for slipping pillars. Enum-only by contract; no raw scores
+   * or medical interpretation cross into this arg.
+   *
+   * Both pipelines have access to this on the bootstrap path — Vertex
+   * via session.contextInstruction's compiler run, LiveKit via
+   * `/orb/context-bootstrap`'s `compileAssistantDecisionContext` call.
+   * Wiring sites pass it; the field stays optional so anonymous sessions
+   * (no spine) and provider-disabled tests don't need to mock it.
+   */
+  pillarMomentum?: import('../orb/context/types').DecisionPillarMomentum | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +135,10 @@ export async function decideWakeBriefForSession(
   const wakeBriefInputs: VoiceWakeBriefInputs = {
     greetingPolicy,
     lang: args.lang,
+    // VTID-03053: forward pillar momentum for proactive opener variants.
+    // When null/missing the renderer falls back to the generic
+    // policy-keyed line — same behavior as before this slice.
+    pillarMomentum: args.pillarMomentum ?? null,
   };
 
   safeRecord(recorder, args.sessionId, 'continuation_decision_started', {
