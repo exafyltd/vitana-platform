@@ -75,6 +75,17 @@ import {
 import { resolveActiveProviderForCaller } from '../orb/live/upstream/active-provider-resolver';
 import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
 import { getLiveKitAgentReadiness } from '../orb/live/upstream/livekit-agent-config';
+// VTID-03052: wake-brief continuation wiring on the LiveKit path.
+// `decideWakeBriefForSession` already runs from Vertex's session-start
+// handler (live-session-controller.ts:730); this slice mirrors the call
+// here so the LiveKit canary user produces the same continuation
+// telemetry (wake_timeline + assistant.continuation.* OASIS events) and
+// the response payload carries the structured decision for downstream
+// observability. No prompt rewiring in this slice — per the B0d.4
+// design rule, the spoken first words stay on their existing path until
+// telemetry confirms the decision flow is healthy.
+import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
+import { fetchLastSessionInfo, describeTimeSince } from '../services/guide/temporal-bucket';
 
 const router = Router();
 
@@ -1395,6 +1406,44 @@ router.get(
       );
     }
 
+    // VTID-03052: wake-brief continuation decision.
+    // Mirrors live-session-controller.ts:727-745 (Vertex path). Best-effort:
+    // any failure here MUST NOT block the bootstrap response. Decision is
+    // attached to the payload so the agent + cockpit can observe it, but
+    // is not yet routed into the spoken first words (deferred per the
+    // B0d.4 design rule until timeline data confirms the path is healthy).
+    let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+    if (userId && tenantId) {
+      try {
+        // LiveKit bootstrap has no long-lived session_id at this point —
+        // each /orb/context-bootstrap call is one HTTP request. We synthesize
+        // a per-bootstrap id so the wake-timeline can group the 3
+        // continuation_decision_* events that fire from
+        // decideWakeBriefForSession for THIS call.
+        const wakeBriefSessionId = `livekit-bootstrap-${randomUUID()}`;
+        const lastSessionInfo = await fetchLastSessionInfo(userId);
+        const temporal = describeTimeSince(lastSessionInfo);
+        wakeBriefDecision = await decideWakeBriefForSession({
+          sessionId: wakeBriefSessionId,
+          tenantId,
+          userId,
+          bucket: temporal.bucket,
+          // `temporal.was_failure` is snake_case in temporal-bucket.ts's
+          // canonical `LastInteraction` view; `decideWakeBriefForSession`'s
+          // arg is `wasFailure` (camelCase) — bridge here.
+          wasFailure: temporal.was_failure,
+          isReconnect,
+          lang,
+          envelopeJourneySurface:
+            (envContext as { journeySurface?: string } | undefined)?.journeySurface,
+        });
+      } catch (exc) {
+        console.warn(
+          `[${VTID}] wake-brief decision failed (non-fatal): ${(exc as Error).message}`,
+        );
+      }
+    }
+
     const responsePayload: Record<string, unknown> = {
       ok: true,
       vtid: VTID,
@@ -1447,6 +1496,27 @@ router.get(
             chars: typeof historyContextPack.contextInstruction === 'string'
               ? historyContextPack.contextInstruction.length
               : 0,
+          }
+        : null,
+      // VTID-03052: continuation decision for the orb_wake surface. The
+      // agent + cockpit can read selected_continuation / suppression_reason
+      // here; the full provider-results carrier is on
+      // decisionContext-side observability. Null when the call was
+      // skipped (anonymous / missing tenant) or failed.
+      wake_brief_decision: wakeBriefDecision
+        ? {
+            decision_id: wakeBriefDecision.decisionId,
+            selected_kind: wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
+            suppression_reason: wakeBriefDecision.suppressionReason ?? null,
+            user_facing_line: wakeBriefDecision.selectedContinuation?.userFacingLine ?? null,
+            decision_started_at: wakeBriefDecision.decisionStartedAt,
+            decision_finished_at: wakeBriefDecision.decisionFinishedAt,
+            provider_results: wakeBriefDecision.sourceProviderResults.map((r) => ({
+              key: r.providerKey,
+              status: r.status,
+              latency_ms: r.latencyMs,
+              reason: r.reason,
+            })),
           }
         : null,
     };
