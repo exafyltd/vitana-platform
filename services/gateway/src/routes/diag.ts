@@ -24,7 +24,11 @@ function clip(value: unknown, max = 512): unknown {
   return value.length > max ? value.slice(0, max) + '…[clipped]' : value;
 }
 
+// public-route — intentionally anonymous: this beacon must fire BEFORE auth
+// hydration so we can capture failures that prevent the user from ever
+// reaching an authenticated state in the Appilix WebView.
 router.post('/notif-tap', (req: Request, res: Response) => {
+  // impact-allow-no-oasis — pure log sink, no state change to record
   try {
     const raw = JSON.stringify(req.body ?? {});
     if (raw.length > MAX_BODY_BYTES) {
@@ -52,10 +56,9 @@ router.post('/notif-tap', (req: Request, res: Response) => {
   }
 });
 
-// Sanity: lets the client confirm the gateway is reachable from inside the
-// Appilix WebView at all. Returns a small JSON blob with server time, which
-// also doubles as a quick way to see in the user's network panel whether
-// the deep-link page is even able to talk to the gateway.
+// public-route — intentionally anonymous: health/connectivity probe used
+// to confirm the gateway is reachable from inside the Appilix WebView
+// before any auth has been established.
 router.get('/ping', (_req: Request, res: Response) => {
   res.json({ ok: true, service: 'gateway-diag', now: new Date().toISOString() });
 });
