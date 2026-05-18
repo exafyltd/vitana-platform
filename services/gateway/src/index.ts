@@ -784,6 +784,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceNextActionEventRouter = require('./routes/voice-next-action-event').default;
   mountRouterSync(app, '/api/v1', voiceNextActionEventRouter, { owner: 'voice-next-action-event' });
 
+  // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
+  // surface that groups recent B0d-real OASIS events by decision_id.
+  // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
+  // Auth: requireExafyAdmin (exposes operator-grade decision metadata).
+  const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
+  mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
+
   // VTID-02930 (B1): Greeting Decay preview (read-only simulator).
   // GET /api/v1/voice/greeting-policy/preview
   const voiceGreetingPolicyRouter = require('./routes/voice-greeting-policy').default;
