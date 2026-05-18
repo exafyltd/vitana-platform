@@ -789,6 +789,34 @@ export async function handleLiveSessionStart(
   // signals into decideGreetingPolicy(). Now we read them from
   // user_assistant_state, pass them through, and record after fire.
   let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+  // VTID-03085 (Lane 1): compile the AssistantDecisionContext on Vertex
+  // so the 4 spine-dependent next-action sources can compete here too.
+  // Before this fix Vertex passed `decisionContext: null` so:
+  //   - life_compass_alignment            → skipped:no_decision_context
+  //   - vitana_index_pillar               → skipped:no_decision_context
+  //   - continuity_pending_thread         → skipped:no_decision_context
+  //   - continuity_promise_owed           → skipped:no_decision_context
+  // Only reminder / calendar / autopilot could fire on Vertex. LiveKit
+  // already compiles the spine — this brings Vertex to parity.
+  let decisionContextVertex: import('../../../orb/context/types').AssistantDecisionContext | null = null;
+  if (orbIdentity?.tenant_id && orbIdentity?.user_id) {
+    try {
+      const { compileAssistantDecisionContext } = await import(
+        '../../../orb/context/compile-assistant-decision-context'
+      );
+      decisionContextVertex = await compileAssistantDecisionContext({
+        userId: orbIdentity.user_id,
+        tenantId: orbIdentity.tenant_id,
+      });
+    } catch (exc) {
+      // Fail-open: degraded behavior is "old Vertex" — never blocks session start.
+      console.warn(
+        `[VTID-03085] compileAssistantDecisionContext failed (non-fatal): ${(exc as Error).message}`,
+      );
+    }
+  }
+  (session as any).decisionContext = decisionContextVertex;
+
   try {
     const temporal = deps.describeTimeSince(session.lastSessionInfo);
     const { getSupabase } = await import('../../../lib/supabase');
@@ -816,7 +844,14 @@ export async function handleLiveSessionStart(
       isReconnect: isReconnectStart,
       lang,
       supabase: supabaseClient,
-      decisionContext: null,
+      // VTID-03085 (Lane 1): pass the compiled spine — unlocks
+      // life_compass_alignment, vitana_index_pillar,
+      // continuity_pending_thread, continuity_promise_owed on Vertex.
+      decisionContext: decisionContextVertex,
+      // Forward distilled pillar_momentum so the voice-wake-brief
+      // renderer can fold in the slipping-pillar proactive variant on
+      // Vertex (LiveKit already does this).
+      pillarMomentum: decisionContextVertex?.pillar_momentum ?? null,
       cadenceSignals,
       // wake_origin is not yet plumbed from the client envelope on
       // Vertex; default 'unknown' so the B1 policy doesn't fire the
