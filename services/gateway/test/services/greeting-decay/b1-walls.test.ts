@@ -101,11 +101,19 @@ describe('B1 — wall integrity', () => {
       expect(policySrc).not.toMatch(/setTimeout\(|setInterval\(/);
     });
 
-    it('B0d wake-brief-wiring still calls decideGreetingPolicy with the same signature', () => {
+    it('B0d wake-brief-wiring still goes through the decideGreetingPolicy seam', () => {
       // Acceptance #7: B0d continuation behavior unchanged except via the
       // intended seam.
-      expect(wakeBriefSrc).toContain('decideGreetingPolicy');
-      expect(wakeBriefSrc).toMatch(/decideGreetingPolicy\(\{[\s\S]*?bucket:/);
+      //
+      // VTID-03081: the wiring now calls `decideGreetingPolicyWithEvidence`
+      // (the evidence-carrying public surface) so it can plumb the B1
+      // cadence signals from user_assistant_state and surface them on the
+      // wake-timeline for the Inspector. Both helpers run the SAME policy
+      // logic — the evidence variant just returns more telemetry. Accept
+      // either function name; what matters is that the file still
+      // delegates to greeting-policy.ts (no inline duplicate truth table).
+      expect(wakeBriefSrc).toMatch(/decideGreetingPolicy(WithEvidence)?\b/);
+      expect(wakeBriefSrc).toMatch(/decideGreetingPolicy(WithEvidence)?\(\{?[\s\S]*?bucket:/);
     });
   });
 });
