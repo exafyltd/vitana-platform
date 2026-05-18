@@ -859,7 +859,17 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # `classify_short_reply` returns 'accept' / 'dismiss' / None.
     # `is_topic_shift` returns True when the reply is long enough to
     # clear active_continuation as a precaution.
-    from orb_agent.continuation_intent import (
+    # VTID-03077: was `from orb_agent.continuation_intent import ...` —
+    # absolute. The orb-agent worker process loads this module as
+    # `src.orb_agent.session` (Dockerfile + worker_entry.py spawn
+    # `python -m src.orb_agent.worker_entry`), so the absolute name
+    # `orb_agent.continuation_intent` is not importable at runtime.
+    # Every agent_entrypoint dispatched since VTID-03076 raised
+    # ImportError right after the bootstrap trace fired and exited
+    # silently — users on the canary saw cascade_built emit, then 5+
+    # minutes of dead air. Use the relative form like every other
+    # sibling import at the top of this file.
+    from .continuation_intent import (
         classify_short_reply as _short_reply_intent,
         is_topic_shift as _is_topic_shift,
     )
