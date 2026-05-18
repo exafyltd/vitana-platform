@@ -48,6 +48,11 @@ import type {
   ScoredCandidate,
   NextActionComposeResult,
 } from './types';
+// VTID-03066 (B0d-real Xi): per-source candidate emit. Fires from inside
+// produce() after compose() returns. Gives operators visibility into the
+// FULL slate (winner + losers + skipped) without waiting for the
+// decision-id-keyed framework events.
+import { emitPerSourceCandidates } from './emit-telemetry';
 
 // ---------------------------------------------------------------------------
 // Inputs the wiring passes via ctx.extra.nextAction
@@ -151,6 +156,21 @@ export function makeNextActionProvider(
           reason: err instanceof Error ? err.message : String(err),
         };
       }
+
+      // VTID-03066 (Xi): emit per-source candidate rows BEFORE returning
+      // to the framework, so the Inspector sees the full slate even when
+      // the winner has higher-priority competitors. compose_id groups
+      // sibling rows; decision_id linkage happens at the framework's
+      // emit-telemetry layer (separate event family).
+      const composeId = newId();
+      emitPerSourceCandidates({
+        composeId,
+        userId: ctx.userId,
+        tenantId: ctx.tenantId,
+        surface,
+        candidates: result.candidates,
+        winnerSource: result.chosen?.source ?? null,
+      });
 
       if (!result.chosen) {
         return {
