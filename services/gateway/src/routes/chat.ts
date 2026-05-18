@@ -128,7 +128,12 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
           sender_name: senderName,
           message_id: data.id,
           thread_id: identity.user_id,
-          url: `/inbox?recipient=${identity.user_id}&context=global`,
+          // Path-based deep-link — query-string form (?recipient=…&context=global)
+          // silently fails in Appilix's Android in-app browser when launched from
+          // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
+          // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
+          // launches cleanly because the URL has no special characters.
+          url: `/inbox/u/${identity.user_id}`,
         },
       },
       supabase,
