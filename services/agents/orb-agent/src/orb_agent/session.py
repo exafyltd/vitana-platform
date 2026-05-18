@@ -100,6 +100,33 @@ except ImportError:
 # instance to every subsequent agent_entrypoint.
 _SHARED_VAD: Any = None
 
+# VTID-03086: Silero VAD tuning. The 2026-05-18 20:56-21:03 UTC session
+# diagnosed the root cause behind the silent-stall thrash — STT recognition
+# cycles were consuming 79-86 SECONDS of audio per cycle because Silero's
+# defaults treat natural German speech (with comma-pauses + breathing)
+# as one continuous "speech" state. Both Google STT and Deepgram are
+# working correctly; they're just being handed one-minute audio streams
+# and finalizing one giant transcript at the end.
+#
+# Three tuned parameters:
+#   * min_silence_duration 0.55 → 0.25
+#     Catches the natural comma-pauses in conversational German that
+#     don't cross the half-second silence threshold of the default.
+#   * activation_threshold 0.5 → 0.6
+#     Slightly less sensitive to breathing / ambient noise being
+#     classified as ongoing speech (especially during a long pause).
+#   * max_buffered_speech 60.0 → 8.0
+#     Hard ceiling. Regardless of silence-detection, Silero will declare
+#     end-of-speech after 8 seconds of continuous "speech" state. This
+#     is the safety net: STT cycles can NEVER again hit the 79-86s
+#     batches we saw. Worst case for a single user utterance: it splits
+#     into 8-second chunks, each transcribed in order, LLM responds per
+#     chunk. Better than 80 seconds of dead air.
+_VAD_MIN_SILENCE_DURATION_S = 0.25
+_VAD_ACTIVATION_THRESHOLD = 0.6
+_VAD_MAX_BUFFERED_SPEECH_S = 8.0
+
+
 def _get_vad() -> Any:
     global _SHARED_VAD
     if _SHARED_VAD is not None:
@@ -107,10 +134,20 @@ def _get_vad() -> Any:
     if not SILERO_AVAILABLE:
         return None
     try:
-        _SHARED_VAD = silero.VAD.load()  # type: ignore[union-attr]
-        logger.info("VTID-03012: module-level Silero VAD loaded (reused across sessions)")
+        _SHARED_VAD = silero.VAD.load(  # type: ignore[union-attr]
+            min_silence_duration=_VAD_MIN_SILENCE_DURATION_S,
+            activation_threshold=_VAD_ACTIVATION_THRESHOLD,
+            max_buffered_speech=_VAD_MAX_BUFFERED_SPEECH_S,
+        )
+        logger.info(
+            "VTID-03086: module-level Silero VAD loaded "
+            "(min_silence=%.2fs, activation=%.2f, max_buffered_speech=%.1fs)",
+            _VAD_MIN_SILENCE_DURATION_S,
+            _VAD_ACTIVATION_THRESHOLD,
+            _VAD_MAX_BUFFERED_SPEECH_S,
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("VTID-03012: silero.VAD.load() failed: %s", exc)
+        logger.warning("VTID-03086: silero.VAD.load() failed: %s", exc)
     return _SHARED_VAD
 
 
