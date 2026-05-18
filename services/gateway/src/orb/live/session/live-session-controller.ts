@@ -398,6 +398,56 @@ export async function handleLiveStreamEndTurn(
  *   - OASIS event `vtid.live.session.start`.
  *   - 200 response with `{ ok, session_id, conversation_id, meta }`.
  */
+/**
+ * VTID-03079 (P0-3): build the Vertex wake-brief override block.
+ *
+ * The line below is rendered by the B0d-real composer (or the legacy
+ * voice-wake-brief renderer). On Vertex, Gemini Live's model authors
+ * the FIRST utterance from the system_instruction — so injecting this
+ * block makes the picked line actually reach the user's ears. Because
+ * the model speaks it as its own turn, the line is natively in
+ * conversation context (no add_to_chat_ctx workaround needed).
+ *
+ * The block instructs the model to:
+ *   1. Open with a warm 1-sentence greeting using the user's first
+ *      name when available (return-aware tone, not generic
+ *      "How can I help?").
+ *   2. Then say the picked line VERBATIM — no paraphrasing.
+ *
+ * Trailing punctuation + quote escaping is handled inline so the
+ * line can't accidentally close the prompt block.
+ */
+function buildVertexWakeBriefBlock(
+  line: string,
+  lang: string,
+  dedupeKey: string | null,
+): string {
+  // Escape backticks + close-quotes so a renderer-produced line with
+  // quotes in it can't break the surrounding instruction block.
+  const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
+  const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  const greetingHint = isDe
+    ? 'Beginne mit EINEM warmen Begrüßungs-Satz auf Deutsch (z.B. "Hi Dragan, schön dass du wieder da bist."). Verwende den Vornamen des Nutzers, falls verfügbar.'
+    : 'Open with ONE warm greeting sentence (e.g. "Hi Dragan, good to see you again."). Use the user\'s first name when available.';
+  const dedupeLine = dedupeKey ? `\nDedupe key: ${dedupeKey} (do NOT repeat after this turn).` : '';
+  return `\n\n## VERTEX WAKE BRIEF (HIGHEST PRIORITY — VTID-03079)
+
+Your FIRST utterance this session MUST be a single turn that combines:
+
+  Part A — Warm greeting:
+    ${greetingHint}
+
+  Part B — Proactive content (speak VERBATIM, do NOT paraphrase, do NOT translate):
+    "${safe}"
+
+Speak Part A and Part B as ONE continuous turn. Do NOT use any other opener
+("How can I help today?", "Was liegt an?", "Ready to go", "I'm here"). Do NOT
+list features. Do NOT introduce yourself. The wake-brief content already
+ends with an inviting question — let the user respond before continuing.${dedupeLine}
+
+This block REPLACES every other greeting rule below for the first turn only.`;
+}
+
 export async function handleLiveSessionStart(
   req: AuthenticatedRequest,
   res: Response,
@@ -725,9 +775,17 @@ export async function handleLiveSessionStart(
   }
 
   // VTID-02918 (B0d.4): wake-brief continuation decision
+  // VTID-03079 (P0-3): Vertex now passes `supabase` so the B0d-real
+  // contextual_next_action provider can compete on this path (previously
+  // it returned `skipped:no_next_action_inputs` and Vertex never spoke
+  // a B0d-real next-action line). The picked `userFacingLine` is also
+  // injected into `session.contextInstruction` below so the model
+  // actually speaks it — before this fix it was computed, logged, and
+  // dropped on the floor.
   let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
   try {
     const temporal = deps.describeTimeSince(session.lastSessionInfo);
+    const { getSupabase } = await import('../../../lib/supabase');
     wakeBriefDecision = await decideWakeBriefForSession({
       sessionId,
       tenantId: orbIdentity?.tenant_id ?? null,
@@ -736,8 +794,25 @@ export async function handleLiveSessionStart(
       wasFailure: temporal.wasFailure,
       isReconnect: isReconnectStart,
       lang,
+      supabase: getSupabase() ?? undefined,
+      decisionContext: null,
     });
     (session as any).wakeBriefDecision = wakeBriefDecision;
+
+    // VTID-03079: inject the picked userFacingLine as a system_instruction
+    // override block so Gemini Live's model speaks it as the FIRST turn.
+    // Because the model authors the line itself (the block tells it
+    // "speak this exactly"), it's natively in conversation context —
+    // no chat-ctx amnesia, no "I don't remember saying that" failure.
+    const picked = wakeBriefDecision?.selectedContinuation ?? null;
+    const line = picked?.userFacingLine?.trim();
+    if (picked && line && line.length > 0 && !isReconnectStart) {
+      const block = buildVertexWakeBriefBlock(line, lang, picked.dedupeKey ?? null);
+      session.contextInstruction = (session.contextInstruction || '') + block;
+      console.log(
+        `[VTID-03079] Vertex wake-brief injected into system_instruction (decision_id=${wakeBriefDecision?.decisionId}, source=${picked.evidence?.find((e) => e.kind?.startsWith('source:'))?.kind || 'voice_wake_brief'})`,
+      );
+    }
   } catch (e) {
     console.warn(
       `[VTID-02918] wake-brief decision failed for ${sessionId}: ${(e as Error).message}`,
