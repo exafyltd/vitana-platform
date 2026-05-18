@@ -108,6 +108,7 @@ function listMarkdown(dir) {
 }
 
 function parseFrontmatter(text, filePath) {
+  text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   if (!text.startsWith('---\n')) {
     throw new Error(`${filePath}: missing front-matter (must start with '---')`);
   }
@@ -182,8 +183,12 @@ function expectedChapterPath(screen) {
 function chapterDbPath(absPath) {
   // services/gateway/src/kb/instruction-manual/maxina/05-health/biomarkers.md
   // → kb/instruction-manual/maxina/05-health/biomarkers.md
-  const i = absPath.indexOf('kb/instruction-manual/');
-  return absPath.slice(i);
+  const normalized = absPath.replace(/\\/g, '/');
+  const i = normalized.indexOf('kb/instruction-manual/');
+  if (i === -1) {
+    throw new Error(`Cannot derive instruction manual DB path from ${absPath}`);
+  }
+  return normalized.slice(i);
 }
 
 function sqlEscape(s) {
