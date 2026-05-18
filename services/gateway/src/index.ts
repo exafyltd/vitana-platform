@@ -791,6 +791,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceNextActionEventRouter = require('./routes/voice-next-action-event').default;
   mountRouterSync(app, '/api/v1', voiceNextActionEventRouter, { owner: 'voice-next-action-event' });
 
+  // VTID-03094 (Teacher PR 4): Teacher lifecycle endpoint —
+  // POST /api/v1/voice/teacher/event. Calls the advance_capability_awareness
+  // RPC, emits capability.awareness.* OASIS events from the central
+  // registry, returns a navigate directive on 'introduced' events when
+  // the chosen capability has a manual_path.
+  const voiceTeacherEventRouter = require('./routes/voice-teacher-event').default;
+  mountRouterSync(app, '/api/v1', voiceTeacherEventRouter, { owner: 'voice-teacher-event' });
+
   // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
   // surface that groups recent B0d-real OASIS events by decision_id.
   // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
