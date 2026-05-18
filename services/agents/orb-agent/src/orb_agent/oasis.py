@@ -172,3 +172,13 @@ TOPIC_STT_METRICS = "livekit.stt.metrics"                       # metrics_collec
 # "Hold on, reconnecting…" banner + an audio chime mirroring Vertex's
 # INSTANT-FEEDBACK behavior.
 TOPIC_STT_SILENT_STALL = "livekit.stt.silent_stall"
+
+# VTID-03078: STT recovery telemetry. Fires when the silent-stall watchdog
+# decides to attempt an in-place STT swap (build fresh cascade →
+# session.update_agent with a new Agent carrying stt=fresh + preserved
+# llm/tts/instructions/tools/chat_ctx). Outcomes:
+#   - `attempted`: swap scheduled. Includes per-session attempt count.
+#   - `succeeded`: a user_input_transcribed event arrived within the
+#     recovery verify window after the swap completed.
+#   - `gave_up`: per-session max swap count reached. We stop trying.
+TOPIC_STT_RECOVERY = "livekit.stt.recovery"
