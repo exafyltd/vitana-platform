@@ -30,7 +30,10 @@
  * suppress_reason. The agent NEVER blocks the user's turn on this call.
  */
 
+import { randomUUID } from 'crypto';
 import { Router, Response } from 'express';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { NEXT_ACTION_SUPPRESSED } from '../services/assistant-continuation/telemetry';
 import {
   requireAuthWithTenant,
   AuthenticatedRequest,
@@ -82,76 +85,59 @@ router.post(
         });
       }
 
-      const sb = getSupabase();
-      if (!sb) {
-        return res
-          .status(503)
-          .json({ ok: false, error: 'DB_UNAVAILABLE', vtid: VTID });
-      }
-
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const lang =
-        typeof body.lang === 'string' && body.lang
-          ? body.lang.toLowerCase().slice(0, 5)
-          : 'en';
-      const decisionContext =
-        body.decisionContext && typeof body.decisionContext === 'object'
-          ? body.decisionContext
-          : null;
-
-      // Run the framework decision on the turn_end surface. We only
-      // populate ctx.extra.nextAction — voice-wake-brief lacks turn-end
-      // inputs and returns `skipped` here. The contextual_next_action
-      // provider serves both surfaces (orb_wake + orb_turn_end).
-      const decision = await decideContinuation({
-        surface: 'orb_turn_end',
-        context: {
-          sessionId: undefined,
-          userId,
-          tenantId,
-          extra: {
-            [NEXT_ACTION_EXTRA_KEY]: {
-              supabase: sb,
-              decisionContext,
-            },
-          },
+      // VTID-03075 (B0d-real P0 mitigation): turn-end next-actions are
+      // PAUSED. Live German testing showed the agent interrupting
+      // active support flows with proactive turn-end nudges that the
+      // LLM had no memory of (spoken with add_to_chat_ctx=False in
+      // orb-agent/session.py) — so when the user said "ja" the agent
+      // answered nonsense. We return a typed suppression here so the
+      // Inspector still sees the request and the lifecycle stays
+      // intact; no candidate is computed and no line is spoken.
+      //
+      // Re-enable ONLY after:
+      //   1. activeContinuation state lands in the LiveKit agent so
+      //      spoken proactive lines join chat context and short-reply
+      //      acceptance ("ja" / "yes" / "okay") is intercepted.
+      //   2. Turn-end suppression rules land (support flow, awaiting
+      //      question, topic mismatch, lang mismatch).
+      //   3. Match-source copy is tightened to suppress on thin
+      //      context instead of firing a generic "frisches Match".
+      const nowIso = new Date().toISOString();
+      const pausedDecisionId = randomUUID();
+      // Emit the suppression to OASIS so the Inspector still sees
+      // turn-end requests during the mitigation window. Fire-and-
+      // forget — mitigation MUST NOT fail because telemetry hiccups.
+      void emitOasisEvent({
+        vtid: VTID,
+        type: NEXT_ACTION_SUPPRESSED as never,
+        source: 'b0d-real-next-action-turn-end',
+        status: 'info',
+        message: 'turn_end_paused_pending_p0',
+        payload: {
+          tenant_id: tenantId,
+          user_id: userId,
+          decision_id: pausedDecisionId,
+          surface: 'orb_turn_end',
+          suppress_reason: 'turn_end_paused_pending_p0',
         },
+        actor_id: userId,
+        actor_role: 'user',
+        surface: 'orb',
+      }).catch(() => {
+        // swallow — mitigation is the contract; telemetry is best-effort.
       });
-
-      // Fire-and-forget OASIS emit (suggested / suppressed). Mirrors
-      // the wake-brief auto-emit so the Inspector sees turn-end events.
-      emitNextActionDecisionTelemetry({
-        decision,
-        userId,
-        tenantId,
-        surface: 'orb_turn_end',
-      });
-
-      const chosen = decision.selectedContinuation;
-      const continuation = chosen
-        ? {
-            user_facing_line: chosen.userFacingLine,
-            kind: chosen.kind,
-            dedupe_key: chosen.dedupeKey,
-            priority: chosen.priority,
-            cta: chosen.cta,
-            evidence: chosen.evidence,
-            privacy_mode: chosen.privacyMode,
-          }
-        : null;
-
       return res.status(200).json({
         ok: true,
         vtid: VTID,
         surface: 'orb_turn_end',
         decision: {
-          decision_id: decision.decisionId,
-          selected_kind: chosen?.kind ?? 'none_with_reason',
-          suppress_reason: decision.suppressionReason ?? null,
-          decision_started_at: decision.decisionStartedAt,
-          decision_finished_at: decision.decisionFinishedAt,
+          decision_id: pausedDecisionId,
+          selected_kind: 'none_with_reason',
+          suppress_reason: 'turn_end_paused_pending_p0',
+          decision_started_at: nowIso,
+          decision_finished_at: nowIso,
         },
-        continuation,
+        continuation: null,
       });
     } catch (err) {
       console.error(`[${VTID}] turn-end route error: ${(err as Error).message}`);

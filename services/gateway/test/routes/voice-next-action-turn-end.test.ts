@@ -68,7 +68,7 @@ describe('VTID-03064 — POST /api/v1/voice/next-action/turn-end', () => {
     currentIdentity = FIXED_IDENTITY;
   });
 
-  it('returns 200 + continuation:null when no source qualifies (all empty)', async () => {
+  it('VTID-03075 mitigation: returns suppress_reason=turn_end_paused_pending_p0 unconditionally', async () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/v1/voice/next-action/turn-end')
@@ -78,8 +78,8 @@ describe('VTID-03064 — POST /api/v1/voice/next-action/turn-end', () => {
     expect(res.body.surface).toBe('orb_turn_end');
     expect(res.body.continuation).toBeNull();
     expect(res.body.decision.selected_kind).toBe('none_with_reason');
-    // Composer suppressed because all sources returned empty.
-    expect(res.body.decision.suppress_reason).toBeTruthy();
+    expect(res.body.decision.suppress_reason).toBe('turn_end_paused_pending_p0');
+    expect(typeof res.body.decision.decision_id).toBe('string');
   });
 
   it('returns 401 when identity is missing', async () => {
@@ -100,18 +100,17 @@ describe('VTID-03064 — POST /api/v1/voice/next-action/turn-end', () => {
     expect(res.status).toBe(200);
   });
 
-  it('emits OASIS suppressed when the composer suppresses', async () => {
+  it('VTID-03075 mitigation: emits orb.livekit.next_action.suppressed with paused reason', async () => {
     const app = buildApp();
     await request(app)
       .post('/api/v1/voice/next-action/turn-end')
       .send({ lang: 'en' });
     // Best-effort + microtask-flushed.
     return Promise.resolve().then(() => {
-      const topics = emitMock.mock.calls.map((c) => (c[0] as { type?: string })?.type);
-      // At least one of next_action.* fires; suppressed when no source.
-      expect(
-        topics.some((t) => typeof t === 'string' && t.startsWith('orb.livekit.next_action.')),
-      ).toBe(true);
+      const calls = emitMock.mock.calls.map((c) => c[0] as { type?: string; message?: string });
+      const suppressed = calls.find((c) => c?.type === 'orb.livekit.next_action.suppressed');
+      expect(suppressed).toBeDefined();
+      expect(suppressed?.message).toBe('turn_end_paused_pending_p0');
     });
   });
 });
