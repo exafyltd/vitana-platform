@@ -766,12 +766,41 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     if vad_instance is None and not SILERO_AVAILABLE:
         logger.warning("livekit-plugins-silero not installed, no VAD")
 
+    # VTID-03074: turn-handling config. SDK defaults leave
+    # `user_turn_limit.max_duration=None`, which means there is NO hard
+    # wall-clock cap on how long a user turn can stay open. The 2026-05-18
+    # 10:07-10:10 UTC session showed Google STT holding a single user turn
+    # open for 170 seconds — VAD never said "speech ended" so the agent
+    # stayed in `listening`, the model never ran, and from the user's seat
+    # the conversation was dead. (Confirmed by VTID-03050 observability:
+    # one `livekit.stt.metrics` event with audio_duration=170s and zero
+    # `livekit.stt.error` / `availability_changed` events — STT was
+    # "working", just buffering forever.)
+    #
+    # Setting max_duration=20s forces the framework to finalize the turn
+    # after 20 wall-clock seconds regardless of VAD state. Worst case for
+    # a long user utterance: it splits into 20-second chunks, each
+    # processed in order. Far better than 170-second silence.
+    #
+    # Endpointing values are the SDK documented defaults — set explicitly
+    # here so the values are visible in code review rather than implicit
+    # from an upstream library version.
     session_kwargs: dict[str, Any] = {
         "stt": cascade.stt,
         "llm": cascade.llm,
         "tts": cascade.tts,
         "userdata": gw,
         "max_tool_steps": MAX_TOOL_STEPS,
+        "turn_handling": {
+            "endpointing": {
+                "mode": "fixed",
+                "min_delay": 0.5,
+                "max_delay": 3.0,
+            },
+            "user_turn_limit": {
+                "max_duration": 20.0,
+            },
+        },
     }
     if vad_instance is not None:
         session_kwargs["vad"] = vad_instance
