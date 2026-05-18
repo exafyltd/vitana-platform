@@ -1743,8 +1743,18 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     SILENT_STALL_MIN_TRANSCRIPT_AGE_S = 15.0
     SILENT_STALL_REPEAT_S = 8.0  # rate-limit: one alert per window
 
+    # VTID-03080: the proper detection primitive. When VAD says
+    # `user_state_changed → listening` (= user stopped speaking),
+    # Google STT should produce a final transcript within ~1s. If 2s
+    # pass without `user_input_transcribed`, that's an unambiguous
+    # stall — orders of magnitude faster than the VTID-03079 fallback
+    # path (which needs 15s of silence) and structurally accurate
+    # (no false positives during normal STT finalization).
+    VAD_SPEECH_END_TRANSCRIPT_TIMEOUT_S = 2.0
+
     stall_state: dict[str, Any] = {
-        "user_speaking_since": None,   # monotonic when VAD → speaking, None when transcript fires or VAD → listening
+        "user_speaking_since": None,           # monotonic when VAD → speaking
+        "expecting_transcript_since": None,    # monotonic when VAD said speech_end (user→listening from speaking)
         "last_transcript_at": time.monotonic(),
         "last_alert_at": 0.0,
     }
@@ -1773,19 +1783,33 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             logger.debug("publish_client_alert(%s) failed: %s", reason, exc)
 
     def _record_user_state(ev: Any = None) -> None:
-        """Replaces the old `user_state_changed` lambda. Feeds the stall
-        watchdog (preserves VTID-02854 behavior) AND records VAD
-        speaking-start so the silent-stall checker can measure
-        VAD-speech-without-transcript wall-clock time."""
+        """Feeds the stall watchdog (VTID-02854) and tracks two transitions:
+          - speaking-start → arms the wall-clock fallback detector (VTID-03079)
+          - speaking → listening → arms the VAD-speech-end primary detector
+            (VTID-03080). After VAD declares end of speech, STT must
+            produce a final transcript within ~2s or it's a stall.
+        Any speaking transition cancels a pending speech-end timer
+        (user resumed talking before STT finalized — that's just a
+        long utterance, not a stall)."""
         stall.feed()
         try:
             new_state = getattr(ev, "new_state", None)
+            old_state = getattr(ev, "old_state", None)
         except Exception:  # noqa: BLE001
             new_state = None
+            old_state = None
         if new_state == "speaking":
             stall_state["user_speaking_since"] = time.monotonic()
+            # User talking again — clear any pending speech-end watchdog.
+            stall_state["expecting_transcript_since"] = None
         elif new_state in ("listening", "away", None):
             stall_state["user_speaking_since"] = None
+            # VTID-03080: VAD just said the user stopped. Expect a final
+            # transcript shortly. Only arm if we're transitioning FROM
+            # "speaking" (otherwise this is an idle-state shuffle, not a
+            # speech turn that needs finalization).
+            if old_state == "speaking" and new_state == "listening":
+                stall_state["expecting_transcript_since"] = time.monotonic()
 
     try:
         session.on("user_state_changed")(_record_user_state)  # type: ignore[misc]
@@ -1794,7 +1818,8 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     def _on_transcript_for_stall(_ev: Any = None) -> None:
         stall_state["last_transcript_at"] = time.monotonic()
-        stall_state["user_speaking_since"] = None  # turn closed cleanly
+        stall_state["user_speaking_since"] = None        # turn closed cleanly
+        stall_state["expecting_transcript_since"] = None  # VTID-03080: transcript arrived after speech_end
 
     try:
         session.on("user_input_transcribed")(_on_transcript_for_stall)  # type: ignore[misc]
@@ -1955,51 +1980,86 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         finally:
             recovery_state["in_flight"] = False
 
+    def _check_for_stall(now: float) -> tuple[str, dict[str, Any]] | None:
+        """Return (detection_reason, telemetry_extras) if a stall should
+        fire this tick, else None. Two detectors in priority order:
+
+          1. VTID-03080 — VAD-speech-end. Best signal. After VAD says
+             user stopped speaking, STT should produce a final transcript
+             within ~1s. If 2s+ pass without one, real stall — fast,
+             accurate, no false positives during normal STT finalization.
+
+          2. VTID-03079 — wall-clock fallback. Catches cases where VAD
+             never reports "listening" (Silero misclassifies ambient
+             noise as continuous speech). Requires BOTH speaking_for≥3s
+             AND since_last_transcript≥15s. Slower (~15s detection) but
+             covers the gap where the primary detector is blind.
+        """
+        # Primary: VAD speech-end without follow-up transcript.
+        expecting = stall_state.get("expecting_transcript_since")
+        if expecting is not None:
+            waiting_after_end = now - expecting
+            if waiting_after_end >= VAD_SPEECH_END_TRANSCRIPT_TIMEOUT_S:
+                return ("vad_speech_end_no_transcript", {
+                    "waiting_after_speech_end_s": round(waiting_after_end, 2),
+                    "detector": "vad_speech_end",
+                })
+        # Fallback: long VAD-speaking-without-transcript (when speech_end
+        # never fired because VAD treats ambient noise as continuous).
+        started = stall_state.get("user_speaking_since")
+        if started is not None:
+            speaking_for = now - started
+            if speaking_for >= SILENT_STALL_THRESHOLD_S:
+                last_transcript_at = stall_state.get("last_transcript_at") or now
+                since_last_transcript = now - last_transcript_at
+                if since_last_transcript >= SILENT_STALL_MIN_TRANSCRIPT_AGE_S:
+                    return ("speaking_no_transcript", {
+                        "speaking_for_s": round(speaking_for, 2),
+                        "since_last_transcript_s": round(since_last_transcript, 2),
+                        "detector": "vad_speaking_timer",
+                    })
+        return None
+
     async def _silent_stall_watchdog() -> None:
-        """Poll every 1s. If user has been in `speaking` for
-        ≥SILENT_STALL_THRESHOLD_S without a transcript, fire the alert.
-        Rate-limited by SILENT_STALL_REPEAT_S so one long stall doesn't
-        spam the client."""
+        """Poll every 1s. Check both stall detectors (VAD-speech-end and
+        wall-clock fallback). Rate-limited by SILENT_STALL_REPEAT_S so
+        one long stall doesn't spam the client."""
         while True:
             try:
                 await asyncio.sleep(1.0)
-                started = stall_state.get("user_speaking_since")
-                if started is None:
-                    continue
                 now = time.monotonic()
-                speaking_for = now - started
-                if speaking_for < SILENT_STALL_THRESHOLD_S:
+                detection = _check_for_stall(now)
+                if detection is None:
                     continue
-                # VTID-03079: second predicate. Without this we fire on
-                # every normal user utterance whose STT happens to take
-                # >3s to finalize. Require ≥15s since the last successful
-                # transcript before declaring stall.
-                last_transcript_at = stall_state.get("last_transcript_at") or now
-                since_last_transcript = now - last_transcript_at
-                if since_last_transcript < SILENT_STALL_MIN_TRANSCRIPT_AGE_S:
-                    continue
+                reason, extras = detection
                 last_alert = stall_state.get("last_alert_at") or 0.0
                 if (now - last_alert) < SILENT_STALL_REPEAT_S:
                     continue
                 stall_state["last_alert_at"] = now
+                # Clear the trigger state so we don't immediately re-fire
+                # on the next tick before recovery runs.
+                if reason == "vad_speech_end_no_transcript":
+                    stall_state["expecting_transcript_since"] = None
+                payload = {
+                    "user_id": identity.user_id,
+                    "orb_session_id": orb_session_id,
+                    "reason": reason,
+                    "since_last_transcript_s": round(
+                        now - (stall_state.get("last_transcript_at") or now), 2
+                    ),
+                    "threshold_s": SILENT_STALL_THRESHOLD_S,
+                    "min_transcript_age_s": SILENT_STALL_MIN_TRANSCRIPT_AGE_S,
+                    "vad_speech_end_timeout_s": VAD_SPEECH_END_TRANSCRIPT_TIMEOUT_S,
+                }
+                payload.update(extras)
                 asyncio.create_task(
-                    oasis.emit(
-                        topic=TOPIC_STT_SILENT_STALL,
-                        payload={
-                            "user_id": identity.user_id,
-                            "orb_session_id": orb_session_id,
-                            "speaking_for_s": round(speaking_for, 2),
-                            "since_last_transcript_s": round(
-                                now - (stall_state.get("last_transcript_at") or now), 2
-                            ),
-                            "threshold_s": SILENT_STALL_THRESHOLD_S,
-                        },
-                    )
+                    oasis.emit(topic=TOPIC_STT_SILENT_STALL, payload=payload)
                 )
-                await _publish_client_alert(
-                    reason="stt_silent_stall",
-                    detail=f"speaking_for={round(speaking_for, 1)}s",
+                client_detail = (
+                    f"reason={reason} "
+                    + " ".join(f"{k}={v}" for k, v in extras.items() if k != "detector")
                 )
+                await _publish_client_alert(reason="stt_silent_stall", detail=client_detail)
                 # VTID-03078: fire the actual recovery — fresh STT cascade
                 # swapped onto the current Agent via session.update_agent.
                 # Bounded (max 3 attempts per session); kill-switchable via
