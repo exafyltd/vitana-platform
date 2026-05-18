@@ -260,19 +260,21 @@ router.post('/login', async (req: Request, res: Response) => {
             .catch(err => {
               console.warn(`[VTID-01185] First-login recommendations failed for ${uid.slice(0, 8)}: ${err.message}`);
             });
-
-          // Send welcome chat messages from new user to all community members (fire-and-forget)
-          sendWelcomeChatMessages(uid, tid, profile.display_name, supabase as any)
-            .then(result => {
-              console.log(
-                `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
-                `sent=${result.sent}, skipped=${result.skipped}${result.reason ? `, reason=${result.reason}` : ''}`
-              );
-            })
-            .catch(err => {
-              console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
-            });
         }
+
+        // Welcome chat: gated independently on app_users.welcome_chat_sent inside the
+        // service. An admin invite can pre-create a welcome_to_vitana notification,
+        // which must not suppress the community greeting.
+        sendWelcomeChatMessages(uid, tid, profile.display_name, supabase as any)
+          .then(result => {
+            console.log(
+              `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
+              `sent=${result.sent}, skipped=${result.skipped}${result.reason ? `, reason=${result.reason}` : ''}`
+            );
+          })
+          .catch(err => {
+            console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
+          });
       }
     }
 
