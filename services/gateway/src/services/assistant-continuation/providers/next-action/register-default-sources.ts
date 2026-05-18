@@ -64,7 +64,21 @@ export function ensureDefaultNextActionSourcesRegistered(): void {
   // Default behavior (row absent) keeps every source live.
   defaultNextActionComposer.register(withFlagGate(makeReminderDueSource()));
   defaultNextActionComposer.register(withFlagGate(makeCalendarUpcomingSource()));
-  defaultNextActionComposer.register(withFlagGate(makeMatchActivityPlanSource()));
+  // VTID-03075 (B0d-real P0 mitigation): match source temporarily
+  // unregistered. Live German testing showed it interrupting active
+  // support flows with vague match nudges ("Es gibt ein frisches
+  // Match...") and the agent had no way to act on user acceptance
+  // because the spoken line was emitted with add_to_chat_ctx=False
+  // in session.py — the LLM had no record of the offer, so "ja"
+  // produced unrelated answers. Re-register only after:
+  //   1. activeContinuation state lands in the LiveKit agent
+  //      (orb-agent/session.py) so spoken proactive lines join chat
+  //      context and short-reply acceptance is intercepted.
+  //   2. Turn-end suppression rules land in the gateway (support flow,
+  //      awaiting question, topic mismatch, lang mismatch).
+  //   3. Match-source copy is tightened so generic "frisches Match"
+  //      suppresses instead of firing on thin context.
+  // defaultNextActionComposer.register(withFlagGate(makeMatchActivityPlanSource()));
   defaultNextActionComposer.register(withFlagGate(makeAutopilotRecommendationSource()));
   defaultNextActionComposer.register(withFlagGate(makeContinuityPromiseOwedSource()));
   defaultNextActionComposer.register(withFlagGate(makeDiaryMissingRelevantSource()));
