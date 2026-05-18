@@ -809,6 +809,103 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     model_turns_counter = {"n": 0}
     stall_count = {"n": 0}
 
+    # VTID-03076 (P0-C): activeContinuation voice state.
+    #
+    # When the agent speaks a wake-brief (proactive opener at orb_wake),
+    # the LLM has historically not remembered it because session.say()
+    # ran with add_to_chat_ctx=False — the line was TTS-output only,
+    # never appended to chat_ctx. The user replying "ja" then triggered
+    # the LLM with NO record of an offer; the model fell back on
+    # system_instruction content (Vitanaland, Vitana Index, ...) and
+    # produced unrelated answers. The user then asked "was hast du
+    # gerade gesagt?" and the agent denied saying it.
+    #
+    # This dict carries the spoken offer's identity AND a TTL so:
+    #   1. on user "ja" / "yes" / "okay" / "mach das", we POST
+    #      /api/v1/voice/next-action/event (accepted) for OASIS.
+    #   2. on user "nein" / "no" / "not now", we POST (dismissed).
+    #   3. on TTL expiry / session end / topic-shift, we clear state.
+    # The wake-brief say() now adds to chat_ctx so the LLM can answer
+    # "was hast du gerade gesagt?" naturally — no special intercept
+    # needed for the repeat case.
+    #
+    # Shape mirrors the wake_brief_decision payload + a wall-clock
+    # deadline. None = no active offer.
+    active_continuation: dict[str, Any] = {}
+    # 3 minutes: long enough that "ja" after a 30s pause still works,
+    # short enough that a stale offer doesn't claim "yes" said much
+    # later about an unrelated topic.
+    _CONTINUATION_TTL_SECONDS = 180.0
+
+    def _continuation_is_active() -> bool:
+        if not active_continuation:
+            return False
+        deadline = active_continuation.get("expires_at_monotonic")
+        if not isinstance(deadline, (int, float)):
+            return False
+        return time.monotonic() < deadline
+
+    def _clear_continuation(reason: str) -> None:
+        if active_continuation:
+            logger.info(
+                "VTID-03076: clearing activeContinuation (reason=%s, decision_id=%s)",
+                reason,
+                active_continuation.get("decision_id"),
+            )
+            active_continuation.clear()
+
+    # VTID-03076: short-reply patterns live in continuation_intent.py
+    # so they can be unit-tested without spinning up an AgentSession.
+    # `classify_short_reply` returns 'accept' / 'dismiss' / None.
+    # `is_topic_shift` returns True when the reply is long enough to
+    # clear active_continuation as a precaution.
+    from orb_agent.continuation_intent import (
+        classify_short_reply as _short_reply_intent,
+        is_topic_shift as _is_topic_shift,
+    )
+
+    async def _post_continuation_event(event_name: str) -> None:
+        """Fire-and-forget POST to /api/v1/voice/next-action/event.
+
+        event_name: 'accepted' | 'dismissed'. Reads from active_continuation
+        snapshot taken at call time so a concurrent clear doesn't race.
+        """
+        snapshot = dict(active_continuation)
+        decision_id = snapshot.get("decision_id")
+        dedupe_key = snapshot.get("dedupe_key")
+        if not isinstance(decision_id, str) or not isinstance(dedupe_key, str):
+            logger.warning(
+                "VTID-03076: skip continuation event (missing decision_id or dedupe_key)",
+            )
+            return
+        body = {
+            "decisionId": decision_id,
+            "dedupeKey": dedupe_key,
+            "eventName": event_name,
+            "surface": snapshot.get("surface") or "orb_wake",
+        }
+        src = snapshot.get("source_key")
+        if isinstance(src, str) and src:
+            body["source"] = src
+        try:
+            res = await gw.post("/api/v1/voice/next-action/event", body)
+            ok = isinstance(res, dict) and res.get("ok") is True
+            if ok:
+                logger.info(
+                    "VTID-03076: continuation %s emitted (decision_id=%s)",
+                    event_name, decision_id,
+                )
+            else:
+                logger.warning(
+                    "VTID-03076: continuation %s emit failed: %s",
+                    event_name, res,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "VTID-03076: continuation %s POST exception: %s",
+                event_name, exc,
+            )
+
     # VTID-03046: per-turn latency state. user_input_transcribed sets
     # `user_done_at` and `user_text_len`; the next speech_created reads them,
     # computes the wait gap, and emits orb.livekit.agent.turn.measured. We
@@ -1206,6 +1303,72 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         session.on("user_input_transcribed")(_on_user_transcribed)  # type: ignore[misc]
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook user_input_transcribed: %s", exc)
+
+    # VTID-03076 (P0-C): activeContinuation accept/dismiss intercept.
+    #
+    # Runs alongside the watchdog/counter handler above. When the user
+    # replies "ja"/"yes"/"okay"/"nein"/"no" AND we have an unexpired
+    # active_continuation, fire the accepted/dismissed event so OASIS
+    # closes the suggested → accepted lifecycle with the same
+    # decision_id. We do NOT silence the LLM — the wake-brief is in
+    # chat_ctx, so the LLM will see the prior assistant turn and the
+    # "ja" reply together and produce a coherent next response. This
+    # handler is purely additive telemetry + clear-state.
+    def _on_user_transcribed_for_continuation(_ev: Any = None) -> None:
+        try:
+            if not _continuation_is_active():
+                if active_continuation:
+                    # Stale offer — sweep it now.
+                    _clear_continuation("ttl_expired")
+                return
+            transcript = ""
+            try:
+                t = (
+                    getattr(_ev, "transcript", None)
+                    or getattr(_ev, "text", None)
+                    or ""
+                )
+                if isinstance(t, str):
+                    transcript = t
+            except Exception:  # noqa: BLE001
+                return
+            intent = _short_reply_intent(transcript)
+            if intent == "accept":
+                # Fire-and-forget. POST runs on the event loop; we clear
+                # state immediately so a duplicate transcript event
+                # can't double-fire.
+                logger.info(
+                    "VTID-03076: short-reply ACCEPT for decision_id=%s",
+                    active_continuation.get("decision_id"),
+                )
+                asyncio.create_task(_post_continuation_event("accepted"))
+                _clear_continuation("accepted")
+            elif intent == "dismiss":
+                logger.info(
+                    "VTID-03076: short-reply DISMISS for decision_id=%s",
+                    active_continuation.get("decision_id"),
+                )
+                asyncio.create_task(_post_continuation_event("dismissed"))
+                _clear_continuation("dismissed")
+            else:
+                # Long / topical reply → treat as topic shift. The user
+                # changed subject; the offer is no longer the live
+                # context. Clear so a later "ja" on a different topic
+                # doesn't accidentally accept the old offer.
+                if _is_topic_shift(transcript):
+                    _clear_continuation("topic_shift")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "VTID-03076: continuation intercept handler failed: %s", exc,
+            )
+
+    try:
+        session.on("user_input_transcribed")(_on_user_transcribed_for_continuation)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "VTID-03076: could not hook user_input_transcribed for continuation: %s",
+            exc,
+        )
 
     # VTID-03001: trace agent_state_changed so we can see the agent
     # transition idle → thinking → speaking. If `speaking` never fires
@@ -1699,6 +1862,19 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # the orb.
         wake_brief = getattr(bootstrap, "wake_brief_decision", None) or {}
         wake_line = wake_brief.get("user_facing_line") if isinstance(wake_brief, dict) else None
+        # VTID-03076 (P0-C): is this a real proactive offer (wake_brief
+        # kind=wake_brief OR next_step) we should remember? The agent
+        # only persists state for offers that have a decision_id +
+        # dedupe_key so the user's "ja"/"nein" can be POSTed back to
+        # /voice/next-action/event for OASIS lifecycle. A generic
+        # localized greeting (no decision) gets NO active_continuation.
+        is_proactive_offer = (
+            isinstance(wake_line, str)
+            and wake_line.strip()
+            and isinstance(wake_brief, dict)
+            and isinstance(wake_brief.get("decision_id"), str)
+            and isinstance(wake_brief.get("dedupe_key"), str)
+        )
         if isinstance(wake_line, str) and wake_line.strip():
             greeting_text = wake_line.strip()
             logger.info(
@@ -1706,21 +1882,51 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 wake_brief.get("selected_kind") if isinstance(wake_brief, dict) else None,
                 wake_brief.get("decision_id") if isinstance(wake_brief, dict) else None,
             )
+            # VTID-03076: persist activeContinuation BEFORE the speak so
+            # a race with the next user turn finds the state populated.
+            if is_proactive_offer:
+                active_continuation.update({
+                    "decision_id": wake_brief.get("decision_id"),
+                    "dedupe_key": wake_brief.get("dedupe_key"),
+                    "source_key": wake_brief.get("source_key"),
+                    "selected_kind": wake_brief.get("selected_kind"),
+                    "user_facing_line": greeting_text,
+                    "lang": identity.lang or "en",
+                    "surface": "orb_wake",
+                    "created_at_monotonic": time.monotonic(),
+                    "expires_at_monotonic": time.monotonic() + _CONTINUATION_TTL_SECONDS,
+                })
+                logger.info(
+                    "VTID-03076: activeContinuation set (decision_id=%s, source_key=%s, ttl=%.0fs)",
+                    active_continuation.get("decision_id"),
+                    active_continuation.get("source_key"),
+                    _CONTINUATION_TTL_SECONDS,
+                )
         else:
             greeting_text = _localized_greeting(
                 identity.lang,
                 first_name=first_name,
                 vitana_handle=vid,
             )
+            is_proactive_offer = False
     else:
         greeting_text = _localized_anonymous_greeting(identity.lang)
+        is_proactive_offer = False
     try:
         # VTID-03017: add_to_chat_ctx=False — the greeting is a deterministic
         # template, not an LLM turn, so it shouldn't pollute chat_ctx as if
         # the model authored it. The LLM still knows the user is freshly
         # greeted via the placeholder system prompt + (after hydration) the
         # rendered system_instruction.
-        await session.say(greeting_text, add_to_chat_ctx=False)
+        #
+        # VTID-03076 (P0-C) exception: a REAL proactive offer (wake_brief
+        # with decision_id + dedupe_key) MUST go into chat_ctx so the LLM
+        # remembers having said it. Otherwise the user's "ja" hits the
+        # model with no context and produces a tangential answer
+        # (Vitanaland explanation when a match was offered). Localized
+        # greetings stay out of chat_ctx — those are decoration, not
+        # offers the user can act on.
+        await session.say(greeting_text, add_to_chat_ctx=bool(is_proactive_offer))
     except Exception as exc:  # noqa: BLE001
         logger.warning("initial greeting session.say failed: %s", exc)
         asyncio.create_task(
