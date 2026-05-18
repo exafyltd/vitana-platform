@@ -69,6 +69,14 @@ import { emitPerSourceCandidates } from './emit-telemetry';
 export interface NextActionInputs {
   supabase: SupabaseClient;
   decisionContext: unknown;
+  /**
+   * VTID-03073: language for the wake-brief / turn-end line. Forwarded
+   * by wake-brief-wiring.ts so every source's `renderLine(... lang)`
+   * picks the user's actual locale. Before this fix the provider
+   * defaulted to 'en' regardless of caller, so German users got
+   * English next-action lines for a week.
+   */
+  lang?: string;
 }
 
 export const NEXT_ACTION_EXTRA_KEY = 'nextAction' as const;
@@ -143,7 +151,7 @@ export function makeNextActionProvider(
         result = await composer.compose(surface, {
           userId: ctx.userId,
           tenantId: ctx.tenantId,
-          lang: 'lang' in (inputs as object) ? (inputs as { lang?: string }).lang ?? 'en' : 'en',
+          lang: inputs.lang ?? 'en',
           nowIso: new Date().toISOString(),
           decisionContext: inputs.decisionContext,
           supabase: inputs.supabase,
@@ -216,6 +224,7 @@ function readInputs(ctx: ContinuationDecisionContext): NextActionInputs | null {
   return {
     supabase: supabase as SupabaseClient,
     decisionContext: obj.decisionContext,
+    lang: typeof obj.lang === 'string' ? obj.lang : undefined,
   };
 }
 

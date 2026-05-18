@@ -94,24 +94,48 @@ function ctxWith(
 // ---------------------------------------------------------------------------
 
 describe('match-activity-plan pure helpers', () => {
-  test('renderKindLabel — known kinds get a friendly label, unknown stays generic', () => {
+  test('renderKindLabel — known kinds get a friendly label, unknown returns null', () => {
     expect(renderKindLabel('hike::hike')).toBe('hike');
     expect(renderKindLabel('chess::chess')).toBe('chess');
     expect(renderKindLabel('language_exchange::language_exchange')).toBe('language exchange');
     expect(renderKindLabel('buddy_seek::buddy_seek')).toBe('buddy');
     expect(renderKindLabel('commercial_buy::product')).toBe('purchase');
-    expect(renderKindLabel('mystery_kind::other')).toBe('match'); // safe fallback
-    expect(renderKindLabel(null)).toBe('match');
-    expect(renderKindLabel('')).toBe('match');
+    // VTID-03073: unknown / null kinds return null so the renderer can
+    // pick a generic sentence instead of producing "fresh match match".
+    expect(renderKindLabel('mystery_kind::other')).toBeNull();
+    expect(renderKindLabel(null)).toBeNull();
+    expect(renderKindLabel('')).toBeNull();
   });
 
-  test('renderLine — EN + DE for all three stages', () => {
+  test('renderLine — EN + DE for all three stages with a known kind', () => {
     expect(renderLine('pending_user_decision', 'hike', 'en')).toMatch(/responded.+hike/i);
     expect(renderLine('pending_user_decision', 'hike', 'de')).toMatch(/Antwort.+hike/);
     expect(renderLine('mutual_interest', 'chess', 'en')).toMatch(/mutual.+chess/i);
     expect(renderLine('mutual_interest', 'chess', 'de')).toMatch(/gegenseitiges.+chess/);
-    expect(renderLine('new', 'match', 'en')).toMatch(/fresh match/i);
-    expect(renderLine('new', 'match', 'de')).toMatch(/frisches match/i);
+    expect(renderLine('new', 'hike', 'en')).toMatch(/fresh hike match/i);
+    expect(renderLine('new', 'hike', 'de')).toMatch(/frisches hike-Match/i);
+  });
+
+  test('renderLine — generic sentence when kindLabel is null (no "match match" duplication)', () => {
+    // VTID-03073 regression guard: the Xm "match match" bug. When the
+    // kind is unknown the sentence MUST NOT inject the word "match"
+    // twice in any language.
+    const newEn = renderLine('new', null, 'en');
+    const newDe = renderLine('new', null, 'de');
+    const mutEn = renderLine('mutual_interest', null, 'en');
+    const mutDe = renderLine('mutual_interest', null, 'de');
+    const penEn = renderLine('pending_user_decision', null, 'en');
+    const penDe = renderLine('pending_user_decision', null, 'de');
+    for (const line of [newEn, newDe, mutEn, mutDe, penEn, penDe]) {
+      expect(line).not.toMatch(/match match/i);
+      expect(line).not.toMatch(/Match-Match/);
+    }
+    expect(newEn).toMatch(/fresh match/i);
+    expect(newDe).toMatch(/frisches Match/);
+    expect(mutEn).toMatch(/mutual match/i);
+    expect(mutDe).toMatch(/gegenseitiges Match/);
+    expect(penEn).toMatch(/responded to your request/i);
+    expect(penDe).toMatch(/auf deine Anfrage geantwortet/);
   });
 
   test('bandForStage — priority + confidence', () => {
