@@ -782,10 +782,31 @@ export async function handleLiveSessionStart(
   // injected into `session.contextInstruction` below so the model
   // actually speaks it — before this fix it was computed, logged, and
   // dropped on the floor.
+  // VTID-03081 (B1 wiring): the existing B1 cadence rules in
+  // greeting-policy.ts (5-min cross-surface continuation, 15-min
+  // greet-once cap, heavy-day dampening, same-style downgrade) were
+  // never being enforced because nobody was feeding the cadence
+  // signals into decideGreetingPolicy(). Now we read them from
+  // user_assistant_state, pass them through, and record after fire.
   let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
   try {
     const temporal = deps.describeTimeSince(session.lastSessionInfo);
     const { getSupabase } = await import('../../../lib/supabase');
+    const supabaseClient = getSupabase() ?? undefined;
+    const { fetchWakeCadenceSignals } = await import('../../../services/wake-cadence-signals');
+    type CadenceSignals = Awaited<ReturnType<typeof fetchWakeCadenceSignals>>;
+    let cadenceSignals: CadenceSignals = {};
+    if (supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
+      try {
+        cadenceSignals = await fetchWakeCadenceSignals({
+          supabase: supabaseClient,
+          tenantId: orbIdentity.tenant_id,
+          userId: orbIdentity.user_id,
+        });
+      } catch {
+        // Fail-open: empty cadence signals degrade to bucket-only policy.
+      }
+    }
     wakeBriefDecision = await decideWakeBriefForSession({
       sessionId,
       tenantId: orbIdentity?.tenant_id ?? null,
@@ -794,10 +815,34 @@ export async function handleLiveSessionStart(
       wasFailure: temporal.wasFailure,
       isReconnect: isReconnectStart,
       lang,
-      supabase: getSupabase() ?? undefined,
+      supabase: supabaseClient,
       decisionContext: null,
+      cadenceSignals,
+      // wake_origin is not yet plumbed from the client envelope on
+      // Vertex; default 'unknown' so the B1 policy doesn't fire the
+      // push_tap nudge. When the envelope ships this field through
+      // /live/session/start body, swap to body.client_context.wakeOrigin.
+      wakeOrigin: 'unknown',
+      recordEmission: true,
     });
     (session as any).wakeBriefDecision = wakeBriefDecision;
+    // VTID-03081: bump sessions_today_count fire-and-forget so the
+    // next session can dampen if the user opens ORB 3+ times today.
+    if (supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
+      void (async () => {
+        try {
+          const { recordWakeSessionStart } = await import('../../../services/wake-cadence-signals');
+          await recordWakeSessionStart({
+            supabase: supabaseClient,
+            tenantId: orbIdentity.tenant_id!,
+            userId: orbIdentity.user_id,
+            style: 'fresh_intro', // value-irrelevant; recordWakeSessionStart only writes the session counter
+          });
+        } catch {
+          // ignore
+        }
+      })();
+    }
 
     // VTID-03079: inject the picked userFacingLine as a system_instruction
     // override block so Gemini Live's model speaks it as the FIRST turn.

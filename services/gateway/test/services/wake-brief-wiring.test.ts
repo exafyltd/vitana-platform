@@ -260,6 +260,129 @@ describe('B0d.4 — wake-brief-wiring', () => {
     });
   });
 
+  describe('VTID-03081 — B1 cadence wiring', () => {
+    function freshRecorder() {
+      return createWakeTimelineRecorder({
+        now: (() => {
+          let t = 1_700_000_000_000;
+          return () => {
+            const d = new Date(t);
+            t += 5;
+            return d;
+          };
+        })(),
+        getDb: () => null,
+      });
+    }
+
+    it('cadence: greeted within 15min forces policy=skip', async () => {
+      const recorder = freshRecorder();
+      const decision = await decideWakeBriefForSession(
+        {
+          sessionId: 'live-cad-1',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'today',
+          isReconnect: false,
+          lang: 'en',
+          // 5 min since we last greeted → still inside 15-min cap.
+          cadenceSignals: { time_since_last_greeting_today_ms: 5 * 60 * 1000 },
+        },
+        { recorder },
+      );
+      // policy=skip → voice-wake-brief provider suppresses → no continuation.
+      expect(decision.selectedContinuation).toBeNull();
+      const timeline = await recorder.getTimeline('live-cad-1');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      expect(started?.metadata?.greetingPolicy).toBe('skip');
+      expect(started?.metadata?.greeting_policy_reason).toBe('greeted_recently_within_window');
+    });
+
+    it('cadence: cross-surface continuation under 5 min forces policy=skip', async () => {
+      const recorder = freshRecorder();
+      const decision = await decideWakeBriefForSession(
+        {
+          sessionId: 'live-cad-2',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'today',
+          isReconnect: false,
+          lang: 'en',
+          cadenceSignals: { seconds_since_last_turn_anywhere: 90 },
+        },
+        { recorder },
+      );
+      expect(decision.selectedContinuation).toBeNull();
+      const timeline = await recorder.getTimeline('live-cad-2');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      expect(started?.metadata?.greeting_policy_reason).toBe('recent_turn_continues_thread');
+    });
+
+    it('cadence: 3+ sessions today dampens fresh_intro → brief_resume', async () => {
+      const recorder = freshRecorder();
+      const decision = await decideWakeBriefForSession(
+        {
+          sessionId: 'live-cad-3',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'long',
+          isReconnect: false,
+          lang: 'en',
+          cadenceSignals: { sessions_today_count: 4 },
+        },
+        { recorder },
+      );
+      // bucket=long → default fresh_intro, but 4 sessions today drops to brief_resume.
+      expect(decision.selectedContinuation?.userFacingLine).toMatch(/Back already\?/);
+    });
+
+    it('cadence: same greeting style twice in a row downgrades one tier', async () => {
+      const recorder = freshRecorder();
+      const decision = await decideWakeBriefForSession(
+        {
+          sessionId: 'live-cad-4',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'long',
+          isReconnect: false,
+          lang: 'en',
+          cadenceSignals: { greeting_style_last_used: 'fresh_intro' },
+        },
+        { recorder },
+      );
+      // bucket=long → fresh_intro by default; previous fresh_intro → warm_return.
+      expect(decision.selectedContinuation?.userFacingLine).toMatch(/welcome back|Schön, dass du wieder da bist/i);
+    });
+
+    it('timeline carries greeting policy evidence + signals present', async () => {
+      const recorder = freshRecorder();
+      await decideWakeBriefForSession(
+        {
+          sessionId: 'live-cad-5',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'today',
+          isReconnect: false,
+          lang: 'en',
+          cadenceSignals: {
+            sessions_today_count: 1,
+            seconds_since_last_turn_anywhere: 600,
+          },
+          wakeOrigin: 'orb_tap',
+        },
+        { recorder },
+      );
+      const timeline = await recorder.getTimeline('live-cad-5');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      const present = started?.metadata?.greeting_policy_signals_present as string[] | undefined;
+      expect(present).toEqual(
+        expect.arrayContaining(['sessions_today_count', 'seconds_since_last_turn_anywhere']),
+      );
+      const evidence = started?.metadata?.greeting_policy_evidence as Array<{ signal: string }>;
+      expect(evidence?.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('best-effort policy', () => {
     it('returns the decision even when the recorder throws on every call', async () => {
       const exploding = {

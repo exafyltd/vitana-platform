@@ -48,10 +48,19 @@ import './assistant-continuation/providers/next-action/register-default-sources'
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
 import { emitNextActionDecisionTelemetry } from './assistant-continuation/providers/next-action/emit-telemetry';
-import { decideGreetingPolicy } from '../orb/live/instruction/greeting-policy';
+import {
+  decideGreetingPolicyWithEvidence,
+  type GreetingPolicyInput,
+} from '../orb/live/instruction/greeting-policy';
 import { defaultWakeTimelineRecorder } from './wake-timeline/wake-timeline-recorder';
 import type { AssistantContinuationDecision } from './assistant-continuation/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+// VTID-03081 (B1 wiring): cadence signal store. Fire-and-forget write
+// after the wake-brief fires so the next session can apply the 15-min
+// skip rule + same-style downgrade. Read happens upstream in the
+// caller (live-session-controller / orb-livekit) so we can keep this
+// module pure on the read side.
+import { recordWakeBriefEmitted } from './wake-cadence-signals';
 
 // ---------------------------------------------------------------------------
 // One-time provider registration. The default registry started empty in
@@ -135,6 +144,30 @@ export interface DecideWakeBriefArgs {
    * (no spine) and provider-disabled tests don't need to mock it.
    */
   pillarMomentum?: import('../orb/context/types').DecisionPillarMomentum | null;
+  /**
+   * VTID-03081 (B1 wiring): cadence signals from
+   * `wake-cadence-signals.fetchWakeCadenceSignals(...)`. When passed
+   * through, `decideGreetingPolicy` runs the full B1 layered decision
+   * (skip on transparent reconnect, 5-min cross-surface continuation,
+   * 15-min greet-once cap, heavy-day dampening, same-style downgrade).
+   * When omitted, the policy degrades to the bucket-only truth table
+   * (same behavior as before this wiring).
+   */
+  cadenceSignals?: Partial<GreetingPolicyInput>;
+  /**
+   * VTID-03081 (B1 wiring): wake_origin (signal #38) from the
+   * ClientContextEnvelope. Forwarded into the policy decision so a
+   * push_tap nudges fresh_intro → warm_return.
+   */
+  wakeOrigin?: GreetingPolicyInput['wake_origin'];
+  /**
+   * VTID-03081 (B1 wiring): when true AND the policy returns a
+   * non-skip style, record `last_greeting_at` + `last_greeting_style`
+   * to user_assistant_state so the next session can dampen. Fire-and-
+   * forget — write failure does NOT block the voice path. Default off
+   * for tests; production callers set it true.
+   */
+  recordEmission?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +202,20 @@ export async function decideWakeBriefForSession(
   const recorder = opts.recorder ?? defaultWakeTimelineRecorder;
   const now = opts.now ?? (() => Date.now());
 
-  const greetingPolicy = decideGreetingPolicy({
+  // VTID-03081 (B1 wiring): merge cadence signals into the input. Order
+  // matters — the caller-supplied `cadenceSignals` (fetched from
+  // user_assistant_state) cannot override the safety fields below.
+  const greetingPolicyInput: GreetingPolicyInput = {
+    ...(args.cadenceSignals ?? {}),
     bucket: args.bucket,
     isReconnect: args.isReconnect,
     wasFailure: args.wasFailure ?? false,
-  });
+    wake_origin: args.wakeOrigin ?? args.cadenceSignals?.wake_origin,
+    is_transparent_reconnect:
+      args.cadenceSignals?.is_transparent_reconnect ?? args.isReconnect,
+  };
+  const greetingDecision = decideGreetingPolicyWithEvidence(greetingPolicyInput);
+  const greetingPolicy = greetingDecision.policy;
 
   const wakeBriefInputs: VoiceWakeBriefInputs = {
     greetingPolicy,
@@ -190,6 +232,15 @@ export async function decideWakeBriefForSession(
     isReconnect: args.isReconnect,
     greetingPolicy,
     lang: args.lang,
+    // VTID-03081: which B1 signals participated in the decision +
+    // which were missing. Lands on the wake-timeline so the Command
+    // Hub Inspector can show "policy=skip because greeted_recently"
+    // instead of just "policy=skip".
+    greeting_policy_reason: greetingDecision.reason,
+    greeting_policy_signals_present: greetingDecision.signalsPresent,
+    greeting_policy_signals_missing: greetingDecision.signalsMissing,
+    greeting_policy_evidence: greetingDecision.evidence,
+    greeting_policy_fell_back_to_bucket: greetingDecision.fellBackToBucket,
   });
 
   // VTID-03057 (B0d-real Xb): build the next-action extras when the
@@ -261,6 +312,36 @@ export async function decideWakeBriefForSession(
     tenantId: args.tenantId,
     surface: 'orb_wake',
   });
+
+  // VTID-03081 (B1 wiring): record greeting style + timestamp so the
+  // next session can dampen. Fire-and-forget — write failure is
+  // logged but never propagates. Only records when:
+  //   - the policy decided a non-skip greeting will actually emit
+  //   - tenant + user are known (anonymous sessions don't persist)
+  //   - a supabase client is available
+  //   - the caller explicitly asked for recording (production yes,
+  //     tests no by default)
+  if (
+    args.recordEmission &&
+    args.supabase &&
+    args.tenantId &&
+    args.userId &&
+    greetingPolicy !== 'skip'
+  ) {
+    void recordWakeBriefEmitted({
+      supabase: args.supabase,
+      tenantId: args.tenantId,
+      userId: args.userId,
+      style: greetingPolicy,
+    }).then((res) => {
+      if (!res.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[VTID-03081] recordWakeBriefEmitted failed (non-fatal): ${res.reason}`,
+        );
+      }
+    });
+  }
 
   return decision;
 }
