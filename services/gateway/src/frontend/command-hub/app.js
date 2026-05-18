@@ -35524,6 +35524,18 @@ function renderLivekitTestView() {
         + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
     container.appendChild(statusPanel);
 
+    // VTID-03075: reconnect banner. Painted when the agent publishes a
+    // `client.alert.show` data message on the `orb_alert` topic — fired
+    // today by the silent-stall watchdog when VAD says user-speaking but
+    // no transcript arrives within 3s. Mirrors Vertex's connection_alert
+    // path; without this the user sees a frozen UI for minutes while STT
+    // silently buffers.
+    var reconnectBanner = document.createElement('div');
+    reconnectBanner.className = 'lkt-reconnect-banner';
+    reconnectBanner.style.cssText = 'display:none;padding:10px 14px;background:#7c2d12;color:#fff;border-radius:6px;margin-bottom:12px;font-size:13px;font-weight:bold;border:1px solid #f97316;';
+    reconnectBanner.textContent = '⏳ Hold on a second, reconnecting…';
+    container.appendChild(reconnectBanner);
+
     // VTID-02996: live mic level meter + audio-autoplay-block recovery +
     // mic-permission banner. The page used to show "MIC: on" the moment
     // setMicrophoneEnabled resolved, even if the OS-level permission was
@@ -36836,12 +36848,83 @@ function renderLivekitTestView() {
                 });
             }
 
+            // VTID-03075: reconnect chime — C5 → E5 ascending two-tone, 400ms
+            // total. Same notes / duration / envelope as Vertex's INSTANT-FEEDBACK
+            // PCM chime (orb-live.ts:1342-1396) so the audio cue feels identical
+            // across providers. Generated on demand via WebAudio API — no MP3
+            // asset, no server PCM publishing.
+            function playReconnectChime() {
+                try {
+                    var AC = window.AudioContext || window.webkitAudioContext;
+                    if (!AC) return;
+                    if (!window._lktChimeCtx) window._lktChimeCtx = new AC();
+                    var ctx = window._lktChimeCtx;
+                    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+                    var now = ctx.currentTime;
+                    // Tone 1: C5 (523.25Hz) 0-150ms, fade in/out.
+                    var o1 = ctx.createOscillator();
+                    var g1 = ctx.createGain();
+                    o1.frequency.value = 523.25;
+                    g1.gain.setValueAtTime(0, now);
+                    g1.gain.linearRampToValueAtTime(0.18, now + 0.02);
+                    g1.gain.linearRampToValueAtTime(0.18, now + 0.08);
+                    g1.gain.linearRampToValueAtTime(0, now + 0.15);
+                    o1.connect(g1).connect(ctx.destination);
+                    o1.start(now); o1.stop(now + 0.16);
+                    // Tone 2: E5 (659.25Hz) 150-400ms, fade in/out.
+                    var o2 = ctx.createOscillator();
+                    var g2 = ctx.createGain();
+                    o2.frequency.value = 659.25;
+                    g2.gain.setValueAtTime(0, now + 0.15);
+                    g2.gain.linearRampToValueAtTime(0.18, now + 0.17);
+                    g2.gain.linearRampToValueAtTime(0.18, now + 0.25);
+                    g2.gain.linearRampToValueAtTime(0, now + 0.40);
+                    o2.connect(g2).connect(ctx.destination);
+                    o2.start(now + 0.15); o2.stop(now + 0.41);
+                } catch (e) { log('warn', 'playReconnectChime failed', { error: String(e) }); }
+            }
+
+            // VTID-03075: banner show/hide. Auto-hides after 6s OR when the
+            // next transcript arrives (sign of recovery).
+            var _bannerHideTimer = null;
+            function showReconnectBanner(reason, detail) {
+                try {
+                    if (reconnectBanner) {
+                        reconnectBanner.textContent = '⏳ Hold on a second, reconnecting…' + (detail ? ' (' + detail + ')' : '');
+                        reconnectBanner.style.display = 'block';
+                    }
+                    playReconnectChime();
+                    if (_bannerHideTimer) clearTimeout(_bannerHideTimer);
+                    _bannerHideTimer = setTimeout(function () {
+                        if (reconnectBanner) reconnectBanner.style.display = 'none';
+                        _bannerHideTimer = null;
+                    }, 6000);
+                } catch (e) { log('warn', 'showReconnectBanner failed', { error: String(e) }); }
+            }
+            function hideReconnectBanner() {
+                if (reconnectBanner) reconnectBanner.style.display = 'none';
+                if (_bannerHideTimer) { clearTimeout(_bannerHideTimer); _bannerHideTimer = null; }
+            }
+
             room.on(LivekitClient.RoomEvent.DataReceived, function (payload, _participant, _kind, topic) {
                 try {
                     var msg = JSON.parse(new TextDecoder().decode(payload));
                     log('event', 'DataReceived', msg);
-                    if (msg.type === 'transcript') appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
+                    if (msg.type === 'transcript') {
+                        appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
+                        // VTID-03075: any transcript = STT recovered (or never stuck). Drop the banner.
+                        hideReconnectBanner();
+                    }
                     if (msg.type === 'tool_call') log('event', 'tool_call', msg);
+                    // VTID-03075: agent-published client alert on the `orb_alert` topic.
+                    // Today's reason: stt_silent_stall. Future reasons (connection_recovering,
+                    // etc.) ride the same channel.
+                    if (msg.type === 'client.alert.show' && (topic === 'orb_alert' || !topic)) {
+                        showReconnectBanner(msg.reason, msg.detail);
+                    }
+                    if (msg.type === 'client.alert.hide') {
+                        hideReconnectBanner();
+                    }
                     // PR 1.B-0 — orb_directive: the agent publishes structured payloads on
                     // the data channel (topic='orb_directive') so the page can react out-of-band
                     // the same way the SSE/WS branch does on Vertex. Currently 2 directive

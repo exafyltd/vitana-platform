@@ -162,3 +162,13 @@ TOPIC_AGENT_TURN_MEASURED = "orb.livekit.agent.turn.measured"
 TOPIC_STT_ERROR = "livekit.stt.error"                           # SDK ErrorEvent from STT/LLM/TTS, source-typed
 TOPIC_STT_AVAILABILITY_CHANGED = "livekit.stt.availability_changed"  # FallbackAdapter swap or recovery
 TOPIC_STT_METRICS = "livekit.stt.metrics"                       # metrics_collected from STT subsystem
+
+# VTID-03075: agent-level silent-stall detection. Fires when VAD reports
+# user_state_changed → "speaking" but no `user_input_transcribed` event
+# appears within SILENT_STALL_THRESHOLD_S seconds. The cascade
+# FallbackAdapter can't help — it swaps on errors only, and the silent-buffer
+# failure produces none. Pairs with a `client.alert.show` data message
+# published into the LiveKit room so the Test Bench frontend can render a
+# "Hold on, reconnecting…" banner + an audio chime mirroring Vertex's
+# INSTANT-FEEDBACK behavior.
+TOPIC_STT_SILENT_STALL = "livekit.stt.silent_stall"
