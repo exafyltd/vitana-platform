@@ -21,6 +21,7 @@ import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
+import { addUserToSystemGroups } from '../services/community-group-enrollment';
 
 const router = Router();
 
@@ -274,6 +275,19 @@ router.post('/login', async (req: Request, res: Response) => {
           })
           .catch(err => {
             console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
+          });
+
+        // VTID-03089: auto-add to system groups (currently "🎆 FIRST 100", cap 100).
+        // Idempotent on chat_group_members PK.
+        addUserToSystemGroups(uid, tid, supabase as any)
+          .then(result => {
+            console.log(
+              `[GroupEnrollment] First-login for ${uid.slice(0, 8)}: ` +
+              `added=${result.added.length}, skipped=${result.skipped.length}`
+            );
+          })
+          .catch(err => {
+            console.warn(`[GroupEnrollment] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
           });
       }
     }
