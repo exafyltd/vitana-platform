@@ -304,6 +304,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
   const chatRouter = require('./routes/chat').default;
+  // Group chat — VTID-03089
+  const chatGroupsRouter = require('./routes/chat-groups').default;
   // VTID-01967: Vitana ID — voice resolver, admin lookup, onboarding pick
   const usersResolveRouter = require('./routes/users-resolve').default;
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
@@ -974,6 +976,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Chat — User-to-user direct messaging
   mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });
+  // Group chat — VTID-03089. Mounted under /api/v1/chat/groups (sibling of DM endpoints).
+  mountRouterSync(app, '/api/v1/chat/groups', chatGroupsRouter, { owner: 'chat-groups' });
 
   // VTID-01967: Vitana ID resolver + onboarding pick + admin lookup.
   // Mounted under /api/v1/users so /resolve and /me/vitana-id/* are siblings;
