@@ -30,6 +30,8 @@ import { makeVitanaIndexPillarSource } from './sources/vitana-index-pillar';
 // VTID-03060 (B0d-real Xe) — continuity sources.
 import { makeContinuityPendingThreadSource } from './sources/continuity-pending-thread';
 import { makeContinuityPromiseOwedSource } from './sources/continuity-promise-owed';
+// VTID-03067 (B0d-real Xj) — per-source flag gates.
+import { withFlagGate } from './source-gate';
 
 let _registered = false;
 
@@ -50,14 +52,18 @@ export function ensureDefaultNextActionSourcesRegistered(): void {
   // Each source's bands are tuned so the natural urgency winner wins on
   // priority alone. This order resolves rare ties without the composer
   // needing a global registry.
-  defaultNextActionComposer.register(makeReminderDueSource());
-  defaultNextActionComposer.register(makeCalendarUpcomingSource());
-  defaultNextActionComposer.register(makeAutopilotRecommendationSource());
-  defaultNextActionComposer.register(makeContinuityPromiseOwedSource());
-  defaultNextActionComposer.register(makeDiaryMissingRelevantSource());
-  defaultNextActionComposer.register(makeContinuityPendingThreadSource());
-  defaultNextActionComposer.register(makeLifeCompassAlignmentSource());
-  defaultNextActionComposer.register(makeVitanaIndexPillarSource());
+  // VTID-03067: every source is wrapped in withFlagGate() so operators
+  // can toggle individual sources via `system_controls` row
+  // `voice.next_action.<source_key>.enabled = false` without redeploy.
+  // Default behavior (row absent) keeps every source live.
+  defaultNextActionComposer.register(withFlagGate(makeReminderDueSource()));
+  defaultNextActionComposer.register(withFlagGate(makeCalendarUpcomingSource()));
+  defaultNextActionComposer.register(withFlagGate(makeAutopilotRecommendationSource()));
+  defaultNextActionComposer.register(withFlagGate(makeContinuityPromiseOwedSource()));
+  defaultNextActionComposer.register(withFlagGate(makeDiaryMissingRelevantSource()));
+  defaultNextActionComposer.register(withFlagGate(makeContinuityPendingThreadSource()));
+  defaultNextActionComposer.register(withFlagGate(makeLifeCompassAlignmentSource()));
+  defaultNextActionComposer.register(withFlagGate(makeVitanaIndexPillarSource()));
 }
 
 // Register on import so consumers don't have to remember.
