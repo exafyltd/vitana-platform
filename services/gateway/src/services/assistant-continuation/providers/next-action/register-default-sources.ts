@@ -30,6 +30,8 @@ import { makeVitanaIndexPillarSource } from './sources/vitana-index-pillar';
 // VTID-03060 (B0d-real Xe) — continuity sources.
 import { makeContinuityPendingThreadSource } from './sources/continuity-pending-thread';
 import { makeContinuityPromiseOwedSource } from './sources/continuity-promise-owed';
+// VTID-03070 (B0d-real Xm) — match / activity-plan source.
+import { makeMatchActivityPlanSource } from './sources/match-activity-plan';
 // VTID-03067 (B0d-real Xj) — per-source flag gates.
 import { withFlagGate } from './source-gate';
 
@@ -42,12 +44,16 @@ export function ensureDefaultNextActionSourcesRegistered(): void {
   // Pick (urgency-first):
   //   1. reminders                — time-bound, beats coaching
   //   2. calendar                 — time-bound, slightly weaker than reminders
-  //   3. autopilot                — coaching with confidence signal
-  //   4. continuity_promise_owed  — relationship trust (overdue promises sit high)
-  //   5. diary_missing_relevant   — streak preservation
-  //   6. continuity_pending_thread— pick up the thread we left
-  //   7. life-compass-alignment   — goal-anchored coaching
-  //   8. vitana-index-pillar      — weakest signal, last resort
+  //   3. match_activity_plan      — time-bound social decisions sit between
+  //                                 calendar and autopilot (a pending match
+  //                                 response is more urgent than a coaching
+  //                                 rec, less urgent than a calendar event)
+  //   4. autopilot                — coaching with confidence signal
+  //   5. continuity_promise_owed  — relationship trust (overdue promises sit high)
+  //   6. diary_missing_relevant   — streak preservation
+  //   7. continuity_pending_thread— pick up the thread we left
+  //   8. life-compass-alignment   — goal-anchored coaching
+  //   9. vitana-index-pillar      — weakest signal, last resort
   //
   // Each source's bands are tuned so the natural urgency winner wins on
   // priority alone. This order resolves rare ties without the composer
@@ -58,6 +64,7 @@ export function ensureDefaultNextActionSourcesRegistered(): void {
   // Default behavior (row absent) keeps every source live.
   defaultNextActionComposer.register(withFlagGate(makeReminderDueSource()));
   defaultNextActionComposer.register(withFlagGate(makeCalendarUpcomingSource()));
+  defaultNextActionComposer.register(withFlagGate(makeMatchActivityPlanSource()));
   defaultNextActionComposer.register(withFlagGate(makeAutopilotRecommendationSource()));
   defaultNextActionComposer.register(withFlagGate(makeContinuityPromiseOwedSource()));
   defaultNextActionComposer.register(withFlagGate(makeDiaryMissingRelevantSource()));
