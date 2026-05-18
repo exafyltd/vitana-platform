@@ -37862,26 +37862,27 @@ function renderDocsSystemKnowledgeView() {
 // Docs > Manuals: per-tenant Instruction Manual catalog
 // ===========================================================================
 // Renders the Maxina Instruction Manual (and other tenant manuals as they
-// are authored) as a 13-module tree on the left, chapter content on the
+// are authored) as a user-manual tree on the left, chapter content on the
 // right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
 // Edits route to the System Knowledge tab where the existing editor lives.
 
 const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
 const MANUAL_MODULE_LABELS = {
-    '00-concepts': '0. Foundational Concepts',
+    '00-concepts': '0. Mission, Voice & Core Concepts',
     '01-public': '1. Public & Onboarding',
-    '02-home': '2. Home',
-    '03-community': '3. Community',
-    '04-discover': '4. Discover',
-    '05-health': '5. Health',
+    '02-home': '2. Home & My Journey',
+    '03-community': '3. Community, Events & Media',
+    '04-discover': '4. Discover & Marketplace',
+    '05-health': '5. Health & Vitana Index',
     '06-inbox': '6. Inbox',
-    '07-ai': '7. AI',
-    '08-wallet': '8. Wallet',
-    '09-sharing': '9. Sharing',
-    '10-memory': '10. Memory',
+    '07-ai': '7. Vitana Assistant & AI',
+    '08-wallet': '8. Smart Wallet',
+    '09-sharing': '9. Sharing & Data Monetization',
+    '10-memory': '10. Memory & Diary',
     '11-settings': '11. Settings',
-    '12-utility': '12. Utility',
+    '12-utility': '12. Calendar, Profile & Search',
     '13-overlays': '13. Overlays & Popups',
+    '14-business': '14. Business & Income',
 };
 
 function initManualsState() {

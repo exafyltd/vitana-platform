@@ -11,36 +11,50 @@ keywords: [ai feed, home ai feed, home ai feed, home]
 related_concepts: []
 related_screens: []
 ---
+
 ## What it is
 
-The **AI Feed** screen is part of the Home feed — the daily landing surface where Vitana surfaces what is most relevant for you today. In the navigation it sits at Home → AI Feed, and Direct URL: `/home/aifeed`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+AI Feed is the AI Feed screen in the Home module. It gives the user a focused place to understand the current state, choose the next step, and ask Vitana for help.
+
+Home turns awareness into action: context, actions, matches, and AI feed should reduce thinking and move the user toward one useful next step.
 
 ## Why it matters
 
-Home is the screen you open first every day; the cards here decide what gets your attention before the day starts pulling you elsewhere. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the ai feed". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Home turns awareness into action: context, actions, matches, and AI feed should reduce thinking and move the user toward one useful next step. It should help the user live better through the five longevity pillars while making useful community or income opportunities easier to act on.
 
 ## Where to find it
 
-Direct URL: `/home/aifeed`. It lives under the **Home** module of the sidebar, on the tab labelled **AI Feed**. If you ask ORB "open the ai feed" the Navigator will route you straight here.
+Direct URL: `/home/aifeed`.
+
+Sidebar path: **Home → AI Feed**.
+
+Module: **Home**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Home module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **AI Feed** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (AI Feed) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- Daily context or recommendation cards
+- Vitana Index, Autopilot, Calendar, or match shortcuts
+- Reason labels that explain why something is shown
+- Open, complete, save, dismiss, or snooze actions
 
 ## How to use it
 
-1. Open the screen via the sidebar (Home → AI Feed) or by asking ORB "open ai feed".
-2. Open it once each morning, scan the cards, act on one or two, then move on.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Home module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Read the top card first because Home is ranked for today.
+2. Ask Vitana to explain any recommendation that feels unclear.
+3. Complete quick tasks immediately and schedule longer ones.
+4. Dismiss irrelevant cards so future ranking improves.
+
+## What you can ask Vitana
+
+- "What should I do now?"
+- "Open My Journey."
+- "Find me a match."
+- "Set a reminder for this."
+
+## Guidance for Vitana Assistant
+
+Home turns awareness into action: context, actions, matches, and AI feed should reduce thinking and move the user toward one useful next step. Explain the screen in plain language first, then offer the next safe action. Ask for confirmation before sending messages, making purchases, booking services, changing privacy, sharing data, altering subscriptions, or deleting anything.
 
 ## Related
 
-- See module 2 for the other screens in **Home**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+Related references from the manual front matter: [].

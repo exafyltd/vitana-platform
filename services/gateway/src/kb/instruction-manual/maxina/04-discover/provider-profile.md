@@ -11,36 +11,50 @@ keywords: [provider profile, provider profile, provider profile, discover]
 related_concepts: []
 related_screens: []
 ---
+
 ## What it is
 
-The **Provider Profile** screen is part of the Discover marketplace — the catalog of products and services curated to your health profile and Life Compass. In the navigation it sits at Discover → Provider Profile, and Direct URL: `/discover/provider/:providerId`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Provider Profile is the Provider Profile screen in the Discover module. It gives the user a focused place to understand the current state, choose the next step, and ask Vitana for help.
+
+Discover is the marketplace layer for products, providers, services, offers, orders, and cart decisions matched to health and opportunity goals.
 
 ## Why it matters
 
-When Vitana recommends a supplement, a coach, or a deal, it is matching real inventory against your actual data; the marketplace is the fulfilment layer. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the provider profile". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Discover is the marketplace layer for products, providers, services, offers, orders, and cart decisions matched to health and opportunity goals. It should help the user live better through the five longevity pillars while making useful community or income opportunities easier to act on.
 
 ## Where to find it
 
-Direct URL: `/discover/provider/:providerId`. It lives under the **Discover** module of the sidebar, on the tab labelled **Provider Profile**. If you ask ORB "open the provider profile" the Navigator will route you straight here.
+Direct URL: `/discover/provider/:providerId`.
+
+Sidebar path: **Discover → Provider Profile**.
+
+Module: **Discover**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Discover module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Provider Profile** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Provider Profile) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- Marketplace cards with price, provider, availability, and relevance reason
+- Filters for pillar, goal, category, price, and location
+- Save, compare, add to cart, book, claim, refund, or checkout actions
+- Disclosures, warnings, and support links
 
 ## How to use it
 
-1. Open the screen via the sidebar (Discover → Provider Profile) or by asking ORB "open provider profile".
-2. Browse, compare, add to cart; most listings can be paid in fiat or credits, and earning rewards apply on first purchase.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Discover module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Search or filter by the goal the user names.
+2. Open details before purchase or booking.
+3. Check price, terms, warnings, and fit reason.
+4. Ask for explicit confirmation before checkout, booking, refund, or subscription actions.
+
+## What you can ask Vitana
+
+- "Find marketplace tools for sleep."
+- "Book this service."
+- "Add this to my cart."
+- "Show my orders."
+
+## Guidance for Vitana Assistant
+
+Discover is the marketplace layer for products, providers, services, offers, orders, and cart decisions matched to health and opportunity goals. Explain the screen in plain language first, then offer the next safe action. Ask for confirmation before sending messages, making purchases, booking services, changing privacy, sharing data, altering subscriptions, or deleting anything.
 
 ## Related
 
-- See module 4 for the other screens in **Discover**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+Related references from the manual front matter: [].
