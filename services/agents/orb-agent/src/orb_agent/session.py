@@ -1727,6 +1727,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # of "dead for 3 minutes."
     # ------------------------------------------------------------------
     SILENT_STALL_THRESHOLD_S = 3.0
+    # VTID-03079: combined predicate. The old single-condition watchdog
+    # (just `speaking_for >= 3s`) fired during NORMAL 5-8s utterances
+    # because Google STT often takes that long to finalize a turn — and
+    # the user heard the recovery chime mid-sentence with no logic. The
+    # 2026-05-18 18:43-18:46 session showed the issue exactly:
+    #   stall #1: since_last_transcript=80.14s  ← real bug, recover
+    #   stall #2: since_last_transcript=3.37s   ← FALSE POSITIVE
+    #   stall #3: since_last_transcript=33.14s  ← maybe real
+    # Adding `since_last_transcript_s >= MIN_TRANSCRIPT_AGE_S` as a
+    # second required condition makes the predicate
+    #   VAD says speaking for ≥3s  AND  no transcript for ≥15s
+    # which is the signature of an actual stall (the 80s and 33s cases),
+    # not normal STT latency.
+    SILENT_STALL_MIN_TRANSCRIPT_AGE_S = 15.0
     SILENT_STALL_REPEAT_S = 8.0  # rate-limit: one alert per window
 
     stall_state: dict[str, Any] = {
@@ -1812,7 +1826,14 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # LiveKit transport problem, not STT. Kill switch:
     # ORB_STT_RECOVERY_ENABLED=false reverts to detection-only behavior.
     # ------------------------------------------------------------------
-    STT_RECOVERY_MAX_ATTEMPTS = 3
+    # VTID-03079: bumped from 3 → 5. The previous cap was burned by
+    # false-positive triggers (see SILENT_STALL_MIN_TRANSCRIPT_AGE_S
+    # comment above); after VTID-03079's tighter predicate every fired
+    # attempt should be a real stall, and a longer session may
+    # legitimately need 4-5 recoveries. Each attempt is bounded to ~3s
+    # by the activity-swap wait, so 5 attempts cost at most ~15s of
+    # total session disruption — still well under any user's patience.
+    STT_RECOVERY_MAX_ATTEMPTS = 5
 
     def _stt_recovery_enabled() -> bool:
         return os.environ.get("ORB_STT_RECOVERY_ENABLED", "true").lower() not in (
@@ -1948,6 +1969,14 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 now = time.monotonic()
                 speaking_for = now - started
                 if speaking_for < SILENT_STALL_THRESHOLD_S:
+                    continue
+                # VTID-03079: second predicate. Without this we fire on
+                # every normal user utterance whose STT happens to take
+                # >3s to finalize. Require ≥15s since the last successful
+                # transcript before declaring stall.
+                last_transcript_at = stall_state.get("last_transcript_at") or now
+                since_last_transcript = now - last_transcript_at
+                if since_last_transcript < SILENT_STALL_MIN_TRANSCRIPT_AGE_S:
                     continue
                 last_alert = stall_state.get("last_alert_at") or 0.0
                 if (now - last_alert) < SILENT_STALL_REPEAT_S:

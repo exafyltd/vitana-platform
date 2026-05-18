@@ -58,13 +58,16 @@ def test_recovery_kill_switch_off_variants(monkeypatch) -> None:  # type: ignore
         assert val in ("false", "0", "no", "off"), v
 
 
-def test_max_attempts_constant_pinned_at_three() -> None:
-    """3 swaps per session. Anything higher risks churning Google STT
-    + Deepgram connections on a chronic upstream problem; anything lower
-    means we give up before the user does. Pin literal."""
+def test_max_attempts_constant_pinned_at_five() -> None:
+    """VTID-03079 bumped 3 → 5 once the tighter predicate started
+    rejecting false positives. 5 attempts cost at most ~15s of swap
+    activity (each bounded by the 5s activity-swap wait); a longer
+    session may legitimately need 4-5 recoveries. Anything higher risks
+    churning Google STT / Deepgram connections on a chronic problem;
+    anything lower means we give up before the user does."""
     src = _session_src()
-    assert "STT_RECOVERY_MAX_ATTEMPTS = 3" in src, (
-        "VTID-03078 regression: STT_RECOVERY_MAX_ATTEMPTS must be 3"
+    assert "STT_RECOVERY_MAX_ATTEMPTS = 5" in src, (
+        "VTID-03079 regression: STT_RECOVERY_MAX_ATTEMPTS must be 5"
     )
 
 
