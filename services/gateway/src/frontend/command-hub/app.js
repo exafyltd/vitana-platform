@@ -43512,6 +43512,10 @@ function renderJourneyContextView() {
     // VTID-02937 (B4): Tenure & Journey Stage panel — onboarding ladder
     // + tenure days + usage days + last active + Index tier. Read-only.
     grid.appendChild(renderJourneyContextJourneyStagePanel(jc.journeyStage));
+    // VTID-03065 (B0d-real Xh): Contextual Next Action Candidate Inspector —
+    // recent decisions with source/winner/outcome, sourced from the
+    // OASIS rollup endpoint Xf.3 shipped (GET /voice/next-action/inspector).
+    grid.appendChild(renderJourneyContextNextActionInspectorPanel(jc.nextActionInspector));
 
     c.appendChild(grid);
     return c;
@@ -43568,6 +43572,12 @@ function loadJourneyContext() {
         // VTID-02937 (B4): journey-stage preview — tenure / usage_days /
         // Index tier + distilled context. Keyed on user/tenant.
         fetch('/api/v1/voice/journey-stage/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        // VTID-03065 (B0d-real Xh): Candidate Inspector — recent
+        // contextual_next_action decisions grouped by decision_id.
+        // Auth: admin-only on the endpoint side. Keyed on user_id.
+        fetch('/api/v1/voice/next-action/inspector?user_id=' + encodeURIComponent(jc.userId || '') + '&hours=24', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -43612,6 +43622,11 @@ function loadJourneyContext() {
             jc.journeyStage = results[8];
         } else {
             jc.journeyStage = null;
+        }
+        if (results[9] && results[9].ok) {
+            jc.nextActionInspector = results[9];
+        } else {
+            jc.nextActionInspector = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -44463,6 +44478,84 @@ function renderJourneyContextFeatureDiscoveryPanel(fd) {
             panel.appendChild(renderJourneyContextEmptyRow(label, detail));
         });
     }
+
+    return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-03065 (B0d-real Xh) — Contextual Next Action Candidate Inspector
+// panel. Reads from GET /api/v1/voice/next-action/inspector (shipped in
+// Xf.3). For the selected user, shows recent decisions grouped by
+// decision_id: which source won, which CTA the user followed, which
+// composer suppressions fired and why.
+//
+// Wall: NO buttons, NO mutation. Read-only operator surface.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextNextActionInspectorPanel(insp) {
+    var panel = renderJourneyContextPanel(
+        'Contextual Next Action Inspector (B0d-real)',
+        'Recent decisions across the 8-source composer — winner, outcome, suppression reasons',
+    );
+
+    if (!insp) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    var totals = insp.totals || {};
+    panel.appendChild(renderJourneyContextEmptyRow('window_hours', String(insp.window_hours || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('suggested', String(totals.suggested || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('accepted', String(totals.accepted || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('dismissed', String(totals.dismissed || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('suppressed', String(totals.suppressed || 0)));
+
+    var decisions = Array.isArray(insp.decisions) ? insp.decisions : [];
+    var listHeader = document.createElement('div');
+    listHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    listHeader.textContent = 'Recent decisions (newest first)';
+    panel.appendChild(listHeader);
+
+    if (decisions.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('decisions', 'no recent decisions in window'));
+        return panel;
+    }
+
+    decisions.forEach(function (d) {
+        // Row 1 — winner / suppression headline
+        var headline;
+        if (d.suggested) {
+            var sourceEv = d.suggested.source_evidence;
+            var srcKind = sourceEv && typeof sourceEv === 'object' ? String(sourceEv.kind || '?') : '?';
+            var srcKey = srcKind.replace(/^source:/, '');
+            var prio = d.suggested.priority != null ? d.suggested.priority : '?';
+            headline = 'WINNER ' + srcKey + ' (p=' + prio + ')';
+        } else if (d.suppressed) {
+            headline = 'SUPPRESSED — ' + String(d.suppressed.suppress_reason || d.suppressed.provider_status || '?');
+        } else {
+            headline = '(no suggested or suppressed payload)';
+        }
+        panel.appendChild(renderJourneyContextEmptyRow(d.decision_id || '(no id)', headline));
+
+        // Row 2 — outcome (when present)
+        if (d.outcome) {
+            var outcomeLabel = String(d.outcome).toUpperCase();
+            var outcomeWhen = d.outcome_at ? new Date(d.outcome_at).toLocaleString() : '';
+            panel.appendChild(renderJourneyContextEmptyRow(
+                '  outcome',
+                outcomeLabel + (outcomeWhen ? ' @ ' + outcomeWhen : ''),
+            ));
+        }
+
+        // Row 3 — reason evidence (when winner)
+        if (d.suggested && Array.isArray(d.suggested.reason_evidence) && d.suggested.reason_evidence.length > 0) {
+            d.suggested.reason_evidence.forEach(function (r) {
+                panel.appendChild(renderJourneyContextEmptyRow(
+                    '  ' + String(r.kind || '?'),
+                    String(r.detail || ''),
+                ));
+            });
+        }
+    });
 
     return panel;
 }
