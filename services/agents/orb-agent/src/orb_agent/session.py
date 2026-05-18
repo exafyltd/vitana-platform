@@ -53,6 +53,7 @@ from .oasis import (
     TOPIC_STT_AVAILABILITY_CHANGED,
     TOPIC_STT_ERROR,
     TOPIC_STT_METRICS,
+    TOPIC_STT_SILENT_STALL,
     OasisEmitter,
 )
 from .providers import build_cascade
@@ -766,41 +767,19 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     if vad_instance is None and not SILERO_AVAILABLE:
         logger.warning("livekit-plugins-silero not installed, no VAD")
 
-    # VTID-03074: turn-handling config. SDK defaults leave
-    # `user_turn_limit.max_duration=None`, which means there is NO hard
-    # wall-clock cap on how long a user turn can stay open. The 2026-05-18
-    # 10:07-10:10 UTC session showed Google STT holding a single user turn
-    # open for 170 seconds — VAD never said "speech ended" so the agent
-    # stayed in `listening`, the model never ran, and from the user's seat
-    # the conversation was dead. (Confirmed by VTID-03050 observability:
-    # one `livekit.stt.metrics` event with audio_duration=170s and zero
-    # `livekit.stt.error` / `availability_changed` events — STT was
-    # "working", just buffering forever.)
-    #
-    # Setting max_duration=20s forces the framework to finalize the turn
-    # after 20 wall-clock seconds regardless of VAD state. Worst case for
-    # a long user utterance: it splits into 20-second chunks, each
-    # processed in order. Far better than 170-second silence.
-    #
-    # Endpointing values are the SDK documented defaults — set explicitly
-    # here so the values are visible in code review rather than implicit
-    # from an upstream library version.
+    # VTID-03075: the `turn_handling.user_turn_limit.max_duration=20.0` cap
+    # shipped in VTID-03074 was a no-op for the 170-second STT-buffer bug.
+    # Per livekit-agents source (audio_recognition.py _check_user_turn_limit,
+    # called only on FINAL transcripts), the cap only triggers AFTER a
+    # transcript event arrives — which means it cannot fire DURING the
+    # silent-buffer window. Removed; real detection lives in the
+    # silent-stall watchdog wired further down in this file.
     session_kwargs: dict[str, Any] = {
         "stt": cascade.stt,
         "llm": cascade.llm,
         "tts": cascade.tts,
         "userdata": gw,
         "max_tool_steps": MAX_TOOL_STEPS,
-        "turn_handling": {
-            "endpointing": {
-                "mode": "fixed",
-                "min_delay": 0.5,
-                "max_delay": 3.0,
-            },
-            "user_turn_limit": {
-                "max_duration": 20.0,
-            },
-        },
     }
     if vad_instance is not None:
         session_kwargs["vad"] = vad_instance
@@ -1258,10 +1237,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook agent_state_changed: %s", exc)
 
-    try:
-        session.on("user_state_changed")(lambda _ev=None: stall.feed())  # type: ignore[misc]
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("could not hook user_state_changed: %s", exc)
+    # VTID-03075: the user_state_changed handler is wired below by
+    # _record_user_state (does what this lambda did + records VAD
+    # speaking-start timestamp for the silent-stall watchdog).
 
     # VTID-03001: conversation_item_added fires whenever something is
     # appended to chat_ctx — LLM responses, tool calls, etc. If we see
@@ -1551,12 +1529,151 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook stt_availability_changed: %s", exc)
 
+    # ------------------------------------------------------------------
+    # VTID-03075: SILENT-STALL WATCHDOG. Cascade FallbackAdapter only
+    # advances on STT errors. Production telemetry (2026-05-18 10:07-10:10
+    # UTC: livekit.stt.metrics with audio_duration=170s, zero error/
+    # availability events) proved Google STT can silently buffer minutes
+    # of audio without raising. From the user's seat: agent in `listening`
+    # forever, no response, dead conversation, 5-10s tolerance.
+    #
+    # This watchdog watches for: user_state_changed → "speaking" without
+    # a `user_input_transcribed` event for SILENT_STALL_THRESHOLD_S. On
+    # detection:
+    #   (a) emit `livekit.stt.silent_stall` oasis (telemetry)
+    #   (b) publish a `client.alert.show` data message into the LiveKit
+    #       room so the frontend can paint a "Hold on, reconnecting…"
+    #       banner + audio chime (Vertex INSTANT-FEEDBACK parity).
+    #
+    # ACTUAL STT recovery (forcing FallbackAdapter to swap) is NOT in
+    # this PR — needs telemetry from this watchdog firing in real sessions
+    # before picking the recovery primitive (custom FallbackAdapter
+    # subclass with stream-idle detection, or AgentSession restart).
+    # Today's value: user immediately sees "we know it's broken" instead
+    # of "dead for 3 minutes."
+    # ------------------------------------------------------------------
+    SILENT_STALL_THRESHOLD_S = 3.0
+    SILENT_STALL_REPEAT_S = 8.0  # rate-limit: one alert per window
+
+    stall_state: dict[str, Any] = {
+        "user_speaking_since": None,   # monotonic when VAD → speaking, None when transcript fires or VAD → listening
+        "last_transcript_at": time.monotonic(),
+        "last_alert_at": 0.0,
+    }
+
+    async def _publish_client_alert(reason: str, detail: str | None = None) -> None:
+        """Send a JSON data-message to the LiveKit room so the frontend
+        can paint a banner + play a chime. Best-effort; agent must not
+        crash if publish_data isn't available on this SDK version."""
+        try:
+            room = getattr(ctx, "room", None)
+            lp = getattr(room, "local_participant", None) if room is not None else None
+            if lp is None:
+                return
+            payload = json.dumps({
+                "type": "client.alert.show",
+                "reason": reason,
+                "detail": detail,
+                "timestamp_ms": int(time.time() * 1000),
+            }).encode("utf-8")
+            pub = getattr(lp, "publish_data", None)
+            if callable(pub):
+                res = pub(payload, topic="orb_alert")
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("publish_client_alert(%s) failed: %s", reason, exc)
+
+    def _record_user_state(ev: Any = None) -> None:
+        """Replaces the old `user_state_changed` lambda. Feeds the stall
+        watchdog (preserves VTID-02854 behavior) AND records VAD
+        speaking-start so the silent-stall checker can measure
+        VAD-speech-without-transcript wall-clock time."""
+        stall.feed()
+        try:
+            new_state = getattr(ev, "new_state", None)
+        except Exception:  # noqa: BLE001
+            new_state = None
+        if new_state == "speaking":
+            stall_state["user_speaking_since"] = time.monotonic()
+        elif new_state in ("listening", "away", None):
+            stall_state["user_speaking_since"] = None
+
+    try:
+        session.on("user_state_changed")(_record_user_state)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook user_state_changed for silent-stall: %s", exc)
+
+    def _on_transcript_for_stall(_ev: Any = None) -> None:
+        stall_state["last_transcript_at"] = time.monotonic()
+        stall_state["user_speaking_since"] = None  # turn closed cleanly
+
+    try:
+        session.on("user_input_transcribed")(_on_transcript_for_stall)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook user_input_transcribed for stall-state: %s", exc)
+
+    async def _silent_stall_watchdog() -> None:
+        """Poll every 1s. If user has been in `speaking` for
+        ≥SILENT_STALL_THRESHOLD_S without a transcript, fire the alert.
+        Rate-limited by SILENT_STALL_REPEAT_S so one long stall doesn't
+        spam the client."""
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                started = stall_state.get("user_speaking_since")
+                if started is None:
+                    continue
+                now = time.monotonic()
+                speaking_for = now - started
+                if speaking_for < SILENT_STALL_THRESHOLD_S:
+                    continue
+                last_alert = stall_state.get("last_alert_at") or 0.0
+                if (now - last_alert) < SILENT_STALL_REPEAT_S:
+                    continue
+                stall_state["last_alert_at"] = now
+                asyncio.create_task(
+                    oasis.emit(
+                        topic=TOPIC_STT_SILENT_STALL,
+                        payload={
+                            "user_id": identity.user_id,
+                            "orb_session_id": orb_session_id,
+                            "speaking_for_s": round(speaking_for, 2),
+                            "since_last_transcript_s": round(
+                                now - (stall_state.get("last_transcript_at") or now), 2
+                            ),
+                            "threshold_s": SILENT_STALL_THRESHOLD_S,
+                        },
+                    )
+                )
+                await _publish_client_alert(
+                    reason="stt_silent_stall",
+                    detail=f"speaking_for={round(speaking_for, 1)}s",
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("silent_stall_watchdog tick error: %s", exc)
+
+    _silent_stall_task: asyncio.Task[None] | None = None
+    try:
+        _silent_stall_task = asyncio.create_task(_silent_stall_watchdog())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not start silent-stall watchdog: %s", exc)
+
     # Stop the watchdog when the room disconnects so we don't leak the task.
     async def _stop_stall_on_shutdown() -> None:
         try:
             await stall.stop()
         except Exception:  # noqa: BLE001
             pass
+        # VTID-03075: also tear down the silent-stall watchdog.
+        if _silent_stall_task is not None and not _silent_stall_task.done():
+            _silent_stall_task.cancel()
+            try:
+                await _silent_stall_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
 
     ctx.add_shutdown_callback(_stop_stall_on_shutdown)
 

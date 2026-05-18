@@ -579,6 +579,12 @@ export type CicdEventType =
   | 'livekit.stt.error'
   | 'livekit.stt.availability_changed'
   | 'livekit.stt.metrics'
+  // VTID-03075: silent-stall detection. Fires when VAD reports
+  // user_state_changed → "speaking" but no user_input_transcribed
+  // arrives within 3 seconds. Pairs with a `client.alert.show` data
+  // message published to the LiveKit room so the Test Bench shows
+  // "Hold on, reconnecting…" + plays a chime.
+  | 'livekit.stt.silent_stall'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
