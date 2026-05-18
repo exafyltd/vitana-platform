@@ -44,6 +44,14 @@ import {
   NEXT_ACTION_PROVIDER_KEY,
 } from './assistant-continuation/providers/next-action';
 import './assistant-continuation/providers/next-action/register-default-sources';
+// VTID-03093 (Teacher PR 3): the Feature Discovery Coach. Sits at
+// priority 75 — beats the bare wake-brief fallback when the user has
+// unexplored capabilities, loses to next-action candidates above 50.
+import {
+  makeFeatureDiscoveryTeacherProvider,
+  TEACHER_EXTRA_KEY,
+  TEACHER_PROVIDER_KEY,
+} from './assistant-continuation/providers/teacher/feature-discovery-teacher';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -83,6 +91,13 @@ export function ensureWakeBriefProviderRegistered(): void {
   // framework's decideContinuation picks voice-wake-brief instead.
   if (!defaultProviderRegistry.get(NEXT_ACTION_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeNextActionProvider());
+  }
+  // VTID-03093: Teacher (Feature Discovery Coach). Priority 75 — wins
+  // when next-action has nothing and the user has an unexplored
+  // capability. Requires the system_capabilities + user_capability_awareness
+  // tables; degrades to `suppressed:empty_catalog` when missing.
+  if (!defaultProviderRegistry.get(TEACHER_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeFeatureDiscoveryTeacherProvider());
   }
   _registered = true;
 }
@@ -168,6 +183,13 @@ export interface DecideWakeBriefArgs {
    * for tests; production callers set it true.
    */
   recordEmission?: boolean;
+  /**
+   * VTID-03093 (Teacher PR 3): user's first name (when known) so the
+   * Teacher greeting clause can address them by name. Pulled from
+   * identity_facts at the caller side. Anonymous sessions pass null /
+   * absent and the Teacher's pool falls back to no-name phrases.
+   */
+  firstName?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +285,18 @@ export async function decideWakeBriefForSession(
       decisionContext: args.decisionContext ?? null,
       lang: args.lang,
     };
+    // VTID-03093 (Teacher PR 3): forward Teacher inputs when identity is
+    // known. Anonymous sessions are skipped at the provider level.
+    if (args.tenantId && args.userId) {
+      extra[TEACHER_EXTRA_KEY] = {
+        supabase: args.supabase,
+        tenantId: args.tenantId,
+        userId: args.userId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+        greetingPolicy,
+      };
+    }
   }
 
   const t0 = now();
