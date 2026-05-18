@@ -245,14 +245,14 @@ function reasonKindFor(stage: MatchStage): string {
 
 /**
  * Map a kind_pairing string ("buddy_seek::buddy_seek", "hike::hike",
- * "commercial_buy::product") to a short user-facing label without
- * leaking the full enum. The label is intentionally generic — the
- * voice line never claims "hiking match" if the kind pairing is
- * something we don't have a friendly word for; it falls back to
- * "match" so we never invent or misclassify the activity.
+ * "commercial_buy::product") to a short user-facing label, or null when
+ * the kind is unknown / absent. NULL signals "no friendly label" — the
+ * renderer then picks a generic sentence template instead of trying to
+ * inject the word "match" into a sentence that already contains
+ * "match" (the original Xm bug: "You have a fresh match match.").
  */
-export function renderKindLabel(kindPairing: string | null): string {
-  if (!kindPairing) return 'match';
+export function renderKindLabel(kindPairing: string | null): string | null {
+  if (!kindPairing) return null;
   const left = String(kindPairing).split('::')[0] || '';
   const known: Record<string, string> = {
     hike: 'hike',
@@ -266,26 +266,42 @@ export function renderKindLabel(kindPairing: string | null): string {
     commercial_buy: 'purchase',
     commercial_sell: 'offer',
   };
-  return known[left] ?? 'match';
+  return known[left] ?? null;
 }
 
 export function renderLine(
   stage: MatchStage,
-  kindLabel: string,
+  kindLabel: string | null,
   lang: string,
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
   if (stage === 'pending_user_decision') {
+    if (kindLabel) {
+      return isDe
+        ? `Es gibt eine Antwort auf deine ${kindLabel}-Anfrage. Willst du entscheiden, wie es weitergeht?`
+        : `Someone has responded to your ${kindLabel} request. Want to decide what's next?`;
+    }
     return isDe
-      ? `Es gibt eine Antwort auf deine ${kindLabel}-Anfrage. Willst du entscheiden, wie es weitergeht?`
-      : `Someone has responded to your ${kindLabel} request. Want to decide what's next?`;
+      ? `Jemand hat auf deine Anfrage geantwortet. Willst du entscheiden, wie es weitergeht?`
+      : `Someone has responded to your request. Want to decide what's next?`;
   }
   if (stage === 'mutual_interest') {
+    if (kindLabel) {
+      return isDe
+        ? `Du hast ein neues gegenseitiges Match auf ${kindLabel}. Sollen wir das Gespräch eröffnen?`
+        : `You have a new mutual ${kindLabel} match. Want to open the conversation?`;
+    }
     return isDe
-      ? `Du hast ein neues gegenseitiges Match auf ${kindLabel}. Sollen wir das Gespräch eröffnen?`
-      : `You have a new mutual ${kindLabel} match. Want to open the conversation?`;
+      ? `Du hast ein neues gegenseitiges Match. Sollen wir das Gespräch eröffnen?`
+      : `You have a new mutual match. Want to open the conversation?`;
+  }
+  // stage === 'new'
+  if (kindLabel) {
+    return isDe
+      ? `Es gibt ein frisches ${kindLabel}-Match für dich. Soll ich es dir vorstellen?`
+      : `You have a fresh ${kindLabel} match. Want me to walk you through it?`;
   }
   return isDe
-    ? `Es gibt ein frisches ${kindLabel}-Match für dich. Soll ich es dir vorstellen?`
-    : `You have a fresh ${kindLabel} match. Want me to walk you through it?`;
+    ? `Es gibt ein frisches Match für dich. Soll ich es dir vorstellen?`
+    : `You have a fresh match. Want me to walk you through it?`;
 }

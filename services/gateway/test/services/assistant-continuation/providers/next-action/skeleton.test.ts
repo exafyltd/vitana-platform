@@ -364,4 +364,40 @@ describe('VTID-03056 (Xa) — makeNextActionProvider()', () => {
     expect(NEXT_ACTION_PROVIDER_KEY).toBe('contextual_next_action');
     expect(NEXT_ACTION_EXTRA_KEY).toBe('nextAction');
   });
+
+  // VTID-03073 regression guard: every source's `renderLine` reads
+  // `ctx.lang` to pick EN vs DE. Before this fix the provider's
+  // composer call hardcoded `'en'` because the extras object never
+  // carried `lang` — every wake-brief rendered English to German users
+  // for a week. This test fails fast if the wiring breaks again.
+  test('VTID-03073: ctx.lang is forwarded from extras.lang into composer ctx', async () => {
+    const {
+      defaultNextActionComposer,
+    } = require('../../../../../src/services/assistant-continuation/providers/next-action/composer');
+    defaultNextActionComposer.reset();
+    let observedLang: string | null = null;
+    defaultNextActionComposer.register({
+      key: 'reminder_due',
+      serves: () => true,
+      produce: async (ctx: { lang: string }) => {
+        observedLang = ctx.lang;
+        return { source: 'reminder_due', candidate: null, skippedReason: 'no_data' };
+      },
+    });
+    const provider = makeNextActionProvider({ newId: () => 'fixed-id' });
+    await provider.produce({
+      surface: 'orb_wake',
+      sessionId: 's1',
+      userId: 'u1',
+      tenantId: 't1',
+      extra: {
+        [NEXT_ACTION_EXTRA_KEY]: {
+          supabase: fakeSupabase(),
+          decisionContext: null,
+          lang: 'de',
+        },
+      },
+    });
+    expect(observedLang).toBe('de');
+  });
 });

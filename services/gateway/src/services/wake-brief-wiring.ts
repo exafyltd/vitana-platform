@@ -200,9 +200,17 @@ export async function decideWakeBriefForSession(
     [VOICE_WAKE_BRIEF_EXTRA_KEY]: wakeBriefInputs,
   };
   if (args.supabase) {
+    // VTID-03073: forward `lang` so next-action sources render in the
+    // user's language. Before this fix the next-action provider always
+    // received the default 'en' — every source rendered English to
+    // German users since slice Xb. The bug was invisible until the
+    // match source's fallback label collided with its own sentence
+    // template ("fresh match match"), making the English line stick
+    // out next to an otherwise German conversation.
     extra[NEXT_ACTION_EXTRA_KEY] = {
       supabase: args.supabase,
       decisionContext: args.decisionContext ?? null,
+      lang: args.lang,
     };
   }
 
