@@ -1276,6 +1276,97 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         logger.debug("could not hook conversation_item_added: %s", exc)
 
     # ------------------------------------------------------------------
+    # VTID-03064 (B0d-real Xg): turn-end next-action wiring.
+    #
+    # Every time the assistant finishes saying something substantial,
+    # ask the gateway for a structured continuation (the highest-priority
+    # B0d-real candidate for surface=orb_turn_end). If one comes back,
+    # speak it as a brief closing doorway after a small gap.
+    #
+    # Guards (kept tight to avoid feeling spammy):
+    #   1. Only fire on role='assistant' items with text_len > 30 — skip
+    #      tool acks + very short responses that don't end a turn.
+    #   2. Skip when the assistant text ends with '?' — they already
+    #      asked the user something.
+    #   3. Per-session dedupe via a small set; same dedupe_key in the
+    #      last 3 turns suppresses the speak.
+    #   4. Fire-and-forget; gateway/network errors never block voice.
+    # ------------------------------------------------------------------
+    _turn_end_recent_dedupe: list[str] = []
+    _TURN_END_DEDUPE_HISTORY = 3
+    _TURN_END_MIN_TEXT_LEN = 30
+    _TURN_END_GAP_SECONDS = 1.5
+
+    async def _turn_end_fetch_and_speak(assistant_text: str) -> None:
+        try:
+            body = await gw.post(
+                "/api/v1/voice/next-action/turn-end",
+                {"lang": identity.lang or "en"},
+            )
+            if not isinstance(body, dict) or body.get("ok") is not True:
+                return
+            cont = body.get("continuation")
+            if not isinstance(cont, dict):
+                return
+            line = cont.get("user_facing_line")
+            dedupe_key = cont.get("dedupe_key")
+            if not isinstance(line, str) or not line.strip():
+                return
+            if isinstance(dedupe_key, str) and dedupe_key in _turn_end_recent_dedupe:
+                return
+
+            # Pause briefly so the doorway doesn't bleed into the just-
+            # spoken response. session.say() blocks until audio queues;
+            # the sleep keeps the boundary audible.
+            await asyncio.sleep(_TURN_END_GAP_SECONDS)
+            try:
+                await session.say(line.strip(), add_to_chat_ctx=False)
+            except Exception as say_err:  # noqa: BLE001
+                logger.warning(
+                    "VTID-03064: turn-end session.say failed: %s", say_err,
+                )
+                return
+
+            if isinstance(dedupe_key, str):
+                _turn_end_recent_dedupe.append(dedupe_key)
+                if len(_turn_end_recent_dedupe) > _TURN_END_DEDUPE_HISTORY:
+                    del _turn_end_recent_dedupe[0]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("VTID-03064: turn-end fetch failed: %s", exc)
+
+    def _on_turn_end_candidate(ev: Any = None) -> None:
+        try:
+            item = getattr(ev, "item", None) or ev
+            role = getattr(item, "role", None) or (
+                item.get("role") if isinstance(item, dict) else None
+            )
+            if role != "assistant":
+                return
+            text = (
+                getattr(item, "text_content", None)
+                or getattr(item, "text", None)
+                or (item.get("text_content") if isinstance(item, dict) else None)
+                or (item.get("text") if isinstance(item, dict) else None)
+                or ""
+            )
+            if not isinstance(text, str):
+                return
+            stripped = text.strip()
+            if len(stripped) < _TURN_END_MIN_TEXT_LEN:
+                return
+            if stripped.endswith("?") or stripped.endswith("?"):
+                # Already a question; don't tack on another doorway.
+                return
+            asyncio.create_task(_turn_end_fetch_and_speak(stripped))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("VTID-03064: turn-end hook setup failed: %s", exc)
+
+    try:
+        session.on("conversation_item_added")(_on_turn_end_candidate)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook turn-end conversation_item_added: %s", exc)
+
+    # ------------------------------------------------------------------
     # VTID-03050: STT FAILURE OBSERVABILITY (DIAGNOSTIC — no behavior
     # change). Three listeners that surface what was previously invisible:
     #

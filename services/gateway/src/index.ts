@@ -791,6 +791,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
   mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
 
+  // VTID-03064 (B0d-real Xg): turn-end activation endpoint. The LiveKit
+  // agent calls this after each generate_reply to fetch the next-action
+  // continuation it should speak as a closing doorway.
+  // POST /api/v1/voice/next-action/turn-end.
+  const voiceNextActionTurnEndRouter = require('./routes/voice-next-action-turn-end').default;
+  mountRouterSync(app, '/api/v1', voiceNextActionTurnEndRouter, { owner: 'voice-next-action-turn-end' });
+
   // VTID-02930 (B1): Greeting Decay preview (read-only simulator).
   // GET /api/v1/voice/greeting-policy/preview
   const voiceGreetingPolicyRouter = require('./routes/voice-greeting-policy').default;
