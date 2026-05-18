@@ -167,7 +167,7 @@ describe('B0d.2 — Voice Wake Brief provider', () => {
       const result = (await provider.produce(
         makeCtx({ greetingPolicy: 'fresh_intro', lang: 'de' }),
       )) as ProviderResult;
-      expect(result.candidate?.userFacingLine).toBe('Hallo! Wie kann ich heute helfen?');
+      expect(result.candidate?.userFacingLine).toBe('Hallo! Wie kann ich dir heute helfen?');
     });
 
     it('falls back to English for an unknown lang', async () => {

@@ -88,20 +88,24 @@ export interface VoiceWakeBriefRenderer {
   render(inputs: VoiceWakeBriefInputs, ctx: ContinuationDecisionContext): string;
 }
 
+// VTID-03083: warmer, service-grade copy. "Back already?" / "Schon
+// zurück?" reads as dismissive — a service assistant greets a returning
+// user warmly, never with a confronting question. Same rule for every
+// policy.
 const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
   // Suppressed at provider boundary; never reaches the renderer.
   skip: { en: '', de: '' },
   brief_resume: {
-    en: 'Back already? What did you want to follow up on?',
-    de: 'Schon zurück? Worauf wolltest du zurückkommen?',
+    en: 'Welcome back. What would you like to pick up on?',
+    de: 'Schön, dich wieder zu hören. Womit kann ich dir helfen?',
   },
   warm_return: {
     en: 'Welcome back. What is on your mind?',
-    de: 'Schön, dass du wieder da bist. Was steht an?',
+    de: 'Schön, dass du wieder da bist. Womit kann ich dir helfen?',
   },
   fresh_intro: {
     en: 'Hello! How can I help today?',
-    de: 'Hallo! Wie kann ich heute helfen?',
+    de: 'Hallo! Wie kann ich dir heute helfen?',
   },
 };
 
