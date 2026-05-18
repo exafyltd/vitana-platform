@@ -748,9 +748,52 @@ router.get(
     const userId = req.identity?.user_id ?? null;
     const tenantId = req.identity?.tenant_id ?? null;
     const role = req.identity?.role ?? 'community';
-    const lang = String(req.headers['accept-language'] || 'en')
+    // VTID-03084 (Lane 2): LiveKit lang resolution priority MUST match Vertex.
+    //   1. Client-supplied `?lang=...` query param (UI dropdown — most explicit).
+    //   2. Stored preference in `memory_facts` (fact_key=preferred_language).
+    //   3. Accept-Language header (browser default).
+    //   4. 'en' fallback.
+    //
+    // Before this fix the route ONLY read Accept-Language, so a German user
+    // who picked DE in the Test Bench dropdown would still get English
+    // wake-brief lines + English system_instruction whenever the browser
+    // sent en-US in the header. That's how the user got
+    // "Welcome back. What would you like to pick up on?" on a ?lang=de
+    // request.
+    const queryLang = typeof req.query.lang === 'string' && req.query.lang
+      ? String(req.query.lang).split(',')[0].split('-')[0].toLowerCase()
+      : null;
+    const headerLang = String(req.headers['accept-language'] || 'en')
       .split(',')[0]
-      .split('-')[0];
+      .split('-')[0]
+      .toLowerCase();
+    let lang = queryLang || headerLang || 'en';
+    // Stored preference only fills the gap when no explicit query param.
+    // (We don't override an explicit ?lang=en with a stored DE preference —
+    // the user just told us what they want for this session.)
+    if (!queryLang && userId && tenantId) {
+      try {
+        const { getCurrentFacts } = await import('../services/memory-facts-service');
+        const result = await getCurrentFacts({
+          tenant_id: tenantId,
+          user_id: userId,
+          fact_keys: ['preferred_language'],
+        });
+        if (result.ok && result.facts.length > 0) {
+          const stored = result.facts[0].fact_value.toLowerCase();
+          const nameToCode: Record<string, string> = {
+            english: 'en', german: 'de', french: 'fr', spanish: 'es',
+            arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+          };
+          const resolved = nameToCode[stored] || stored;
+          if (['en','de','fr','es','ar','zh','ru','sr'].includes(resolved)) {
+            lang = resolved;
+          }
+        }
+      } catch {
+        // Fail-open: keep header-derived lang.
+      }
+    }
 
     // VTID-03035 + VTID-03036: two-layer cache hit short-circuit.
     //  - L1 in-memory (per Cloud Run instance) — ~0ms when hit
