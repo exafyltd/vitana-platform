@@ -1530,6 +1530,19 @@ router.get(
             selected_kind: wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
             suppression_reason: wakeBriefDecision.suppressionReason ?? null,
             user_facing_line: wakeBriefDecision.selectedContinuation?.userFacingLine ?? null,
+            // VTID-03076 (P0-C): expose dedupe_key + source_key on the
+            // bootstrap response so the LiveKit agent can POST
+            // accepted/dismissed events to /voice/next-action/event
+            // when the user replies "ja"/"yes"/"nein"/"no" to a spoken
+            // wake-brief. Without these two fields the agent has no way
+            // to close the suggested → accepted lifecycle (event
+            // endpoint validates dedupeKey as required).
+            dedupe_key: wakeBriefDecision.selectedContinuation?.dedupeKey ?? null,
+            source_key:
+              wakeBriefDecision.selectedContinuation?.evidence
+                .map((e) => e.kind)
+                .find((k) => k.startsWith('source:'))
+                ?.replace('source:', '') ?? null,
             decision_started_at: wakeBriefDecision.decisionStartedAt,
             decision_finished_at: wakeBriefDecision.decisionFinishedAt,
             provider_results: wakeBriefDecision.sourceProviderResults.map((r) => ({
