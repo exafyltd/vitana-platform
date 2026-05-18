@@ -129,7 +129,7 @@ describe('B0d.4 — wake-brief-wiring', () => {
         },
         { recorder },
       );
-      expect(decision.selectedContinuation?.userFacingLine).toBe('Hallo! Wie kann ich heute helfen?');
+      expect(decision.selectedContinuation?.userFacingLine).toBe('Hallo! Wie kann ich dir heute helfen?');
     });
   });
 
@@ -333,7 +333,7 @@ describe('B0d.4 — wake-brief-wiring', () => {
         { recorder },
       );
       // bucket=long → default fresh_intro, but 4 sessions today drops to brief_resume.
-      expect(decision.selectedContinuation?.userFacingLine).toMatch(/Back already\?/);
+      expect(decision.selectedContinuation?.userFacingLine).toMatch(/Welcome back/i);
     });
 
     it('cadence: same greeting style twice in a row downgrades one tier', async () => {

@@ -197,7 +197,8 @@ describe('VTID-03053 — defaultVoiceWakeBriefRenderer emits pillar-specific lin
       { greetingPolicy: 'brief_resume', lang: 'en', pillarMomentum: makePm() },
       makeCtx({ greetingPolicy: 'brief_resume', lang: 'en' }),
     );
-    expect(line).toBe('Back already? What did you want to follow up on?');
+    // VTID-03083: warmer copy — never confronting questions.
+    expect(line).toBe('Welcome back. What would you like to pick up on?');
   });
 });
 
