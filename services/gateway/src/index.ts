@@ -81,6 +81,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const cicdRouter = require('./routes/cicd').default;
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
+  // BOOTSTRAP-NOTIF-MESSENGER-DIAG: unauthenticated client beacon for chat-notification deep-link failures
+  const diagRouter = require('./routes/diag').default;
   const autopilotRouter = require('./routes/autopilot').default;
   // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
@@ -630,6 +632,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-0526-D: Telemetry routes with stage counters
   mountRouterSync(app, '/api/v1/telemetry', telemetryRouter, { owner: 'telemetry' });
+
+  // BOOTSTRAP-NOTIF-MESSENGER-DIAG: unauthenticated diagnostic beacon — see routes/diag.ts
+  mountRouterSync(app, '/api/v1/diag', diagRouter, { owner: 'notif-diag' });
 
   // Vitana Index — celebrate() analytics ingestion (light-weight, fire-and-forget)
   const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
