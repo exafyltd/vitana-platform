@@ -1431,6 +1431,25 @@ router.get(
         const wakeBriefSessionId = `livekit-bootstrap-${randomUUID()}`;
         const lastSessionInfo = await fetchLastSessionInfo(userId);
         const temporal = describeTimeSince(lastSessionInfo);
+        // VTID-03081 (B1 wiring): read cadence signals from
+        // user_assistant_state so decideGreetingPolicy() can apply the
+        // 15-min greet-once cap, same-style downgrade, and heavy-day
+        // dampening that have lived (unused) in greeting-policy.ts.
+        const { fetchWakeCadenceSignals, recordWakeSessionStart } =
+          await import('../services/wake-cadence-signals');
+        type LkCadence = Awaited<ReturnType<typeof fetchWakeCadenceSignals>>;
+        let cadenceSignals: LkCadence = {};
+        if (sb) {
+          try {
+            cadenceSignals = await fetchWakeCadenceSignals({
+              supabase: sb,
+              tenantId,
+              userId,
+            });
+          } catch {
+            // Fail-open — empty signals degrade to bucket-only policy.
+          }
+        }
         wakeBriefDecision = await decideWakeBriefForSession({
           sessionId: wakeBriefSessionId,
           tenantId,
@@ -1457,7 +1476,25 @@ router.get(
           // hardcoded fallback line.
           supabase: sb ?? undefined,
           decisionContext: decisionContext ?? null,
+          // VTID-03081: pass cadence + wake_origin so the B1 policy runs
+          // the full layered decision. Recording happens automatically
+          // inside decideWakeBriefForSession on non-skip emissions.
+          cadenceSignals,
+          wakeOrigin:
+            (envContext as { wakeOrigin?: 'orb_tap' | 'wake_word' | 'push_tap' | 'proactive_opener' | 'deep_link' | 'unknown' } | undefined)
+              ?.wakeOrigin ?? 'unknown',
+          recordEmission: true,
         });
+        // VTID-03081: bump sessions_today_count. Fire-and-forget; never
+        // blocks the bootstrap response.
+        if (sb) {
+          void recordWakeSessionStart({
+            supabase: sb,
+            tenantId,
+            userId,
+            style: 'fresh_intro', // ignored by recordWakeSessionStart
+          }).catch(() => {});
+        }
       } catch (exc) {
         console.warn(
           `[${VTID}] wake-brief decision failed (non-fatal): ${(exc as Error).message}`,
