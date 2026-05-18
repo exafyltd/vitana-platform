@@ -585,6 +585,12 @@ export type CicdEventType =
   // message published to the LiveKit room so the Test Bench shows
   // "Hold on, reconnecting…" + plays a chime.
   | 'livekit.stt.silent_stall'
+  // VTID-03078: STT recovery telemetry. Fires when the silent-stall
+  // watchdog attempts an in-place STT swap (build fresh cascade →
+  // session.update_agent with new Agent carrying stt=fresh and the rest
+  // preserved). Outcomes: attempted / succeeded / gave_up. Bounded to
+  // 3 swaps per session; kill switch ORB_STT_RECOVERY_ENABLED=false.
+  | 'livekit.stt.recovery'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events

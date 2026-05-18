@@ -53,6 +53,7 @@ from .oasis import (
     TOPIC_STT_AVAILABILITY_CHANGED,
     TOPIC_STT_ERROR,
     TOPIC_STT_METRICS,
+    TOPIC_STT_RECOVERY,
     TOPIC_STT_SILENT_STALL,
     OasisEmitter,
 )
@@ -1786,6 +1787,153 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook user_input_transcribed for stall-state: %s", exc)
 
+    # ------------------------------------------------------------------
+    # VTID-03078: ACTUAL STT RECOVERY on silent-stall detection.
+    #
+    # The session at 2026-05-18 16:07-16:14 UTC confirmed the diagnostic
+    # gap VTID-03075 left open: the watchdog detected silent_stall within
+    # 3s as designed, but the FallbackAdapter could not advance (its swap
+    # logic only fires on stream exceptions; Google STT silently buffers
+    # without raising). 18 stalls, 2 minutes of dead audio, user gave up.
+    #
+    # This block adds the actual swap. When silent_stall fires:
+    #   1. Build a fresh cascade.stt via providers.build_cascade — three
+    #      NEW STT instances, new gRPC connections to Google + Deepgram.
+    #   2. Create a new Agent carrying stt=fresh, preserving everything
+    #      else from the current Agent (instructions, tools, llm, tts,
+    #      chat_ctx). Agent-level stt= overrides session-level stt at
+    #      agent_activity.py:3717 (verified upstream source).
+    #   3. session.update_agent(new_agent) — in-place swap (same path
+    #      as VTID-03046 persona handoff). Bounded by 5s wait on the
+    #      activity-transition task.
+    #
+    # Bounded to STT_RECOVERY_MAX_ATTEMPTS per session. After exhausting
+    # attempts the watchdog stays telemetry-only — likely a deeper
+    # LiveKit transport problem, not STT. Kill switch:
+    # ORB_STT_RECOVERY_ENABLED=false reverts to detection-only behavior.
+    # ------------------------------------------------------------------
+    STT_RECOVERY_MAX_ATTEMPTS = 3
+
+    def _stt_recovery_enabled() -> bool:
+        return os.environ.get("ORB_STT_RECOVERY_ENABLED", "true").lower() not in (
+            "false", "0", "no", "off",
+        )
+
+    recovery_state: dict[str, Any] = {
+        "attempts": 0,
+        "last_attempt_at": 0.0,
+        "in_flight": False,
+    }
+
+    async def _attempt_stt_recovery() -> None:
+        """Build a fresh STT cascade and swap it onto the current Agent.
+        Bounded; runs at most STT_RECOVERY_MAX_ATTEMPTS per session and
+        guards against re-entry while a previous swap is still completing."""
+        if not _stt_recovery_enabled():
+            return
+        if recovery_state["in_flight"]:
+            return
+        attempts = int(recovery_state["attempts"])
+        if attempts >= STT_RECOVERY_MAX_ATTEMPTS:
+            # Emit gave_up exactly once when we hit the cap.
+            if attempts == STT_RECOVERY_MAX_ATTEMPTS:
+                recovery_state["attempts"] = attempts + 1  # idempotent
+                asyncio.create_task(
+                    oasis.emit(
+                        topic=TOPIC_STT_RECOVERY,
+                        payload={
+                            "user_id": identity.user_id,
+                            "orb_session_id": orb_session_id,
+                            "outcome": "gave_up",
+                            "attempts": attempts,
+                            "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                        },
+                    )
+                )
+            return
+
+        recovery_state["in_flight"] = True
+        recovery_state["attempts"] = attempts + 1
+        recovery_state["last_attempt_at"] = time.monotonic()
+        attempt_no = recovery_state["attempts"]
+
+        # Telemetry: announce the attempt.
+        asyncio.create_task(
+            oasis.emit(
+                topic=TOPIC_STT_RECOVERY,
+                payload={
+                    "user_id": identity.user_id,
+                    "orb_session_id": orb_session_id,
+                    "outcome": "attempted",
+                    "attempt_no": attempt_no,
+                    "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                },
+            )
+        )
+
+        try:
+            # Step 1: fresh cascade. Same build_cascade call as session
+            # bootstrap — keeps language, voice override, all options.
+            fresh_cascade = build_cascade(
+                bootstrap.voice_config,
+                lang=identity.lang,
+                voice_override=voice_override,
+            )
+            if fresh_cascade.stt is None:
+                logger.warning(
+                    "VTID-03078: fresh cascade has no STT (build_cascade notes=%s) — abort recovery",
+                    list(fresh_cascade.notes)[:5],
+                )
+                return
+
+            # Step 2: snapshot the current Agent so we preserve everything
+            # except STT. The Agent on this session is the same object
+            # passed to session.start; we grab it back via session.agent.
+            current = getattr(session, "agent", None)
+            if current is None:
+                logger.warning("VTID-03078: session.agent is None — abort recovery")
+                return
+
+            new_agent = Agent(
+                instructions=getattr(current, "_instructions", "") or "",
+                tools=list(getattr(current, "_tools", []) or []),
+                chat_ctx=getattr(current, "_chat_ctx", None),
+                stt=fresh_cascade.stt,
+                llm=getattr(current, "_llm", None),
+                tts=getattr(current, "_tts", None),
+            )
+
+            # Step 3: in-place swap. update_agent is sync; the activity
+            # transition runs as a background task. Bounded wait so we
+            # know within ~5s whether the swap landed.
+            session.update_agent(new_agent)
+            swap_task = getattr(session, "_update_activity_atask", None)
+            if swap_task is not None:
+                try:
+                    await asyncio.wait_for(swap_task, timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "VTID-03078: activity-swap task didn't finish in 5s for STT recovery"
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "VTID-03078: activity-swap task raised: %s", exc
+                    )
+
+            # Reset the stall-state so the watchdog doesn't re-fire
+            # immediately on the same stale `user_speaking_since`.
+            stall_state["user_speaking_since"] = None
+            stall_state["last_transcript_at"] = time.monotonic()
+
+            logger.info(
+                "VTID-03078: STT recovery swap completed (attempt %d/%d)",
+                attempt_no, STT_RECOVERY_MAX_ATTEMPTS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("VTID-03078: STT recovery attempt %d failed: %s", attempt_no, exc)
+        finally:
+            recovery_state["in_flight"] = False
+
     async def _silent_stall_watchdog() -> None:
         """Poll every 1s. If user has been in `speaking` for
         ≥SILENT_STALL_THRESHOLD_S without a transcript, fire the alert.
@@ -1823,6 +1971,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     reason="stt_silent_stall",
                     detail=f"speaking_for={round(speaking_for, 1)}s",
                 )
+                # VTID-03078: fire the actual recovery — fresh STT cascade
+                # swapped onto the current Agent via session.update_agent.
+                # Bounded (max 3 attempts per session); kill-switchable via
+                # ORB_STT_RECOVERY_ENABLED=false.
+                asyncio.create_task(_attempt_stt_recovery())
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
