@@ -277,10 +277,21 @@ export async function sendAppilixPush(
       user_identity: userId,
     });
     const url = payload.data?.url;
+    let resolvedOpenLink: string | undefined;
     if (url) {
       const baseUrl = process.env.APPILIX_APP_URL || 'https://vitanaland.com';
-      params.set('open_link_url', url.startsWith('http') ? url : `${baseUrl}${url}`);
+      resolvedOpenLink = url.startsWith('http') ? url : `${baseUrl}${url}`;
+      params.set('open_link_url', resolvedOpenLink);
     }
+
+    // BOOTSTRAP-NOTIF-MESSENGER-DIAG: log the exact open_link_url so we can
+    // correlate Appilix delivery with the [NotifDiag] beacons fired from the
+    // WebView when the deep-link page either loads or fails to load.
+    console.log(
+      `[Appilix] push request user=${userId.slice(0, 8)}… ` +
+      `title=${JSON.stringify(payload.title)} ` +
+      `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
+    );
 
     const res = await fetch('https://appilix.com/api/push-notification', {
       method: 'POST',
