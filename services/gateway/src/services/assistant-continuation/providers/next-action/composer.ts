@@ -26,6 +26,12 @@ import type {
   NextActionSourceResult,
   ScoredCandidate,
 } from './types';
+// VTID-03068 (B0d-real Xk) — cross-session dedupe via user_assistant_state.
+import {
+  isSeenRecently,
+  recordDedupeSighting,
+  DEFAULT_DEDUPE_WINDOW_MS,
+} from './dedupe-store';
 
 class CompositeNextActionComposer implements NextActionComposer {
   /**
@@ -69,18 +75,84 @@ class CompositeNextActionComposer implements NextActionComposer {
     }
 
     const t0 = Date.now();
-    const results = await Promise.all(
+    const rawResults = await Promise.all(
       eligible.map((source) => invokeSourceSafely(source, ctx, t0)),
     );
+
+    // VTID-03068: cross-session dedupe gate. For every candidate that
+    // came back, check whether its dedupe_key was already shown to this
+    // user within the last 4 hours. If yes, downgrade the result to
+    // skippedReason='dedup_window' BEFORE ranking, so a fresh sibling
+    // candidate (different source, different dedupe_key) can still win.
+    //
+    // The check runs in parallel with itself; each check NEVER throws —
+    // failures default to "not seen" so a DB outage cannot silence the
+    // orb. Best-effort: composer continues even if every check errors.
+    const results = await applyDedupeGate(rawResults, ctx);
     const composeFinishedAt = new Date().toISOString();
 
+    const ranked = rank(results);
+
+    // VTID-03068: record the winner's dedupe_key sighting (fire-and-
+    // forget). When the orb actually speaks the line, recording here
+    // captures it as "shown" — subsequent wakes within the window will
+    // see it via isSeenRecently and skip.
+    if (ranked.chosen && ranked.chosen.dedupeKey) {
+      void recordDedupeSighting({
+        supabase: ctx.supabase,
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        dedupeKey: ranked.chosen.dedupeKey,
+        source: ranked.chosen.source,
+        surface,
+      });
+    }
+
     return {
-      ...rank(results),
+      ...ranked,
       candidates: results,
       composeStartedAt,
       composeFinishedAt,
     };
   }
+}
+
+/**
+ * For each result that has a candidate, check the dedupe store. When the
+ * dedupe_key was seen within the default window, downgrade the row to
+ * skippedReason='dedup_window'. Never throws upward — fail-open by
+ * design (DB outage MUST NOT silence the orb).
+ */
+async function applyDedupeGate(
+  rawResults: ReadonlyArray<NextActionSourceResult>,
+  ctx: NextActionSourceContext,
+): Promise<NextActionSourceResult[]> {
+  const checks = rawResults.map(async (row) => {
+    if (!row.candidate) return row;
+    try {
+      const seen = await isSeenRecently({
+        supabase: ctx.supabase,
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        dedupeKey: row.candidate.dedupeKey,
+        nowIso: ctx.nowIso,
+        windowMs: DEFAULT_DEDUPE_WINDOW_MS,
+      });
+      if (seen) {
+        return {
+          source: row.source,
+          candidate: null,
+          skippedReason: 'dedup_window' as const,
+          latencyMs: row.latencyMs,
+        };
+      }
+      return row;
+    } catch {
+      // Fail-open — never let the dedupe gate silence the orb.
+      return row;
+    }
+  });
+  return Promise.all(checks);
 }
 
 async function invokeSourceSafely(
