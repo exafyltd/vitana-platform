@@ -84,4 +84,23 @@ describe('VTID-03036 LiveKit context parity wire-up', () => {
     // unaffected by anything inside this best-effort closure.
     expect(source).toMatch(/buildBootstrapContextPack failed:/);
   });
+
+  // VTID-03084 (Lane 2) — LiveKit lang resolution priority.
+  it('VTID-03084: reads ?lang query param first (most explicit)', () => {
+    // The route must look at req.query.lang BEFORE the Accept-Language
+    // header so a Test Bench / mobile UI dropdown choice always wins
+    // over the browser's default language.
+    expect(source).toMatch(/req\.query\.lang/);
+    expect(source).toMatch(/queryLang\b/);
+  });
+
+  it('VTID-03084: still falls back to Accept-Language header', () => {
+    expect(source).toMatch(/req\.headers\[['"]accept-language['"]\]/);
+    expect(source).toMatch(/headerLang\b/);
+  });
+
+  it('VTID-03084: consults stored preferred_language fact when no explicit query param', () => {
+    expect(source).toMatch(/preferred_language/);
+    expect(source).toMatch(/getCurrentFacts/);
+  });
 });
