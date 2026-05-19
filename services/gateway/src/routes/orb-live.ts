@@ -6343,104 +6343,6 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const lang = session.lang;
-
-  // VTID-WAKE-OPENER: branch on wake-brief state BEFORE the legacy bucket-driven
-  // menu prompt is built. The legacy prompt (below) is a user-turn that tells
-  // Gemini to "Pick ONE of: 'How can I help?' / 'I am listening.' / ...". Since
-  // it's sent AFTER setup_complete, it is the most recent input Gemini sees and
-  // it wins over the system_instruction's SPOKEN FIRST UTTERANCE override block
-  // (live-session-controller.ts buildVertexWakeBriefBlock). VTID-03101 fixed the
-  // race that wiped the override block from contextInstruction; this fixes the
-  // separate race where the trigger prompt itself contradicts the override.
-  //
-  // Two distinct wake-brief states matter here:
-  //   (a) decision produced a userFacingLine → block exists on the session:
-  //       send a minimal trigger that defers to the system_instruction. NO menu.
-  //   (b) decision exists but was suppressed (none_with_reason — B1 cadence
-  //       skip, greeted-recently, heavy-day dampening, etc.): the policy says
-  //       "do not greet". Do NOT send the legacy menu (that would force
-  //       Gemini to speak generic fallback). Skip the trigger entirely; the
-  //       user opens with audio and the model responds to that.
-  //
-  // Both branches mark greetingSent=true so the stall-recovery re-send path
-  // does not re-fire the legacy menu later. The watchdog only starts when
-  // we actually send a trigger (case a) — case b is silence-by-design.
-  const wakeBriefOverrideBlock: string | undefined = (session as any).wakeBriefOverrideBlock;
-  const wakeBriefDecision: { selectedContinuation?: { kind?: string; userFacingLine?: string; suppressReason?: string | null } | null; suppressionReason?: string | null; decisionId?: string } | null =
-    (session as any).wakeBriefDecision || null;
-  const overrideActive =
-    typeof wakeBriefOverrideBlock === 'string' && wakeBriefOverrideBlock.length > 0;
-  const wakeBriefSuppressed =
-    !overrideActive
-    && !!wakeBriefDecision
-    && (wakeBriefDecision.selectedContinuation?.kind === 'none_with_reason'
-        || !wakeBriefDecision.selectedContinuation
-        || !wakeBriefDecision.selectedContinuation.userFacingLine
-        || wakeBriefDecision.selectedContinuation.userFacingLine.trim().length === 0);
-
-  if (overrideActive) {
-    const triggerPromptsByLang: Record<string, string> = {
-      'en': 'Begin your first turn now. The SPOKEN FIRST UTTERANCE block in your system instruction contains the exact line you must speak. Use that line verbatim — copy it letter-for-letter — then stop and wait for the user. Do NOT pick a phrase from any other section. Do NOT add a greeting before it. Do NOT add a question after it.',
-      'de': 'Beginne jetzt deinen ersten Sprechturn. Der Abschnitt "SPOKEN FIRST UTTERANCE" in deiner Systemanweisung enthält den exakten Satz, den du sprechen musst. Verwende diesen Satz wörtlich — Zeichen für Zeichen — und warte dann auf den Nutzer. Wähle KEINE Phrase aus einem anderen Abschnitt. Stelle KEINE Begrüßung davor. Hänge KEINE Frage hinten an.',
-      'fr': 'Commence ton premier tour maintenant. Le bloc "SPOKEN FIRST UTTERANCE" dans tes instructions système contient la phrase exacte que tu dois prononcer. Utilise cette phrase verbatim — caractère par caractère — puis attends l\'utilisateur. Ne choisis AUCUNE phrase d\'une autre section. N\'ajoute AUCUNE salutation avant. N\'ajoute AUCUNE question après.',
-      'es': 'Comienza ahora tu primer turno. El bloque "SPOKEN FIRST UTTERANCE" en tu instrucción del sistema contiene la frase exacta que debes decir. Usa esa frase textualmente — letra por letra — y luego espera al usuario. NO elijas una frase de ninguna otra sección. NO añadas saludo antes. NO añadas pregunta después.',
-      'ar': 'ابدأ دورك الأول الآن. يحتوي قسم "SPOKEN FIRST UTTERANCE" في تعليمات النظام على الجملة الدقيقة التي يجب أن تنطق بها. استخدم تلك الجملة حرفياً — حرفاً بحرف — ثم انتظر المستخدم. لا تختر عبارة من أي قسم آخر.',
-      'zh': '现在开始你的第一个对话回合。你的系统指令中的"SPOKEN FIRST UTTERANCE"部分包含你必须说的确切句子。逐字使用那句话，然后停下来等待用户。不要从任何其他部分选择短语。',
-      'ru': 'Начни свой первый ход прямо сейчас. Блок "SPOKEN FIRST UTTERANCE" в твоих системных инструкциях содержит точную фразу, которую ты должен произнести. Используй её дословно — буква в букву — затем остановись и жди пользователя. НЕ выбирай фразу из других разделов.',
-      'sr': 'Започни сада свој први потез. Блок "SPOKEN FIRST UTTERANCE" у твојим системским упутствима садржи тачну реченицу коју мораш изговорити. Користи ту реченицу дословно — слово по слово — затим стани и сачекај корисника. НЕ бирај фразу из друге секције.',
-    };
-    const triggerPrompt = triggerPromptsByLang[lang] || triggerPromptsByLang['en'];
-    const triggerMessage = {
-      client_content: {
-        turns: [{
-          role: 'user',
-          parts: [{ text: triggerPrompt }]
-        }],
-        turn_complete: true
-      }
-    };
-    const selectedLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim() || '<missing>';
-    const previewLine = selectedLine.length > 160 ? selectedLine.slice(0, 160) + '...' : selectedLine;
-    const promptPreview = triggerPrompt.length > 120 ? triggerPrompt.slice(0, 120) + '...' : triggerPrompt;
-    console.log(`[VTID-WAKE-OPENER] path=vertex override_active=true lang=${lang} decision_id=${wakeBriefDecision?.decisionId || '<none>'}`);
-    console.log(`[VTID-WAKE-OPENER] selected_line="${previewLine}"`);
-    console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
-    ws.send(JSON.stringify(triggerMessage));
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: triggerPrompt.length,
-      wake_opener: 'override_trigger',
-      decision_id: wakeBriefDecision?.decisionId || null,
-    });
-    startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
-    return true;
-  }
-
-  if (wakeBriefSuppressed) {
-    // Wake-brief policy said "do not greet". Do NOT send a competing trigger.
-    // Mark greetingSent=true so stall-recovery doesn't later substitute the
-    // legacy menu. No watchdog: case is silence-by-design and the next turn
-    // is gated on user audio (mic input → Gemini realtime VAD).
-    const suppressionReason =
-      wakeBriefDecision?.selectedContinuation?.suppressReason
-      || wakeBriefDecision?.suppressionReason
-      || 'unknown';
-    console.log(`[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=true lang=${lang} suppression_reason=${suppressionReason} decision_id=${wakeBriefDecision?.decisionId || '<none>'}`);
-    console.log(`[VTID-WAKE-OPENER] selected_line=<none>`);
-    console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: 0,
-      wake_opener: 'suppressed_no_trigger',
-      suppression_reason: suppressionReason,
-      decision_id: wakeBriefDecision?.decisionId || null,
-    });
-    return true;
-  }
   // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
   // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
   // never curt. The previous iteration fixed "Hello Dragan!" but made
@@ -6558,22 +6460,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     }
   };
 
-  // VTID-WAKE-OPENER: legacy path log — fires when no wake-brief decision was
-  // made (anonymous session, decider threw, pre-VTID-03052 callers, etc.).
-  // Always paired with the override + suppressed logs above so we can prove
-  // in production which branch actually fired for a given session.
-  const promptPreview = prompt.length > 120 ? prompt.slice(0, 120) + '...' : prompt;
-  console.log(`[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=false lang=${lang} decision_id=<none>`);
-  console.log(`[VTID-WAKE-OPENER] selected_line=<none> (legacy menu path)`);
-  console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
-
   ws.send(JSON.stringify(message));
 
   // Mark greeting as sent and record turn index for filtering
   session.greetingSent = true;
   session.greetingTurnIndex = session.turn_count;
   console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
-  emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0, wake_opener: 'legacy' });
+  emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
 
   // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
   startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
