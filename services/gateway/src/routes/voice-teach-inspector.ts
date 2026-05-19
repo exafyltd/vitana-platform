@@ -17,6 +17,7 @@
 
 import { Router, Response } from 'express';
 import {
+  requireAuthWithTenant,
   requireExafyAdmin,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
@@ -33,6 +34,12 @@ const SUPPORTED_LANGS = ['en', 'de'] as const;
 
 router.get(
   '/voice/teach-vitanaland/state',
+  // VTID-03097: requireExafyAdmin needs requireAuthWithTenant FIRST to
+  // populate req.identity. Without the auth step the admin middleware
+  // sees no identity and returns 'Authentication required' (401). All
+  // other admin routes pair these two — voice-feature-discovery.ts is
+  // the canonical example.
+  requireAuthWithTenant,
   requireExafyAdmin,
   async (req: AuthenticatedRequest, res: Response) => {
     try {

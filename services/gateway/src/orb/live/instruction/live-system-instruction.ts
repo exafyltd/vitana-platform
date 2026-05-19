@@ -149,6 +149,10 @@ function buildTemporalJourneyContextSection(
   // greeting) so this stays opt-in. TONE RULES + JOURNEY AWARENESS are
   // kept because they shape ongoing conversation, not just the opener.
   omitGreetingPolicy?: boolean,
+  // VTID-03097: when the caller already injected a VERTEX WAKE BRIEF
+  // override block, suppress the short-gap-greeting-phrases pool so
+  // Gemini doesn't see two competing "speak this verbatim" lists.
+  wakeBriefOverrideActive?: boolean,
 ): string {
   const temporal = describeTimeSince(lastSessionInfo);
   const current = describeRoute(currentRoute, lang);
@@ -247,11 +251,19 @@ function buildTemporalJourneyContextSection(
   const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
 
   const bucket = isReconnect ? 'reconnect' : temporal.bucket;
+  // VTID-03097: caller signals when a wake-brief override block is
+  // active. When yes, the SHORT-GAP GREETING PHRASES pool is
+  // suppressed so Gemini doesn't see two competing "speak this
+  // verbatim" lists.
   // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
   // subset of the language-specific phrase pool so Gemini rotates openers
   // instead of converging on the same translation every time.
   const shortGapExamples = pickShortGapGreetings(lang, 6);
   const appendShortGapPhraseMenu = () => {
+    if (wakeBriefOverrideActive) {
+      lines.push('  • SHORT-GAP PHRASE LIST SUPPRESSED — a VERTEX WAKE BRIEF override is active later in this prompt. Speak the override line verbatim instead of any phrase here.');
+      return;
+    }
     lines.push('  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):');
     for (const p of shortGapExamples) {
       lines.push(`      "${p}"`);
@@ -630,6 +642,13 @@ ${trimmedHistory}
   // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
   // its greeting policy overrides the generic GREETING RULES higher up. This
   // is what stops Vitana from saying "Hello <name>!" every single session.
+  // VTID-03097: detect VERTEX WAKE BRIEF override here at the
+  // top-level buildLiveSystemInstruction (which has bootstrapContext)
+  // and pass the boolean down so the temporal section can suppress
+  // the SHORT-GAP GREETING PHRASES pool when needed.
+  const wakeBriefOverrideActive =
+    typeof bootstrapContext === 'string' &&
+    bootstrapContext.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>');
   instruction += buildTemporalJourneyContextSection(
     lang,
     lastSessionInfo,
@@ -638,6 +657,7 @@ ${trimmedHistory}
     !!isReconnect,
     clientContext?.timeOfDay,
     omitGreetingPolicy,
+    wakeBriefOverrideActive,
   );
 
   // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
