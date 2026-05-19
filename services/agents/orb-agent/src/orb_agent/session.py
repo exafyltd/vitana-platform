@@ -2149,8 +2149,25 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # behavior. Fully reversible — empty/missing decision falls back to
         # _localized_greeting() so a degraded bootstrap path never silences
         # the orb.
-        wake_brief = getattr(bootstrap, "wake_brief_decision", None) or {}
-        wake_line = wake_brief.get("user_facing_line") if isinstance(wake_brief, dict) else None
+        #
+        # VTID-WAKE-OPENER: trust the decider. When the gateway returned a
+        # decision (`wake_brief_decision` is a dict) but no `user_facing_line`,
+        # that is a deliberate policy decision — B1 cadence skip, greeted-
+        # recently, heavy-day dampening, etc. Falling back to
+        # _localized_greeting() in that case is exactly the bug: the user
+        # hears "Hallo, wie kann ich helfen?" three minutes after they last
+        # heard "Hallo, wie kann ich helfen?". The only legitimate fallback
+        # is when the decision is absent (degraded bootstrap, pre-VTID-03052
+        # gateway) — then localized greeting is correct so the orb never
+        # silently fails to greet.
+        raw_wake_brief = getattr(bootstrap, "wake_brief_decision", None)
+        decision_present = isinstance(raw_wake_brief, dict)
+        wake_brief = raw_wake_brief if decision_present else {}
+        wake_line = wake_brief.get("user_facing_line") if decision_present else None
+        selected_kind = wake_brief.get("selected_kind") if decision_present else None
+        suppression_reason = (
+            wake_brief.get("suppression_reason") if decision_present else None
+        )
         # VTID-03076 (P0-C): is this a real proactive offer (wake_brief
         # kind=wake_brief OR next_step) we should remember? The agent
         # only persists state for offers that have a decision_id +
@@ -2160,7 +2177,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         is_proactive_offer = (
             isinstance(wake_line, str)
             and wake_line.strip()
-            and isinstance(wake_brief, dict)
+            and decision_present
             and isinstance(wake_brief.get("decision_id"), str)
             and isinstance(wake_brief.get("dedupe_key"), str)
         )
@@ -2168,8 +2185,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             greeting_text = wake_line.strip()
             logger.info(
                 "VTID-03054: speaking wake_brief user_facing_line (kind=%s, decision_id=%s)",
-                wake_brief.get("selected_kind") if isinstance(wake_brief, dict) else None,
-                wake_brief.get("decision_id") if isinstance(wake_brief, dict) else None,
+                selected_kind,
+                wake_brief.get("decision_id"),
+            )
+            # VTID-WAKE-OPENER: parallel log to the Vertex side
+            # (orb-live.ts sendGreetingPromptToLiveAPI) so a single grep
+            # across logs covers both providers.
+            line_preview = greeting_text[:160] + ("..." if len(greeting_text) > 160 else "")
+            logger.info(
+                '[VTID-WAKE-OPENER] path=livekit override_active=true lang=%s '
+                'decision_id=%s selected_line="%s" said="%s"',
+                identity.lang or "en",
+                wake_brief.get("decision_id") or "<none>",
+                line_preview,
+                line_preview,
             )
             # VTID-03076: persist activeContinuation BEFORE the speak so
             # a race with the next user turn finds the state populated.
@@ -2191,45 +2220,85 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     active_continuation.get("source_key"),
                     _CONTINUATION_TTL_SECONDS,
                 )
+        elif decision_present:
+            # VTID-WAKE-OPENER: decision was made AND policy suppressed the
+            # spoken opener. Do NOT fall back to the localized-greeting
+            # helper — the decider already considered (and rejected) speaking
+            # on this wake. Silence is the correct outcome; the next turn is
+            # gated on user audio.
+            greeting_text = None
+            is_proactive_offer = False
+            logger.info(
+                "[VTID-WAKE-OPENER] path=livekit override_active=false suppressed=true "
+                "lang=%s decision_id=%s selected_kind=%s suppression_reason=%s "
+                'user_facing_line=<empty> said=<skipped>',
+                identity.lang or "en",
+                wake_brief.get("decision_id") or "<none>",
+                selected_kind or "<none>",
+                suppression_reason or "<unknown>",
+            )
         else:
+            # No decision at all — degraded bootstrap, pre-VTID-03052 gateway,
+            # or wake_brief_decision absent for any other reason. Localized
+            # fallback so the orb never silently fails to greet.
             greeting_text = _localized_greeting(
                 identity.lang,
                 first_name=first_name,
                 vitana_handle=vid,
             )
             is_proactive_offer = False
+            preview = (greeting_text or "")[:160]
+            logger.info(
+                "[VTID-WAKE-OPENER] path=livekit override_active=false suppressed=false "
+                'lang=%s decision_id=<missing> said="%s"',
+                identity.lang or "en",
+                preview,
+            )
     else:
         greeting_text = _localized_anonymous_greeting(identity.lang)
         is_proactive_offer = False
-    try:
-        # VTID-03017: add_to_chat_ctx=False — the greeting is a deterministic
-        # template, not an LLM turn, so it shouldn't pollute chat_ctx as if
-        # the model authored it. The LLM still knows the user is freshly
-        # greeted via the placeholder system prompt + (after hydration) the
-        # rendered system_instruction.
-        #
-        # VTID-03076 (P0-C) exception: a REAL proactive offer (wake_brief
-        # with decision_id + dedupe_key) MUST go into chat_ctx so the LLM
-        # remembers having said it. Otherwise the user's "ja" hits the
-        # model with no context and produces a tangential answer
-        # (Vitanaland explanation when a match was offered). Localized
-        # greetings stay out of chat_ctx — those are decoration, not
-        # offers the user can act on.
-        await session.say(greeting_text, add_to_chat_ctx=bool(is_proactive_offer))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("initial greeting session.say failed: %s", exc)
-        asyncio.create_task(
-            _early_trace_heartbeat(
-                cfg.gateway_url,
-                {
-                    "user_id": identity.user_id or "unknown",
-                    "code_version": CODE_VERSION,
-                    "phase": "greeting_failed",
-                    "orb_session_id": orb_session_id,
-                    "error": str(exc)[:500],
-                },
-            )
+        preview = (greeting_text or "")[:160]
+        logger.info(
+            "[VTID-WAKE-OPENER] path=livekit override_active=false suppressed=false "
+            'lang=%s anonymous=true said="%s"',
+            identity.lang or "en",
+            preview,
         )
+    if greeting_text is None:
+        # VTID-WAKE-OPENER: suppressed-by-policy branch. Skip session.say
+        # entirely; do NOT emit a greeting_failed heartbeat (this is not a
+        # failure, it is the intended behavior).
+        pass
+    else:
+        try:
+            # VTID-03017: add_to_chat_ctx=False — the greeting is a deterministic
+            # template, not an LLM turn, so it shouldn't pollute chat_ctx as if
+            # the model authored it. The LLM still knows the user is freshly
+            # greeted via the placeholder system prompt + (after hydration) the
+            # rendered system_instruction.
+            #
+            # VTID-03076 (P0-C) exception: a REAL proactive offer (wake_brief
+            # with decision_id + dedupe_key) MUST go into chat_ctx so the LLM
+            # remembers having said it. Otherwise the user's "ja" hits the
+            # model with no context and produces a tangential answer
+            # (Vitanaland explanation when a match was offered). Localized
+            # greetings stay out of chat_ctx — those are decoration, not
+            # offers the user can act on.
+            await session.say(greeting_text, add_to_chat_ctx=bool(is_proactive_offer))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("initial greeting session.say failed: %s", exc)
+            asyncio.create_task(
+                _early_trace_heartbeat(
+                    cfg.gateway_url,
+                    {
+                        "user_id": identity.user_id or "unknown",
+                        "code_version": CODE_VERSION,
+                        "phase": "greeting_failed",
+                        "orb_session_id": orb_session_id,
+                        "error": str(exc)[:500],
+                    },
+                )
+            )
 
     # VTID-03021: NO background hydration. The full system_instruction is
     # already bound to Agent(instructions=sys_prompt) at construction time
