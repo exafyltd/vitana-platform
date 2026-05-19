@@ -901,9 +901,22 @@ export async function handleLiveSessionStart(
     const line = picked?.userFacingLine?.trim();
     if (picked && line && line.length > 0 && !isReconnectStart) {
       const block = buildVertexWakeBriefBlock(line, lang, picked.dedupeKey ?? null);
-      session.contextInstruction = (session.contextInstruction || '') + block;
+      // VTID-03101: write to a DEDICATED session field instead of mutating
+      // contextInstruction. The bootstrap promise above unconditionally
+      // does `session.contextInstruction = finalContext` when it resolves
+      // — and bootstrap typically finishes AFTER this synchronous block
+      // (vitana-brain ~200-2000ms vs wake-brief ~50-200ms). Mutating
+      // contextInstruction here meant the bootstrap overwrite always
+      // wiped the override block, and the WS setup-message builder then
+      // sent Gemini a prompt with NO override — so Gemini fell back to
+      // its trained-default greeting ("Hello! How can I help today?")
+      // and the Teacher line was never spoken. The setup-message builder
+      // (orb-live.ts buildOrbVertexSetupEnvelope) now concatenates BOTH
+      // contextInstruction AND wakeBriefOverrideBlock, eliminating the
+      // race entirely.
+      session.wakeBriefOverrideBlock = block;
       console.log(
-        `[VTID-03079] Vertex wake-brief injected into system_instruction (decision_id=${wakeBriefDecision?.decisionId}, source=${picked.evidence?.find((e) => e.kind?.startsWith('source:'))?.kind || 'voice_wake_brief'})`,
+        `[VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=${wakeBriefDecision?.decisionId}, source=${picked.evidence?.find((e) => e.kind?.startsWith('source:'))?.kind || 'voice_wake_brief'}, block_chars=${block.length})`,
       );
     }
   } catch (e) {

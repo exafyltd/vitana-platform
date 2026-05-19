@@ -827,6 +827,12 @@ export interface GeminiLiveSession {
   // overlaps with the Google auth + WS handshake (500-1000ms) instead of
   // serializing with /live/session/start's response.
   contextReadyPromise?: Promise<void>;
+  // VTID-03101: wake-brief override block, kept on its own field so the
+  // background bootstrap promise (which unconditionally writes
+  // contextInstruction = finalContext at the end of its .then) cannot
+  // overwrite it. The WS setup-message builder concatenates BOTH fields
+  // when rendering the system_instruction.
+  wakeBriefOverrideBlock?: string;
   // VTID-01225: Transcript accumulation for Cognee extraction
   // Forwarding v2d: `persona` records WHICH persona spoke this assistant turn
   // (e.g. 'vitana' / 'devon' / 'sage' / 'atlas' / 'mira'). Without this, the
@@ -5662,7 +5668,19 @@ async function connectToLiveAPI(
                                   ((session as any)._lastSpecialistPersona as string),
                                   session.lang,
                                 )
-                              : ''),
+                              : '')
+                          // VTID-03101: append the wake-brief override block
+                          // LAST so it has recency primacy in Gemini's
+                          // attention AND so the sentinel marker reaches
+                          // buildLiveSystemInstruction's strip+suppress
+                          // logic in the same string. The block lives on
+                          // its own session field to avoid the race where
+                          // the bootstrap promise (session.contextInstruction
+                          // = finalContext at the end of its .then) wipes
+                          // the appended override. See
+                          // live-session-controller.ts:VTID-03101 for the
+                          // write side. Empty when no override is active.
+                          + (session.wakeBriefOverrideBlock || ''),
                         session.active_role,
                         session.conversationSummary,
                         // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
