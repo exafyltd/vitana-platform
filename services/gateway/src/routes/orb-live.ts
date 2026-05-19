@@ -6343,6 +6343,75 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const lang = session.lang;
+
+  // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
+  // a user_facing_line on /live/session/start, replace the legacy menu
+  // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
+  // (~line 6413) already uses successfully in production. The line itself
+  // is embedded in the user-turn — Gemini does not need to scan the
+  // system_instruction to find the SPOKEN FIRST UTTERANCE block, and the
+  // prompt stays compact (~150-300 chars) so it does not delay the first
+  // audio chunk past the AudioContext suspend window.
+  //
+  // History:
+  //   VTID-03101 (PR #2258) — added wake-brief override block to system_instruction.
+  //                            Legacy menu user-turn still won (recency primacy).
+  //   VTID-03102 (PR #2262) — replaced legacy menu with a long meta-instruction
+  //                            trigger that pointed Gemini at the system prompt's
+  //                            override block. Reverted in PR #2265 because
+  //                            Gemini Live either shifted response modality to
+  //                            text-only or delayed first audio past iOS
+  //                            AudioContext auto-suspend — UI flipped to
+  //                            "speaking" but no audio reached the user.
+  //   VTID-03104 (this fix)  — minimal, field-tested prompt shape; line is
+  //                            quoted directly so the model has nothing to
+  //                            look up.
+  //
+  // The suppressed-by-cadence branch deliberately falls through to the
+  // legacy bucket dispatch below — that path has shipped for months and
+  // is known to keep audio flowing. B1 cadence is a separate slice.
+  const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
+    (session as any).wakeBriefDecision || null;
+  const wakeOverrideLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim();
+  if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
+    // Escape double-quotes so the line cannot terminate the wrapper early.
+    const safe = wakeOverrideLine.replace(/"/g, '\\"');
+    const wakeTriggerByLang: Record<string, string> = {
+      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
+      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
+      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
+      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
+      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
+      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
+      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
+      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
+    };
+    const wakePrompt = wakeTriggerByLang[lang] || wakeTriggerByLang.en;
+    const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
+    const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
+    console.log(
+      `[VTID-WAKE-OPENER] path=vertex override_active=true lang=${lang} decision_id=${wakeBriefDecision?.decisionId || '<none>'} prompt_len=${wakePrompt.length}`,
+    );
+    console.log(`[VTID-WAKE-OPENER] selected_line="${linePreview}"`);
+    console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
+    const wakeMessage = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text: wakePrompt }] }],
+        turn_complete: true,
+      },
+    };
+    ws.send(JSON.stringify(wakeMessage));
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    emitDiag(session, 'greeting_sent', {
+      lang,
+      prompt_len: wakePrompt.length,
+      wake_opener: 'override_v2',
+      decision_id: wakeBriefDecision?.decisionId || null,
+    });
+    startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+    return true;
+  }
   // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
   // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
   // never curt. The previous iteration fixed "Hello Dragan!" but made
