@@ -564,23 +564,20 @@ export async function notifyUser(
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
-    pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-
     if (payload.data?.url) {
-      const { count: nativeMobileCount } = await supabase
-        .from('user_device_tokens')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('tenant_id', tenantId)
-        .like('device_label', 'Appilix %');
-
-      if (!nativeMobileCount) {
+      // Notifications with deep-link URLs must go through Appilix first.
+      // Appilix honors open_link_url on tap; FCM-delivered notifications
+      // crash the Appilix WebView ("Something went wrong") because FCM
+      // doesn't pass the URL to Appilix's native tap handler.
+      appilixSent = await sendAppilixPush(userId, payload);
+      if (!appilixSent) {
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+      }
+    } else {
+      pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+      if (pushed === 0) {
         appilixSent = await sendAppilixPush(userId, payload);
       }
-    }
-
-    if (pushed === 0 && !appilixSent) {
-      appilixSent = await sendAppilixPush(userId, payload);
     }
   }
 
