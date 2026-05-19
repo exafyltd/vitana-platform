@@ -1545,6 +1545,62 @@ router.get(
       }
     }
 
+    // VTID-03100: re-render systemInstruction with the wake-brief
+    // override block when a candidate has a non-empty userFacingLine.
+    // The earlier buildLiveSystemInstruction call (line ~1431) ran
+    // BEFORE wakeBriefDecision was computed, so the override block
+    // had nowhere to go. Now we know the picked line (Teacher's
+    // two-clause greeting or voice_wake_brief's policy line), so we
+    // build the block, prepend the sentinel marker to bootstrapContext,
+    // and re-call buildLiveSystemInstruction. The strip helper in
+    // live-system-instruction.ts detects the marker and removes the
+    // competing vitana-brain opener sections so the override actually
+    // owns the first turn.
+    try {
+      const picked = wakeBriefDecision?.selectedContinuation ?? null;
+      const line = picked?.userFacingLine?.trim();
+      if (picked && line && line.length > 0 && !isReconnect) {
+        const { buildVertexWakeBriefBlock } = await import(
+          '../orb/live/session/live-session-controller'
+        );
+        const overrideBlock = buildVertexWakeBriefBlock(
+          line,
+          lang,
+          picked.dedupeKey ?? null,
+        );
+        const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
+        const augmentedContext =
+          (bootstrapContext ? `${bootstrapContext}\n\n` : '') +
+          `${vitanaBehavioralRule}` +
+          overrideBlock;
+        const voiceStyle =
+          (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
+          'friendly, calm, empathetic';
+        systemInstruction = buildLiveSystemInstruction(
+          lang,
+          voiceStyle,
+          augmentedContext,
+          role,
+          undefined,
+          undefined,
+          isReconnect,
+          null,
+          null,
+          null,
+          envContext ?? undefined,
+          req.identity?.vitana_id ?? null,
+          true,
+        );
+        console.log(
+          `[${VTID}/VTID-03100] systemInstruction re-rendered with wake-brief override (kind=${picked.kind}, decision_id=${wakeBriefDecision?.decisionId}, lang=${lang})`,
+        );
+      }
+    } catch (exc) {
+      console.warn(
+        `[${VTID}/VTID-03100] override re-render failed (non-fatal — falls back to pre-override system_instruction): ${(exc as Error).message}`,
+      );
+    }
+
     const responsePayload: Record<string, unknown> = {
       ok: true,
       vtid: VTID,
