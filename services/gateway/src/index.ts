@@ -799,6 +799,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceTeacherEventRouter = require('./routes/voice-teacher-event').default;
   mountRouterSync(app, '/api/v1', voiceTeacherEventRouter, { owner: 'voice-teacher-event' });
 
+  // VTID-03095 (Teacher PR 5): Teach Vitanaland inspector route — admin-only.
+  // GET /api/v1/voice/teach-vitanaland/state?user_id=<uuid>
+  // Returns catalog + per-user ledger + greeting/invitation pools for the
+  // Command Hub "Teach Vitanaland" sub-tab.
+  const voiceTeachInspectorRouter = require('./routes/voice-teach-inspector').default;
+  mountRouterSync(app, '/api/v1', voiceTeachInspectorRouter, { owner: 'voice-teach-inspector' });
+
   // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
   // surface that groups recent B0d-real OASIS events by decision_id.
   // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.

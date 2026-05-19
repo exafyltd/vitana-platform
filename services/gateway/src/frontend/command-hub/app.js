@@ -43440,7 +43440,13 @@ function renderVoiceAwarenessView() {
     var subs = [
         { key: 'registry',   label: 'Registry'   },
         { key: 'test',       label: 'Test'       },
-        { key: 'watchdogs',  label: 'Watchdogs'  }
+        { key: 'watchdogs',  label: 'Watchdogs'  },
+        // VTID-03095 (Teacher PR 5): the "Teach Vitanaland" panel —
+        // read-only inspector for the Feature Discovery Coach
+        // (Teacher) catalog + per-user awareness ledger +
+        // greeting/invitation pool copy. Reads /api/v1/voice/
+        // teach-vitanaland/state.
+        { key: 'teach',      label: 'Teach Vitanaland' }
     ];
     subs.forEach(function (s) {
         var pill = document.createElement('button');
@@ -43464,9 +43470,240 @@ function renderVoiceAwarenessView() {
     } else if (active === 'watchdogs') {
         // VTID-02859: Awareness Watchdogs sub-tab — fetches /voice/awareness/watchdogs
         body.appendChild(renderAwarenessWatchdogsTable());
+    } else if (active === 'teach') {
+        // VTID-03095 (Teacher PR 5): Teach Vitanaland inspector panel.
+        body.appendChild(renderTeachVitanalandView());
     }
     c.appendChild(body);
     return c;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-03095 (Teacher PR 5): Teach Vitanaland inspector view.
+//
+// Read-only operator panel for the Feature Discovery Coach (Teacher).
+// Renders the global capability catalog, the per-user awareness ledger,
+// and the greeting + invitation phrase pools. Mutations happen via the
+// existing POST /api/v1/voice/teacher/event endpoint (PR 4); this view
+// is purely diagnostic.
+// ─────────────────────────────────────────────────────────────────────────
+function renderTeachVitanalandView() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:1.5rem;';
+
+    if (!state.teachVitanaland) {
+        state.teachVitanaland = {
+            userId: '',
+            loading: false,
+            error: null,
+            data: null,
+        };
+    }
+    var tv = state.teachVitanaland;
+
+    // ---- Header ----
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:1rem;';
+    var title = document.createElement('h2');
+    title.textContent = 'Teach Vitanaland';
+    title.style.cssText = 'margin:0 0 0.25rem 0;font-size:1.25rem;color:var(--color-text-primary);';
+    header.appendChild(title);
+    var subtitle = document.createElement('div');
+    subtitle.textContent = 'Feature Discovery Coach (the Teacher) — catalog, per-user awareness ledger, and phrase pools. VTID-03095.';
+    subtitle.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+    header.appendChild(subtitle);
+    c.appendChild(header);
+
+    // ---- User picker ----
+    var picker = document.createElement('div');
+    picker.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;';
+    var userInput = document.createElement('input');
+    userInput.type = 'text';
+    userInput.placeholder = 'user_id (UUID) — optional (catalog renders without it)';
+    userInput.value = tv.userId || '';
+    userInput.style.cssText = 'flex:1;padding:0.5rem 0.75rem;background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:6px;color:var(--color-text-primary);font-family:monospace;font-size:0.85rem;';
+    userInput.oninput = function () { tv.userId = userInput.value.trim(); };
+    var loadBtn = document.createElement('button');
+    loadBtn.textContent = tv.loading ? 'Loading…' : 'Load';
+    loadBtn.disabled = !!tv.loading;
+    loadBtn.style.cssText = 'padding:0.5rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;' + (tv.loading ? 'opacity:0.6;cursor:not-allowed;' : '');
+    loadBtn.onclick = function () {
+        loadTeachVitanalandData(tv.userId);
+    };
+    picker.appendChild(userInput);
+    picker.appendChild(loadBtn);
+    c.appendChild(picker);
+
+    // ---- Error ----
+    if (tv.error) {
+        var err = document.createElement('div');
+        err.textContent = '⚠ ' + tv.error;
+        err.style.cssText = 'padding:0.75rem 1rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#ef4444;margin-bottom:1rem;font-size:0.85rem;';
+        c.appendChild(err);
+    }
+
+    // ---- Initial empty state ----
+    if (!tv.data) {
+        var empty = document.createElement('div');
+        empty.textContent = 'Press Load to fetch the catalog. Pass a user_id to also see the per-user awareness ledger.';
+        empty.style.cssText = 'padding:1rem;color:var(--color-text-secondary);font-size:0.85rem;';
+        c.appendChild(empty);
+        return c;
+    }
+
+    var data = tv.data;
+
+    // ---- Capability Catalog panel ----
+    var catalogPanel = makeTeachPanel('Capability Catalog (' + (data.catalog || []).length + ')', 'Every feature the Teacher can introduce. Read-only.');
+    var catTable = document.createElement('table');
+    catTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="text-align:left;border-bottom:1px solid var(--color-border);"><th style="padding:0.5rem 0.5rem 0.5rem 0;">capability_key</th><th style="padding:0.5rem;">display_name</th><th style="padding:0.5rem;">manual_path</th><th style="padding:0.5rem;">enabled</th></tr>';
+    catTable.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    (data.catalog || []).forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.style.cssText = 'border-bottom:1px solid var(--color-border);';
+        tr.innerHTML = '<td style="padding:0.5rem 0.5rem 0.5rem 0;font-family:monospace;color:var(--color-text-secondary);">' + esc(row.capability_key) + '</td>' +
+            '<td style="padding:0.5rem;color:var(--color-text-primary);">' + esc(row.display_name || '') + '</td>' +
+            '<td style="padding:0.5rem;font-family:monospace;font-size:0.75rem;color:var(--color-text-secondary);">' + esc(row.manual_path || '(none)') + '</td>' +
+            '<td style="padding:0.5rem;color:' + (row.enabled ? '#10b981' : '#ef4444') + ';">' + (row.enabled ? '✓' : '✕') + '</td>';
+        tbody.appendChild(tr);
+    });
+    catTable.appendChild(tbody);
+    catalogPanel.body.appendChild(catTable);
+    c.appendChild(catalogPanel.el);
+
+    // ---- Per-User Awareness Ledger panel ----
+    var ledgerPanel = makeTeachPanel(
+        data.user_id ? ('Awareness Ledger — ' + esc(data.user_id) + ' (' + (data.ledger || []).length + ')') : 'Awareness Ledger',
+        data.user_id ? 'Per-capability state ladder for the selected user.' : 'Pass a user_id and reload to see the ledger.',
+    );
+    if (data.user_id && (data.ledger || []).length > 0) {
+        var ledTable = document.createElement('table');
+        ledTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;';
+        var ledHead = document.createElement('thead');
+        ledHead.innerHTML = '<tr style="text-align:left;border-bottom:1px solid var(--color-border);"><th style="padding:0.5rem 0.5rem 0.5rem 0;">capability_key</th><th style="padding:0.5rem;">state</th><th style="padding:0.5rem;">dismiss_count</th><th style="padding:0.5rem;">last_introduced_at</th><th style="padding:0.5rem;">use_count</th></tr>';
+        ledTable.appendChild(ledHead);
+        var ledBody = document.createElement('tbody');
+        (data.ledger || []).forEach(function (row) {
+            var stateColor = '#6b7280';
+            if (row.awareness_state === 'introduced') stateColor = '#3b82f6';
+            else if (row.awareness_state === 'seen' || row.awareness_state === 'tried') stateColor = '#f59e0b';
+            else if (row.awareness_state === 'completed' || row.awareness_state === 'mastered') stateColor = '#10b981';
+            else if (row.awareness_state === 'dismissed') stateColor = '#ef4444';
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid var(--color-border);';
+            tr.innerHTML = '<td style="padding:0.5rem 0.5rem 0.5rem 0;font-family:monospace;">' + esc(row.capability_key) + '</td>' +
+                '<td style="padding:0.5rem;color:' + stateColor + ';font-weight:500;">' + esc(row.awareness_state) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (row.dismiss_count || 0) + '</td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;color:var(--color-text-secondary);">' + esc(row.last_introduced_at || '—') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (row.use_count || 0) + '</td>';
+            ledBody.appendChild(tr);
+        });
+        ledTable.appendChild(ledBody);
+        ledgerPanel.body.appendChild(ledTable);
+    } else if (data.user_id) {
+        var ledEmpty = document.createElement('div');
+        ledEmpty.textContent = 'No ledger rows for this user — they have never been offered a capability yet.';
+        ledEmpty.style.cssText = 'padding:0.5rem;color:var(--color-text-secondary);font-size:0.85rem;';
+        ledgerPanel.body.appendChild(ledEmpty);
+    }
+    c.appendChild(ledgerPanel.el);
+
+    // ---- Phrase Pools panel ----
+    var poolsPanel = makeTeachPanel('Phrase Pools', 'Read-only view of the Teacher’s greeting + invitation pools per language.');
+    Object.keys(data.phrase_pools || {}).forEach(function (lang) {
+        var pool = data.phrase_pools[lang];
+        var langBlock = document.createElement('div');
+        langBlock.style.cssText = 'margin-top:0.75rem;';
+        var langTitle = document.createElement('div');
+        langTitle.textContent = lang.toUpperCase() + ' — ' + (pool.greetings || []).length + ' greetings, ' + (pool.invitations || []).length + ' invitations';
+        langTitle.style.cssText = 'font-weight:600;margin-bottom:0.5rem;color:var(--color-text-primary);';
+        langBlock.appendChild(langTitle);
+
+        var greetingsList = document.createElement('div');
+        greetingsList.style.cssText = 'margin-bottom:0.5rem;';
+        var grTitle = document.createElement('div');
+        grTitle.textContent = 'Greetings:';
+        grTitle.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.25rem;';
+        greetingsList.appendChild(grTitle);
+        (pool.greetings || []).forEach(function (g) {
+            var line = document.createElement('div');
+            line.textContent = '• ' + g;
+            line.style.cssText = 'padding:0.15rem 0.5rem;font-size:0.8rem;color:var(--color-text-primary);';
+            greetingsList.appendChild(line);
+        });
+        langBlock.appendChild(greetingsList);
+
+        var invitationsList = document.createElement('div');
+        var inTitle = document.createElement('div');
+        inTitle.textContent = 'Invitations:';
+        inTitle.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.25rem;';
+        invitationsList.appendChild(inTitle);
+        (pool.invitations || []).forEach(function (i) {
+            var line = document.createElement('div');
+            line.textContent = '• ' + i;
+            line.style.cssText = 'padding:0.15rem 0.5rem;font-size:0.8rem;color:var(--color-text-primary);';
+            invitationsList.appendChild(line);
+        });
+        langBlock.appendChild(invitationsList);
+
+        poolsPanel.body.appendChild(langBlock);
+    });
+    c.appendChild(poolsPanel.el);
+
+    return c;
+}
+
+function makeTeachPanel(title, subtitle) {
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem 1.25rem;margin-bottom:1rem;';
+    var titleEl = document.createElement('div');
+    titleEl.textContent = title;
+    titleEl.style.cssText = 'font-size:0.95rem;font-weight:600;color:var(--color-text-primary);margin-bottom:0.25rem;';
+    panel.appendChild(titleEl);
+    if (subtitle) {
+        var subEl = document.createElement('div');
+        subEl.textContent = subtitle;
+        subEl.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+        panel.appendChild(subEl);
+    }
+    var body = document.createElement('div');
+    panel.appendChild(body);
+    return { el: panel, body: body };
+}
+
+function loadTeachVitanalandData(userId) {
+    state.teachVitanaland.loading = true;
+    state.teachVitanaland.error = null;
+    renderApp();
+    var url = '/api/v1/voice/teach-vitanaland/state' + (userId ? ('?user_id=' + encodeURIComponent(userId)) : '');
+    fetch(url, { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (json) {
+            state.teachVitanaland.loading = false;
+            if (json && json.ok) {
+                state.teachVitanaland.data = json;
+            } else {
+                state.teachVitanaland.error = (json && (json.message || json.error)) || 'Unknown error';
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            state.teachVitanaland.loading = false;
+            state.teachVitanaland.error = (err && err.message) || String(err);
+            renderApp();
+        });
+}
+
+function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
