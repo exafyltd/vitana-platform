@@ -152,24 +152,42 @@ router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Respons
   }
 
   const memberIds = (members || []).map(m => m.user_id);
-  let profiles: Array<{ user_id: string; display_name: string | null; avatar_url: string | null }> = [];
+  let profileRows: Array<{ user_id: string; display_name: string | null; full_name: string | null; avatar_url: string | null }> = [];
+  let appUserRows: Array<{ user_id: string; display_name: string | null; email: string | null }> = [];
   if (memberIds.length > 0) {
-    const { data: profileRows } = await supabase
-      .from('app_users')
-      .select('user_id, display_name, avatar_url')
-      .in('user_id', memberIds);
-    profiles = profileRows || [];
+    const [profilesResp, appUsersResp] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('user_id, display_name, full_name, avatar_url')
+        .in('user_id', memberIds),
+      supabase
+        .from('app_users')
+        .select('user_id, display_name, email')
+        .in('user_id', memberIds),
+    ]);
+    profileRows = (profilesResp.data as typeof profileRows) || [];
+    appUserRows = (appUsersResp.data as typeof appUserRows) || [];
   }
-  const profileById = new Map(profiles.map(p => [p.user_id, p]));
+  const profileById = new Map(profileRows.map(p => [p.user_id, p]));
+  const appUserById = new Map(appUserRows.map(u => [u.user_id, u]));
 
-  const enrichedMembers = (members || []).map(m => ({
-    user_id: m.user_id,
-    role: m.role,
-    joined_at: m.joined_at,
-    display_name: profileById.get(m.user_id)?.display_name || null,
-    avatar_url: profileById.get(m.user_id)?.avatar_url || null,
-    is_bot: isVitanaBot(m.user_id),
-  }));
+  const enrichedMembers = (members || []).map(m => {
+    const profile = profileById.get(m.user_id);
+    const appUser = appUserById.get(m.user_id);
+    const displayName =
+      profile?.display_name ||
+      profile?.full_name ||
+      appUser?.display_name ||
+      (appUser?.email ? appUser.email.split('@')[0] : null);
+    return {
+      user_id: m.user_id,
+      role: m.role,
+      joined_at: m.joined_at,
+      display_name: displayName,
+      avatar_url: profile?.avatar_url || null,
+      is_bot: isVitanaBot(m.user_id),
+    };
+  });
 
   return res.json({
     ok: true,
@@ -330,15 +348,19 @@ async function fanoutGroupNotifications(
   content: string,
   messageId: string,
 ): Promise<void> {
-  const [{ data: group }, { data: members }, { data: senderProfile }] = await Promise.all([
+  const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
     supabase.from('chat_groups').select('name').eq('id', groupId).maybeSingle(),
     supabase.from('chat_group_members').select('user_id').eq('group_id', groupId),
     supabase.from('app_users').select('display_name, email').eq('user_id', senderId).maybeSingle(),
+    supabase.from('profiles').select('display_name, full_name').eq('user_id', senderId).maybeSingle(),
   ]);
 
   const groupName = (group as any)?.name || 'Group chat';
-  const senderName = (senderProfile as any)?.display_name
-    || ((senderProfile as any)?.email ? (senderProfile as any).email.split('@')[0] : 'Someone');
+  const senderName =
+    (senderProfile as any)?.display_name
+    || (senderProfile as any)?.full_name
+    || (senderAppUser as any)?.display_name
+    || ((senderAppUser as any)?.email ? (senderAppUser as any).email.split('@')[0] : 'Someone');
 
   const body = content.length > 100 ? content.slice(0, 97) + '...' : content;
 
