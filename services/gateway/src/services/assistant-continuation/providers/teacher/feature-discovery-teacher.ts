@@ -61,16 +61,17 @@ import {
 export const TEACHER_EXTRA_KEY = 'teacher' as const;
 export const TEACHER_PROVIDER_KEY = 'feature_discovery_teacher' as const;
 
-// Priority 75 — sits between voice_wake_brief (80) and the lowest band
-// of next-action sources (~50). Guide picks above-50 candidates first;
-// when Guide has nothing, Teacher's offer beats the bare wake-brief
-// fallback. Wake-brief at 80 still wins ONLY when the renderer
-// produces a non-empty line AND we explicitly chose the wake-brief
-// path (e.g. pillar-momentum proactive variant). The composer keeps
-// the Teacher candidate as a co-equal fallback if voice_wake_brief
-// returns the generic policy line — they have different `kind`s
-// (`wake_brief` vs `feature_discovery`) and different dedupeKeys.
-const DEFAULT_PRIORITY = 75;
+// VTID-03096 (Teacher priority bump): Teacher → 85, voice_wake_brief
+// stays at 80. The Teacher OWNS the spoken first turn whenever there
+// is an unexplored capability for this user. voice_wake_brief becomes
+// the pure fallback for the all-mastered / catalog-empty / suppressed
+// case.
+//
+// Lower than the urgent next-action bands (95+ reminder) so a
+// time-sensitive reminder still pre-empts the Teacher. Above the
+// generic wake-brief greeting because the user's product philosophy
+// is: teach first, greet-only when there is nothing to teach.
+const DEFAULT_PRIORITY = 85;
 
 const DEFAULT_LOOKBACK_INTRODUCED_DAYS = 7;
 const MAX_DISMISS_BEFORE_PERMANENT = 3;
