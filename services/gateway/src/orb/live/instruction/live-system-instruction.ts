@@ -131,6 +131,38 @@ export function describeRoute(route: string | undefined | null, lang: string): {
  * The block is language-agnostic — Gemini Live translates it into the
  * session language via the LANGUAGE directive earlier in the instruction.
  */
+
+/**
+ * VTID-03097: surgically strip vitana-brain's opener sections from
+ * `bootstrapContext` when a VERTEX WAKE BRIEF override is active.
+ * The three sections below all tell Gemini "your first utterance must
+ * build around this candidate" and dominate the override at generation
+ * time even when the override is later in the prompt. Removing them
+ * lets the override own the first turn without re-architecting
+ * vitana-brain.ts.
+ *
+ * Idempotent: stripping a string that doesn't contain the markers
+ * returns it unchanged. Pure function. Exported for tests.
+ */
+export function stripBrainOpenerSections(bootstrap: string): string {
+  if (!bootstrap) return bootstrap;
+  const SECTIONS = [
+    'OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION)',
+    'PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS',
+    'PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION)',
+  ];
+  let out = bootstrap;
+  for (const heading of SECTIONS) {
+    const safe = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      `={3,}\\s*${safe}\\s*={3,}[\\s\\S]*?(?=\\n={3,}\\s+|$)`,
+      'g',
+    );
+    out = out.replace(pattern, '');
+  }
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function buildTemporalJourneyContextSection(
   lang: string,
   lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
@@ -615,9 +647,36 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
     instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
   }
 
-  // VTID-01224: Append bootstrap context if available
-  if (bootstrapContext) {
-    instruction += `\n\n${bootstrapContext}`;
+  // VTID-01224: Append bootstrap context if available.
+  //
+  // VTID-03097 step 2: when a wake-brief override block is active
+  // (Teacher / wake-brief picked a specific userFacingLine), strip
+  // the competing brain-side opener sections from bootstrapContext:
+  //   === OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION) ===
+  //   === PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS ===
+  //   === PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
+  //
+  // These are vitana-brain.ts injections that tell Gemini "lead with
+  // this opener candidate." They dominate the override block at
+  // generation time even when the override is later in the prompt —
+  // Gemini reconciles by following the more-concrete matrix
+  // instructions and ignoring our VERBATIM rule. Stripping them is
+  // the only reliable way to make the wake-brief override actually
+  // own the first turn.
+  //
+  // The strip is surgical: only the opener sections are removed; the
+  // rest of the brain context (USER CONTEXT PROFILE, ACTIVITY_14D,
+  // RECENT, FACTS, etc.) stays — those carry no greeting instructions
+  // and continue to ground the conversation after the first utterance.
+  let effectiveBootstrap = bootstrapContext ?? '';
+  if (
+    effectiveBootstrap &&
+    effectiveBootstrap.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>')
+  ) {
+    effectiveBootstrap = stripBrainOpenerSections(effectiveBootstrap);
+  }
+  if (effectiveBootstrap) {
+    instruction += `\n\n${effectiveBootstrap}`;
   }
 
   // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
