@@ -853,6 +853,11 @@
   // ============================================================
 
   function _playAudio(base64Data, mimeType) {
+    // Belt-and-suspenders: drop chunks that arrive after a user-initiated stop
+    // or while the overlay is hidden. _processQueue auto-recreates a closed
+    // playbackCtx, so without this guard any late SSE audio (e.g. from a racy
+    // _sessionStart that resolved after _sessionStop) plays in the background.
+    if (_s._userInitiatedStop || !_s.overlayVisible) return;
     _s.audioQueue.push({ data: base64Data, mime: mimeType });
     _processQueue();
   }
@@ -1098,8 +1103,38 @@
       });
       if (startTimer) clearTimeout(startTimer);
 
+      // Bail out if the user pressed X (or the overlay was hidden) while the
+      // session/start fetch was in flight. Without this, _sessionStart goes on
+      // to attach SSE + play the greeting audio after the overlay is already
+      // gone, which is the "Vitana keeps speaking in the background after the
+      // first close" symptom. The gateway hasn't returned a session_id yet at
+      // this point, so there's nothing to tear down upstream.
+      if (_s._userInitiatedStop || !_s.overlayVisible) {
+        console.log('[VTOrb] _sessionStart: aborted after fetch — overlay closed during start handshake');
+        return;
+      }
+
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Failed to start session');
+
+      // Same guard, after the response body is parsed. This is the load-bearing
+      // check: we now have data.session_id, so we must POST /live/session/stop
+      // to release the upstream Gemini Live session — otherwise the gateway
+      // leaks it. Return BEFORE setting _s.sessionId / _s.active / opening SSE.
+      if (_s._userInitiatedStop || !_s.overlayVisible) {
+        console.log('[VTOrb] _sessionStart: aborted after json — cleaning up stranded session_id=' + (data && data.session_id));
+        if (data && data.session_id) {
+          try {
+            fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
+              method: 'POST',
+              headers: headers,
+              body: JSON.stringify({ session_id: data.session_id }),
+              keepalive: true,
+            }).catch(function () { /* ignore */ });
+          } catch (e) { /* ignore */ }
+        }
+        return;
+      }
 
       _s.sessionId = data.session_id;
       _s.active = true;
@@ -2397,9 +2432,9 @@
     _setOrbState('connecting');
 
     setTimeout(function () {
-      if (!_s.overlayVisible) {
+      if (!_s.overlayVisible || _s._userInitiatedStop) {
         _s._isReconnecting = false;
-        return; // User closed overlay
+        return; // User closed overlay / pressed X
       }
 
       // Clean up old session resources before retry
