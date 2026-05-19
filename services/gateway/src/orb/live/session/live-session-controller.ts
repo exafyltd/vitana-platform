@@ -423,7 +423,7 @@ export async function handleLiveStreamEndTurn(
 export const VERTEX_WAKE_BRIEF_OVERRIDE_MARKER =
   '<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>';
 
-function buildVertexWakeBriefBlock(
+export function buildVertexWakeBriefBlock(
   line: string,
   _lang: string,
   dedupeKey: string | null,
