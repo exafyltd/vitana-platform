@@ -417,35 +417,48 @@ export async function handleLiveStreamEndTurn(
  * Trailing punctuation + quote escaping is handled inline so the
  * line can't accidentally close the prompt block.
  */
+/** Sentinel marker — used by buildLiveSystemInstruction to suppress
+ *  the SHORT-GAP GREETING PHRASES pool when an override is active.
+ *  Must match the literal substring exactly in both places. */
+export const VERTEX_WAKE_BRIEF_OVERRIDE_MARKER =
+  '<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>';
+
 function buildVertexWakeBriefBlock(
   line: string,
-  lang: string,
+  _lang: string,
   dedupeKey: string | null,
 ): string {
   // Escape backticks + close-quotes so a renderer-produced line with
   // quotes in it can't break the surrounding instruction block.
   const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
-  const isDe = (lang || 'en').toLowerCase().startsWith('de');
-  const greetingHint = isDe
-    ? 'Beginne mit EINEM warmen Begrüßungs-Satz auf Deutsch (z.B. "Hi Dragan, schön dass du wieder da bist."). Verwende den Vornamen des Nutzers, falls verfügbar.'
-    : 'Open with ONE warm greeting sentence (e.g. "Hi Dragan, good to see you again."). Use the user\'s first name when available.';
   const dedupeLine = dedupeKey ? `\nDedupe key: ${dedupeKey} (do NOT repeat after this turn).` : '';
-  return `\n\n## VERTEX WAKE BRIEF (HIGHEST PRIORITY — VTID-03079)
+  // VTID-03097: hard-instruction format. Earlier soft-instruction
+  // ("Speak this VERBATIM") was being lost to the SHORT-GAP GREETING
+  // PHRASES pool injection in live-system-instruction.ts:253. The
+  // sentinel marker below is also detected by buildLiveSystemInstruction
+  // to skip the pool injection entirely when an override is active.
+  return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 
-Your FIRST utterance this session MUST be a single turn that combines:
+## SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM (VTID-03079 / VTID-03097)
 
-  Part A — Warm greeting:
-    ${greetingHint}
+The user just opened the orb. Your FIRST spoken turn this session MUST
+be EXACTLY this text. Copy these characters letter-for-letter; do not
+paraphrase, do not translate, do not shorten, do not split into two
+turns, do not append clarifying questions:
 
-  Part B — Proactive content (speak VERBATIM, do NOT paraphrase, do NOT translate):
-    "${safe}"
+  "${safe}"
 
-Speak Part A and Part B as ONE continuous turn. Do NOT use any other opener
-("How can I help today?", "Was liegt an?", "Ready to go", "I'm here"). Do NOT
-list features. Do NOT introduce yourself. The wake-brief content already
-ends with an inviting question — let the user respond before continuing.${dedupeLine}
+Rules:
+  - Do NOT say "Wie kann ich dir helfen?" / "How can I help?" / "Was steht an?"
+    / "Was liegt an?" / any standalone offer-to-help phrasing.
+  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
+    that section is SUPPRESSED for this turn.
+  - Do NOT introduce yourself or list features.
+  - The line above already contains both the greeting AND the proactive
+    invitation. After speaking it, stop and wait for the user's reply.${dedupeLine}
 
-This block REPLACES every other greeting rule below for the first turn only.`;
+This block OVERRIDES every other greeting rule in this prompt for the
+first turn only. Subsequent turns follow the normal conversation flow.`;
 }
 
 export async function handleLiveSessionStart(
