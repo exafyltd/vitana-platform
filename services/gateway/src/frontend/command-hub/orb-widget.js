@@ -199,6 +199,13 @@
     _isReconnecting: false,
     _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
     _disconnectStuck: false,
+    // VTID-03098: user-initiated stop guard. Set true at the top of
+    // _sessionStop (X button / VitanaOrb.hide() / signup-close), cleared at
+    // the top of _sessionStart. While true, _announceDisconnect and
+    // _resetAndReconnect both short-circuit so a spurious onerror from the
+    // manually-closed EventSource (Android WebView fires it; spec is murky)
+    // never spawns a fresh session in the background.
+    _userInitiatedStop: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -653,6 +660,13 @@
   }
 
   function _announceDisconnect(reason) {
+    // VTID-03098: never announce a disconnect during user-initiated teardown
+    // or when the overlay is already closed. Either condition means the
+    // session is supposed to be ending; treating the close as a network
+    // disconnect arms _recoveryWatchdog and spawns a fresh session in the
+    // background ~5s after the X press.
+    if (_s._userInitiatedStop) return;
+    if (!_s.overlayVisible) return;
     if (_s._disconnectActive) return; // debounce
     _s._disconnectActive = true;
     _s._disconnectReason = reason;
@@ -786,6 +800,17 @@
   // by the orb-tap handler when the user taps an orb that's stuck on the
   // disconnect display, and by the 60s watchdog as a last-resort recovery.
   function _resetAndReconnect() {
+    // VTID-03098: refuse to reconnect when the user has closed the overlay
+    // or when _sessionStop has been initiated. This is the last line of
+    // defense — both the SSE-handler detach in _sessionStop and the
+    // _userInitiatedStop guard in _announceDisconnect should prevent us
+    // from getting here, but if any future code path manages to call this
+    // function after the user pressed X, fail closed instead of spawning a
+    // background session.
+    if (_s._userInitiatedStop || !_s.overlayVisible) {
+      console.log('[VTOrb] _resetAndReconnect: skipped — overlay closed or stop in progress');
+      return;
+    }
     console.log('[VTOrb] _resetAndReconnect: forcing full session restart');
     _stopWatchdog();
     if (_s.captureStream) {
@@ -942,6 +967,11 @@
     if (_s.active) return;
     console.log('[VTOrb] Starting Gemini Live session...');
 
+    // VTID-03098: clear the user-initiated-stop flag at the start of every
+    // session so a fresh tap on the orb can connect normally. The flag is
+    // only meant to guard the teardown window between _sessionStop and the
+    // next intentional _sessionStart.
+    _s._userInitiatedStop = false;
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
     // call. It used to only get reset in _sessionStop (full session teardown),
@@ -1131,8 +1161,22 @@
 
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
+    // VTID-03098: mark this as a user-initiated stop BEFORE any teardown.
+    // Anything that fires synchronously as a result of the teardown (SSE
+    // onerror on Android WebView, residual disconnect-recovery probes,
+    // setTimeout reconnect callbacks) must see this flag and bail.
+    _s._userInitiatedStop = true;
     _stopWatchdog();
     clearTimeout(_s._listeningIdleTimer);
+
+    // VTID-03098: always cancel the disconnect-recovery probe, even when
+    // _disconnectActive is false. The probe is a 5s setInterval started by
+    // _announceDisconnect; if any earlier onerror (manual close on Android,
+    // half-open socket race) armed it without flipping _disconnectActive
+    // back into the alert state we still observe, leaving it running would
+    // wake a brand-new session in the background after the user pressed X.
+    clearInterval(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = null;
 
     // Cancel any pending disconnect alert silently — session is ending, so no
     // "we're back" phrase. (Alert clips are short BufferSources that finish
@@ -1143,8 +1187,6 @@
       _s._preDisconnectVoiceState = null;
       _s._disconnectStuck = false;
       _s._isReconnecting = false;
-      clearInterval(_s._recoveryWatchdog);
-      _s._recoveryWatchdog = null;
     }
 
     // Stop mic
@@ -1168,8 +1210,21 @@
     _s.greetingAudioReceived = false;
     _s.lastScheduledEnd = 0;
 
-    // Close SSE
-    if (_s.eventSource) { _s.eventSource.close(); _s.eventSource = null; }
+    // Close SSE — VTID-03098: detach handlers FIRST so the manual close
+    // cannot trip the auto-reconnect cascade through es.onerror. The
+    // EventSource spec does not require onerror to fire on close(), but
+    // Android Appilix WebView observably does fire it, and the handler
+    // bound below calls _announceDisconnect → _recoveryWatchdog (5s
+    // health probe) → _resetAndReconnect → _sessionStart, which is
+    // exactly the "background greeting after the X" symptom this fixes.
+    if (_s.eventSource) {
+      var __es = _s.eventSource;
+      _s.eventSource = null;
+      try { __es.onopen = null; } catch (e) { /* noop */ }
+      try { __es.onmessage = null; } catch (e) { /* noop */ }
+      try { __es.onerror = null; } catch (e) { /* noop */ }
+      try { __es.close(); } catch (e) { /* noop */ }
+    }
 
     // Stop backend session
     if (_s.sessionId) {
