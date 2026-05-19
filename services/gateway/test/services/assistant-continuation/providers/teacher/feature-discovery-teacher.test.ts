@@ -289,7 +289,7 @@ describe('VTID-03093 — provider produce()', () => {
     if (r.status !== 'returned') return;
     expect(r.candidate.id).toBe('teacher-fixed-id');
     expect(r.candidate.kind).toBe('feature_discovery');
-    expect(r.candidate.priority).toBe(75);
+    expect(r.candidate.priority).toBe(85);
     expect(r.candidate.userFacingLine).toContain('Dragan');
     expect(r.candidate.userFacingLine).toMatch(/\?/);
     // CTA carries capability_key + manual_path
