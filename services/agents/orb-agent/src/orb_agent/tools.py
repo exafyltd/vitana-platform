@@ -286,38 +286,92 @@ async def report_to_specialist(
     summary: str,
     specialist_hint: str | None = None,
 ) -> str:
-    """File a customer-support ticket and hand the call to a specialist.
+    """File a customer-support ticket and hand the call to Devon, our
+    tech-support colleague (VTID-03044 canary: Devon is the ONLY enabled
+    specialist; Sage / Atlas / Mira are disabled). This is RARE —
+    typically less than 5% of conversations. You ARE the instruction
+    manual; almost every question is yours to answer.
 
-    Mirrors Vertex's tool schema (voice-pipeline-spec/spec.json). The
-    gateway creates a real feedback_tickets row + handoff event + OASIS
-    emit. If the response includes a `persona`, this wrapper SIGNALS the
-    agent's main loop to rebuild the AgentSession for that persona —
-    Devon answers in Devon's voice with Devon's system_instruction.
+    YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
+    first say something like "Shall I bring in Devon to file this?" and
+    wait for the user to say yes. Implicit consent does NOT count. Vary
+    the proposal phrasing every time.
 
-    VTID-03033 — Observability + fail-loud:
-    - Emits `orb.livekit.tool.report_to_specialist.called` before dispatch
-      and `.result` after, so an operator reading OASIS can distinguish:
-        (1) LLM never called the tool — no `called` event for the turn.
-        (2) Tool called, backend returned stay_inline — `.result` payload
-            carries status="stay_inline" + rpc_gate.
-        (3) Tool called, backend created handoff — status="handoff_created"
-            + persona name.
-        (4) Tool called, gateway/network failed — status="failed" or
-            "failed_network" + gateway_status / error.
-    - Returns a deterministic, machine-keyed text to the LLM (replaces
-      the free-text `summarize(body)` that let Gemini hallucinate "I'm
-      connecting you to Devon" even on stay_inline / failed outcomes).
-      The text always opens with `STATUS: <status>.` so the model has a
-      single token to read; the action sentence that follows tells it
-      what to say to the user.
+    CALL ONLY WHEN ALL THREE are true:
+      (1) the user has described a CONCRETE PROBLEM (bug, broken state,
+          refund, account lockout, claim) — not a question about how
+          something works,
+      (2) the user has EXPLICITLY agreed to be connected to a specialist
+          (after you proposed it), and
+      (3) you can write a SPECIFIC `summary` (>= 15 words) that describes
+          WHAT broke, on WHICH screen/feature, with the user's own words.
+          If you cannot — because the user only said "I want to report a
+          bug" without details — DO NOT CALL THIS TOOL YET. Instead ask
+          ONE follow-up question: "What's breaking — which screen or
+          feature?" Get the details, THEN call this tool. A vague summary
+          causes the specialist to invent the issue, which is worse than
+          not forwarding at all. Generic summaries like "user wants to
+          report a bug" are FORBIDDEN.
+
+    NEVER CALL for any of these — answer them yourself inline using
+    search_knowledge first:
+      - "How does X work?" / "What is X?" / "Explain X"
+      - "Show me how to use X" / "How do I X?" / "Teach me"
+      - "Tell me about X" / "I want to learn X" / "I am new"
+      - "Help me understand X" / "Walk me through X"
+      - Any health, longevity, matchmaking, community, business, diary,
+        calendar, or general life-companion question
+      - Anything that is a learning question, not a broken-state report.
+        First-time users asking how to use the diary is a teaching
+        moment, NOT a customer-support ticket.
+
+    GATE-A enforcement: the backend re-checks the user's actual recent
+    words (not your summary). If the gate returns STAY_INLINE, do NOT
+    mention the routing decision out loud — silently answer the question.
+    Same if the conversation's forward budget is exhausted (max 1
+    forward + 1 return per conversation).
+
+    AFTER A FORWARD FIRES: speak ONE short bridge sentence in your own
+    natural words. ANNOUNCE the handoff — never INTRODUCE the specialist
+    ("Hi, here is Devon" — that is DEVON'S job in his own voice). Vary
+    your phrasing every time, never recite a template. Then STOP — the
+    next voice is the specialist's.
+
+    HALLUCINATION GUARD (CRITICAL — VTID-03102): you MUST invoke this
+    function via tool call. NEVER say "Ich verbinde dich mit Devon" /
+    "I'll connect you to Devon" / "Einen Moment, Devon übernimmt" /
+    "In Ordnung, ich hole Devon" / equivalents UNLESS this tool's most
+    recent return value began with "STATUS: handoff_created." Speaking
+    the bridge sentence WITHOUT first calling this function is a FAILED
+    HANDOFF — the user is stranded with you while believing they're
+    talking to Devon. The tool call is the PHYSICAL handoff; the bridge
+    sentence is just the audible announcement of what already happened.
+    Speak ONLY after the call returns.
 
     Args:
-        kind: Best classification of what's being reported. One of:
+        kind: Best classification of what the user is reporting. One of:
             'bug', 'ux_issue', 'support_question', 'account_issue',
             'marketplace_claim', 'feature_request', 'feedback'.
-        summary: Concrete description in the user's own words (>= 15
-            words). What broke, on which screen/feature, with specifics.
-        specialist_hint: Optional persona key.
+        summary: CONCRETE one-paragraph summary using the user's OWN
+            WORDS. Must include: what broke (the symptom), where (which
+            screen/feature/flow), and any specifics the user gave (error
+            message, order id, account email, time of day, etc).
+            Minimum 15 words. FORBIDDEN: placeholder summaries like
+            "user wants to report a bug" or "user has an account issue"
+            or "user has a question". If you do not have enough
+            specifics, ASK the user one diagnostic question first and
+            call this tool only after you have a real description. A
+            vague summary causes the specialist to hallucinate the
+            issue.
+        specialist_hint: Optional. VTID-03044 canary: only 'devon' is
+            enabled. The backend re-checks via the keyword router and
+            falls back to the kind→handles_kinds match if the hint is
+            empty or unknown.
+
+    Observability (VTID-03033): emits orb.livekit.tool.report_to_specialist
+    .called BEFORE dispatch and .result AFTER, so OASIS can distinguish
+    (1) LLM never called the tool, (2) backend returned stay_inline,
+    (3) backend created handoff, (4) gateway/network failed.
     """
     gw = _gw(context)
     oasis = getattr(gw, "oasis_emitter", None)
