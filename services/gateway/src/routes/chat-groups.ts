@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import {
   requireAuth,
   requireTenant,
+  requireExafyAdmin,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -438,5 +439,120 @@ async function handleVitanaGroupMention(
     console.error(`[ChatGroups] @vitana handler error: ${err.message}`);
   }
 }
+
+// ── POST /:id/refanout-welcome — admin only, idempotent push fanout ───
+//
+// VTID-03089: when the system group's welcome message was seeded via direct
+// SQL the gateway notification fanout never fired, so no one got a push.
+// This endpoint re-fires the per-member notifyUserAsync exactly once per
+// user — idempotency key = group_welcome:<message_id>:<user_id>, checked
+// against user_notifications.data->>'idempotency_key' before sending.
+
+router.post('/:id/refanout-welcome', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const dryRun = !!req.body?.dry_run;
+  const supabase = getSupabase();
+
+  const { data: group, error: groupErr } = await supabase
+    .from('chat_groups')
+    .select('id, tenant_id, name')
+    .eq('id', groupId)
+    .maybeSingle();
+  if (groupErr || !group) {
+    return res.status(404).json({ ok: false, error: 'group_not_found' });
+  }
+
+  const { data: welcomeRows, error: welcomeErr } = await supabase
+    .from('chat_messages')
+    .select('id, content, sender_id, created_at')
+    .eq('group_id', groupId)
+    .filter('metadata->>source', 'eq', 'vitana_group_welcome')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (welcomeErr || !welcomeRows || welcomeRows.length === 0) {
+    return res.status(404).json({ ok: false, error: 'welcome_message_not_found' });
+  }
+  const welcome = welcomeRows[0] as { id: string; content: string; sender_id: string; created_at: string };
+
+  const { data: members, error: membersErr } = await supabase
+    .from('chat_group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+  if (membersErr) {
+    return res.status(500).json({ ok: false, error: membersErr.message });
+  }
+
+  const tenantId = (group as any).tenant_id as string;
+  const groupName = (group as any).name as string;
+  const bodyPreview = welcome.content.length > 100
+    ? welcome.content.slice(0, 97) + '...'
+    : welcome.content;
+
+  let fired = 0;
+  let skipped = 0;
+  const skippedDetails: Array<{ user_id: string; reason: string }> = [];
+
+  for (const m of (members || []) as Array<{ user_id: string }>) {
+    if (m.user_id === welcome.sender_id) { skipped++; skippedDetails.push({ user_id: m.user_id, reason: 'sender' }); continue; }
+    if (isVitanaBot(m.user_id))         { skipped++; skippedDetails.push({ user_id: m.user_id, reason: 'bot' }); continue; }
+
+    const idemKey = `group_welcome:${welcome.id}:${m.user_id}`;
+
+    const { count: alreadyCount } = await supabase
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', m.user_id)
+      .filter('data->>idempotency_key', 'eq', idemKey);
+
+    if ((alreadyCount || 0) > 0) {
+      skipped++;
+      skippedDetails.push({ user_id: m.user_id, reason: 'already_notified' });
+      continue;
+    }
+
+    if (dryRun) {
+      fired++;
+      continue;
+    }
+
+    notifyUserAsync(
+      m.user_id,
+      tenantId,
+      'new_chat_message',
+      {
+        title: groupName,
+        body: `Vitana: ${bodyPreview}`,
+        data: {
+          type: 'new_group_message',
+          group_id: groupId,
+          sender_id: welcome.sender_id,
+          sender_name: 'Vitana',
+          message_id: welcome.id,
+          idempotency_key: idemKey,
+          url: `/inbox/g/${groupId}`,
+        },
+      },
+      supabase,
+    );
+    fired++;
+  }
+
+  return res.json({
+    ok: true,
+    dry_run: dryRun,
+    group_id: groupId,
+    welcome_message_id: welcome.id,
+    members_total: (members || []).length,
+    fired,
+    skipped,
+    skipped_breakdown: skippedDetails.reduce((acc, s) => {
+      acc[s.reason] = (acc[s.reason] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  });
+});
 
 export default router;
