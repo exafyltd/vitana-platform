@@ -338,10 +338,32 @@ export async function tool_report_to_specialist(
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
   const { executeReportToSpecialist } = await import('./report-to-specialist-core');
+
+  // VTID-03099: build gate_input from the user's recent RAW transcript
+  // turns so the two-gate RPC matches forward_request_phrases against
+  // what the user actually said — Vertex parity (see orb-live.ts:2872
+  // buildGateInputFromTranscript). Without this, the LLM-curated summary
+  // (compressed business language) rarely matches phrases like
+  // "verbinde mich" / "mit dem support sprechen" / "fehler melden", so
+  // Gate A returns answer_inline and the handoff is vetoed even after
+  // the user explicitly consented. 2026-05-19 user-reported regression.
+  const recentTurnsRaw = Array.isArray(args.recent_user_turns)
+    ? (args.recent_user_turns as unknown[])
+    : [];
+  const recentTurns: string[] = recentTurnsRaw
+    .map((t) => (typeof t === 'string' ? t.trim() : ''))
+    .filter((t) => t.length > 0);
+  const summaryStr =
+    typeof args.summary === 'string' ? args.summary : undefined;
+  const gateInput =
+    recentTurns.length > 0
+      ? recentTurns.slice(-3).join(' \n ')
+      : summaryStr;
+
   const result = await executeReportToSpecialist(
     {
       kind: typeof args.kind === 'string' ? args.kind : undefined,
-      summary: typeof args.summary === 'string' ? args.summary : undefined,
+      summary: summaryStr,
       specialist_hint:
         typeof args.specialist_hint === 'string' ? args.specialist_hint : undefined,
     },
@@ -353,6 +375,7 @@ export async function tool_report_to_specialist(
     },
     sb,
     {
+      gate_input: gateInput,
       source: 'orb-livekit-tool',
       screen_path: '/orb/livekit-voice',
     },

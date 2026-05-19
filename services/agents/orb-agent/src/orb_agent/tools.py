@@ -324,9 +324,67 @@ async def report_to_specialist(
     orb_session_id = getattr(gw, "orb_session_id", None) or ""
     user_id = getattr(gw, "user_id", None) or ""
 
+    # VTID-03099: extract the user's last 3 RAW transcript turns and ship
+    # them with the tool call. The gateway feeds these into the two-gate
+    # forwarding RPC as gate_input — same logic Vertex uses (orb-live.ts:
+    # buildGateInputFromTranscript). Without this, the gate only sees the
+    # LLM-curated `summary` (compressed business language) which rarely
+    # contains the forward_request_phrases the RPC looks for ("verbinde
+    # mich", "mit dem support sprechen", "fehler melden", etc.) — Gate A
+    # returns answer_inline and the handoff is silently vetoed even after
+    # the user explicitly consented. Defensive: best-effort, never raises
+    # — empty list falls through to the summary fallback on the gateway
+    # side, exactly matching Vertex's behaviour when transcriptTurns is
+    # empty.
+    recent_user_turns: list[str] = []
+    try:
+        session_obj = (
+            getattr(context, "session", None)
+            or getattr(getattr(context, "agent", None), "session", None)
+        )
+        chat_ctx = getattr(session_obj, "chat_ctx", None) if session_obj else None
+        # livekit-agents 1.x stores items on chat_ctx.items; older 0.x
+        # used .messages. Support both without importing the type.
+        items = getattr(chat_ctx, "items", None) or getattr(chat_ctx, "messages", None) or []
+        for item in reversed(list(items)):
+            role = getattr(item, "role", None)
+            if role != "user":
+                continue
+            content = (
+                getattr(item, "content", None)
+                or getattr(item, "text_content", None)
+            )
+            if content is None:
+                continue
+            if isinstance(content, str):
+                text = content.strip()
+            else:
+                # ChatMessage.content can be list[str | ContentBlock]; join
+                # whatever stringifies meaningfully and ignore the rest.
+                try:
+                    text = " ".join(
+                        str(c) for c in content if c is not None
+                    ).strip()
+                except Exception:  # noqa: BLE001
+                    text = ""
+            if text:
+                recent_user_turns.append(text)
+                if len(recent_user_turns) >= 3:
+                    break
+        recent_user_turns.reverse()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "report_to_specialist: chat_ctx read failed (gate falls back "
+            "to summary): %s",
+            exc,
+        )
+        recent_user_turns = []
+
     args: dict[str, Any] = {"kind": kind, "summary": summary}
     if specialist_hint:
         args["specialist_hint"] = specialist_hint
+    if recent_user_turns:
+        args["recent_user_turns"] = recent_user_turns
 
     # --- BEFORE DISPATCH ---------------------------------------------------
     summary_chars = len(summary or "")
@@ -352,6 +410,7 @@ async def report_to_specialist(
                     "summary_chars": summary_chars,
                     "summary_words": summary_word_count,
                     "specialist_hint": specialist_hint,
+                    "recent_user_turns_count": len(recent_user_turns),
                 },
                 vtid="VTID-03033",
             )
