@@ -72,6 +72,41 @@ const GREETING_PHRASES: Record<string, string[]> = {
 };
 
 /**
+ * VTID-03105: meta variant of pickTeacherGreeting. Returns the picked
+ * text PLUS the index inside the final (post-filter) pool and the pool
+ * size. Used by feature-discovery-teacher.ts for the diagnostic log so
+ * we can confirm in production whether Math.random is actually rotating
+ * across sessions. The classic `pickTeacherGreeting` stays as a thin
+ * `.text` wrapper for backward compatibility with the Command Hub
+ * panel + existing tests.
+ */
+export interface TeacherGreetingPick {
+  text: string;
+  rawTemplate: string;
+  idx: number;
+  poolSize: number;
+}
+
+export function pickTeacherGreetingMeta(args: {
+  lang: string;
+  firstName?: string | null;
+  rng?: () => number;
+}): TeacherGreetingPick {
+  const lang = (args.lang || 'en').toLowerCase();
+  const pool = GREETING_PHRASES[lang] || GREETING_PHRASES.en;
+  const hasName = !!(args.firstName && args.firstName.trim().length > 0);
+  const eligible = hasName ? pool : pool.filter((p) => !p.includes('{firstName}'));
+  // Defensive: if a lang lacks no-name phrases, fall back to en's no-name set.
+  const finalPool =
+    eligible.length > 0 ? eligible : GREETING_PHRASES.en.filter((p) => !p.includes('{firstName}'));
+  const rng = args.rng ?? Math.random;
+  const idx = Math.floor(rng() * finalPool.length) % finalPool.length;
+  const raw = finalPool[idx];
+  const text = hasName ? raw.replace('{firstName}', args.firstName!.trim()) : raw;
+  return { text, rawTemplate: raw, idx, poolSize: finalPool.length };
+}
+
+/**
  * Pick one greeting phrase, substituting `{firstName}` when supplied.
  *
  * When no name is available, the function filters the pool to entries
@@ -86,17 +121,7 @@ export function pickTeacherGreeting(args: {
   firstName?: string | null;
   rng?: () => number;
 }): string {
-  const lang = (args.lang || 'en').toLowerCase();
-  const pool = GREETING_PHRASES[lang] || GREETING_PHRASES.en;
-  const hasName = !!(args.firstName && args.firstName.trim().length > 0);
-  const eligible = hasName ? pool : pool.filter((p) => !p.includes('{firstName}'));
-  // Defensive: if a lang lacks no-name phrases, fall back to en's no-name set.
-  const finalPool =
-    eligible.length > 0 ? eligible : GREETING_PHRASES.en.filter((p) => !p.includes('{firstName}'));
-  const rng = args.rng ?? Math.random;
-  const idx = Math.floor(rng() * finalPool.length) % finalPool.length;
-  const raw = finalPool[idx];
-  return hasName ? raw.replace('{firstName}', args.firstName!.trim()) : raw;
+  return pickTeacherGreetingMeta(args).text;
 }
 
 /**
