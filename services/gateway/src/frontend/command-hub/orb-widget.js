@@ -1726,7 +1726,7 @@
             }, 300);
           })();
         } else if (msg.directive === 'end_teaching_session') {
-          // VTID-03112 (T2): the LLM called `end_teaching_session` after
+          // VTID-03112 (T2 / DEV-COMHU-03115): the LLM called `end_teaching_session` after
           // delivering its farewell line. Close the overlay gracefully —
           // give the audio queue a moment to finish playing the farewell
           // before the SSE/WS tear down. Mirrors the navigate directive's
