@@ -837,15 +837,58 @@ export async function handleLiveSessionStart(
     const { fetchWakeCadenceSignals } = await import('../../../services/wake-cadence-signals');
     type CadenceSignals = Awaited<ReturnType<typeof fetchWakeCadenceSignals>>;
     let cadenceSignals: CadenceSignals = {};
+    // VTID-03108 (Item 4): resolve the user's first name in parallel with
+    // cadence so the Teacher's name-aware pool ("Willkommen zurück, Dragan.")
+    // becomes available instead of falling back to the 5 no-name entries.
+    // Source order mirrors orb-livekit.ts:1287-1289:
+    //   1. memory_facts.user_name (the canonical fact the agent already
+    //      maintains across sessions);
+    //   2. app_users.display_name (provisioned at signup);
+    //   3. JWT email local-part (deterministic last-resort so non-empty
+    //      first names are common — most users register with their first
+    //      name in the email handle, e.g. "dragan@..." → "dragan").
+    // Best-effort: every fetch failure leaves firstName null, which sends
+    // the Teacher to the no-name pool (still correct, just less personal).
+    let firstName: string | null = null;
     if (supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
-      try {
-        cadenceSignals = await fetchWakeCadenceSignals({
+      const [cadenceResult, factResult, profileResult] = await Promise.allSettled([
+        fetchWakeCadenceSignals({
           supabase: supabaseClient,
           tenantId: orbIdentity.tenant_id,
           userId: orbIdentity.user_id,
-        });
-      } catch {
-        // Fail-open: empty cadence signals degrade to bucket-only policy.
+        }),
+        supabaseClient
+          .from('memory_facts')
+          .select('fact_value')
+          .eq('user_id', orbIdentity.user_id)
+          .eq('fact_key', 'user_name')
+          .maybeSingle(),
+        supabaseClient
+          .from('app_users')
+          .select('display_name')
+          .eq('user_id', orbIdentity.user_id)
+          .maybeSingle(),
+      ]);
+      if (cadenceResult.status === 'fulfilled') {
+        cadenceSignals = cadenceResult.value;
+      }
+      let fullName = '';
+      if (factResult.status === 'fulfilled' && factResult.value && !factResult.value.error) {
+        const v = (factResult.value.data as { fact_value?: string | null } | null)?.fact_value;
+        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
+      }
+      if (!fullName && profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error) {
+        const v = (profileResult.value.data as { display_name?: string | null } | null)?.display_name;
+        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
+      }
+      if (fullName) {
+        firstName = fullName.split(/\s+/)[0] || null;
+      } else if (orbIdentity.email && orbIdentity.email.includes('@')) {
+        // Last-resort: take the email local part. Strip digits / underscores
+        // so "dragan1" → "dragan", "d_stevanovic" → "stevanovic" (best effort).
+        const local = orbIdentity.email.split('@')[0] || '';
+        const stripped = local.replace(/[0-9_.+\-]+/g, '').trim();
+        if (stripped.length >= 2) firstName = stripped[0].toUpperCase() + stripped.slice(1);
       }
     }
     wakeBriefDecision = await decideWakeBriefForSession({
@@ -866,6 +909,10 @@ export async function handleLiveSessionStart(
       // Vertex (LiveKit already does this).
       pillarMomentum: decisionContextVertex?.pillar_momentum ?? null,
       cadenceSignals,
+      // VTID-03108 (Item 4): firstName unlocks the Teacher's full 20-entry
+      // name-aware greeting pool. LiveKit always passed this; Vertex never
+      // did — that's why `firstname_len=0` showed on every Teacher pick.
+      firstName,
       // wake_origin is not yet plumbed from the client envelope on
       // Vertex; default 'unknown' so the B1 policy doesn't fire the
       // push_tap nudge. When the envelope ships this field through

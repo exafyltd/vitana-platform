@@ -355,7 +355,14 @@ describe('VTID-03056 (Xa) — makeNextActionProvider()', () => {
     const c = r.candidate!;
     expect(c.kind).toBe('next_step');
     expect(c.userFacingLine).toBe('Your magnesium reminder is due in 28 minutes.');
-    expect(c.priority).toBe(90); // provider-level default
+    // VTID-03108 (Item 1): the wrap priority is now the SOURCE's own
+    // context-aware priority (here 80 from makeCandidate), no longer
+    // the hardcoded provider-level 90 it used to be. Result: a softer
+    // next-action source (life_compass 80, pillar 68) doesn't outrank
+    // the Teacher (85) any more, matching the user's pedagogical
+    // priority ladder. The legacy fixed `priority` arg now acts as a
+    // ceiling only.
+    expect(c.priority).toBe(80);
     expect(c.evidence.some((e) => e.kind === 'source:reminder_due')).toBe(true);
     expect(c.dedupeKey).toBe('reminder_due:1');
   });
@@ -363,6 +370,103 @@ describe('VTID-03056 (Xa) — makeNextActionProvider()', () => {
   test('provider key + extra key are stable strings (registration contract)', () => {
     expect(NEXT_ACTION_PROVIDER_KEY).toBe('contextual_next_action');
     expect(NEXT_ACTION_EXTRA_KEY).toBe('nextAction');
+  });
+
+  // VTID-03108 (Item 1): the next-action provider wraps each chosen
+  // source-candidate with the SOURCE's own context-aware priority —
+  // never a hardcoded constant. These three tests lock the ladder
+  // against regression so a soft-nudge source (life_compass 80, pillar
+  // 68) can't outrank the Teacher (85) on the provider-level priority
+  // ladder again.
+  test('VTID-03108 Item 1: urgent source (reminder@95) wraps at 95, still beats Teacher@85', async () => {
+    const {
+      defaultNextActionComposer,
+    } = require('../../../../../src/services/assistant-continuation/providers/next-action/composer');
+    defaultNextActionComposer.reset();
+    defaultNextActionComposer.register(
+      makeSource({
+        key: 'reminder_due',
+        candidate: makeCandidate('reminder_due', 95, {
+          userFacingLine: 'Reminder due now.',
+        }),
+      }),
+    );
+    const provider = makeNextActionProvider({ newId: () => 'id' });
+    const r = await provider.produce(makeCtx());
+    expect(r.status).toBe('returned');
+    if (r.status === 'returned') {
+      expect(r.candidate!.priority).toBe(95);
+      // 95 > 85 → still wins over Teacher.
+      expect(r.candidate!.priority).toBeGreaterThan(85);
+    }
+  });
+
+  test('VTID-03108 Item 1: soft-nudge source (life_compass@80) wraps at 80, LOSES to Teacher@85', async () => {
+    const {
+      defaultNextActionComposer,
+    } = require('../../../../../src/services/assistant-continuation/providers/next-action/composer');
+    defaultNextActionComposer.reset();
+    defaultNextActionComposer.register(
+      makeSource({
+        key: 'life_compass_alignment',
+        candidate: makeCandidate('life_compass_alignment', 80, {
+          userFacingLine: 'Your focus pillar is slipping.',
+        }),
+      }),
+    );
+    const provider = makeNextActionProvider({ newId: () => 'id' });
+    const r = await provider.produce(makeCtx());
+    expect(r.status).toBe('returned');
+    if (r.status === 'returned') {
+      expect(r.candidate!.priority).toBe(80);
+      // 80 < 85 → loses to Teacher. This was the priority-inversion
+      // bug before VTID-03108: legacy wrap at 90 made this beat Teacher.
+      expect(r.candidate!.priority).toBeLessThan(85);
+    }
+  });
+
+  test('VTID-03108 Item 1: very-low source (pillar@68) wraps at 68, well below Teacher', async () => {
+    const {
+      defaultNextActionComposer,
+    } = require('../../../../../src/services/assistant-continuation/providers/next-action/composer');
+    defaultNextActionComposer.reset();
+    defaultNextActionComposer.register(
+      makeSource({
+        key: 'vitana_index_pillar',
+        candidate: makeCandidate('vitana_index_pillar', 68, {
+          userFacingLine: 'Your pillar score is steady.',
+        }),
+      }),
+    );
+    const provider = makeNextActionProvider({ newId: () => 'id' });
+    const r = await provider.produce(makeCtx());
+    expect(r.status).toBe('returned');
+    if (r.status === 'returned') {
+      expect(r.candidate!.priority).toBe(68);
+      expect(r.candidate!.priority).toBeLessThan(85);
+    }
+  });
+
+  test('VTID-03108 Item 1: explicit priority opt (test ceiling) clamps source priority', async () => {
+    const {
+      defaultNextActionComposer,
+    } = require('../../../../../src/services/assistant-continuation/providers/next-action/composer');
+    defaultNextActionComposer.reset();
+    defaultNextActionComposer.register(
+      makeSource({
+        key: 'reminder_due',
+        candidate: makeCandidate('reminder_due', 95, {
+          userFacingLine: 'High priority reminder.',
+        }),
+      }),
+    );
+    // Explicit ceiling at 75 — source's 95 should clamp down.
+    const provider = makeNextActionProvider({ newId: () => 'id', priority: 75 });
+    const r = await provider.produce(makeCtx());
+    expect(r.status).toBe('returned');
+    if (r.status === 'returned') {
+      expect(r.candidate!.priority).toBe(75);
+    }
   });
 
   // VTID-03073 regression guard: every source's `renderLine` reads

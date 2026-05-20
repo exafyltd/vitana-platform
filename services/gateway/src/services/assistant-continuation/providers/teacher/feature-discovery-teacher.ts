@@ -88,8 +88,20 @@ export interface TeacherInputs {
   lang: string;
   /** User's first name when known (from identity facts). */
   firstName?: string | null;
-  /** B1 greeting policy. When 'skip', Teacher also suppresses. */
+  /** B1 greeting policy. Used (with `skipReason`) only to detect the
+   *  isReconnect-class forced skips; cadence-class skips no longer
+   *  suppress the Teacher (VTID-03108 Item 2). */
   greetingPolicy: GreetingPolicy;
+  /**
+   * VTID-03108: the explicit reason emitted by `decideGreetingPolicy*`
+   * when `greetingPolicy === 'skip'`. Forwarded from
+   * `decideGreetingPolicyWithEvidence().reason` via the wake-brief
+   * wiring. Used to distinguish "user is mid-reconnect, do nothing"
+   * (forced skip) from "user just greeted within the 15-min window"
+   * (cadence skip — Teacher should still fire on a *different*
+   * capability). Optional + undefined when policy is non-skip.
+   */
+  skipReason?: string | null;
   /** ISO 8601 server-side now. Used for the introduced-within-N-days
    *  filter so a candidate isn't re-introduced too soon. */
   nowIso?: string;
@@ -105,6 +117,11 @@ export interface CapabilityCatalogRow {
   description: string;
   manual_path: string | null;
   enabled: boolean;
+  // VTID-03108 (Item 3): pedagogical order from `system_capabilities`.
+  // Lower = earlier in the Teacher curriculum (Five Pillars before
+  // marketplace). NULL means "no preference; alphabetical tie-break".
+  // Read straight from the DB column — no hardcoded sequence in TS.
+  pedagogical_order?: number | null;
 }
 
 export interface AwarenessLedgerRow {
@@ -195,19 +212,31 @@ export function pickCapability(
     const bNever = b.awarenessState === 'unknown' ? 0 : 1;
     if (aNever !== bNever) return aNever - bNever;
 
-    // 5b. Oldest last_introduced_at first
+    // VTID-03108 (Item 3) — 5b. Pedagogical order from system_capabilities.
+    // NULL sorts LAST (treated as +Infinity) so a capability without an
+    // explicit order doesn't outrank a curriculum-ranked one. Drives the
+    // first-time-user curriculum: foundations (Five Pillars, Vitana ID,
+    // Daily Loop) before community (matches, marketplace, autopilot).
+    // The order lives in the DB column — operators tune live without
+    // a code deploy. No hardcoded sequence in TS.
+    const aOrder = typeof a.row.pedagogical_order === 'number' ? a.row.pedagogical_order : Number.POSITIVE_INFINITY;
+    const bOrder = typeof b.row.pedagogical_order === 'number' ? b.row.pedagogical_order : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    // 5c. Oldest last_introduced_at first (kicks in for reintroduction
+    // candidates, since unknown rows have null last_introduced_at).
     const al = ledgerByKey.get(a.row.capability_key)?.last_introduced_at ?? null;
     const bl = ledgerByKey.get(b.row.capability_key)?.last_introduced_at ?? null;
     const aMs = al ? Date.parse(al) : -Infinity;
     const bMs = bl ? Date.parse(bl) : -Infinity;
     if (aMs !== bMs) return aMs - bMs;
 
-    // 5c. Lower dismiss_count
+    // 5d. Lower dismiss_count
     const ad = ledgerByKey.get(a.row.capability_key)?.dismiss_count ?? 0;
     const bd = ledgerByKey.get(b.row.capability_key)?.dismiss_count ?? 0;
     if (ad !== bd) return ad - bd;
 
-    // 5d. Alphabetical tie-break
+    // 5e. Alphabetical tie-break (deterministic last resort).
     return a.row.capability_key.localeCompare(b.row.capability_key);
   });
 
@@ -270,13 +299,34 @@ export function makeFeatureDiscoveryTeacherProvider(
         };
       }
 
-      // Cadence wall: when B1 says skip, the Teacher MUST stay silent.
-      if (inputs.greetingPolicy === 'skip') {
+      // VTID-03108 (Item 2): Teacher is no longer B1-cadence-gated.
+      // The Teacher is the predominant first-utterance authority for the
+      // community education phase — its job is to introduce ONE capability,
+      // not to greet. B1 cadence is a *greeting* policy and only applies
+      // to the bare voice-wake-brief fallback. The Teacher's own 4h
+      // per-capability cross-session dedupe (via `dedupeKey =
+      // teacher:<capability_key>`) is the cadence brake that prevents
+      // re-offering the same capability twice; that gate is intact and
+      // applies regardless of greetingPolicy. So a re-tap during a B1
+      // skip window now still gets a teaching offer — just for a
+      // *different* capability than the previous one (or none, when the
+      // user has exhausted the eligible catalog).
+      //
+      // The only forced skips that remain valid are isReconnect-class
+      // forced skips (transparent reconnect, bucket=reconnect): those
+      // mean "the previous turn is technically still alive, do not
+      // produce a new opener". Keep that one branch.
+      if (
+        inputs.greetingPolicy === 'skip'
+        && (inputs.skipReason === 'isReconnect_forces_skip'
+          || inputs.skipReason === 'transparent_reconnect_forces_skip'
+          || inputs.skipReason === 'bucket_reconnect_forces_skip')
+      ) {
         return {
           providerKey: TEACHER_PROVIDER_KEY,
           status: 'suppressed',
           latencyMs: Math.max(0, now() - t0),
-          reason: 'greeting_policy_skip',
+          reason: `forced_skip_${inputs.skipReason}`,
         };
       }
 
@@ -286,7 +336,7 @@ export function makeFeatureDiscoveryTeacherProvider(
       try {
         const cap = await inputs.supabase
           .from('system_capabilities')
-          .select('capability_key, display_name, description, manual_path, enabled')
+          .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order')
           .eq('enabled', true);
         if (cap.error) {
           return {
@@ -456,6 +506,10 @@ function readInputs(ctx: ContinuationDecisionContext): TeacherInputs | null {
         ? obj.firstName
         : null,
     greetingPolicy: gp,
+    skipReason:
+      typeof obj.skipReason === 'string' && obj.skipReason.length > 0
+        ? obj.skipReason
+        : null,
     nowIso: typeof obj.nowIso === 'string' && obj.nowIso ? obj.nowIso : undefined,
   };
 }

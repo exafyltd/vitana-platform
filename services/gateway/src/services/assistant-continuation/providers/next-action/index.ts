@@ -81,7 +81,13 @@ export interface NextActionInputs {
 
 export const NEXT_ACTION_EXTRA_KEY = 'nextAction' as const;
 export const NEXT_ACTION_PROVIDER_KEY = 'contextual_next_action' as const;
-const DEFAULT_PRIORITY = 90;
+// VTID-03108 (Item 1): this is now a ceiling, not the wrap target. The
+// actual wrap priority is the SOURCE's own priority (context-aware:
+// minutes-until-fire, confidence band, match stage). 100 means
+// effectively no ceiling for the highest-priority sources (max source
+// priority is 95 in current bands). Tests can pass a smaller value to
+// pin the ceiling and verify clamping.
+const DEFAULT_PRIORITY = 100;
 
 // ---------------------------------------------------------------------------
 // Provider factory
@@ -189,7 +195,26 @@ export function makeNextActionProvider(
         };
       }
 
-      const candidate = renderCandidateAsContinuation(result.chosen, surface, priority, newId);
+      // VTID-03108 (Item 1, "no hardcoding when it comes to intelligence"):
+      // wrap with the SOURCE's own context-aware priority, not the legacy
+      // fixed `priority` (which was hardcoded at 90 and made every
+      // next-action source — including soft nudges like life_compass at
+      // 80, pillar at 68, diary at 78 — beat the Teacher at 85). The
+      // source's `priority` already reflects context-aware signals
+      // (reminder minutes-until-fire, calendar minutes, match stage,
+      // autopilot confidence band). Pass it through so the ladder among
+      // providers is data-driven by each source's own ranking:
+      //   - Urgent sources (reminder_due 95, calendar up-to-95, autopilot
+      //     high-confidence 88, promise overdue 88, match pending 85)
+      //     stay ABOVE the Teacher's priority (85).
+      //   - Nudge sources (life_compass 80, diary 78, continuity-thread
+      //     75, vitana_index_pillar 68) drop BELOW the Teacher.
+      // The legacy fixed `priority` arg is now treated as a CEILING only:
+      // if the source's own priority exceeds it (unlikely; max source
+      // priority is 95), we clamp. Keep `opts.priority` injectable in
+      // tests for explicit-override scenarios; default ceiling = 100.
+      const effectivePriority = Math.min(result.chosen.priority, priority);
+      const candidate = renderCandidateAsContinuation(result.chosen, surface, effectivePriority, newId);
       return {
         providerKey: NEXT_ACTION_PROVIDER_KEY,
         status: 'returned',
