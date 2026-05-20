@@ -965,6 +965,48 @@ export async function handleLiveSessionStart(
       console.log(
         `[VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=${wakeBriefDecision?.decisionId}, source=${picked.evidence?.find((e) => e.kind?.startsWith('source:'))?.kind || 'voice_wake_brief'}, block_chars=${block.length})`,
       );
+
+      // VTID-03112 (T1): when the wake-brief winner is the Teacher
+      // (feature_discovery kind), fetch the manual content + the next
+      // curriculum entries so the system_instruction can run Teacher
+      // Mode for the WHOLE session — not just turn 1. The model
+      // interprets every subsequent user reply IN CONTEXT (no regex,
+      // no keyword tables) and decides what to do next. Best-effort
+      // — any failure leaves teacherModeContent null and the session
+      // degrades to the legacy one-shot Teacher behavior.
+      const winnerEvidence = picked.evidence ?? [];
+      const sourceKind = winnerEvidence.find((e) => e.kind?.startsWith('source:'))?.kind || '';
+      const isTeacherWinner =
+        picked.kind === 'feature_discovery'
+        || sourceKind === 'source:feature_discovery_teacher';
+      if (isTeacherWinner && supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
+        const ctaPayload = (picked as { cta?: { payload?: { capability_key?: string } } }).cta?.payload;
+        const activeCapabilityKey = ctaPayload?.capability_key;
+        if (typeof activeCapabilityKey === 'string' && activeCapabilityKey.length > 0) {
+          try {
+            const { resolveTeacherModeContent } = await import(
+              '../../teacher/teacher-content-resolver'
+            );
+            const teacherContent = await resolveTeacherModeContent({
+              supabase: supabaseClient,
+              tenantId: orbIdentity.tenant_id,
+              userId: orbIdentity.user_id,
+              activeCapabilityKey,
+            });
+            if (teacherContent) {
+              (session as any).teacherModeContent = teacherContent;
+              (session as any).teacherModeFirstName = firstName;
+              console.log(
+                `[VTID-03112] Teacher Mode content resolved for ${sessionId}: capability=${teacherContent.active_capability_key} manual_chars=${teacherContent.active_manual_content.length} remaining=${teacherContent.remaining_capabilities.length}`,
+              );
+            }
+          } catch (exc) {
+            console.warn(
+              `[VTID-03112] Teacher Mode resolver failed (non-fatal): ${(exc as Error).message}`,
+            );
+          }
+        }
+      }
     }
   } catch (e) {
     console.warn(

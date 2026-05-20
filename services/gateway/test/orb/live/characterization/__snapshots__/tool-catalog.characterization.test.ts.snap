@@ -2037,6 +2037,67 @@ data sub-score will start filling in.'",
         },
       },
       {
+        "description": "Teacher Mode lifecycle: record a capability-awareness event for
+the active user (introduced / tried / completed / dismissed). Call
+this AFTER you have actually delivered an intro for a capability,
+or when the user signals they want to dismiss / skip it. The
+system_capabilities ledger drives the curriculum — calling this
+is how the model says "I taught X, please advance the ledger so
+I don't re-offer it next session".
+
+Examples (call IMMEDIATELY after the model action it records):
+  - 'tried': you just narrated The Five Pillars manual content.
+  - 'dismissed': user said 'nein danke' to the offer.
+  - 'completed': user confirmed they understand / will use it.",
+        "name": "teacher_event",
+        "parameters": {
+          "properties": {
+            "capability_key": {
+              "description": "The capability_key from system_capabilities (e.g. "five_pillars", "vitana_id"). The model receives the active key in its Teacher Mode prompt.",
+              "type": "string",
+            },
+            "event_name": {
+              "description": "Which lifecycle event to record. Use "tried" after delivering an intro; "dismissed" when user declines; "completed" if the user confirms understanding.",
+              "enum": [
+                "introduced",
+                "seen",
+                "tried",
+                "completed",
+                "dismissed",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "capability_key",
+            "event_name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Teacher Mode termination: close the orb overlay gracefully when
+the user has signaled they want to end. ALWAYS call this AFTER
+speaking your warm farewell line — do not just stop talking. The
+overlay UI listens for this directive and fades out the chime.
+
+Call this when the user says any kind of "I'm done" / "nein
+danke" / "enough" — interpret IN CONTEXT, not by keyword match.
+If the user is ambiguous, ask a clarifying question first; only
+call this when you are confident the session should end.",
+        "name": "end_teaching_session",
+        "parameters": {
+          "properties": {
+            "reason": {
+              "description": "Short freeform reason the model is closing (e.g. "user said nein danke", "user signaled they are tired"). Used for telemetry — never spoken.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Return the top open admin_insights for this tenant, ranked by severity × confidence. Call this AT THE START of every admin orb session to know what needs attention. The bootstrap context already includes the briefing on session-open; only call again if the admin asks "what else?", "anything new?", or "give me the briefing again".",
         "name": "admin_briefing",
         "parameters": {
@@ -4122,6 +4183,67 @@ data sub-score will start filling in.'",
           "required": [
             "pillar",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Teacher Mode lifecycle: record a capability-awareness event for
+the active user (introduced / tried / completed / dismissed). Call
+this AFTER you have actually delivered an intro for a capability,
+or when the user signals they want to dismiss / skip it. The
+system_capabilities ledger drives the curriculum — calling this
+is how the model says "I taught X, please advance the ledger so
+I don't re-offer it next session".
+
+Examples (call IMMEDIATELY after the model action it records):
+  - 'tried': you just narrated The Five Pillars manual content.
+  - 'dismissed': user said 'nein danke' to the offer.
+  - 'completed': user confirmed they understand / will use it.",
+        "name": "teacher_event",
+        "parameters": {
+          "properties": {
+            "capability_key": {
+              "description": "The capability_key from system_capabilities (e.g. "five_pillars", "vitana_id"). The model receives the active key in its Teacher Mode prompt.",
+              "type": "string",
+            },
+            "event_name": {
+              "description": "Which lifecycle event to record. Use "tried" after delivering an intro; "dismissed" when user declines; "completed" if the user confirms understanding.",
+              "enum": [
+                "introduced",
+                "seen",
+                "tried",
+                "completed",
+                "dismissed",
+              ],
+              "type": "string",
+            },
+          },
+          "required": [
+            "capability_key",
+            "event_name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Teacher Mode termination: close the orb overlay gracefully when
+the user has signaled they want to end. ALWAYS call this AFTER
+speaking your warm farewell line — do not just stop talking. The
+overlay UI listens for this directive and fades out the chime.
+
+Call this when the user says any kind of "I'm done" / "nein
+danke" / "enough" — interpret IN CONTEXT, not by keyword match.
+If the user is ambiguous, ask a clarifying question first; only
+call this when you are confident the session should end.",
+        "name": "end_teaching_session",
+        "parameters": {
+          "properties": {
+            "reason": {
+              "description": "Short freeform reason the model is closing (e.g. "user said nein danke", "user signaled they are tired"). Used for telemetry — never spoken.",
+              "type": "string",
+            },
+          },
+          "required": [],
           "type": "object",
         },
       },

@@ -1410,7 +1410,32 @@ CALL THIS WHEN the user asks:
 
 Speak the answer naturally — 'Your Sleep is mostly baseline because we don't
 have any tracker data yet — connect a wearable or log sleep manually and the
-data sub-score will start filling in.'"
+data sub-score will start filling in.'
+
+### teacher_event
+Teacher Mode lifecycle: record a capability-awareness event for
+the active user (introduced / tried / completed / dismissed). Call
+this AFTER you have actually delivered an intro for a capability,
+or when the user signals they want to dismiss / skip it. The
+system_capabilities ledger drives the curriculum — calling this
+is how the model says "I taught X, please advance the ledger so
+I don't re-offer it next session".
+
+Examples (call IMMEDIATELY after the model action it records):
+  - 'tried': you just narrated The Five Pillars manual content.
+  - 'dismissed': user said 'nein danke' to the offer.
+  - 'completed': user confirmed they understand / will use it.
+
+### end_teaching_session
+Teacher Mode termination: close the orb overlay gracefully when
+the user has signaled they want to end. ALWAYS call this AFTER
+speaking your warm farewell line — do not just stop talking. The
+overlay UI listens for this directive and fades out the chime.
+
+Call this when the user says any kind of "I'm done" / "nein
+danke" / "enough" — interpret IN CONTEXT, not by keyword match.
+If the user is ambiguous, ask a clarifying question first; only
+call this when you are confident the session should end."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -2581,5 +2606,30 @@ CALL THIS WHEN the user asks:
 
 Speak the answer naturally — 'Your Sleep is mostly baseline because we don't
 have any tracker data yet — connect a wearable or log sleep manually and the
-data sub-score will start filling in.'"
+data sub-score will start filling in.'
+
+### teacher_event
+Teacher Mode lifecycle: record a capability-awareness event for
+the active user (introduced / tried / completed / dismissed). Call
+this AFTER you have actually delivered an intro for a capability,
+or when the user signals they want to dismiss / skip it. The
+system_capabilities ledger drives the curriculum — calling this
+is how the model says "I taught X, please advance the ledger so
+I don't re-offer it next session".
+
+Examples (call IMMEDIATELY after the model action it records):
+  - 'tried': you just narrated The Five Pillars manual content.
+  - 'dismissed': user said 'nein danke' to the offer.
+  - 'completed': user confirmed they understand / will use it.
+
+### end_teaching_session
+Teacher Mode termination: close the orb overlay gracefully when
+the user has signaled they want to end. ALWAYS call this AFTER
+speaking your warm farewell line — do not just stop talking. The
+overlay UI listens for this directive and fades out the chime.
+
+Call this when the user says any kind of "I'm done" / "nein
+danke" / "enough" — interpret IN CONTEXT, not by keyword match.
+If the user is ambiguous, ask a clarifying question first; only
+call this when you are confident the session should end."
 `;
