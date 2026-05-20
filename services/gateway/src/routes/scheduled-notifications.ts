@@ -20,6 +20,8 @@ import { Router, Request, Response } from 'express';
 import { notifyUserAsync, sendPushToUser, sendAppilixPush } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
+import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { getUserLocale, bulkGetUserLocales } from '../i18n/server-locale';
 
 const router = Router();
 
@@ -45,6 +47,42 @@ async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ 
 // ── Helper: extract tenant_id from body or use default ───────
 function getTenantId(req: Request): string | null {
   return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// ── Helper: fan-out a localized notification across a user list ───────
+// Looks up each user's preferred locale (bulk), then dispatches the
+// notification with the title/body resolved per-user against the gateway
+// catalog. Use this instead of raw notifyUserAsync() in scheduled jobs.
+async function dispatchLocalized(
+  supa: any,
+  users: Array<{ user_id: string }>,
+  tenantId: string,
+  type: string,
+  titleKey: GatewayI18nKey,
+  bodyKey: GatewayI18nKey,
+  data: Record<string, string>,
+  bodyParams?: (userId: string) => Record<string, string | number>,
+): Promise<number> {
+  const userIds = users.map((u) => u.user_id);
+  const locales = await bulkGetUserLocales(supa, userIds);
+  let dispatched = 0;
+  for (const { user_id } of users) {
+    const lc = locales.get(user_id);
+    const params = bodyParams ? bodyParams(user_id) : undefined;
+    notifyUserAsync(
+      user_id,
+      tenantId,
+      type,
+      {
+        title: tt(titleKey, lc),
+        body: tt(bodyKey, lc, params),
+        data,
+      },
+      supa,
+    );
+    dispatched++;
+  }
+  return dispatched;
 }
 
 // =============================================================================
@@ -365,16 +403,15 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const users = await getActiveUsers(supa, tenantId);
-  let dispatched = 0;
-
-  for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'daily_diary_reminder', {
-      title: 'Diary Reminder',
-      body: 'Take a moment to reflect on your day.',
-      data: { url: '/diary' },
-    }, supa);
-    dispatched++;
-  }
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'daily_diary_reminder',
+    'notif.diary_reminder.title',
+    'notif.diary_reminder.body',
+    { url: '/diary' },
+  );
 
   console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
@@ -391,16 +428,15 @@ router.post('/weekly-digest', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const users = await getActiveUsers(supa, tenantId);
-  let dispatched = 0;
-
-  for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'weekly_community_digest', {
-      title: 'Weekly Community Digest',
-      body: 'See what happened in your community this week.',
-      data: { url: '/community' },
-    }, supa);
-    dispatched++;
-  }
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_community_digest',
+    'notif.weekly_digest.title',
+    'notif.weekly_digest.body',
+    { url: '/community' },
+  );
 
   console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
@@ -417,16 +453,15 @@ router.post('/weekly-summary', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const users = await getActiveUsers(supa, tenantId);
-  let dispatched = 0;
-
-  for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'weekly_activity_summary', {
-      title: 'Your Weekly Summary',
-      body: 'Here\'s a snapshot of your activity and progress this week.',
-      data: { url: '/dashboard' },
-    }, supa);
-    dispatched++;
-  }
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_activity_summary',
+    'notif.weekly_summary.title',
+    'notif.weekly_summary.body',
+    { url: '/dashboard' },
+  );
 
   console.log(`[Scheduled] weekly_activity_summary → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
@@ -443,16 +478,15 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const users = await getActiveUsers(supa, tenantId);
-  let dispatched = 0;
-
-  for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'weekly_reflection_prompt', {
-      title: 'Weekly Reflection',
-      body: 'Take a few minutes to reflect on your week and set intentions.',
-      data: { url: '/diary' },
-    }, supa);
-    dispatched++;
-  }
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_reflection_prompt',
+    'notif.weekly_reflection.title',
+    'notif.weekly_reflection.body',
+    { url: '/diary' },
+  );
 
   console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
@@ -490,10 +524,13 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
       .eq('meetup_id', meetup.id)
       .eq('status', 'rsvp');
 
-    for (const { user_id } of rsvps || []) {
+    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
+    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
+    for (const { user_id } of rsvpList) {
+      const lc = locales.get(user_id);
       notifyUserAsync(user_id, tenantId, 'meetup_starting_soon', {
-        title: 'Meetup Starting Soon',
-        body: `"${meetup.title || 'A meetup'}" starts in about 15 minutes.`,
+        title: tt('notif.meetup_starting_soon.title', lc),
+        body: tt('notif.meetup_starting_soon.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
         data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
       }, supa);
       dispatched++;
@@ -515,10 +552,13 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
       .eq('meetup_id', meetup.id)
       .eq('status', 'rsvp');
 
-    for (const { user_id } of rsvps || []) {
+    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
+    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
+    for (const { user_id } of rsvpList) {
+      const lc = locales.get(user_id);
       notifyUserAsync(user_id, tenantId, 'meetup_starting_now', {
-        title: 'Meetup Starting Now!',
-        body: `"${meetup.title || 'A meetup'}" is starting now. Join in!`,
+        title: tt('notif.meetup_starting_now.title', lc),
+        body: tt('notif.meetup_starting_now.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
         data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
       }, supa);
       dispatched++;
@@ -572,18 +612,22 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
   // Deduplicate to one notification per user (their first event of the day).
   // Multiple events on the same day would otherwise spam the lock screen.
   const seenUsers = new Set<string>();
+  const dedupedEvents = ((events || []) as Array<any>).filter((ev) => {
+    if (seenUsers.has(ev.user_id)) return false;
+    seenUsers.add(ev.user_id);
+    return true;
+  });
+  const locales = await bulkGetUserLocales(supa, dedupedEvents.map((e) => e.user_id));
   let dispatched = 0;
 
-  for (const ev of events || []) {
-    if (seenUsers.has(ev.user_id)) continue;
-    seenUsers.add(ev.user_id);
-
+  for (const ev of dedupedEvents) {
     const start = new Date(ev.start_time);
     const hhmm = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
+    const lc = locales.get(ev.user_id);
 
     notifyUserAsync(ev.user_id, tenantId, 'upcoming_event_today', {
-      title: 'You have an event today',
-      body: `"${ev.title || 'Event'}" at ${hhmm}.`,
+      title: tt('notif.event_today.title', lc),
+      body: tt('notif.event_today.body', lc, { title: ev.title || tt('notif.fallback_app_name', lc), time: hhmm }),
       data: { url: '/calendar', entity_id: ev.id, event_id: ev.id, start_time: ev.start_time },
     }, supa);
     dispatched++;
@@ -614,11 +658,14 @@ router.post('/recommendation-expiry', async (req: Request, res: Response) => {
     .lte('expires_at', tomorrow.toISOString())
     .gte('expires_at', new Date().toISOString());
 
+  const expiringList = (expiring || []) as Array<{ id: string; user_id: string; title: string | null }>;
+  const expiringLocales = await bulkGetUserLocales(supa, expiringList.map((r) => r.user_id));
   let dispatched = 0;
-  for (const rec of expiring || []) {
+  for (const rec of expiringList) {
+    const lc = expiringLocales.get(rec.user_id);
     notifyUserAsync(rec.user_id, tenantId, 'recommendation_expires_soon', {
-      title: 'Recommendation Expiring',
-      body: `"${rec.title || 'A recommendation'}" expires soon. Act now!`,
+      title: tt('notif.recommendation_expiring.title', lc),
+      body: tt('notif.recommendation_expiring.body', lc, { title: rec.title || tt('notif.fallback_app_name', lc) }),
       data: { url: '/autopilot', entity_id: rec.id, recommendation_id: rec.id },
     }, supa);
     dispatched++;
@@ -646,18 +693,21 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
     .eq('status', 'active')
     .lte('expires_at', new Date().toISOString());
 
+  const expiredList = (expired || []) as Array<{ id: string; user_id: string }>;
+  const sigLocales = await bulkGetUserLocales(supa, expiredList.map((s) => s.user_id));
   let cleaned = 0;
-  for (const signal of expired || []) {
+  for (const signal of expiredList) {
     // Mark as expired
     await supa
       .from('d44_predictive_signals')
       .update({ status: 'expired' })
       .eq('id', signal.id);
 
+    const lc = sigLocales.get(signal.user_id);
     // Silent notification (no push, in-app only for audit)
     notifyUserAsync(signal.user_id, tenantId, 'signal_expired', {
-      title: 'Signal Expired',
-      body: 'A predictive signal has expired.',
+      title: tt('notif.signal_expired.title', lc),
+      body: tt('notif.signal_expired.body', lc),
       data: { entity_id: signal.id },
     }, supa);
     cleaned++;
