@@ -75,6 +75,43 @@ const INVITATION_PHRASES: Record<string, string[]> = {
 };
 
 /**
+ * VTID-03105: meta variant of pickTeacherInvitation. Returns the picked
+ * text PLUS the index inside the final (post-filter) pool and the pool
+ * size. Used by feature-discovery-teacher.ts for the diagnostic log so
+ * we can confirm in production whether Math.random is actually rotating
+ * across sessions. The classic `pickTeacherInvitation` stays as a thin
+ * `.text` wrapper for backward compatibility.
+ */
+export interface TeacherInvitationPick {
+  text: string;
+  rawTemplate: string;
+  idx: number;
+  poolSize: number;
+}
+
+export function pickTeacherInvitationMeta(args: {
+  lang: string;
+  featureLabel?: string | null;
+  rng?: () => number;
+}): TeacherInvitationPick {
+  const lang = (args.lang || 'en').toLowerCase();
+  const pool = INVITATION_PHRASES[lang] || INVITATION_PHRASES.en;
+  const hasLabel = !!(args.featureLabel && args.featureLabel.trim().length > 0);
+  const eligible = hasLabel ? pool : pool.filter((p) => !p.includes('{featureLabel}'));
+  // Defensive: every lang has phrases without `{featureLabel}`; fall back
+  // to en's no-label subset if the lang somehow lacks them.
+  const finalPool =
+    eligible.length > 0
+      ? eligible
+      : INVITATION_PHRASES.en.filter((p) => !p.includes('{featureLabel}'));
+  const rng = args.rng ?? Math.random;
+  const idx = Math.floor(rng() * finalPool.length) % finalPool.length;
+  const raw = finalPool[idx];
+  const text = hasLabel ? raw.replace('{featureLabel}', args.featureLabel!.trim()) : raw;
+  return { text, rawTemplate: raw, idx, poolSize: finalPool.length };
+}
+
+/**
  * Pick one invitation phrase, substituting `{featureLabel}` when supplied.
  *
  * When no feature label is given (e.g. the first call when the Teacher
@@ -89,20 +126,7 @@ export function pickTeacherInvitation(args: {
   featureLabel?: string | null;
   rng?: () => number;
 }): string {
-  const lang = (args.lang || 'en').toLowerCase();
-  const pool = INVITATION_PHRASES[lang] || INVITATION_PHRASES.en;
-  const hasLabel = !!(args.featureLabel && args.featureLabel.trim().length > 0);
-  const eligible = hasLabel ? pool : pool.filter((p) => !p.includes('{featureLabel}'));
-  // Defensive: every lang has phrases without `{featureLabel}`; fall back
-  // to en's no-label subset if the lang somehow lacks them.
-  const finalPool =
-    eligible.length > 0
-      ? eligible
-      : INVITATION_PHRASES.en.filter((p) => !p.includes('{featureLabel}'));
-  const rng = args.rng ?? Math.random;
-  const idx = Math.floor(rng() * finalPool.length) % finalPool.length;
-  const raw = finalPool[idx];
-  return hasLabel ? raw.replace('{featureLabel}', args.featureLabel!.trim()) : raw;
+  return pickTeacherInvitationMeta(args).text;
 }
 
 /** Exported for the Command Hub "Teach Vitanaland" panel. */

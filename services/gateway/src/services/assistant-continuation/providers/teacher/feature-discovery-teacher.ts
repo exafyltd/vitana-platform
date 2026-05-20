@@ -47,10 +47,12 @@ import type {
 import type { GreetingPolicy } from '../../../../orb/live/instruction/greeting-policy';
 import {
   pickTeacherGreeting,
+  pickTeacherGreetingMeta,
   listTeacherGreetings,
 } from './teacher-greeting-pool';
 import {
   pickTeacherInvitation,
+  pickTeacherInvitationMeta,
   listTeacherInvitations,
 } from './teacher-invitation-pool';
 
@@ -340,7 +342,7 @@ export function makeFeatureDiscoveryTeacherProvider(
       }
 
       // ---- Render the two-clause line ----
-      const greeting = pickTeacherGreeting({
+      const greetingPick = pickTeacherGreetingMeta({
         lang: inputs.lang,
         firstName: inputs.firstName ?? null,
         rng,
@@ -350,12 +352,32 @@ export function makeFeatureDiscoveryTeacherProvider(
       // and only names the capability AFTER the user accepts. This
       // matches the user's spec ("Darf ich dir kurz etwas zeigen?").
       // A future tuning slice can flip this rule per-capability.
-      const invitation = pickTeacherInvitation({
+      const invitationPick = pickTeacherInvitationMeta({
         lang: inputs.lang,
         featureLabel: null,
         rng,
       });
-      const userFacingLine = renderTeacherLine({ greeting, invitation });
+      const userFacingLine = renderTeacherLine({
+        greeting: greetingPick.text,
+        invitation: invitationPick.text,
+      });
+
+      // VTID-03105: per-pick diagnostic log. Production grep on this
+      // prefix lets us confirm whether Math.random IS actually rotating
+      // across sessions, or whether the picker pins to one entry. Each
+      // line carries: rendered text + idx within (post-filter) pool +
+      // pool size + capability_key + lang. NO PII — first name is logged
+      // as length only.
+      console.log(
+        `[VTID-03105 TEACHER-PICK] tenant=${inputs.tenantId} user=${inputs.userId.slice(0, 8)} lang=${inputs.lang} `
+        + `capability=${picked.row.capability_key} `
+        + `greeting_idx=${greetingPick.idx}/${greetingPick.poolSize} `
+        + `invitation_idx=${invitationPick.idx}/${invitationPick.poolSize} `
+        + `firstname_len=${(inputs.firstName ?? '').trim().length} `
+        + `greeting_raw="${greetingPick.rawTemplate.replace(/"/g, '\\"')}" `
+        + `invitation_raw="${invitationPick.rawTemplate.replace(/"/g, '\\"')}" `
+        + `rendered="${userFacingLine.replace(/"/g, '\\"').slice(0, 240)}"`,
+      );
 
       const candidate: AssistantContinuation = {
         id: `teacher-${newId()}`,
