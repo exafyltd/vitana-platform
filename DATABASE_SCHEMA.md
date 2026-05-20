@@ -404,6 +404,7 @@ CREATE TABLE my_new_table (
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
+| 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 
 ---
 
@@ -792,6 +793,81 @@ CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
 ```
 
 **Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
+
+---
+
+## VTID-03113 — Decision-Contract Phase B (externalized policy)
+
+These two tables externalize the ~140 hard-coded constants and ~30 hard-coded ladders the May 2026 contextual-intelligence audit found scattered across the renderer, ranker, fusion engine, and voice layers. Phase B.1 introduces the **schema only** — no code reads from these tables yet. Reads land in Phase B.4 (vertical proof on the temporal-bucket greeting block in `services/gateway/src/orb/live/instruction/live-system-instruction.ts`).
+
+### decision_policy
+**Purpose:** Versioned, tenant-aware, time-bounded numeric/enum/JSON policy values. One row per `(policy_key, tenant_id, version)`. Replaces hard-coded literals across decision-producing code paths.
+**Used by:** `services/gateway/src/services/decision-contract/policy-resolver.ts` (lands in Phase B.3; nothing today).
+**Migration:** `supabase/migrations/20260527000000_VTID_03113_decision_policy.sql`
+
+**Resolver contract:** for a given `(policy_key, tenant_id, now)`, pick the highest `version` row where `effective_from <= now AND (effective_until IS NULL OR effective_until > now)`. Tenant-specific row wins over `tenant_id IS NULL`.
+
+**Schema:**
+```sql
+CREATE TABLE decision_policy (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  policy_key      TEXT NOT NULL,         -- e.g. session.recency_bucket.reconnect_max_seconds
+  tenant_id       UUID,                  -- NULL = global default
+  version         INTEGER NOT NULL,
+  value_json      JSONB NOT NULL,
+  effective_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  effective_until TIMESTAMPTZ,
+  source          TEXT NOT NULL DEFAULT 'seed'
+    CHECK (source IN ('seed','admin_ui','autopilot','experiment')),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      TEXT,
+  UNIQUE (policy_key, tenant_id, version)
+);
+CREATE INDEX decision_policy_lookup_idx
+  ON decision_policy (policy_key, tenant_id, effective_from DESC);
+```
+
+**Auth model:** RLS enabled. `service_role` bypasses RLS (Supabase default) — the resolver runs as service. Authenticated app role has `SELECT` only, scoped to global defaults (`tenant_id IS NULL`) plus rows whose `tenant_id` is in `user_tenants` for the caller. No INSERT/UPDATE/DELETE policy for authenticated.
+
+### policy_render_block
+**Purpose:** Versioned, tenant-aware, localized prompt fragments. Sibling of `decision_policy`: carries verbatim text the renderer concatenates or the model echoes (greeting lines, instruction blocks).
+**Used by:** Same as `decision_policy` (Phase B.3 resolver; nothing today).
+**Migration:** `supabase/migrations/20260527010000_VTID_03113_policy_render_block.sql`
+
+**Resolver contract:** identical to `decision_policy`, keyed by `(block_key, language, tenant_id, now)`.
+
+**Schema:**
+```sql
+CREATE TABLE policy_render_block (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  block_key       TEXT NOT NULL,         -- e.g. greeting.bucket.today
+  language        TEXT NOT NULL,         -- en, de, fr, es, ar, zh, ru, sr
+  tenant_id       UUID,                  -- NULL = global default
+  version         INTEGER NOT NULL,
+  content         TEXT NOT NULL,
+  effective_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  effective_until TIMESTAMPTZ,
+  source          TEXT NOT NULL DEFAULT 'seed'
+    CHECK (source IN ('seed','admin_ui','autopilot','experiment')),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      TEXT,
+  UNIQUE (block_key, language, tenant_id, version)
+);
+CREATE INDEX policy_render_block_lookup_idx
+  ON policy_render_block (block_key, language, tenant_id, effective_from DESC);
+```
+
+**Auth model:** Same as `decision_policy` (RLS-on, `service_role` bypass, authenticated SELECT only).
+
+**Phase plan (each its own VTID + PR):**
+1. B.1 — schema (this VTID, VTID-03113).
+2. B.2 — seed migration (5 `decision_policy` rows + 64 `policy_render_block` rows = 8 buckets × 8 languages).
+3. B.3 — `PolicyResolver` service, cache warm-up, telemetry, `policy-keys.ts`.
+4. B.4 — vertical proof: migrate `live-system-instruction.ts` greeting block to read via the resolver.
+
+See `docs/decision-contract/phase-b-brief.md` for the full plan.
 
 ---
 
