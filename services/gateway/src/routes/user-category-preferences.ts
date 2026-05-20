@@ -16,6 +16,8 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
+import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
 
@@ -66,17 +68,32 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     prefMap.set(pref.category_id, pref.enabled);
   }
 
-  // Group categories by type, merging in the user's preference state
+  // Resolve the user's preferred locale once. Used to translate
+  // display_name + description for every category row. Falls back to DE.
+  const locale = await getUserLocale(supabase, identity.user_id);
+
+  // Group categories by type, merging in the user's preference state.
+  // Translate display_name + description on the fly via the gateway catalog:
+  //   notif.category.<type>.<slug>.{label,desc}
+  // If the key is missing from the catalog, fall back to the DB literal so
+  // newly-added categories never break the UI.
   const grouped: Record<string, any[]> = { chat: [], calendar: [], community: [] };
   for (const cat of categories || []) {
     const userPref = prefMap.get(cat.id);
     const enabled = userPref !== undefined ? userPref : cat.default_enabled;
 
+    const labelKey = `notif.category.${cat.type}.${cat.slug}.label` as GatewayI18nKey;
+    const descKey = `notif.category.${cat.type}.${cat.slug}.desc` as GatewayI18nKey;
+    const translatedLabel = tt(labelKey, locale);
+    const translatedDesc = tt(descKey, locale);
+
     const entry = {
       id: cat.id,
       slug: cat.slug,
-      display_name: cat.display_name,
-      description: cat.description,
+      // If the catalog has no entry for this slug, `tt()` echoes the key
+      // string back. In that case fall back to the original DB literal.
+      display_name: translatedLabel === labelKey ? cat.display_name : translatedLabel,
+      description: translatedDesc === descKey ? cat.description : translatedDesc,
       icon: cat.icon,
       enabled,
     };
