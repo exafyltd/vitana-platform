@@ -1213,6 +1213,11 @@ export {
 // characterization test) continue to resolve from this route file.
 import { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
+// VTID-03112 (T1): Teacher Mode block builder. Injected into the Vertex
+// system_instruction when wakeBriefDecision picked the Teacher AND the
+// content resolver succeeded. Drives multi-turn teaching via prompt +
+// tools rather than a TS-side state machine.
+import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -4860,6 +4865,97 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // VTID-03112 (T1): Teacher Mode tool handlers. The LLM calls these
+      // during Teacher Mode (system_instruction block injected at session
+      // start when wakeBriefDecision picked the Teacher). The model
+      // decides WHEN to call based on the user's transcribed reply —
+      // no rule table on our side. Both handlers are best-effort: they
+      // never fail the model's turn, only record state / emit directives.
+      case 'teacher_event': {
+        const capabilityKey = typeof args.capability_key === 'string' ? args.capability_key.trim() : '';
+        const eventName = typeof args.event_name === 'string' ? args.event_name.trim() : '';
+        if (!capabilityKey || !eventName) {
+          return { success: false, result: '', error: 'teacher_event requires capability_key + event_name' };
+        }
+        const allowedEvents = ['introduced', 'seen', 'tried', 'completed', 'dismissed'];
+        if (!allowedEvents.includes(eventName)) {
+          return { success: false, result: '', error: `event_name must be one of: ${allowedEvents.join(', ')}` };
+        }
+        const tenantId = session.identity?.tenant_id;
+        const userId = session.identity?.user_id;
+        if (!tenantId || !userId) {
+          return { success: false, result: '', error: 'teacher_event requires an authenticated session' };
+        }
+        try {
+          const sb = getSupabase();
+          if (!sb) {
+            return { success: false, result: '', error: 'database unavailable' };
+          }
+          const { data: rpcResult, error: rpcError } = await sb.rpc(
+            'advance_capability_awareness',
+            {
+              p_tenant_id: tenantId,
+              p_user_id: userId,
+              p_capability_key: capabilityKey,
+              p_event_name: eventName,
+              p_idempotency_key: `teacher-tool-${session.sessionId}-${capabilityKey}-${eventName}-${Date.now()}`,
+              p_decision_id: ((session as any).wakeBriefDecision?.decisionId) || null,
+              p_source_surface: 'orb_wake',
+              p_occurred_at: new Date().toISOString(),
+              p_metadata: { source: 'teacher_tool', session_id: session.sessionId },
+            },
+          );
+          if (rpcError) {
+            console.warn(`[VTID-03112] teacher_event RPC failed: ${rpcError.message}`);
+            return { success: false, result: '', error: `rpc_failed: ${rpcError.message}` };
+          }
+          const result = rpcResult && typeof rpcResult === 'object'
+            ? (rpcResult as Record<string, unknown>)
+            : {};
+          console.log(`[VTID-03112] teacher_event recorded: capability=${capabilityKey} event=${eventName} idempotent=${result.idempotent === true}`);
+          return {
+            success: true,
+            result: `Recorded ${eventName} for ${capabilityKey}. Continue teaching naturally — do NOT mention the tool call.`,
+          };
+        } catch (err) {
+          console.warn(`[VTID-03112] teacher_event handler error: ${(err as Error).message}`);
+          return { success: false, result: '', error: (err as Error).message };
+        }
+      }
+
+      case 'end_teaching_session': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        // Emit a directive so the orb-widget can close the overlay
+        // gracefully. The SSE / WS write is best-effort — the model's
+        // farewell line has already been spoken by the time this
+        // dispatches.
+        const directive = {
+          type: 'orb_directive',
+          directive: 'end_teaching_session',
+          reason: reason || 'teacher_session_ended',
+          vtid: 'VTID-03112',
+        };
+        try {
+          if (session.sseResponse) {
+            session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            session.clientWs.send(JSON.stringify(directive));
+          }
+        } catch (err) {
+          console.warn(`[VTID-03112] end_teaching_session directive emit failed (non-fatal): ${(err as Error).message}`);
+        }
+        // Mark session-level state so the legacy menu / re-trigger paths
+        // don't speak more lines after the farewell.
+        (session as any).teacherModeEnded = true;
+        console.log(`[VTID-03112] end_teaching_session called: session=${session.sessionId} reason=${reason || '<none>'}`);
+        emitDiag(session, 'teacher_session_ended', { reason: reason || null });
+        return {
+          success: true,
+          result: 'Teaching session is ending. Your farewell line was the final thing — the overlay is now closing.',
+        };
+      }
+
       default: {
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that
@@ -5710,7 +5806,25 @@ async function connectToLiveAPI(
                           // the appended override. See
                           // live-session-controller.ts:VTID-03101 for the
                           // write side. Empty when no override is active.
-                          + (session.wakeBriefOverrideBlock || ''),
+                          + (session.wakeBriefOverrideBlock || '')
+                          // VTID-03112 (T1): Teacher Mode block. Empty
+                          // when the wake-brief winner wasn't the
+                          // Teacher OR the manual resolver failed.
+                          // The block runs Teacher Mode for the WHOLE
+                          // session — turns 2+ are governed by it.
+                          // Turn 1 is still owned by the wake-brief
+                          // override (which sits ABOVE it in the
+                          // concatenation order). The model interprets
+                          // each user reply IN CONTEXT (no rule table)
+                          // and calls teacher_event / end_teaching_session
+                          // tools as appropriate.
+                          + ((session as any).teacherModeContent
+                              ? buildTeacherModeBlock({
+                                  content: (session as any).teacherModeContent,
+                                  lang: session.lang,
+                                  firstName: (session as any).teacherModeFirstName ?? null,
+                                })
+                              : ''),
                         session.active_role,
                         session.conversationSummary,
                         // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.

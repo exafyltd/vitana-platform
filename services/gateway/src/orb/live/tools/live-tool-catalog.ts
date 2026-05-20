@@ -1938,6 +1938,69 @@ export function buildLiveApiTools(
             required: ['pillar'],
           },
         },
+        // VTID-03112 (T1): Teacher Mode tools. Only declared for authenticated
+        // sessions — anonymous landing-page visitors never enter Teacher Mode.
+        // The two tools work together: teacher_event advances the
+        // `system_capabilities` awareness ledger after the LLM delivers each
+        // capability's intro; end_teaching_session closes the overlay
+        // gracefully when the LLM senses the user wants to stop. The LLM
+        // decides when to call each — no rule table on our side.
+        {
+          name: 'teacher_event',
+          description: [
+            'Teacher Mode lifecycle: record a capability-awareness event for',
+            'the active user (introduced / tried / completed / dismissed). Call',
+            'this AFTER you have actually delivered an intro for a capability,',
+            'or when the user signals they want to dismiss / skip it. The',
+            'system_capabilities ledger drives the curriculum — calling this',
+            'is how the model says "I taught X, please advance the ledger so',
+            'I don\'t re-offer it next session".',
+            '',
+            'Examples (call IMMEDIATELY after the model action it records):',
+            "  - 'tried': you just narrated The Five Pillars manual content.",
+            "  - 'dismissed': user said 'nein danke' to the offer.",
+            "  - 'completed': user confirmed they understand / will use it.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              capability_key: {
+                type: 'string',
+                description: 'The capability_key from system_capabilities (e.g. "five_pillars", "vitana_id"). The model receives the active key in its Teacher Mode prompt.',
+              },
+              event_name: {
+                type: 'string',
+                enum: ['introduced', 'seen', 'tried', 'completed', 'dismissed'],
+                description: 'Which lifecycle event to record. Use "tried" after delivering an intro; "dismissed" when user declines; "completed" if the user confirms understanding.',
+              },
+            },
+            required: ['capability_key', 'event_name'],
+          },
+        },
+        {
+          name: 'end_teaching_session',
+          description: [
+            'Teacher Mode termination: close the orb overlay gracefully when',
+            'the user has signaled they want to end. ALWAYS call this AFTER',
+            'speaking your warm farewell line — do not just stop talking. The',
+            'overlay UI listens for this directive and fades out the chime.',
+            '',
+            'Call this when the user says any kind of "I\'m done" / "nein',
+            'danke" / "enough" — interpret IN CONTEXT, not by keyword match.',
+            'If the user is ambiguous, ask a clarifying question first; only',
+            'call this when you are confident the session should end.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "user said nein danke", "user signaled they are tired"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
+          },
+        },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.

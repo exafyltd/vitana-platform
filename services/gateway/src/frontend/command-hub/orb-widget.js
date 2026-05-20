@@ -1725,6 +1725,29 @@
               }, 200);
             }, 300);
           })();
+        } else if (msg.directive === 'end_teaching_session') {
+          // VTID-03112 (T2): the LLM called `end_teaching_session` after
+          // delivering its farewell line. Close the overlay gracefully —
+          // give the audio queue a moment to finish playing the farewell
+          // before the SSE/WS tear down. Mirrors the navigate directive's
+          // teardown pattern so the closing chime + state cleanup behave
+          // identically.
+          console.log('[VTOrb] orb_directive end_teaching_session (reason=' + (msg.reason || '<none>') + ')');
+          try {
+            // Stop accepting new audio chunks but let the queued farewell
+            // finish playing — _hide() is invoked after a short delay.
+            _s.audioPlaying = false;
+            setTimeout(function() {
+              try { _hide(); }
+              catch (e) { console.error('[VTOrb] _hide on end_teaching_session failed:', e); }
+            }, 500);
+            if (typeof _cfg.onTeachingSessionEnd === 'function') {
+              try { _cfg.onTeachingSessionEnd(msg.reason || null); }
+              catch (e) { console.error('[VTOrb] onTeachingSessionEnd handler failed:', e); }
+            }
+          } catch (e) {
+            console.error('[VTOrb] end_teaching_session handling error:', e);
+          }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }
