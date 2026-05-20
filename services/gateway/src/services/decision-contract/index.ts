@@ -41,3 +41,22 @@ export {
   renderSystemInstructionFromContext,
   type RenderOptions,
 } from './renderer';
+
+// VTID-03116 (Phase B.3) — PolicyResolver service: sync gets after a 15s
+// cache warm-up. Both consumers and tests import from here, never from
+// the implementation files directly, so the boundary is grep-auditable.
+export {
+  POLICY_KEYS,
+  RENDER_BLOCK_KEYS,
+  type PolicyKey,
+  type RenderBlockKey,
+} from './policy-keys';
+
+export {
+  getPolicyResolver,
+  warmPolicyResolverCache,
+  configurePolicyResolverForTests,
+  __resetPolicyResolverForTests,
+  type PolicyResolver,
+  type PolicyResolverTestSeed,
+} from './policy-resolver';
