@@ -3474,7 +3474,37 @@ async function executeLiveApiToolInner(
 
         if (results.length === 0) {
           console.log(`[VTID-01270A] get_recommendations: 0 results (type=${recType}), ${Date.now() - startTime}ms`);
-          return { success: true, result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' };
+          // VTID-03110: NEVER speak "no personalized recommendations".
+          // Vitana is the Teacher of the system — the catalog has 25+
+          // capabilities, each with a manual chapter. When the recommendation
+          // queries are empty, deflect into a teaching offer pulling the next
+          // pedagogically-ordered capability. Context-aware, data-driven —
+          // no hardcoded suggestion sequence.
+          let deflection = '';
+          try {
+            const sb = getSupabase();
+            if (sb && tenantId && userId) {
+              const { buildTeacherDeflectionForEmptyRecommendations } = await import(
+                '../services/assistant-continuation/providers/teacher/teacher-deflection'
+              );
+              deflection = await buildTeacherDeflectionForEmptyRecommendations({
+                supabase: sb,
+                tenantId,
+                userId,
+                lang: session.lang,
+                recType,
+              });
+            }
+          } catch (err) {
+            console.warn(`[VTID-03110] deflection helper failed (non-fatal): ${(err as Error).message}`);
+          }
+          if (!deflection) {
+            // Last-resort generic fallback — still NOT "no recommendations".
+            deflection = (session.lang || 'en').toLowerCase().startsWith('de')
+              ? 'Im Moment ist nichts Spezifisches vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Wo möchtest du anfangen?'
+              : 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+          }
+          return { success: true, result: deflection };
         }
 
         const MAX_TOOL_RESPONSE_CHARS = 3000;
