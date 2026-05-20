@@ -1087,6 +1087,142 @@ router.patch(
 );
 
 // =============================================================================
+// GET /admin/billing/metrics  — operator dashboard KPIs (PR-6)
+// =============================================================================
+// Aggregates over the v1 schema for the Command Hub billing dashboard:
+//   - MRR / ARR derived from active subscriptions × their monthly price
+//   - Subs by plan_key (active + trialing)
+//   - Paywall funnel counts (shown / upgraded / credit_paid /
+//     deferred_for_vulnerability / degraded) over the last 30 days
+//   - Code redemptions by campaign over the last 30 days
+//   - Voice degrade events over the last 7 days
+//   - Marketing budget remaining (cents) from tenant_settings.feature_flags
+//
+// No new tables. All reads. Admin-only.
+// =============================================================================
+
+router.get(
+  '/admin/metrics',
+  requireAuth,
+  requireExafyAdmin,
+  async (_req: AuthenticatedRequest, res: Response) => {
+    try {
+      const supabase = sb();
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      // 1. Active subscriptions joined with their monthly price for MRR/ARR
+      const { data: activeSubs } = await supabase
+        .from('user_subscriptions')
+        .select('plan_key, price_key, status')
+        .in('status', ['active', 'trialing', 'past_due']);
+
+      const planCounts: Record<string, number> = {};
+      const trialingCount: Record<string, number> = {};
+      const planKeys = new Set<string>();
+      ((activeSubs as Array<{ plan_key: string; price_key: string | null; status: string }>) || []).forEach(
+        (row) => {
+          planCounts[row.plan_key] = (planCounts[row.plan_key] || 0) + 1;
+          if (row.status === 'trialing') {
+            trialingCount[row.plan_key] = (trialingCount[row.plan_key] || 0) + 1;
+          }
+          planKeys.add(row.plan_key);
+        }
+      );
+
+      // Read monthly prices per plan to compute MRR
+      const { data: prices } = await supabase
+        .from('subscription_plan_prices')
+        .select('plan_key, billing_interval, price_cents')
+        .eq('billing_interval', 'month')
+        .eq('is_active', true);
+      const monthlyPriceCents: Record<string, number> = {};
+      ((prices as Array<{ plan_key: string; billing_interval: string; price_cents: number }>) || []).forEach(
+        (p) => {
+          monthlyPriceCents[p.plan_key] = p.price_cents;
+        }
+      );
+      let mrrCents = 0;
+      Object.entries(planCounts).forEach(([plan, count]) => {
+        const trialing = trialingCount[plan] || 0;
+        const paying = count - trialing;
+        mrrCents += paying * (monthlyPriceCents[plan] || 0);
+      });
+
+      // 2. Paywall funnel (last 30d)
+      const { data: paywallEvents } = await supabase
+        .from('paywall_events')
+        .select('action')
+        .gte('created_at', since30d);
+      const funnel: Record<string, number> = {};
+      ((paywallEvents as Array<{ action: string }>) || []).forEach((row) => {
+        funnel[row.action] = (funnel[row.action] || 0) + 1;
+      });
+
+      // 3. Code redemptions by campaign (last 30d)
+      const { data: redemptions } = await supabase
+        .from('redemption_redemptions')
+        .select('campaign, grant_value_cents')
+        .gte('redeemed_at', since30d);
+      const redemptionsByCampaign: Record<string, { count: number; grant_value_cents: number }> = {};
+      ((redemptions as Array<{ campaign: string; grant_value_cents: number }>) || []).forEach((row) => {
+        const c = redemptionsByCampaign[row.campaign] || { count: 0, grant_value_cents: 0 };
+        c.count += 1;
+        c.grant_value_cents += row.grant_value_cents || 0;
+        redemptionsByCampaign[row.campaign] = c;
+      });
+
+      // 4. Voice degrade events (last 7d)
+      const { data: degradeEvents } = await supabase
+        .from('paywall_events')
+        .select('id')
+        .eq('action', 'degraded')
+        .eq('feature_key', 'voice_live_minutes')
+        .gte('created_at', since7d);
+      const voiceDegradeCount7d = (degradeEvents as Array<unknown>)?.length ?? 0;
+
+      // 5. Marketing budget remaining
+      let budgetRemainingCents: number | null = null;
+      try {
+        const { data: budgetRow } = await supabase
+          .from('tenant_settings')
+          .select('feature_flags')
+          .maybeSingle();
+        const flags = (budgetRow as { feature_flags?: Record<string, unknown> } | null)?.feature_flags;
+        const val = flags?.marketing_budget_eur_remaining_cents;
+        if (typeof val === 'number') budgetRemainingCents = val;
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} budget query error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      return res.json({
+        ok: true,
+        generated_at: new Date().toISOString(),
+        revenue: {
+          mrr_cents: mrrCents,
+          arr_cents: mrrCents * 12,
+          currency: 'eur',
+        },
+        subscriptions: {
+          total_active_or_trialing: Object.values(planCounts).reduce((a, b) => a + b, 0),
+          by_plan: planCounts,
+          trialing_by_plan: trialingCount,
+        },
+        paywall_funnel_30d: funnel,
+        redemptions_30d: redemptionsByCampaign,
+        voice_degrade_count_7d: voiceDegradeCount7d,
+        marketing_budget_remaining_cents: budgetRemainingCents,
+        vtid: VTID,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`${LOG_PREFIX} /admin/metrics crash: ${message}`);
+      return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', message, vtid: VTID });
+    }
+  }
+);
+
+// =============================================================================
 // VTID marker for grep
 // =============================================================================
 export const _VTID = VTID;
