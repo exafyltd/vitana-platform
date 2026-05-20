@@ -119,7 +119,7 @@ describe('VTID-03093 — pickCapability', () => {
     expect(pickCapability(catalog, ledger, NOW_ISO)).toBeNull();
   });
 
-  test('alphabetical tie-break on equal-priority entries', () => {
+  test('alphabetical tie-break on equal-priority entries (no pedagogical order set)', () => {
     const catalog: CapabilityCatalogRow[] = [
       cat({ capability_key: 'zebra' }),
       cat({ capability_key: 'apple' }),
@@ -127,6 +127,42 @@ describe('VTID-03093 — pickCapability', () => {
     ];
     const picked = pickCapability(catalog, [], NOW_ISO);
     expect(picked?.row.capability_key).toBe('apple');
+  });
+
+  // VTID-03108 (Item 3): pedagogical_order drives the Teacher curriculum.
+  // Foundation capabilities (low pedagogical_order) should win over
+  // advanced ones (high pedagogical_order) regardless of alphabetical
+  // position. The order itself lives in the system_capabilities table
+  // (data-driven, editable without a deploy) — these tests just lock
+  // that the column is honored.
+  test('pedagogical_order (low) wins over alphabetical tie-break', () => {
+    const catalog: CapabilityCatalogRow[] = [
+      // 'activity_match' is alphabetically first but pedagogically LATE.
+      cat({ capability_key: 'activity_match', pedagogical_order: 140 }),
+      // 'five_pillars' starts with 'f' but is the curriculum FIRST step.
+      cat({ capability_key: 'five_pillars', pedagogical_order: 10 }),
+      cat({ capability_key: 'vitana_id', pedagogical_order: 30 }),
+    ];
+    const picked = pickCapability(catalog, [], NOW_ISO);
+    expect(picked?.row.capability_key).toBe('five_pillars');
+  });
+
+  test('pedagogical_order=null sorts LAST (treated as +Infinity)', () => {
+    const catalog: CapabilityCatalogRow[] = [
+      cat({ capability_key: 'activity_match', pedagogical_order: null }),
+      cat({ capability_key: 'five_pillars', pedagogical_order: 10 }),
+    ];
+    const picked = pickCapability(catalog, [], NOW_ISO);
+    expect(picked?.row.capability_key).toBe('five_pillars');
+  });
+
+  test('pedagogical_order ties still fall through to alphabetical', () => {
+    const catalog: CapabilityCatalogRow[] = [
+      cat({ capability_key: 'beta', pedagogical_order: 50 }),
+      cat({ capability_key: 'alpha', pedagogical_order: 50 }),
+    ];
+    const picked = pickCapability(catalog, [], NOW_ISO);
+    expect(picked?.row.capability_key).toBe('alpha');
   });
 });
 
@@ -209,7 +245,13 @@ describe('VTID-03093 — provider produce()', () => {
     if (r.status === 'skipped') expect(r.reason).toBe('no_teacher_inputs');
   });
 
-  test('greetingPolicy=skip → suppressed', async () => {
+  // VTID-03108 (Item 2): cadence-class skip no longer suppresses the
+  // Teacher. The Teacher is the predominant first-utterance authority
+  // for the community education phase; its own per-capability 4h
+  // dedupe is the cadence brake. Only isReconnect-class forced skips
+  // still suppress (transparent reconnect = "previous turn is alive,
+  // do not produce a new opener"). See the next two tests.
+  test('greetingPolicy=skip with cadence reason → still returns (fires anyway)', async () => {
     const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
     const r = await provider.produce(
       ctxWith({
@@ -219,11 +261,35 @@ describe('VTID-03093 — provider produce()', () => {
           userId: 'u1',
           lang: 'de',
           greetingPolicy: 'skip',
+          skipReason: 'greeted_recently_within_window',
         },
       }),
     );
-    expect(r.status).toBe('suppressed');
-    if (r.status === 'suppressed') expect(r.reason).toBe('greeting_policy_skip');
+    expect(r.status).toBe('returned');
+  });
+
+  test('greetingPolicy=skip with isReconnect-class reason → suppressed', async () => {
+    for (const reason of [
+      'isReconnect_forces_skip',
+      'transparent_reconnect_forces_skip',
+      'bucket_reconnect_forces_skip',
+    ]) {
+      const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+      const r = await provider.produce(
+        ctxWith({
+          [TEACHER_EXTRA_KEY]: {
+            supabase: fakeSb({ catalog: [cat()] }),
+            tenantId: 't1',
+            userId: 'u1',
+            lang: 'de',
+            greetingPolicy: 'skip',
+            skipReason: reason,
+          },
+        }),
+      );
+      expect(r.status).toBe('suppressed');
+      if (r.status === 'suppressed') expect(r.reason).toBe(`forced_skip_${reason}`);
+    }
   });
 
   test('empty catalog → suppressed:empty_catalog', async () => {

@@ -295,6 +295,11 @@ export async function decideWakeBriefForSession(
         lang: args.lang,
         firstName: args.firstName ?? null,
         greetingPolicy,
+        // VTID-03108 (Item 2): forward the explicit skip reason so the
+        // Teacher can distinguish isReconnect-class forced skips
+        // (suppress) from cadence-class skips (still fire — different
+        // capability via per-capability dedupe).
+        skipReason: greetingDecision.reason,
       };
     }
   }

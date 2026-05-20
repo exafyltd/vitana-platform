@@ -6412,6 +6412,74 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
     return true;
   }
+
+  // VTID-03108 (Item 5): cadence-suppressed silence. When wake-brief
+  // explicitly returned `none_with_reason` AND the rolled-up cause is
+  // one of the cadence-class skips emitted by greeting-policy.ts, we
+  // honor the policy by sending NO trigger prompt — the orb stays
+  // silent, the next turn is gated on user audio. The previous
+  // behavior fell through to the legacy menu, which made Gemini
+  // produce a generic line that contradicted the policy.
+  //
+  // Whitelist mirrors greeting-policy's emitted `reason` values
+  // (`isReconnect_forces_skip`, `transparent_reconnect_forces_skip`,
+  // `bucket_reconnect_forces_skip`, `recent_turn_continues_thread`,
+  // `greeted_recently_within_window`). Detection looks at the source
+  // provider results so we ONLY silence when the cause is a real skip
+  // from voice-wake-brief — never on generic "all_providers_suppressed"
+  // rollups that might mask an error path. The kill-switch
+  // `ORB_GREETING_SILENCE_ON_SKIP_ENABLED=false` falls back to legacy
+  // menu in case this silencing reintroduces a regression — set via
+  // system_controls or env. Default is enabled.
+  //
+  // Audio safety: anonymous sessions never use this path (their own
+  // anonPrompts block fires further down). For authenticated users we
+  // still mark `greetingSent=true` so stall-recovery doesn't later
+  // inject the legacy menu, and we do NOT arm the response watchdog
+  // (silence is intended; the watchdog would emit a false-positive
+  // timeout). The user breaks the silence by speaking.
+  const silenceOnSkipEnabled = process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false';
+  if (silenceOnSkipEnabled && !session.isAnonymous) {
+    const cadenceSkipReasons = new Set([
+      'isReconnect_forces_skip',
+      'transparent_reconnect_forces_skip',
+      'bucket_reconnect_forces_skip',
+      'recent_turn_continues_thread',
+      'greeted_recently_within_window',
+    ]);
+    const providerResults = (wakeBriefDecision as any)?.sourceProviderResults as
+      | Array<{ providerKey?: string; status?: string; reason?: string | null }>
+      | undefined;
+    const voiceWakeBriefReason = Array.isArray(providerResults)
+      ? providerResults.find((r) => r?.providerKey === 'voice_wake_brief')?.reason ?? null
+      : null;
+    const isCadenceSkip =
+      wakeBriefDecision?.selectedContinuation == null
+      && typeof voiceWakeBriefReason === 'string'
+      // voice-wake-brief returns `reason: 'greeting_policy_skip'` when policy=skip; the
+      // upstream skip-class reason from greeting-policy itself shows up on the
+      // wake_brief_selected timeline event. Match both shapes so this works
+      // regardless of which layer surfaces the reason.
+      && (cadenceSkipReasons.has(voiceWakeBriefReason)
+        || voiceWakeBriefReason === 'greeting_policy_skip');
+    if (isCadenceSkip) {
+      console.log(
+        `[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=true reason=cadence_skip voice_wake_brief_reason=${voiceWakeBriefReason} lang=${lang}`,
+      );
+      console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
+      session.greetingSent = true;
+      session.greetingTurnIndex = session.turn_count;
+      emitDiag(session, 'greeting_sent', {
+        lang,
+        prompt_len: 0,
+        wake_opener: 'silenced_on_cadence',
+        decision_id: wakeBriefDecision?.decisionId || null,
+        suppression_reason: voiceWakeBriefReason,
+      });
+      return true;
+    }
+  }
+
   // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
   // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
   // never curt. The previous iteration fixed "Hello Dragan!" but made
