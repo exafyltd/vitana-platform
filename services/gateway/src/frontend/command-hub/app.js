@@ -2715,7 +2715,8 @@ const NAVIGATION_CONFIG = [
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
             { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
             { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
-            { "key": "analytics", "path": "/command-hub/admin/analytics/" }
+            { "key": "analytics", "path": "/command-hub/admin/analytics/" },
+            { "key": "billing-codes", "label": "Billing Codes", "path": "/command-hub/admin/billing-codes/" }
         ]
     },
     {
@@ -6256,6 +6257,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'marketplace-review') {
         // VTID-02000: Admin Marketplace Review Queue - approve/reject flagged products
         container.appendChild(renderAdminMarketplaceReviewView());
+    } else if (moduleKey === 'admin' && tab === 'billing-codes') {
+        // VTID-03107: Billing v1 admin — redemption code generation + listing
+        container.appendChild(renderAdminBillingCodesView());
     } else if (moduleKey === 'agents' && tab === 'registered-agents') {
         // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
         container.appendChild(renderRegisteredAgentsView());
@@ -11428,6 +11432,261 @@ async function triggerMarketplaceSync(network) {
         console.error('[VTID-02000] sync failed:', err);
         showToast('Sync failed: ' + err.message, 'error');
     }
+}
+
+// =============================================================================
+// VTID-03107 · Billing v1 — admin redemption-code management
+// =============================================================================
+// Operator tab at /command-hub/admin/billing-codes/.
+//
+// Lets ops:
+//   - Bulk-generate unique-per-user codes for a campaign (test cohort pattern,
+//     365-day default). Downloads CSV for distribution.
+//   - View existing codes per campaign with usage stats.
+//   - Deactivate a code instantly (leak response).
+//
+// Reads/writes via the routes shipped in PR-2 (routes/billing.ts):
+//   POST /api/v1/billing/admin/redemption-codes/generate
+//   GET  /api/v1/billing/admin/redemption-codes
+//   PATCH /api/v1/billing/admin/redemption-codes/:code
+// =============================================================================
+
+async function fetchAdminBillingCodes(campaign) {
+    state.adminBillingCodesLoading = true;
+    try {
+        var url = '/api/v1/billing/admin/redemption-codes?include_codes=true' +
+            (campaign ? '&campaign=' + encodeURIComponent(campaign) : '') +
+            '&limit=200';
+        var resp = await fetch(url, { method: 'GET', headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminBillingCodes = json.codes || [];
+        state.adminBillingCodesError = null;
+    } catch (err) {
+        console.error('[VTID-03107] fetch billing codes failed:', err);
+        state.adminBillingCodes = [];
+        state.adminBillingCodesError = String(err && err.message ? err.message : err);
+    } finally {
+        state.adminBillingCodesLoading = false;
+        renderApp();
+    }
+}
+
+async function generateAdminBillingCodes(payload) {
+    try {
+        var resp = await fetch('/api/v1/billing/admin/redemption-codes/generate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify(payload),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminBillingLastBatch = json;
+        await fetchAdminBillingCodes(null);
+        return json;
+    } catch (err) {
+        console.error('[VTID-03107] generate codes failed:', err);
+        state.adminBillingError = String(err && err.message ? err.message : err);
+        renderApp();
+        throw err;
+    }
+}
+
+async function deactivateAdminBillingCode(code) {
+    try {
+        var resp = await fetch('/api/v1/billing/admin/redemption-codes/' + encodeURIComponent(code), {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ is_active: false }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        await fetchAdminBillingCodes(null);
+    } catch (err) {
+        console.error('[VTID-03107] deactivate code failed:', err);
+        alert('Deactivate failed: ' + err.message);
+    }
+}
+
+function downloadCodesAsCsv(codes, campaign) {
+    var header = 'code,campaign,grants_plan,grant_duration_days,deep_link\n';
+    var origin = (window.location.origin || '').replace(/\/$/, '');
+    var rows = codes.map(function (c) {
+        var code = (c.code || '').replace(/"/g, '""');
+        var deepLink = origin + '/redeem?code=' + encodeURIComponent(c.code);
+        return [
+            '"' + code + '"',
+            '"' + (campaign || '') + '"',
+            '"' + (c.grants_plan || 'premium') + '"',
+            (c.grant_duration_days || 365),
+            '"' + deepLink + '"',
+        ].join(',');
+    }).join('\n');
+    var blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'vitana-codes-' + (campaign || 'batch') + '-' + Date.now() + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function renderAdminBillingCodesView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+
+    if (!state.adminBillingCodes && !state.adminBillingCodesLoading) {
+        fetchAdminBillingCodes(null);
+    }
+
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Billing Codes (VTID-03107)</h2>' +
+        '<p class="admin-screen-subtitle">Generate redemption codes for test cohorts and special campaigns. ' +
+        'The public FOUNDING code is managed via SQL (see migration 6). All grants decrement the marketing budget cap.</p>';
+    container.appendChild(header);
+
+    // ── Generation form ────────────────────────────────────────────────────
+    var formCard = document.createElement('div');
+    formCard.className = 'admin-form-card';
+    formCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;margin-bottom:1rem;';
+    formCard.innerHTML =
+        '<h3 style="margin:0 0 0.75rem;font-size:14px;">Generate codes</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0.5rem;align-items:end;">' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
+        '    <input id="vtid-03107-campaign" type="text" placeholder="test_cohort_2026Q2" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
+        '    <input id="vtid-03107-count" type="number" min="1" max="1000" value="100" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
+        '    <input id="vtid-03107-days" type="number" min="1" max="730" value="365" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
+        '    <select id="vtid-03107-plan" style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;">' +
+        '      <option value="premium">premium</option>' +
+        '      <option value="premium_5x">premium_5x (Host)</option>' +
+        '      <option value="premium_20x">premium_20x (Community)</option>' +
+        '    </select></div>' +
+        '  <button id="vtid-03107-generate" class="primary-btn" style="padding:0.5rem 1rem;background:#10b981;color:#0f172a;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Generate</button>' +
+        '</div>' +
+        '<p style="margin:0.5rem 0 0;font-size:11px;color:#64748b;">Codes are unique-per-user (max_uses=1). For shared marketing codes, edit redemption_codes directly via SQL.</p>';
+    container.appendChild(formCard);
+
+    formCard.querySelector('#vtid-03107-generate').addEventListener('click', async function () {
+        var campaign = formCard.querySelector('#vtid-03107-campaign').value.trim();
+        var count = parseInt(formCard.querySelector('#vtid-03107-count').value, 10) || 0;
+        var days = parseInt(formCard.querySelector('#vtid-03107-days').value, 10) || 365;
+        var plan = formCard.querySelector('#vtid-03107-plan').value;
+        if (!campaign) { alert('Campaign name required'); return; }
+        if (count < 1 || count > 1000) { alert('Count must be 1–1000'); return; }
+        try {
+            var result = await generateAdminBillingCodes({
+                campaign: campaign, count: count, grant_duration_days: days, grants_plan: plan,
+            });
+            downloadCodesAsCsv(result.codes || [], campaign);
+            alert('Generated ' + (result.generated || 0) + ' codes for campaign "' + campaign + '". CSV downloaded.');
+        } catch (e) { /* error already alerted via state */ }
+    });
+
+    // ── Last-batch quick view ──────────────────────────────────────────────
+    if (state.adminBillingLastBatch) {
+        var batch = state.adminBillingLastBatch;
+        var batchCard = document.createElement('div');
+        batchCard.style.cssText = 'background:#064e3b;border:1px solid #10b981;border-radius:8px;padding:1rem;margin-bottom:1rem;color:#d1fae5;';
+        batchCard.innerHTML = '<strong>Last batch:</strong> ' + (batch.generated || 0) +
+            ' codes generated for campaign "' + escapeHtml(batch.campaign || '') + '" ' +
+            '(plan=' + escapeHtml(batch.grants_plan || '') + ', ' + (batch.grant_duration_days || '?') + ' days each). ' +
+            'CSV downloaded. Distribute to recipients individually.';
+        container.appendChild(batchCard);
+    }
+
+    // ── Existing codes table ───────────────────────────────────────────────
+    var listCard = document.createElement('div');
+    listCard.className = 'admin-list-container';
+    listCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;';
+
+    var listHeader = document.createElement('div');
+    listHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;';
+    listHeader.innerHTML = '<h3 style="margin:0;font-size:14px;">Recent codes (latest 200)</h3>' +
+        '<button id="vtid-03107-refresh" style="padding:0.25rem 0.75rem;background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:12px;">↻ Refresh</button>';
+    listCard.appendChild(listHeader);
+    listHeader.querySelector('#vtid-03107-refresh').addEventListener('click', function () {
+        state.adminBillingCodes = null;
+        state.adminBillingCodesError = null;
+        fetchAdminBillingCodes(null);
+    });
+
+    if (state.adminBillingCodesLoading) {
+        var loading = document.createElement('p');
+        loading.textContent = 'Loading…';
+        loading.style.color = '#94a3b8';
+        listCard.appendChild(loading);
+    } else if (state.adminBillingCodesError) {
+        var errEl = document.createElement('p');
+        errEl.textContent = 'Error: ' + state.adminBillingCodesError;
+        errEl.style.color = '#ef4444';
+        listCard.appendChild(errEl);
+    } else if (!state.adminBillingCodes || state.adminBillingCodes.length === 0) {
+        var empty = document.createElement('p');
+        empty.textContent = 'No codes generated yet. Use the form above.';
+        empty.style.color = '#94a3b8';
+        listCard.appendChild(empty);
+    } else {
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+        table.innerHTML =
+            '<thead><tr style="border-bottom:1px solid #334155;">' +
+            '<th style="text-align:left;padding:0.5rem;">Code</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Campaign</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Plan</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Days</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Used</th>' +
+            '<th style="text-align:center;padding:0.5rem;">Active</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Created</th>' +
+            '<th></th>' +
+            '</tr></thead>';
+        var tbody = document.createElement('tbody');
+        state.adminBillingCodes.forEach(function (c) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var usagePct = c.max_uses > 0 ? Math.round((c.uses_count / c.max_uses) * 100) : 0;
+            var usedColor = usagePct >= 100 ? '#ef4444' : usagePct >= 80 ? '#f59e0b' : '#10b981';
+            tr.innerHTML =
+                '<td style="padding:0.5rem;font-family:monospace;">' + escapeHtml(c.code) + '</td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(c.campaign) + '</td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(c.grants_plan) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (c.grant_duration_days || '?') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;color:' + usedColor + ';">' +
+                  (c.uses_count || 0) + ' / ' + (c.max_uses || 0) + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;">' + (c.is_active ? '✓' : '✗') + '</td>' +
+                '<td style="padding:0.5rem;color:#94a3b8;">' +
+                  (c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : '') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' +
+                  (c.is_active ? '<button class="deactivate-btn" data-code="' + escapeHtml(c.code) +
+                    '" style="padding:0.25rem 0.5rem;background:#7f1d1d;color:#fecaca;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Deactivate</button>' : '') +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        listCard.appendChild(table);
+
+        // Wire deactivate buttons
+        listCard.querySelectorAll('.deactivate-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var code = btn.getAttribute('data-code');
+                if (confirm('Deactivate code "' + code + '"? This is reversible via SQL.')) {
+                    deactivateAdminBillingCode(code);
+                }
+            });
+        });
+    }
+    container.appendChild(listCard);
+
+    return container;
 }
 
 function renderAdminMarketplaceShopsView() {
