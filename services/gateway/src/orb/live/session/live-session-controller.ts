@@ -48,6 +48,9 @@ import {
   FORWARDING_ACK_TIMEOUT_MS,
 } from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
+// VTID-03107: Live AI voice quota check at session start.
+import { reserveVoiceQuotaAtSessionStart } from '../../../services/voice-quota-guard';
+import { recordPaywallEvent } from '../../../services/entitlement-service';
 import {
   deduplicatedExtract,
   clearExtractionState,
@@ -488,6 +491,70 @@ export async function handleLiveSessionStart(
       error: 'AUTH_TOKEN_INVALID',
       message: 'Session expired or invalid — please re-authenticate',
     });
+  }
+
+  // VTID-03107: Live AI voice quota gate (authenticated sessions only).
+  // Anonymous sessions skip the gate (no user to bill). For authenticated
+  // users we reserve quota up front; if exhausted with degrade behavior, we
+  // allow the session to start but mark `voice_quota_exhausted` in the
+  // response meta so the frontend can flip to Standard tier mode.
+  //
+  // Failures inside the guard never block a legitimate session — they log
+  // and fall through to normal start. The cashflow guardrail is best-effort;
+  // never trade availability for metering accuracy.
+  const _earlyAuthHeader = req.headers.authorization;
+  const _earlyAuthToken =
+    _earlyAuthHeader && _earlyAuthHeader.startsWith('Bearer ')
+      ? _earlyAuthHeader.slice(7)
+      : undefined;
+  let voiceQuotaReservation: Awaited<ReturnType<typeof reserveVoiceQuotaAtSessionStart>> | null = null;
+  if (req.identity?.user_id && req.identity?.tenant_id) {
+    try {
+      voiceQuotaReservation = await reserveVoiceQuotaAtSessionStart(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        { authToken: _earlyAuthToken }
+      );
+    } catch (err: unknown) {
+      console.warn(
+        `[VTID-03107] voice quota reservation failed (failing open): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    if (
+      voiceQuotaReservation &&
+      (voiceQuotaReservation.paywall_action === 'paywall' ||
+        voiceQuotaReservation.paywall_action === 'hard_block')
+    ) {
+      // Quota exhausted AND the user's plan configures this feature as hard_block
+      // (no PAYG path open at all). Record event + return 402 with paywall body.
+      recordPaywallEvent(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        'voice_live_minutes',
+        'shown',
+        { context: 'session_start_blocked', vtid: 'VTID-03107' }
+      ).catch(() => {});
+      return res.status(402).json({
+        ok: false,
+        error: 'payment_required',
+        paywall: {
+          feature: 'voice_live_minutes',
+          tier: 'unknown',
+          quota: voiceQuotaReservation.quota,
+          used: voiceQuotaReservation.used,
+          remaining: voiceQuotaReservation.remaining,
+          reset_at: voiceQuotaReservation.reset_at,
+          credit_cost_per_unit: 0,
+          user_credit_balance: 0,
+          allowed_burn_buckets: ['purchased_credits'],
+          credit_option: null,
+          upgrade_url: '/api/v1/billing/checkout/subscription',
+          paywall_action: voiceQuotaReservation.paywall_action,
+        },
+        vtid: 'VTID-03107',
+      });
+    }
   }
 
   const body = req.body as LiveSessionStartRequest;
@@ -954,6 +1021,20 @@ export async function handleLiveSessionStart(
       voice: deps.getVoiceForLang(lang),
       modalities: responseModalities,
       model: VERTEX_LIVE_MODEL,
+      // VTID-03107: voice quota snapshot at session start. Frontend reads
+      // this to know whether to display the Standard-tier badge from the
+      // get-go (start_on_standard_tier=true) and how much quota remains.
+      voice_quota: voiceQuotaReservation
+        ? {
+            tier: voiceQuotaReservation.start_on_standard_tier ? 'standard' : 'live',
+            quota: voiceQuotaReservation.quota,
+            used: voiceQuotaReservation.used,
+            remaining: voiceQuotaReservation.remaining,
+            reset_at: voiceQuotaReservation.reset_at,
+            deferred_for_vulnerability: voiceQuotaReservation.deferred_for_vulnerability,
+            paywall_action: voiceQuotaReservation.paywall_action,
+          }
+        : null,
       context_bootstrap: {
         latency_ms: contextBootstrapLatencyMs ?? null,
         context_chars: null,
