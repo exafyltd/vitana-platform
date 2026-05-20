@@ -1484,6 +1484,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ AI Personality cache warm failed (non-fatal, using defaults):', error);
       }
 
+      // VTID-03116 (Phase B.3): pre-warm the PolicyResolver cache so the
+      // first inbound request can sync-read from `decision_policy` /
+      // `policy_render_block`. Warm failure is non-fatal — the resolver
+      // falls back to caller-supplied defaultValue, never crashes.
+      try {
+        const { warmPolicyResolverCache } = require('./services/decision-contract');
+        await warmPolicyResolverCache();
+        console.log('📜 PolicyResolver cache pre-warmed (decision-contract Phase B.3)');
+      } catch (error) {
+        console.warn('⚠️ PolicyResolver cache warm failed (non-fatal, using defaults):', error);
+      }
+
       // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
       try {
         warmNavCatalogCache();
