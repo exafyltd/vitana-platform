@@ -300,6 +300,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   const creatorsRouter = require('./routes/creators').default;
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
+  // VTID-03107: Billing v1 — customer-side Stripe subscriptions + credit packs + redemption
+  const billingRouter = require('./routes/billing').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
@@ -414,8 +416,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   setupCors(app);
   app.use(sseHeaders);
 
-  // VTID-01230: Raw body parser for Stripe webhooks (MUST come BEFORE express.json())
+  // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
+  app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -985,6 +989,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
+  // VTID-03107: Billing v1 — customer-side Stripe + redemption codes + admin code mgmt
+  mountRouterSync(app, '/api/v1/billing', billingRouter, { owner: 'billing' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
