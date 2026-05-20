@@ -578,6 +578,67 @@ router.post('/redeem', requireAuth, async (req: AuthenticatedRequest, res: Respo
 });
 
 // =============================================================================
+// GET /founding-status  — public Founding-campaign progress for the launch banner
+// =============================================================================
+//
+// Returns the active Founding campaign's uses_count + max_uses + code so the
+// frontend marketing banner can render real-time scarcity ("X of N spots
+// remaining"). Public — no auth required. Returns the code ONLY when the
+// campaign is still public (is_active=true AND has_spots).
+//
+// When the campaign is exhausted or deactivated, we still return shape but
+// `code` is null so the frontend banner can hide cleanly.
+// =============================================================================
+
+router.get('/founding-status', async (_req: Request, res: Response) => {
+  try {
+    const { data, error } = await sb()
+      .from('redemption_codes')
+      .select('code, max_uses, uses_count, is_active, expires_at, campaign, metadata')
+      .eq('campaign', 'founding_500')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`${LOG_PREFIX} /founding-status query error: ${error.message}`);
+      return res.json({ ok: true, active: false, vtid: VTID });
+    }
+    if (!data) {
+      return res.json({ ok: true, active: false, vtid: VTID });
+    }
+
+    const row = data as {
+      code: string;
+      max_uses: number;
+      uses_count: number;
+      is_active: boolean;
+      expires_at: string | null;
+      campaign: string;
+      metadata: Record<string, unknown> | null;
+    };
+    const expired = row.expires_at ? new Date(row.expires_at).getTime() < Date.now() : false;
+    const hasSpots = row.uses_count < row.max_uses;
+    const active = row.is_active && hasSpots && !expired;
+
+    return res.json({
+      ok: true,
+      active,
+      uses_count: row.uses_count,
+      max_uses: row.max_uses,
+      remaining: Math.max(0, row.max_uses - row.uses_count),
+      code: active ? row.code : null,
+      campaign: row.campaign,
+      vtid: VTID,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`${LOG_PREFIX} /founding-status crash: ${message}`);
+    return res.json({ ok: true, active: false, vtid: VTID });
+  }
+});
+
+// =============================================================================
 // POST /webhooks/stripe  — customer-side webhook
 // =============================================================================
 //
