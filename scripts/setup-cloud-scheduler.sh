@@ -62,6 +62,7 @@ JOBS=(
   "AP-0210|creator-digest|0 18 * * 0|Europe/Berlin"
   "AP-0305|trending-events|0 18 * * 0|Europe/Berlin"
   "AP-0604|wellness-check-in|0 10 * * 3|Europe/Berlin"
+  "AP-0510|upcoming-events-today|0 8 * * *|Europe/Berlin"
 )
 
 for JOB in "${JOBS[@]}"; do
