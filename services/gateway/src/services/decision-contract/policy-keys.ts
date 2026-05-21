@@ -60,6 +60,33 @@ export const POLICY_KEYS = {
   // `{stt_provider, stt_model, llm_provider, llm_model, tts_provider,
   //   tts_model}` — same 6 fields the Python agent expected.
   VOICE_CASCADE_DEFAULT: 'voice.cascade.default',
+
+  // ---- Phase C.2 (VTID-03131) — pillar weighter ----------------
+  // The 21 numeric thresholds + weights currently hard-coded inside
+  // `services/gateway/src/services/recommendation-engine/ranking/index-pillar-weighter.ts`.
+  // Phase C.3 will implement `PillarWeighterStrategy` reading these
+  // through PolicyResolver with the same values as `defaultValue`.
+  RANKER_PILLAR_ALPHA_PILLAR: 'ranker.pillar_weighter.alpha_pillar',
+  RANKER_PILLAR_ALPHA_WAVE: 'ranker.pillar_weighter.alpha_wave',
+  RANKER_PILLAR_COMPASS_BOOST: 'ranker.pillar_weighter.compass_boost',
+  RANKER_PILLAR_QUOTA_MAX: 'ranker.pillar_weighter.pillar_quota_max',
+  RANKER_PILLAR_WEAKEST_QUOTA_MAX: 'ranker.pillar_weighter.weakest_quota_max',
+  RANKER_PILLAR_COMPLETION_DAMPENER: 'ranker.pillar_weighter.completion_dampener',
+  RANKER_PILLAR_PLAN_DAMPENER: 'ranker.pillar_weighter.plan_dampener',
+  RANKER_PILLAR_REJECTION_DAMPENER_ALPHA: 'ranker.pillar_weighter.rejection_dampener_alpha',
+  RANKER_PILLAR_STREAK_REINFORCEMENT: 'ranker.pillar_weighter.streak_reinforcement',
+  RANKER_PILLAR_COMMUNITY_MOMENTUM_BOOST: 'ranker.pillar_weighter.community_momentum_boost',
+  RANKER_PILLAR_BALANCE_UNBALANCED_AT: 'ranker.pillar_weighter.balance_unbalanced_at',
+  RANKER_PILLAR_BALANCE_AMPLIFY_AT: 'ranker.pillar_weighter.balance_amplify_at',
+  RANKER_PILLAR_BALANCE_AMPLIFY_FACTOR: 'ranker.pillar_weighter.balance_amplify_factor',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_1: 'ranker.pillar_weighter.journey_mode_day_break_1',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_2: 'ranker.pillar_weighter.journey_mode_day_break_2',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_3: 'ranker.pillar_weighter.journey_mode_day_break_3',
+  RANKER_PILLAR_JOURNEY_MODE_DECAY_1TO2: 'ranker.pillar_weighter.journey_mode_decay_1to2',
+  RANKER_PILLAR_JOURNEY_MODE_DECAY_2TO3: 'ranker.pillar_weighter.journey_mode_decay_2to3',
+  RANKER_PILLAR_JOURNEY_MODE_TERMINAL: 'ranker.pillar_weighter.journey_mode_terminal',
+  RANKER_PILLAR_COMPASS_DECAY_SUBTRACT: 'ranker.pillar_weighter.compass_decay_subtract',
+  RANKER_PILLAR_SCORE_CAP: 'ranker.pillar_weighter.pillar_score_cap',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
