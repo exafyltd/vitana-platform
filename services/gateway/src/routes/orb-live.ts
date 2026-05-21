@@ -1175,6 +1175,9 @@ import {
 // / resolve) via onSetupComplete + isSetupComplete callbacks, and forwards
 // every orb-live.ts-local helper through the deps bag.
 import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-message-handler';
+// VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
+// LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
+import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
 // A8.3b.1 (VTID-02971): connectToLiveAPI now uses the A7 UpstreamLiveClient
 // boundary via VertexLiveClient. The orb-specific persona/tools/context
 // envelope is supplied through the new `customSetupMessage` option so the
@@ -1334,20 +1337,12 @@ async function getAccessToken(): Promise<string> {
   return tokenResponse.token;
 }
 
-/**
- * VTID-01219: Live API voice names (Vertex AI voices)
- * These are different from Cloud TTS voices
- */
-const LIVE_API_VOICES: Record<string, string> = {
-  'en': 'Aoede',    // English - warm, clear
-  'de': 'Kore',     // German
-  'fr': 'Charon',   // French
-  'es': 'Fenrir',   // Spanish
-  'ar': 'Aoede',    // Arabic - fallback to English voice
-  'zh': 'Kore',     // Chinese - fallback
-  'ru': 'Aoede',    // Russian - fallback
-  'sr': 'Aoede'     // Serbian - fallback
-};
+// VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
+// into a `decision_policy`-backed accessor at
+// services/gateway/src/orb/live/voice/live-api-voice.ts. Each row now
+// carries `{voice_name, fallback_lang}` so a non-native fallback emits
+// telemetry on first use per (lang, fallback_lang) — closes the
+// previously-silent "Arabic → English Aoede" audit finding.
 
 // VTID-02651: persona voice IDs and greetings are now data-driven from
 // agent_personas (loaded by services/persona-registry.ts). Adding a new
@@ -2730,7 +2725,7 @@ async function executeLiveApiToolInner(
             type: 'persona_swap',
             from: currentPersona,
             to: target,
-            voice_id: (session as any).personaVoiceOverride || (LIVE_API_VOICES[session.lang || 'en'] || 'Aoede'),
+            voice_id: (session as any).personaVoiceOverride || getLiveApiVoice(session.lang || 'en'),
             display_name: target.charAt(0).toUpperCase() + target.slice(1),
             navigation_only: true,
           };
@@ -5696,7 +5691,7 @@ async function connectToLiveAPI(
           console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
         }
       }
-      _personaVoice = _personaVoice || LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'];
+      _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       const setupMessage = {
@@ -10692,7 +10687,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     meta: {
       model: VERTEX_LIVE_MODEL,
       lang: session.lang,
-      voice: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] || getVoiceForLang(session.lang),
+      voice: getLiveApiVoice(session.lang) || getVoiceForLang(session.lang),
       audio_out_rate: 24000,
       audio_in_rate: 16000,
     },
@@ -11919,7 +11914,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       message: 'Session created but Live API not available (missing credentials)',
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL
       }
     });
@@ -12001,7 +11996,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     emitLiveSessionEvent('vtid.live.session.start', {
       session_id: sessionId,
       lang,
-      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      voice: getLiveApiVoice(lang),
       response_modalities: responseModalities,
       transport: 'websocket',
       // VTID-01224: Include context bootstrap info
@@ -12039,7 +12034,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       },
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL,
         audio_in_rate: 16000,
         audio_out_rate: 24000,
@@ -12087,7 +12082,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       error: err.message,
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL
       }
     });
