@@ -745,20 +745,12 @@ const orbTranscripts = new Map<string, OrbSessionTranscript>();
 // VTID-01155: Gemini Live Multimodal Session Types & Stores
 // =============================================================================
 
-/**
- * VTID-01155: Supported languages for Live sessions and TTS
- * Voice map uses female voices per spec
- */
-const LIVE_LANGUAGE_VOICES: Record<string, string> = {
-  'en': 'Callirrhoe',
-  'de': 'Achernar',
-  'fr': 'Leda',
-  'es': 'Aoede',
-  'ar': 'Sulafat',
-  'zh': 'Laomedeia',
-  'sr': 'Vindemiatrix',
-  'ru': 'Gacrux'
-};
+// VTID-03134 (Phase D.3.b-e): LIVE_LANGUAGE_VOICES Record moved out of
+// this file. See `services/gateway/src/orb/live/voice/voice-mapping.ts`
+// for the PolicyResolver-backed accessor (`getLiveLanguageVoice`).
+// Seeded rows live under `voice.live_language.<lang>` in
+// `decision_policy`; byte-identical literal kept in voice-mapping.ts
+// as the cache-cold safety net.
 
 // A2 (orb-live-refactor): SUPPORTED_LIVE_LANGUAGES lifted to orb/live/config.ts.
 import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
@@ -1178,6 +1170,14 @@ import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-m
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
+// VTID-03134 (Phase D.3.b-e): voice mapping table accessors.
+import {
+  getLiveLanguageVoice,
+  getGeminiTtsVoice,
+  getNeural2TtsVoice,
+  getNeural2EnabledLanguages,
+  isNeural2EnabledFor,
+} from '../orb/live/voice/voice-mapping';
 // A8.3b.1 (VTID-02971): connectToLiveAPI now uses the A7 UpstreamLiveClient
 // boundary via VertexLiveClient. The orb-specific persona/tools/context
 // envelope is supplied through the new `customSetupMessage` option so the
@@ -1247,39 +1247,12 @@ try {
 }
 
 // VTID-01155: Gemini TTS voice mapping for each language
-// Uses Google Cloud TTS with Gemini model
-const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'en': { name: 'Kore', languageCode: 'en-US' },
-  'de': { name: 'Kore', languageCode: 'de-DE' },
-  'fr': { name: 'Kore', languageCode: 'fr-FR' },
-  'es': { name: 'Kore', languageCode: 'es-ES' },
-  'ar': { name: 'Kore', languageCode: 'ar-XA' },
-  'zh': { name: 'Kore', languageCode: 'cmn-CN' },
-  'sr': { name: 'Kore', languageCode: 'sr-RS' },
-  'ru': { name: 'Kore', languageCode: 'ru-RU' }
-};
-
-// VTID-01219: TTS voices for ALL languages
-// Neural2 voices provide lower latency and more natural speech synthesis
-// Gemini TTS "Kore" voice DOES NOT WORK due to @google-cloud/text-to-speech
-// library stripping modelName field during protobuf serialization.
-// Female voices selected per specification
-// Neural2 available: de, en, fr, es
-// WaveNet fallback: ar, zh, ru (Neural2 not available)
-// Standard fallback: sr (neither Neural2 nor WaveNet available)
-const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German - Neural2
-  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English - Neural2
-  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French - Neural2
-  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish - Neural2
-  'ar': { name: 'ar-XA-Wavenet-D', languageCode: 'ar-XA' },  // Female Arabic - WaveNet (Neural2 N/A)
-  'zh': { name: 'cmn-CN-Wavenet-A', languageCode: 'cmn-CN' }, // Female Chinese - WaveNet (Neural2 N/A)
-  'ru': { name: 'ru-RU-Wavenet-A', languageCode: 'ru-RU' },  // Female Russian - WaveNet (Neural2 N/A)
-  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian - Standard (Neural2/WaveNet N/A)
-};
-
-// ALL languages use best available voice (Neural2 > WaveNet > Standard)
-const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
+// VTID-03134 (Phase D.3.b-e): GEMINI_TTS_VOICES + NEURAL2_TTS_VOICES +
+// NEURAL2_ENABLED_LANGUAGES moved to
+// `services/gateway/src/orb/live/voice/voice-mapping.ts`. Per-lang rows
+// seeded under `voice.gemini_tts.<lang>`, `voice.neural2_tts.<lang>`,
+// `voice.neural2.enabled_languages`. Byte-identical fallbacks retained
+// in the accessor module for cache-cold safety.
 
 // =============================================================================
 // VTID-01219: Gemini Live API WebSocket Implementation
@@ -10127,7 +10100,7 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
   const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
   const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
+  const voiceConfig = getGeminiTtsVoice(lang);
 
   const debugResult: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
@@ -10514,7 +10487,7 @@ function normalizeLang(lang: string): string {
  */
 function getVoiceForLang(lang: string): string {
   const normalized = normalizeLang(lang);
-  return LIVE_LANGUAGE_VOICES[normalized] || LIVE_LANGUAGE_VOICES['en'];
+  return getLiveLanguageVoice(normalized);
 }
 
 /**
@@ -11058,10 +11031,11 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
   const lang = normalizeLang(body.lang || 'en');
 
   // VTID-01219: Use Neural2 voices for German and English, Gemini for others
-  const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+  // VTID-03134 (Phase D.3.b-e): both branches now read through accessors.
+  const useNeural2 = isNeural2EnabledFor(lang);
   const voiceConfig = useNeural2
-    ? (NEURAL2_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'])
-    : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+    ? getNeural2TtsVoice(lang)
+    : getGeminiTtsVoice(lang);
   const voiceType = useNeural2 ? 'Neural2' : 'Gemini';
 
   // Emit request event
@@ -11273,10 +11247,10 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
     let audioB64 = '';
     let audioMime = '';
     if (ttsClient) {
-      const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+      const useNeural2 = isNeural2EnabledFor(lang);
       const voiceConfig = useNeural2
-        ? (NEURAL2_TTS_VOICES[lang] || NEURAL2_TTS_VOICES['en'])
-        : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+        ? (getNeural2TtsVoice(lang))
+        : (getGeminiTtsVoice(lang));
 
       const voiceParams: any = {
         languageCode: voiceConfig.languageCode,
@@ -11400,19 +11374,20 @@ router.get('/health', (_req: Request, res: Response) => {
       video_format: 'JPEG 768x768 @ 1 FPS'
     },
     // VTID-01219: Neural2 TTS voice configuration (ALL languages)
+    // VTID-03134 (Phase D.3.b-e): now reads via accessors.
     neural2_tts: {
       enabled: true,
       vtid: 'VTID-01219',
-      enabled_languages: NEURAL2_ENABLED_LANGUAGES,
+      enabled_languages: getNeural2EnabledLanguages(),
       voices: {
-        de: NEURAL2_TTS_VOICES['de']?.name,
-        en: NEURAL2_TTS_VOICES['en']?.name,
-        fr: NEURAL2_TTS_VOICES['fr']?.name,
-        es: NEURAL2_TTS_VOICES['es']?.name,
-        ar: NEURAL2_TTS_VOICES['ar']?.name,
-        zh: NEURAL2_TTS_VOICES['zh']?.name,
-        ru: NEURAL2_TTS_VOICES['ru']?.name,
-        sr: NEURAL2_TTS_VOICES['sr']?.name
+        de: getNeural2TtsVoice('de')?.name,
+        en: getNeural2TtsVoice('en')?.name,
+        fr: getNeural2TtsVoice('fr')?.name,
+        es: getNeural2TtsVoice('es')?.name,
+        ar: getNeural2TtsVoice('ar')?.name,
+        zh: getNeural2TtsVoice('zh')?.name,
+        ru: getNeural2TtsVoice('ru')?.name,
+        sr: getNeural2TtsVoice('sr')?.name
       },
       note: 'Gemini TTS disabled - modelName stripped by protobuf serialization'
     },
