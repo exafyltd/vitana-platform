@@ -65,6 +65,8 @@ const FIVE_PILLARS: FakeRow = {
   manual_path: '/manuals/maxina/00-concepts/five-pillars',
   enabled: true,
   pedagogical_order: 10,
+  teacher_intro_de: null,
+  teacher_intro_en: null,
 };
 
 const VITANA_ID: FakeRow = {
@@ -74,6 +76,8 @@ const VITANA_ID: FakeRow = {
   manual_path: '/manuals/maxina/00-concepts/vitana-id',
   enabled: true,
   pedagogical_order: 30,
+  teacher_intro_de: null,
+  teacher_intro_en: null,
 };
 
 const ACTIVITY_MATCH: FakeRow = {
@@ -83,6 +87,8 @@ const ACTIVITY_MATCH: FakeRow = {
   manual_path: '/manuals/maxina/03-community/activity-match',
   enabled: true,
   pedagogical_order: 140,
+  teacher_intro_de: 'Activity Match auf Deutsch — vier Sätze hier. Zweiter Satz. Dritter Satz. Vierter Satz.',
+  teacher_intro_en: 'Activity Match in English — four sentences here. Second sentence. Third sentence. Fourth sentence.',
 };
 
 describe('VTID-03112 — resolveTeacherModeContent', () => {
@@ -208,6 +214,88 @@ describe('VTID-03112 — resolveTeacherModeContent', () => {
     expect(keys).toContain('activity_match'); // still eligible
   });
 
+  // VTID-03120: locked intro script resolution tests.
+  test('returns the German teacher_intro when lang=de', async () => {
+    const sb = fakeSb({
+      catalog: [ACTIVITY_MATCH],
+      ledger: [],
+      doc: { content: '# manual' },
+    });
+    const out = await resolveTeacherModeContent({
+      supabase: sb,
+      tenantId: 't1',
+      userId: 'u1',
+      activeCapabilityKey: 'activity_match',
+      lang: 'de',
+      nowIso: NOW_ISO,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.active_teacher_intro_script).toBeTruthy();
+    expect(out!.active_teacher_intro_script).toContain('Activity Match auf Deutsch');
+  });
+
+  test('returns the English teacher_intro when lang=en', async () => {
+    const sb = fakeSb({
+      catalog: [ACTIVITY_MATCH],
+      ledger: [],
+      doc: { content: '# manual' },
+    });
+    const out = await resolveTeacherModeContent({
+      supabase: sb,
+      tenantId: 't1',
+      userId: 'u1',
+      activeCapabilityKey: 'activity_match',
+      lang: 'en',
+      nowIso: NOW_ISO,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.active_teacher_intro_script).toContain('Activity Match in English');
+  });
+
+  test('falls back across languages when requested lang is empty', async () => {
+    // De-only capability — caller asks for English. Resolver falls
+    // back to the German script rather than collapse to null. Speaking
+    // the locked script in the wrong language is preferable to letting
+    // Gemini freelance a 2-sentence summary.
+    const DE_ONLY: FakeRow = {
+      ...ACTIVITY_MATCH,
+      teacher_intro_en: null,
+    };
+    const sb = fakeSb({
+      catalog: [DE_ONLY],
+      ledger: [],
+      doc: { content: '# manual' },
+    });
+    const out = await resolveTeacherModeContent({
+      supabase: sb,
+      tenantId: 't1',
+      userId: 'u1',
+      activeCapabilityKey: 'activity_match',
+      lang: 'en',
+      nowIso: NOW_ISO,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.active_teacher_intro_script).toContain('Activity Match auf Deutsch');
+  });
+
+  test('active_teacher_intro_script is null when both columns empty (fallback to manual-based)', async () => {
+    const sb = fakeSb({
+      catalog: [FIVE_PILLARS],
+      ledger: [],
+      doc: { content: '# manual' },
+    });
+    const out = await resolveTeacherModeContent({
+      supabase: sb,
+      tenantId: 't1',
+      userId: 'u1',
+      activeCapabilityKey: 'five_pillars',
+      lang: 'en',
+      nowIso: NOW_ISO,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.active_teacher_intro_script).toBeNull();
+  });
+
   test('remaining list capped at 5 entries even with a large catalog', async () => {
     const catalog: FakeRow[] = [
       FIVE_PILLARS,
@@ -218,6 +306,8 @@ describe('VTID-03112 — resolveTeacherModeContent', () => {
         manual_path: null,
         enabled: true,
         pedagogical_order: 20 + i,
+        teacher_intro_de: null,
+        teacher_intro_en: null,
       })),
     ];
     const sb = fakeSb({
