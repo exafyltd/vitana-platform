@@ -97,6 +97,22 @@ export const POLICY_KEYS = {
   // Per-lang keys are looked up via helper builders in voice-mapping.ts;
   // only the array key needs a direct POLICY_KEYS entry.
   VOICE_NEURAL2_ENABLED_LANGUAGES: 'voice.neural2.enabled_languages',
+
+  // ---- Phase B.5 (VTID-03135) — temporal-bucket motivation -----
+  SESSION_MOTIVATION_COOLING_TO_ABSENT_DAYS:
+    'session.motivation.cooling_to_absent_days',
+
+  // ---- Phase B.6 (VTID-03135) — D32 time-of-day windows --------
+  SITUATIONAL_TIME_OF_DAY_EARLY_MORNING_START_HOUR:
+    'situational.time_of_day.early_morning_start_hour',
+  SITUATIONAL_TIME_OF_DAY_MORNING_START_HOUR:
+    'situational.time_of_day.morning_start_hour',
+  SITUATIONAL_TIME_OF_DAY_AFTERNOON_START_HOUR:
+    'situational.time_of_day.afternoon_start_hour',
+  SITUATIONAL_TIME_OF_DAY_EVENING_START_HOUR:
+    'situational.time_of_day.evening_start_hour',
+  SITUATIONAL_TIME_OF_DAY_LATE_EVENING_START_HOUR:
+    'situational.time_of_day.late_evening_start_hour',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
