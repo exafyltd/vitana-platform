@@ -13,7 +13,28 @@
  *   - `configureLiveSessionController` is required before any handler fires.
  *   - Double-configure throws (catches mis-wired tests / boot loudly).
  *   - `__resetLiveSessionControllerForTests` clears state for clean tests.
+ *
+ * VTID-03107: mock voice-quota-guard so the new entitlement gate in
+ * handleLiveSessionStart does not query a (test-mode) Supabase that has no
+ * feature_entitlements seeded. Default mock returns `paywall_action='allow'`
+ * so every pre-existing authenticated test keeps passing. Quota-exhausted
+ * behavior gets its own focused test below.
  */
+
+jest.mock('../../../../src/services/voice-quota-guard', () => ({
+  reserveVoiceQuotaAtSessionStart: jest.fn(async () => ({
+    feature: 'voice_live_minutes',
+    paywall_action: 'allow',
+    quota: 600,
+    used: 0,
+    remaining: 600,
+    reset_at: null,
+    start_on_standard_tier: false,
+    deferred_for_vulnerability: false,
+  })),
+  recordVoiceMinute: jest.fn(async () => 0),
+  triggerDowngrade: jest.fn(async () => undefined),
+}));
 
 import {
   configureLiveSessionController,
@@ -659,6 +680,94 @@ describe('A8.2.1: handleLiveSessionStart', () => {
     const payload = (res.json.mock.calls[0][0]) as any;
     // wake_brief MAY be non-null even for anonymous sessions; just assert the field exists.
     expect(payload.meta).toHaveProperty('wake_brief');
+  });
+
+  // VTID-03107: voice-quota gate behavior
+  describe('VTID-03107: voice-quota gate', () => {
+    let reserveMock: jest.Mock;
+
+    beforeEach(() => {
+      // Pull a typed handle on the mocked module so each test can override
+      // the per-call return without re-mocking the module.
+      const voiceQuotaModule = require('../../../../src/services/voice-quota-guard');
+      reserveMock = voiceQuotaModule.reserveVoiceQuotaAtSessionStart as jest.Mock;
+      reserveMock.mockClear();
+      // Reset to the default `allow` shape between tests
+      reserveMock.mockResolvedValue({
+        feature: 'voice_live_minutes',
+        paywall_action: 'allow',
+        quota: 600,
+        used: 0,
+        remaining: 600,
+        reset_at: null,
+        start_on_standard_tier: false,
+        deferred_for_vulnerability: false,
+      });
+    });
+
+    it('returns 402 with structured paywall body when quota is exhausted (hard_block)', async () => {
+      configureLiveSessionController(
+        baseDeps({
+          resolveOrbIdentity: async () => ({
+            user_id: 'real-user-uuid',
+            tenant_id: 'tenant-uuid',
+          }) as any,
+        }),
+      );
+      reserveMock.mockResolvedValueOnce({
+        feature: 'voice_live_minutes',
+        paywall_action: 'hard_block',
+        quota: 15,
+        used: 15,
+        remaining: 0,
+        reset_at: '2026-06-01T00:00:00Z',
+        start_on_standard_tier: true,
+        deferred_for_vulnerability: false,
+      });
+      const req = makeReq({
+        identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+      });
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = (res.json.mock.calls[0][0]) as any;
+      expect(payload.ok).toBe(false);
+      expect(payload.error).toBe('payment_required');
+      expect(payload.paywall.feature).toBe('voice_live_minutes');
+      expect(payload.paywall.paywall_action).toBe('hard_block');
+      expect(payload.paywall.upgrade_url).toBe('/api/v1/billing/checkout/subscription');
+    });
+
+    it('allows the session to start normally when quota is available', async () => {
+      configureLiveSessionController(
+        baseDeps({
+          resolveOrbIdentity: async () => ({
+            user_id: 'real-user-uuid',
+            tenant_id: 'tenant-uuid',
+          }) as any,
+        }),
+      );
+      const req = makeReq({
+        identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+      });
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reserveMock).toHaveBeenCalledWith(
+        'real-user-uuid',
+        'tenant-uuid',
+        expect.objectContaining({ authToken: undefined }),
+      );
+    });
+
+    it('skips the quota check entirely for anonymous sessions (no identity)', async () => {
+      configureLiveSessionController(baseDeps());
+      const req = makeReq();
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reserveMock).not.toHaveBeenCalled();
+    });
   });
 });
 
