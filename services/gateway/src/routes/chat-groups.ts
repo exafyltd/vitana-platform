@@ -5,8 +5,13 @@
  *   GET    /                       — List groups the caller belongs to
  *   GET    /:id                    — Group info + member list
  *   GET    /:id/messages           — Paginated group message history
- *   POST   /:id/send               — Send a message to the group;
- *                                    @vitana mentions trigger Vitana reply
+ *   POST   /:id/send               — Send a message to the group.
+ *                                    Body: { content?, message_type?: 'text'|'attachment'|'voice',
+ *                                    content_data? } — content_data persists in chat_messages.metadata
+ *                                    (e.g. { attachments: [{url, path, mime, filename, size}] }).
+ *                                    @vitana mentions in text trigger Vitana reply.
+ *                                    Reactions are written client-side via Supabase RLS on
+ *                                    message_reactions (polymorphic on chat_messages.id).
  *   POST   /:id/read               — Mark all group messages read up to "now"
  */
 
@@ -241,10 +246,29 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const { id: groupId } = req.params;
-  const { content } = req.body;
+  const { content, message_type, content_data } = req.body as {
+    content?: unknown;
+    message_type?: unknown;
+    content_data?: unknown;
+  };
 
-  if (!content || typeof content !== 'string' || content.trim().length === 0) {
-    return res.status(400).json({ ok: false, error: 'content is required' });
+  const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript']);
+  if (!allowedTypes.has(msgType)) {
+    return res.status(400).json({ ok: false, error: 'invalid_message_type' });
+  }
+
+  const rawContent = typeof content === 'string' ? content : '';
+  const trimmed = rawContent.trim();
+  const metadata = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
+
+  if (msgType === 'text') {
+    if (trimmed.length === 0) {
+      return res.status(400).json({ ok: false, error: 'content is required' });
+    }
+  } else if (trimmed.length === 0 && attachments.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
   }
 
   const supabase = getSupabase();
@@ -254,7 +278,6 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  const trimmed = content.trim();
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -263,7 +286,8 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
       receiver_id: null,
       group_id: groupId,
       content: trimmed,
-      message_type: 'text',
+      message_type: msgType,
+      metadata,
     })
     .select()
     .single();
@@ -273,16 +297,28 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(500).json({ ok: false, error: error.message });
   }
 
+  const firstAttachmentName: string | null = attachments.length > 0
+    ? (attachments[0] as any)?.filename || (attachments[0] as any)?.name || null
+    : null;
+  let fanoutBody = trimmed;
+  if (trimmed.length === 0) {
+    if (msgType === 'attachment') {
+      fanoutBody = firstAttachmentName ? `📎 ${firstAttachmentName}` : '📎 Attachment';
+    } else if (msgType === 'voice' || msgType === 'voice_transcript') {
+      fanoutBody = '🎤 Voice message';
+    }
+  }
+
   fanoutGroupNotifications(
     supabase,
     groupId,
     identity.user_id,
     identity.tenant_id!,
-    trimmed,
+    fanoutBody,
     data.id,
   ).catch(err => console.warn('[ChatGroups] Fanout failed:', err.message));
 
-  if (VITANA_MENTION_RE.test(trimmed) && !isVitanaBot(identity.user_id)) {
+  if (trimmed.length > 0 && VITANA_MENTION_RE.test(trimmed) && !isVitanaBot(identity.user_id)) {
     handleVitanaGroupMention(
       supabase,
       groupId,
