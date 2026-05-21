@@ -258,7 +258,9 @@ import {
   getForwardingAckTimeoutMs,
   getMaxConsecutiveModelTurns,
   getMaxConsecutiveToolCalls,
-  connectionIssueMessages,
+  // VTID-03125 (Phase D.2): connection-issue apologies now resolve via
+  // PolicyResolver render-block lookup with English fallback baked in.
+  getConnectionIssueMessage,
 } from '../orb/upstream/constants';
 import {
   SHORT_GAP_GREETING_PHRASES,
@@ -5990,7 +5992,7 @@ async function connectToLiveAPI(
         const issueEvent = {
           type: 'connection_issue',
           reason: 'upstream_error',
-          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          message: getConnectionIssueMessage(lang),
           should_close: true,
         };
         if (session.sseResponse) {
@@ -6097,7 +6099,7 @@ async function connectToLiveAPI(
             const issueEvent = {
               type: 'connection_issue',
               reason: 'upstream_disconnected',
-              message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+              message: getConnectionIssueMessage(lang),
               should_close: true,
             };
             // VTID-02637: dedupe — only emit if we haven't already.
@@ -6152,7 +6154,7 @@ async function connectToLiveAPI(
         const issueEvent = {
           type: 'connection_issue',
           reason: 'upstream_disconnected',
-          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          message: getConnectionIssueMessage(lang),
           should_close: true,
         };
         // VTID-02637: dedupe — error handler may already have emitted.
@@ -6415,7 +6417,7 @@ function startResponseWatchdog(
     if (!session.active) return;
 
     const lang = session.lang || 'en';
-    const message = connectionIssueMessages[lang] || connectionIssueMessages['en'];
+    const message = getConnectionIssueMessage(lang);
 
     console.warn(`[VTID-WATCHDOG] Response watchdog fired for session ${session.sessionId}: ${reason} (${timeoutMs}ms)`);
     emitDiag(session, 'watchdog_fired', { reason, timeout_ms: timeoutMs });

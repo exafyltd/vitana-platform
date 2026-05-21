@@ -70,6 +70,12 @@ export const RENDER_BLOCK_KEYS = {
   GREETING_BUCKET_WEEK: 'greeting.bucket.week',
   GREETING_BUCKET_LONG: 'greeting.bucket.long',
   GREETING_BUCKET_FIRST: 'greeting.bucket.first',
+
+  // Phase D.2 (VTID-03125) — user-facing connection-issue apology when
+  // the upstream WS is unrecoverable. Localized; renderer falls back to
+  // 'en' if the requested language has no row. Consumed by orb-live.ts
+  // (4 call sites at the time of writing).
+  VOICE_CONNECTION_ISSUE: 'voice.connection_issue',
 } as const;
 
 export type RenderBlockKey =
