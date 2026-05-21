@@ -1354,6 +1354,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-03107: Billing v1 — trial lifecycle notification worker.
+      // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
+      try {
+        const { startLifecycleNotificationWorker } = require('./services/lifecycle-notification-worker');
+        startLifecycleNotificationWorker();
+      } catch (error) {
+        console.warn('⚠️ Lifecycle notification worker startup failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize recommendation scheduler (autonomous self-improvement)
       try {
         const { startScheduler } = require('./services/recommendation-engine/scheduler');
