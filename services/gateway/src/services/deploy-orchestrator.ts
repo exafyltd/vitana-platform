@@ -21,7 +21,12 @@ const DEFAULT_REPO = 'exafyltd/vitana-platform';
 export interface DeployRequest {
   vtid: string;
   service: 'gateway' | 'oasis-operator' | 'oasis-projector';
-  environment: 'dev';
+  // Phase 0 staging build: 'dev' kept for backwards compatibility with the
+  // legacy operator-deploy/command paths. 'staging' targets the gateway-staging
+  // Cloud Run service via STAGE-DEPLOY.yml; 'production' targets gateway via
+  // EXEC-DEPLOY.yml (the publish flow). VTID requirement still applies to
+  // 'production' (EXEC-DEPLOY governance gate enforces it).
+  environment: 'dev' | 'staging' | 'production';
   branch?: string;
   source: 'operator.console.chat' | 'publish.modal' | 'api';
 }
