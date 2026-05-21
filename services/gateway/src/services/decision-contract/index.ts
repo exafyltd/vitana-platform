@@ -72,3 +72,16 @@ export type {
   RecommendationStrategyScoreResult,
   RecommendationStrategy,
 } from './strategy';
+
+// Phase C.3 (VTID-03132) — PillarWeighterStrategy implementation.
+// Vertical proof: reads 21 ranker policy keys via PolicyResolver,
+// calls the existing scoreRec/rankBatch, emits RankProvenance.
+// Byte-identical to the pre-C.3 path when defaults are seeded.
+export {
+  PILLAR_WEIGHTER_STRATEGY_ID,
+  PILLAR_WEIGHTER_STRATEGY_VERSION,
+  buildPillarWeighterConfig,
+  scoreRecWithProvenance,
+  rankBatchWithProvenance,
+  type PillarWeighterStrategyResult,
+} from './strategies/pillar-weighter';
