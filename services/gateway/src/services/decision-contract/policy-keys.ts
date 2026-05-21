@@ -28,6 +28,30 @@ export const POLICY_KEYS = {
     'session.recency_bucket.today_max_hours',
   SESSION_RECENCY_WEEK_MAX_DAYS:
     'session.recency_bucket.week_max_days',
+
+  // ---- voice.* (Phase D.1, VTID-03124) --------------------------
+  // Thresholds that previously lived as `export const` in
+  // services/gateway/src/orb/upstream/constants.ts. Consumed by the
+  // live-session-controller, upstream-message-handler, and orb-live.ts
+  // route handlers. Seeded by the Phase D.1 migration with the same
+  // byte-identical values; the constants.ts file still carries the
+  // literal as the safety-net `defaultValue` when the cache is cold.
+  VOICE_VAD_SILENCE_DURATION_MS: 'voice.vad.silence_duration_ms',
+  VOICE_POST_TURN_COOLDOWN_MS: 'voice.post_turn.cooldown_ms',
+  VOICE_SILENCE_KEEPALIVE_INTERVAL_MS:
+    'voice.silence_keepalive.interval_ms',
+  VOICE_SILENCE_KEEPALIVE_IDLE_THRESHOLD_MS:
+    'voice.silence_keepalive.idle_threshold_ms',
+  VOICE_WATCHDOG_GREETING_TIMEOUT_MS:
+    'voice.watchdog.greeting_timeout_ms',
+  VOICE_WATCHDOG_TURN_RESPONSE_TIMEOUT_MS:
+    'voice.watchdog.turn_response_timeout_ms',
+  VOICE_WATCHDOG_FORWARDING_ACK_TIMEOUT_MS:
+    'voice.watchdog.forwarding_ack_timeout_ms',
+  VOICE_LOOP_GUARD_MAX_CONSECUTIVE_MODEL_TURNS:
+    'voice.loop_guard.max_consecutive_model_turns',
+  VOICE_LOOP_GUARD_MAX_CONSECUTIVE_TOOL_CALLS:
+    'voice.loop_guard.max_consecutive_tool_calls',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];

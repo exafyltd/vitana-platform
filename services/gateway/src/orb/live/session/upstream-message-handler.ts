@@ -38,13 +38,14 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
 import {
-  POST_TURN_COOLDOWN_MS,
-  MAX_CONSECUTIVE_MODEL_TURNS,
-  MAX_CONSECUTIVE_TOOL_CALLS,
-  TURN_RESPONSE_TIMEOUT_MS,
+  // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
+  getPostTurnCooldownMs,
+  getMaxConsecutiveModelTurns,
+  getMaxConsecutiveToolCalls,
+  getTurnResponseTimeoutMs,
+  getSilenceIdleThresholdMs,
+  getSilenceKeepaliveIntervalMs,
   SILENCE_AUDIO_B64,
-  SILENCE_IDLE_THRESHOLD_MS,
-  SILENCE_KEEPALIVE_INTERVAL_MS,
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
@@ -174,7 +175,7 @@ export function createUpstreamLiveMessageHandler(
             // Vertex VAD to briefly process the input, creating audible glitches.
             if (session.isModelSpeaking) return;
             const idleMs = Date.now() - session.lastAudioForwardedTime;
-            if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
+            if (idleMs >= getSilenceIdleThresholdMs()) {
               try {
                 ctx.deps.sendAudioToLiveAPI(ws, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
                 // Don't update lastAudioForwardedTime — silence doesn't count as real audio
@@ -182,7 +183,7 @@ export function createUpstreamLiveMessageHandler(
                 // WS may be closing — ignore
               }
             }
-          }, SILENCE_KEEPALIVE_INTERVAL_MS);
+          }, getSilenceKeepaliveIntervalMs());
 
           // setup-complete handshake completed via ctx.onSetupComplete() above
           return;
@@ -227,10 +228,10 @@ export function createUpstreamLiveMessageHandler(
             // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
             session.isModelSpeaking = false;
             // VTID-ECHO-COOLDOWN: Record turn completion time for post-turn mic cooldown.
-            // Client playback queue may still be draining — gate mic for POST_TURN_COOLDOWN_MS
+            // Client playback queue may still be draining — gate mic for getPostTurnCooldownMs()
             // to prevent speaker echo from being picked up and triggering phantom responses.
             session.turnCompleteAt = Date.now();
-            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
+            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
             ctx.deps.emitDiag(session, 'turn_complete');
 
             // VTID-02047 voice channel-swap: if a persona swap was queued by
@@ -330,7 +331,7 @@ export function createUpstreamLiveMessageHandler(
 
             // VTID-LOOPGUARD: If the model has responded too many times without user input,
             // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
-            if (session.consecutiveModelTurns > MAX_CONSECUTIVE_MODEL_TURNS && !isGreetingTurn) {
+            if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
               console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
               if (session.silenceKeepaliveInterval) {
                 clearInterval(session.silenceKeepaliveInterval);
@@ -827,7 +828,7 @@ export function createUpstreamLiveMessageHandler(
                 }
                 // VTID-WATCHDOG: Model is sending audio — restart watchdog.
                 // If audio stops mid-stream (no turn_complete), watchdog fires.
-                ctx.deps.startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'audio_stall');
+                ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
                 session.audioOutChunks++;
                 const audioB64 = inlineData.data;
                 // VTID-STREAM-KEEPALIVE: Only log every 50th audio chunk to reduce log volume
@@ -846,7 +847,7 @@ export function createUpstreamLiveMessageHandler(
               if (part.text) {
                 // VTID-WATCHDOG: Model is responding with text — restart watchdog.
                 // If text stops mid-stream (no turn_complete), watchdog fires.
-                ctx.deps.startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'text_stall');
+                ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'text_stall');
                 console.log(`[VTID-01219] Received text: ${part.text.substring(0, 100)}`);
                 ctx.callbacks.onTextResponse(part.text);
               }
@@ -898,18 +899,18 @@ export function createUpstreamLiveMessageHandler(
                   if (!session.upstreamWs || session.upstreamWs.readyState !== WebSocket.OPEN || !session.active) return;
                   if (session.isModelSpeaking) return;
                   const idleMs = Date.now() - session.lastAudioForwardedTime;
-                  if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
+                  if (idleMs >= getSilenceIdleThresholdMs()) {
                     try {
                       ctx.deps.sendAudioToLiveAPI(session.upstreamWs, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
                     } catch (_e) { /* WS closing */ }
                   }
-                }, SILENCE_KEEPALIVE_INTERVAL_MS);
+                }, getSilenceKeepaliveIntervalMs());
               }
 
               // VTID-WATCHDOG: User spoke — start watchdog waiting for model response.
               // Restart on each transcript fragment to give the model time from the
               // LAST user speech, not the first (user may still be speaking).
-              ctx.deps.startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'response_timeout');
+              ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'response_timeout');
 
               // VTID-THINKING: Notify client that model is processing (user spoke, waiting for response).
               // Client uses this to show "Thinking..." state instead of staying on "Listening...".
@@ -946,7 +947,7 @@ export function createUpstreamLiveMessageHandler(
         if (toolCall) {
           const toolNames = (toolCall.function_calls || toolCall.functionCalls || []).map((fc: any) => fc.name);
           session.consecutiveToolCalls++;
-          console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${MAX_CONSECUTIVE_TOOL_CALLS}):`, JSON.stringify(toolCall).substring(0, 500));
+          console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}):`, JSON.stringify(toolCall).substring(0, 500));
           ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
 
           // VTID-THINKING: Notify client that model is processing a tool call.
@@ -971,8 +972,8 @@ export function createUpstreamLiveMessageHandler(
           // `watchdog_fired` with reason `forwarding_no_ack`. Sending a
           // synthetic response keeps the Live API protocol intact while still
           // forcing the model out of the tool-call loop.
-          if (session.consecutiveToolCalls > MAX_CONSECUTIVE_TOOL_CALLS) {
-            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${MAX_CONSECUTIVE_TOOL_CALLS}). Sending synthetic loop-break response.`);
+          if (session.consecutiveToolCalls > getMaxConsecutiveToolCalls()) {
+            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${getMaxConsecutiveToolCalls()}). Sending synthetic loop-break response.`);
             ctx.deps.emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
             ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
               session_id: session.sessionId,
