@@ -87,6 +87,16 @@ export const POLICY_KEYS = {
   RANKER_PILLAR_JOURNEY_MODE_TERMINAL: 'ranker.pillar_weighter.journey_mode_terminal',
   RANKER_PILLAR_COMPASS_DECAY_SUBTRACT: 'ranker.pillar_weighter.compass_decay_subtract',
   RANKER_PILLAR_SCORE_CAP: 'ranker.pillar_weighter.pillar_score_cap',
+
+  // ---- Phase D.3.b-e (VTID-03134) — voice mapping tables -------
+  // The remaining 4 voice-mapping Records from orb-live.ts:
+  //   - LIVE_LANGUAGE_VOICES  → voice.live_language.<lang>   (string)
+  //   - GEMINI_TTS_VOICES     → voice.gemini_tts.<lang>      ({name, languageCode})
+  //   - NEURAL2_TTS_VOICES    → voice.neural2_tts.<lang>     ({name, languageCode})
+  //   - NEURAL2_ENABLED_LANGUAGES → voice.neural2.enabled_languages (string[])
+  // Per-lang keys are looked up via helper builders in voice-mapping.ts;
+  // only the array key needs a direct POLICY_KEYS entry.
+  VOICE_NEURAL2_ENABLED_LANGUAGES: 'voice.neural2.enabled_languages',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
