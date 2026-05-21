@@ -251,9 +251,12 @@ export function renderTeacherLine(args: {
   greeting: string;
   invitation: string;
 }): string {
-  // Trim every clause, join with a single space. Greeting ends in `.`
-  // (enforced by the pool), invitation has a `?` somewhere.
-  return `${args.greeting.trim()} ${args.invitation.trim()}`;
+  // VTID-03123: greeting may be empty (cadence-class skip — rapid re-tap).
+  // In that case the rendered line is just the invitation, no leading
+  // space or stale "Welcome back".
+  const g = args.greeting.trim();
+  const inv = args.invitation.trim();
+  return g.length > 0 ? `${g} ${inv}` : inv;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,10 +395,16 @@ export function makeFeatureDiscoveryTeacherProvider(
       }
 
       // ---- Render the two-clause line ----
+      // VTID-03123: pass the B1 greetingPolicy so the greeting clause is
+      // SUPPRESSED on cadence-class skips (rapid re-tap, greet-once
+      // window). The invitation always fires — the Teacher's offer is
+      // its purpose — but a 5-second re-tap should not produce
+      // "Welcome back, Dragan."
       const greetingPick = pickTeacherGreetingMeta({
         lang: inputs.lang,
         firstName: inputs.firstName ?? null,
         rng,
+        greetingPolicy: inputs.greetingPolicy,
       });
       // For the FIRST introduction we keep the invitation abstract
       // (no featureLabel) — Vitana asks "may I show you something?"

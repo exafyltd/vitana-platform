@@ -87,11 +87,41 @@ export interface TeacherGreetingPick {
   poolSize: number;
 }
 
+/**
+ * VTID-03123: pickTeacherGreetingMeta now reads the B1 `greetingPolicy`
+ * the existing decideGreetingPolicy* produces and skips the greeting
+ * clause entirely when policy is 'skip'. That's the case for rapid
+ * re-taps (under 60s since last turn) and the greet-once-per-15-min
+ * window — the user's instinct ("if I've been there a few seconds ago
+ * it should greet in a simple way, knowing I have been there a few
+ * seconds ago") translates to: no warm "Welcome back, Dragan", just
+ * the invitation clause that's about to follow. The greeting POOL
+ * itself stays untouched (it's content, picked from when applicable);
+ * the change is in WHEN to pick from it.
+ *
+ * Returns `{ text: '', rawTemplate: '', idx: -1, poolSize: 0 }` on skip
+ * — the caller's renderTeacherLine drops the empty prefix and the
+ * Teacher's userFacingLine becomes just the invitation.
+ *
+ * Other policy values still draw from the full pool — `brief_resume`,
+ * `warm_return`, and `fresh_intro` all currently use the same pool.
+ * Future slices can tier the pool further by warmth (e.g. "Hi again."
+ * for brief_resume vs "Welcome back, Dragan." for fresh_intro) — that
+ * is a content-tuning slice, not a logic change here.
+ */
 export function pickTeacherGreetingMeta(args: {
   lang: string;
   firstName?: string | null;
   rng?: () => number;
+  /** VTID-03123: B1 greeting policy from decideGreetingPolicy. When
+   *  'skip' the greeting clause is suppressed entirely (rapid re-tap
+   *  / cadence-class skip). Optional — when absent the function
+   *  behaves as before (full-pool pick). */
+  greetingPolicy?: 'skip' | 'brief_resume' | 'warm_return' | 'fresh_intro';
 }): TeacherGreetingPick {
+  if (args.greetingPolicy === 'skip') {
+    return { text: '', rawTemplate: '', idx: -1, poolSize: 0 };
+  }
   const lang = (args.lang || 'en').toLowerCase();
   const pool = GREETING_PHRASES[lang] || GREETING_PHRASES.en;
   const hasName = !!(args.firstName && args.firstName.trim().length > 0);
@@ -120,6 +150,7 @@ export function pickTeacherGreeting(args: {
   lang: string;
   firstName?: string | null;
   rng?: () => number;
+  greetingPolicy?: 'skip' | 'brief_resume' | 'warm_return' | 'fresh_intro';
 }): string {
   return pickTeacherGreetingMeta(args).text;
 }
