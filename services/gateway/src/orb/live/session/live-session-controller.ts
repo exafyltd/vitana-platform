@@ -43,9 +43,10 @@ import type { ContextPack } from '../../../types/conversation';
 import { SESSION_TIMEOUT_MS, VERTEX_PROJECT_ID } from '../config';
 import { VERTEX_LIVE_MODEL } from '../protocol';
 import {
-  VAD_SILENCE_DURATION_MS_DEFAULT,
-  POST_TURN_COOLDOWN_MS,
-  FORWARDING_ACK_TIMEOUT_MS,
+  // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
+  getVadSilenceDurationMs,
+  getPostTurnCooldownMs,
+  getForwardingAckTimeoutMs,
 } from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
 import {
@@ -725,7 +726,7 @@ export async function handleLiveSessionStart(
     lastAudioForwardedTime: Date.now(),
     lastTelemetryEmitTime: 0,
     vadSilenceMs: (body as any).vad_silence_ms && (body as any).vad_silence_ms >= 500 && (body as any).vad_silence_ms <= 3000
-      ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+      ? (body as any).vad_silence_ms : getVadSilenceDurationMs(),
     greetingDeferred: false,
     lastSessionInfo,
     consecutiveModelTurns: 0,
@@ -1375,7 +1376,7 @@ export async function handleLiveStreamSend(
       }
 
       // VTID-ECHO-COOLDOWN: Post-turn cooldown drops mic for N ms.
-      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
+      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < getPostTurnCooldownMs()) {
         session.audioInChunks++;
         return res.json({ ok: true, dropped: true, reason: 'post_turn_cooldown' });
       }
@@ -1413,7 +1414,7 @@ export async function handleLiveStreamSend(
               const canSlide = !session.responseWatchdogTimer
                 || session.responseWatchdogReason === 'forwarding_no_ack';
               if (canSlide) {
-                deps.startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+                deps.startResponseWatchdog(session, getForwardingAckTimeoutMs(), 'forwarding_no_ack');
               }
             }
           }

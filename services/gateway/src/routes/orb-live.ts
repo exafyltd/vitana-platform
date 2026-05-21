@@ -242,17 +242,22 @@ import { parse as parseUrl } from 'url';
 // BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) extracted constants + helpers.
 // Definitions previously inline in this file now live in the orb/ tree.
 import {
-  VAD_SILENCE_DURATION_MS_DEFAULT,
-  POST_TURN_COOLDOWN_MS,
-  SILENCE_KEEPALIVE_INTERVAL_MS,
-  SILENCE_IDLE_THRESHOLD_MS,
+  // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
+  // The literal `*_DEFAULT` / uppercase exports were retired; accessors
+  // delegate to decision_policy rows with the same byte-identical values
+  // as the previous literals (preserved as defaultValue for cache-cold
+  // safety).
+  getVadSilenceDurationMs,
+  getPostTurnCooldownMs,
+  getSilenceKeepaliveIntervalMs,
+  getSilenceIdleThresholdMs,
   SILENCE_PCM_BYTES,
   SILENCE_AUDIO_B64,
-  GREETING_RESPONSE_TIMEOUT_MS,
-  TURN_RESPONSE_TIMEOUT_MS,
-  FORWARDING_ACK_TIMEOUT_MS,
-  MAX_CONSECUTIVE_MODEL_TURNS,
-  MAX_CONSECUTIVE_TOOL_CALLS,
+  getGreetingResponseTimeoutMs,
+  getTurnResponseTimeoutMs,
+  getForwardingAckTimeoutMs,
+  getMaxConsecutiveModelTurns,
+  getMaxConsecutiveToolCalls,
   connectionIssueMessages,
 } from '../orb/upstream/constants';
 import {
@@ -856,7 +861,7 @@ export interface GeminiLiveSession {
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
   // VTID-ECHO-COOLDOWN: Timestamp when turn_complete was received.
-  // Mic audio is gated for POST_TURN_COOLDOWN_MS after this to let client-side
+  // Mic audio is gated for getPostTurnCooldownMs() after this to let client-side
   // audio playback finish draining — prevents speaker echo being picked up as input.
   turnCompleteAt: number;
   // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
@@ -882,7 +887,7 @@ export interface GeminiLiveSession {
   // 10-second windows instead of per-N-chunks, reducing Supabase HTTP calls.
   lastTelemetryEmitTime: number;
   // VTID-RESPONSE-DELAY: Per-session VAD silence threshold (ms).
-  // Defaults to VAD_SILENCE_DURATION_MS_DEFAULT; can be overridden by client.
+  // Defaults to getVadSilenceDurationMs(); can be overridden by client.
   vadSilenceMs: number;
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
@@ -910,7 +915,7 @@ export interface GeminiLiveSession {
   consecutiveModelTurns: number;
   // VTID-TOOLGUARD: Consecutive tool calls without audio output.
   // Gemini can enter an infinite loop calling tools without producing audio.
-  // After MAX_CONSECUTIVE_TOOL_CALLS, we stop sending function_responses
+  // After getMaxConsecutiveToolCalls(), we stop sending function_responses
   // to force the model to generate an audio response.
   consecutiveToolCalls: number;
   // VTID-ANON: Whether this is an anonymous/unauthenticated session (landing page)
@@ -6553,7 +6558,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       wake_opener: 'override_v2',
       decision_id: wakeBriefDecision?.decisionId || null,
     });
-    startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
     return true;
   }
 
@@ -6750,7 +6755,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
 
   // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
-  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
 
   return true;
 }
@@ -6889,7 +6894,7 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
 
   // Watchdog so a missing recovery response surfaces as a recoverable diag,
   // matching the greeting path's behavior.
-  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'recovery_prompt_timeout');
+  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'recovery_prompt_timeout');
 
   return true;
 }
@@ -11856,7 +11861,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     lastTelemetryEmitTime: 0,
     // VTID-RESPONSE-DELAY: Per-session VAD from client or default
     vadSilenceMs: message.vad_silence_ms && message.vad_silence_ms >= 500 && message.vad_silence_ms <= 3000
-      ? message.vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+      ? message.vad_silence_ms : getVadSilenceDurationMs(),
     // VTID-AUDIO-READY: WebSocket path defers greeting until client sends audio_ready
     greetingDeferred: true,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
@@ -12131,7 +12136,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
   // turn_complete to let client-side audio playback finish draining.
-  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
+  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < getPostTurnCooldownMs()) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;
@@ -12179,7 +12184,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
           const canSlide = !liveSession.responseWatchdogTimer
             || liveSession.responseWatchdogReason === 'forwarding_no_ack';
           if (canSlide) {
-            startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+            startResponseWatchdog(liveSession, getForwardingAckTimeoutMs(), 'forwarding_no_ack');
           }
         }
       }
