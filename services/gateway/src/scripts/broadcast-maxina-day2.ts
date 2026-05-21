@@ -129,14 +129,14 @@ async function sb<T = unknown>(path: string, init: RequestInit = {}): Promise<T>
 }
 
 async function resolveMaxinaTenantId(): Promise<string> {
-  const rows = await sb<Array<{ id: string }>>(
-    '/tenants?slug=eq.maxina&select=id&limit=1',
+  const rows = await sb<Array<{ tenant_id: string }>>(
+    '/tenants?slug=eq.maxina&select=tenant_id&limit=1',
     { headers: { Prefer: 'return=representation' } },
   );
   if (!rows || rows.length === 0) {
     throw new Error('MAXINA tenant not found (slug=maxina)');
   }
-  return rows[0].id;
+  return rows[0].tenant_id;
 }
 
 async function fetchCommunityMemberIds(tenantId: string): Promise<string[]> {
