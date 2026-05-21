@@ -65,6 +65,16 @@ import {
   WearableSignal,
   generateWearableFingerprint,
 } from './analyzers/wearable-analyzer';
+// VTID-03140 (Phase C.6): per-signal-type impact maps live in
+// `decision_policy` now; this module owns the typed lookups.
+import {
+  getCodebaseSignalImpact,
+  getOasisSignalImpact,
+  getHealthSignalImpact,
+  getLLMSignalImpact,
+  getMarketplaceSignalImpact,
+  getWearableSignalImpact,
+} from './signal-impact';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -172,14 +182,8 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     missing_docs: 'dev',
   };
 
-  const impactMap: Record<string, number> = {
-    todo: 5,
-    large_file: 6,
-    missing_tests: 7,
-    dead_code: 4,
-    duplication: 5,
-    missing_docs: 3,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.codebase`).
 
   const effortMap: Record<string, number> = {
     todo: 3,
@@ -200,7 +204,7 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     title: signal.suggested_action.substring(0, 100),
     summary: signal.message,
     domain: domainMap[signal.type] || 'dev',
-    impact_score: impactMap[signal.type] || 5,
+    impact_score: getCodebaseSignalImpact(signal.type),
     effort_score: effortMap[signal.type] || 5,
     risk_level: severityToRisk[signal.severity] || 'low',
     source_type: 'codebase',
@@ -221,19 +225,14 @@ function convertOasisSignal(signal: OasisSignal): GeneratedRecommendation {
     underused_feature: 'Review underused feature',
   };
 
-  const impactMap: Record<string, number> = {
-    error_pattern: 8,
-    slow_endpoint: 7,
-    failed_deploy: 9,
-    anomaly: 6,
-    underused_feature: 4,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.oasis`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Address issue'}: ${signal.source.substring(0, 50)}`,
     summary: signal.message,
     domain: signal.type === 'failed_deploy' ? 'infra' : 'dev',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getOasisSignalImpact(signal.type),
     effort_score: signal.type === 'slow_endpoint' ? 6 : 5,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'oasis',
@@ -254,19 +253,14 @@ function convertHealthSignal(signal: HealthSignal): GeneratedRecommendation {
     stale_migration: 'Apply pending migration',
   };
 
-  const impactMap: Record<string, number> = {
-    missing_index: 7,
-    large_table: 6,
-    missing_rls: 9,
-    env_gap: 8,
-    stale_migration: 5,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.health`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Fix issue'}: ${signal.resource}`,
     summary: signal.message,
     domain: signal.type === 'missing_rls' ? 'security' : 'infra',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getHealthSignalImpact(signal.type),
     effort_score: signal.type === 'large_table' ? 8 : 4,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'health',
@@ -300,7 +294,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
     title: signal.title.substring(0, 100),
     summary: signal.message,
     domain: signal.type === 'security' ? 'security' : signal.type === 'architecture' ? 'infra' : 'dev',
-    impact_score: signal.confidence > 0.8 ? 8 : signal.confidence > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): confidence ladder moved to decision_policy
+    // (`recommendation.signal_impact.llm`).
+    impact_score: getLLMSignalImpact(signal.confidence),
     effort_score: signal.type === 'architecture' ? 7 : 5,
     risk_level: signal.severity,
     source_type: 'llm',
@@ -313,7 +309,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
 }
 
 function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation {
-  const impact = signal.severity === 'high' ? 8 : signal.severity === 'medium' ? 6 : 4;
+  // VTID-03140 (Phase C.6): severity ladder moved to decision_policy
+  // (`recommendation.signal_impact.wearable`).
+  const impact = getWearableSignalImpact(signal.severity);
   return {
     title: signal.summary.substring(0, 100),
     summary: signal.summary,
@@ -345,7 +343,9 @@ function convertMarketplaceSignal(signal: MarketplaceSignal): GeneratedRecommend
     title: `Try: ${signal.product_title}${priceText}`.substring(0, 100),
     summary: `Recommended${conditionText}. ${reasonsText}`,
     domain: 'marketplace',
-    impact_score: signal.match_score > 0.7 ? 8 : signal.match_score > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): match_score ladder moved to decision_policy
+    // (`recommendation.signal_impact.marketplace`).
+    impact_score: getMarketplaceSignalImpact(signal.match_score),
     effort_score: 2, // easy to act on — just review + click
     risk_level: signal.severity,
     source_type: 'marketplace',
