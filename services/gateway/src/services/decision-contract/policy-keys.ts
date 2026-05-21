@@ -166,6 +166,42 @@ export const POLICY_KEYS = {
   RANKER_FEED_HIGH_RATING_THRESHOLD: 'ranker.feed.high_rating_threshold',
   RANKER_FEED_HIGH_RATING_BONUS: 'ranker.feed.high_rating_bonus',
   RANKER_FEED_BUDGET_FIT_BONUS: 'ranker.feed.budget_fit_bonus',
+
+  // ---- Phase C.7 (VTID-03138) — marketplace-analyzer -----------
+  RANKER_MARKETPLACE_TOP_PICKS_PER_USER:
+    'ranker.marketplace.top_picks_per_user',
+  RANKER_MARKETPLACE_PRODUCT_CANDIDATE_LIMIT:
+    'ranker.marketplace.product_candidate_limit',
+  RANKER_MARKETPLACE_INGREDIENT_RANK_BASE:
+    'ranker.marketplace.ingredient_rank_base',
+  RANKER_MARKETPLACE_INGREDIENT_RANK_DECAY:
+    'ranker.marketplace.ingredient_rank_decay',
+  RANKER_MARKETPLACE_EVIDENCE_MULTIPLIERS:
+    'ranker.marketplace.evidence_multipliers',
+  RANKER_MARKETPLACE_GOAL_MATCH_BOOST:
+    'ranker.marketplace.goal_match_boost',
+  RANKER_MARKETPLACE_SAME_REGION_BONUS:
+    'ranker.marketplace.same_region_bonus',
+  RANKER_MARKETPLACE_RATING_BOOST_CAP:
+    'ranker.marketplace.rating_boost_cap',
+  RANKER_MARKETPLACE_PAST_PURCHASE_PENALTY:
+    'ranker.marketplace.past_purchase_penalty',
+
+  // ---- Phase C.8 (VTID-03138) — community-user-analyzer --------
+  ANALYZER_COMMUNITY_PILLAR_WEAKNESS_THRESHOLD:
+    'analyzer.community.pillar_weakness_threshold',
+  ANALYZER_COMMUNITY_DECLINE_TREND_DROP_POINTS:
+    'analyzer.community.decline_trend_drop_points',
+  ANALYZER_COMMUNITY_STAGE_DAY1_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day1_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY3_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day3_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY7_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day7_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY14_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day14_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY30PLUS_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day30plus_after_days',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
