@@ -44,6 +44,16 @@ import {
 import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
 import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
 import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
+// VTID-03133 (Phase C.4): replace direct `rankBatch` with the
+// PolicyResolver-backed strategy so each recommendation gets a
+// RankProvenance trail persisted to autopilot_recommendations.provenance.
+// The legacy `rankBatch` import stays for the fallback path inside the
+// try/catch below — if the strategy bombs, we silently fall back to the
+// pre-C.4 scoring path so production keeps working.
+import {
+  rankBatchWithProvenance,
+  type RankProvenance,
+} from '../decision-contract';
 import { deriveEconomicAxis } from './economic-axis';
 import {
   analyzeMarketplace,
@@ -844,6 +854,11 @@ export async function generatePersonalRecommendations(
     // G4: re-rank by pillar-gap + compass + journey_mode BEFORE fingerprint
     // dedup so the highest-rank_score candidates survive when they collide.
     // rankBatch also applies the G6 per-pillar quota + balance guard.
+    // VTID-03133 (Phase C.4): use `rankBatchWithProvenance` so each
+    // ranked rec carries a `RankProvenance` trail. We key the trail by
+    // the rec's index-id and persist it after the corresponding row is
+    // inserted in autopilot_recommendations.
+    const provenanceByIndex = new Map<string, RankProvenance>();
     try {
       const rankerInputs = recommendations.map((r, idx) => ({
         id: String(idx),
@@ -852,13 +867,46 @@ export async function generatePersonalRecommendations(
         contribution_vector: (r as any).contribution_vector ?? null,
         economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
       }));
-      const ranked = rankBatch(rankerInputs, rankerCtx);
+      let rankedOrder: Array<{ rec: { id?: string } }>;
+      try {
+        const rankedWithProv = rankBatchWithProvenance(rankerInputs, rankerCtx);
+        for (const r of rankedWithProv) {
+          const idxId = (r.ranked.rec as { id?: string }).id;
+          if (idxId) provenanceByIndex.set(idxId, r.provenance);
+        }
+        rankedOrder = rankedWithProv.map((r) => ({ rec: r.ranked.rec }));
+      } catch (stratErr: any) {
+        // Strategy bombed → fall back to the pre-C.4 scoring path so
+        // production isn't blocked by a Phase C wiring bug. Provenance
+        // is auxiliary; rank order is critical.
+        console.warn(
+          `${LOG_PREFIX} rankBatchWithProvenance failed — falling back to legacy rankBatch (non-fatal): ${stratErr?.message}`,
+        );
+        rankedOrder = rankBatch(rankerInputs, rankerCtx).map((r) => ({ rec: r.rec }));
+      }
       // Apply rank order back onto recommendations[].
       const indexById = new Map<string, GeneratedRecommendation>(
         recommendations.map((r, idx) => [String(idx), r]),
       );
-      recommendations = ranked
-        .map(r => indexById.get((r.rec as any).id as string))
+      // VTID-03133: stash the new ranker index back onto each rec so we
+      // can recover its provenance in the insert loop below. Map's key
+      // is `rec` reference for stability across the re-ordering.
+      const recToProvenance = new Map<GeneratedRecommendation, RankProvenance>();
+      for (const r of rankedOrder) {
+        const idxId = (r.rec as { id?: string }).id;
+        if (!idxId) continue;
+        const matched = indexById.get(idxId);
+        const prov = provenanceByIndex.get(idxId);
+        if (matched && prov) recToProvenance.set(matched, prov);
+      }
+      // Stamp provenance onto the rec object (untyped — picked up below
+      // in the insert loop). Done before `recommendations` is rewritten
+      // by the .filter so references survive.
+      for (const [rec, prov] of recToProvenance) {
+        (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance = prov;
+      }
+      recommendations = rankedOrder
+        .map(r => indexById.get((r.rec as { id?: string }).id as string))
         .filter((r): r is GeneratedRecommendation => !!r);
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
@@ -895,7 +943,7 @@ export async function generatePersonalRecommendations(
         continue;
       }
 
-      const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
+      const insertResult = await callRpc<{ duplicate?: boolean; id?: string }>('insert_autopilot_recommendation', {
         p_title: rec.title,
         p_summary: rec.summary,
         p_domain: rec.domain,
@@ -920,6 +968,45 @@ export async function generatePersonalRecommendations(
           duplicatesSkipped++;
         } else {
           generated++;
+          // VTID-03133 (Phase C.4): persist the RankProvenance trail to
+          // the autopilot_recommendations row created by the RPC above.
+          // Best-effort: UPDATE failure NEVER blocks generation (the row
+          // already exists; provenance is auxiliary). Without an
+          // id-returning RPC, we'd have to update by fingerprint —
+          // luckily the RPC's JSONB return includes `id` when not a
+          // duplicate.
+          const insertedId = insertResult.data?.id;
+          const prov = (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance;
+          if (insertedId && prov) {
+            try {
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+              if (supabaseUrl && supabaseKey) {
+                const upd = await fetch(
+                  `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${insertedId}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      apikey: supabaseKey,
+                      Authorization: `Bearer ${supabaseKey}`,
+                      Prefer: 'return=minimal',
+                    },
+                    body: JSON.stringify({ provenance: prov }),
+                  },
+                );
+                if (!upd.ok) {
+                  console.warn(
+                    `${LOG_PREFIX} provenance UPDATE failed (non-fatal): ${upd.status} for id=${insertedId.slice(0, 8)}`,
+                  );
+                }
+              }
+            } catch (provErr: any) {
+              console.warn(
+                `${LOG_PREFIX} provenance UPDATE threw (non-fatal): ${provErr?.message}`,
+              );
+            }
+          }
         }
       } else {
         errors.push({ source: 'community', error: insertResult.error || 'Insert failed' });
