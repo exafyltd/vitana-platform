@@ -202,6 +202,23 @@ export const POLICY_KEYS = {
     'analyzer.community.onboarding_stage.day14_after_days',
   ANALYZER_COMMUNITY_STAGE_DAY30PLUS_AFTER_DAYS:
     'analyzer.community.onboarding_stage.day30plus_after_days',
+
+  // ---- Phase C.6 (VTID-03140) — signal→impact maps -------------
+  // Per-signal-type impact catalogues from `recommendation-generator.ts`.
+  // One JSONB row per signal_type. Shape:
+  //   { version: 1, impacts: { <signal_key>: { impact, weight, rationale } } }
+  // The `weight` field is reserved (currently 1 for every entry) — leaves
+  // room to introduce per-key fan-in weighting without another schema bump.
+  // Codebase/OASIS/health are categorical maps; LLM/marketplace/wearable
+  // encode the existing 3-tier ladders as named keys ('high'/'mid'/'low').
+  RECOMMENDATION_SIGNAL_IMPACT_CODEBASE: 'recommendation.signal_impact.codebase',
+  RECOMMENDATION_SIGNAL_IMPACT_OASIS: 'recommendation.signal_impact.oasis',
+  RECOMMENDATION_SIGNAL_IMPACT_HEALTH: 'recommendation.signal_impact.health',
+  RECOMMENDATION_SIGNAL_IMPACT_LLM: 'recommendation.signal_impact.llm',
+  RECOMMENDATION_SIGNAL_IMPACT_MARKETPLACE:
+    'recommendation.signal_impact.marketplace',
+  RECOMMENDATION_SIGNAL_IMPACT_WEARABLE:
+    'recommendation.signal_impact.wearable',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
