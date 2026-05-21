@@ -220,11 +220,25 @@ def build_cascade(
     behaves exactly as before — backwards-compatible.
     """
     if voice_config is None:
-        # VTID-02696: hardcoded Google fallback so the agent works even when
-        # context-bootstrap fails (e.g. empty GATEWAY_SERVICE_TOKEN). Once the
-        # service token is set this branch is rarely hit; the row from
-        # agent_voice_configs takes over.
-        logger.warning("build_cascade: no voice_config — falling back to hardcoded Google cascade")
+        # VTID-03129 (Phase D.4.b): this branch is UNREACHABLE in healthy
+        # production traffic since Phase D.4.a (VTID-03127, gateway PR
+        # #2290) made `/orb/context-bootstrap` fall back to the seeded
+        # `voice.cascade.default` `decision_policy` row whenever
+        # `agent_voice_configs` has no row for the agent. If we are here,
+        # one of the following has failed:
+        #   - GATEWAY_SERVICE_TOKEN is missing/wrong (auth → 401 → null)
+        #   - Supabase `decision_policy` table is unreachable / empty
+        #   - The gateway is on a pre-D.4.a revision
+        # The hardcoded literal below is RETAINED as defense-in-depth so
+        # the agent can still serve a session in a partial outage — but
+        # the previous `logger.warning` was easy to miss in noisy logs.
+        # Logging at ERROR with a structured `[voice-config-defensive-fallback]`
+        # prefix makes the silent-fallback audit finding visible to ops.
+        logger.error(
+            "[voice-config-defensive-fallback] build_cascade: voice_config is None — "
+            "this should be unreachable post-VTID-03127. Investigate the gateway "
+            "context-bootstrap path (service token / decision_policy seed / revision)."
+        )
         voice_config = {
             "stt_provider": "google_stt",  "stt_model": "latest_long", "stt_options": {},
             "llm_provider": "google_llm",  "llm_model": "gemini-2.5-flash", "llm_options": {},
