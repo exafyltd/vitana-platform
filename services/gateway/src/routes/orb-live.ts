@@ -6796,6 +6796,86 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   const stage = ((session as any).reconnectStage as string) || 'idle';
   const reconnectCount = ((session as any)._reconnectCount || 0);
 
+  // VTID-03128: Teacher-aware recovery. When session.teacherModeContent
+  // is set, the generic "what were you asking?" prompt below makes
+  // Vitana lose the Teacher thread — user complained that after a
+  // disconnect during "Want me to show you Autopilot?", Vitana came
+  // back saying "Sorry, what were you asking?" instead of continuing
+  // the Teacher flow. The Teacher Mode block stays in system_instruction
+  // across the reconnect (because session.teacherModeContent is
+  // preserved on attemptTransparentReconnect); the recovery prompt was
+  // the only thing fighting against it. This branch tells Gemini to
+  // resume the Teacher flow explicitly: acknowledge the blip briefly,
+  // then continue from where the Teacher Mode block + transcript
+  // history place the conversation.
+  const teacherMode = (session as any).teacherModeContent as
+    | {
+        active_capability_key: string;
+        active_display_name: string;
+        active_teacher_intro_script: string | null;
+      }
+    | undefined;
+  if (teacherMode && teacherMode.active_capability_key) {
+    const ackByLang: Record<string, string> = {
+      en: 'Sorry, the connection blipped for a moment.',
+      de: 'Entschuldige, die Verbindung war kurz weg.',
+      fr: 'Désolé, la connexion a sauté un instant.',
+      es: 'Perdón, se cortó la conexión un momento.',
+      sr: 'Извини, веза је на тренутак отпала.',
+    };
+    const ack = ackByLang[lang] || ackByLang.en;
+
+    const teacherRecoveryPrompt = [
+      'You are recovering from a brief connection blip in the middle of a Teacher Mode session.',
+      '',
+      `The active capability is "${teacherMode.active_display_name}" (key: ${teacherMode.active_capability_key}).`,
+      'Your Teacher Mode block + the conversation history are in your system instruction. Read them to know exactly where the conversation was when the connection dropped.',
+      '',
+      'Recovery shape — speak exactly ONE acknowledgment sentence first, then RESUME the Teacher flow from where you left off:',
+      '',
+      `1. Open with: "${ack}"`,
+      '',
+      '2. Then look at what was happening BEFORE the disconnect (in the conversation history):',
+      `   - If you had JUST OFFERED the capability ("Want me to show you ${teacherMode.active_display_name}?") and the user had not yet responded → briefly re-offer in a slightly different wording, e.g. "Sind wir noch in der Frage, ob ich dir ${teacherMode.active_display_name} vorstellen darf?" / "Are we still on whether to walk through ${teacherMode.active_display_name}?"`,
+      `   - If you were IN THE MIDDLE OF the intro for ${teacherMode.active_display_name} → continue from where you stopped, picking up the unfinished sentence. Do NOT start the intro over.`,
+      `   - If you had JUST FINISHED the intro and were about to ask the user's next preference → ask the named-next question now ("Möchtest du noch mehr dazu wissen, oder soll ich dir ${teacherMode.active_display_name} jetzt im Detail zeigen?").`,
+      `   - If the user was responding when the connection dropped → paraphrase what they were saying (from history) in 3-6 words and invite them to continue ("Du warst gerade bei <kurz paraphrasieren> — sprich ruhig weiter.").`,
+      '',
+      'CRITICAL RULES:',
+      '- Do NOT say "Hello" / "Hi" / "Welcome back" / the user\'s name — this is a recovery, not a fresh start.',
+      '- Do NOT ask generic "What would you like to talk about?" — you ALREADY KNOW you were in Teacher Mode for ' + teacherMode.active_display_name + '.',
+      '- Do NOT restart the offer or the intro from scratch — continue.',
+      '- Do NOT use the word "Internet" / "network" / "Wi-Fi" — say "connection" / "Verbindung".',
+      '- Speak in the user\'s language (set in your system instruction).',
+      '- Use "Sorry" / equivalent ONCE only.',
+      '- Speak immediately when this prompt arrives.',
+      '- The Teacher Mode behavior rules (3-4 sentence intros, named-next, awareness-event tool calls) ALL still apply once you have resumed.',
+    ].join('\n');
+
+    const message = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text: teacherRecoveryPrompt }] }],
+        turn_complete: true,
+      },
+    };
+    ws.send(JSON.stringify(message));
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    console.log(
+      `[VTID-03128] Teacher-aware recovery sent — capability=${teacherMode.active_capability_key} lang=${lang} stage=${stage} reconnectCount=${reconnectCount} transcriptTurns=${session.transcriptTurns?.length || 0}`,
+    );
+    emitDiag(session, 'recovery_prompt_sent', {
+      lang,
+      stage,
+      reconnect_count: reconnectCount,
+      transcript_turns: session.transcriptTurns?.length || 0,
+      recovery_mode: 'teacher_resume',
+      capability_key: teacherMode.active_capability_key,
+    });
+    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'recovery_timeout');
+    return true;
+  }
+
   // VTID-02715 — neutral disconnect copy.
   //  - Words "internet" / "network" never appear: the user's Wi-Fi is fine,
   //    the drop is on the upstream WS side and we don't shift blame.
