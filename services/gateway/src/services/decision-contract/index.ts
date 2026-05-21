@@ -60,3 +60,15 @@ export {
   type PolicyResolver,
   type PolicyResolverTestSeed,
 } from './policy-resolver';
+
+// Phase C.1 (VTID-03130) — RecommendationStrategy + RankProvenance.
+// Re-exported through the barrel so every ranker consumer pulls from
+// `services/decision-contract` regardless of which slice (B vs C) it
+// uses. Single grep surface for the boundary audit.
+export type {
+  RankProvenanceComponent,
+  RankProvenance,
+  RecommendationCandidate,
+  RecommendationStrategyScoreResult,
+  RecommendationStrategy,
+} from './strategy';
