@@ -104,3 +104,62 @@ describe('VTID-03036 LiveKit context parity wire-up', () => {
     expect(source).toMatch(/getCurrentFacts/);
   });
 });
+
+describe('VTID-03122 Phase E LiveKit context parity — lastSessionInfo + journey trail', () => {
+  it('extracts current_route from the query string', () => {
+    expect(source).toMatch(/req\.query\.current_route/);
+    expect(source).toMatch(/const\s+currentRoute\s*=/);
+  });
+
+  it('extracts recent_routes as array or comma-separated string', () => {
+    expect(source).toMatch(/req\.query\.recent_routes/);
+    expect(source).toMatch(/Array\.isArray\(raw\)/);
+    expect(source).toMatch(/split\(['"`],['"`]\)/);
+  });
+
+  it('caps recent_routes at 10 entries to bound prompt size', () => {
+    expect(source).toMatch(/\.slice\(0,\s*10\)/);
+  });
+
+  it('hoists fetchLastSessionInfo so both buildLiveSystemInstruction call sites share one fetch', () => {
+    expect(source).toMatch(
+      /let\s+lastSessionInfo:\s*\{\s*time:\s*string;\s*wasFailure:\s*boolean\s*\}\s*\|\s*null\s*=\s*null/,
+    );
+    expect(source).toMatch(/lastSessionInfo\s*=\s*await\s+fetchLastSessionInfo\(userId\)/);
+  });
+
+  it('threads lastSessionInfo / currentRoute / recentRoutes into both buildLiveSystemInstruction call sites', () => {
+    // Both calls must reference the variables; the original `null` literals
+    // for these positional args were the parity leak.
+    const callRegex = /buildLiveSystemInstruction\([\s\S]*?\);/g;
+    const calls = source.match(callRegex) ?? [];
+    const vitanaCalls = calls.filter((c) => c.includes('vitanaContextInstruction') || c.includes('augmentedContext'));
+    expect(vitanaCalls.length).toBeGreaterThanOrEqual(2);
+    for (const call of vitanaCalls) {
+      expect(call).toMatch(/\blastSessionInfo\b/);
+      expect(call).toMatch(/\bcurrentRoute\b/);
+      expect(call).toMatch(/\brecentRoutes\b/);
+    }
+  });
+
+  it('does not re-fetch lastSessionInfo inside the wake-brief block (single fetch only)', () => {
+    // One single occurrence of `await fetchLastSessionInfo` is the hoist.
+    // A duplicate inside the wake-brief block would mean the route fetches
+    // twice per request.
+    const matches = source.match(/await\s+fetchLastSessionInfo\(/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it('echoes lastSessionInfo / currentRoute / recentRoutes back in the bootstrap response payload', () => {
+    expect(source).toMatch(/last_session_info:\s*lastSessionInfo/);
+    expect(source).toMatch(/current_route:\s*currentRoute/);
+    expect(source).toMatch(/recent_routes:\s*recentRoutes\s*\?\?\s*\[\]/);
+  });
+
+  it('degrades silently when fetchLastSessionInfo throws (best-effort, no rethrow)', () => {
+    // Must wrap the hoisted fetch in try/catch so a temporal-bucket lookup
+    // failure cannot block the bootstrap response. The Vertex orb-live.ts
+    // path is unaffected.
+    expect(source).toMatch(/fetchLastSessionInfo failed[\s\S]{0,200}falls back to UNKNOWN/);
+  });
+});

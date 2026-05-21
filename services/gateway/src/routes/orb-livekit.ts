@@ -795,6 +795,33 @@ router.get(
       }
     }
 
+    // VTID-03122 (Phase E): accept optional journey-trail hints from the
+    // client so the LiveKit-rendered system instruction can populate the
+    // current-screen + journey trail in the TEMPORAL+JOURNEY block. Older
+    // callers (Test Bench) don't send these; new callers can supply them
+    // to close the parity gap with Vertex without forcing any frontend
+    // change today. Always optional, null-safe, capped at 10 entries.
+    const currentRoute =
+      typeof req.query.current_route === 'string' && req.query.current_route
+        ? String(req.query.current_route)
+        : null;
+    const recentRoutes: string[] | null = (() => {
+      const raw = req.query.recent_routes;
+      if (Array.isArray(raw)) {
+        return raw
+          .filter((r): r is string => typeof r === 'string' && r.length > 0)
+          .slice(0, 10);
+      }
+      if (typeof raw === 'string' && raw) {
+        return raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 10);
+      }
+      return null;
+    })();
+
     // VTID-03035 + VTID-03036: two-layer cache hit short-circuit.
     //  - L1 in-memory (per Cloud Run instance) — ~0ms when hit
     //  - L2 Supabase `bootstrap_cache` (shared across instances) — ~30-80ms
@@ -1409,6 +1436,23 @@ router.get(
         console.warn(`[VTID-03047] persona prompt fetch failed for ${agentId}: ${(exc as Error).message}`);
       }
     }
+    // VTID-03122 (Phase E): hoist fetchLastSessionInfo so the TEMPORAL+JOURNEY
+    // block in buildLiveSystemInstruction has real "Time since last ORB session"
+    // data instead of "UNKNOWN recency". The same call already runs inside the
+    // wake-brief block below — hoisting here lets both code paths share a
+    // single fetch. Best-effort: any error returns null and the temporal block
+    // degrades to UNKNOWN, never blocks the bootstrap.
+    let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
+    if (userId) {
+      try {
+        lastSessionInfo = await fetchLastSessionInfo(userId);
+      } catch (exc) {
+        console.warn(
+          `[${VTID}/VTID-03122] fetchLastSessionInfo failed (non-fatal, temporal block falls back to UNKNOWN): ${(exc as Error).message}`,
+        );
+      }
+    }
+
     // Vitana path: full 65KB system instruction with IDENTITY LOCK etc.
     try {
       if (systemInstruction === null) {
@@ -1436,9 +1480,9 @@ router.get(
         undefined,           // conversationSummary — not surfaced through bootstrap yet
         undefined,           // conversationHistory — agent reconnect path will populate later
         isReconnect,
-        null,                // lastSessionInfo — not surfaced through bootstrap yet
-        null,                // currentRoute — LiveKit path doesn't carry the React route
-        null,                // recentRoutes
+        lastSessionInfo,     // VTID-03122 (Phase E) — drives "Time since last ORB session" + wasFailure marker in the TEMPORAL+JOURNEY block
+        currentRoute,        // VTID-03122 (Phase E) — drives "Current screen" line when client supplies ?current_route=…
+        recentRoutes,        // VTID-03122 (Phase E) — drives journey trail when client supplies ?recent_routes=…
         envContext ?? undefined,
         req.identity?.vitana_id ?? null,
         true,                // VTID-03046 step 2 — LiveKit's session.say()
@@ -1472,7 +1516,10 @@ router.get(
         // continuation_decision_* events that fire from
         // decideWakeBriefForSession for THIS call.
         const wakeBriefSessionId = `livekit-bootstrap-${randomUUID()}`;
-        const lastSessionInfo = await fetchLastSessionInfo(userId);
+        // VTID-03122 (Phase E): reuse the lastSessionInfo hoisted at the top
+        // of the handler instead of re-fetching here. Single fetch per
+        // bootstrap, same value reaches both buildLiveSystemInstruction call
+        // sites and the wake-brief decision.
         const temporal = describeTimeSince(lastSessionInfo);
         // VTID-03081 (B1 wiring): read cadence signals from
         // user_assistant_state so decideGreetingPolicy() can apply the
@@ -1584,9 +1631,9 @@ router.get(
           undefined,
           undefined,
           isReconnect,
-          null,
-          null,
-          null,
+          lastSessionInfo,     // VTID-03122 (Phase E)
+          currentRoute,        // VTID-03122 (Phase E)
+          recentRoutes,        // VTID-03122 (Phase E)
           envContext ?? undefined,
           req.identity?.vitana_id ?? null,
           true,
@@ -1617,9 +1664,13 @@ router.get(
       active_role: role,
       conversation_summary: null,
       last_turns: null,
-      last_session_info: null,
-      current_route: null,
-      recent_routes: [],
+      // VTID-03122 (Phase E): echo the populated fields back so the client
+      // can verify what was applied. lastSessionInfo flows in from the
+      // hoisted fetch; currentRoute / recentRoutes echo the query-param
+      // input (null/[] when unset).
+      last_session_info: lastSessionInfo,
+      current_route: currentRoute,
+      recent_routes: recentRoutes ?? [],
       client_context: envContext ?? { user_agent: req.headers['user-agent'] ?? null },
       vitana_id: req.identity?.vitana_id ?? null,
       // VTID-LIVEKIT-IDENTITY-NAME: surface the user's name + verified facts as
