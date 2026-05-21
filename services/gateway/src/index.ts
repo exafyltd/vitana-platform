@@ -1496,6 +1496,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ PolicyResolver cache warm failed (non-fatal, using defaults):', error);
       }
 
+      // VTID-03142 (Phase D42): pre-warm the ConflictPairResolver cache so
+      // the fusion engine's first conflict check sync-reads from
+      // decision_conflict_pair. Warm failure falls back to literals.
+      try {
+        const { warmConflictPairCache } = require('./services/decision-contract/conflict-pair-resolver');
+        await warmConflictPairCache();
+        console.log('📜 ConflictPairResolver cache pre-warmed (decision-contract D42)');
+      } catch (error) {
+        console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
+      }
+
       // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
       try {
         warmNavCatalogCache();

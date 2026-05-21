@@ -71,22 +71,15 @@ const DEV_IDENTITY = {
 };
 
 /**
- * Conflict type mappings for detection
+ * Conflict type mappings for detection.
+ *
+ * VTID-03142 (Phase D42): moved from a hardcoded constant to the
+ * `decision_conflict_pair` table. The accessor `getConflictPairResolver()`
+ * returns the same Record<conflict_type, [PriorityDomain, PriorityDomain][]>
+ * shape and cold-falls-back to literals byte-identical to the pre-D42
+ * map, so behaviour is unchanged on a fresh deploy before migration.
  */
-const CONFLICT_TYPE_MAP: Record<string, [PriorityDomain, PriorityDomain][]> = {
-  'health_vs_monetization': [['health_wellbeing', 'commerce_monetization']],
-  'rest_vs_social': [['health_wellbeing', 'social_relationships']],
-  'learning_vs_availability': [['learning_growth', 'health_wellbeing']],
-  'goals_vs_desire': [['learning_growth', 'exploration_discovery']],
-  'boundaries_vs_optimization': [
-    ['health_wellbeing', 'commerce_monetization'],
-    ['social_relationships', 'commerce_monetization']
-  ],
-  'capacity_vs_demand': [
-    ['health_wellbeing', 'learning_growth'],
-    ['health_wellbeing', 'social_relationships']
-  ]
-};
+import { getConflictPairResolver } from './decision-contract/conflict-pair-resolver';
 
 // =============================================================================
 // Environment Detection
@@ -661,8 +654,13 @@ function detectConflicts(
     !priorities[s.domain].suppressed
   );
 
-  // Check each conflict type
-  for (const [conflictType, domainPairs] of Object.entries(CONFLICT_TYPE_MAP)) {
+  // Check each conflict type — pairs come from decision_conflict_pair
+  // (VTID-03142); resolver cold-falls-back to the pre-D42 literals.
+  // tenant_id is not threaded through FusionContext today, so all
+  // callers read the global pair set. Per-tenant overrides land when
+  // the fusion engine routes tenant_id through to detectConflicts.
+  const conflictPairMap = getConflictPairResolver().getConflictPairs();
+  for (const [conflictType, domainPairs] of Object.entries(conflictPairMap)) {
     for (const [domain1, domain2] of domainPairs) {
       const signal1 = activeSignals.find(s => s.domain === domain1);
       const signal2 = activeSignals.find(s => s.domain === domain2);
