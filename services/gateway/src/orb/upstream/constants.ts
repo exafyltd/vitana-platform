@@ -27,7 +27,10 @@
  */
 
 import { getPolicyResolver } from '../../services/decision-contract/policy-resolver';
-import { POLICY_KEYS } from '../../services/decision-contract/policy-keys';
+import {
+  POLICY_KEYS,
+  RENDER_BLOCK_KEYS,
+} from '../../services/decision-contract/policy-keys';
 
 // ---------------------------------------------------------------------------
 // Safety-net fallback values. Match the Phase D.1 seed rows byte-for-byte.
@@ -155,10 +158,12 @@ export const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('ba
 // =============================================================================
 // User-facing connection-issue messages (per language)
 // =============================================================================
-// Phase D.2 (next slice) will migrate these to `policy_render_block` so
-// translations + edits don't require a code deploy. Kept inline for now
-// so this PR stays bounded.
-export const connectionIssueMessages: Record<string, string> = {
+// Phase D.2 (VTID-03125): localized strings now live in `policy_render_block`
+// rows seeded with byte-identical content. `getConnectionIssueMessage` reads
+// via PolicyResolver; the resolver automatically falls back to 'en' if the
+// requested language has no row. The fallback Record below is the
+// cache-cold safety net — same strings as the seeded rows.
+const CONNECTION_ISSUE_FALLBACKS: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
   'de': 'Es tut mir leid, ich habe gerade Verbindungsprobleme. Bitte versuchen Sie, ein neues Gespräch zu starten.',
   'fr': "Je suis désolé, j'ai des problèmes de connexion. Veuillez réessayer une nouvelle conversation.",
@@ -168,3 +173,12 @@ export const connectionIssueMessages: Record<string, string> = {
   'ru': 'Извините, у меня проблемы с подключением. Пожалуйста, попробуйте начать новый разговор.',
   'sr': 'Извините, изгледа да имам проблеме са везом. Молимо покушајте поново.',
 };
+
+export function getConnectionIssueMessage(lang: string): string {
+  const fallback = CONNECTION_ISSUE_FALLBACKS[lang] ?? CONNECTION_ISSUE_FALLBACKS['en'];
+  return getPolicyResolver().getRenderBlock(
+    RENDER_BLOCK_KEYS.VOICE_CONNECTION_ISSUE,
+    lang,
+    { defaultValue: fallback },
+  );
+}
