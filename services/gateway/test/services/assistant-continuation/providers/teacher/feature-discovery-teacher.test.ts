@@ -188,6 +188,27 @@ describe('VTID-03093 — renderTeacherLine', () => {
       }),
     ).toBe('Hi. May I?');
   });
+
+  // VTID-03123: when cadence-class skip suppressed the greeting, the
+  // renderer returns just the invitation — no leading space, no stale
+  // "Welcome back". The user's 5-second-re-tap complaint.
+  test('VTID-03123: empty greeting drops the leading space', () => {
+    expect(
+      renderTeacherLine({
+        greeting: '',
+        invitation: 'Magst du, dass ich dir Life Compass vorstelle?',
+      }),
+    ).toBe('Magst du, dass ich dir Life Compass vorstelle?');
+  });
+
+  test('VTID-03123: whitespace-only greeting also drops cleanly', () => {
+    expect(
+      renderTeacherLine({
+        greeting: '   ',
+        invitation: 'Want me to show you?',
+      }),
+    ).toBe('Want me to show you?');
+  });
 });
 
 // ---------------------------------------------------------------------------

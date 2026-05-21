@@ -77,6 +77,58 @@ describe('VTID-03105 — pickTeacherGreetingMeta', () => {
     });
     expect(plain).toBe(meta.text);
   });
+
+  // VTID-03123: cadence-class skip drops the greeting clause.
+  test('greetingPolicy=skip returns empty text + idx=-1', () => {
+    const meta = pickTeacherGreetingMeta({
+      lang: 'de',
+      firstName: 'Dragan',
+      rng: () => 0,
+      greetingPolicy: 'skip',
+    });
+    expect(meta.text).toBe('');
+    expect(meta.rawTemplate).toBe('');
+    expect(meta.idx).toBe(-1);
+    expect(meta.poolSize).toBe(0);
+  });
+
+  test('greetingPolicy=skip wrapper returns empty string', () => {
+    const out = pickTeacherGreeting({
+      lang: 'de',
+      firstName: 'Dragan',
+      rng: () => 0,
+      greetingPolicy: 'skip',
+    });
+    expect(out).toBe('');
+  });
+
+  test('non-skip policies still draw from the full pool', () => {
+    for (const policy of ['brief_resume', 'warm_return', 'fresh_intro'] as const) {
+      const meta = pickTeacherGreetingMeta({
+        lang: 'de',
+        firstName: 'Dragan',
+        rng: () => 0,
+        greetingPolicy: policy,
+      });
+      expect(meta.text.length).toBeGreaterThan(0);
+      expect(meta.idx).toBeGreaterThanOrEqual(0);
+      expect(meta.poolSize).toBeGreaterThan(0);
+    }
+  });
+
+  test('greetingPolicy absent (undefined) behaves like pre-VTID-03123 (full pool)', () => {
+    // Backward-compat guard: callers that don't pass greetingPolicy
+    // still get the full pool. Existing wake-brief code paths that
+    // haven't been updated to forward policy don't suddenly silence
+    // greetings.
+    const meta = pickTeacherGreetingMeta({
+      lang: 'de',
+      firstName: 'Dragan',
+      rng: () => 0,
+    });
+    expect(meta.text.length).toBeGreaterThan(0);
+    expect(meta.poolSize).toBeGreaterThan(0);
+  });
 });
 
 describe('VTID-03105 — pickTeacherInvitationMeta', () => {
