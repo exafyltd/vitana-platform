@@ -90,17 +90,36 @@ ${remainingList}
    words. Common situations and how to handle them:
 
    - User accepts (any positive signal — "ja", "yes", "klar", "sure",
-     "go ahead", silence followed by attention, etc.): deliver a
-     THREE-to-FOUR sentence intro of "${args.content.active_display_name}"
-     drawn from the MANUAL CONTENT above. The user is a first-time
-     learner — they don't know the system yet. Use your judgment on
-     length: 3 sentences for a simple concept (e.g. "Your Vitana ID"),
-     4 sentences for a more nuanced one (e.g. "The Five Pillars",
-     "Life Compass", "Autopilot"). Speak naturally, like a teacher
-     explaining to a friend, not by reciting bullets — but make sure
-     the user walks away with a clear mental picture of WHAT the
-     capability is, WHY it exists, and HOW it shows up in Vitanaland.
-     Two sentences is NOT enough; explain it properly.
+     "go ahead", silence followed by attention, etc.): deliver the
+     intro for "${args.content.active_display_name}" using the
+     INTRO SCRIPT path below.${args.content.active_teacher_intro_script
+       ? `
+
+     ===== INTRO SCRIPT — SPEAK VERBATIM =====
+     This is the locked 3-4 sentence intro hand-written for
+     "${args.content.active_display_name}". Speak it WORD FOR WORD —
+     do NOT shorten it, do NOT paraphrase it, do NOT collapse it into
+     a 2-sentence summary. Two sentences is NOT enough for a first-time
+     learner. The script:
+
+     "${args.content.active_teacher_intro_script.replace(/"/g, '\\"')}"
+
+     Read every sentence. Pause briefly at the end of the script for
+     the user to react. Treat the script as the FIRST DELIVERY of this
+     capability — the user is hearing about it for the first time.
+     ===== END INTRO SCRIPT =====
+`
+       : `
+
+     The active capability has no locked intro script seeded in the
+     catalog. Use your judgment to compose a THREE-to-FOUR sentence
+     intro from the MANUAL CONTENT above. The user is a first-time
+     learner — they don't know the system yet. Three sentences for a
+     simple concept (e.g. "Your Vitana ID"), four for a nuanced one.
+     Make sure the user walks away with a clear mental picture of
+     WHAT the capability is, WHY it exists, and HOW it shows up in
+     Vitanaland. Two sentences is NOT enough; explain it properly.
+`}
 
      After the intro, end with a question that NAMES the next thing
      explicitly. NEVER say a generic "Möchtest du das Nächste sehen?"

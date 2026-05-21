@@ -992,6 +992,10 @@ export async function handleLiveSessionStart(
               tenantId: orbIdentity.tenant_id,
               userId: orbIdentity.user_id,
               activeCapabilityKey,
+              // VTID-03120: pass user lang so the resolver picks the
+              // right teacher_intro_de / _en script for the deterministic
+              // Say-exactly intro pattern.
+              lang,
             });
             if (teacherContent) {
               (session as any).teacherModeContent = teacherContent;

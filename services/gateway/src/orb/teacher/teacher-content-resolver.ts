@@ -44,6 +44,16 @@ export interface TeacherModeContent {
    *  injection into system_instruction stays bounded. May be empty
    *  string when the knowledge_docs row isn't found. */
   active_manual_content: string;
+  /** VTID-03120: locked 3-4 sentence script in the user's language —
+   *  hand-written in `system_capabilities.teacher_intro_*` so the
+   *  Teacher prompt can use the deterministic "Say exactly:" pattern
+   *  the wake-brief opener uses. Null when the row isn't seeded for
+   *  this capability/lang; the prompt then falls back to manual-based
+   *  generation. The fallback is intentional — capabilities without a
+   *  seeded script still teach, they just rely on LLM judgment for
+   *  length and phrasing. Operators add scripts to new capabilities
+   *  via the system_capabilities table without a code deploy. */
+  active_teacher_intro_script: string | null;
   /** Up to 5 remaining capabilities in pedagogical order so the LLM
    *  can chain to the next one without an extra fetch. Each entry has
    *  the display name + a one-line description (no manual content —
@@ -61,6 +71,9 @@ export interface TeacherContentResolverInputs {
   tenantId: string;
   userId: string;
   activeCapabilityKey: string;
+  /** VTID-03120: user's language. Picks teacher_intro_de or
+   *  teacher_intro_en. Defaults to 'en' when absent. */
+  lang?: string;
   nowIso?: string;
 }
 
@@ -86,16 +99,32 @@ export async function resolveTeacherModeContent(
 ): Promise<TeacherModeContent | null> {
   let catalog: CapabilityCatalogRow[] = [];
   let activeRow: CapabilityCatalogRow | null = null;
+  // VTID-03120: keep the raw row (including the teacher_intro_* columns)
+  // so we can resolve the locked script for the active capability + lang
+  // BEFORE the pickCapability ranker discards everything except the
+  // catalog-shape fields.
+  let activeRawRow: Record<string, unknown> | null = null;
   try {
     const cap = await inputs.supabase
       .from('system_capabilities')
-      .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order')
+      .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order, teacher_intro_de, teacher_intro_en')
       .eq('enabled', true);
     if (cap.error || !Array.isArray(cap.data)) {
       return null;
     }
-    catalog = cap.data as CapabilityCatalogRow[];
+    catalog = (cap.data as Array<Record<string, unknown>>).map((r) => ({
+      capability_key: r.capability_key as string,
+      display_name: r.display_name as string,
+      description: r.description as string,
+      manual_path: (r.manual_path as string | null) ?? null,
+      enabled: r.enabled as boolean,
+      pedagogical_order: (r.pedagogical_order as number | null) ?? null,
+    }));
     activeRow = catalog.find((r) => r.capability_key === inputs.activeCapabilityKey) ?? null;
+    activeRawRow =
+      (cap.data as Array<Record<string, unknown>>).find(
+        (r) => r.capability_key === inputs.activeCapabilityKey,
+      ) ?? null;
   } catch {
     return null;
   }
@@ -196,12 +225,34 @@ export async function resolveTeacherModeContent(
     });
   }
 
+  // VTID-03120: resolve the locked intro script for the user's lang.
+  // Falls back to the other language if the requested one is empty
+  // (better to speak the locked script in the wrong language than to
+  // collapse to manual-based generation and risk the 2-sentence issue).
+  // Falls back to null only when BOTH language columns are empty —
+  // then the prompt uses the manual-based fallback path.
+  const lang = (inputs.lang || 'en').toLowerCase();
+  let teacherIntroScript: string | null = null;
+  if (activeRawRow) {
+    const de = typeof activeRawRow.teacher_intro_de === 'string'
+      ? activeRawRow.teacher_intro_de.trim()
+      : '';
+    const en = typeof activeRawRow.teacher_intro_en === 'string'
+      ? activeRawRow.teacher_intro_en.trim()
+      : '';
+    if (lang.startsWith('de') && de) teacherIntroScript = de;
+    else if (lang.startsWith('en') && en) teacherIntroScript = en;
+    else if (en) teacherIntroScript = en;
+    else if (de) teacherIntroScript = de;
+  }
+
   return {
     active_capability_key: activeRow.capability_key,
     active_display_name: activeRow.display_name,
     active_description: activeRow.description,
     active_manual_path: activeRow.manual_path,
     active_manual_content: manualContent,
+    active_teacher_intro_script: teacherIntroScript,
     remaining_capabilities: remaining,
   };
 }
