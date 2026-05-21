@@ -113,6 +113,34 @@ export const POLICY_KEYS = {
     'situational.time_of_day.evening_start_hour',
   SITUATIONAL_TIME_OF_DAY_LATE_EVENING_START_HOUR:
     'situational.time_of_day.late_evening_start_hour',
+
+  // ---- Phase B.7 (VTID-03136) — D33 readiness thresholds -------
+  // The 11 thresholds that previously lived as `export const D33_THRESHOLDS`
+  // in `services/gateway/src/types/availability-readiness.ts`. The const
+  // becomes a proxy (via `getD33Thresholds()` accessor) that reads via
+  // PolicyResolver with these literal values as cache-cold defaults.
+  SITUATIONAL_READINESS_MONETIZATION_MIN:
+    'situational.readiness.monetization_min',
+  SITUATIONAL_READINESS_DEEP_FLOW_MIN:
+    'situational.readiness.deep_flow_min',
+  SITUATIONAL_READINESS_LIGHT_FLOW_MIN:
+    'situational.readiness.light_flow_min',
+  SITUATIONAL_TIME_WINDOW_IMMEDIATE_MAX_MINUTES:
+    'situational.time_window.immediate_max_minutes',
+  SITUATIONAL_TIME_WINDOW_SHORT_MAX_MINUTES:
+    'situational.time_window.short_max_minutes',
+  SITUATIONAL_CONFIDENCE_MIN_FOR_ACTION:
+    'situational.confidence.min_for_action',
+  SITUATIONAL_RESPONSE_TIME_FAST_THRESHOLD_SECONDS:
+    'situational.response_time.fast_threshold_seconds',
+  SITUATIONAL_RESPONSE_TIME_SLOW_THRESHOLD_SECONDS:
+    'situational.response_time.slow_threshold_seconds',
+  SITUATIONAL_SESSION_LENGTH_SHORT_THRESHOLD_MINUTES:
+    'situational.session_length.short_threshold_minutes',
+  SITUATIONAL_SESSION_LENGTH_LONG_THRESHOLD_MINUTES:
+    'situational.session_length.long_threshold_minutes',
+  SITUATIONAL_OVERRIDE_EXPIRY_MINUTES:
+    'situational.override.expiry_minutes',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
