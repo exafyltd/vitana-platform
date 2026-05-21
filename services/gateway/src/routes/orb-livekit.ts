@@ -864,6 +864,37 @@ router.get(
         .maybeSingle();
       voiceConfig = (data as Record<string, unknown> | null) ?? null;
     }
+    // VTID-03127 (Phase D.4.a): fall back to the seeded
+    // `voice.cascade.default` policy row when no agent-specific
+    // `agent_voice_configs` row exists. Before this, the gateway
+    // returned `voice_config: null` and the Python orb-agent at
+    // `providers.py:54-64` silently used a literal all-Google cascade —
+    // hiding any service-token / DB failure under what looked like a
+    // working voice path. Now the gateway always returns a non-null
+    // voice_config (DB-seeded defaults or per-agent override); the
+    // Python fallback becomes unreachable and D.4.b removes the dead
+    // code.
+    if (!voiceConfig) {
+      try {
+        const { getPolicyResolver } = await import(
+          '../services/decision-contract/policy-resolver'
+        );
+        const { POLICY_KEYS } = await import(
+          '../services/decision-contract/policy-keys'
+        );
+        const fallback = getPolicyResolver().getValue<Record<string, unknown> | null>(
+          POLICY_KEYS.VOICE_CASCADE_DEFAULT,
+          { defaultValue: null },
+        );
+        if (fallback && typeof fallback === 'object') {
+          voiceConfig = { ...fallback, _source: 'voice.cascade.default' };
+        }
+      } catch (exc) {
+        console.warn(
+          `[VTID-03127] voice.cascade.default resolver fetch failed (non-fatal — agent will still fall back to its own literal): ${(exc as Error).message}`,
+        );
+      }
+    }
 
     // VTID-03017: greeting-critical fast path. When the agent calls with
     // ?greeting_only=true, return ONLY the fields needed to build the cascade

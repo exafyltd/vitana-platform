@@ -52,6 +52,14 @@ export const POLICY_KEYS = {
     'voice.loop_guard.max_consecutive_model_turns',
   VOICE_LOOP_GUARD_MAX_CONSECUTIVE_TOOL_CALLS:
     'voice.loop_guard.max_consecutive_tool_calls',
+
+  // ---- Phase D.4.a (VTID-03127) --------------------------------
+  // Default voice cascade returned by the gateway when no per-agent
+  // `agent_voice_configs` row exists. Replaces the silent all-Google
+  // hardcoded fallback in `orb-agent/providers.py:54-64`. JSON shape:
+  // `{stt_provider, stt_model, llm_provider, llm_model, tts_provider,
+  //   tts_model}` — same 6 fields the Python agent expected.
+  VOICE_CASCADE_DEFAULT: 'voice.cascade.default',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];

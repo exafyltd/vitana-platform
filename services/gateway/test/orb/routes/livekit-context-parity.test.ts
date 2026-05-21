@@ -105,6 +105,35 @@ describe('VTID-03036 LiveKit context parity wire-up', () => {
   });
 });
 
+describe('VTID-03127 Phase D.4.a voice.cascade.default fallback', () => {
+  it('reads voice.cascade.default from PolicyResolver when agent_voice_configs returns null', () => {
+    // The fallback block must call the resolver with the canonical
+    // policy key.
+    expect(source).toMatch(/POLICY_KEYS\.VOICE_CASCADE_DEFAULT/);
+    expect(source).toMatch(/getPolicyResolver\(\)\.getValue/);
+  });
+
+  it('is gated on voiceConfig being null after the agent_voice_configs lookup', () => {
+    // Per-agent override (when agent_voice_configs has a row) MUST win
+    // over the default — the fallback only fires when voiceConfig is
+    // still null after the table lookup.
+    expect(source).toMatch(/if\s*\(\s*!voiceConfig\s*\)\s*\{/);
+  });
+
+  it('tags the fallback with a `_source` marker so the agent / cockpit can tell it apart from a per-agent row', () => {
+    // Useful for telemetry: a session that hit the default vs. one that
+    // hit a per-agent override leaves a distinguishable trail.
+    expect(source).toMatch(/_source:\s*['"]voice\.cascade\.default['"]/);
+  });
+
+  it('best-effort: resolver fetch failure does not block the bootstrap', () => {
+    // A try/catch wraps the fallback fetch so a resolver bug cannot
+    // crash a voice session. The Python agent still has its own
+    // literal fallback today; D.4.b removes that.
+    expect(source).toMatch(/VTID-03127[\s\S]{0,300}resolver fetch failed/);
+  });
+});
+
 describe('VTID-03122 Phase E LiveKit context parity — lastSessionInfo + journey trail', () => {
   it('extracts current_route from the query string', () => {
     expect(source).toMatch(/req\.query\.current_route/);
