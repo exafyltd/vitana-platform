@@ -28,6 +28,17 @@ import {
   lookupByRoute as lookupNavByRoute,
 } from '../../../lib/navigation-catalog';
 import { pickShortGapGreetings } from '../../instruction/greeting-pools';
+// VTID-03118 (Phase B.4): bucket thresholds + greeting-bucket prompt
+// fragments come from PolicyResolver instead of inline literals/switch-case
+// lines. Resolver returns byte-identical content for the seeded defaults
+// (Phase B.2 / VTID-03114); the consumer below substitutes
+// {{greeting_time_of_day}} and {{short_gap_phrase_menu}} tokens to
+// reproduce the pre-B.4 output exactly.
+import {
+  getPolicyResolver,
+  POLICY_KEYS,
+  RENDER_BLOCK_KEYS,
+} from '../../../services/decision-contract';
 // A3: buildNavigatorPolicySection stays in orb-live.ts (still consumed by
 // the route handler too); the instruction builder calls it back across the
 // boundary. The function is pure (lang → string), so the round-trip is
@@ -43,6 +54,112 @@ import { buildNavigatorPolicySection } from '../../../routes/orb-live';
 import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
+
+// VTID-03118 (Phase B.4): map TemporalBucket → policy_render_block key so
+// the consumer below can fetch the seeded template by enum.
+const BUCKET_TO_BLOCK_KEY: Record<TemporalBucket, string> = {
+  reconnect: RENDER_BLOCK_KEYS.GREETING_BUCKET_RECONNECT,
+  recent: RENDER_BLOCK_KEYS.GREETING_BUCKET_RECENT,
+  same_day: RENDER_BLOCK_KEYS.GREETING_BUCKET_SAME_DAY,
+  today: RENDER_BLOCK_KEYS.GREETING_BUCKET_TODAY,
+  yesterday: RENDER_BLOCK_KEYS.GREETING_BUCKET_YESTERDAY,
+  week: RENDER_BLOCK_KEYS.GREETING_BUCKET_WEEK,
+  long: RENDER_BLOCK_KEYS.GREETING_BUCKET_LONG,
+  first: RENDER_BLOCK_KEYS.GREETING_BUCKET_FIRST,
+};
+
+// VTID-03118 (Phase B.4): safety-net fallbacks. Byte-identical to the
+// Phase B.2 seed content. The resolver returns the DB row in production;
+// these defaults activate only when the seed migration hasn't been run
+// (e.g. early boot in a fresh environment). Placeholder tokens match the
+// seed migration (see supabase/migrations/20260527020000_...).
+const BUCKET_DEFAULT_TEMPLATES: Record<TemporalBucket, string> = {
+  reconnect:
+`- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).
+  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I'm back", "I'm listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.
+  • Wait for the user to speak. Your next message must be a direct response to the user's next utterance — nothing else.
+  • If the user says nothing, you say nothing. Silence is correct here.`,
+  recent:
+`- BUCKET = recent (2–15 min since last session).
+  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.
+  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.
+{{short_gap_phrase_menu}}
+  • Max ONE short phrase. Warm but direct.`,
+  same_day:
+`- BUCKET = same_day (15 min – 8 h since last session).
+  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you've never met.
+  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.
+{{short_gap_phrase_menu}}
+  • Max ONE short phrase. Warm and direct.`,
+  today:
+`- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).
+  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
+  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
+  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
+  • Example follow-up if no candidate exists (pick ONE or skip):
+      "What's on your mind today?"
+      "Where would you like to focus today?"
+  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
+  yesterday:
+`- BUCKET = yesterday (this is a NEW-DAY greeting).
+  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
+  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
+  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
+  • Example follow-up if no candidate exists (pick ONE or skip):
+      "What would you like to explore today?"
+      "Picking up where we left off?"
+  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
+  week:
+`- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).
+  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
+  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
+  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
+  • Example follow-up if no candidate exists (pick ONE or skip):
+      "Good to hear from you again — what's been on your mind?"
+      "What would you like to explore today?"
+  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
+  long:
+`- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).
+  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
+  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
+  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).
+  • Example follow-up if no candidate exists (pick ONE or skip):
+      "It's been a few days — happy you're back. What's been on your mind?"
+      "What would you like to focus on today?"
+  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
+  first:
+`- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).
+  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
+  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
+  • EXCEPTION: when the brain context's USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context's OPENING SHAPE MATRIX — that overrides this fallback.
+  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
+  • Example follow-up if no candidate exists (pick ONE or skip):
+      "What's on your mind today?"
+      "Where would you like to focus today?"
+  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
+};
+
+// VTID-03118 (Phase B.4): the `{{short_gap_phrase_menu}}` placeholder
+// inside the `recent` and `same_day` templates expands to this multi-line
+// block. Identical line-for-line to the pre-B.4 `appendShortGapPhraseMenu`
+// closure that used to live inside `buildTemporalJourneyContextSection`.
+function expandShortGapPhraseMenu(
+  lang: string,
+  wakeBriefOverrideActive?: boolean,
+): string {
+  if (wakeBriefOverrideActive) {
+    return '  • SHORT-GAP PHRASE LIST SUPPRESSED — a VERTEX WAKE BRIEF override is active later in this prompt. Speak the override line verbatim instead of any phrase here.';
+  }
+  const examples = pickShortGapGreetings(lang, 6);
+  const out: string[] = [
+    '  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):',
+  ];
+  for (const p of examples) {
+    out.push(`      "${p}"`);
+  }
+  out.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
+  return out.join('\n');
+}
 
 // Exported for characterization testing (A0.2, orb-live-refactor).
 // No behavior change — same function, externally addressable so the refactor
@@ -67,28 +184,55 @@ export function describeTimeSince(lastSessionInfo: { time: string; wasFailure: b
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
+  // VTID-03118 (Phase B.4): thresholds resolved through PolicyResolver.
+  // Defaults match the pre-B.4 literal values (live-system-instruction.ts
+  // lines 72-91 before this PR) so behavior is byte-identical when the
+  // seeds from Phase B.2 are present; defaults take over if the cache is
+  // cold (e.g. early boot, Supabase outage).
+  const resolver = getPolicyResolver();
+  const reconnectMaxSec = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_RECONNECT_MAX_SECONDS,
+    { defaultValue: 120 },
+  );
+  const recentMaxMin = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_RECENT_MAX_MINUTES,
+    { defaultValue: 15 },
+  );
+  const sameDayMaxHour = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_SAME_DAY_MAX_HOURS,
+    { defaultValue: 8 },
+  );
+  const todayMaxHour = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_TODAY_MAX_HOURS,
+    { defaultValue: 24 },
+  );
+  const weekMaxDay = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_WEEK_MAX_DAYS,
+    { defaultValue: 7 },
+  );
+
   let bucket: TemporalBucket;
   let timeAgo: string;
-  if (diffSec < 120) {
+  if (diffSec < reconnectMaxSec) {
     bucket = 'reconnect';
     timeAgo = diffSec < 30 ? 'a few seconds ago' : `about ${diffSec} seconds ago`;
-  } else if (diffMin < 15) {
+  } else if (diffMin < recentMaxMin) {
     bucket = 'recent';
     timeAgo = `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
-  } else if (diffHour < 8) {
+  } else if (diffHour < sameDayMaxHour) {
     bucket = 'same_day';
     if (diffMin < 60) {
       timeAgo = `${diffMin} minutes ago`;
     } else {
       timeAgo = `about ${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
     }
-  } else if (diffHour < 24) {
+  } else if (diffHour < todayMaxHour) {
     bucket = 'today';
     timeAgo = `earlier today (about ${diffHour} hours ago)`;
   } else if (diffDay === 1) {
     bucket = 'yesterday';
     timeAgo = 'yesterday';
-  } else if (diffDay < 7) {
+  } else if (diffDay < weekMaxDay) {
     bucket = 'week';
     timeAgo = `${diffDay} days ago`;
   } else {
@@ -290,105 +434,35 @@ function buildTemporalJourneyContextSection(
   // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
   // subset of the language-specific phrase pool so Gemini rotates openers
   // instead of converging on the same translation every time.
-  const shortGapExamples = pickShortGapGreetings(lang, 6);
-  const appendShortGapPhraseMenu = () => {
-    if (wakeBriefOverrideActive) {
-      lines.push('  • SHORT-GAP PHRASE LIST SUPPRESSED — a VERTEX WAKE BRIEF override is active later in this prompt. Speak the override line verbatim instead of any phrase here.');
-      return;
-    }
-    lines.push('  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):');
-    for (const p of shortGapExamples) {
-      lines.push(`      "${p}"`);
-    }
-    lines.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
-  };
-  switch (bucket) {
-    case 'reconnect':
-      // VTID-02637: This is a transparent server-side reconnect (Vertex 5-min
-      // session limit, network blip, or stall recovery). The user did NOT
-      // perceive any pause — they may still be mid-thought or already speaking.
-      // Speaking ANY proactive phrase here ("Picking up where we left off?",
-      // "I'm listening", "Where were we?") creates the apology-loop bug: every
-      // reconnect prompts a new spoken interjection that the user reads as
-      // "Vitana keeps apologizing for connection issues". Stay silent. Wait.
-      lines.push('- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).');
-      lines.push('  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I\'m back", "I\'m listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.');
-      lines.push('  • Wait for the user to speak. Your next message must be a direct response to the user\'s next utterance — nothing else.');
-      lines.push('  • If the user says nothing, you say nothing. Silence is correct here.');
-      break;
-    case 'recent':
-      lines.push('- BUCKET = recent (2–15 min since last session).');
-      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm but direct.');
-      break;
-    case 'same_day':
-      lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
-      lines.push('  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you\'ve never met.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm and direct.');
-      break;
-    case 'today':
-      lines.push('- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'yesterday':
-      lines.push('- BUCKET = yesterday (this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('      "Picking up where we left off?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'week':
-      lines.push('- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "Good to hear from you again — what\'s been on your mind?"');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'long':
-      lines.push('- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "It\'s been a few days — happy you\'re back. What\'s been on your mind?"');
-      lines.push('      "What would you like to focus on today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'first':
-    default:
-      // VTID-NAV-TIMEJOURNEY: 'first' here is the "no telemetry found"
-      // fallback, NOT a genuine first meeting. For authenticated users
-      // (everyone who reaches this code path) we treat it as a returning
-      // user with unknown recency — treat as new-day greeting.
-      // VTID-01927/VTID-01929: when the brain context shows tenure.stage='day0',
-      // the user IS truly new and gets the FULL INTRODUCTION shape (handled
-      // by the OPENING SHAPE MATRIX in the brain block, not this fallback).
-      lines.push('- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • EXCEPTION: when the brain context\'s USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context\'s OPENING SHAPE MATRIX — that overrides this fallback.');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
+  // VTID-03118 (Phase B.4): the bucket-to-prompt mapping (8 templates × 8
+  // languages) is the policy_render_block table seeded in Phase B.2. The
+  // resolver returns each bucket's full multi-line template; the consumer
+  // here substitutes the two dynamic tokens that survive into seed text:
+  //
+  //   {{greeting_time_of_day}}  -> the local `greetingTimeOfDay` value
+  //                                (morning | afternoon | evening | day).
+  //   {{short_gap_phrase_menu}} -> the locale-specific menu produced by
+  //                                `expandShortGapPhraseMenu()` below
+  //                                (1 line under wake-brief override,
+  //                                multiple lines otherwise).
+  //
+  // BUCKET_DEFAULT_TEMPLATES below is byte-identical to the seed content
+  // — it exists ONLY as a safety net for the "resolver cold + cache miss"
+  // case. In production, the resolver returns the DB row.
+  const shortGapPhraseMenu = expandShortGapPhraseMenu(
+    lang,
+    wakeBriefOverrideActive,
+  );
+  const template = getPolicyResolver().getRenderBlock(
+    BUCKET_TO_BLOCK_KEY[bucket],
+    lang,
+    { defaultValue: BUCKET_DEFAULT_TEMPLATES[bucket] },
+  );
+  const rendered = template
+    .replace(/\{\{greeting_time_of_day\}\}/g, greetingTimeOfDay)
+    .replace(/\{\{short_gap_phrase_menu\}\}/g, shortGapPhraseMenu);
+  for (const line of rendered.split('\n')) {
+    lines.push(line);
   }
 
   // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
