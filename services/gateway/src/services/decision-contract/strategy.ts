@@ -50,6 +50,39 @@ export type RankProvenanceComponent =
       readonly before: number;
       readonly after: number;
       readonly reason: string;
+    }
+  // Phase C.3.b (VTID-03141): four new flat kinds covering the feedback
+  // paths previously fused into a single `feedback_mult` multiplier.
+  // Composite_decomposition is explicitly NOT used — each path that fires
+  // emits its own top-level component. `feedback_reinforcement` carries a
+  // `path` field that distinguishes the two positive-reinforcement
+  // sub-paths (community-momentum + start_streak) which share the
+  // `completions_7d ≥ 3` trigger.
+  | {
+      readonly kind: 'feedback_completion';
+      readonly weight_key: string;
+      readonly weight_value: number;
+      readonly contribution_multiplier: number;
+    }
+  | {
+      readonly kind: 'feedback_plan';
+      readonly weight_key: string;
+      readonly weight_value: number;
+      readonly contribution_multiplier: number;
+    }
+  | {
+      readonly kind: 'feedback_reinforcement';
+      readonly path: 'community' | 'streak';
+      readonly weight_key: string;
+      readonly weight_value: number;
+      readonly contribution_multiplier: number;
+    }
+  | {
+      readonly kind: 'feedback_rejection';
+      readonly weight_key: string;
+      readonly weight_value: number;
+      readonly rejection_rate: number;
+      readonly contribution_multiplier: number;
     };
 
 export interface RankProvenance {

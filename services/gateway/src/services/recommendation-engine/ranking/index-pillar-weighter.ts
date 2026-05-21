@@ -57,6 +57,21 @@ export interface RankInputRec {
   economic_axis?: EconomicAxis | string | null;
 }
 
+// Phase C.3.b (VTID-03141): structured per-path breakdown of the
+// `feedback_mult` composite. Each field is the multiplicative factor
+// the path contributed (e.g. 0.3 for a fired completion dampener, 1.2
+// for a fired community-momentum boost). A field is `undefined` when
+// the path did not fire. Used by PillarWeighterStrategy to emit one
+// `feedback_*` provenance component per fired path instead of a single
+// fused `feedback_mult` multiplier.
+export interface FeedbackBreakdown {
+  completion?: number;
+  plan?: number;
+  community?: number;
+  streak?: number;
+  rejection?: number;
+}
+
 export interface RankedRec<T extends RankInputRec = RankInputRec> {
   rec: T;
   rank_score: number;
@@ -64,6 +79,7 @@ export interface RankedRec<T extends RankInputRec = RankInputRec> {
   compass_boost: number;
   economic_boost: number;
   journey_mode: number;
+  feedback_breakdown: FeedbackBreakdown;
   explanation: string;
 }
 
@@ -411,22 +427,29 @@ export function scoreRec<T extends RankInputRec>(
   const primary = primaryPillar(rec);
   let feedback_mult = 1.0;
   let feedback_reason = '';
+  // VTID-03141 (C.3.b): per-path breakdown to feed provenance components.
+  // Only populated for paths that actually fire on this row.
+  const feedback_breakdown: FeedbackBreakdown = {};
   if (primary && ctx.recent_activity[primary]) {
     const act = ctx.recent_activity[primary]!;
     if (act.completions_24h > 0) {
       feedback_mult *= cfg.completion_dampener;
+      feedback_breakdown.completion = cfg.completion_dampener;
       feedback_reason += ' completion_dampened';
     } else if (act.plan_events_24h > 0) {
       feedback_mult *= cfg.plan_dampener;
+      feedback_breakdown.plan = cfg.plan_dampener;
       feedback_reason += ' voice_plan_dampened';
     }
     if (act.completions_7d >= 3 && primary === 'mental') {
       feedback_mult *= cfg.community_momentum_boost;
+      feedback_breakdown.community = cfg.community_momentum_boost;
       feedback_reason += ' community_momentum';
     }
     // Streak reinforcement — rec that encourages continuing the streak
     if (act.completions_7d >= 3 && rec.source_ref === 'start_streak') {
       feedback_mult *= cfg.streak_reinforcement;
+      feedback_breakdown.streak = cfg.streak_reinforcement;
       feedback_reason += ' streak_reinforcement';
     }
   }
@@ -434,7 +457,12 @@ export function scoreRec<T extends RankInputRec>(
   if (rec.domain) {
     const rate = ctx.rejection_rate_by_domain[rec.domain] ?? 0;
     if (rate > 0) {
-      feedback_mult *= Math.max(0.2, 1 - cfg.rejection_dampener_alpha * rate);
+      const rejectionFactor = Math.max(
+        0.2,
+        1 - cfg.rejection_dampener_alpha * rate,
+      );
+      feedback_mult *= rejectionFactor;
+      feedback_breakdown.rejection = rejectionFactor;
       feedback_reason += ` rej_rate_${rate.toFixed(2)}`;
     }
   }
@@ -449,6 +477,7 @@ export function scoreRec<T extends RankInputRec>(
     compass_boost,
     economic_boost,
     journey_mode,
+    feedback_breakdown,
     explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} × econ=${economic_boost.toFixed(2)} × fb=${feedback_mult.toFixed(2)}${feedback_reason} = ${rank_score.toFixed(2)}`,
   };
 }

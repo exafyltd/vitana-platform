@@ -25,6 +25,7 @@ import {
   scoreRec,
   rankBatch,
   DEFAULT_RANKER_CONFIG,
+  type FeedbackBreakdown,
   type RankerConfig,
   type RankerContext,
   type RankInputRec,
@@ -38,7 +39,76 @@ import type {
 } from '../strategy';
 
 export const PILLAR_WEIGHTER_STRATEGY_ID = 'pillar_weighter_v1';
-export const PILLAR_WEIGHTER_STRATEGY_VERSION = 1;
+// Phase C.3.b (VTID-03141): bumped from 1 → 2. feedback_mult composite
+// component is replaced by per-path `feedback_completion` /
+// `feedback_plan` / `feedback_reinforcement` / `feedback_rejection`
+// components. Historical v1 traces remain valid and interpretable.
+export const PILLAR_WEIGHTER_STRATEGY_VERSION = 2;
+
+/**
+ * Build the per-feedback-path provenance components for one ranked rec.
+ * Each path that fired in `scoreRec` (encoded in `r.feedback_breakdown`)
+ * becomes one top-level component using one of the 4 new union arms.
+ * Paths that did not fire emit nothing.
+ *
+ * VTID-03141 (C.3.b): replaces the single fused `feedback_mult`
+ * multiplier the v1 strategy emitted.
+ */
+function buildFeedbackComponents<T extends RankInputRec>(
+  rec: T,
+  ctx: RankerContext,
+  cfg: RankerConfig,
+  bd: FeedbackBreakdown,
+): RankProvenanceComponent[] {
+  const out: RankProvenanceComponent[] = [];
+  if (bd.completion !== undefined) {
+    out.push({
+      kind: 'feedback_completion',
+      weight_key: POLICY_KEYS.RANKER_PILLAR_COMPLETION_DAMPENER,
+      weight_value: cfg.completion_dampener,
+      contribution_multiplier: bd.completion,
+    });
+  }
+  if (bd.plan !== undefined) {
+    out.push({
+      kind: 'feedback_plan',
+      weight_key: POLICY_KEYS.RANKER_PILLAR_PLAN_DAMPENER,
+      weight_value: cfg.plan_dampener,
+      contribution_multiplier: bd.plan,
+    });
+  }
+  if (bd.community !== undefined) {
+    out.push({
+      kind: 'feedback_reinforcement',
+      path: 'community',
+      weight_key: POLICY_KEYS.RANKER_PILLAR_COMMUNITY_MOMENTUM_BOOST,
+      weight_value: cfg.community_momentum_boost,
+      contribution_multiplier: bd.community,
+    });
+  }
+  if (bd.streak !== undefined) {
+    out.push({
+      kind: 'feedback_reinforcement',
+      path: 'streak',
+      weight_key: POLICY_KEYS.RANKER_PILLAR_STREAK_REINFORCEMENT,
+      weight_value: cfg.streak_reinforcement,
+      contribution_multiplier: bd.streak,
+    });
+  }
+  if (bd.rejection !== undefined) {
+    const rate = rec.domain
+      ? ctx.rejection_rate_by_domain[rec.domain] ?? 0
+      : 0;
+    out.push({
+      kind: 'feedback_rejection',
+      weight_key: POLICY_KEYS.RANKER_PILLAR_REJECTION_DAMPENER_ALPHA,
+      weight_value: cfg.rejection_dampener_alpha,
+      rejection_rate: rate,
+      contribution_multiplier: bd.rejection,
+    });
+  }
+  return out;
+}
 
 /**
  * Build a `RankerConfig` populated from PolicyResolver, with the
@@ -110,16 +180,6 @@ export function scoreRecWithProvenance<T extends RankInputRec>(
   const journeyComplement = 1 - ranked.journey_mode;
   const pillarAdditive = cfg.alpha_pillar * ranked.pillar_boost * journeyComplement;
 
-  // feedback_mult — recovered as a single multiplier from the
-  // post-formula identity rank_score = base × (1 + α·pb·(1−jm))
-  //                                       × compass × econ × feedback_mult
-  const denom =
-    base *
-    (1 + pillarAdditive) *
-    ranked.compass_boost *
-    ranked.economic_boost;
-  const feedback_mult = denom > 0 ? ranked.rank_score / denom : 1;
-
   const components: RankProvenanceComponent[] = [
     { kind: 'base', value: base },
     {
@@ -149,16 +209,11 @@ export function scoreRecWithProvenance<T extends RankInputRec>(
       applied: ranked.economic_boost > 1,
       contribution_multiplier: ranked.economic_boost,
     },
-    {
-      kind: 'multiplier',
-      name: 'feedback_mult',
-      // Composite of completion / plan / community / streak dampeners + rejection
-      // suppression. C.3.b will break this into per-path components.
-      weight_key: 'ranker.pillar_weighter.feedback_composite',
-      weight_value: feedback_mult,
-      applied: feedback_mult !== 1,
-      contribution_multiplier: feedback_mult,
-    },
+    // Phase C.3.b (VTID-03141): per-path feedback components. Each path
+    // that fired in scoreRec emits one component using the 4 new union
+    // arms (feedback_completion / feedback_plan / feedback_reinforcement
+    // / feedback_rejection). Paths that did not fire emit nothing.
+    ...buildFeedbackComponents(rec, ctx, cfg, ranked.feedback_breakdown),
   ];
 
   const provenance: RankProvenance = {
@@ -192,8 +247,6 @@ export function rankBatchWithProvenance<T extends RankInputRec>(
     const base = Number(r.rec.impact_score ?? 5);
     const journeyComplement = 1 - r.journey_mode;
     const pillarAdditive = cfg.alpha_pillar * r.pillar_boost * journeyComplement;
-    const denom = base * (1 + pillarAdditive) * r.compass_boost * r.economic_boost;
-    const feedback_mult = denom > 0 ? r.rank_score / denom : 1;
     const components: RankProvenanceComponent[] = [
       { kind: 'base', value: base },
       {
@@ -220,14 +273,8 @@ export function rankBatchWithProvenance<T extends RankInputRec>(
         applied: r.economic_boost > 1,
         contribution_multiplier: r.economic_boost,
       },
-      {
-        kind: 'multiplier',
-        name: 'feedback_mult',
-        weight_key: 'ranker.pillar_weighter.feedback_composite',
-        weight_value: feedback_mult,
-        applied: feedback_mult !== 1,
-        contribution_multiplier: feedback_mult,
-      },
+      // Phase C.3.b (VTID-03141): per-path feedback components.
+      ...buildFeedbackComponents(r.rec, ctx, cfg, r.feedback_breakdown),
     ];
     const provenance: RankProvenance = {
       strategy_id: PILLAR_WEIGHTER_STRATEGY_ID,

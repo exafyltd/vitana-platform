@@ -236,14 +236,19 @@ describe('VTID-03132 Phase C.3 PillarWeighterStrategy', () => {
     it('emits strategy_id and version', () => {
       const out = scoreRecWithProvenance(makeRec(), makeCtx());
       expect(out.provenance.strategy_id).toBe(PILLAR_WEIGHTER_STRATEGY_ID);
+      // VTID-03141 (C.3.b) bumped version from 1 → 2.
       expect(out.provenance.strategy_version).toBe(PILLAR_WEIGHTER_STRATEGY_VERSION);
+      expect(PILLAR_WEIGHTER_STRATEGY_VERSION).toBe(2);
       expect(out.provenance.strategy_id).toBe('pillar_weighter_v1');
     });
 
-    it('emits the 5 canonical components: base + 1 additive + 3 multipliers', () => {
+    it('with no feedback path firing, emits 4 components: base + 1 additive + 2 multipliers', () => {
+      // VTID-03141 (C.3.b): the single fused `feedback_mult` multiplier
+      // is gone. When no feedback path fires for a row, the provenance
+      // trail does not carry a feedback component at all.
       const out = scoreRecWithProvenance(makeRec(), makeCtx());
       const kinds = out.provenance.components.map((c) => c.kind);
-      expect(kinds).toEqual(['base', 'additive', 'multiplier', 'multiplier', 'multiplier']);
+      expect(kinds).toEqual(['base', 'additive', 'multiplier', 'multiplier']);
       const names = out.provenance.components.map((c) =>
         c.kind === 'base' ? 'base' : (c as { name: string }).name,
       );
@@ -252,7 +257,6 @@ describe('VTID-03132 Phase C.3 PillarWeighterStrategy', () => {
         'pillar_boost',
         'compass_boost',
         'economic_boost',
-        'feedback_mult',
       ]);
     });
 
