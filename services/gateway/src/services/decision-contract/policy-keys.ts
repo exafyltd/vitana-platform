@@ -141,6 +141,31 @@ export const POLICY_KEYS = {
     'situational.session_length.long_threshold_minutes',
   SITUATIONAL_OVERRIDE_EXPIRY_MINUTES:
     'situational.override.expiry_minutes',
+
+  // ---- Phase C.5 (VTID-03137) — feed-ranker weights ------------
+  // The 12 weight/threshold literals in
+  // `services/gateway/src/services/feed-ranker.ts`. Accessor
+  // `getFeedRankerConfig()` reads via PolicyResolver with the literals
+  // as cache-cold defaults so behaviour is byte-identical at rollout.
+  RANKER_FEED_PW_ONBOARDING:
+    'ranker.feed.personalization_weight.onboarding',
+  RANKER_FEED_PW_EARLY:
+    'ranker.feed.personalization_weight.early',
+  RANKER_FEED_PW_ESTABLISHED:
+    'ranker.feed.personalization_weight.established',
+  RANKER_FEED_PW_MATURE:
+    'ranker.feed.personalization_weight.mature',
+  RANKER_FEED_PW_DEFAULT:
+    'ranker.feed.personalization_weight.default',
+  RANKER_FEED_FEATURED_BOOST: 'ranker.feed.featured_boost',
+  RANKER_FEED_RATING_SCORE_MAX: 'ranker.feed.rating_score_max',
+  RANKER_FEED_CATEGORY_MIX_WEIGHT: 'ranker.feed.category_mix_weight',
+  RANKER_FEED_TOPIC_AFFINITY_CAP: 'ranker.feed.topic_affinity_cap',
+  RANKER_FEED_CONDITION_MATCH_BOOST: 'ranker.feed.condition_match_boost',
+  RANKER_FEED_SAME_REGION_BONUS: 'ranker.feed.same_region_bonus',
+  RANKER_FEED_HIGH_RATING_THRESHOLD: 'ranker.feed.high_rating_threshold',
+  RANKER_FEED_HIGH_RATING_BONUS: 'ranker.feed.high_rating_bonus',
+  RANKER_FEED_BUDGET_FIT_BONUS: 'ranker.feed.budget_fit_bonus',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];
