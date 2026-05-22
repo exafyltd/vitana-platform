@@ -269,19 +269,22 @@ export async function sendAppilixPush(
   if (!appKey || !apiKey) return false;
 
   try {
-    const params = new URLSearchParams({
-      app_key: appKey,
-      api_key: apiKey,
-      notification_title: payload.title,
-      notification_body: payload.body,
-      user_identity: userId,
-    });
+    // IMPORTANT: Appilix API does NOT decode URL-encoded values.
+    // We must NOT use URLSearchParams (which auto-encodes) — instead
+    // build the body string manually so open_link_url is passed raw.
+    const bodyParts = [
+      `app_key=${appKey}`,
+      `api_key=${apiKey}`,
+      `notification_title=${payload.title}`,
+      `notification_body=${payload.body}`,
+      `user_identity=${userId}`,
+    ];
     const url = payload.data?.url;
     let resolvedOpenLink: string | undefined;
     if (url) {
       const baseUrl = process.env.APPILIX_APP_URL || 'https://vitanaland.com';
       resolvedOpenLink = url.startsWith('http') ? url : `${baseUrl}${url}`;
-      params.set('open_link_url', resolvedOpenLink);
+      bodyParts.push(`open_link_url=${resolvedOpenLink}`);
     }
 
     // BOOTSTRAP-NOTIF-MESSENGER-DIAG: log the exact open_link_url so we can
@@ -296,7 +299,7 @@ export async function sendAppilixPush(
     const res = await fetch('https://appilix.com/api/push-notification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+      body: bodyParts.join('&'),
     });
 
     const text = await res.text().catch(() => '');
