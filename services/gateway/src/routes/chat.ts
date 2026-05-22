@@ -36,16 +36,37 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
-  const { receiver_id, content } = req.body;
+  const { receiver_id, content, message_type, content_data } = req.body as {
+    receiver_id?: unknown;
+    content?: unknown;
+    message_type?: unknown;
+    content_data?: unknown;
+  };
 
   if (!receiver_id || typeof receiver_id !== 'string') {
     return res.status(400).json({ ok: false, error: 'receiver_id is required' });
   }
-  if (!content || typeof content !== 'string' || content.trim().length === 0) {
-    return res.status(400).json({ ok: false, error: 'content is required' });
-  }
   if (receiver_id === identity.user_id) {
     return res.status(400).json({ ok: false, error: 'cannot message yourself' });
+  }
+
+  const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript']);
+  if (!allowedTypes.has(msgType)) {
+    return res.status(400).json({ ok: false, error: 'invalid_message_type' });
+  }
+
+  const rawContent = typeof content === 'string' ? content : '';
+  const trimmedContent = rawContent.trim();
+  const metadata = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
+
+  if (msgType === 'text') {
+    if (trimmedContent.length === 0) {
+      return res.status(400).json({ ok: false, error: 'content is required' });
+    }
+  } else if (trimmedContent.length === 0 && attachments.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
   }
 
   const supabase = getSupabase();
@@ -66,7 +87,9 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       tenant_id: identity.tenant_id,
       sender_id: identity.user_id,
       receiver_id,
-      content: content.trim(),
+      content: trimmedContent,
+      message_type: msgType,
+      metadata,
       ...(sender_vitana_id && { sender_vitana_id }),
       ...(receiver_vitana_id && { receiver_vitana_id }),
     })
@@ -80,14 +103,16 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
 
   // VTID-CHAT-BRIDGE: If receiver is Vitana, generate a reply via the unified
   // conversation intelligence layer and write it back to chat_messages.
-  if (isVitanaBot(receiver_id)) {
+  // Skip the bot reply when the message is just an attachment with no text —
+  // there's no prompt to reply to.
+  if (isVitanaBot(receiver_id) && trimmedContent.length > 0) {
     handleVitanaTextReply(
       identity.user_id,
       identity.tenant_id!,
-      content.trim(),
+      trimmedContent,
       supabase,
     ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
-  } else {
+  } else if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
     // push notification looks like a classic chat notification ("John Doe" as
     // the title, message body as the preview) rather than a generic "New message".
@@ -115,13 +140,27 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     // context on mount so the thread auto-opens regardless of the recipient's
     // current context preference (otherwise a `tenant`-context user lands on
     // /inbox without the thread being selected).
+    // Notification body: prefer text; for attachment-only messages show
+    // "📎 <filename>" so the push isn't an empty bubble.
+    const firstAttachmentName: string | null = attachments.length > 0
+      ? (attachments[0] as any)?.filename || (attachments[0] as any)?.name || null
+      : null;
+    let notifBody = trimmedContent;
+    if (notifBody.length === 0) {
+      if (msgType === 'attachment') {
+        notifBody = firstAttachmentName ? `📎 ${firstAttachmentName}` : '📎 Attachment';
+      } else if (msgType === 'voice' || msgType === 'voice_transcript') {
+        notifBody = '🎤 Voice message';
+      }
+    }
+
     notifyUserAsync(
       receiver_id,
       identity.tenant_id!,
       'new_chat_message',
       {
         title: senderName,
-        body: content.trim().length > 100 ? content.trim().slice(0, 97) + '...' : content.trim(),
+        body: notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody,
         data: {
           type: 'new_chat_message',
           sender_id: identity.user_id,
