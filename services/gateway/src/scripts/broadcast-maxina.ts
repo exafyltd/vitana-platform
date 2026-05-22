@@ -38,6 +38,7 @@ interface Args {
   roles: string[];
   dryRun: boolean;
   noPush: boolean;
+  onlyUser?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -47,11 +48,13 @@ function parseArgs(argv: string[]): Args {
     if (a === '--message' || a === '--message-file') out.messageFile = argv[++i];
     else if (a === '--campaign') out.campaign = argv[++i];
     else if (a === '--roles') out.roles = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
+    else if (a === '--only-user') out.onlyUser = argv[++i];
     else if (a === '--dry-run') out.dryRun = true;
     else if (a === '--no-push') out.noPush = true;
     else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: broadcast-maxina.ts --message <file> --campaign <id> [--roles community,member] [--dry-run] [--no-push]',
+        'Usage: broadcast-maxina.ts --message <file> --campaign <id> ' +
+          '[--roles community,member] [--only-user <user_id>] [--dry-run] [--no-push]',
       );
       process.exit(0);
     } else {
@@ -169,8 +172,14 @@ async function main(): Promise<void> {
   const tenantId = await resolveTenantId();
   console.log(`${TAG} MAXINA tenant_id = ${tenantId}`);
 
-  const memberIds = await fetchMemberIds(tenantId, args.roles);
-  console.log(`${TAG} Total eligible members: ${memberIds.length}`);
+  let memberIds: string[];
+  if (args.onlyUser) {
+    memberIds = [args.onlyUser];
+    console.log(`${TAG} --only-user set, targeting single user: ${args.onlyUser}`);
+  } else {
+    memberIds = await fetchMemberIds(tenantId, args.roles);
+    console.log(`${TAG} Total eligible members: ${memberIds.length}`);
+  }
 
   const alreadySent = await fetchAlreadySentReceivers(args.campaign);
   if (alreadySent.size > 0) {
