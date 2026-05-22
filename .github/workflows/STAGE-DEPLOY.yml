@@ -177,20 +177,29 @@ jobs:
           echo "::error::Staging smoke failed — /api/v1/admin/health did not return env=staging after 6 attempts"
           exit 1
 
-      - name: Backfill software_versions + emit OASIS event
+      - name: Backfill software_versions + emit OASIS event (best-effort)
         env:
           SHA: ${{ steps.commit.outputs.sha }}
           SHORT: ${{ steps.commit.outputs.short }}
           SUBJECT: ${{ steps.commit.outputs.subject }}
           REVISION: ${{ steps.deploy.outputs.revision }}
         run: |
-          set -e
-          # Pull prod Supabase URL + service role from GCP Secret Manager — we
-          # write the event AND the software_versions row to the prod oasis_events
-          # / software_versions tables, tagged metadata.env=staging. Single source
-          # of truth for both stacks' history (matches the brief's CLOCK design).
-          SUPABASE_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}")
-          SUPABASE_SVC=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}")
+          # Best-effort post-deploy tracking. The actual deploy + smoke already
+          # passed before this step; missing IAM here must NOT fail the workflow.
+          # The WIF service account may not have roles/secretmanager.secretAccessor
+          # on the SUPABASE_* secrets; in that case we skip the write and rely on
+          # /api/v1/admin/health serving as the source of truth for the new revision.
+          # Also: the `cloud_run_revision` column on prod's software_versions is
+          # only present once the supabase staging branch is merged to main (the
+          # P0.4 migration is staging-only until that merge). We omit the column
+          # from the INSERT for now and put the revision name in oasis_events.metadata.
+          set +e
+          SUPABASE_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null)
+          SUPABASE_SVC=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null)
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::warning::WIF SA lacks secretmanager.versions.access for SUPABASE_URL/SUPABASE_SERVICE_ROLE — skipping post-deploy backfill. Deploy itself succeeded; see Cloud Run for the live revision."
+            exit 0
+          fi
 
           NEXT_SWV=$(curl -fsS \
             "$SUPABASE_URL/rest/v1/software_versions?select=swv_id&order=created_at.desc&limit=1" \
@@ -209,8 +218,8 @@ jobs:
             -d "$(jq -nc \
               --arg swv "$NEXT_SWV_ID" \
               --arg sha "$SHA" \
-              --arg rev "$REVISION" \
-              '{swv_id:$swv, service:"gateway-staging", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:"success", environment:"staging", cloud_run_revision:$rev}')"
+              '{swv_id:$swv, service:"gateway-staging", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:"success", environment:"staging"}')" || \
+            echo "::warning::software_versions INSERT failed (likely IAM or schema); continuing."
 
           EVENT_BODY=$(jq -nc \
             --arg sha "$SHA" \
