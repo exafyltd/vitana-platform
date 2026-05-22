@@ -42,6 +42,10 @@ import {
 import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
 import { getCurrentFacts } from './memory-facts-service';
 import { generateEmbedding } from './embedding-service';
+// VTID-03145 (PR 2): DIARY + NETWORK blocks now route through the
+// memory-broker boundary instead of raw Supabase fetches. See
+// fetchDiaryHits / fetchRelationshipContext below.
+import { getMemoryContext, type DiaryBlock, type NetworkBlock } from './memory-broker';
 import { ContextLens } from '../types/context-lens';
 // VTID-01230: Session buffer for Tier 0 short-term memory
 import { formatSessionBufferForLLM, getSessionContext } from './session-memory-buffer';
@@ -580,9 +584,11 @@ async function fetchMemoryFacts(
 }
 
 /**
- * VTID-01224-FIX: Fetch diary entries from memory_diary_entries and diary_entries tables.
- * Diary data lives in separate tables (not memory_items), so without this function
- * the search_memory tool cannot find diary content during live ORB sessions.
+ * VTID-01224-FIX: Fetch diary entries to surface in the LLM context pack.
+ *
+ * VTID-03145 (PR 2): now routed through the memory-broker boundary.
+ * The broker owns the canonical DIARY stream (`memory_diary_entries`).
+ *
  * Results are returned as MemoryHit[] to merge with other memory hits.
  */
 async function fetchDiaryHits(
@@ -593,105 +599,54 @@ async function fetchDiaryHits(
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    const headers = {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-    };
+    // VTID-03145 (PR 2): DIARY now routed through the memory-broker
+    // boundary. The broker reads `memory_diary_entries` via the
+    // approved `getSupabase()` helper. The legacy `diary_entries`
+    // table read is dropped here — context-pack alignment with the
+    // broker's canonical-table decision (audit 2026-05-22, CPB-4).
+    // Voice-saved diary entries written via tool_save_diary_entry
+    // into `diary_entries` remain readable through orb-memory-bridge;
+    // they no longer surface in the LLM context pack until the write
+    // path is migrated to `memory_diary_entries`.
+    const pack = await getMemoryContext({
+      tenant_id: lens.tenant_id,
+      user_id: lens.user_id,
+      intent: 'recall_history',
+      required_blocks: ['DIARY'],
+      query: query || undefined,
+    });
 
-    // Fetch from both diary tables in parallel with timeout
-    const timeout = fetchWithTimeout();
-    try {
-      const diaryUrl = `${SUPABASE_URL}/rest/v1/memory_diary_entries?select=id,raw_text,tags,entry_date,created_at,entry_type&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
-      const lovableUrl = `${SUPABASE_URL}/rest/v1/diary_entries?select=id,text,source,tags,created_at&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
-
-      const [diaryResp, lovableResp] = await Promise.all([
-        fetch(diaryUrl, { method: 'GET', headers, signal: timeout.signal }),
-        fetch(lovableUrl, { method: 'GET', headers, signal: timeout.signal }).catch(() => null),
-      ]);
-
-      const hits: MemoryHit[] = [];
-
-      // Process memory_diary_entries
-      if (diaryResp.ok) {
-        const diaryData = await diaryResp.json() as Array<{
-          id: string;
-          raw_text: string;
-          tags: string[];
-          entry_date: string;
-          created_at: string;
-          entry_type: string;
-        }>;
-
-        for (const d of diaryData) {
-          const content = d.raw_text || '';
-          hits.push({
-            id: d.id,
-            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
-            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-            importance: 60,
-            occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
-            source: 'diary',
-            relevance_score: computeRelevanceScore(
-              { importance: 60, occurred_at: d.entry_date || d.created_at, content },
-              query, hits.length
-            ),
-          });
-        }
-      }
-
-      // Process diary_entries (Lovable) — table may not exist
-      if (lovableResp && lovableResp.ok) {
-        const lovableData = await lovableResp.json() as Array<{
-          id: string;
-          text: string;
-          source: string;
-          tags: string[];
-          created_at: string;
-        }>;
-
-        // Deduplicate by ID (in case same entry exists in both tables)
-        const seenIds = new Set(hits.map(h => h.id));
-        for (const d of lovableData) {
-          if (seenIds.has(d.id)) continue;
-          const content = d.text || '';
-          hits.push({
-            id: d.id,
-            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
-            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-            importance: 60,
-            occurred_at: d.created_at,
-            source: d.source || 'diary',
-            relevance_score: computeRelevanceScore(
-              { importance: 60, occurred_at: d.created_at, content },
-              query, hits.length
-            ),
-          });
-        }
-      }
-
-      // Sort by relevance and cap
-      hits.sort((a, b) => b.relevance_score - a.relevance_score);
-      console.log(`[VTID-01224-FIX] fetchDiaryHits: ${hits.length} diary entries found`);
-
+    const diaryBlock = pack.blocks.DIARY as DiaryBlock | undefined;
+    const entries = diaryBlock?.entries ?? [];
+    const hits: MemoryHit[] = entries.map((e, idx) => {
+      const content = e.content ?? '';
       return {
-        hits: hits.slice(0, limit),
-        latency_ms: Date.now() - startTime,
+        id: e.id,
+        category_key: e.category_key || 'diary',
+        content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        importance: 60,
+        occurred_at: e.occurred_at,
+        source: 'diary',
+        relevance_score: computeRelevanceScore(
+          { importance: 60, occurred_at: e.occurred_at, content },
+          query,
+          idx,
+        ),
       };
-    } finally {
-      timeout.clear();
-    }
+    });
+
+    // Sort by relevance and cap (same as legacy behaviour).
+    hits.sort((a, b) => b.relevance_score - a.relevance_score);
+    console.log(`[VTID-01224-FIX] fetchDiaryHits: ${hits.length} diary entries found`);
+
+    return {
+      hits: hits.slice(0, limit),
+      latency_ms: Date.now() - startTime,
+    };
   } catch (error: any) {
     console.error(`[VTID-01224-FIX] diary retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -699,8 +654,17 @@ async function fetchDiaryHits(
 }
 
 /**
- * Fetch relationship graph context from relationship_nodes and relationship_edges tables
- * (written by cognee extraction pipeline). Returns human-readable relationship strings.
+ * Fetch relationship graph context. Returns human-readable strings
+ * describing the user's closest connections.
+ *
+ * VTID-03145 (PR 2): NETWORK now routed through the memory-broker
+ * boundary. The broker reads `mem_graph_edges` + `relationship_nodes`
+ * via the approved `getSupabase()` helper. The legacy
+ * `relationship_edges` direct read is dropped: `mem_graph_edges` is
+ * the canonical Phase 5/6 schema for relationship traversal (audit
+ * 2026-05-22, CPB-5). The output array shape (string[]) is unchanged;
+ * each string is now centred on the user-vs-other-side of an edge
+ * (the broker resolves the "other side" already).
  */
 async function fetchRelationshipContext(
   lens: ContextLens,
@@ -709,74 +673,26 @@ async function fetchRelationshipContext(
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return { context: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       return { context: [], latency_ms: Date.now() - startTime };
     }
 
-    const headers = {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-    };
+    const pack = await getMemoryContext({
+      tenant_id: lens.tenant_id,
+      user_id: lens.user_id,
+      intent: 'social_query',
+      required_blocks: ['NETWORK'],
+    });
 
-    // Fetch nodes and edges in parallel
-    const nodesUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?select=id,title,node_type,domain,metadata&tenant_id=eq.${lens.tenant_id}&order=created_at.desc&limit=${limit}`;
-    const edgesUrl = `${SUPABASE_URL}/rest/v1/relationship_edges?select=from_node_id,to_node_id,relationship_type,strength&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=strength.desc&limit=20`;
+    const networkBlock = pack.blocks.NETWORK as NetworkBlock | undefined;
+    const people = networkBlock?.people ?? [];
+    const context: string[] = people.slice(0, limit).map(p => {
+      const edge = p.edge_type || 'connected to';
+      const name = p.display_name || p.node_id;
+      return `User ${edge}: ${name} (${p.node_type})`;
+    });
 
-    // VTID-01224-FIX: Add timeout to relationship graph fetch
-    const relTimeout = fetchWithTimeout();
-    const [nodesResponse, edgesResponse] = await Promise.all([
-      fetch(nodesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
-      fetch(edgesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
-    ]);
-
-    if (!nodesResponse.ok || !edgesResponse.ok) {
-      console.warn(`[VTID-01216] relationship retrieval failed: nodes=${nodesResponse.status}, edges=${edgesResponse.status}`);
-      return { context: [], latency_ms: Date.now() - startTime };
-    }
-
-    const nodes = await nodesResponse.json() as Array<{
-      id: string;
-      title: string;
-      node_type: string;
-      domain: string;
-      metadata: Record<string, unknown>;
-    }>;
-
-    const edges = await edgesResponse.json() as Array<{
-      from_node_id: string;
-      to_node_id: string;
-      relationship_type: string;
-      strength: number;
-    }>;
-
-    // Build node lookup map
-    const nodeMap = new Map<string, { title: string; node_type: string }>();
-    for (const node of nodes) {
-      nodeMap.set(node.id, { title: node.title, node_type: node.node_type });
-    }
-
-    // Map edges to human-readable strings
-    const context: string[] = edges
-      .map((edge) => {
-        const fromNode = nodeMap.get(edge.from_node_id);
-        const toNode = nodeMap.get(edge.to_node_id);
-        if (!fromNode || !toNode) return null;
-
-        return `${fromNode.node_type}: ${fromNode.title} (${edge.relationship_type}) → connected to → ${toNode.title} (${toNode.node_type})`;
-      })
-      .filter((s): s is string => s !== null);
-
-    console.log(`[VTID-01216] relationship graph returned ${context.length} connections from ${nodes.length} nodes`);
-
-    relTimeout.clear();
+    console.log(`[VTID-01216] relationship graph returned ${context.length} connections (NETWORK block)`);
     return {
       context,
       latency_ms: Date.now() - startTime,
