@@ -30,9 +30,12 @@
  *   - Stable sorting for ties
  */
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-03144 — fusion-audit write lives behind the decision-contract
+// boundary. d42 no longer imports `@supabase/supabase-js` directly;
+// the writer owns the table, the payload, and the auth-mode gate.
+import { storeFusionAudit as storeFusionAuditImpl } from './decision-contract/fusion-audit-writer';
 import {
   PriorityDomain,
   PriorityTag,
@@ -80,63 +83,6 @@ const DEV_IDENTITY = {
  * map, so behaviour is unchanged on a fresh deploy before migration.
  */
 import { getConflictPairResolver } from './decision-contract/conflict-pair-resolver';
-
-// =============================================================================
-// Environment Detection
-// =============================================================================
-
-function isDevSandbox(): boolean {
-  const env = (process.env.ENVIRONMENT || process.env.VITANA_ENV || '').toLowerCase();
-  return env === 'dev-sandbox' ||
-         env === 'dev' ||
-         env === 'development' ||
-         env === 'sandbox' ||
-         env.includes('dev') ||
-         env.includes('sandbox');
-}
-
-// =============================================================================
-// Supabase Client
-// =============================================================================
-
-function createServiceClient(): SupabaseClient | null {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    console.warn(`${LOG_PREFIX} Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
-    return null;
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
-}
-
-function createUserClient(token: string): SupabaseClient | null {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn(`${LOG_PREFIX} Missing SUPABASE_URL or SUPABASE_ANON_KEY`);
-    return null;
-  }
-
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
-}
 
 // =============================================================================
 // Utility Functions
@@ -1329,55 +1275,18 @@ export async function isDomainActionAllowed(
 }
 
 /**
- * Store fusion audit entry
+ * Store fusion audit entry.
+ *
+ * VTID-03144: the actual DB write lives behind the decision-contract
+ * boundary. This export remains so external callers keep the same
+ * import surface; the call delegates to
+ * `services/decision-contract/fusion-audit-writer.ts`.
  */
 export async function storeFusionAudit(
   entry: FusionAuditEntry,
   authToken?: string
 ): Promise<boolean> {
-  try {
-    let supabase: SupabaseClient | null;
-
-    if (authToken) {
-      supabase = createUserClient(authToken);
-    } else if (isDevSandbox()) {
-      supabase = createServiceClient();
-    } else {
-      console.warn(`${LOG_PREFIX} Cannot store audit without auth`);
-      return false;
-    }
-
-    if (!supabase) {
-      return false;
-    }
-
-    const { error } = await supabase
-      .from('d42_fusion_audit')
-      .insert({
-        id: entry.id,
-        tenant_id: entry.tenant_id,
-        user_id: entry.user_id,
-        session_id: entry.session_id,
-        turn_id: entry.turn_id,
-        input_summary: entry.input_summary,
-        resolved_plan: entry.resolved_plan,
-        conflicts_count: entry.conflicts_count,
-        rules_applied: entry.rules_applied,
-        duration_ms: entry.duration_ms,
-        created_at: entry.created_at
-      });
-
-    if (error) {
-      console.warn(`${LOG_PREFIX} Failed to store audit:`, error.message);
-      return false;
-    }
-
-    return true;
-
-  } catch (error) {
-    console.error(`${LOG_PREFIX} Error storing audit:`, error);
-    return false;
-  }
+  return storeFusionAuditImpl(entry, authToken);
 }
 
 // =============================================================================
