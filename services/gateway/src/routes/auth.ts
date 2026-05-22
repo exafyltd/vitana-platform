@@ -277,19 +277,27 @@ router.post('/login', async (req: Request, res: Response) => {
             console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
           });
 
-        // VTID-03089: auto-add to system groups (currently "🎆 FIRST 100", cap 100).
-        // Idempotent on chat_group_members PK.
-        addUserToSystemGroups(uid, tid, supabase as any)
-          .then(result => {
+      }
+
+      // VTID-03089: auto-add to system groups (currently "🎆 FIRST 100",
+      // cap 100). Run on EVERY login, not just first-login: users who
+      // signed up before VTID-03089 shipped already received the welcome
+      // notification, so the `count === 0` gate above would never re-fire
+      // for them and they'd never be enrolled. The function is idempotent
+      // (chat_group_members PK + silent cap_reached skip), so re-running
+      // on every login is safe and cheap.
+      addUserToSystemGroups(uid, tid, supabase as any)
+        .then(result => {
+          if (result.added.length > 0) {
             console.log(
-              `[GroupEnrollment] First-login for ${uid.slice(0, 8)}: ` +
+              `[GroupEnrollment] Login for ${uid.slice(0, 8)}: ` +
               `added=${result.added.length}, skipped=${result.skipped.length}`
             );
-          })
-          .catch(err => {
-            console.warn(`[GroupEnrollment] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
-          });
-      }
+          }
+        })
+        .catch(err => {
+          console.warn(`[GroupEnrollment] Login enroll failed for ${uid.slice(0, 8)}: ${err.message}`);
+        });
     }
 
     return res.status(200).json({
