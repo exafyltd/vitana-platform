@@ -269,14 +269,18 @@ export async function sendAppilixPush(
   if (!appKey || !apiKey) return false;
 
   try {
-    // IMPORTANT: Appilix API does NOT decode URL-encoded values.
-    // We must NOT use URLSearchParams (which auto-encodes) — instead
-    // build the body string manually so open_link_url is passed raw.
+    // Appilix API does NOT decode open_link_url (confirmed by their support),
+    // so that field must be sent raw. However, notification_title and
+    // notification_body CAN contain user input with &, =, + etc. which would
+    // corrupt the form body. Encode those fields to keep the body well-formed;
+    // Appilix decodes standard display fields normally for the push text.
+    const safeTitle = encodeURIComponent(payload.title);
+    const safeBody = encodeURIComponent(payload.body);
     const bodyParts = [
       `app_key=${appKey}`,
       `api_key=${apiKey}`,
-      `notification_title=${payload.title}`,
-      `notification_body=${payload.body}`,
+      `notification_title=${safeTitle}`,
+      `notification_body=${safeBody}`,
       `user_identity=${userId}`,
     ];
     const url = payload.data?.url;
@@ -287,12 +291,10 @@ export async function sendAppilixPush(
       bodyParts.push(`open_link_url=${resolvedOpenLink}`);
     }
 
-    // BOOTSTRAP-NOTIF-MESSENGER-DIAG: log the exact open_link_url so we can
-    // correlate Appilix delivery with the [NotifDiag] beacons fired from the
-    // WebView when the deep-link page either loads or fails to load.
     console.log(
-      `[Appilix] push request user=${userId.slice(0, 8)}… ` +
+      `[Appilix] push user=${userId.slice(0, 8)}… ` +
       `title=${JSON.stringify(payload.title)} ` +
+      `body_len=${payload.body.length} ` +
       `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
     );
 
