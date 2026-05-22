@@ -180,7 +180,7 @@ BEGIN
         provenance_source, provenance_confidence
       ) VALUES (
         v_tenant, uid, 'self', v_keys[k], v_vals[k], v_types[k],
-        'system_observed', 0.95
+        'system_provision', 0.95
       );
     END LOOP;
   END LOOP;

@@ -230,6 +230,62 @@ gcloud projects add-iam-policy-binding lovable-vitana-vers1 \
 
 (The gateway's `roles/run.viewer` permissions are implicit via `roles/run.developer`.)
 
+## 9b. Staging-branch migration gap (record of state on 2026-05-22)
+
+Supabase's branch auto-apply mechanism failed mid-replay when the `staging`
+branch was first provisioned (status: `MIGRATIONS_FAILED`). A direct three-pass
+Node + `pg` runner against the IPv4 shared pooler then applied the migrations
+manually:
+
+- **234 of 348** migration files applied cleanly.
+- **114** failed with real schema issues (Postgres 17 reserved-word changes
+  like `window`, ALTER statements that assumed columns added out-of-band on
+  prod, references to tables — `products`, `profiles`, `live_rooms`,
+  `calendar_events`, `catalog_sources`, `vitana_index_config` — that the
+  migrations directory never creates).
+- **280 tables** ended up on staging vs 320+ on prod.
+
+The critical tables for Phase 0's publish/revert flow + the 48-day fine-tune
+experiment **are all present** with the right schema: `software_versions` (with
+the new `cloud_run_revision`, `source_revision`, `initiator_id` columns),
+`oasis_events`, `vtid_ledger`, `app_users`, `memory_items`, `memory_facts`,
+`autopilot_recommendations`, `user_tenants`, `tenants`.
+
+A one-time schema patch was applied on top of the failed replay so the
+`on_auth_user_platform_provision` trigger fires correctly during seed runs:
+
+```sql
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS tenant_id uuid;
+UPDATE public.tenants SET tenant_id = id WHERE tenant_id IS NULL;
+ALTER TABLE public.app_users
+  ADD COLUMN IF NOT EXISTS tenant_id uuid,
+  ADD COLUMN IF NOT EXISTS status text,
+  ADD COLUMN IF NOT EXISTS profile jsonb,
+  ADD COLUMN IF NOT EXISTS live_room_id uuid,
+  ADD COLUMN IF NOT EXISTS vitana_id text,
+  ADD COLUMN IF NOT EXISTS country_code text,
+  ADD COLUMN IF NOT EXISTS locale text;
+INSERT INTO public.tenants (id, slug, name, tenant_id)
+VALUES ('11111111-1111-1111-1111-111111111111', 'maxina', 'Maxina',
+        '11111111-1111-1111-1111-111111111111')
+ON CONFLICT (id) DO UPDATE
+  SET tenant_id = COALESCE(public.tenants.tenant_id, EXCLUDED.tenant_id);
+```
+
+These columns exist on prod under names the replay couldn't reproduce; the
+patch is staging-only and lives here, not in the migrations directory,
+because it represents replay drift rather than a real schema change.
+
+If the parent session needs any of the missing tables (`products`, `profiles`,
+`live_rooms`, `calendar_events`, `catalog_sources`, `vitana_index_config`),
+the right fix is either:
+- inspect the failing migration files and write replay-safe versions, OR
+- `pg_dump --schema-only` from prod (once an IPv6-reachable host is available)
+  and `psql` the dump into staging.
+
+Do **not** re-dispatch STAGE-DEPLOY to recover — that workflow does not touch
+the database; only the manual replay path does.
+
 ## 10. Pointer index
 
 | Thing                              | Where                                                              |
