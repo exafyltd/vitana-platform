@@ -1,3 +1,4 @@
+-- impact-allow-solo-migration — pure-RLS fix, no gateway/worker code change needed
 -- =============================================================================
 -- Chat attachments: fix RLS SELECT policy so DM recipients and chat_groups
 -- members can read images uploaded by other users.
