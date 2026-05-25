@@ -1081,7 +1081,11 @@ async function scheduleReminderFcmPush(
     data: {
       type: 'reminder.fire',
       reminder_id: row.id,
-      url: '/reminders',
+      // Deep-link to the reminder action overlay (Mark done / Snooze /
+      // Dismiss) rather than the bare list — the frontend opens
+      // ReminderInterruptOverlay when ?fire=<id> is present, matching the
+      // in-app SSE behaviour on a push click.
+      url: `/reminders?fire=${row.id}`,
       spoken_message: row.spoken_message || '',
     },
   };
