@@ -1,0 +1,38 @@
+name: Update Gateway Env Var (one-off helper)
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Cloud Run service name'
+        required: true
+        default: 'gateway'
+      env_var:
+        description: 'env var to set (NAME=VALUE)'
+        required: true
+        default: 'STAGING_PUBLISH_BAKE_SECONDS=0'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Update env var
+        run: |
+          gcloud run services update "${{ github.event.inputs.service }}" \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --update-env-vars="${{ github.event.inputs.env_var }}" \
+            --quiet
+          gcloud run services describe "${{ github.event.inputs.service }}" \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(spec.template.spec.containers[0].env)' | head -c 500
