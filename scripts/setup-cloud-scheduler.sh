@@ -105,3 +105,57 @@ done
 
 echo ""
 echo "Done. ${#JOBS[@]} scheduler jobs processed."
+
+# ──────────────────────────────────────────────────────────────
+# Direct-URL Scheduler Jobs (VTID-02601 — reminder tick/sweeper)
+#
+# These don't follow the AP-XXXX automation registry pattern — they
+# hit gateway routes directly. They're tenant-agnostic (the endpoints
+# scan all due reminders across every tenant) so no tenant_id needed.
+# ──────────────────────────────────────────────────────────────
+
+# Format: NAME|SCHEDULE|TIMEZONE|PATH
+DIRECT_JOBS=(
+  "reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick"
+  "reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper"
+)
+
+for JOB in "${DIRECT_JOBS[@]}"; do
+  IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ <<< "$JOB"
+  JOB_NAME="gateway-${NAME}"
+  TARGET_URL="${GATEWAY_URL}${PATH_}"
+
+  if $DELETE; then
+    echo "Deleting: $JOB_NAME"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || echo "  (not found, skipping)"
+    fi
+  else
+    echo "Creating: $JOB_NAME → $PATH_ ($SCHEDULE $TIMEZONE)"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || true
+
+      gcloud scheduler jobs create http "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --schedule="$SCHEDULE" \
+        --time-zone="$TIMEZONE" \
+        --uri="$TARGET_URL" \
+        --http-method=POST \
+        --headers="Content-Type=application/json" \
+        --message-body="{}" \
+        --attempt-deadline=120s \
+        --max-retry-attempts=1 \
+        --description="Gateway direct cron: $NAME"
+    fi
+  fi
+done
+
+echo ""
+echo "Done. ${#DIRECT_JOBS[@]} direct-URL scheduler jobs processed."
