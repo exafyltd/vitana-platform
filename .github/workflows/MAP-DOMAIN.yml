@@ -27,29 +27,33 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-      - name: Setup gcloud
+      - name: Setup gcloud + beta component
         uses: google-github-actions/setup-gcloud@v2
-      - name: Create domain mapping
+        with:
+          install_components: 'beta'
+      - name: Create domain mapping (idempotent)
         run: |
+          DOMAIN="${{ github.event.inputs.domain }}"
+          SERVICE="${{ github.event.inputs.service }}"
+          REGION="${{ github.event.inputs.region }}"
+          PROJECT="lovable-vitana-vers1"
+
           set +e
-          # Idempotent: if mapping already exists, just print it and exit 0.
-          EXISTING=$(gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
-            --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1 \
+          EXISTING=$(gcloud --quiet beta run domain-mappings describe "$DOMAIN" \
+            --region="$REGION" --project="$PROJECT" \
             --format='value(metadata.name)' 2>/dev/null)
           if [ -n "$EXISTING" ]; then
-            echo "Mapping already exists for ${{ github.event.inputs.domain }} — skipping create"
-            gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
-              --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1
-            exit 0
+            echo "Mapping already exists for $DOMAIN — skipping create"
+          else
+            set -e
+            gcloud --quiet beta run domain-mappings create \
+              --service="$SERVICE" \
+              --domain="$DOMAIN" \
+              --region="$REGION" \
+              --project="$PROJECT"
           fi
-          set -e
-          gcloud beta run domain-mappings create \
-            --service="${{ github.event.inputs.service }}" \
-            --domain="${{ github.event.inputs.domain }}" \
-            --region="${{ github.event.inputs.region }}" \
-            --project=lovable-vitana-vers1
       - name: Show mapping status + required DNS records
         run: |
-          gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
+          gcloud --quiet beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
             --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1 \
             --format='yaml(status.resourceRecords,status.conditions,spec.routeName)'
