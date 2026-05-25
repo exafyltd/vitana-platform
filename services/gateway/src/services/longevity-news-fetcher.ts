@@ -32,8 +32,8 @@ let cycleInFlight = false;
 interface FeedSource { name: string; url: string; language: string; }
 
 const FEEDS: FeedSource[] = [
-  // ── English (15) ──
-  { name: 'Fight Aging!', url: 'https://www.fightaging.org/feed/', language: 'en' },
+  // ── English (14) ──
+  // 'Fight Aging!' excluded: feed never supplies cover images, leaving ugly placeholder cards.
   { name: 'Lifespan.io', url: 'https://www.lifespan.io/feed/', language: 'en' },
   { name: 'Longevity.Technology', url: 'https://longevity.technology/feed/', language: 'en' },
   { name: 'Novos Labs', url: 'https://novoslabs.com/feed/', language: 'en' },
