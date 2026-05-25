@@ -972,13 +972,12 @@ router.post('/reminders-tick', async (_req: Request, res: Response) => {
           });
         } catch {}
 
-        // VTID-02601 FCM fallback: 5s after fire, if SSE didn't ack the row,
-        // send an OS-level push notification so the user gets the reminder
-        // even if the app is closed / phone locked / WebView suspended.
-        // SSE wins for active clients (it acks within ~3s); FCM catches the
-        // rest. Best-effort, fully detached — does not block the tick.
-        scheduleReminderFcmFallback(supa, row).catch((e) =>
-          console.warn(`[reminders-tick] FCM fallback schedule failed for ${row.id}:`, e?.message),
+        // VTID-02601 / BOOTSTRAP-REMINDERS-CRON: 5s after fire, always send an
+        // OS-level push (FCM + Appilix) so the reminder reaches the lock screen
+        // regardless of whether the in-app SSE banner already showed on web.
+        // Best-effort, fully detached — does not block the tick.
+        scheduleReminderFcmPush(supa, row).catch((e) =>
+          console.warn(`[reminders-tick] FCM push schedule failed for ${row.id}:`, e?.message),
         );
 
         fired++;
@@ -1051,40 +1050,33 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
 });
 
 // =============================================================================
-// VTID-02601 — scheduleReminderFcmFallback
+// VTID-02601 — scheduleReminderFcmPush
 //
-// 5 seconds after a reminder is marked 'fired', re-check `acked_at`. If the
-// SSE listener already acked the row (because the app is open and the user
-// got the chime + voice + banner), skip — the user has been notified. If
-// not, send an FCM web push so the OS surfaces a notification. Also try
-// Appilix native push for the Maxina installed app (currently 522 per memory,
-// but worth retrying — fails silently if API is down).
+// 5 seconds after a reminder is marked 'fired', send the mobile/web push
+// (FCM + Appilix native). Always fires regardless of SSE ack — product
+// decision (BOOTSTRAP-REMINDERS-CRON): a reminder should always reach the
+// lock screen even if the user already saw the in-app banner on web, because
+// they may dismiss the web banner, walk away, and rely on the phone. The web
+// overlay's seen-set dedups so a user with both surfaces open never sees the
+// same fire rendered twice.
 //
-// Detached from the request handler — Cloud Run keeps the function instance
-// alive long enough for the 5-second timer because the gateway has CPU
-// always-on (set in EXEC-DEPLOY). Worst case (instance scales to zero),
-// the FCM is dropped and the next tick poll picks it up via the existing
-// fired+unacked SSE flow.
+// The 5-second delay stays as a small grace window (lets the SSE banner land
+// first when the app is open) and to keep the Cloud Run instance warm. Worst
+// case (instance scales to zero) the push is dropped and the next tick poll
+// re-picks it via the fired+unacked SSE flow.
+//
+// Title is localized (CLAUDE.md §13b) so German users don't see English on
+// the lock screen; the body is the user's own reminder text (not translated).
 // =============================================================================
-async function scheduleReminderFcmFallback(
+async function scheduleReminderFcmPush(
   supa: any,
   row: { id: string; user_id: string; tenant_id: string; action_text: string; spoken_message: string | null }
 ): Promise<void> {
   await new Promise((r) => setTimeout(r, 5000));
 
-  // Re-check acked_at — SSE may have already delivered + the user dismissed.
-  const { data: fresh } = await supa
-    .from('reminders')
-    .select('id, acked_at, delivery_via')
-    .eq('id', row.id)
-    .maybeSingle();
-  if (fresh?.acked_at) {
-    console.log(`[reminders-tick] FCM skip — already acked via ${fresh.delivery_via} (${row.id})`);
-    return;
-  }
-
+  const locale = await getUserLocale(supa, row.user_id);
   const payload = {
-    title: '🔔 Reminder',
+    title: tt('notif.reminder.title', locale),
     body: row.action_text,
     data: {
       type: 'reminder.fire',
@@ -1097,7 +1089,7 @@ async function scheduleReminderFcmFallback(
   try {
     const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
     const appilixSent = await sendAppilixPush(row.user_id, payload);
-    console.log(`[reminders-tick] FCM fallback for ${row.id}: fcm=${fcmSent} appilix=${appilixSent}`);
+    console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent}`);
 
     // Mark delivery_via=fcm if we sent at least one push and the row is still
     // unacked. The SSE flow may still race-deliver later — that's fine, the
