@@ -2352,6 +2352,7 @@
 
   function _show() {
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
+    _suppressSoundscape();
     // Refresh token and language on every show — picks up login/logout and language change
     _refreshToken();
     try {
@@ -2378,8 +2379,53 @@
     _sessionStart();
   }
 
+  // ============================================================
+  // HOST SOUNDSCAPE SUPPRESSION
+  // ============================================================
+  // The host app (vitana-v1) plays ambient background music ("Soundscape")
+  // through an <audio> element it exposes on window.__SOUNDSCAPE_AUDIO__.
+  // Vitana's voice is rendered through this widget's OWN AudioContext, which
+  // the host's media-precedence listeners can't observe — so without this the
+  // music keeps playing while Vitana speaks. We duck it for the whole overlay
+  // session (mirroring how Shorts/music/podcasts suppress it) and re-pause on
+  // any mid-session resume (e.g. a route effect calling startFresh()) via a
+  // one-shot 'play' guard. Self-contained: no host wiring required.
+  function _suppressSoundscape() {
+    try {
+      var a = window.__SOUNDSCAPE_AUDIO__;
+      if (!a || _s._soundscapeGuard) return; // already suppressing
+      _s._soundscapeWasPlaying = !a.paused;
+      _s._soundscapeGuard = function () {
+        // Anything that tries to resume the music while the orb is open gets
+        // immediately re-paused. Cleared by _restoreSoundscape().
+        try { a.pause(); } catch (e) { /* ignore */ }
+      };
+      if (!a.paused) { try { a.pause(); } catch (e) { /* ignore */ } }
+      a.addEventListener('play', _s._soundscapeGuard);
+      console.log('[VTOrb] Soundscape ducked for orb session (wasPlaying=' + _s._soundscapeWasPlaying + ')');
+    } catch (e) { /* host audio not present — nothing to suppress */ }
+  }
+
+  function _restoreSoundscape() {
+    try {
+      var a = window.__SOUNDSCAPE_AUDIO__;
+      if (_s._soundscapeGuard && a) {
+        a.removeEventListener('play', _s._soundscapeGuard);
+        // Only resume music we actually paused, and never override a user who
+        // muted or explicitly stopped it (muted => element stays paused+muted).
+        if (_s._soundscapeWasPlaying && a.paused && !a.muted) {
+          a.play().catch(function () { /* autoplay policy — leave paused */ });
+          console.log('[VTOrb] Soundscape resumed after orb session');
+        }
+      }
+    } catch (e) { /* ignore */ }
+    _s._soundscapeGuard = null;
+    _s._soundscapeWasPlaying = false;
+  }
+
   function _hide() {
     _sessionStop();
+    _restoreSoundscape();
     _s.overlayVisible = false;
     if (_root) {
       _root.classList.remove('vtorb-visible');
@@ -2684,6 +2730,7 @@
 
     destroy: function () {
       _sessionStop();
+      _restoreSoundscape();
       if (_root && _root.parentNode) _root.parentNode.removeChild(_root);
       if (_fab && _fab.parentNode) _fab.parentNode.removeChild(_fab);
       var css = document.getElementById('vtorb-css');
