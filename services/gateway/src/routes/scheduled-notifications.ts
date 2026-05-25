@@ -1092,8 +1092,28 @@ async function scheduleReminderFcmPush(
 
   try {
     const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
-    const appilixSent = await sendAppilixPush(row.user_id, payload);
-    console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent}`);
+
+    // Avoid double-notifying. Mirrors notifyUser()'s FCM/Appilix coexistence
+    // rule: if the user has an Appilix-wrapped native token (device_label
+    // 'Appilix %'), FCM-direct already delivered to the installed app, so
+    // sending Appilix too would surface a second identical lock-screen
+    // notification. Only fire Appilix when there's no native token, or as a
+    // last resort when FCM reached zero devices (e.g. web-only token that
+    // opens the browser, not the app).
+    let appilixSent = false;
+    const { count: nativeMobileCount } = await supa
+      .from('user_device_tokens')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', row.user_id)
+      .eq('tenant_id', row.tenant_id)
+      .like('device_label', 'Appilix %');
+    if (!nativeMobileCount) {
+      appilixSent = await sendAppilixPush(row.user_id, payload);
+    }
+    if (fcmSent === 0 && !appilixSent) {
+      appilixSent = await sendAppilixPush(row.user_id, payload);
+    }
+    console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent} nativeTokens=${nativeMobileCount || 0}`);
 
     // Mark delivery_via=fcm if we sent at least one push and the row is still
     // unacked. The SSE flow may still race-deliver later — that's fine, the
