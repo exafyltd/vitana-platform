@@ -856,7 +856,17 @@ export type CicdEventType =
   // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
   | 'architecture.investigation.started'
   | 'architecture.investigation.completed'
-  | 'architecture.investigation.failed';
+  | 'architecture.investigation.failed'
+  // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
+  // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  | 'staging.deploy.completed'
+  | 'staging.deploy.failed'
+  | 'staging.metrics.snapshot'
+  | 'staging.revert.completed'
+  | 'production.publish.requested'
+  | 'production.publish.completed'
+  | 'production.publish.failed'
+  | 'production.revert.completed';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -877,6 +887,10 @@ export interface CicdOasisEvent {
   // Auto-resolved from actor_id if omitted by caller (cached lookup in
   // emitOasisEvent). Null when the event has no human actor (system/cron).
   vitana_id?: string | null;
+  // Phase 0 staging build: explicit env tag. When unset, emitOasisEvent
+  // defaults to the running process's VITANA_ENV. Embedded in metadata.env
+  // (no oasis_events schema change required).
+  env?: 'production' | 'staging';
 }
 
 // ==================== Allowed Services for Deploy ====================

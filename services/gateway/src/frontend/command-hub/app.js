@@ -5081,8 +5081,11 @@ async function fetchDeploymentHistory() {
             return [];
         }
 
-        // Map API response to version history format
+        // Map API response to version history format.
         // API returns: swv_id, service, git_commit, status, initiator, deploy_type, environment, created_at
+        // Phase 0 staging build (P0.5): forward the new fields the extended
+        // /deployments endpoint exposes so the CLOCK dropdown's Revert
+        // button + display-label rendering work.
         return deployments.map(function (d, index) {
             return {
                 id: 'deploy-' + (d.swv_id || d.swv || index),
@@ -5093,7 +5096,14 @@ async function fetchDeploymentHistory() {
                 createdAt: d.created_at,
                 service: d.service,
                 environment: d.environment,
-                commit: d.git_commit || d.commit
+                commit: d.git_commit || d.commit,
+                // Phase 0 additions:
+                git_commit: d.git_commit || null,
+                cloud_run_revision: d.cloud_run_revision || null,
+                source_revision: d.source_revision || null,
+                display_deploy_type: d.display_deploy_type || d.deploy_type || null,
+                is_active: !!d.is_active,
+                revert_eligible: !!d.revert_eligible
             };
         });
     } catch (error) {
@@ -6010,6 +6020,28 @@ function renderVersionDropdown() {
             }
 
             item.appendChild(meta);
+
+            // Phase 0 staging build (P0.5): per-row Revert button. The
+            // server marks revert_eligible after age/active/status checks;
+            // here we just surface the button + open the confirm overlay.
+            if (version.revert_eligible && window.VitanaStaging) {
+                try {
+                    const revertBtn = window.VitanaStaging.renderRevertButton(version, {
+                        buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                        onAfterRevert: function () {
+                            if (typeof fetchDeploymentHistory === 'function') {
+                                fetchDeploymentHistory().then(function (h) {
+                                    state.versionHistory = h;
+                                    if (typeof renderApp === 'function') renderApp();
+                                }).catch(function () { /* swallow */ });
+                            }
+                        },
+                    });
+                    item.appendChild(revertBtn);
+                } catch (err) {
+                    console.warn('[VitanaStaging] renderRevertButton failed:', err);
+                }
+            }
 
             // Click handler
             item.onclick = function (e) {
@@ -24055,6 +24087,37 @@ function renderPublishModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
     body.style.cssText = 'padding: 20px;';
+
+    // Phase 0 staging build (P0.5): on production Command Hub, surface the
+    // "Promote latest staging → production" card at the very top of the body.
+    // On staging Command Hub, fall through to the legacy dropdown — the
+    // operator can still re-deploy specific versions to dev for testing.
+    if (window.VitanaStaging) {
+        const env = window.VitanaStaging.env;
+        if (env === 'production') {
+            try {
+                body.appendChild(window.VitanaStaging.renderPublishStagingCard({
+                    buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                    onAfterPublish: function () {
+                        // Refresh version history after a publish so CLOCK shows the new prod row.
+                        if (typeof fetchDeploymentHistory === 'function') {
+                            fetchDeploymentHistory().then(function (h) {
+                                state.versionHistory = h;
+                                if (typeof renderApp === 'function') renderApp();
+                            }).catch(function () { /* swallow */ });
+                        }
+                    },
+                }));
+            } catch (err) {
+                console.warn('[VitanaStaging] renderPublishStagingCard failed:', err);
+            }
+        } else if (env === 'staging') {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'margin-bottom:14px;padding:10px 12px;background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.3);border-radius:6px;font-size:12px;color:#93c5fd;';
+            banner.textContent = 'You are on the STAGING Command Hub. Use the production Command Hub to publish.';
+            body.appendChild(banner);
+        }
+    }
 
     // Environment Info Section
     const envSection = document.createElement('div');

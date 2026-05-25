@@ -60,7 +60,12 @@ import {
   INTAKE_QUESTIONS
 } from '../services/task-intake-service';
 import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
-import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { getDeploymentHistory, getNextSWV, insertSoftwareVersion, SoftwareVersion } from '../lib/versioning';
+// Phase 0 staging build (P0.4): VTID allocator + Cloud Run Admin + admin auth.
+import { allocateVtid } from '../services/operator-service';
+import { describeService, listRevisions, updateTrafficToRevision, shortRevisionName } from '../services/cloud-run-admin';
+// Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
+import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -834,9 +839,50 @@ router.post('/command', async (req: Request, res: Response) => {
 /**
  * GET /deployments → /api/v1/operator/deployments
  */
+// Phase 0 staging build (P0.4): 30s in-process cache of active Cloud Run
+// revision per service so the CLOCK dropdown's `is_active` field doesn't burn
+// a Cloud Run Admin API call per row.
+const ACTIVE_REV_CACHE: Map<string, { activeRevision: string | null; expiresAt: number }> = new Map();
+const ACTIVE_REV_TTL_MS = 30_000;
+
+async function getActiveRevisionCached(service: string): Promise<string | null> {
+  const cached = ACTIVE_REV_CACHE.get(service);
+  if (cached && cached.expiresAt > Date.now()) return cached.activeRevision;
+  try {
+    const summary = await describeService(service);
+    const active = summary.activeRevision;
+    ACTIVE_REV_CACHE.set(service, { activeRevision: active, expiresAt: Date.now() + ACTIVE_REV_TTL_MS });
+    return active;
+  } catch (err) {
+    console.warn(`[Operator] active-revision lookup failed for ${service}: ${err instanceof Error ? err.message : 'unknown'}`);
+    return null;
+  }
+}
+
+/**
+ * Compute the display label the CLOCK history view shows in its "deploy type"
+ * column. Derives a richer label from the storage-side (deploy_type, environment,
+ * source_revision) triple — no DB schema change needed.
+ *
+ *   environment=staging,    deploy_type=normal,   source=null  → "staging-deploy"
+ *   environment=production, deploy_type=normal,   source!=null → "staging-publish"
+ *   environment=production, deploy_type=normal,   source=null  → "deploy"
+ *   *,                       deploy_type=rollback              → "revert"
+ */
+function displayDeployType(row: SoftwareVersion): string {
+  if (row.deploy_type === 'rollback') return 'revert';
+  if (row.environment === 'staging' || row.environment === 'staging-supabase') return 'staging-deploy';
+  if (row.source_revision) return 'staging-publish';
+  return 'deploy';
+}
+
+const REVERT_AGE_LIMIT_MS = 90 * 24 * 60 * 60 * 1000;
+
 router.get('/deployments', async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const serviceFilter = (req.query.service as string | undefined)?.trim();
+    const envFilter = (req.query.environment as string | undefined)?.trim();
 
     const result = await getDeploymentHistory(limit);
 
@@ -848,17 +894,53 @@ router.get('/deployments', async (req: Request, res: Response) => {
       });
     }
 
-    // Format for UI feed
-    const deployments = (result.deployments || []).map((d) => ({
-      swv_id: d.swv_id,
-      created_at: d.created_at,
-      git_commit: d.git_commit,
-      status: d.status,
-      initiator: d.initiator,
-      deploy_type: d.deploy_type,
-      service: d.service,
-      environment: d.environment,
-    }));
+    let rows = result.deployments || [];
+    if (serviceFilter) rows = rows.filter(r => r.service === serviceFilter);
+    if (envFilter) rows = rows.filter(r => r.environment === envFilter);
+
+    // Active-revision cache lookup is done once per distinct service to keep
+    // this endpoint O(unique-services) Cloud Run calls instead of O(rows).
+    const distinctServices = Array.from(new Set(rows.map(r => r.service)));
+    const activeByService = new Map<string, string | null>();
+    await Promise.all(
+      distinctServices.map(async svc => {
+        activeByService.set(svc, await getActiveRevisionCached(svc));
+      })
+    );
+
+    const nowMs = Date.now();
+
+    const deployments = rows.map((d) => {
+      const createdMs = d.created_at ? Date.parse(d.created_at) : nowMs;
+      const ageMs = nowMs - createdMs;
+      const cloudRev = d.cloud_run_revision ?? null;
+      const activeShort = activeByService.get(d.service)
+        ? shortRevisionName(activeByService.get(d.service) as string)
+        : null;
+      const isActive = !!(cloudRev && activeShort && cloudRev === activeShort);
+
+      return {
+        swv_id: d.swv_id,
+        created_at: d.created_at,
+        git_commit: d.git_commit,
+        status: d.status,
+        initiator: d.initiator,
+        initiator_id: d.initiator_id ?? null,
+        deploy_type: d.deploy_type,
+        // Phase 0 staging build: derived display label.
+        display_deploy_type: displayDeployType(d),
+        service: d.service,
+        environment: d.environment,
+        cloud_run_revision: cloudRev,
+        source_revision: d.source_revision ?? null,
+        is_active: isActive,
+        revert_eligible:
+          d.status === 'success' &&
+          !!cloudRev &&
+          ageMs < REVERT_AGE_LIMIT_MS &&
+          !isActive, // can't revert to the row that IS active
+      };
+    });
 
     return res.status(200).json(deployments);
   } catch (error) {
@@ -1119,6 +1201,382 @@ router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
       error: error.message,
       message: 'Repair operation failed'
     });
+  }
+});
+
+// ====================================================================
+// Phase 0 staging build (handoff brief P0.4): publish / revert / revisions
+// ====================================================================
+//
+// Three new admin-gated endpoints power the PUBLISH and CLOCK buttons in the
+// Command Hub top bar:
+//
+//   GET  /api/v1/operator/revisions?service=gateway[-staging]
+//        — list recent Cloud Run revisions for the CLOCK history view.
+//
+//   POST /api/v1/operator/publish
+//        — promote the current `gateway-staging` active revision to `gateway`
+//          (production) via EXEC-DEPLOY.yml. Records source_revision in the
+//          software_versions row so the CLOCK history view can render
+//          "staging-publish" against the new prod revision.
+//
+//   POST /api/v1/operator/revert  { service, target_revision }
+//        — route 100% of traffic to a past revision via Cloud Run
+//          updateService(traffic). Records a deploy_type=rollback row.
+//
+// All three require an admin JWT (exafy_admin role). The Cloud Run Admin
+// API calls run with the gateway's service account ADC — the one-time IAM
+// grant (`roles/run.developer`) is documented in the handoff brief.
+// --------------------------------------------------------------------
+
+/**
+ * GET /revisions → /api/v1/operator/revisions?service=<svc>&limit=<n>
+ *
+ * Returns Cloud Run revisions for `service` newest-first. Defaults to
+ * `gateway` if service param omitted. CLOCK dropdown uses this to render the
+ * "all past revisions" tab alongside the software_versions tab.
+ */
+router.get('/revisions', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const service = ((req.query.service as string | undefined) || 'gateway').trim();
+    const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
+
+    if (!['gateway', 'gateway-staging', 'community-app', 'community-app-staging'].includes(service)) {
+      return res.status(400).json({ ok: false, error: 'unsupported_service', service });
+    }
+
+    const revisions = await listRevisions(service, limit);
+    return res.status(200).json({ ok: true, service, revisions });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[Operator] /revisions failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+const STAGING_PUBLISH_BAKE_MS = (() => {
+  const raw = parseInt(process.env.STAGING_PUBLISH_BAKE_SECONDS || '3600', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw * 1000 : 60 * 60 * 1000;
+})();
+
+/**
+ * POST /publish → /api/v1/operator/publish
+ *
+ * Body: { confirm_short_sha?: string }  (recommended; not strictly required —
+ * the UI's type-to-confirm flow gates the click, the server does its own checks)
+ *
+ * Flow:
+ *   1. requireAdminAuth — admin JWT present + exafy_admin role on identity.
+ *   2. Resolve gateway-staging's currently-serving revision (Cloud Run Admin).
+ *   3. Read the commit SHA from the revision's env (GIT_COMMIT_SHA) and/or
+ *      from software_versions by cloud_run_revision. Fail if neither yields a
+ *      SHA — without it the audit trail breaks.
+ *   4. Bake-time guard: refuse if the staging revision is <STAGING_PUBLISH_BAKE_SECONDS
+ *      seconds old (default 3600 = 1h). Set env to 0 to disable for smoke tests.
+ *   5. Allocate a VTID via the canonical allocator (EXEC-DEPLOY gate needs it
+ *      in vtid_ledger).
+ *   6. Call deployOrchestrator.executeDeploy({ service:'gateway',
+ *      environment:'production', source:'api' }) — this dispatches EXEC-DEPLOY.
+ *   7. Insert software_versions row with source_revision=<staging revision short
+ *      name>, initiator_id=<admin uuid>, deploy_type='normal'. cloud_run_revision
+ *      stays NULL — EXEC-DEPLOY's post-deploy step backfills it.
+ *   8. Emit production.publish.requested + production.publish.completed events.
+ */
+router.post('/publish', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  try {
+    // Step 2: resolve staging service state.
+    let stagingSummary;
+    try {
+      stagingSummary = await describeService('gateway-staging');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-PUBLISH',
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `publish: cannot describe gateway-staging (${msg})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, stage: 'describe_staging' },
+      });
+      return res.status(502).json({ ok: false, error: 'staging_unreachable', detail: msg });
+    }
+
+    if (!stagingSummary.activeRevision) {
+      return res.status(409).json({ ok: false, error: 'staging_has_no_active_revision' });
+    }
+
+    const stagingRevShort = stagingSummary.activeRevisionShort!;
+    const stagingCommit = stagingSummary.activeRevisionCommit;
+    if (!stagingCommit) {
+      // Fall back: look up software_versions by cloud_run_revision = stagingRevShort.
+      // For Phase 0 a missing SHA is recoverable but flag-worthy; we still
+      // refuse to ship without one so the audit trail is complete.
+      return res.status(409).json({
+        ok: false,
+        error: 'staging_commit_unknown',
+        detail: `Active staging revision ${stagingRevShort} has no GIT_COMMIT_SHA env var. STAGE-DEPLOY must set this on the revision before publish can proceed.`,
+      });
+    }
+
+    // Step 4: bake-time guard.
+    let ageMs = 0;
+    try {
+      const rev = (await listRevisions('gateway-staging', 5)).find(r => r.shortName === stagingRevShort);
+      if (rev?.createdAt) ageMs = Date.now() - Date.parse(rev.createdAt);
+    } catch {
+      ageMs = STAGING_PUBLISH_BAKE_MS; // can't read age — treat as old enough; we already verified active rev
+    }
+    if (STAGING_PUBLISH_BAKE_MS > 0 && ageMs < STAGING_PUBLISH_BAKE_MS) {
+      const remainingSec = Math.ceil((STAGING_PUBLISH_BAKE_MS - ageMs) / 1000);
+      return res.status(409).json({
+        ok: false,
+        error: 'bake_time_not_met',
+        detail: `Staging revision ${stagingRevShort} is only ${Math.floor(ageMs / 1000)}s old; needs ${STAGING_PUBLISH_BAKE_MS / 1000}s. Wait ${remainingSec}s, or set STAGING_PUBLISH_BAKE_SECONDS=0 to override.`,
+      });
+    }
+
+    // Step 5: allocate VTID. EXEC-DEPLOY's hard gate requires the ledger row.
+    const allocation = await allocateVtid('publish.api', 'INFRA', 'GATEWAY');
+    if (!allocation.ok || !allocation.vtid) {
+      return res.status(503).json({
+        ok: false,
+        error: 'vtid_allocation_failed',
+        detail: allocation.message || allocation.error || 'unknown',
+      });
+    }
+    const vtid = allocation.vtid;
+
+    // Step 6: publish-requested event before dispatching.
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.requested',
+      source: 'gateway-operator',
+      status: 'info',
+      message: `publish: gateway-staging ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → gateway`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        source_revision: stagingRevShort,
+        source_commit: stagingCommit,
+        staging_age_seconds: Math.floor(ageMs / 1000),
+        confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
+      },
+    });
+
+    // Step 7: dispatch the production deploy (EXEC-DEPLOY.yml).
+    const deployResult = await deployOrchestrator.executeDeploy({
+      vtid,
+      service: 'gateway',
+      environment: 'production',
+      source: 'api',
+    });
+
+    if (!deployResult.ok) {
+      await emitOasisEvent({
+        vtid,
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `publish: EXEC-DEPLOY dispatch failed — ${deployResult.error || 'unknown'}`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: {
+          request_id: requestId,
+          source_revision: stagingRevShort,
+          source_commit: stagingCommit,
+          deploy_error: deployResult.error,
+          governance_blocked: deployResult.blocked,
+          governance_violations: deployResult.violations,
+        },
+      });
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        error: 'deploy_dispatch_failed',
+        detail: deployResult.error,
+        blocked: deployResult.blocked,
+        violations: deployResult.violations,
+      });
+    }
+
+    // Step 8: record the publish row in software_versions. cloud_run_revision
+    // stays null — STAGE/EXEC-DEPLOY post-deploy step (P0.7) is responsible
+    // for backfilling it once the new prod revision is healthy.
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service: 'gateway',
+      git_commit: stagingCommit,
+      deploy_type: 'normal',
+      initiator: 'user',
+      status: 'success', // optimistic — true success is the EXEC-DEPLOY post-deploy event
+      environment: 'production',
+      cloud_run_revision: null,
+      source_revision: stagingRevShort,
+      initiator_id: identity.user_id,
+    });
+
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.completed',
+      source: 'gateway-operator',
+      status: 'success',
+      message: `publish: gateway-staging ${stagingRevShort} promoted; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        vtid,
+        swv_id: swvId,
+        source_revision: stagingRevShort,
+        source_commit: stagingCommit,
+        workflow_run_id: deployResult.workflow_run_id,
+        workflow_url: deployResult.workflow_url,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      swv_id: swvId,
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      workflow_run_id: deployResult.workflow_run_id,
+      workflow_url: deployResult.workflow_url,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /publish failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+/**
+ * POST /revert → /api/v1/operator/revert
+ *
+ * Body: { service: 'gateway' | 'gateway-staging', target_revision: string,
+ *         confirm_short_sha?: string }
+ *
+ * Flow:
+ *   1. requireAdminAuth.
+ *   2. Validate `service` is one of the two Cloud Run services we manage.
+ *   3. Validate target_revision exists in the recent revisions list and is
+ *      not the currently-active one.
+ *   4. Refuse if target_revision is older than 90 days (revert age limit).
+ *   5. Call Cloud Run updateService(traffic) → 100% to target.
+ *   6. Insert software_versions row with deploy_type='rollback',
+ *      cloud_run_revision=<target>, initiator_id=<admin uuid>.
+ *   7. Emit production.revert.completed or staging.revert.completed.
+ */
+router.post('/revert', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || '').toString().trim();
+  const targetRevisionRaw = (req.body?.target_revision || '').toString().trim();
+
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service', detail: 'service must be "gateway" or "gateway-staging"' });
+  }
+  if (!targetRevisionRaw) {
+    return res.status(400).json({ ok: false, error: 'missing_target_revision' });
+  }
+  const targetShort = shortRevisionName(targetRevisionRaw);
+
+  try {
+    // Step 3 + 4: validate revision exists, isn't currently active, isn't expired.
+    const revisions = await listRevisions(service, 100);
+    const target = revisions.find(r => r.shortName === targetShort);
+    if (!target) {
+      return res.status(404).json({ ok: false, error: 'target_revision_not_found', detail: `revision ${targetShort} not found in last 100 revisions of ${service}` });
+    }
+    if (target.isActive) {
+      return res.status(409).json({ ok: false, error: 'target_already_active' });
+    }
+    const ageMs = target.createdAt ? Date.now() - Date.parse(target.createdAt) : 0;
+    if (ageMs > REVERT_AGE_LIMIT_MS) {
+      return res.status(409).json({ ok: false, error: 'target_revision_too_old', detail: `revision ${targetShort} is ${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old; >90d. Re-deploy that commit instead.` });
+    }
+
+    // Step 5: traffic shift.
+    const result = await updateTrafficToRevision(service, targetShort);
+    if (!result.ok) {
+      const isProd = service === 'gateway';
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-REVERT',
+        type: isProd ? 'production.publish.failed' : 'staging.deploy.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `revert: ${service} → ${targetShort} traffic-shift failed (${result.error})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, service, target_revision: targetShort, error: result.error },
+      });
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    // Step 6: record rollback row.
+    ACTIVE_REV_CACHE.delete(service); // invalidate cache so next /deployments shows new active
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: target.commitSha || '(unknown)',
+      deploy_type: 'rollback',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: targetShort,
+      source_revision: null,
+      initiator_id: identity.user_id,
+    });
+
+    // Step 7: terminal event (topic depends on which stack).
+    const topic = service === 'gateway' ? 'production.revert.completed' : 'staging.revert.completed';
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-REVERT',
+      type: topic,
+      source: 'gateway-operator',
+      status: 'success',
+      message: `revert: ${service} now serving ${targetShort}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        target_revision: targetShort,
+        target_commit: target.commitSha,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      target_revision: targetShort,
+      target_commit: target.commitSha,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /revert failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
   }
 });
 

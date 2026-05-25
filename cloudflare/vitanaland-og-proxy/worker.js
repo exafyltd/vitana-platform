@@ -1,5 +1,17 @@
-const SUPABASE_FUNCTIONS = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1';
-const GATEWAY_URL = 'https://gateway-q74ibpv6ia-uc.a.run.app';
+// Production defaults. Phase 0 staging build: per-request `env` bindings from
+// wrangler.toml override these so `wrangler deploy --env staging` ships a
+// variant worker pointing at gateway-staging + the staging Supabase branch.
+// Helpers below accept an explicit { gatewayUrl, supabaseFunctions } config so
+// no module-level mutable state is shared across concurrent requests.
+const DEFAULT_SUPABASE_FUNCTIONS = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1';
+const DEFAULT_GATEWAY_URL = 'https://gateway-q74ibpv6ia-uc.a.run.app';
+
+function resolveConfig(env) {
+  return {
+    gatewayUrl: (env && env.GATEWAY_URL) || DEFAULT_GATEWAY_URL,
+    supabaseFunctions: (env && env.SUPABASE_FUNCTIONS) || DEFAULT_SUPABASE_FUNCTIONS,
+  };
+}
 
 const CRAWLERS = ['whatsapp', 'facebookexternalhit', 'facebot',
   'twitterbot', 'linkedinbot', 'slackbot', 'telegrambot', 'discordbot'];
@@ -160,13 +172,14 @@ function renderProfileFallback(canonicalUrl, destinationUrl) {
  * Build an HTML page with OG meta tags for a profile. Served to crawlers only.
  * Queries the gateway's public profile endpoint — no auth required.
  */
-async function renderProfileOg(id, canonicalUrl, destinationUrl) {
+async function renderProfileOg(id, canonicalUrl, destinationUrl, config) {
   const DEFAULT_IMAGE = PROFILE_DEFAULT_IMAGE;
+  const { gatewayUrl } = config;
 
   let p = null;
   try {
     const resp = await fetch(
-      `${GATEWAY_URL}/api/v1/public/profile/${encodeURIComponent(id)}`,
+      `${gatewayUrl}/api/v1/public/profile/${encodeURIComponent(id)}`,
     );
     if (resp.ok) {
       const body = await resp.json().catch(() => null);
@@ -254,8 +267,9 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl) {
  * Build an HTML page with OG meta tags for a product. Served to crawlers only.
  * Queries the gateway's public product endpoint — no auth required.
  */
-async function renderProductOg(id, canonicalUrl) {
-  const resp = await fetch(`${GATEWAY_URL}/api/v1/discover/product/${encodeURIComponent(id)}`);
+async function renderProductOg(id, canonicalUrl, config) {
+  const { gatewayUrl } = config;
+  const resp = await fetch(`${gatewayUrl}/api/v1/discover/product/${encodeURIComponent(id)}`);
   if (!resp.ok) {
     return new Response('Product not found', { status: 404 });
   }
@@ -314,19 +328,20 @@ async function renderProductOg(id, canonicalUrl) {
   });
 }
 
-function getOgFunctionUrl(type, identifier) {
+function getOgFunctionUrl(type, identifier, config) {
+  const { supabaseFunctions } = config;
   switch (type) {
     case 'events':
       const isUUID = /^[0-9a-f]{8}-/.test(identifier);
-      return `${SUPABASE_FUNCTIONS}/og-event?${isUUID ? 'id' : 'slug'}=${encodeURIComponent(identifier)}`;
+      return `${supabaseFunctions}/og-event?${isUUID ? 'id' : 'slug'}=${encodeURIComponent(identifier)}`;
     case 'profiles':
-      return `${SUPABASE_FUNCTIONS}/og-profile?id=${encodeURIComponent(identifier)}`;
+      return `${supabaseFunctions}/og-profile?id=${encodeURIComponent(identifier)}`;
     case 'rooms':
-      return `${SUPABASE_FUNCTIONS}/og-room?id=${encodeURIComponent(identifier)}`;
+      return `${supabaseFunctions}/og-room?id=${encodeURIComponent(identifier)}`;
     case 'matches':
-      return `${SUPABASE_FUNCTIONS}/og-match?id=${encodeURIComponent(identifier)}`;
+      return `${supabaseFunctions}/og-match?id=${encodeURIComponent(identifier)}`;
     case 'shorts':
-      return `${SUPABASE_FUNCTIONS}/og-short?id=${encodeURIComponent(identifier)}`;
+      return `${supabaseFunctions}/og-short?id=${encodeURIComponent(identifier)}`;
     // products handled inline below via renderProductOg() — no Supabase Function needed
     default:
       return null;
@@ -357,7 +372,8 @@ function getRedirectUrl(type, identifier) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
+    const config = resolveConfig(env);
     const url = new URL(request.url);
     const ua = request.headers.get('user-agent') || '';
     const route = parseRoute(url.pathname);
@@ -370,7 +386,7 @@ export default {
       // Products: generate OG HTML inline from the gateway product endpoint.
       if (route.type === 'products') {
         const canonical = getRedirectUrl('products', route.identifier);
-        return renderProductOg(route.identifier, canonical);
+        return renderProductOg(route.identifier, canonical, config);
       }
 
       // Profiles: same pattern. Gateway has the profile row; we render the
@@ -379,10 +395,10 @@ export default {
       if (route.type === 'profiles') {
         const canonical = `https://e.vitanaland.com/profiles/${encodeURIComponent(route.identifier)}`;
         const destination = getRedirectUrl('profiles', route.identifier);
-        return renderProfileOg(route.identifier, canonical, destination);
+        return renderProfileOg(route.identifier, canonical, destination, config);
       }
 
-      const ogUrl = getOgFunctionUrl(route.type, route.identifier);
+      const ogUrl = getOgFunctionUrl(route.type, route.identifier, config);
       if (ogUrl) {
         const ogResp = await fetch(ogUrl, {
           headers: { 'User-Agent': ua }
