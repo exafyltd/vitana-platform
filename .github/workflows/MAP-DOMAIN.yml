@@ -1,0 +1,55 @@
+name: Map Cloud Run Domain (one-off helper)
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Cloud Run service name'
+        required: true
+      domain:
+        description: 'Custom domain to map (e.g. preview.gateway.vitanaland.com)'
+        required: true
+      region:
+        description: 'Cloud Run region'
+        required: false
+        default: 'us-central1'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Create domain mapping
+        run: |
+          set +e
+          # Idempotent: if mapping already exists, just print it and exit 0.
+          EXISTING=$(gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
+            --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1 \
+            --format='value(metadata.name)' 2>/dev/null)
+          if [ -n "$EXISTING" ]; then
+            echo "Mapping already exists for ${{ github.event.inputs.domain }} — skipping create"
+            gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
+              --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1
+            exit 0
+          fi
+          set -e
+          gcloud beta run domain-mappings create \
+            --service="${{ github.event.inputs.service }}" \
+            --domain="${{ github.event.inputs.domain }}" \
+            --region="${{ github.event.inputs.region }}" \
+            --project=lovable-vitana-vers1
+      - name: Show mapping status + required DNS records
+        run: |
+          gcloud beta run domain-mappings describe "${{ github.event.inputs.domain }}" \
+            --region="${{ github.event.inputs.region }}" --project=lovable-vitana-vers1 \
+            --format='yaml(status.resourceRecords,status.conditions,spec.routeName)'
