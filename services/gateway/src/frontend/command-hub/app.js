@@ -5688,8 +5688,14 @@ function renderHeader() {
     // to the legacy modal — it shows a banner saying "use prod CH to publish".
     // Anchor the popover as a sibling of the button via a position:relative
     // wrapper so the popover's position:absolute lands correctly.
-    const publishWrap = document.createElement('div');
-    publishWrap.style.cssText = 'position:relative;display:inline-flex;flex-direction:column;align-items:flex-start;';
+    // The publish flow is a popover anchored to the button via position:absolute.
+    // Wrapping the button in a position:relative inline-block keeps the popover
+    // positioned correctly WITHOUT changing the button's height or alignment
+    // relative to sibling pills (AUTOPILOT / OPERATOR / CLOCK).  No "Live: ..."
+    // pill in the header — the live-revision context lives INSIDE the popover
+    // where the operator actually needs it (deciding what to publish).
+    const publishWrap = document.createElement('span');
+    publishWrap.style.cssText = 'position:relative;display:inline-block;';
 
     const publishBtn = document.createElement('button');
     publishBtn.className = 'header-pill header-pill--neutral';
@@ -5697,10 +5703,8 @@ function renderHeader() {
     publishBtn.onclick = async () => {
         const isProdCH = window.VitanaStaging && window.VitanaStaging.env === 'production';
         if (isProdCH) {
-            // Inline popover flow. Reset publishFlow each time so a previous
-            // success/error doesn't bleed in.
             state.publishFlow = {
-                open: !state.publishFlow.open,  // toggle
+                open: !state.publishFlow.open,
                 phase: 'loading',
                 message: '',
                 vtid: null,
@@ -5727,33 +5731,19 @@ function renderHeader() {
     };
     publishWrap.appendChild(publishBtn);
 
-    // Live revision pill under the button (Lovable-style "Live: a7b3f9 · 12m ago").
-    if (window.VitanaStaging && typeof window.VitanaStaging.renderLiveRevisionPill === 'function') {
-        try {
-            const pill = window.VitanaStaging.renderLiveRevisionPill({
-                buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
-            });
-            publishWrap.appendChild(pill);
-        } catch (err) {
-            console.warn('[VitanaStaging] renderLiveRevisionPill failed:', err);
-        }
-    }
-
-    // Mount the inline publish popover when open (prod CH only).
     if (state.publishFlow && state.publishFlow.open && window.VitanaStaging && window.VitanaStaging.renderPublishInlineFlow) {
         try {
             const popover = window.VitanaStaging.renderPublishInlineFlow({
                 buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
                 onAfterPublish: function () {
-                    // Refresh deployment history + live revision after publish.
                     if (typeof fetchDeploymentHistory === 'function') {
                         fetchDeploymentHistory().then(function (h) {
                             state.versionHistory = h;
                             if (typeof renderApp === 'function') renderApp();
                         }).catch(function () { /* swallow */ });
                     }
-                    if (window.state && window.state.liveRevision) {
-                        window.state.liveRevision.lastFetched = 0; // force refresh
+                    if (window.__vitana_state && window.__vitana_state.liveRevision) {
+                        window.__vitana_state.liveRevision.lastFetched = 0;
                     }
                 },
             });

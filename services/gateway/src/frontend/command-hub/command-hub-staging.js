@@ -507,46 +507,83 @@
       return card;
     }
 
-    // Phases loading / ready / publishing / building / rolling all show the
-    // source-staging card + a single action button (state varies).
+    // Fetch BOTH staging (source) AND prod (currently live) revisions on
+    // first open so the popover shows the full before/after comparison.
     if (!s.sourceRevision) {
-      // Fetch staging revision once on first render.
-      fetch('/api/v1/operator/revisions?service=gateway-staging&limit=1', { credentials: 'include', headers })
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status + ' ' + r.statusText)); })
-        .then(function (body) {
-          const rev = body && body.revisions && body.revisions[0];
-          if (!rev) throw new Error('No staging revisions returned');
+      Promise.all([
+        fetch('/api/v1/operator/revisions?service=gateway-staging&limit=1', { credentials: 'include', headers })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('staging ' + r.status)); }),
+        fetch('/api/v1/operator/revisions?service=gateway&limit=5', { credentials: 'include', headers })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('prod ' + r.status)); }),
+      ])
+        .then(function (results) {
+          const sRev = results[0] && results[0].revisions && results[0].revisions[0];
+          const pRevs = (results[1] && results[1].revisions) || [];
+          const pRev = pRevs.find(function (r) { return r.isActive; }) || pRevs[0];
+          if (!sRev) throw new Error('No staging revisions');
           if (window.__vitana_state && window.__vitana_state.publishFlow) {
-            window.__vitana_state.publishFlow.sourceRevision = rev.shortName;
-            window.__vitana_state.publishFlow.sourceCommit = rev.commitSha || null;
-            window.__vitana_state.publishFlow.sourceDeployedAt = rev.createdAt || null;
-            window.__vitana_state.publishFlow.phase = 'ready';
+            const sf = window.__vitana_state.publishFlow;
+            sf.sourceRevision = sRev.shortName;
+            sf.sourceCommit = sRev.commitSha || null;
+            sf.sourceDeployedAt = sRev.createdAt || null;
+            sf.liveRevision = pRev ? pRev.shortName : null;
+            sf.liveCommit = pRev && pRev.commitSha ? pRev.commitSha : null;
+            sf.liveDeployedAt = pRev ? pRev.createdAt : null;
+            sf.phase = 'ready';
           }
           if (typeof renderApp === 'function') renderApp();
         })
         .catch(function (err) {
           if (window.__vitana_state && window.__vitana_state.publishFlow) {
             window.__vitana_state.publishFlow.phase = 'error';
-            window.__vitana_state.publishFlow.message = 'Could not load staging: ' + (err && err.message);
+            window.__vitana_state.publishFlow.message = 'Could not load: ' + (err && err.message);
           }
           if (typeof renderApp === 'function') renderApp();
         });
     }
 
-    // Source-staging info block.
-    const sourceBlock = el('div', { style: 'margin-bottom:12px;color:#cbd5e1;line-height:1.55;' });
+    // Comparison block: "Currently live" ↓ arrow ↓ "Source from staging".
+    const compareBlock = el('div', { style: 'margin-bottom:14px;color:#cbd5e1;line-height:1.5;' });
+
     if (s.sourceRevision) {
-      sourceBlock.appendChild(el('div', { style: 'color:#888;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;' }, 'Source: gateway-staging'));
-      sourceBlock.appendChild(el('div', { style: 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;' }, s.sourceRevision));
-      if (s.sourceCommit) {
-        sourceBlock.appendChild(el('div', { style: 'margin-top:2px;' },
-          'commit ', el('code', { style: 'color:#fde68a;font-size:12px;' }, s.sourceCommit.slice(0, 7)),
-          s.sourceDeployedAt ? ' · ' + formatTimeAgo(s.sourceDeployedAt) : ''));
+      // Currently live (prod).
+      compareBlock.appendChild(el('div', {
+        style: 'color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;',
+      }, 'Currently live'));
+      const liveLine = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:2px;' },
+        el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#10b981;flex:none;' }),
+        el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
+          s.liveCommit ? s.liveCommit.slice(0, 7) : (s.liveRevision || 'unknown')),
+        el('span', { style: 'color:#888;font-size:11px;' }, s.liveDeployedAt ? formatTimeAgo(s.liveDeployedAt) : '')
+      );
+      compareBlock.appendChild(liveLine);
+
+      // Arrow.
+      compareBlock.appendChild(el('div', { style: 'color:#666;font-size:14px;line-height:1;text-align:center;margin:6px 0 6px 2px;' }, '↓'));
+
+      // Source from staging.
+      compareBlock.appendChild(el('div', {
+        style: 'color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;',
+      }, 'Source from staging'));
+      const sourceLine = el('div', { style: 'display:flex;align-items:center;gap:8px;' },
+        el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#93c5fd;flex:none;' }),
+        el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
+          s.sourceCommit ? s.sourceCommit.slice(0, 7) : s.sourceRevision),
+        el('span', { style: 'color:#888;font-size:11px;' }, s.sourceDeployedAt ? formatTimeAgo(s.sourceDeployedAt) : '')
+      );
+      compareBlock.appendChild(sourceLine);
+
+      // "Same as live" hint if commits match — operator should know the
+      // publish would be a no-op.
+      if (s.sourceCommit && s.liveCommit && s.sourceCommit === s.liveCommit) {
+        compareBlock.appendChild(el('div', {
+          style: 'margin-top:8px;padding:6px 9px;background:rgba(148,163,184,0.1);border-radius:5px;font-size:11px;color:#94a3b8;',
+        }, 'Staging and production are on the same commit. Publish will re-deploy the current code.'));
       }
     } else {
-      sourceBlock.appendChild(el('div', { style: 'color:var(--color-text-secondary);' }, 'Loading staging revision…'));
+      compareBlock.appendChild(el('div', { style: 'color:var(--color-text-secondary);font-size:12px;' }, 'Loading revisions…'));
     }
-    card.appendChild(sourceBlock);
+    card.appendChild(compareBlock);
 
     // Single big action button. Disabled until phase=ready.
     const publishing = phase === 'publishing' || phase === 'building' || phase === 'rolling';
