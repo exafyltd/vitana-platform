@@ -1019,6 +1019,91 @@ export async function handleLiveSessionStart(
     );
   }
 
+  // VTID-03154 Slices C + D: journey-greeting block.
+  // Resolves the persistent user_journey row (Slice A) and decides whether
+  // this session should open with the one-time first-session welcome
+  // (is_first_session=true) or the daily-morning greeting (new calendar
+  // day in user TZ). Anonymous and missing-user sessions are skipped.
+  // Best-effort: any failure leaves journeyGreetingBlock empty and the
+  // session falls back to today's behavior. Self-contained scope — uses
+  // its own supabase handle so wake-brief failures upstream don't
+  // suppress the journey greeting.
+  try {
+    if (orbIdentity?.user_id) {
+      const { getSupabase: getSupa } = await import('../../../lib/supabase');
+      const supa = getSupa();
+      if (supa) {
+        const [
+          { getJourneyState, updateSessionEndState },
+          { buildJourneyGreetingBlock, todayInTimezone },
+          { fetchLifeCompass },
+        ] = await Promise.all([
+          import('../../../services/journey/user-journey-service'),
+          import('../instruction/journey-greeting'),
+          import('../../../services/user-context-profiler'),
+        ]);
+        const journey = await getJourneyState(supa, orbIdentity.user_id);
+        if (journey) {
+          const lifeCompass = await fetchLifeCompass(supa, orbIdentity.user_id).catch(() => null);
+          const tz = (session as any).clientContext?.timezone ?? null;
+          const todayDateIso = todayInTimezone(new Date(), tz);
+          // Best-effort first-name read for the contract. The wake-brief
+          // resolves firstName upstream; we read app_users.display_name
+          // here as a self-contained fallback so this block does not
+          // depend on the wake-brief try-block scope.
+          let nameForGreeting: string | null = null;
+          try {
+            const { data: prof } = await supa
+              .from('app_users')
+              .select('display_name')
+              .eq('user_id', orbIdentity.user_id)
+              .maybeSingle();
+            const dn = (prof?.display_name as string | undefined) ?? null;
+            if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
+          } catch { /* leave nameForGreeting null */ }
+          const result = buildJourneyGreetingBlock({
+            journey,
+            lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
+            firstName: nameForGreeting,
+            lang,
+            todayDateIso,
+          });
+          if (result.block && result.meta) {
+            (session as any).journeyGreetingBlock = result.block;
+            (session as any).journeyGreetingMeta = result.meta;
+            // Suppress the wake-brief Say-exactly override when a journey
+            // greeting fires — the journey greeting becomes the turn-1
+            // owner. Teacher Mode (turn 2+) is unaffected. Otherwise the
+            // model gets two conflicting "first turn" instructions.
+            if (session.wakeBriefOverrideBlock) {
+              console.log(
+                `[VTID-03154] Suppressing wake-brief override block for ${sessionId} — journey greeting (${result.meta.kind}) takes turn 1.`,
+              );
+              session.wakeBriefOverrideBlock = '';
+            }
+            console.log(
+              `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
+            );
+            // Fire-and-forget update: clear is_first_session for Slice C,
+            // advance last_session_date for both kinds so same-day repeat
+            // sessions don't re-fire the morning greeting.
+            const userIdForUpdate = orbIdentity.user_id;
+            updateSessionEndState(supa, userIdForUpdate, {
+              last_session_date: result.meta.today_date_iso,
+              clear_first_session: result.meta.kind === 'first_session',
+            }).catch((err: any) =>
+              console.warn(`[VTID-03154] update after fire failed (non-fatal): ${err.message}`),
+            );
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(
+      `[VTID-03154] journey-greeting resolution failed (non-fatal) for ${sessionId}: ${(e as Error).message}`,
+    );
+  }
+
   // Emit OASIS event with identity context
   await deps.emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
