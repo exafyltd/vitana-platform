@@ -107,9 +107,21 @@ export async function describeService(service: string): Promise<ServiceSummary> 
     };
   };
 
+  // Cloud Run v2 traffic targets have two shapes:
+  //   - { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: '...', percent }
+  //   - { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent }  (no revision field)
+  // The LATEST type means "route to whatever latestReadyRevision is", which is
+  // the default after `gcloud run deploy` without an explicit --traffic flag.
+  // We resolve LATEST entries to data.latestReadyRevision so the CLOCK
+  // dropdown's `is_active` flag is accurate.
   const trafficSplit = (data.traffic ?? [])
-    .filter(t => (t.percent ?? 0) > 0 && t.revision)
-    .map(t => ({ revision: t.revision!, percent: t.percent ?? 0 }))
+    .filter(t => (t.percent ?? 0) > 0)
+    .map(t => {
+      const isLatest = t.type === 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST';
+      const rev = (isLatest ? data.latestReadyRevision : t.revision) ?? null;
+      return rev ? { revision: rev, percent: t.percent ?? 0 } : null;
+    })
+    .filter((x): x is { revision: string; percent: number } => x !== null)
     .sort((a, b) => b.percent - a.percent);
 
   const activeFull = trafficSplit[0]?.revision ?? data.latestReadyRevision ?? null;
