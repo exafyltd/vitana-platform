@@ -5782,6 +5782,17 @@ async function connectToLiveAPI(
                           // live-session-controller.ts:VTID-03101 for the
                           // write side. Empty when no override is active.
                           + (session.wakeBriefOverrideBlock || '')
+                          // VTID-03154 Slices C+D: journey-greeting block.
+                          // Owns TURN 1 when fired (first-session welcome
+                          // for is_first_session=true users, or daily
+                          // morning greeting on a new calendar day in user
+                          // TZ). When this fires, the controller has
+                          // already cleared wakeBriefOverrideBlock above so
+                          // they don't conflict. Structural prompt (not
+                          // Say-exactly) — the LLM composes fresh wording
+                          // every time, satisfying the required-elements /
+                          // forbidden-elements contract.
+                          + ((session as any).journeyGreetingBlock || '')
                           // VTID-03112 (T1): Teacher Mode block. Empty
                           // when the wake-brief winner wasn't the
                           // Teacher OR the manual resolver failed.
