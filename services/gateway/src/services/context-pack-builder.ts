@@ -39,6 +39,14 @@ import {
   RetrievalSource,
   ConversationChannel,
 } from '../types/conversation';
+// VTID-03158 (CPB-7/8/9): typed readers own all direct Supabase
+// access for the ledger, OASIS event, and autopilot-recommendation
+// surfaces. CPB just receives shaped results.
+import { getActiveVTIDs } from './vtid-ledger-reader';
+import {
+  getDeveloperOasisContext,
+  getCommunityOasisContext,
+} from './oasis-context-reader';
 import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
 import {
   getCurrentFacts,
@@ -694,61 +702,11 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
 // Active VTIDs Retrieval
 // =============================================================================
 
-/**
- * Fetch active VTIDs for context
- */
-async function fetchActiveVTIDs(
-  tenant_id: string,
-  limit: number = 5
-): Promise<ActiveVTID[]> {
-  try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return [];
-    }
-
-    // Fetch recent active tasks from vtid_ledger
-    // VTID-01224-FIX: Add timeout
-    const vtidTimeout = fetchWithTimeout();
-    try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/vtid_ledger?status=in.(in-progress,scheduled,planned)&order=created_at.desc&limit=${limit}`,
-        {
-          headers: {
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
-          signal: vtidTimeout.signal,
-        }
-      );
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const results = await response.json() as Array<{
-        vtid: string;
-        title: string;
-        status: string;
-        priority?: string;
-      }>;
-
-      return results.map(r => ({
-        vtid: r.vtid,
-        title: r.title || r.vtid,
-        status: r.status,
-        priority: r.priority,
-      }));
-    } finally {
-      vtidTimeout.clear();
-    }
-  } catch (error: any) {
-    console.warn(`[VTID-01216] Failed to fetch active VTIDs: ${error.message}`);
-    return [];
-  }
-}
+// VTID-03158 (CPB-7): the ledger read lives behind the typed
+// `vtid-ledger-reader` boundary now. CPB no longer constructs Supabase
+// REST URLs for the ledger here. See
+// `test/services/context-pack-oasis-boundary.test.ts` for the
+// anti-regression contract.
 
 // =============================================================================
 // Context Pack Builder
@@ -928,73 +886,51 @@ export async function buildContextPack(
     checkToolHealth().then(result => { toolHealth = result; })
   );
   retrievalPromises.push(
-    fetchActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
+    getActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
   );
 
   // VITANA-BRAIN: Fetch OASIS system awareness context (role-gated)
+  //
+  // VTID-03158 (CPB-8 / CPB-9): all direct Supabase access for this
+  // block now lives behind `oasis-context-reader`. CPB owns only the
+  // role-routing decision; the reader owns table names, URLs, env
+  // reads, and the parallel-fan-out shape.
   let oasisContext: ContextPack['oasis_context'] | undefined;
   const oasisRole = input.role || 'community';
-  if (oasisRole === 'developer' || oasisRole === 'admin' || oasisRole === 'super_admin' || oasisRole === 'DEV' || oasisRole === 'infra') {
+  if (
+    oasisRole === 'developer' ||
+    oasisRole === 'admin' ||
+    oasisRole === 'super_admin' ||
+    oasisRole === 'DEV' ||
+    oasisRole === 'infra'
+  ) {
     retrievalPromises.push(
       (async () => {
         try {
-          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!SUPABASE_URL_ENV || !SUPABASE_KEY) return;
-          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-
-          // Parallel: active tasks, recent deploys, pending approvals, self-healing alerts
-          const [tasksResp, deploysResp, approvalsResp, healingResp] = await Promise.all([
-            // Active VTIDs from ledger (in_progress + scheduled, limit 5)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/vtid_ledger?select=vtid,title,status&status=in.(in_progress,scheduled,allocated)&is_terminal=is.false&order=updated_at.desc&limit=5`, { headers }),
-            // Recent deploys (last 3 from oasis_events)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=service,status,created_at&topic=like.cicd.deploy.service.*&order=created_at.desc&limit=3`, { headers }),
-            // Pending approvals count
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=eq.cicd.github.safe_merge.evaluated&status=eq.info&order=created_at.desc&limit=20`, { headers }),
-            // Self-healing alerts (last 24h)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=like.self-healing.*&status=eq.error&created_at=gte.${new Date(Date.now() - 86400000).toISOString()}&limit=50`, { headers }),
-          ]);
-
-          const tasks = tasksResp.ok ? await tasksResp.json() as Array<{ vtid: string; title: string; status: string }> : [];
-          const deploys = deploysResp.ok ? await deploysResp.json() as Array<{ service: string; status: string; created_at: string }> : [];
-          const approvals = approvalsResp.ok ? await approvalsResp.json() as Array<{ id: string }> : [];
-          const healing = healingResp.ok ? await healingResp.json() as Array<{ id: string }> : [];
-
-          oasisContext = {
-            active_tasks: tasks.map(t => ({ vtid: t.vtid, title: t.title, status: t.status })),
-            recent_deploys: deploys.map(d => ({ service: d.service || 'unknown', status: d.status, created_at: d.created_at })),
-            pending_approvals_count: approvals.length,
-            self_healing_alerts: healing.length,
-            recent_recommendations: [],
-          };
-          console.log(`[OASIS-CTX] Fetched: ${tasks.length} tasks, ${deploys.length} deploys, ${approvals.length} approvals, ${healing.length} healing alerts`);
+          const block = await getDeveloperOasisContext({
+            tenantId: input.lens.tenant_id,
+          });
+          if (block) {
+            oasisContext = block;
+            console.log(
+              `[OASIS-CTX] Fetched: ${block.active_tasks.length} tasks, ` +
+              `${block.recent_deploys.length} deploys, ` +
+              `${block.pending_approvals_count} approvals, ` +
+              `${block.self_healing_alerts} healing alerts`,
+            );
+          }
         } catch (oasisErr: any) {
           console.warn(`[OASIS-CTX] OASIS context fetch failed (non-fatal): ${oasisErr.message}`);
         }
       })()
     );
   } else {
-    // Community role: fetch recent recommendation activations only
+    // Community role: surface recent recommendation activations only.
     retrievalPromises.push(
       (async () => {
         try {
-          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!SUPABASE_URL_ENV || !SUPABASE_KEY || !input.lens.user_id) return;
-          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-          const recsResp = await fetch(`${SUPABASE_URL_ENV}/rest/v1/autopilot_recommendations?select=title,status&user_id=eq.${input.lens.user_id}&status=in.(activated,completed)&order=updated_at.desc&limit=3`, { headers });
-          if (recsResp.ok) {
-            const recs = await recsResp.json() as Array<{ title: string; status: string }>;
-            if (recs.length > 0) {
-              oasisContext = {
-                active_tasks: [],
-                recent_deploys: [],
-                pending_approvals_count: 0,
-                self_healing_alerts: 0,
-                recent_recommendations: recs,
-              };
-            }
-          }
+          const block = await getCommunityOasisContext(input.lens.user_id);
+          if (block) oasisContext = block;
         } catch {}
       })()
     );
