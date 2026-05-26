@@ -390,21 +390,20 @@ export async function fetchLifeCompass(
     // back to the base columns rather than dropping the compass entirely.
     const extendedCols =
       'primary_goal, category, confidence_score, target_date, target_value, target_unit, starting_value, created_at';
-    let { data, error } = await client
-      .from('life_compass')
-      .select(extendedCols)
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (error) {
-      ({ data, error } = await client
+    const queryCols = async (cols: string) =>
+      client
         .from('life_compass')
-        .select('primary_goal, category, confidence_score, created_at')
+        .select(cols)
         .eq('user_id', userId)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
-        .limit(1));
+        .limit(1);
+
+    let data: any[] | null;
+    let error: any;
+    ({ data, error } = await queryCols(extendedCols));
+    if (error) {
+      ({ data, error } = await queryCols('primary_goal, category, confidence_score, created_at'));
     }
     if (error || !data || data.length === 0) return null;
     const row = data[0] as {
