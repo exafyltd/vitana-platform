@@ -97,6 +97,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vitanaIndexRouter = require('./routes/vitana-index').default;
   // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
   const myJourneyRouter = require('./routes/my-journey').default;
+  const goalPlannerRouter = require('./routes/goal-planner').default;
   const landingRouteRouter = require('./routes/landing-route').default;
   const orbToolRouter = require('./routes/orb-tool').default;
   const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
@@ -704,6 +705,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-03152: journey-foundation endpoints.
   mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
+  mountRouterSync(app, '/api/v1/goal-plan', goalPlannerRouter, { owner: 'goal-planner' });
   mountRouterSync(app, '/api/v1/landing-route', landingRouteRouter, { owner: 'landing-route' });
 
   // VTID-LIVEKIT-TOOLS: dispatcher endpoint that wraps every tool whose Vertex
