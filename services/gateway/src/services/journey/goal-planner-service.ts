@@ -115,7 +115,7 @@ export function mapPlanToSteps(plan: LLMPlan, startDateIso: string, totalDays: n
 async function fetchActiveGoal(client: SupabaseClient, userId: string): Promise<ActiveGoal | null> {
   const { data, error } = await client
     .from('life_compass')
-    .select('id, primary_goal, category, target_date, target_value, target_unit, created_at, tenant_id')
+    .select('id, primary_goal, category, target_date, target_value, target_unit, created_at')
     .eq('user_id', userId)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -131,7 +131,7 @@ async function fetchActiveGoal(client: SupabaseClient, userId: string): Promise<
     target_value: row.target_value ?? null,
     target_unit: row.target_unit ?? null,
     set_at: row.created_at,
-    tenant_id: row.tenant_id ?? null,
+    tenant_id: null, // life_compass has no tenant_id column
   };
 }
 
