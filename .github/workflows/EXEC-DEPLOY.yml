@@ -547,19 +547,13 @@ jobs:
 
           NEW_REV=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT" \
             --format='value(status.latestReadyRevisionName)')
-          # The currently-serving revision = whatever has the largest non-zero
-          # traffic percent.  If only --no-traffic deploys ever ran, fall back
-          # to "second most recent ready revision".
+          # The currently-serving revision = the one with the largest non-zero
+          # traffic percent that isn't the new revision. jq because inline
+          # python can't be indented inside a YAML `run: |` block (parser thinks
+          # de-dented lines end the block scalar).
           ACTIVE_REV=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT" \
             --format='json' \
-            | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-traffic = (d.get("status") or {}).get("traffic") or []
-active = [t for t in traffic if (t.get("percent") or 0) > 0 and t.get("revisionName") and t.get("revisionName") != sys.argv[1]]
-active.sort(key=lambda t: t.get("percent") or 0, reverse=True)
-print(active[0]["revisionName"] if active else "")
-' "$NEW_REV")
+            | jq -r --arg new "$NEW_REV" '.status.traffic // [] | map(select((.percent // 0) > 0 and .revisionName and .revisionName != $new)) | sort_by(.percent) | reverse | .[0].revisionName // ""')
 
           if [ -z "$ACTIVE_REV" ]; then
             echo "::warning::No prior active revision found for $SERVICE — sending 100% to new (canary effectively full ship)."
