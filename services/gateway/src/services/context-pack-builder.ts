@@ -586,8 +586,13 @@ async function fetchMemoryFacts(
 /**
  * VTID-01224-FIX: Fetch diary entries to surface in the LLM context pack.
  *
- * VTID-03145 (PR 2): now routed through the memory-broker boundary.
- * The broker owns the canonical DIARY stream (`memory_diary_entries`).
+ * VTID-03145 (PR 2): routed through the memory-broker DIARY block —
+ * raw table reads no longer live in this file. The broker owns the
+ * canonical diary stream.
+ *
+ * VTID-03153 (CPB-4 anti-regression): forbidden table names are
+ * intentionally absent from this file. Reintroducing them is caught
+ * by `test/services/context-pack-broker-boundary.test.ts`.
  *
  * Results are returned as MemoryHit[] to merge with other memory hits.
  */
@@ -603,15 +608,11 @@ async function fetchDiaryHits(
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    // VTID-03145 (PR 2): DIARY now routed through the memory-broker
-    // boundary. The broker reads `memory_diary_entries` via the
-    // approved `getSupabase()` helper. The legacy `diary_entries`
-    // table read is dropped here — context-pack alignment with the
-    // broker's canonical-table decision (audit 2026-05-22, CPB-4).
-    // Voice-saved diary entries written via tool_save_diary_entry
-    // into `diary_entries` remain readable through orb-memory-bridge;
-    // they no longer surface in the LLM context pack until the write
-    // path is migrated to `memory_diary_entries`.
+    // VTID-03145 (PR 2): DIARY routed through the memory-broker. The
+    // broker owns the canonical diary store. The legacy alternative
+    // diary store (voice tool_save_diary_entry write path) is no
+    // longer mirrored into the context pack here; that bridge moves
+    // when the write path is unified upstream.
     const pack = await getMemoryContext({
       tenant_id: lens.tenant_id,
       user_id: lens.user_id,
@@ -657,14 +658,16 @@ async function fetchDiaryHits(
  * Fetch relationship graph context. Returns human-readable strings
  * describing the user's closest connections.
  *
- * VTID-03145 (PR 2): NETWORK now routed through the memory-broker
- * boundary. The broker reads `mem_graph_edges` + `relationship_nodes`
- * via the approved `getSupabase()` helper. The legacy
- * `relationship_edges` direct read is dropped: `mem_graph_edges` is
- * the canonical Phase 5/6 schema for relationship traversal (audit
- * 2026-05-22, CPB-5). The output array shape (string[]) is unchanged;
- * each string is now centred on the user-vs-other-side of an edge
- * (the broker resolves the "other side" already).
+ * VTID-03145 (PR 2): NETWORK routed through the memory-broker NETWORK
+ * block. The broker owns the canonical graph traversal; this file
+ * does not name graph tables anymore. The output array shape
+ * (string[]) is unchanged; each string is now centred on the user-
+ * vs-other-side of an edge (the broker resolves the "other side"
+ * already).
+ *
+ * VTID-03153 (CPB-5 anti-regression): forbidden table names are
+ * intentionally absent from this file; see
+ * `test/services/context-pack-broker-boundary.test.ts`.
  */
 async function fetchRelationshipContext(
   lens: ContextLens,
