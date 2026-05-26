@@ -1071,41 +1071,29 @@ export async function handleLiveSessionStart(
           if (result.block && result.meta) {
             (session as any).journeyGreetingBlock = result.block;
             (session as any).journeyGreetingMeta = result.meta;
-            // Suppress the wake-brief Say-exactly override when a journey
-            // greeting fires — the journey greeting becomes the turn-1
-            // owner. Otherwise the model gets two conflicting "first turn"
-            // instructions.
-            if (session.wakeBriefOverrideBlock) {
-              console.log(
-                `[VTID-03154] Suppressing wake-brief override block for ${sessionId} — journey greeting (${result.meta.kind}) takes turn 1.`,
-              );
-              session.wakeBriefOverrideBlock = '';
-            }
-            // VTID-03157: also suppress the Teacher Mode block. Its
-            // system_instruction contains the literal sentence "Your
-            // FIRST spoken line of this session was a permission-asking
-            // offer for X", which directly contradicts the journey
-            // greeting. Because Teacher Mode is concatenated AFTER the
-            // journey greeting in orb-live.ts, Gemini's recency primacy
-            // gives Teacher Mode the upper hand — so the user hears the
-            // curriculum-march pattern instead of the new journey
-            // framing. The user's runtime test surfaced this: they
-            // experienced "no change" after VTID-03154 because Teacher
-            // Mode was still winning turn 1.
-            // Clearing teacherModeContent here means: on a new-day
-            // session (or a brand-new user's first session), the journey
-            // greeting cleanly owns turn 1 and Vitana responds normally
-            // to whatever the user says from turn 2+. If the user wants
-            // to keep learning a specific capability, they can ask, and
-            // Vitana will discover/answer via search_knowledge — same
-            // pathway as any other "what is X?" question.
-            if ((session as any).teacherModeContent) {
-              console.log(
-                `[VTID-03157] Suppressing Teacher Mode block for ${sessionId} — journey greeting (${result.meta.kind}) takes turn 1 and dominates the session.`,
-              );
-              (session as any).teacherModeContent = null;
-              (session as any).teacherModeFirstName = null;
-            }
+            // VTID-03160 REVERT: VTID-03154 cleared wakeBriefOverrideBlock
+            // and VTID-03157 cleared teacherModeContent so the journey
+            // greeting could own turn 1. Both clearings broke the Teacher
+            // flow in production: with teacherModeContent null, the
+            // Teacher's permission-asking opener still fired (via the
+            // wake-brief Say-exactly OR via Gemini's general prompt
+            // memory) but there were no turn-2+ instructions to guide
+            // what to teach, so Gemini fell back to the
+            // end_teaching_session tool and closed the overlay the
+            // moment the user said yes.
+            //
+            // Restoring the working Teacher experience is more important
+            // than the journey-greeting framing right now. The greeting
+            // block is still set on the session (orb-live.ts appends it
+            // into the system instruction), so the LLM sees the
+            // journey-day context, but it does NOT pre-empt the existing
+            // wake-brief or Teacher Mode pathways. Proper journey-vs-
+            // Teacher integration is a follow-up slice that requires
+            // either (a) reordering the concat so journeyGreetingBlock
+            // gets recency primacy AND adding journey-aware preamble to
+            // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
+            // suppressing the wake-brief's Teacher-winner selection
+            // upstream when journey-greeting will fire.
             console.log(
               `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
             );
