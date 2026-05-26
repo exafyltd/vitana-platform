@@ -178,6 +178,21 @@ function parseLooseJson(text: string): unknown {
   }
 }
 
+function parseLooseJson(text: string): unknown {
+  if (!text) return null;
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+  try {
+    return JSON.parse(t);
+  } catch {
+    return null;
+  }
+}
+
 function validatePlan(raw: unknown): LLMPlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as any;
