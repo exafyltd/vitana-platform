@@ -205,6 +205,21 @@ const PLAN_TOOL = {
   },
 } as const;
 
+function parseLooseJson(text: string): unknown {
+  if (!text) return null;
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+  try {
+    return JSON.parse(t);
+  } catch {
+    return null;
+  }
+}
+
 function validatePlan(raw: unknown): LLMPlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as any;
@@ -233,6 +248,8 @@ export async function generateGoalPlan(
     return null;
   }
 
+  console.log(`${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date}`);
+
   const startIso = goal.set_at;
   const startDate = startIso.slice(0, 10);
   const totalDays = Math.max(1, calendarDaysBetween(startIso, goal.target_date));
@@ -245,13 +262,24 @@ export async function generateGoalPlan(
     tools: [PLAN_TOOL as any],
     forceTool: 0,
   });
-  if (!result.ok || !result.toolCall) {
-    console.error(`${LOG} LLM plan generation failed: ${result.error ?? 'no tool call'}`);
+  console.log(
+    `${LOG} llm result ok=${result.ok} provider=${result.provider} model=${result.model} ` +
+      `toolCall=${!!result.toolCall} textLen=${(result.text ?? '').length} err=${result.error ?? ''}`,
+  );
+  if (!result.ok) {
+    console.error(`${LOG} LLM call failed: ${result.error ?? 'unknown'}`);
     return null;
   }
-  const plan = validatePlan(result.toolCall.arguments);
+  // Prefer the structured tool call; fall back to JSON embedded in free text
+  // (some providers/models return the plan as text instead of a tool call).
+  let raw: unknown = result.toolCall?.arguments ?? null;
+  if (!raw && result.text) {
+    raw = parseLooseJson(result.text);
+    if (raw) console.log(`${LOG} parsed plan from text (no tool call)`);
+  }
+  const plan = raw ? validatePlan(raw) : null;
   if (!plan) {
-    console.error(`${LOG} LLM plan failed validation`);
+    console.error(`${LOG} no usable plan. textSnippet=${(result.text ?? '').slice(0, 300)}`);
     return null;
   }
 
