@@ -5,6 +5,8 @@
  *                                            user's active goal (supersedes prior)
  *   GET  /api/v1/goal-plan                 → active plan + steps + live day/days-left
  *   POST /api/v1/goal-plan/steps/:id/complete  → mark a step done (body: { done })
+ *
+ * Deploy marker: re-trigger AUTO-DEPLOY so /api/v1/goal-plan ships to the gateway.
  */
 
 import { Router, Response } from 'express';
