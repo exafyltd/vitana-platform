@@ -10,7 +10,11 @@
  *     day_in_journey, total_days, days_left, plan_type, plan_summary,
  *     status, is_first_session, last_session_date,
  *     current_phase: { id, name, day_range, day_in_phase, days_to_next_milestone },
- *     life_compass: { active_goal_text, pillar_focus, set_at } | null,
+ *     life_compass: {
+ *       active_goal_text, pillar_focus, set_at,
+ *       target_date, target_value, target_unit,        // goal-centric North Star
+ *       has_deadline, days_to_deadline, goal_total_days, goal_day, goal_progress_pct,
+ *     } | null,
  *     vitana_index: { today, tier, trend_7d } | null,
  *   }
  *
@@ -23,12 +27,75 @@
 import { Router, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
-import { fetchVitanaIndexForProfiler, fetchLifeCompass } from '../services/user-context-profiler';
+import { fetchVitanaIndexForProfiler, fetchLifeCompass, LifeCompassSnapshot } from '../services/user-context-profiler';
 import { getJourneyState } from '../services/journey/user-journey-service';
 
 const router = Router();
 
 const VTID = 'VTID-03152';
+
+const MS_PER_DAY = 86_400_000;
+
+/** UTC-midnight epoch for the calendar date of an ISO date/datetime string. */
+function utcMidnight(iso: string): number | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Whole CALENDAR days between two ISO date/datetime strings (b - a). Both are
+ * normalized to UTC midnight first, so a noon "now" against a midnight deadline
+ * date yields a stable calendar-day count (no time-of-day off-by-one). Can be
+ * negative (deadline already passed). Null when either input is missing/unparseable.
+ */
+function daysBetween(aIso: string | null | undefined, bIso: string | null | undefined): number | null {
+  if (!aIso || !bIso) return null;
+  const a = utcMidnight(aIso);
+  const b = utcMidnight(bIso);
+  if (a === null || b === null) return null;
+  return Math.round((b - a) / MS_PER_DAY);
+}
+
+/**
+ * Goal-centric block for the My Journey North Star. Progress is time-based
+ * (days elapsed since the goal was set vs. days until its deadline) so it is
+ * always computable from dates alone — no quantified measurements required.
+ * All goal-target fields fall back to null when the goal has no deadline yet.
+ */
+export function buildGoalBlock(lc: LifeCompassSnapshot, now: Date = new Date()) {
+  const nowIso = now.toISOString();
+  const hasDeadline = !!lc.target_date;
+
+  const daysToDeadline = hasDeadline
+    ? Math.max(0, daysBetween(nowIso, lc.target_date) ?? 0)
+    : null;
+  const goalTotalDays = hasDeadline
+    ? Math.max(0, daysBetween(lc.set_at, lc.target_date) ?? 0)
+    : null;
+  const goalDay = hasDeadline
+    ? Math.max(0, daysBetween(lc.set_at, nowIso) ?? 0)
+    : null;
+  const goalProgressPct =
+    goalTotalDays && goalTotalDays > 0 && goalDay !== null
+      ? Math.min(100, Math.round((goalDay / goalTotalDays) * 100))
+      : null;
+
+  return {
+    active_goal_text: lc.primary_goal,
+    pillar_focus: lc.category,
+    confidence_score: lc.confidence_score ?? null,
+    target_date: lc.target_date ?? null,
+    target_value: lc.target_value ?? null,
+    target_unit: lc.target_unit ?? null,
+    set_at: lc.set_at ?? null,
+    has_deadline: hasDeadline,
+    days_to_deadline: daysToDeadline,
+    goal_total_days: goalTotalDays,
+    goal_day: goalDay,
+    goal_progress_pct: goalProgressPct,
+  };
+}
 
 function getServiceClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
@@ -103,13 +170,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         current_phase: phase,
         fallback_used: journey.fallback_used,
       },
-      life_compass: lifeCompass
-        ? {
-            active_goal_text: lifeCompass.primary_goal,
-            pillar_focus: lifeCompass.category,
-            confidence_score: lifeCompass.confidence_score ?? null,
-          }
-        : null,
+      life_compass: lifeCompass ? buildGoalBlock(lifeCompass) : null,
       vitana_index: indexSnapshot
         ? {
             today: indexSnapshot.total,
