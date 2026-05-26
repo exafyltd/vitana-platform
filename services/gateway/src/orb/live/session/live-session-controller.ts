@@ -1073,13 +1073,38 @@ export async function handleLiveSessionStart(
             (session as any).journeyGreetingMeta = result.meta;
             // Suppress the wake-brief Say-exactly override when a journey
             // greeting fires — the journey greeting becomes the turn-1
-            // owner. Teacher Mode (turn 2+) is unaffected. Otherwise the
-            // model gets two conflicting "first turn" instructions.
+            // owner. Otherwise the model gets two conflicting "first turn"
+            // instructions.
             if (session.wakeBriefOverrideBlock) {
               console.log(
                 `[VTID-03154] Suppressing wake-brief override block for ${sessionId} — journey greeting (${result.meta.kind}) takes turn 1.`,
               );
               session.wakeBriefOverrideBlock = '';
+            }
+            // VTID-03157: also suppress the Teacher Mode block. Its
+            // system_instruction contains the literal sentence "Your
+            // FIRST spoken line of this session was a permission-asking
+            // offer for X", which directly contradicts the journey
+            // greeting. Because Teacher Mode is concatenated AFTER the
+            // journey greeting in orb-live.ts, Gemini's recency primacy
+            // gives Teacher Mode the upper hand — so the user hears the
+            // curriculum-march pattern instead of the new journey
+            // framing. The user's runtime test surfaced this: they
+            // experienced "no change" after VTID-03154 because Teacher
+            // Mode was still winning turn 1.
+            // Clearing teacherModeContent here means: on a new-day
+            // session (or a brand-new user's first session), the journey
+            // greeting cleanly owns turn 1 and Vitana responds normally
+            // to whatever the user says from turn 2+. If the user wants
+            // to keep learning a specific capability, they can ask, and
+            // Vitana will discover/answer via search_knowledge — same
+            // pathway as any other "what is X?" question.
+            if ((session as any).teacherModeContent) {
+              console.log(
+                `[VTID-03157] Suppressing Teacher Mode block for ${sessionId} — journey greeting (${result.meta.kind}) takes turn 1 and dominates the session.`,
+              );
+              (session as any).teacherModeContent = null;
+              (session as any).teacherModeFirstName = null;
             }
             console.log(
               `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
