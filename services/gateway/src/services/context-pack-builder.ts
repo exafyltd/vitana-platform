@@ -45,7 +45,6 @@ import {
   searchFactsSemantic,
   listFactsByConfidence,
 } from './memory-facts-service';
-import { generateEmbedding } from './embedding-service';
 // VTID-03145 (PR 2): DIARY + NETWORK blocks now route through the
 // memory-broker boundary instead of raw Supabase fetches. See
 // fetchDiaryHits / fetchRelationshipContext below.
@@ -128,11 +127,18 @@ function fetchWithTimeout(timeoutMs: number = CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_
 // =============================================================================
 
 /**
- * VTID-01230: Fetch memory hits using semantic search (primary) with REST fallback.
+ * Fetch episodic memory hits.
  *
- * Previous approach: REST query sorted by importance+recency, then keyword scoring.
- * New approach: Generate embedding for query → pgvector cosine similarity search.
- * Falls back to REST if embedding generation fails or query is too short.
+ * VTID-03156 (CPB-1/2): all episodic memory reads — including the
+ * legacy semantic + REST fallbacks — now live behind the memory
+ * broker. CPB no longer constructs Supabase REST/RPC requests for
+ * this path; it just asks the broker for the EPISODIC block and
+ * maps the returned hits.
+ *
+ * The broker owns the full fallback ladder (mem_episodes_semantic →
+ * mem_episodes recency → legacy semantic → legacy REST)
+ * and returns pre-ranked hits; the position-based relevance score
+ * here preserves the broker's ordering.
  */
 async function fetchMemoryHits(
   lens: ContextLens,
@@ -140,45 +146,17 @@ async function fetchMemoryHits(
   limit: number
 ): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
   const startTime = Date.now();
-
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      console.warn('[VTID-01216] Supabase not configured for memory retrieval');
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       console.warn('[VTID-01216] Missing tenant_id or user_id in lens');
       return { hits: [], latency_ms: Date.now() - startTime };
     }
-
-    // VTID-02058 Phase 6c: when memory_broker_enabled is on, route the
-    // EPISODIC read through getMemoryContext (which reads mem_episodes via
-    // mem_episodes_semantic_search RPC). Falls back to the legacy
-    // memory_semantic_search path on disabled-flag, error, or empty result.
     const brokerHits = await fetchMemoryHitsViaBroker(lens, query, limit);
-    if (brokerHits.length > 0) {
-      console.log(`[VTID-02058] Broker EPISODIC: ${brokerHits.length} hits (${Date.now() - startTime}ms)`);
-      return { hits: brokerHits, latency_ms: Date.now() - startTime };
-    }
-
-    // VTID-01230: Legacy semantic search over memory_items for meaningful queries
-    if (query && query.trim().length > 5) {
-      const semanticHits = await fetchMemoryHitsSemantic(
-        SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit
-      );
-      if (semanticHits.length > 0) {
-        console.log(`[VTID-01230] Semantic memory_items: ${semanticHits.length} hits (${Date.now() - startTime}ms)`);
-        return { hits: semanticHits, latency_ms: Date.now() - startTime };
-      }
-      // Fall through to REST if semantic search returned nothing
-    }
-
-    // Fallback: REST query with importance+recency sort
-    return await fetchMemoryHitsREST(SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit, startTime);
+    console.log(
+      `[VTID-03156] Broker EPISODIC: ${brokerHits.length} hits ` +
+      `(${Date.now() - startTime}ms)`
+    );
+    return { hits: brokerHits, latency_ms: Date.now() - startTime };
   } catch (error: any) {
     console.error(`[VTID-01216] Memory retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -239,179 +217,14 @@ async function fetchMemoryHitsViaBroker(
   }
 }
 
-/**
- * VTID-01230 / VTID-01980: Semantic search path for memory_items.
- *
- * Generates query embedding → calls memory_semantic_search RPC (VTID-01184,
- * type-fixed in VTID-01978).
- *
- * Historical note (VTID-01980): the prior version called a non-existent RPC
- * `semantic_memory_search` whose migration (20260221000000_fix_embedding_dimensions_768)
- * was authored but never applied. The 404 was caught, the function returned [],
- * and callers silently fell through to the importance+recency REST fallback —
- * which performs no semantic matching. End result: ORB never recalled anything,
- * even when the user asked direct questions about facts already in memory.
- */
-async function fetchMemoryHitsSemantic(
-  supabaseUrl: string,
-  serviceRole: string,
-  lens: ContextLens,
-  query: string,
-  limit: number,
-): Promise<MemoryHit[]> {
-  const timeout = fetchWithTimeout();
-  try {
-    const embResult = await generateEmbedding(query);
-    if (!embResult.ok || !embResult.embedding) {
-      console.warn(`[VTID-01230] Embedding generation failed for memory_items semantic search: ${embResult.error}`);
-      return [];
-    }
-
-    const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/memory_semantic_search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-      },
-      body: JSON.stringify({
-        p_query_embedding: '[' + embResult.embedding.join(',') + ']',
-        p_top_k: limit * 2,
-        p_tenant_id: lens.tenant_id,
-        p_user_id: lens.user_id,
-        p_workspace_scope: lens.workspace_scope ?? null,
-        p_active_role: lens.active_role ?? null,
-        p_categories: lens.allowed_categories ?? null,
-        p_visibility_scope: lens.visibility_scope ?? 'private',
-        p_max_age_hours: lens.max_age_hours ?? null,
-        p_recency_boost: true,
-      }),
-      signal: timeout.signal,
-    });
-
-    if (!resp.ok) {
-      if (resp.status === 404) {
-        console.log(`[VTID-01230] memory_semantic_search RPC not found — using REST fallback`);
-      } else {
-        console.warn(`[VTID-01230] memory_semantic_search RPC failed: ${resp.status}`);
-      }
-      return [];
-    }
-
-    const results = await resp.json() as Array<{
-      id: string;
-      category_key: string;
-      content: string;
-      content_json: Record<string, unknown> | null;
-      source: string;
-      importance: number;
-      occurred_at: string;
-      created_at: string;
-      similarity_score: number;
-      recency_score: number;
-      combined_score: number;
-    }>;
-
-    return results.map((r) => ({
-      id: r.id,
-      category_key: r.category_key,
-      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      importance: r.importance,
-      occurred_at: r.occurred_at || r.created_at,
-      source: r.source,
-      // The RPC already produces a 0.7*similarity + 0.3*recency combined_score.
-      // Blend in importance for our final ranking.
-      relevance_score: Math.min(1,
-        r.similarity_score * 0.5 +
-        (r.importance / 100) * 0.3 +
-        r.recency_score * 0.2
-      ),
-    })).slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS));
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.warn(`[VTID-01230] memory_semantic_search timed out`);
-    } else {
-      console.warn(`[VTID-01230] memory_semantic_search error: ${err.message}`);
-    }
-    return [];
-  } finally {
-    timeout.clear();
-  }
-}
-
-/**
- * Compute a 0-1 recency boost (exponential decay, 7-day half-life).
- */
-function computeRecencyBoost(occurred_at: string): number {
-  const ageHours = (Date.now() - new Date(occurred_at).getTime()) / (1000 * 60 * 60);
-  return Math.exp(-ageHours / 168);
-}
-
-/**
- * Original REST-based memory_items retrieval (fallback).
- */
-async function fetchMemoryHitsREST(
-  supabaseUrl: string,
-  serviceRole: string,
-  lens: ContextLens,
-  query: string,
-  limit: number,
-  startTime: number,
-): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
-  const fetchLimit = limit * 3;
-
-  let url = `${supabaseUrl}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc,occurred_at.desc&limit=${fetchLimit}`;
-
-  if (lens.allowed_categories && lens.allowed_categories.length > 0) {
-    url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
-  }
-
-  const timeout = fetchWithTimeout();
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-      },
-      signal: timeout.signal,
-    });
-
-    if (!response.ok) {
-      console.warn(`[VTID-01216] Memory REST retrieval failed: ${response.status}`);
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
-    const results = await response.json() as Array<{
-      id: string;
-      category_key: string;
-      content: string;
-      importance: number;
-      occurred_at: string;
-      source: string;
-    }>;
-
-    const hits: MemoryHit[] = results.map((r, index) => ({
-      id: r.id,
-      category_key: r.category_key,
-      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      importance: r.importance,
-      occurred_at: r.occurred_at,
-      source: r.source,
-      relevance_score: computeRelevanceScore(r, query, index),
-    }));
-
-    hits.sort((a, b) => b.relevance_score - a.relevance_score);
-
-    return {
-      hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
-      latency_ms: Date.now() - startTime,
-    };
-  } finally {
-    timeout.clear();
-  }
-}
+// VTID-03156 (CPB-1/2): the legacy `fetchMemoryHitsSemantic`,
+// `fetchMemoryHitsREST`, and unused `computeRecencyBoost` helpers
+// were deleted from this file. The broker now owns the full episodic
+// fallback ladder. See `services/gateway/src/services/memory-broker.ts`
+// → `fetchEpisodicBlock` for the canonical implementation. CPB no
+// longer references the legacy tables / RPCs or constructs Supabase
+// credentials for the episodic memory path; that contract is locked
+// by `test/services/context-pack-episodic-boundary.test.ts`.
 
 /**
  * Fetch structured facts for the context pack using a three-tier approach.
@@ -1067,7 +880,7 @@ export async function buildContextPack(
     );
   }
 
-  // VTID-01224-FIX: Diary entries retrieval (stored in separate tables, not memory_items)
+  // VTID-01224-FIX: Diary entries retrieval (stored in their own dedicated tables, broker-owned)
   let diaryHits: MemoryHit[] = [];
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
