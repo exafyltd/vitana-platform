@@ -127,10 +127,17 @@ export interface EpisodicHit {
   conversation_id: string | null;
 }
 
+// VTID-03156 (CPB-1/2): the broker now owns the legacy episodic
+// memory fallbacks too. `source` widens to include the legacy
+// memory_items origins so consumers can audit which path produced
+// the hits in this block.
 export interface EpisodicBlock {
   kind: 'EPISODIC';
   hits: EpisodicHit[];
-  source: 'mem_episodes';
+  source:
+    | 'mem_episodes'
+    | 'memory_items_semantic'
+    | 'memory_items_rest';
   fetched_at: string;
 }
 
@@ -435,57 +442,208 @@ async function fetchEpisodicBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  // Phase 6b: when caller passes a query string, switch to semantic-rank
-  // via mem_episodes_semantic_search RPC (cosine + recency-boosted
-  // combined_score). Otherwise fall back to recency-order.
+  // VTID-03156 (CPB-1/2): the broker now owns the full episodic
+  // fallback ladder that used to live in context-pack-builder.ts.
+  // Order is preserved end-to-end:
+  //   1. mem_episodes_semantic_search RPC (if query.length > 5)
+  //   2. mem_episodes recency-ordered select
+  //   3. memory_semantic_search RPC (legacy; if query.length > 5)
+  //   4. memory_items REST (legacy; importance+recency-ordered)
+  // Each step falls through only when the previous step produced
+  // 0 hits — preserves the byte-identical surface CPB used to give
+  // its callers when it ran these steps inline.
   const trimmedQuery = (input.query ?? '').trim();
+
+  // Step 1: mem_episodes semantic-rank.
   if (trimmedQuery.length > 5) {
     const semantic = await fetchEpisodicSemantic(
       input, trimmedQuery, limit, maxAgeHours
     );
-    if (semantic.ok) {
+    if (semantic.ok && semantic.block && semantic.block.hits.length > 0) {
       return { block: semantic.block, latency_ms: Date.now() - t0 };
     }
-    // Embedding generation or RPC failed — fall through to recency-order.
   }
 
-  let query = supabase
-    .from('mem_episodes')
-    .select('id, kind, content, category_key, source, importance, occurred_at, actor_id, conversation_id')
-    .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .is('valid_to', null) // active rows only
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
+  // Step 2: mem_episodes recency-order.
+  let recencyBlock: EpisodicBlock | null = null;
+  {
+    let q = supabase
+      .from('mem_episodes')
+      .select('id, kind, content, category_key, source, importance, occurred_at, actor_id, conversation_id')
+      .eq('tenant_id', input.tenant_id)
+      .eq('user_id', input.user_id)
+      .is('valid_to', null) // active rows only
+      .order('occurred_at', { ascending: false })
+      .limit(limit);
 
-  if (maxAgeHours && maxAgeHours > 0) {
-    const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
-    query = query.gte('occurred_at', cutoff);
+    if (maxAgeHours && maxAgeHours > 0) {
+      const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
+      q = q.gte('occurred_at', cutoff);
+    }
+
+    const { data, error } = await q;
+    if (!error) {
+      recencyBlock = {
+        kind: 'EPISODIC',
+        hits: (data ?? []).map(r => ({
+          id: r.id,
+          kind: r.kind,
+          content: (r.content ?? '').slice(0, 400),
+          category_key: r.category_key,
+          source: r.source,
+          importance: r.importance ?? 30,
+          occurred_at: r.occurred_at,
+          actor_id: r.actor_id,
+          conversation_id: r.conversation_id,
+        })),
+        source: 'mem_episodes',
+        fetched_at: new Date().toISOString(),
+      };
+      if (recencyBlock.hits.length > 0) {
+        return { block: recencyBlock, latency_ms: Date.now() - t0 };
+      }
+    } else {
+      console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
+    }
   }
 
-  const { data, error } = await query;
+  // Step 3: legacy semantic on memory_items (only when query is
+  // meaningful, matching the pre-VTID-03156 CPB threshold).
+  if (trimmedQuery.length > 5) {
+    const legacySemantic = await fetchEpisodicLegacySemantic(
+      input, trimmedQuery, limit
+    );
+    if (
+      legacySemantic.ok &&
+      legacySemantic.block &&
+      legacySemantic.block.hits.length > 0
+    ) {
+      return { block: legacySemantic.block, latency_ms: Date.now() - t0 };
+    }
+  }
+
+  // Step 4: legacy REST fallback on memory_items.
+  const legacyRest = await fetchEpisodicLegacyRest(input, limit);
+  if (legacyRest.ok && legacyRest.block) {
+    return { block: legacyRest.block, latency_ms: Date.now() - t0 };
+  }
+
+  // Last resort — return the (possibly empty) recency block so the
+  // caller still sees a well-formed EpisodicBlock.
+  return { block: recencyBlock, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// EPISODIC legacy fallbacks (VTID-03156 — owns CPB-1/2)
+//
+// These two helpers absorb the legacy memory_items reads that used
+// to live in context-pack-builder.ts. They only fire when the
+// mem_episodes ladder above produces 0 hits. Both return an
+// `EpisodicBlock` keyed by their own `source` so consumers can tell
+// which path produced the hits.
+// -----------------------------------------------------------------------------
+
+async function fetchEpisodicLegacySemantic(
+  input: MemoryReadInput,
+  query: string,
+  limit: number,
+): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
+  const { generateEmbedding } = await import('./embedding-service');
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, block: null };
+
+  const emb = await generateEmbedding(query);
+  if (!emb.ok || !emb.embedding) return { ok: false, block: null };
+
+  const { data, error } = await supabase.rpc('memory_semantic_search', {
+    p_query_embedding: '[' + emb.embedding.join(',') + ']',
+    p_top_k: limit * 2,
+    p_tenant_id: input.tenant_id,
+    p_user_id: input.user_id,
+    p_workspace_scope: null,
+    p_active_role: null,
+    p_categories: null,
+    p_visibility_scope: 'private',
+    p_max_age_hours: null,
+    p_recency_boost: true,
+  });
   if (error) {
-    console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
-    return { block: null, latency_ms: Date.now() - t0 };
+    // 404 (RPC missing) is non-fatal — caller falls through to REST.
+    console.warn(`[${VTID}] memory_semantic_search RPC failed: ${error.message}`);
+    return { ok: false, block: null };
   }
 
   const block: EpisodicBlock = {
     kind: 'EPISODIC',
-    hits: (data ?? []).map(r => ({
+    hits: (data ?? []).slice(0, limit).map((r: any) => ({
       id: r.id,
-      kind: r.kind,
+      kind: 'utterance',
+      content: (r.content ?? '').slice(0, 400),
+      category_key: r.category_key,
+      source: r.source,
+      importance: r.importance ?? 30,
+      occurred_at: r.occurred_at || r.created_at,
+      // Legacy memory_items rows have no actor/conversation columns;
+      // surface a stable provenance label rather than widening the
+      // EpisodicHit interface.
+      actor_id: 'memory_items',
+      conversation_id: null,
+    })),
+    source: 'memory_items_semantic',
+    fetched_at: new Date().toISOString(),
+  };
+  return { ok: true, block };
+}
+
+async function fetchEpisodicLegacyRest(
+  input: MemoryReadInput,
+  limit: number,
+): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, block: null };
+
+  // Pre-VTID-03156 CPB overfetched 3× to give its blended ranker a
+  // pool to re-sort over. The broker now serves the ladder directly
+  // and the importance+occurred_at order already matches what the
+  // blender produced as the top-N for the no-query / no-keyword-hit
+  // case (the keyword boost was bounded to 0.2 and only fired on
+  // term overlap — when no overlap, the blender ordering collapsed
+  // to importance+recency anyway).
+  const fetchLimit = limit * 3;
+  const { data, error } = await supabase
+    .from('memory_items')
+    .select('id, category_key, content, importance, occurred_at, source')
+    .eq('tenant_id', input.tenant_id)
+    .eq('user_id', input.user_id)
+    .order('importance', { ascending: false })
+    .order('occurred_at', { ascending: false })
+    .limit(fetchLimit);
+
+  if (error) {
+    console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
+    return { ok: false, block: null };
+  }
+
+  const block: EpisodicBlock = {
+    kind: 'EPISODIC',
+    hits: (data ?? []).slice(0, limit).map((r: any) => ({
+      id: r.id,
+      kind: 'utterance',
       content: (r.content ?? '').slice(0, 400),
       category_key: r.category_key,
       source: r.source,
       importance: r.importance ?? 30,
       occurred_at: r.occurred_at,
-      actor_id: r.actor_id,
-      conversation_id: r.conversation_id,
+      // Legacy memory_items rows have no actor/conversation columns;
+      // surface a stable provenance label rather than widening the
+      // EpisodicHit interface.
+      actor_id: 'memory_items',
+      conversation_id: null,
     })),
-    source: 'mem_episodes',
+    source: 'memory_items_rest',
     fetched_at: new Date().toISOString(),
   };
-  return { block, latency_ms: Date.now() - t0 };
+  return { ok: true, block };
 }
 
 async function fetchSemanticBlock(
