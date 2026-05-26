@@ -124,52 +124,46 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   }
 
   try {
-    // Run journey/index/life-compass in parallel; all are independent.
+    // Run journey/index/life-compass in parallel; all are independent. Each
+    // falls back to null on its own error so one failing source never blanks
+    // the others — the My Journey North Star reads life_compass even when the
+    // journey lookup is unavailable.
     const [journey, indexSnapshot, lifeCompass] = await Promise.all([
-      getJourneyState(client, userId),
+      getJourneyState(client, userId).catch(() => null),
       fetchVitanaIndexForProfiler(client, userId).catch(() => null),
       fetchLifeCompass(client, userId).catch(() => null),
     ]);
 
-    if (!journey) {
-      // Service couldn't fetch and couldn't fall back. Return a shape
-      // the frontend can render with sensible "no journey yet" copy.
-      return res.status(200).json({
-        ok: true,
-        vtid: VTID,
-        journey: null,
-        life_compass: null,
-        vitana_index: null,
-      });
-    }
-
-    const phase = journey.current_wave
-      ? {
-          id: journey.current_wave.id,
-          name: journey.current_wave.name,
-          description: journey.current_wave.description,
-          day_range: [journey.current_wave.start_day, journey.current_wave.end_day] as [number, number],
-          day_in_phase: Math.max(0, journey.day_in_journey - journey.current_wave.start_day),
-          days_to_next_milestone: Math.max(0, journey.current_wave.end_day - journey.day_in_journey),
-        }
-      : null;
+    const phase =
+      journey && journey.current_wave
+        ? {
+            id: journey.current_wave.id,
+            name: journey.current_wave.name,
+            description: journey.current_wave.description,
+            day_range: [journey.current_wave.start_day, journey.current_wave.end_day] as [number, number],
+            day_in_phase: Math.max(0, journey.day_in_journey - journey.current_wave.start_day),
+            days_to_next_milestone: Math.max(0, journey.current_wave.end_day - journey.day_in_journey),
+          }
+        : null;
 
     return res.status(200).json({
       ok: true,
       vtid: VTID,
-      journey: {
-        day_in_journey: journey.day_in_journey,
-        total_days: journey.total_days,
-        days_left: journey.days_left,
-        plan_type: journey.plan_type,
-        plan_summary: journey.plan_summary,
-        status: journey.status,
-        is_first_session: journey.is_first_session,
-        last_session_date: journey.last_session_date,
-        is_past_total_days: journey.is_past_total_days,
-        current_phase: phase,
-        fallback_used: journey.fallback_used,
-      },
+      journey: journey
+        ? {
+            day_in_journey: journey.day_in_journey,
+            total_days: journey.total_days,
+            days_left: journey.days_left,
+            plan_type: journey.plan_type,
+            plan_summary: journey.plan_summary,
+            status: journey.status,
+            is_first_session: journey.is_first_session,
+            last_session_date: journey.last_session_date,
+            is_past_total_days: journey.is_past_total_days,
+            current_phase: phase,
+            fallback_used: journey.fallback_used,
+          }
+        : null,
       life_compass: lifeCompass ? buildGoalBlock(lifeCompass) : null,
       vitana_index: indexSnapshot
         ? {
