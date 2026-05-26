@@ -153,57 +153,15 @@ function buildPrompt(goal: ActiveGoal, startDateIso: string, totalDays: number):
     `Start day offset: 0 (${startDateIso})\n` +
     `Final day offset: ${totalDays} (deadline ${goal.target_date})\n` +
     `Total days: ${totalDays}\n\n` +
-    'Produce the plan via the prescribe_plan tool. Ensure the last milestone lands on or near ' +
-    `day_offset ${totalDays}. Weekly checkpoints roughly every 7 days.`;
+    'Respond with ONLY a JSON object — no markdown fences, no commentary — of exactly this shape:\n' +
+    '{"plan_summary": string, ' +
+    '"milestones": [{"day_offset": number, "title": string, "description": string}], ' +
+    '"weekly_checkpoints": [{"day_offset": number, "title": string, "description": string}], ' +
+    '"daily_habits": [{"title": string, "description": string}]}\n' +
+    `Include 5-8 milestones spread from day 0 to day ${totalDays} (the last on or near day ${totalDays}), ` +
+    'a roughly weekly checkpoint cadence, and 3-5 sustainable daily habits.';
   return { system, user };
 }
-
-const PLAN_TOOL = {
-  name: 'prescribe_plan',
-  description: 'Return a structured plan to reach the goal by the deadline.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      plan_summary: { type: 'string', description: 'Two warm sentences summarizing the approach.' },
-      milestones: {
-        type: 'array',
-        description: 'Key dated achievements across the timeframe.',
-        items: {
-          type: 'object',
-          properties: {
-            day_offset: { type: 'integer' },
-            title: { type: 'string' },
-            description: { type: 'string' },
-          },
-          required: ['day_offset', 'title'],
-        },
-      },
-      weekly_checkpoints: {
-        type: 'array',
-        description: 'Roughly weekly review points.',
-        items: {
-          type: 'object',
-          properties: {
-            day_offset: { type: 'integer' },
-            title: { type: 'string' },
-            description: { type: 'string' },
-          },
-          required: ['day_offset', 'title'],
-        },
-      },
-      daily_habits: {
-        type: 'array',
-        description: '3-5 sustainable daily habits.',
-        items: {
-          type: 'object',
-          properties: { title: { type: 'string' }, description: { type: 'string' } },
-          required: ['title'],
-        },
-      },
-    },
-    required: ['plan_summary', 'milestones', 'daily_habits'],
-  },
-} as const;
 
 function parseLooseJson(text: string): unknown {
   if (!text) return null;
@@ -255,12 +213,12 @@ export async function generateGoalPlan(
   const totalDays = Math.max(1, calendarDaysBetween(startIso, goal.target_date));
 
   const { system, user } = buildPrompt(goal, startDate, totalDays);
+  // Ask for plain JSON instead of forcing a tool call: Vertex/Gemini returns an
+  // empty response under forced function-calling here, so we parse JSON from text.
   const result = await callViaRouter('planner', user, {
     service: 'goal-planner',
     systemPrompt: system,
     maxTokens: 2500,
-    tools: [PLAN_TOOL as any],
-    forceTool: 0,
   });
   console.log(
     `${LOG} llm result ok=${result.ok} provider=${result.provider} model=${result.model} ` +
