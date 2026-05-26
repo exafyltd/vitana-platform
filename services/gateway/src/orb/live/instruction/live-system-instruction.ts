@@ -562,6 +562,13 @@ export function buildLiveSystemInstruction(
   // comment for the full rationale. Only LiveKit callers pass true —
   // Vertex still needs it because Gemini Live generates the greeting.
   omitGreetingPolicy?: boolean,
+  // Per-surface persona switch. Derived from session.surface in orb-live.ts
+  // session bootstrap (see deriveSurfaceFromRoute). When 'command-hub', the
+  // dev_orb voice_* fields overlay voice_live so the Command Hub voice
+  // assistant speaks as the engineering co-pilot instead of the community
+  // wellness companion. Default (undefined or 'vitanaland') is unchanged
+  // behavior — the existing community persona.
+  surface?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -574,8 +581,45 @@ export function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
-  // Load personality config from service (uses cached values or hardcoded defaults)
-  const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
+  // Load personality config from service (uses cached values or hardcoded defaults).
+  // Shallow-clone so the dev_orb overlay below does not mutate the cached
+  // defaults object — that would leak the developer persona into subsequent
+  // community sessions.
+  const voiceLiveConfig: Record<string, any> = { ...(getPersonalityConfigSync('voice_live') as Record<string, any>) };
+
+  // Per-surface persona overlay. When the session is on the Command Hub
+  // (developer surface), pull voice_* fields from dev_orb so the assistant
+  // speaks as the engineering co-pilot instead of the community wellness
+  // companion. Missing fields fall back to voice_live defaults — a partial
+  // dev_orb override (e.g. only voice_tools_section set in the DB) is safe.
+  //
+  // Resolution mirrors the role-override logic in orb-live.ts session
+  // bootstrap (~14327): mobile is always community, /command-hub/* is the
+  // developer surface, /admin/* is the admin surface (no overlay yet —
+  // behaves as community). An explicit `surface` param wins over the
+  // heuristic so voice-lab eval and tests can force a surface.
+  const resolveSurface = (): string => {
+    if (typeof surface === 'string' && surface.trim()) return surface.trim();
+    if (clientContext?.isMobile) return 'vitanaland';
+    const route = (currentRoute || '').toLowerCase();
+    if (route.startsWith('/command-hub')) return 'command-hub';
+    if (route.startsWith('/admin')) return 'admin';
+    return 'vitanaland';
+  };
+  const resolvedSurface = resolveSurface();
+  const isCommandHubSurface = resolvedSurface === 'command-hub';
+  let identityLockRoleLine = "the user's life companion and instruction manual";
+  if (isCommandHubSurface) {
+    const devOrbConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
+    if (devOrbConfig.voice_base_identity) voiceLiveConfig.base_identity = devOrbConfig.voice_base_identity;
+    if (devOrbConfig.voice_general_behavior) voiceLiveConfig.general_behavior = devOrbConfig.voice_general_behavior;
+    if (devOrbConfig.voice_greeting_rules) voiceLiveConfig.greeting_rules = devOrbConfig.voice_greeting_rules;
+    if (devOrbConfig.voice_tools_section) voiceLiveConfig.tools_section = devOrbConfig.voice_tools_section;
+    if (devOrbConfig.voice_important_section) voiceLiveConfig.important_section = devOrbConfig.voice_important_section;
+    if (typeof devOrbConfig.voice_identity_lock_role === 'string' && devOrbConfig.voice_identity_lock_role.trim()) {
+      identityLockRoleLine = devOrbConfig.voice_identity_lock_role;
+    }
+  }
 
   // VTID-01225-ROLE + BOOTSTRAP-ORB-ROLE-CLARITY: Build role-aware context
   // section. The authoritative role declaration is also prepended to the very
@@ -643,7 +687,7 @@ Do NOT substitute an internal UUID under any circumstance.
   // utterances ("Hi I'm Devon") and continue speaking as them in her voice.
   const VITANA_IDENTITY_LOCK = `=== IDENTITY LOCK ===
 YOU ARE Vitana.
-Your role is the user's life companion and instruction manual.
+Your role is ${identityLockRoleLine}.
 
 You speak EXCLUSIVELY as Vitana. You NEVER:
   - introduce yourself as another persona ("Hi, this is Devon" — only Devon ever says that)
