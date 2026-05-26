@@ -29,6 +29,11 @@ export interface DeployRequest {
   environment: 'dev' | 'staging' | 'production';
   branch?: string;
   source: 'operator.console.chat' | 'publish.modal' | 'api';
+  // Voice-first canary: when true, deploy creates the new revision with
+  // --no-traffic and the workflow itself sets a 10/90 split (new=10, old=90).
+  // Operator then promotes via /operator/promote after watching staging
+  // metrics. Default false preserves the existing 100%-on-deploy behavior.
+  canary?: boolean;
 }
 
 // VTID-0407: Governance violation interface
@@ -201,7 +206,7 @@ async function evaluateGovernance(
  * VTID-0407: Now integrates governance evaluation before deployment.
  */
 export async function executeDeploy(request: DeployRequest): Promise<DeployResult> {
-  const { vtid, service, environment, source } = request;
+  const { vtid, service, environment, source, canary } = request;
 
   console.log(`[Deploy Orchestrator] Starting deploy for ${service} to ${environment} (VTID: ${vtid}, source: ${source})`);
 
@@ -247,6 +252,7 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
         service, // 'gateway', 'oasis-operator', or 'oasis-projector'
         health_path: '/alive',
         initiator: source === 'operator.console.chat' ? 'agent' : 'user',
+        canary: canary ? 'true' : 'false',
       }
     );
 

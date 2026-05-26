@@ -1372,12 +1372,20 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       },
     });
 
+    // Voice-first canary mode: defaults to TRUE (recommended for voice).
+    // body.mode='full' opts out of canary for low-risk shipments where the
+    // operator wants 100% immediately. Body shape:
+    //   { confirm_short_sha?: string, mode?: 'canary'|'full' }
+    const mode: 'canary' | 'full' = (req.body?.mode === 'full') ? 'full' : 'canary';
+    const isCanary = mode === 'canary';
+
     // Step 7: dispatch the production deploy (EXEC-DEPLOY.yml).
     const deployResult = await deployOrchestrator.executeDeploy({
       vtid,
       service: 'gateway',
       environment: 'production',
       source: 'api',
+      canary: isCanary,
     });
 
     if (!deployResult.ok) {
@@ -1392,6 +1400,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         surface: 'command-hub',
         payload: {
           request_id: requestId,
+          mode,
           source_revision: stagingRevShort,
           source_commit: stagingCommit,
           deploy_error: deployResult.error,
@@ -1426,12 +1435,21 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       initiator_id: identity.user_id,
     });
 
+    // Emit different terminal events depending on mode.
+    // Canary mode: the deploy DOES NOT promote to 100%; emit .requested only.
+    //              Operator promotes later via /operator/promote, which emits
+    //              production.canary.promoted (or .aborted on discard).
+    // Full mode:   same behavior as before — emit production.publish.completed.
+    const terminalType = isCanary ? 'production.canary.requested' : 'production.publish.completed';
+    const terminalMessage = isCanary
+      ? `canary publish requested: ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → 10/90 split scheduled; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`
+      : `publish: ${stagingRevShort} promoted; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`;
     await emitOasisEvent({
       vtid,
-      type: 'production.publish.completed',
+      type: terminalType,
       source: 'gateway-operator',
       status: 'success',
-      message: `publish: gateway-staging ${stagingRevShort} promoted; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`,
+      message: terminalMessage,
       actor_id: identity.user_id,
       actor_role: 'admin',
       surface: 'command-hub',
@@ -1439,6 +1457,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         request_id: requestId,
         vtid,
         swv_id: swvId,
+        mode,
         source_revision: stagingRevShort,
         source_commit: stagingCommit,
         workflow_run_id: deployResult.workflow_run_id,
@@ -1576,6 +1595,188 @@ router.post('/revert', requireAdminAuth, async (req: Request, res: Response) => 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Operator] /revert failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+// ====================================================================
+// Voice-first canary endpoints (post-Phase 0 UX).  See docs/STAGING.md
+// §"Canary publish" for the operator playbook.
+//
+//   POST /api/v1/operator/promote     — shift the canary revision to 100%
+//   POST /api/v1/operator/abort-canary — drop the canary back to 0%, restore
+//                                         the prior revision to 100%
+//
+// Both are admin-only.  Both inspect the current Cloud Run traffic split to
+// resolve which revision is the canary (the one with the lower non-zero
+// percent) vs the stable revision (the one with the higher percent).
+// ====================================================================
+
+router.post('/promote', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || 'gateway').toString().trim();
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service' });
+  }
+
+  try {
+    const summary = await describeService(service);
+    if (summary.trafficSplit.length < 2) {
+      return res.status(409).json({
+        ok: false,
+        error: 'no_canary_active',
+        detail: `No canary split detected on ${service}. Traffic is already on a single revision.`,
+      });
+    }
+    // Canary = lowest non-zero percent. Stable = highest.
+    const sorted = [...summary.trafficSplit].sort((a, b) => a.percent - b.percent);
+    const canary = sorted[0];
+    const canaryShort = shortRevisionName(canary.revision);
+
+    const result = await updateTrafficToRevision(service, canaryShort);
+    if (!result.ok) {
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-PROMOTE',
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `promote: traffic-shift failed (${result.error})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, service, canary_revision: canaryShort, error: result.error },
+      });
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    ACTIVE_REV_CACHE.delete(service);
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: '(canary-promote)',
+      deploy_type: 'normal',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: canaryShort,
+      source_revision: null,
+      initiator_id: identity.user_id,
+    });
+
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PROMOTE',
+      type: 'production.canary.promoted',
+      source: 'gateway-operator',
+      status: 'success',
+      message: `canary promoted: ${service} now serving ${canaryShort} at 100%`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        canary_revision: canaryShort,
+        previous_split: summary.trafficSplit,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      promoted_revision: canaryShort,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /promote failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+router.post('/abort-canary', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || 'gateway').toString().trim();
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service' });
+  }
+
+  try {
+    const summary = await describeService(service);
+    if (summary.trafficSplit.length < 2) {
+      return res.status(409).json({
+        ok: false,
+        error: 'no_canary_active',
+        detail: `No canary split detected on ${service}.`,
+      });
+    }
+    // Stable = highest percent. Send that to 100%, dropping the canary.
+    const sorted = [...summary.trafficSplit].sort((a, b) => b.percent - a.percent);
+    const stable = sorted[0];
+    const canary = sorted[sorted.length - 1];
+    const stableShort = shortRevisionName(stable.revision);
+    const canaryShort = shortRevisionName(canary.revision);
+
+    const result = await updateTrafficToRevision(service, stableShort);
+    if (!result.ok) {
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    ACTIVE_REV_CACHE.delete(service);
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: '(canary-abort)',
+      deploy_type: 'rollback',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: stableShort,
+      source_revision: canaryShort,
+      initiator_id: identity.user_id,
+    });
+
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-ABORT',
+      type: 'production.canary.aborted',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `canary discarded: ${service} restored to ${stableShort} (canary ${canaryShort} idled)`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        canary_revision: canaryShort,
+        stable_revision: stableShort,
+        previous_split: summary.trafficSplit,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      stable_revision: stableShort,
+      canary_revision_idled: canaryShort,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /abort-canary failed: ${errorMessage}`);
     return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
   }
 });

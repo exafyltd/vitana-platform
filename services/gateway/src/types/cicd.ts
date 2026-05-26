@@ -866,7 +866,20 @@ export type CicdEventType =
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'
-  | 'production.revert.completed';
+  | 'production.revert.completed'
+  // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
+  //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
+  //                  with canary=true.  No traffic shift yet.
+  //   .started     — EXEC-DEPLOY finished; canary revision is at 10%, prior
+  //                  revision at 90%.  Operator is now watching metrics.
+  //   .promoted    — operator clicked "Promote to 100%"; canary revision is
+  //                  now serving 100% traffic.
+  //   .aborted     — operator clicked "Discard canary"; traffic shifted back
+  //                  to the prior revision at 100%, canary revision idle.
+  | 'production.canary.requested'
+  | 'production.canary.started'
+  | 'production.canary.promoted'
+  | 'production.canary.aborted';
 
 export interface CicdOasisEvent {
   vtid: string;

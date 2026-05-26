@@ -107,9 +107,21 @@ export async function describeService(service: string): Promise<ServiceSummary> 
     };
   };
 
+  // Cloud Run v2 traffic targets have two shapes:
+  //   - { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION', revision: '...', percent }
+  //   - { type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent }  (no revision field)
+  // The LATEST type means "route to whatever latestReadyRevision is", which is
+  // the default after `gcloud run deploy` without an explicit --traffic flag.
+  // We resolve LATEST entries to data.latestReadyRevision so the CLOCK
+  // dropdown's `is_active` flag is accurate.
   const trafficSplit = (data.traffic ?? [])
-    .filter(t => (t.percent ?? 0) > 0 && t.revision)
-    .map(t => ({ revision: t.revision!, percent: t.percent ?? 0 }))
+    .filter(t => (t.percent ?? 0) > 0)
+    .map(t => {
+      const isLatest = t.type === 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST';
+      const rev = (isLatest ? data.latestReadyRevision : t.revision) ?? null;
+      return rev ? { revision: rev, percent: t.percent ?? 0 } : null;
+    })
+    .filter((x): x is { revision: string; percent: number } => x !== null)
     .sort((a, b) => b.percent - a.percent);
 
   const activeFull = trafficSplit[0]?.revision ?? data.latestReadyRevision ?? null;
@@ -246,6 +258,52 @@ export async function updateTrafficToRevision(
   if (!resp.ok) {
     const text = await resp.text();
     return { ok: false, error: `cloud-run-admin updateTraffic(${service}, ${shortRev}): ${resp.status} ${text}` };
+  }
+
+  const data = await resp.json() as { name?: string };
+  return { ok: true, operationName: data.name };
+}
+
+/**
+ * Split traffic across multiple revisions.  Used by the canary publish flow:
+ *   setTrafficSplit('gateway', [
+ *     { revision: 'gateway-00099-old', percent: 90 },
+ *     { revision: 'gateway-00100-new', percent: 10 },
+ *   ])
+ *
+ * Cloud Run requires the sum of percents to be exactly 100.  Each revision
+ * name can be either the full resource name or the short name (e.g.
+ * 'gateway-00100-new').
+ */
+export async function setTrafficSplit(
+  service: string,
+  splits: Array<{ revision: string; percent: number }>
+): Promise<UpdateTrafficResult> {
+  if (splits.length === 0) {
+    return { ok: false, error: 'setTrafficSplit: empty splits array' };
+  }
+  const total = splits.reduce((acc, s) => acc + s.percent, 0);
+  if (total !== 100) {
+    return { ok: false, error: `setTrafficSplit: percents sum to ${total}, must be 100` };
+  }
+
+  const body = {
+    traffic: splits.map(s => ({
+      type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION',
+      revision: s.revision.includes('/') ? s.revision.split('/').pop() ?? s.revision : s.revision,
+      percent: s.percent,
+    })),
+  };
+
+  const url = `${RUN_API}/${servicePath(service)}?updateMask=traffic`;
+  const resp = await authedFetch(url, { method: 'PATCH', body: JSON.stringify(body) });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    return {
+      ok: false,
+      error: `cloud-run-admin setTrafficSplit(${service}, ${JSON.stringify(splits)}): ${resp.status} ${text}`,
+    };
   }
 
   const data = await resp.json() as { name?: string };

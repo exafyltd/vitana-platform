@@ -43,6 +43,10 @@ on:
         description: 'Deployment environment'
         required: false
         default: 'dev'
+      canary:
+        description: 'If true, deploy with --no-traffic so the new revision is created but not serving. The operator promotes it via /operator/promote after verifying staging metrics. Defaults to false (existing 100%-on-deploy behavior).'
+        required: false
+        default: 'false'
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -483,6 +487,14 @@ jobs:
             DEPLOY_ARGS+=(--min-instances=1)
           fi
 
+          # Canary mode: create the revision but route ZERO traffic to it.
+          # The operator promotes via /operator/promote after the staging
+          # metrics window passes.  Without this flag, gcloud run deploy
+          # routes 100% of traffic to the new revision immediately.
+          if [ "${{ github.event.inputs.canary }}" = "true" ]; then
+            DEPLOY_ARGS+=(--no-traffic)
+            echo "::notice::Canary mode — new revision will be created with --no-traffic. Promote via Command Hub."
+          fi
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             "${DEPLOY_ARGS[@]}" \
@@ -519,11 +531,49 @@ jobs:
           fi
 
       # =========================================================================
+      # Canary traffic split (only when canary=true).  After deploy with
+      # --no-traffic, set the new revision to 10% and the previously-serving
+      # revision to 90%.  The operator promotes via /operator/promote later.
+      # Idempotent: re-running the same canary input is a no-op if the split
+      # is already in place.
+      # =========================================================================
+      - name: Canary 10/90 traffic split
+        if: success() && github.event.inputs.canary == 'true'
+        run: |
+          set -e
+          SERVICE="${{ steps.deploy.outputs.cloud_run_service }}"
+          REGION=us-central1
+          PROJECT=lovable-vitana-vers1
+
+          NEW_REV=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT" \
+            --format='value(status.latestReadyRevisionName)')
+          # The currently-serving revision = the one with the largest non-zero
+          # traffic percent that isn't the new revision. jq because inline
+          # python can't be indented inside a YAML `run: |` block (parser thinks
+          # de-dented lines end the block scalar).
+          ACTIVE_REV=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT" \
+            --format='json' \
+            | jq -r --arg new "$NEW_REV" '.status.traffic // [] | map(select((.percent // 0) > 0 and .revisionName and .revisionName != $new)) | sort_by(.percent) | reverse | .[0].revisionName // ""')
+
+          if [ -z "$ACTIVE_REV" ]; then
+            echo "::warning::No prior active revision found for $SERVICE — sending 100% to new (canary effectively full ship)."
+            gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT" \
+              --to-revisions="$NEW_REV=100" --quiet
+          else
+            echo "Setting canary split: $ACTIVE_REV=90  $NEW_REV=10"
+            gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT" \
+              --to-revisions="$ACTIVE_REV=90,$NEW_REV=10" --quiet
+          fi
+
+          gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT" \
+            --format='value(status.traffic)' | head -c 800
+
+      # =========================================================================
       # VTID-0416: Post-Deploy Smoke Tests
       # =========================================================================
       - name: Post-Deploy Smoke Tests (VTID-0416)
         id: smoke_tests
-        if: success() && github.event.inputs.service == 'gateway'
+        if: success() && github.event.inputs.service == 'gateway' && github.event.inputs.canary != 'true'
         env:
           GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
         run: |

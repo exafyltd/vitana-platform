@@ -3211,8 +3211,55 @@ const state = {
     versionHistory: [],
     selectedVersionId: null,
 
-    // Publish Modal (VTID-0517)
+    // Publish Modal (VTID-0517) — legacy dev/dropdown flow. Phase 0 staging
+    // build keeps this for the staging Command Hub fallback.
     showPublishModal: false,
+
+    // Phase 0 staging build (post-handoff UX): inline publish flow on the
+    // production Command Hub. Replaces the modal entirely — see
+    // command-hub-staging.js renderPublishInlineFlow().
+    publishFlow: {
+        open: false,
+        // Phases:
+        //   loading        — fetching staging + prod state
+        //   ready          — comparison loaded; show "Publish to canary" button
+        //   publishing     — /publish dispatched; waiting for canary revision to land
+        //   canary-active  — new revision serving 10%; show Promote / Discard
+        //   promoting      — /promote dispatched; traffic shifting to 100%
+        //   promoted       — 100% on new revision; auto-close
+        //   aborting       — /abort-canary dispatched; restoring stable revision
+        //   aborted        — stable restored to 100%; auto-close
+        //   full-publishing — operator chose "Skip canary"; old-style 100%-on-deploy
+        //   full-verified  — full publish landed
+        //   error          — show retry
+        phase: 'loading',
+        message: '',
+        vtid: null,
+        workflowUrl: null,
+        startedAt: null,
+        // Source = staging revision being promoted
+        sourceRevision: null,
+        sourceCommit: null,
+        sourceDeployedAt: null,
+        // Live = currently-serving prod revision (when no canary)
+        liveRevision: null,
+        liveCommit: null,
+        liveDeployedAt: null,
+        // Canary-active state (when a canary is already running)
+        canaryRevision: null,
+        canaryCommit: null,
+        canaryPercent: null,
+        stableRevision: null,
+        stableCommit: null,
+        stablePercent: null,
+    },
+
+    // CLOCK dropdown env filter tab. 'all' | 'production' | 'staging'.
+    versionFilter: 'all',
+
+    // Active prod revision short SHA + age, polled every 30s for the
+    // "Live: <sha> · Xm ago" annotation under PUBLISH.
+    liveRevision: { shortSha: null, deployedAt: null, lastFetched: 0 },
 
     // VTID-01180: Autopilot Recommendations Modal
     showAutopilotRecommendationsModal: false,
@@ -5659,26 +5706,88 @@ function renderHeader() {
         left.appendChild(renderVersionDropdown());
     }
 
-    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot)
+    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot).
+    // Phase 0 staging build (UX polish): on the PRODUCTION Command Hub, the
+    // PUBLISH button opens an inline popover (Lovable-style) instead of the
+    // legacy modal. On staging CH (or before VitanaStaging loads), fall back
+    // to the legacy modal — it shows a banner saying "use prod CH to publish".
+    // Anchor the popover as a sibling of the button via a position:relative
+    // wrapper so the popover's position:absolute lands correctly.
+    // The publish flow is a popover anchored to the button via position:absolute.
+    // Wrapping the button in a position:relative inline-block keeps the popover
+    // positioned correctly WITHOUT changing the button's height or alignment
+    // relative to sibling pills (AUTOPILOT / OPERATOR / CLOCK).  No "Live: ..."
+    // pill in the header — the live-revision context lives INSIDE the popover
+    // where the operator actually needs it (deciding what to publish).
+    const publishWrap = document.createElement('span');
+    publishWrap.style.cssText = 'position:relative;display:inline-block;';
+
     const publishBtn = document.createElement('button');
     publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
+        const isProdCH = window.VitanaStaging && window.VitanaStaging.env === 'production';
+        if (isProdCH) {
+            state.publishFlow = {
+                open: !state.publishFlow.open,
+                phase: 'loading',
+                message: '',
+                vtid: null,
+                workflowUrl: null,
+                startedAt: null,
+                sourceRevision: null,
+                sourceCommit: null,
+                sourceDeployedAt: null,
+                liveRevision: null,
+                liveCommit: null,
+                liveDeployedAt: null,
+                canaryRevision: null,
+                canaryCommit: null,
+                canaryPercent: null,
+                stableRevision: null,
+                stableCommit: null,
+                stablePercent: null,
+            };
+            renderApp();
+            return;
+        }
+        // Staging CH (or pre-env-detection) — use legacy modal.
         state.showPublishModal = true;
-        renderApp(); // Show modal immediately with loading state
-
-        // Fetch version history if not already loaded
+        renderApp();
         if (!state.versionHistory || state.versionHistory.length === 0) {
             try {
-                console.log('[VTID-0523-B] Fetching version history for publish modal');
                 state.versionHistory = await fetchDeploymentHistory();
-                renderApp(); // Re-render with loaded versions
+                renderApp();
             } catch (error) {
                 console.error('[VTID-0523-B] Failed to fetch version history:', error);
             }
         }
     };
-    left.appendChild(publishBtn);
+    publishWrap.appendChild(publishBtn);
+
+    if (state.publishFlow && state.publishFlow.open && window.VitanaStaging && window.VitanaStaging.renderPublishInlineFlow) {
+        try {
+            const popover = window.VitanaStaging.renderPublishInlineFlow({
+                buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                onAfterPublish: function () {
+                    if (typeof fetchDeploymentHistory === 'function') {
+                        fetchDeploymentHistory().then(function (h) {
+                            state.versionHistory = h;
+                            if (typeof renderApp === 'function') renderApp();
+                        }).catch(function () { /* swallow */ });
+                    }
+                    if (window.__vitana_state && window.__vitana_state.liveRevision) {
+                        window.__vitana_state.liveRevision.lastFetched = 0;
+                    }
+                },
+            });
+            publishWrap.appendChild(popover);
+        } catch (err) {
+            console.warn('[VitanaStaging] renderPublishInlineFlow failed:', err);
+        }
+    }
+
+    left.appendChild(publishWrap);
 
     header.appendChild(left);
 
@@ -5946,84 +6055,184 @@ function renderHeader() {
  * - Shows SWV label
  * - Hover/tooltip shows VTID + timestamp
  */
+// Lovable-style relative time: "just now", "2m ago", "1h ago", "3d ago", "May 12".
+function formatRelativeTime(isoString) {
+    if (!isoString) return '';
+    const then = new Date(isoString).getTime();
+    if (Number.isNaN(then)) return '';
+    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (seconds < 45) return 'just now';
+    if (seconds < 90) return '1m ago';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return minutes + 'm ago';
+    if (minutes < 90) return '1h ago';
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return hours + 'h ago';
+    if (hours < 36) return '1d ago';
+    const days = Math.round(hours / 24);
+    if (days < 14) return days + 'd ago';
+    // Older than two weeks — switch to date.
+    return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Set up a 10s polling tick that keeps the CLOCK dropdown fresh while open
+// AND refreshes the relative timestamps without re-hitting the API.
+function ensureVersionDropdownPoller() {
+    if (state._versionPoller) return;
+    state._versionPoller = setInterval(function () {
+        if (!state.isVersionDropdownOpen) {
+            clearInterval(state._versionPoller);
+            state._versionPoller = null;
+            return;
+        }
+        // Re-fetch + re-render; keeps "just now" / "Xm ago" accurate AND
+        // surfaces new deploys that happened while dropdown is open.
+        if (typeof fetchDeploymentHistory === 'function') {
+            fetchDeploymentHistory().then(function (h) {
+                state.versionHistory = h;
+                if (typeof renderApp === 'function') renderApp();
+            }).catch(function () { /* swallow */ });
+        }
+    }, 10000);
+}
+
 function renderVersionDropdown() {
+    ensureVersionDropdownPoller();
+
     const dropdown = document.createElement('div');
     dropdown.className = 'version-dropdown';
 
-    // Header
+    // ── Header: title + filter tabs ───────────────────────────────────────
     const dropdownHeader = document.createElement('div');
     dropdownHeader.className = 'version-dropdown__title';
-    dropdownHeader.textContent = 'Versions';
+    dropdownHeader.style.display = 'flex';
+    dropdownHeader.style.justifyContent = 'space-between';
+    dropdownHeader.style.alignItems = 'center';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = 'Versions';
+    dropdownHeader.appendChild(titleSpan);
+
+    // Filter tabs — All / Production / Staging. Default 'all'.
+    const tabs = document.createElement('div');
+    tabs.style.cssText = 'display:flex;gap:4px;font-size:10px;text-transform:none;letter-spacing:normal;font-weight:500;';
+    [
+        { id: 'all', label: 'All' },
+        { id: 'production', label: 'Prod' },
+        { id: 'staging', label: 'Staging' },
+    ].forEach(function (t) {
+        const tab = document.createElement('button');
+        const active = state.versionFilter === t.id;
+        tab.type = 'button';
+        tab.textContent = t.label;
+        tab.style.cssText = 'padding:2px 8px;background:' + (active ? 'rgba(96,165,250,0.18)' : 'transparent') +
+            ';color:' + (active ? '#93c5fd' : 'var(--color-text-secondary)') +
+            ';border:1px solid ' + (active ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.08)') +
+            ';border-radius:4px;cursor:pointer;font-size:10px;';
+        tab.onclick = function (e) {
+            e.stopPropagation();
+            state.versionFilter = t.id;
+            renderApp();
+        };
+        tabs.appendChild(tab);
+    });
+    dropdownHeader.appendChild(tabs);
     dropdown.appendChild(dropdownHeader);
 
-    // List container
+    // ── List container ────────────────────────────────────────────────────
     const list = document.createElement('div');
     list.className = 'version-dropdown__list';
 
-    // Show loading state if no data yet
+    // Apply env filter. Treat null/unknown env as "production" to be safe
+    // (legacy rows had environment=dev-sandbox).
+    function envOf(v) {
+        const e = (v.environment || '').toLowerCase();
+        if (e === 'staging') return 'staging';
+        return 'production'; // dev-sandbox + everything else collapses to prod for the filter
+    }
+    const filtered = (state.versionHistory || []).filter(function (v) {
+        if (state.versionFilter === 'all') return true;
+        return envOf(v) === state.versionFilter;
+    });
+
     if (!state.versionHistory || state.versionHistory.length === 0) {
         const emptyItem = document.createElement('div');
         emptyItem.className = 'version-dropdown__item version-dropdown__item--empty';
-        emptyItem.textContent = 'Loading deployments...';
+        emptyItem.textContent = 'Loading deployments…';
+        list.appendChild(emptyItem);
+    } else if (filtered.length === 0) {
+        const emptyItem = document.createElement('div');
+        emptyItem.className = 'version-dropdown__item version-dropdown__item--empty';
+        emptyItem.textContent = 'No deployments in this filter.';
         list.appendChild(emptyItem);
     } else {
-        // VTID-0524: Render deployments (already sorted by created_at DESC from API)
-        state.versionHistory.forEach(function (version) {
+        filtered.forEach(function (version) {
             const item = document.createElement('div');
             item.className = 'version-dropdown__item';
             if (state.selectedVersionId === version.id) {
                 item.className += ' version-dropdown__item--selected';
             }
+            if (version.is_active) item.className += ' version-dropdown__item--active';
 
-            // VTID-0524: Build tooltip with VTID + timestamp
+            // Tooltip carries absolute time + VTID + full SHA.
             const tooltipParts = [];
-            if (version.vtid) {
-                tooltipParts.push(version.vtid);
+            if (version.createdAt) tooltipParts.push(new Date(version.createdAt).toLocaleString());
+            if (version.vtid) tooltipParts.push(version.vtid);
+            if (version.commit) tooltipParts.push('commit ' + version.commit);
+            if (version.cloud_run_revision) tooltipParts.push('rev ' + version.cloud_run_revision);
+            item.title = tooltipParts.join(' · ');
+
+            // ── Row 1: time-first + LIVE marker ──────────────────────────
+            const row1 = document.createElement('div');
+            row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;';
+
+            const timeLeft = document.createElement('span');
+            timeLeft.style.cssText = 'display:flex;align-items:center;gap:6px;color:var(--color-text-primary);font-size:0.85rem;font-weight:500;';
+            const dot = document.createElement('span');
+            dot.style.cssText = 'display:inline-block;width:7px;height:7px;border-radius:50%;background:' +
+                (version.is_active ? '#10b981' : 'rgba(148,163,184,0.4)') + ';flex:none;';
+            timeLeft.appendChild(dot);
+            timeLeft.appendChild(document.createTextNode(formatRelativeTime(version.createdAt)));
+            row1.appendChild(timeLeft);
+
+            const row1Right = document.createElement('span');
+            row1Right.style.cssText = 'display:flex;align-items:center;gap:6px;';
+            if (version.is_active) {
+                const liveBadge = document.createElement('span');
+                liveBadge.className = 'version-dropdown__item-badge version-dropdown__item-badge--live';
+                liveBadge.textContent = 'LIVE';
+                row1Right.appendChild(liveBadge);
+            } else if (version.status === 'failure') {
+                const failBadge = document.createElement('span');
+                failBadge.className = 'version-dropdown__item-badge version-dropdown__item-badge--failure';
+                failBadge.textContent = 'Failed';
+                row1Right.appendChild(failBadge);
             }
-            if (version.createdAt) {
-                tooltipParts.push(new Date(version.createdAt).toLocaleString());
+            row1.appendChild(row1Right);
+            item.appendChild(row1);
+
+            // ── Row 2: SWV + env + commit SHA ────────────────────────────
+            const row2 = document.createElement('div');
+            row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.72rem;color:var(--color-text-secondary);';
+
+            const left = document.createElement('span');
+            const env = envOf(version);
+            const envColor = env === 'staging' ? '#93c5fd' : '#a78bfa';
+            left.innerHTML = '<span style="color:' + envColor + ';font-weight:500;">' + env + '</span>' +
+                ' · ' + (version.swv || '—') +
+                (version.display_deploy_type ? ' · ' + version.display_deploy_type : '');
+            row2.appendChild(left);
+
+            const sha = version.commit ? version.commit.slice(0, 7) : (version.cloud_run_revision || '');
+            if (sha) {
+                const shaSpan = document.createElement('code');
+                shaSpan.style.cssText = 'color:#fde68a;font-size:0.7rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;';
+                shaSpan.textContent = sha;
+                row2.appendChild(shaSpan);
             }
-            if (version.commit) {
-                tooltipParts.push('Commit: ' + version.commit);
-            }
-            item.title = tooltipParts.join(' | ');
+            item.appendChild(row2);
 
-            // Primary label: SWV + service
-            const label = document.createElement('div');
-            label.className = 'version-dropdown__item-label';
-            label.textContent = version.swv + ' – ' + (version.service || 'unknown');
-            item.appendChild(label);
-
-            // Meta line: timestamp + status badge
-            const meta = document.createElement('div');
-            meta.className = 'version-dropdown__item-meta';
-
-            const timestamp = document.createElement('span');
-            timestamp.className = 'version-dropdown__item-timestamp';
-            timestamp.textContent = version.createdAt ? formatVersionTimestamp(version.createdAt) : '';
-            meta.appendChild(timestamp);
-
-            if (version.status) {
-                const badge = document.createElement('span');
-                // VTID-0524: Map status to badge classes
-                let badgeClass = 'version-dropdown__item-badge';
-                if (version.status === 'success') {
-                    badgeClass += ' version-dropdown__item-badge--success';
-                } else if (version.status === 'failure') {
-                    badgeClass += ' version-dropdown__item-badge--failure';
-                } else {
-                    badgeClass += ' version-dropdown__item-badge--' + version.status;
-                }
-                badge.className = badgeClass;
-                badge.textContent = version.status.charAt(0).toUpperCase() + version.status.slice(1);
-                meta.appendChild(badge);
-            }
-
-            item.appendChild(meta);
-
-            // Phase 0 staging build (P0.5): per-row Revert button. The
-            // server marks revert_eligible after age/active/status checks;
-            // here we just surface the button + open the confirm overlay.
+            // ── Row 3: revert button (only if eligible) ──────────────────
             if (version.revert_eligible && window.VitanaStaging) {
                 try {
                     const revertBtn = window.VitanaStaging.renderRevertButton(version, {
@@ -6037,19 +6246,19 @@ function renderVersionDropdown() {
                             }
                         },
                     });
+                    revertBtn.style.marginTop = '6px';
+                    revertBtn.style.marginLeft = '13px'; // align past the LIVE dot
                     item.appendChild(revertBtn);
                 } catch (err) {
                     console.warn('[VitanaStaging] renderRevertButton failed:', err);
                 }
             }
 
-            // Click handler
+            // Single click no longer triggers a "selected" toast (that pattern
+            // was from the legacy modal flow). Selection is purely visual now.
             item.onclick = function (e) {
                 e.stopPropagation();
                 state.selectedVersionId = version.id;
-                const displayName = version.swv || version.vtid || version.label;
-                showToast('Version ' + displayName + ' selected. Restore/publish flow will be implemented in a later step.', 'info');
-                state.isVersionDropdownOpen = false;
                 renderApp();
             };
 
