@@ -5,13 +5,30 @@ The parent session unblocks when criteria 1, 3, 4, 5, 6, 7, 8, 11 are green
 and the publish/revert flow (9, 10) has been exercised manually by the
 human operator.
 
-**Snapshot:** 2026-05-22 (the gateway-staging service was first deployed and
-verified live on this date).
+**Snapshot:** 2026-05-22 (first gateway-staging deploy) → 2026-05-26 (preview
+URLs `preview-gateway.vitanaland.com` + `preview.vitanaland.com` live).
+
+## Lovable-style preview URLs (added 2026-05-26)
+
+|        | Live (prod)                       | Preview (staging)                       |
+|--------|-----------------------------------|-----------------------------------------|
+| Frontend (community app) | `https://vitanaland.com`            | **`https://preview.vitanaland.com`**     |
+| Backend gateway          | `https://gateway.vitanaland.com`    | **`https://preview-gateway.vitanaland.com`** |
+| Command Hub (operator)   | `gateway.vitanaland.com/command-hub`| `preview-gateway.vitanaland.com/command-hub` |
+
+Wired via a Cloudflare Worker ([cloudflare/preview-router](../cloudflare/preview-router/))
+that proxies both preview hostnames to their Cloud Run `*.run.app` services
+with the Host header rewritten — Cloud Run rejects the original Host
+(`preview-gateway.vitanaland.com`) because no Cloud Run custom-domain mapping
+exists (would need per-subdomain Google Search Console verification), and
+Cloudflare Origin Rules with HostHeader override are a paid feature. The
+Worker is the free-tier correct fix. See STAGING.md §0 for the operational
+runbook.
 
 | #  | Criterion                                                                                                   | Status   | Evidence                                                                                                                                                                                                                                                                          |
 |----|-------------------------------------------------------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1  | `gateway-staging` deployed; `/api/v1/admin/health` returns `env:"staging"` + staging Supabase               | **GREEN** | Service live at `https://gateway-staging-q74ibpv6ia-uc.a.run.app`. `/api/v1/admin/health` returns `{env:"staging", supabase_host:"rsdakjqpvcpgomltdmxu.supabase.co", cloud_run_service:"gateway-staging", cloud_run_revision:"gateway-staging-00001-k2s"}`. First deploy: workflow run [26283585453](https://github.com/exafyltd/vitana-platform/actions/runs/26283585453) (steps 1–7 all green; step 8 patched and verified clean in run [26284210335](https://github.com/exafyltd/vitana-platform/actions/runs/26284210335)). |
-| 2  | `community-app-staging` deployed; `VITE_GATEWAY_URL` at `gateway-staging`                                  | DEFERRED | Vitana-v1 frontend lives in a sibling repo (`exafyltd/vitana-v1`). A parallel STAGE-DEPLOY-FRONTEND workflow in that repo is the right place. Not in this PR's scope; see STAGING.md §6.                                                                                            |
+| 2  | `community-app-staging` deployed; `VITE_GATEWAY_URL` at `gateway-staging`                                  | **GREEN** | Service live at `community-app-staging-q74ibpv6ia-uc.a.run.app` + custom domain `https://preview.vitanaland.com`. Deploys via [STAGE-DEPLOY-FRONTEND.yml](https://github.com/exafyltd/vitana-v1/blob/main/.github/workflows/STAGE-DEPLOY-FRONTEND.yml) in the `exafyltd/vitana-v1` sibling repo on every push to main; injects a `.env.production` with `VITE_GATEWAY_URL=https://preview-gateway.vitanaland.com/api/v1` + staging Supabase URL + anon key at build time so Vite bakes the staging-isolation-critical vars into the bundle. First deploy: commit [7740f53f](https://github.com/exafyltd/vitana-v1/commit/7740f53f4801b3215261140c2210ec060e03deae). Bundle verified: 7 `preview-gateway.vitanaland.com` references, 1 `rsdakjqpvcpgomltdmxu` (staging Supabase project ref). |
 | 3  | Supabase Persistent branch `staging`, migrations applied, seed populated (≥11 users, ≥50 memory rows)       | **GREEN** | Branch `Staging` (project_ref `rsdakjqpvcpgomltdmxu`), Persistent + ACTIVE_HEALTHY. **234 of 348** local migrations applied via direct-pooler Node runner; **280 tables** on staging vs ~320 on prod (gap documented in STAGING.md §9b). Seed counts: `auth.users=11`, `memory_items=110`, `memory_facts=20`, `autopilot_recommendations=40`, `user_tenants=23` — all ≥ targets. |
 | 4  | `.github/workflows/STAGE-DEPLOY.yml` exists and auto-deploys staging on every main push                     | **GREEN** | [STAGE-DEPLOY.yml](../.github/workflows/STAGE-DEPLOY.yml) registered on main (commit [9c87955d](https://github.com/exafyltd/vitana-platform/commit/9c87955d7c107227707d0fd1112d21efae3a3469)). Resilience patch on main as commit `4f0f3c6c` (current sha `2289e9b9`). Workflow fires on push + workflow_dispatch. |
 | 5  | `/operator/publish` + `/operator/revert` implemented, wired to PUBLISH/CLOCK, write `software_versions` + OASIS | DONE     | Endpoints at [services/gateway/src/routes/operator.ts §publish/revert](../services/gateway/src/routes/operator.ts) (line ~1208 onward). Cloud Run Admin wrapper at [services/gateway/src/services/cloud-run-admin.ts](../services/gateway/src/services/cloud-run-admin.ts). Migration at [supabase/migrations/20260601000000_PHASE0_staging_software_versions.sql](../supabase/migrations/20260601000000_PHASE0_staging_software_versions.sql) (applied to staging; flows to prod via the Supabase staging→main merge). |

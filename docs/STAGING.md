@@ -9,6 +9,38 @@ that promote staging changes into production.
 
 ---
 
+## 0. URLs (Lovable-style preview)
+
+|        | Live (prod)                       | Preview (staging)                       |
+|--------|-----------------------------------|-----------------------------------------|
+| Frontend (community app) | `https://vitanaland.com`            | `https://preview.vitanaland.com`        |
+| Backend gateway          | `https://gateway.vitanaland.com`    | `https://preview-gateway.vitanaland.com`|
+| Command Hub (operator)   | `gateway.vitanaland.com/command-hub`| `preview-gateway.vitanaland.com/command-hub` |
+| Supabase                 | `inmkhvwdcuyhnxkgfvsb.supabase.co`  | `rsdakjqpvcpgomltdmxu.supabase.co` (Persistent branch `Staging`) |
+
+How the preview URLs work: Cloudflare DNS has a proxied CNAME for each
+preview hostname pointing at the corresponding Cloud Run `*.run.app`
+service.  Because Cloud Run rejects requests whose Host header doesn't
+match either the `*.run.app` URL or a registered custom-domain mapping
+(which would need Google Search Console verification of every subdomain),
+a tiny Cloudflare Worker — [cloudflare/preview-router](../cloudflare/preview-router/)
+— sits in front and rewrites the Host header to the `*.run.app` value
+before fetching the origin.  Origin Rules with HostHeader override would
+solve this too but are a paid Cloudflare feature (`not entitled to use
+the HostHeader override`), so the Worker is the cheapest correct fix.
+
+To add a new preview hostname (e.g. another staging service):
+1. `cloudflare/preview-router/worker.js` — add the hostname to the
+   `ROUTES` map.
+2. `cloudflare/preview-router/wrangler.toml` — add the hostname to the
+   `routes` array.
+3. Cloudflare API → `POST /zones/{zone_id}/dns_records` adding a CNAME
+   for the hostname with `proxied: true`.
+4. Push to main; the existing `DEPLOY-CLOUDFLARE-WORKERS.yml` workflow
+   auto-deploys when files under `cloudflare/preview-router/` change.
+
+---
+
 ## 1. Architecture
 
 ```
