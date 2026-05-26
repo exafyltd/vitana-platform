@@ -264,6 +264,52 @@ export async function updateTrafficToRevision(
   return { ok: true, operationName: data.name };
 }
 
+/**
+ * Split traffic across multiple revisions.  Used by the canary publish flow:
+ *   setTrafficSplit('gateway', [
+ *     { revision: 'gateway-00099-old', percent: 90 },
+ *     { revision: 'gateway-00100-new', percent: 10 },
+ *   ])
+ *
+ * Cloud Run requires the sum of percents to be exactly 100.  Each revision
+ * name can be either the full resource name or the short name (e.g.
+ * 'gateway-00100-new').
+ */
+export async function setTrafficSplit(
+  service: string,
+  splits: Array<{ revision: string; percent: number }>
+): Promise<UpdateTrafficResult> {
+  if (splits.length === 0) {
+    return { ok: false, error: 'setTrafficSplit: empty splits array' };
+  }
+  const total = splits.reduce((acc, s) => acc + s.percent, 0);
+  if (total !== 100) {
+    return { ok: false, error: `setTrafficSplit: percents sum to ${total}, must be 100` };
+  }
+
+  const body = {
+    traffic: splits.map(s => ({
+      type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION',
+      revision: s.revision.includes('/') ? s.revision.split('/').pop() ?? s.revision : s.revision,
+      percent: s.percent,
+    })),
+  };
+
+  const url = `${RUN_API}/${servicePath(service)}?updateMask=traffic`;
+  const resp = await authedFetch(url, { method: 'PATCH', body: JSON.stringify(body) });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    return {
+      ok: false,
+      error: `cloud-run-admin setTrafficSplit(${service}, ${JSON.stringify(splits)}): ${resp.status} ${text}`,
+    };
+  }
+
+  const data = await resp.json() as { name?: string };
+  return { ok: true, operationName: data.name };
+}
+
 // ==================== Small helpers ====================
 
 /** Strip the long resource prefix to leave just the revision short name. */

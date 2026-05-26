@@ -439,18 +439,31 @@
     // Header row: phase chip + close.
     const phase = s.phase || 'loading';
     const chipText = ({
-      loading:    el('span', {}, spinnerSvg(11, '#cbd5e1'), ' Reading staging…'),
-      ready:      'Ready to publish',
-      publishing: el('span', {}, spinnerSvg(11, '#93c5fd'), ' Dispatching deploy…'),
-      building:   el('span', {}, spinnerSvg(11, '#93c5fd'), ' Building…'),
-      rolling:    el('span', {}, spinnerSvg(11, '#93c5fd'), ' Rolling out…'),
-      verified:   '✓ Published',
-      error:      '× Publish failed',
-    })[phase];
+      loading:           el('span', {}, spinnerSvg(11, '#cbd5e1'), ' Reading state…'),
+      ready:             'Ready to publish',
+      publishing:        el('span', {}, spinnerSvg(11, '#93c5fd'), ' Dispatching canary…'),
+      'canary-active':   '🐤 Canary at 10%',
+      promoting:         el('span', {}, spinnerSvg(11, '#93c5fd'), ' Promoting to 100%…'),
+      promoted:          '✓ Promoted',
+      aborting:          el('span', {}, spinnerSvg(11, '#fca5a5'), ' Discarding canary…'),
+      aborted:           '⤺ Canary discarded',
+      'full-publishing': el('span', {}, spinnerSvg(11, '#93c5fd'), ' Publishing 100%…'),
+      'full-verified':   '✓ Published',
+      // legacy aliases used by older in-flight rollouts
+      building:          el('span', {}, spinnerSvg(11, '#93c5fd'), ' Building…'),
+      rolling:           el('span', {}, spinnerSvg(11, '#93c5fd'), ' Rolling out…'),
+      verified:          '✓ Published',
+      error:             '× Failed',
+    })[phase] || phase;
+    const chipKindMap = {
+      'canary-active': 'ready', promoting: 'publishing', aborting: 'error',
+      promoted: 'verified', aborted: 'verified', 'full-publishing': 'publishing', 'full-verified': 'verified',
+    };
+    const chipKindResolved = chipKindMap[phase] || phase;
     const headerRow = el('div', {
       style: 'display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;',
     },
-      phaseChip(chipText, phase),
+      phaseChip(chipText, chipKindResolved),
       el('button', {
         type: 'button',
         style: 'background:none;border:none;color:#888;font-size:18px;cursor:pointer;padding:0 4px;line-height:1;',
@@ -463,25 +476,27 @@
     );
     card.appendChild(headerRow);
 
-    // Body content depends on phase.
-    if (phase === 'verified') {
-      card.appendChild(el('div', { style: 'color:#86efac;line-height:1.5;' },
-        'Production gateway is now serving ',
-        el('code', { style: 'color:#fde68a;font-size:12px;' }, (s.sourceCommit || '').slice(0, 7) || '—'),
-        '.  ',
-        s.workflowUrl
-          ? el('a', { href: s.workflowUrl, target: '_blank', style: 'color:#60a5fa;text-decoration:underline;' }, 'View deploy →')
-          : null
-      ));
+    // Terminal success: promoted / aborted / full-verified / verified (legacy).
+    const terminalSuccess = (phase === 'promoted' || phase === 'aborted' ||
+                             phase === 'full-verified' || phase === 'verified');
+    if (terminalSuccess) {
+      const inner = phase === 'promoted'
+        ? ['Production is now serving ', el('code', { style: 'color:#fde68a;font-size:12px;' }, (s.canaryCommit || s.sourceCommit || '').slice(0, 7) || '—'), ' at 100%.']
+        : phase === 'aborted'
+        ? ['Canary discarded. Production restored to the previous stable revision.']
+        : ['Production gateway is now serving ', el('code', { style: 'color:#fde68a;font-size:12px;' }, (s.sourceCommit || '').slice(0, 7) || '—'), '.'];
+      card.appendChild(el('div', { style: 'color:#86efac;line-height:1.5;' }, ...inner));
+      if (s.workflowUrl) {
+        card.appendChild(el('div', { style: 'margin-top:6px;' },
+          el('a', { href: s.workflowUrl, target: '_blank', style: 'color:#60a5fa;font-size:12px;text-decoration:underline;' }, 'View deploy →')));
+      }
       card.appendChild(el('div', { style: 'margin-top:10px;color:var(--color-text-secondary);font-size:11px;' },
-        'This popover will close automatically.'
-      ));
-      // Auto-close after 4s on success.
+        'This popover will close automatically.'));
       if (!s._autoCloseTimer) {
         s._autoCloseTimer = setTimeout(function () {
           if (window.__vitana_state && window.__vitana_state.publishFlow) {
             window.__vitana_state.publishFlow.open = false;
-            window.__vitana_state.publishFlow.phase = 'idle';
+            window.__vitana_state.publishFlow.phase = 'loading';
             window.__vitana_state.publishFlow._autoCloseTimer = null;
           }
           if (typeof renderApp === 'function') renderApp();
@@ -519,16 +534,31 @@
         .then(function (results) {
           const sRev = results[0] && results[0].revisions && results[0].revisions[0];
           const pRevs = (results[1] && results[1].revisions) || [];
-          const pRev = pRevs.find(function (r) { return r.isActive; }) || pRevs[0];
           if (!sRev) throw new Error('No staging revisions');
-          if (window.__vitana_state && window.__vitana_state.publishFlow) {
-            const sf = window.__vitana_state.publishFlow;
-            sf.sourceRevision = sRev.shortName;
-            sf.sourceCommit = sRev.commitSha || null;
-            sf.sourceDeployedAt = sRev.createdAt || null;
-            sf.liveRevision = pRev ? pRev.shortName : null;
-            sf.liveCommit = pRev && pRev.commitSha ? pRev.commitSha : null;
-            sf.liveDeployedAt = pRev ? pRev.createdAt : null;
+          const sf = window.__vitana_state && window.__vitana_state.publishFlow;
+          if (!sf) return;
+          sf.sourceRevision = sRev.shortName;
+          sf.sourceCommit = sRev.commitSha || null;
+          sf.sourceDeployedAt = sRev.createdAt || null;
+          // Detect canary-active: 2+ revisions with non-zero traffic.
+          const trafficRevs = pRevs.filter(function (r) { return (r.trafficPercent || 0) > 0; });
+          if (trafficRevs.length >= 2) {
+            const sorted = trafficRevs.slice().sort(function (a, b) { return b.trafficPercent - a.trafficPercent; });
+            const stable = sorted[0];
+            const canary = sorted[sorted.length - 1];
+            sf.stableRevision = stable.shortName;
+            sf.stableCommit = stable.commitSha || null;
+            sf.stablePercent = stable.trafficPercent;
+            sf.canaryRevision = canary.shortName;
+            sf.canaryCommit = canary.commitSha || null;
+            sf.canaryDeployedAt = canary.createdAt || null;
+            sf.canaryPercent = canary.trafficPercent;
+            sf.phase = 'canary-active';
+          } else {
+            const live = pRevs.find(function (r) { return r.isActive; }) || pRevs[0];
+            sf.liveRevision = live ? live.shortName : null;
+            sf.liveCommit = live && live.commitSha ? live.commitSha : null;
+            sf.liveDeployedAt = live ? live.createdAt : null;
             sf.phase = 'ready';
           }
           if (typeof renderApp === 'function') renderApp();
@@ -585,9 +615,111 @@
     }
     card.appendChild(compareBlock);
 
-    // Single big action button. Disabled until phase=ready.
-    const publishing = phase === 'publishing' || phase === 'building' || phase === 'rolling';
-    const btn = el('button', {
+    // ── canary-active: show stable/canary lines + Promote/Discard buttons ──
+    if (phase === 'canary-active' || phase === 'promoting' || phase === 'aborting') {
+      // Replace the comparison block we just rendered with a different one.
+      while (compareBlock.firstChild) compareBlock.removeChild(compareBlock.firstChild);
+      compareBlock.appendChild(el('div', { style: 'color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;' }, 'Stable · ' + (s.stablePercent || 90) + '%'));
+      compareBlock.appendChild(el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:8px;' },
+        el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#10b981;flex:none;' }),
+        el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
+          s.stableCommit ? s.stableCommit.slice(0, 7) : (s.stableRevision || 'unknown'))
+      ));
+      compareBlock.appendChild(el('div', { style: 'color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;' }, '🐤 Canary · ' + (s.canaryPercent || 10) + '%'));
+      compareBlock.appendChild(el('div', { style: 'display:flex;align-items:center;gap:8px;' },
+        el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#fbbf24;flex:none;' }),
+        el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
+          s.canaryCommit ? s.canaryCommit.slice(0, 7) : (s.canaryRevision || 'unknown')),
+        el('span', { style: 'color:#888;font-size:11px;' }, s.canaryDeployedAt ? formatTimeAgo(s.canaryDeployedAt) : '')
+      ));
+
+      const inFlight = (phase === 'promoting' || phase === 'aborting');
+      const promoteBtn = el('button', {
+        type: 'button',
+        style: 'flex:1;padding:10px;background:' + (inFlight ? 'rgba(148,163,184,0.18)' : '#16a34a') +
+               ';color:#fff;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:' +
+               (inFlight ? 'not-allowed' : 'pointer') + ';opacity:' + (inFlight ? '0.85' : '1') +
+               ';display:flex;align-items:center;justify-content:center;gap:6px;',
+      });
+      if (phase === 'promoting') {
+        promoteBtn.appendChild(spinnerSvg(13, '#93c5fd'));
+        promoteBtn.appendChild(document.createTextNode('Promoting…'));
+      } else {
+        promoteBtn.textContent = 'Promote to 100%';
+      }
+      if (!inFlight) {
+        promoteBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const sf = window.__vitana_state && window.__vitana_state.publishFlow;
+          if (!sf) return;
+          sf.phase = 'promoting';
+          if (typeof renderApp === 'function') renderApp();
+          fetch('/api/v1/operator/promote', { method: 'POST', credentials: 'include',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+            body: JSON.stringify({ service: 'gateway' }) })
+            .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+            .then(function (p) {
+              if (p.status >= 200 && p.status < 300 && p.body && p.body.ok) {
+                sf.phase = 'promoted';
+                if (typeof renderApp === 'function') renderApp();
+                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+              } else {
+                sf.phase = 'error';
+                sf.message = (p.body && (p.body.detail || p.body.error)) || ('HTTP ' + p.status);
+                if (typeof renderApp === 'function') renderApp();
+              }
+            })
+            .catch(function (err) { sf.phase = 'error'; sf.message = 'Network: ' + (err && err.message); if (typeof renderApp === 'function') renderApp(); });
+        });
+      }
+      const discardBtn = el('button', {
+        type: 'button',
+        style: 'flex:1;padding:10px;background:' + (inFlight ? 'rgba(148,163,184,0.18)' : 'rgba(251,113,133,0.15)') +
+               ';color:' + (inFlight ? '#cbd5e1' : '#fca5a5') +
+               ';border:1px solid ' + (inFlight ? 'transparent' : 'rgba(251,113,133,0.4)') +
+               ';border-radius:6px;font-weight:600;font-size:13px;cursor:' +
+               (inFlight ? 'not-allowed' : 'pointer') + ';opacity:' + (inFlight ? '0.85' : '1') +
+               ';display:flex;align-items:center;justify-content:center;gap:6px;',
+      });
+      if (phase === 'aborting') {
+        discardBtn.appendChild(spinnerSvg(13, '#fca5a5'));
+        discardBtn.appendChild(document.createTextNode('Discarding…'));
+      } else {
+        discardBtn.textContent = 'Discard canary';
+      }
+      if (!inFlight) {
+        discardBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const sf = window.__vitana_state && window.__vitana_state.publishFlow;
+          if (!sf) return;
+          sf.phase = 'aborting';
+          if (typeof renderApp === 'function') renderApp();
+          fetch('/api/v1/operator/abort-canary', { method: 'POST', credentials: 'include',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+            body: JSON.stringify({ service: 'gateway' }) })
+            .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+            .then(function (p) {
+              if (p.status >= 200 && p.status < 300 && p.body && p.body.ok) {
+                sf.phase = 'aborted';
+                if (typeof renderApp === 'function') renderApp();
+                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+              } else {
+                sf.phase = 'error';
+                sf.message = (p.body && (p.body.detail || p.body.error)) || ('HTTP ' + p.status);
+                if (typeof renderApp === 'function') renderApp();
+              }
+            })
+            .catch(function (err) { sf.phase = 'error'; sf.message = 'Network: ' + (err && err.message); if (typeof renderApp === 'function') renderApp(); });
+        });
+      }
+      const btnRow = el('div', { style: 'display:flex;gap:8px;' }, promoteBtn, discardBtn);
+      card.appendChild(btnRow);
+      return card;
+    }
+
+    // ── ready / publishing / full-publishing: Publish-to-canary primary ──
+    const dispatching = (phase === 'publishing' || phase === 'full-publishing' || phase === 'building' || phase === 'rolling');
+    const primary = el('button', {
       type: 'button',
       style: 'width:100%;padding:12px 16px;border:none;border-radius:8px;font-weight:600;font-size:14px;' +
              'cursor:' + (phase === 'ready' ? 'pointer' : 'not-allowed') + ';' +
@@ -596,112 +728,130 @@
              'opacity:' + (phase === 'ready' ? '1' : '0.85') + ';' +
              'display:flex;align-items:center;justify-content:center;gap:8px;',
     });
-    if (publishing) {
-      btn.appendChild(spinnerSvg(14, '#93c5fd'));
-      btn.appendChild(document.createTextNode({
-        publishing: 'Dispatching…',
-        building:   'Building…',
-        rolling:    'Rolling out…',
-      }[phase]));
+    if (dispatching) {
+      primary.appendChild(spinnerSvg(14, '#93c5fd'));
+      primary.appendChild(document.createTextNode(
+        phase === 'full-publishing' ? 'Publishing 100%…' :
+        phase === 'building' ? 'Building…' :
+        phase === 'rolling' ? 'Rolling out…' :
+        'Dispatching canary…'
+      ));
     } else if (phase === 'loading') {
-      btn.appendChild(spinnerSvg(14, '#cbd5e1'));
-      btn.appendChild(document.createTextNode('Loading…'));
+      primary.appendChild(spinnerSvg(14, '#cbd5e1'));
+      primary.appendChild(document.createTextNode('Loading…'));
     } else {
-      btn.textContent = 'Publish to production';
+      primary.textContent = 'Publish to canary (10%)';
     }
     if (phase === 'ready') {
-      btn.addEventListener('click', function (e) {
+      primary.addEventListener('click', function (e) {
         e.stopPropagation();
-        // Phase transitions: ready → publishing → building → rolling → verified
-        const sf = window.__vitana_state && window.__vitana_state.publishFlow;
-        if (!sf) return;
-        sf.phase = 'publishing';
-        sf.startedAt = Date.now();
-        if (typeof renderApp === 'function') renderApp();
-
-        fetch('/api/v1/operator/publish', {
-          method: 'POST',
-          credentials: 'include',
-          headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-          body: JSON.stringify({ confirm_short_sha: (sf.sourceCommit || '').slice(0, 7) }),
-        })
-          .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
-          .then(function (payload) {
-            if (payload.status >= 200 && payload.status < 300 && payload.body && payload.body.ok) {
-              sf.vtid = payload.body.vtid || null;
-              sf.workflowUrl = payload.body.workflow_url || null;
-              sf.phase = 'building';
-              if (typeof renderApp === 'function') renderApp();
-              // Poll for new prod revision serving the published commit.
-              pollUntilLive(sf, headers, opts);
-            } else {
-              sf.phase = 'error';
-              sf.message = (payload.body && (payload.body.detail || payload.body.error)) || ('HTTP ' + payload.status);
-              if (typeof renderApp === 'function') renderApp();
-            }
-          })
-          .catch(function (err) {
-            sf.phase = 'error';
-            sf.message = 'Network: ' + (err && err.message ? err.message : 'unknown');
-            if (typeof renderApp === 'function') renderApp();
-          });
+        dispatchPublish('canary', headers, opts);
       });
     }
-    card.appendChild(btn);
+    card.appendChild(primary);
+
+    if (phase === 'ready') {
+      const skipRow = el('div', { style: 'margin-top:8px;text-align:center;' },
+        el('button', {
+          type: 'button',
+          style: 'background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;text-decoration:underline;',
+          onclick: function (e) {
+            e.stopPropagation();
+            if (!window.confirm('Skip canary and publish to 100% immediately?\n\nFor voice, canary is recommended — bad changes reach all users within seconds.')) return;
+            dispatchPublish('full', headers, opts);
+          },
+        }, 'Skip canary — publish 100% now')
+      );
+      card.appendChild(skipRow);
+    }
 
     return card;
   };
 
-  // Poll Cloud Run for the new prod revision to actually serve traffic.
-  // Transitions phase: building → rolling → verified.  Caps at 6 minutes;
-  // after that we surface a "still running, check workflow URL" notice
-  // instead of blocking forever.
-  function pollUntilLive(sf, headers, opts) {
-    const startSha = (sf.sourceCommit || '').slice(0, 7);
-    if (!startSha) return; // can't reliably verify without a SHA
+  function dispatchPublish(mode, headers, opts) {
+    const sf = window.__vitana_state && window.__vitana_state.publishFlow;
+    if (!sf) return;
+    sf.phase = (mode === 'canary') ? 'publishing' : 'full-publishing';
+    sf.startedAt = Date.now();
+    if (typeof renderApp === 'function') renderApp();
+
+    fetch('/api/v1/operator/publish', { method: 'POST', credentials: 'include',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+      body: JSON.stringify({ confirm_short_sha: (sf.sourceCommit || '').slice(0, 7), mode: mode }) })
+      .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (p) {
+        if (p.status >= 200 && p.status < 300 && p.body && p.body.ok) {
+          sf.vtid = p.body.vtid || null;
+          sf.workflowUrl = p.body.workflow_url || null;
+          if (mode === 'canary') pollUntilCanaryActive(sf, headers, opts);
+          else pollUntilFullVerified(sf, headers, opts);
+        } else {
+          sf.phase = 'error';
+          sf.message = (p.body && (p.body.detail || p.body.error)) || ('HTTP ' + p.status);
+          if (typeof renderApp === 'function') renderApp();
+        }
+      })
+      .catch(function (err) { sf.phase = 'error'; sf.message = 'Network: ' + (err && err.message); if (typeof renderApp === 'function') renderApp(); });
+  }
+
+  function pollUntilCanaryActive(sf, headers, opts) {
     const startMs = Date.now();
-    let phase = 'building';
     const tick = function () {
-      if (Date.now() - startMs > 6 * 60 * 1000) {
-        sf.phase = 'verified'; // optimistic: workflow is dispatched, surface the link
-        sf.message = '(taking longer than usual; check the deploy URL)';
+      if (Date.now() - startMs > 8 * 60 * 1000) {
+        sf.phase = 'error'; sf.message = 'Canary deploy is taking >8 min. Check workflow URL.';
+        if (typeof renderApp === 'function') renderApp();
+        return;
+      }
+      fetch('/api/v1/operator/revisions?service=gateway&limit=5', { credentials: 'include', headers })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (body) {
+          const revs = (body && body.revisions) || [];
+          const trafficRevs = revs.filter(function (r) { return (r.trafficPercent || 0) > 0; });
+          if (trafficRevs.length >= 2) {
+            const sorted = trafficRevs.slice().sort(function (a, b) { return b.trafficPercent - a.trafficPercent; });
+            const stable = sorted[0]; const canary = sorted[sorted.length - 1];
+            sf.stableRevision = stable.shortName; sf.stableCommit = stable.commitSha || null; sf.stablePercent = stable.trafficPercent;
+            sf.canaryRevision = canary.shortName; sf.canaryCommit = canary.commitSha || null;
+            sf.canaryDeployedAt = canary.createdAt || null; sf.canaryPercent = canary.trafficPercent;
+            sf.phase = 'canary-active';
+            if (typeof renderApp === 'function') renderApp();
+            if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+            return;
+          }
+          setTimeout(tick, 6000);
+        })
+        .catch(function () { setTimeout(tick, 6000); });
+    };
+    setTimeout(tick, 8000);
+  }
+
+  function pollUntilFullVerified(sf, headers, opts) {
+    const startSha = (sf.sourceCommit || '').slice(0, 7);
+    if (!startSha) { sf.phase = 'full-verified'; if (typeof renderApp === 'function') renderApp(); return; }
+    const startMs = Date.now();
+    const tick = function () {
+      if (Date.now() - startMs > 8 * 60 * 1000) {
+        sf.phase = 'full-verified'; sf.message = '(taking longer than usual; check workflow)';
         if (typeof renderApp === 'function') renderApp();
         if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
         return;
       }
-      fetch('/api/v1/admin/health', { credentials: 'include' })
+      fetch('/api/v1/admin/build-info', { credentials: 'include' })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (body) {
-          // build-info has git_commit; /admin/health has cloud_run_revision.
-          // Use the env=production health endpoint via the prod gateway URL?
-          // Actually this admin/health is for *current host* — when running
-          // on production Command Hub, it returns prod's revision.
-          if (!body) { setTimeout(tick, 5000); return; }
-          // Switch to "rolling" once we see ANY new revision (not necessarily
-          // matching commit yet — gives the user a sense of forward motion).
-          if (phase === 'building' && body.cloud_run_revision && !sf._sawRev) {
-            sf._sawRev = body.cloud_run_revision;
-            sf.phase = 'rolling';
-            phase = 'rolling';
+        .then(function (bi) {
+          if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
+            sf.phase = 'full-verified';
             if (typeof renderApp === 'function') renderApp();
+            if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+            return;
           }
-          // Verified when /admin/build-info exists & git_commit matches.
-          return fetch('/api/v1/admin/build-info', { credentials: 'include' })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (bi) {
-              if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
-                sf.phase = 'verified';
-                if (typeof renderApp === 'function') renderApp();
-                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
-                return;
-              }
-              setTimeout(tick, 5000);
-            });
+          setTimeout(tick, 6000);
         })
-        .catch(function () { setTimeout(tick, 5000); });
+        .catch(function () { setTimeout(tick, 6000); });
     };
-    setTimeout(tick, 4000); // first poll 4s after dispatch
+    setTimeout(tick, 8000);
   }
+
 
   // ============== Live revision pill (under PUBLISH button) ==============
   //

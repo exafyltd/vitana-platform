@@ -3220,13 +3220,38 @@ const state = {
     // command-hub-staging.js renderPublishInlineFlow().
     publishFlow: {
         open: false,
-        phase: 'idle',          // idle|loading|ready|publishing|building|rolling|verified|error
+        // Phases:
+        //   loading        — fetching staging + prod state
+        //   ready          — comparison loaded; show "Publish to canary" button
+        //   publishing     — /publish dispatched; waiting for canary revision to land
+        //   canary-active  — new revision serving 10%; show Promote / Discard
+        //   promoting      — /promote dispatched; traffic shifting to 100%
+        //   promoted       — 100% on new revision; auto-close
+        //   aborting       — /abort-canary dispatched; restoring stable revision
+        //   aborted        — stable restored to 100%; auto-close
+        //   full-publishing — operator chose "Skip canary"; old-style 100%-on-deploy
+        //   full-verified  — full publish landed
+        //   error          — show retry
+        phase: 'loading',
         message: '',
         vtid: null,
         workflowUrl: null,
         startedAt: null,
+        // Source = staging revision being promoted
         sourceRevision: null,
         sourceCommit: null,
+        sourceDeployedAt: null,
+        // Live = currently-serving prod revision (when no canary)
+        liveRevision: null,
+        liveCommit: null,
+        liveDeployedAt: null,
+        // Canary-active state (when a canary is already running)
+        canaryRevision: null,
+        canaryCommit: null,
+        canaryPercent: null,
+        stableRevision: null,
+        stableCommit: null,
+        stablePercent: null,
     },
 
     // CLOCK dropdown env filter tab. 'all' | 'production' | 'staging'.
@@ -5713,6 +5738,15 @@ function renderHeader() {
                 sourceRevision: null,
                 sourceCommit: null,
                 sourceDeployedAt: null,
+                liveRevision: null,
+                liveCommit: null,
+                liveDeployedAt: null,
+                canaryRevision: null,
+                canaryCommit: null,
+                canaryPercent: null,
+                stableRevision: null,
+                stableCommit: null,
+                stablePercent: null,
             };
             renderApp();
             return;
