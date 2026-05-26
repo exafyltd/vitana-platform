@@ -224,29 +224,115 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       .eq('user_id', identity.user_id)
       .maybeSingle();
 
-    // Usage rollup for the 6 metered features (only for current plan)
+    // Usage rollup for the 6 metered features (only for current plan).
+    // Post rolling-windows migration (20260526100000), Free tier carries
+    // window_5h_quota + weekly_quota in addition to monthly. Paid tiers keep
+    // monthly-only (other columns NULL). We surface all configured windows so
+    // the UI shows "5h resets in 2h" + "Weekly resets Mon" side-by-side
+    // (Codex/Claude pattern).
     const { data: entitlementRows } = await sb()
       .from('feature_entitlements')
-      .select('feature_key, quota, window_seconds, unit, behavior_on_exceed')
+      .select('feature_key, quota, window_seconds, window_5h_quota, weekly_quota, unit, behavior_on_exceed')
       .eq('plan_key', plan.plan_key);
 
-    const usage: Record<string, { used: number; quota: number; reset_at: string | null; unit: string; behavior: string }> = {};
+    type EntitlementRow = {
+      feature_key: string;
+      quota: number;
+      window_seconds: number;
+      window_5h_quota: number | null;
+      weekly_quota: number | null;
+      unit: string;
+      behavior_on_exceed: string;
+    };
+
+    type WindowSnapshot = {
+      name: 'window_5h' | 'weekly' | 'monthly';
+      used: number;
+      limit: number;
+      reset_at: string | null;
+    };
+
+    const SECONDS_5H = 5 * 60 * 60;
+    const SECONDS_WEEK = 7 * 24 * 60 * 60;
+
+    const usage: Record<string, {
+      used: number;
+      quota: number;
+      reset_at: string | null;
+      unit: string;
+      behavior: string;
+      windows: WindowSnapshot[];
+      binding_window: 'window_5h' | 'weekly' | 'monthly';
+    }> = {};
+
     if (entitlementRows) {
-      for (const row of entitlementRows as Array<{ feature_key: string; quota: number; window_seconds: number; unit: string; behavior_on_exceed: string }>) {
-        const { data: u } = await sb().rpc('fn_get_feature_usage', {
+      for (const row of entitlementRows as EntitlementRow[]) {
+        const windows: WindowSnapshot[] = [];
+
+        if (row.window_5h_quota != null) {
+          const { data: w } = await sb().rpc('fn_get_feature_usage_in_window', {
+            p_tenant_id: identity.tenant_id,
+            p_user_id: identity.user_id,
+            p_feature_key: row.feature_key,
+            p_window_seconds: SECONDS_5H,
+          });
+          windows.push({
+            name: 'window_5h',
+            used: (w as { used?: number })?.used ?? 0,
+            limit: row.window_5h_quota,
+            reset_at: (w as { reset_at?: string })?.reset_at ?? null,
+          });
+        }
+
+        if (row.weekly_quota != null) {
+          const { data: w } = await sb().rpc('fn_get_feature_usage_in_window', {
+            p_tenant_id: identity.tenant_id,
+            p_user_id: identity.user_id,
+            p_feature_key: row.feature_key,
+            p_window_seconds: SECONDS_WEEK,
+          });
+          windows.push({
+            name: 'weekly',
+            used: (w as { used?: number })?.used ?? 0,
+            limit: row.weekly_quota,
+            reset_at: (w as { reset_at?: string })?.reset_at ?? null,
+          });
+        }
+
+        // Monthly always present
+        const { data: m } = await sb().rpc('fn_get_feature_usage', {
           p_tenant_id: identity.tenant_id,
           p_user_id: identity.user_id,
           p_feature_key: row.feature_key,
           p_window_seconds: row.window_seconds,
         });
-        const used = (u as { used?: number })?.used ?? 0;
-        const resetAt = (u as { window_end?: string })?.window_end ?? null;
+        windows.push({
+          name: 'monthly',
+          used: (m as { used?: number })?.used ?? 0,
+          limit: row.quota,
+          reset_at: (m as { window_end?: string })?.window_end ?? null,
+        });
+
+        // Pick binding window (least remaining; ties go to shortest window)
+        let bindingIdx = 0;
+        let bestRemaining = windows[0].limit - windows[0].used;
+        for (let i = 1; i < windows.length; i++) {
+          const remaining = windows[i].limit - windows[i].used;
+          if (remaining < bestRemaining) {
+            bestRemaining = remaining;
+            bindingIdx = i;
+          }
+        }
+        const binding = windows[bindingIdx];
+
         usage[row.feature_key] = {
-          used,
-          quota: row.quota,
-          reset_at: resetAt,
+          used: binding.used,
+          quota: binding.limit,
+          reset_at: binding.reset_at,
           unit: row.unit,
           behavior: row.behavior_on_exceed,
+          windows,
+          binding_window: binding.name,
         };
       }
     }
@@ -518,15 +604,10 @@ router.post('/credits/spend', requireAuth, async (req: AuthenticatedRequest, res
   }
 
   // Advance the feature usage meter so the entitlement engine sees the spend
-  // as "consumed" — the PAYG credits paid for the units.
-  const { data: cfg } = await sb()
-    .from('feature_entitlements')
-    .select('window_seconds')
-    .eq('plan_key', (await getUserPlan(identity.user_id, identity.tenant_id)).plan_key)
-    .eq('feature_key', feature)
-    .maybeSingle();
-  const windowSeconds = (cfg as { window_seconds?: number })?.window_seconds ?? 2592000;
-  await recordUsage(identity.user_id, identity.tenant_id, feature, units, windowSeconds);
+  // as "consumed" — the PAYG credits paid for the units. Per-minute event
+  // granularity (post rolling-windows migration) — entitlement-service handles
+  // window aggregation downstream.
+  await recordUsage(identity.user_id, identity.tenant_id, feature, units);
 
   return res.json({ ...result, ok: true, units_purchased: units, vtid: VTID });
 });

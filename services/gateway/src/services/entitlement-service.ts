@@ -63,13 +63,25 @@ export type WalletBucket = 'purchased_credits' | 'reward_credits' | 'cash_balanc
 export interface EntitlementConfig {
   plan_key: string;
   feature_key: string;
-  quota: number;
-  window_seconds: number;
+  quota: number;              // monthly cap (always set)
+  window_seconds: number;     // monthly window (default 30 days)
+  window_5h_quota: number | null;   // optional rolling 5h cap (Free tier only)
+  weekly_quota: number | null;      // optional rolling 7d cap (Free tier only)
   unit: 'count' | 'minutes' | 'bytes';
   behavior_on_exceed: BehaviorOnExceed;
   credit_cost_per_unit: number;
   allowed_burn_buckets: WalletBucket[];
 }
+
+/** Per-window snapshot exposed on /billing/me + paywall responses. */
+export interface UsageWindow {
+  name: 'window_5h' | 'weekly' | 'monthly';
+  used: number;
+  limit: number;
+  reset_at: string | null;
+}
+
+export type BindingWindow = 'window_5h' | 'weekly' | 'monthly';
 
 export interface PlanSnapshot {
   plan_key: string;
@@ -85,10 +97,16 @@ export interface CheckResult {
   paywall_action: PaywallAction;
   feature: string;
   tier: string;
+  // Legacy single-window fields kept for backwards compat with existing callers.
+  // These mirror the BINDING window (most restrictive of the three).
   quota: number;
   used: number;
   remaining: number;
   reset_at: string | null;
+  // Multi-window detail — surfaced to the UI so the user sees both
+  // "5h resets in 2h 14m" and "Weekly resets Mon 1 Jun".
+  windows: UsageWindow[];
+  binding_window: BindingWindow;
   credit_cost_per_unit: number;
   user_credit_balance: number;
   allowed_burn_buckets: WalletBucket[];
@@ -192,7 +210,7 @@ async function readEntitlementConfig(
   const sb = client();
   const { data, error } = await sb
     .from('feature_entitlements')
-    .select('plan_key, feature_key, quota, window_seconds, unit, behavior_on_exceed, credit_cost_per_unit, allowed_burn_buckets')
+    .select('plan_key, feature_key, quota, window_seconds, window_5h_quota, weekly_quota, unit, behavior_on_exceed, credit_cost_per_unit, allowed_burn_buckets')
     .eq('plan_key', planKey)
     .eq('feature_key', feature)
     .maybeSingle();
@@ -208,6 +226,8 @@ async function readEntitlementConfig(
     feature_key: data.feature_key,
     quota: data.quota,
     window_seconds: data.window_seconds,
+    window_5h_quota: (data as { window_5h_quota?: number | null }).window_5h_quota ?? null,
+    weekly_quota: (data as { weekly_quota?: number | null }).weekly_quota ?? null,
     unit: data.unit as 'count' | 'minutes' | 'bytes',
     behavior_on_exceed: data.behavior_on_exceed as BehaviorOnExceed,
     credit_cost_per_unit: data.credit_cost_per_unit,
@@ -221,9 +241,13 @@ async function readEntitlementConfig(
 
 interface UsageSnapshot {
   used: number;
-  window_end: string | null;
+  reset_at: string | null;
 }
 
+/**
+ * Calendar-aligned bucket read (used for the monthly window). This is the
+ * historical fn_get_feature_usage RPC — kept for backwards compat.
+ */
 async function readUsageInCurrentWindow(
   tenantId: string,
   userId: string,
@@ -240,14 +264,108 @@ async function readUsageInCurrentWindow(
 
   if (error || !data) {
     console.error(`${LOG_PREFIX} fn_get_feature_usage error: ${error?.message}`);
-    return { used: 0, window_end: null };
+    return { used: 0, reset_at: null };
   }
 
   const result = data as Record<string, unknown>;
   return {
     used: (result.used as number) || 0,
-    window_end: (result.window_end as string) || null,
+    reset_at: (result.window_end as string) || null,
   };
+}
+
+/**
+ * Sliding-window aggregation (used for 5h + weekly Free-tier rolling caps).
+ * Shipped in migration 20260526100000. Returns SUM(used) over events in the
+ * last `windowSeconds` plus the effective reset_at (= oldest event ages out).
+ */
+async function readUsageInSlidingWindow(
+  tenantId: string,
+  userId: string,
+  feature: string,
+  windowSeconds: number
+): Promise<UsageSnapshot> {
+  const sb = client();
+  const { data, error } = await sb.rpc('fn_get_feature_usage_in_window', {
+    p_tenant_id: tenantId,
+    p_user_id: userId,
+    p_feature_key: feature,
+    p_window_seconds: windowSeconds,
+  });
+
+  if (error || !data) {
+    console.error(`${LOG_PREFIX} fn_get_feature_usage_in_window error: ${error?.message}`);
+    return { used: 0, reset_at: null };
+  }
+
+  const result = data as Record<string, unknown>;
+  return {
+    used: (result.used as number) || 0,
+    reset_at: (result.reset_at as string) || null,
+  };
+}
+
+const SECONDS_PER_5H = 5 * 60 * 60;
+const SECONDS_PER_WEEK = 7 * 24 * 60 * 60;
+
+/**
+ * Build the per-feature usage windows array. Includes only the windows that
+ * are configured (window_5h/weekly are optional; monthly is always present).
+ */
+async function readAllWindows(
+  tenantId: string,
+  userId: string,
+  config: EntitlementConfig
+): Promise<UsageWindow[]> {
+  const windows: UsageWindow[] = [];
+
+  if (config.window_5h_quota !== null && config.window_5h_quota !== undefined) {
+    const u = await readUsageInSlidingWindow(tenantId, userId, config.feature_key, SECONDS_PER_5H);
+    windows.push({
+      name: 'window_5h',
+      used: u.used,
+      limit: config.window_5h_quota,
+      reset_at: u.reset_at,
+    });
+  }
+
+  if (config.weekly_quota !== null && config.weekly_quota !== undefined) {
+    const u = await readUsageInSlidingWindow(tenantId, userId, config.feature_key, SECONDS_PER_WEEK);
+    windows.push({
+      name: 'weekly',
+      used: u.used,
+      limit: config.weekly_quota,
+      reset_at: u.reset_at,
+    });
+  }
+
+  const monthly = await readUsageInCurrentWindow(tenantId, userId, config.feature_key, config.window_seconds);
+  windows.push({
+    name: 'monthly',
+    used: monthly.used,
+    limit: config.quota,
+    reset_at: monthly.reset_at,
+  });
+
+  return windows;
+}
+
+/**
+ * Pick the binding window: the one with the LEAST remaining (or already
+ * over-quota). Ties broken by shortest reset time (window_5h before weekly
+ * before monthly).
+ */
+function pickBindingWindow(windows: UsageWindow[]): { window: UsageWindow; index: number } {
+  let bestIdx = 0;
+  let bestRemaining = windows[0].limit - windows[0].used;
+  for (let i = 1; i < windows.length; i++) {
+    const remaining = windows[i].limit - windows[i].used;
+    if (remaining < bestRemaining) {
+      bestRemaining = remaining;
+      bestIdx = i;
+    }
+  }
+  return { window: windows[bestIdx], index: bestIdx };
 }
 
 // =============================================================================
@@ -322,6 +440,8 @@ export async function checkEntitlement(
       used: 0,
       remaining: 0,
       reset_at: null,
+      windows: [],
+      binding_window: 'monthly',
       credit_cost_per_unit: 0,
       user_credit_balance: 0,
       allowed_burn_buckets: ['purchased_credits'],
@@ -329,26 +449,30 @@ export async function checkEntitlement(
     };
   }
 
-  // 3. Read current usage in the current rolling window
-  const usage = await readUsageInCurrentWindow(tenantId, userId, feature, config.window_seconds);
-  const remaining = config.quota - usage.used;
+  // 3. Read usage in every configured window (5h / weekly / monthly).
+  //    Paid tiers only have monthly; Free has all three.
+  const windows = await readAllWindows(tenantId, userId, config);
+  const binding = pickBindingWindow(windows);
+  const remaining = binding.window.limit - binding.window.used;
 
   // 4. Read wallet buckets relevant to this feature's allowed_burn_buckets
   const buckets = await readWalletBuckets(tenantId, userId);
   const userCreditBalance = bucketsToBalance(buckets, config.allowed_burn_buckets);
 
   // 5. Decide outcome
-  // If the request fits within remaining quota → allow
+  // If the request fits within the BINDING window's remaining quota → allow
   if (remaining >= amount) {
     return {
       allowed: true,
       paywall_action: 'allow',
       feature,
       tier: planKey,
-      quota: config.quota,
-      used: usage.used,
+      quota: binding.window.limit,
+      used: binding.window.used,
       remaining,
-      reset_at: usage.window_end,
+      reset_at: binding.window.reset_at,
+      windows,
+      binding_window: binding.window.name,
       credit_cost_per_unit: config.credit_cost_per_unit,
       user_credit_balance: userCreditBalance,
       allowed_burn_buckets: config.allowed_burn_buckets,
@@ -403,10 +527,12 @@ export async function checkEntitlement(
     paywall_action: action,
     feature,
     tier: planKey,
-    quota: config.quota,
-    used: usage.used,
+    quota: binding.window.limit,
+    used: binding.window.used,
     remaining: Math.max(0, remaining),
-    reset_at: usage.window_end,
+    reset_at: binding.window.reset_at,
+    windows,
+    binding_window: binding.window.name,
     credit_cost_per_unit: config.credit_cost_per_unit,
     user_credit_balance: userCreditBalance,
     allowed_burn_buckets: config.allowed_burn_buckets,
@@ -419,25 +545,36 @@ export async function checkEntitlement(
 // =============================================================================
 
 /**
- * Atomic increment of the user's feature_usage counter in the current
- * rolling window. Call AFTER the user action has been allowed.
+ * Atomic increment of the user's feature_usage counter. Call AFTER the user
+ * action has been allowed.
  *
- * @returns the new `used` value after increment, or null on error
+ * Writes a per-minute event row so sliding-window aggregation (5h, weekly)
+ * works correctly. Same-minute increments fold into the same row via the
+ * existing ON CONFLICT (user_id, feature_key, window_start).
+ *
+ * Sliding aggregation reads via fn_get_feature_usage_in_window (SUM over
+ * recent minute rows). Monthly aggregation (calendar-aligned) is computed
+ * client-side over the same minute rows by passing 30d to the same RPC, OR
+ * the legacy fn_get_feature_usage if the caller wants epoch-aligned buckets.
+ *
+ * @returns the new `used` value after increment in the minute-bucket, or
+ *          null on error. (Callers usually care about the aggregate, not
+ *          the per-minute total.)
  */
 export async function recordUsage(
   userId: string,
   tenantId: string,
   feature: string,
-  amount: number = 1,
-  windowSeconds: number = 2592000
+  amount: number = 1
 ): Promise<number | null> {
   const sb = client();
+  // Always write at minute granularity so sliding-window SUM works.
   const { data, error } = await sb.rpc('fn_increment_feature_usage', {
     p_tenant_id: tenantId,
     p_user_id: userId,
     p_feature_key: feature,
     p_amount: amount,
-    p_window_seconds: windowSeconds,
+    p_window_seconds: 60,
   });
 
   if (error || !data) {

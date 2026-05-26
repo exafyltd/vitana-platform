@@ -150,6 +150,8 @@ export function requireEntitlement(
         used: 0,
         remaining: -1,
         reset_at: null,
+        windows: [],
+        binding_window: 'monthly',
         credit_cost_per_unit: 0,
         user_credit_balance: 0,
         allowed_burn_buckets: ['purchased_credits'] as WalletBucket[],

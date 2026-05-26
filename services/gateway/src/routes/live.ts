@@ -582,8 +582,7 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
             verified.identity.user_id,
             verified.identity.tenant_id,
             'live_room_minutes',
-            elapsedMinutes,
-            2592000
+            elapsedMinutes
           );
           console.log(
             `[VTID-03107] recorded ${elapsedMinutes} live_room_minutes for user=${verified.identity.user_id}`

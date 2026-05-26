@@ -4,7 +4,7 @@
 >
 > **VTID:** VTID-03107
 > **Status:** Spec for launch (v1). Numbers tuneable post-launch via DB config; mechanism changes require new VTID.
-> **Last updated:** 2026-05-20
+> **Last updated:** 2026-05-26 (rolling-window Free quotas + auto-grant for existing users)
 
 ---
 
@@ -70,16 +70,35 @@ The Subscriptions screen leads with **Free vs Premium** as the binary headline c
 
 ## 3. The most-valued features (paywall surface)
 
-Six metered features. v1 actively enforces paywalls on the two **cost drivers** (rows 1–2). Rows 3–6 ship as visible tier quotas (soft counters) so users see the upgrade value, but the routes do not yet return 402 — they will be flipped on after 30–60 days of usage data justify it.
+Six metered features. v1 enforces **hard cuts on all six** on Free. Existing onboarded users are protected from those walls by the launch auto-grant (§9). Paid plans see only the monthly cap. Free sees three rolling windows so the user always has a near-term recovery option (Claude / ChatGPT pattern).
 
-| # | Feature | Free | Premium | Host | Community | PAYG rate | Enforcement |
-|---|---|---|---|---|---|---|---|
-| 1 | **Live AI voice** (Gemini Live) | 15 min/mo · 5 min/day cap · D36-gated | 30 min/mo | 150 min/mo (5×) | 600 min/mo (20×) | 5 credits/min | **Hard: degrade to standard voice OR PAYG** |
-| 2 | **Live Rooms hosting** (Daily.co) | 40 min/mo · 1 session | 5 hrs/mo | 25 hrs/mo (5×) | 100 hrs/mo (20×) | 1 credit/min | **Hard: 5-min warn → graceful end OR PAYG** |
-| 3 | **Find-a-Match posts** | 3/mo | 20/mo | 100/mo | 400/mo | 50 credits/post | Soft (UI counter, no 402) |
-| 4 | **Find-a-Match reveals** | 5/wk | 50/mo | 250/mo | 1,000/mo | 10 credits/reveal | Soft (UI counter, no 402) |
-| 5 | **Lab analysis** (OCR + LLM) | 1/mo | 5/mo | 25/mo | 100/mo | 50 credits/lab | Soft (UI counter, no 402) |
-| 6 | **Photo uploads** | 5/mo | 50/mo | 250/mo | 1,000/mo | 1 credit/photo | Soft (UI counter, no 402) |
+### Free tier — three rolling windows
+
+The Free user gets two short-window caps (5h + weekly) AND a monthly soft ceiling. **The weekly cap is almost always the binding limit.** The 5h cap stops burst use and refreshes ~4×/day. The monthly is set above weekly×4.3 so it acts as a safety ceiling, not the day-to-day pain point.
+
+| # | Feature | 5h window | Weekly cap | Monthly ceiling | Enforcement |
+|---|---|---|---|---|---|
+| 1 | **Live AI voice** (Gemini Live) | 5 min | 20 min/wk | 80 min/mo | Hard: degrade to standard voice OR PAYG |
+| 2 | **Live Rooms hosting** (Daily.co) | 20 min | 60 min/wk | 240 min/mo | Hard: graceful end OR PAYG |
+| 3 | **Find-a-Match posts** | 2 | 5/wk | 20/mo | Hard: 402 OR PAYG |
+| 4 | **Find-a-Match reveals** | 3 | 10/wk | 40/mo | Hard: 402 OR PAYG |
+| 5 | **Lab analysis** (OCR + LLM) | 1 | 3/wk | 12/mo | Hard: 402 OR PAYG |
+| 6 | **Photo uploads** | 5 | 15/wk | 60/mo | Hard: 402 OR PAYG |
+
+When the user hits ANY of the three caps, the in-context message shows the sooner reset (always the 5h window during active use, the weekly cap otherwise). The Usage drawer shows both bars side-by-side.
+
+### Paid tiers — monthly only
+
+| # | Feature | Premium | Host | Community | PAYG rate |
+|---|---|---|---|---|---|
+| 1 | Live AI voice | 30 min/mo | 150 min/mo (5×) | 600 min/mo (20×) | 5 credits/min |
+| 2 | Live Rooms hosting | 5 hrs/mo | 25 hrs/mo (5×) | 100 hrs/mo (20×) | 1 credit/min |
+| 3 | Find-a-Match posts | 20/mo | 100/mo | 400/mo | 50 credits/post |
+| 4 | Find-a-Match reveals | 50/mo | 250/mo | 1,000/mo | 10 credits/reveal |
+| 5 | Lab analysis | 5/mo | 25/mo | 100/mo | 50 credits/lab |
+| 6 | Photo uploads | 50/mo | 250/mo | 1,000/mo | 1 credit/photo |
+
+Paid plans have `window_5h_quota` and `weekly_quota` NULL — only the monthly cap is checked. PAYG credits work across all plans for overage.
 
 ### Storage included in every plan
 
@@ -262,7 +281,32 @@ No fake transparency under any circumstances. If neither mode is achievable, the
 
 ---
 
-## 9. Not in launch scope (intentional — not promised anywhere)
+## 9. Launch auto-grant for existing onboarded users
+
+Locked decision (2026-05-26): every user who was onboarded BEFORE the billing v1 deploy automatically receives a **12-month Premium subscription** — no codes, no clicks, no email. The grant runs once during deploy via migration `20260526110000_VTID_03107_launch_auto_grant.sql`.
+
+**What it does:**
+- Iterates every `user_tenants.is_primary = true` membership where `app_users.created_at < now() - 24h`
+- Skips any user with an active/trialing/past_due subscription (auto-grant is a floor, not an override)
+- Writes a `user_subscriptions` row: `plan_key='premium'`, `status='active'`, `current_period_end=now()+365d`, `price_key=NULL` (no Stripe binding)
+- Tags with `metadata.source='launch_auto_grant_2026'`, `metadata.no_friction=true`, `metadata.granted_at`, `metadata.grant_duration_days=365`
+
+**What the user sees** on next app open (no push, no email):
+- Settings → Subscription shows their plan as **Premium** with subtitle "auto-granted at launch · ends YYYY-MM-DD"
+- A one-time welcome banner above the plan card: "🎁 Welcome from us — you've received 12 months of Vitana Premium on us. Active until {date}. No action needed. Enjoy."
+- Banner is dismissible (`localStorage` keyed by user id). The plan-card subtitle stays so the user can always check the source.
+
+**End of grant (day 350):**
+- One pre-end nudge: "Your Vitana Premium grant ends in 15 days. Continue for €9.99/mo or stay on the Free plan." (push + in-app banner, no email)
+- At day 365: cron flips status to `canceled` and plan back to `free`. Same UX as any expired paid sub.
+
+**Cashflow note:** foregone-revenue worst case ≈ user_count × €9.99 × 12 months. At ~2,000 users that's ~€240k foregone. Real cash spent is bounded by Premium quotas (30 min voice + 5h rooms + small features per month) ≈ €10/user/mo ≈ ~€240k infra worst case. Acceptable: existing users are the highest-value cohort we have, and the alternative — telling onboarded users to "redeem a code" — is poor UX.
+
+This grant supersedes the test-cohort codes for already-onboarded users. The test-cohort + Founding code campaigns (§6) remain active for NEW signups who arrive after the deploy.
+
+---
+
+## 10. Not in launch scope (intentional — not promised anywhere)
 
 - ❌ Match-reveal / Match-post / Memory / Autopilot active 402 paywalls (soft UI badges only in v1)
 - ❌ Family plan / multi-seat subscription
@@ -286,7 +330,7 @@ Each of these is a separate scoped project with its own cashflow analysis when p
 
 ---
 
-## 10. Cross-references
+## 11. Cross-references
 
 | Customer-facing copy | Engineering implementation |
 |---|---|

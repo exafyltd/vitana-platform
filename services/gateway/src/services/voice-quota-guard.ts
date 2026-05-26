@@ -109,7 +109,7 @@ export async function recordVoiceMinute(
   isDeferred: boolean = false
 ): Promise<number | null> {
   if (isDeferred) return null;
-  return recordUsage(userId, tenantId, FEATURE_VOICE_LIVE_MINUTES, 1, 2592000);
+  return recordUsage(userId, tenantId, FEATURE_VOICE_LIVE_MINUTES, 1);
 }
 
 /**
