@@ -40,7 +40,11 @@ import {
   ConversationChannel,
 } from '../types/conversation';
 import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
-import { getCurrentFacts } from './memory-facts-service';
+import {
+  getCurrentFacts,
+  searchFactsSemantic,
+  listFactsByConfidence,
+} from './memory-facts-service';
 import { generateEmbedding } from './embedding-service';
 // VTID-03145 (PR 2): DIARY + NETWORK blocks now route through the
 // memory-broker boundary instead of raw Supabase fetches. See
@@ -410,15 +414,22 @@ async function fetchMemoryHitsREST(
 }
 
 /**
- * Fetch structured facts from memory_facts table using two-tier approach:
+ * Fetch structured facts for the context pack using a three-tier approach.
  *
- * Tier 1 (Identity Core): Always fetched via getCurrentFacts() RPC with IDENTITY_CORE_KEYS.
- *   These are pinned facts (user_name, user_birthday, etc.) that must always be in context.
+ * VTID-03155 (CPB-3 boundary): the table + RPC names live in
+ * `memory-facts-service.ts` now. This function owns only the
+ * context-pack mapping + merge order (Identity → Semantic → General),
+ * which is context-pack-specific (relevance-score formulas tuned for
+ * the LLM ranker).
  *
- * Tier 2 (General facts): Fetched via REST with confidence+recency sort and limit.
- *   Fills remaining context budget with other extracted facts.
+ *   Tier 1 (Identity Core): always fetched via `getCurrentFacts()` —
+ *     pinned facts (user_name, user_birthday, …) at relevance 1.0.
+ *   Tier 2 (Semantic): `searchFactsSemantic()` cosine-similarity
+ *     against the query (skipped for empty/bootstrap queries).
+ *   Tier 3 (General): `listFactsByConfidence()` ordered by
+ *     confidence + recency.
  *
- * Results are merged and deduplicated by fact ID.
+ * Results are merged and deduplicated by fact ID, in tier order.
  */
 async function fetchMemoryFacts(
   lens: ContextLens,
@@ -457,111 +468,42 @@ async function fetchMemoryFacts(
       console.warn(`[VTID-01216] Identity Core fetch failed (falling back to REST): ${coreErr.message}`);
     }
 
-    // --- Tier 2: Semantic search via memory_facts_semantic_search() RPC ---
-    // Only when a meaningful query is provided (skip for empty/bootstrap queries)
+    // --- Tier 2: Semantic search ---
+    // VTID-03155: routed through `searchFactsSemantic`. The service
+    // owns the embedding gen, RPC call, timeout, and query-length gate.
     let semanticFacts: MemoryHit[] = [];
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE && query && query.trim().length > 3) {
-      // VTID-01224-FIX: Add timeout to semantic search (embedding + RPC)
-      const semTimeout = fetchWithTimeout();
-      try {
-        const embResult = await generateEmbedding(query);
-        if (embResult.ok && embResult.embedding) {
-          const semResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/memory_facts_semantic_search`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_SERVICE_ROLE,
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-            },
-            body: JSON.stringify({
-              p_query_embedding: JSON.stringify(embResult.embedding),
-              p_top_k: 20,
-              p_tenant_id: lens.tenant_id,
-              p_user_id: lens.user_id,
-              p_min_confidence: 0.5,
-            }),
-            signal: semTimeout.signal,
-          });
-
-          if (semResp.ok) {
-            const semResults = await semResp.json() as Array<{
-              id: string;
-              fact_key: string;
-              fact_value: string;
-              entity: string;
-              provenance_confidence: number;
-              provenance_source: string;
-              similarity_score: number;
-            }>;
-
-            semanticFacts = semResults.map((r) => ({
-              id: r.id,
-              category_key: `fact:${r.entity || 'general'}`,
-              content: `${r.fact_key}: ${r.fact_value}`,
-              importance: Math.round(r.provenance_confidence * 100),
-              occurred_at: new Date().toISOString(),
-              source: r.provenance_source || 'cognee_extraction',
-              relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
-            }));
-            console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
-          } else {
-            console.warn(`[VTID-01216] Semantic search RPC failed: ${semResp.status}`);
-          }
-        }
-      } catch (semErr: any) {
-        console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semErr.message}`);
-      } finally {
-        semTimeout.clear();
-      }
+    const semResult = await searchFactsSemantic(lens, query);
+    if (semResult.ok && semResult.facts.length > 0) {
+      semanticFacts = semResult.facts.map((r) => ({
+        id: r.id,
+        category_key: `fact:${r.entity || 'general'}`,
+        content: `${r.fact_key}: ${r.fact_value}`,
+        importance: Math.round(r.provenance_confidence * 100),
+        occurred_at: new Date().toISOString(),
+        source: r.provenance_source || 'cognee_extraction',
+        relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
+      }));
+      console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+    } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+      console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
     }
 
-    // --- Tier 3: General facts via REST (confidence + recency sorted) ---
+    // --- Tier 3: General facts (confidence + recency sorted) ---
+    // VTID-03155: routed through `listFactsByConfidence`.
     let generalFacts: MemoryHit[] = [];
-
-    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
-      const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=${limit}`;
-
-      // VTID-01224-FIX: Add timeout to general facts fetch
-      const factsTimeout = fetchWithTimeout();
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
-          signal: factsTimeout.signal,
-        });
-
-        if (response.ok) {
-          const results = await response.json() as Array<{
-            id: string;
-            fact_key: string;
-            fact_value: string;
-            entity: string;
-            provenance_confidence: number;
-            provenance_source: string;
-          }>;
-
-          generalFacts = results.map((r) => ({
-            id: r.id,
-            category_key: `fact:${r.entity || 'general'}`,
-            content: `${r.fact_key}: ${r.fact_value}`,
-            importance: Math.round(r.provenance_confidence * 100),
-            occurred_at: new Date().toISOString(),
-            source: r.provenance_source || 'cognee_extraction',
-            relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
-          }));
-        } else {
-          console.warn(`[VTID-01216] memory_facts REST retrieval failed: ${response.status}`);
-        }
-      } finally {
-        factsTimeout.clear();
-      }
+    const generalResult = await listFactsByConfidence(lens, { limit });
+    if (generalResult.ok && generalResult.facts.length > 0) {
+      generalFacts = generalResult.facts.map((r) => ({
+        id: r.id,
+        category_key: `fact:${r.entity || 'general'}`,
+        content: `${r.fact_key}: ${r.fact_value}`,
+        importance: Math.round(r.provenance_confidence * 100),
+        occurred_at: new Date().toISOString(),
+        source: r.provenance_source || 'cognee_extraction',
+        relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
+      }));
+    } else if (!generalResult.ok && generalResult.error && generalResult.error !== 'missing_lens') {
+      console.warn(`[VTID-01216] general facts retrieval failed: ${generalResult.error}`);
     }
 
     // --- Merge: Identity Core → Semantic → General (deduplicated by ID) ---
@@ -571,14 +513,14 @@ async function fetchMemoryFacts(
     const dedupedGeneral = generalFacts.filter(f => !seenIds.has(f.id));
     const facts = [...identityCoreFacts, ...dedupedSemantic, ...dedupedGeneral];
 
-    console.log(`[VTID-01216] memory_facts: ${identityCoreFacts.length} identity core + ${dedupedSemantic.length} semantic + ${dedupedGeneral.length} general = ${facts.length} total`);
+    console.log(`[VTID-01216] structured facts: ${identityCoreFacts.length} identity core + ${dedupedSemantic.length} semantic + ${dedupedGeneral.length} general = ${facts.length} total`);
 
     return {
       facts,
       latency_ms: Date.now() - startTime,
     };
   } catch (error: any) {
-    console.error(`[VTID-01216] memory_facts retrieval error: ${error.message}`);
+    console.error(`[VTID-01216] structured facts retrieval error: ${error.message}`);
     return { facts: [], latency_ms: Date.now() - startTime };
   }
 }
