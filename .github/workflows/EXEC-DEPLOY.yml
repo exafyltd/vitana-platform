@@ -293,6 +293,12 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=ENVIRONMENT=dev-sandbox)
             # VTID-01219: Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT; required for Vertex AI Live API
             EXTRA_ENV_ARGS+=(--update-env-vars=GCP_PROJECT_ID=lovable-vitana-vers1)
+            # BOOTSTRAP-PHASE0-UX: bake the deploying commit SHA into Cloud Run env so
+            # /admin/build-info + cloud-run-admin.describeService can surface a real
+            # 7-char SHA (instead of falling back to the *.run.app revision name).
+            # Mirrors what STAGE-DEPLOY.yml already does for gateway-staging.
+            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ github.sha }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.sha }})
             # VTID-01225: Cognee Extractor URL for entity extraction
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01155: Bind Gemini API key for TTS and chat
@@ -713,6 +719,12 @@ jobs:
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
           GIT_COMMIT="${{ github.sha }}"
 
+          # BOOTSTRAP-PHASE0-UX: include the Cloud Run revision name so the
+          # CLOCK dropdown can match this row to the currently-serving
+          # revision and render the LIVE badge.  Resolved from Cloud Run.
+          REVISION=$(gcloud run services describe "$SERVICE_NAME" --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(status.latestReadyRevisionName)' 2>/dev/null || echo "")
+
           # Call operator API to record deployment — fail the job if it doesn't stick,
           # otherwise the Release Feed silently drifts and supervisors can't trust it.
           HTTP_CODE=$(curl -sS -o /tmp/record_resp.json -w "%{http_code}" \
@@ -720,7 +732,7 @@ jobs:
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-VTID: ${{ github.event.inputs.vtid }}" \
-            -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"normal\",\"initiator\":\"${{ github.event.inputs.initiator }}\",\"environment\":\"dev-sandbox\"}")
+            -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"normal\",\"initiator\":\"${{ github.event.inputs.initiator }}\",\"environment\":\"dev-sandbox\",\"cloud_run_revision\":\"${REVISION}\"}")
           echo "Record Software Version HTTP $HTTP_CODE"
           cat /tmp/record_resp.json || true
           echo ""
