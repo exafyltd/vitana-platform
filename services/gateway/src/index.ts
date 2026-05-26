@@ -95,6 +95,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // same OASIS pipeline the gateway uses.
   const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
+  const myJourneyRouter = require('./routes/my-journey').default;
+  const landingRouteRouter = require('./routes/landing-route').default;
   const orbToolRouter = require('./routes/orb-tool').default;
   const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
@@ -698,6 +701,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-03152: journey-foundation endpoints.
+  mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
+  mountRouterSync(app, '/api/v1/landing-route', landingRouteRouter, { owner: 'landing-route' });
 
   // VTID-LIVEKIT-TOOLS: dispatcher endpoint that wraps every tool whose Vertex
   // implementation is inline-only in orb-live.ts. Single POST /api/v1/orb/tool
