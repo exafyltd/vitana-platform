@@ -208,22 +208,6 @@ describe('VTID-03154 journey-greeting', () => {
       expect(r.block).not.toMatch(/Do NOT start the same way today/);
     });
 
-    it('VTID-03157: requires a preview of what to expect in the COMING DAYS, not just today', () => {
-      const j = makeJourney({
-        day_in_journey: 5,
-        current_wave: { id: 'wave-1', name: 'Getting Started', description: 'Set up profile', start_day: 0, end_day: 7 },
-      });
-      const r = buildJourneyGreetingBlock({
-        journey: j,
-        lifeCompassGoalText: 'sleep better',
-        firstName: 'Dragan',
-        lang: 'en',
-        todayDateIso: '2026-06-15',
-      });
-      expect(r.block).toMatch(/preview of WHAT TO EXPECT in the COMING DAYS/);
-      expect(r.block).toMatch(/over the next few days/);
-    });
-
     it('structural — NOT Say-exactly verbatim', () => {
       const j = makeJourney();
       const r = buildJourneyGreetingBlock({

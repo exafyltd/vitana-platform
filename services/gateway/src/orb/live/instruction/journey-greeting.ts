@@ -170,18 +170,17 @@ same opening on two consecutive days.
   return {
     block: `
 
-=== DAILY MORNING GREETING (VTID-03154 / VTID-03157 Slice D — first session of a new day) ===
+=== DAILY MORNING GREETING (VTID-03154 Slice D — first session of a new day) ===
 
 This is the user's FIRST session of a new calendar day. Compose a fresh
-2–4 sentence greeting that satisfies this contract. Speak in ${langUpper}.
+2–3 sentence greeting that satisfies this contract. Speak in ${langUpper}.
 
 REQUIRED — your greeting MUST:
 - Use a time-appropriate salutation per the user's LOCAL TIME (good morning / good afternoon / good evening — pick the one that matches the local hour from the environment context block above).
 - ${nameClause}
 - State **"day ${dayInJourney}"** of the journey explicitly (DE: "Tag ${dayInJourney}"). The journey is ${totalDays} days total.
 - ${purposeClause}
-- Give the user a clear status of WHERE they are right now (day count + phase placement) AND a one-sentence preview of WHAT TO EXPECT in the COMING DAYS of this phase — not just today. The user explicitly asked for both "where I am" AND "where I'm going next". Example: "today is about X, and over the next few days we'll move toward Y" / DE "heute geht es um X, und in den kommenden Tagen kommen wir zu Y". Use the phase description to ground what comes next.
-- End with ONE concrete pointer to today — either name the next planned action (if you know one) OR reference the user's last meaningful step. NOT a menu of options.
+- End with ONE concrete pointer to today — either name the next planned action (if you know one) OR reference the user's last meaningful step (whichever is more useful given context). NOT a menu of options.
 
 CONTEXT:
 - ${phaseClause}
