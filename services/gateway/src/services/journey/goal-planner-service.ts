@@ -215,10 +215,12 @@ export async function generateGoalPlan(
   const { system, user } = buildPrompt(goal, startDate, totalDays);
   // Ask for plain JSON instead of forcing a tool call: Vertex/Gemini returns an
   // empty response under forced function-calling here, so we parse JSON from text.
+  // High token budget — the planner model is a "thinking" model whose reasoning
+  // consumes the budget, so a low cap truncates the JSON output mid-object.
   const result = await callViaRouter('planner', user, {
     service: 'goal-planner',
     systemPrompt: system,
-    maxTokens: 2500,
+    maxTokens: 8000,
   });
   console.log(
     `${LOG} llm result ok=${result.ok} provider=${result.provider} model=${result.model} ` +
