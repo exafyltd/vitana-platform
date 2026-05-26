@@ -253,7 +253,7 @@ export async function getDeploymentHistory(limit: number = 20): Promise<{
 
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/software_versions?select=swv_id,created_at,git_commit,status,initiator,deploy_type,service,environment&order=created_at.desc&limit=${limit}`,
+      `${supabaseUrl}/rest/v1/software_versions?select=swv_id,created_at,git_commit,status,initiator,deploy_type,service,environment,cloud_run_revision,source_revision,initiator_id&order=created_at.desc&limit=${limit}`,
       {
         method: 'GET',
         headers: {
