@@ -171,6 +171,7 @@ function parseLooseJson(text: string): unknown {
   const first = t.indexOf('{');
   const last = t.lastIndexOf('}');
   if (first >= 0 && last > first) t = t.slice(first, last + 1);
+  t = t.replace(/,\s*([}\]])/g, '$1'); // tolerate trailing commas
   try {
     return JSON.parse(t);
   } catch {
@@ -181,13 +182,12 @@ function parseLooseJson(text: string): unknown {
 function validatePlan(raw: unknown): LLMPlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as any;
-  if (typeof r.plan_summary !== 'string') return null;
-  if (!Array.isArray(r.milestones) || !Array.isArray(r.daily_habits)) return null;
+  if (typeof r.plan_summary !== 'string' || !r.plan_summary.trim()) return null;
   return {
     plan_summary: r.plan_summary,
-    milestones: r.milestones,
+    milestones: Array.isArray(r.milestones) ? r.milestones : [],
     weekly_checkpoints: Array.isArray(r.weekly_checkpoints) ? r.weekly_checkpoints : [],
-    daily_habits: r.daily_habits,
+    daily_habits: Array.isArray(r.daily_habits) ? r.daily_habits : [],
   };
 }
 
@@ -237,7 +237,10 @@ export async function generateGoalPlan(
   }
   const plan = raw ? validatePlan(raw) : null;
   if (!plan) {
-    console.error(`${LOG} no usable plan. textSnippet=${(result.text ?? '').slice(0, 300)}`);
+    console.error(
+      `${LOG} no usable plan parsed=${raw !== null} ` +
+        `text=${(result.text ?? '').replace(/\s+/g, ' ').slice(0, 800)}`,
+    );
     return null;
   }
 
