@@ -959,7 +959,7 @@ router.get('/deployments', async (req: Request, res: Response) => {
  */
 router.post('/deployments', async (req: Request, res: Response) => {
   try {
-    const { service, git_commit, deploy_type, initiator, environment } = req.body;
+    const { service, git_commit, deploy_type, initiator, environment, cloud_run_revision } = req.body;
 
     // Validate required fields
     if (!service || typeof service !== 'string') {
@@ -987,6 +987,9 @@ router.post('/deployments', async (req: Request, res: Response) => {
       initiator,
       status: 'success',
       environment: environment || 'dev-sandbox',
+      // BOOTSTRAP-PHASE0-UX: persist the Cloud Run revision name so the
+      // CLOCK dropdown can flag the LIVE row. EXEC-DEPLOY now sends this.
+      cloud_run_revision: typeof cloud_run_revision === 'string' && cloud_run_revision.length > 0 ? cloud_run_revision : null,
     });
 
     if (!result.ok) {
