@@ -11,9 +11,49 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
 import { bulkCreateCalendarEvents } from '../calendar-service';
+import { getUserLocale } from '../../i18n/server-locale';
 import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
+
+// Localized question generation — broad goals ask the user to clarify in their
+// own language so a German user never sees English questions.
+const LANGUAGE_NAMES: Record<string, string> = {
+  de: 'German',
+  en: 'English',
+  es: 'Spanish',
+  sr: 'Serbian',
+};
+
+// Intent gloss for the canonical Life Compass preset categories. The presets
+// store only a short title + category (the rich description lives in the
+// frontend), so we restate each domain's intent here to ground the planner and
+// clarifying questions across all suggested goals.
+const CATEGORY_INTENT: Record<string, string> = {
+  relationship: 'building meaningful romantic relationships and finding a life partner',
+  health: 'achieving optimal physical and mental wellness',
+  career: 'building a fulfilling and successful career',
+  learning: 'learning and growing through new skills and knowledge',
+  spiritual: 'deepening purpose, presence, and inner peace',
+  longevity: 'healthspan, energy, and longevity',
+  wealth: 'building financial freedom and security',
+};
+
+function goalDomain(goal: ActiveGoal): string | null {
+  if (!goal.category) return null;
+  return CATEGORY_INTENT[goal.category.trim().toLowerCase()] ?? goal.category;
+}
+
+export interface ClarificationAnswer {
+  question: string;
+  answer: string;
+}
+
+export interface ClarifyResult {
+  hasGoal: boolean;
+  specific: boolean;
+  questions: string[];
+}
 
 export type GoalStepKind = 'milestone' | 'checkpoint' | 'habit';
 
@@ -135,7 +175,12 @@ async function fetchActiveGoal(client: SupabaseClient, userId: string): Promise<
   };
 }
 
-function buildPrompt(goal: ActiveGoal, startDateIso: string, totalDays: number): { system: string; user: string } {
+function buildPrompt(
+  goal: ActiveGoal,
+  startDateIso: string,
+  totalDays: number,
+  answers?: ClarificationAnswer[],
+): { system: string; user: string } {
   const target =
     goal.target_value != null && goal.target_unit
       ? `${goal.target_value} ${goal.target_unit}`
@@ -147,13 +192,23 @@ function buildPrompt(goal: ActiveGoal, startDateIso: string, totalDays: number):
     'never a rote action for every single day. Keep titles short and motivating; keep ' +
     'descriptions to one sentence. day_offset is the number of days after the start (0 = today). ' +
     'Spread milestones and checkpoints across the whole timeframe up to the final day.';
+  const clarifications =
+    answers && answers.length
+      ? '\nThe user answered these clarifying questions — use them to make the plan concrete and personal:\n' +
+        answers
+          .map((a) => `Q: ${a.question}\nA: ${a.answer?.trim() ? a.answer.trim() : '(no answer — make a sensible assumption)'}`)
+          .join('\n') +
+        '\n'
+      : '';
   const user =
     `Goal: "${goal.primary_goal}"\n` +
+    (goalDomain(goal) ? `Life domain: ${goalDomain(goal)}\n` : '') +
     `Quantified target: ${target}\n` +
     `Start day offset: 0 (${startDateIso})\n` +
     `Final day offset: ${totalDays} (deadline ${goal.target_date})\n` +
-    `Total days: ${totalDays}\n\n` +
-    'Respond with ONLY a JSON object — no markdown fences, no commentary — of exactly this shape:\n' +
+    `Total days: ${totalDays}\n` +
+    clarifications +
+    '\nRespond with ONLY a JSON object — no markdown fences, no commentary — of exactly this shape:\n' +
     '{"plan_summary": string, ' +
     '"milestones": [{"day_offset": number, "title": string, "description": string}], ' +
     '"weekly_checkpoints": [{"day_offset": number, "title": string, "description": string}], ' +
@@ -161,6 +216,68 @@ function buildPrompt(goal: ActiveGoal, startDateIso: string, totalDays: number):
     `Include 5-8 milestones spread from day 0 to day ${totalDays} (the last on or near day ${totalDays}), ` +
     'a roughly weekly checkpoint cadence, and 3-5 sustainable daily habits.';
   return { system, user };
+}
+
+function parseQuestions(raw: unknown): ClarifyResult['questions'] | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as any;
+  if (typeof r.specific !== 'boolean') return null;
+  if (r.specific) return [];
+  if (!Array.isArray(r.questions)) return [];
+  return r.questions
+    .filter((q: unknown) => typeof q === 'string' && q.trim())
+    .map((q: string) => q.trim())
+    .slice(0, 3);
+}
+
+/**
+ * Ask the planner whether the goal is specific enough to build a concrete plan.
+ * Broad goals (e.g. "Master new skills", "Advance career") return 2-3 short
+ * clarifying questions, written in the user's language, so the plan can be
+ * personalized. Fails open (treats the goal as specific) on any LLM error so a
+ * hiccup never blocks plan generation.
+ */
+export async function clarifyGoalIfNeeded(client: SupabaseClient, userId: string): Promise<ClarifyResult> {
+  const goal = await fetchActiveGoal(client, userId);
+  if (!goal) return { hasGoal: false, specific: true, questions: [] };
+
+  const locale = await getUserLocale(client, userId).catch(() => 'en');
+  const language = LANGUAGE_NAMES[locale] ?? 'English';
+  const target =
+    goal.target_value != null && goal.target_unit ? `${goal.target_value} ${goal.target_unit}` : 'unspecified';
+
+  const system =
+    'You are Vitana, a warm longevity and wellness coach. Decide whether a user goal is specific ' +
+    'enough to design a concrete, personalized day-by-day plan. A goal is NOT specific enough when ' +
+    'key details are missing — e.g. which skill, what kind of career move, what target, or important ' +
+    'constraints (time, budget, starting point). Ask only what genuinely changes the plan.';
+  const domain = goalDomain(goal);
+  const user =
+    `Goal: "${goal.primary_goal}"\nQuantified target: ${target}\n` +
+    (domain ? `Life domain: ${domain}\n` : `Category: ${goal.category ?? 'none'}\n`) +
+    '\n' +
+    'If the goal is specific enough, respond {"specific": true, "questions": []}. ' +
+    'If not, respond {"specific": false, "questions": [...]} with 2-3 short, friendly questions — ' +
+    `each one sentence, easy to answer — that would make the plan concrete. Write the questions in ${language}. ` +
+    'Respond with ONLY the JSON object, no markdown fences, no commentary.';
+
+  const result = await callViaRouter('planner', user, {
+    service: 'goal-planner-clarify',
+    systemPrompt: system,
+    maxTokens: 6000,
+  });
+  if (!result.ok) {
+    console.warn(`${LOG} clarify check failed (${result.error ?? 'unknown'}) — treating goal as specific`);
+    return { hasGoal: true, specific: true, questions: [] };
+  }
+  const parsed = result.text ? parseQuestions(parseLooseJson(result.text)) : null;
+  if (parsed === null) {
+    console.warn(`${LOG} clarify check unparseable — treating goal as specific`);
+    return { hasGoal: true, specific: true, questions: [] };
+  }
+  const specific = parsed.length === 0;
+  console.log(`${LOG} clarify user=${userId} specific=${specific} questions=${parsed.length}`);
+  return { hasGoal: true, specific, questions: parsed };
 }
 
 function parseLooseJson(text: string): unknown {
@@ -199,6 +316,7 @@ function validatePlan(raw: unknown): LLMPlan | null {
 export async function generateGoalPlan(
   client: SupabaseClient,
   userId: string,
+  answers?: ClarificationAnswer[],
 ): Promise<{ plan_id: string; step_count: number } | null> {
   const goal = await fetchActiveGoal(client, userId);
   if (!goal) {
@@ -206,21 +324,26 @@ export async function generateGoalPlan(
     return null;
   }
 
-  console.log(`${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date}`);
+  console.log(
+    `${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date} answers=${answers?.length ?? 0}`,
+  );
 
   const startIso = goal.set_at;
   const startDate = startIso.slice(0, 10);
   const totalDays = Math.max(1, calendarDaysBetween(startIso, goal.target_date));
 
-  const { system, user } = buildPrompt(goal, startDate, totalDays);
+  const { system, user } = buildPrompt(goal, startDate, totalDays, answers);
   // Ask for plain JSON instead of forcing a tool call: Vertex/Gemini returns an
   // empty response under forced function-calling here, so we parse JSON from text.
   // High token budget — the planner model is a "thinking" model whose reasoning
-  // consumes the budget, so a low cap truncates the JSON output mid-object.
+  // tokens count against the output budget, so a low cap can be fully consumed
+  // by reasoning and leave nothing for the JSON (empty text, finishReason
+  // MAX_TOKENS). Some goal phrasings reason longer than others, so give ample
+  // headroom for thinking + the full JSON object.
   const result = await callViaRouter('planner', user, {
     service: 'goal-planner',
     systemPrompt: system,
-    maxTokens: 8000,
+    maxTokens: 16000,
   });
   console.log(
     `${LOG} llm result ok=${result.ok} provider=${result.provider} model=${result.model} ` +

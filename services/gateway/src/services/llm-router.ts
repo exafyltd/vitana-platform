@@ -350,6 +350,18 @@ const openaiAdapter: ProviderAdapter = {
  * back to GOOGLE_GEMINI_API_KEY for local dev. Supports text, multi-image,
  * and function calling.
  */
+// Permissive safety thresholds for Gemini. The default filters block benign
+// wellness/coaching topics (relationships, weight, mental health, substance
+// recovery) — e.g. a goal of "Find a life partner" came back empty and the
+// planner surfaced no_plan_generated. BLOCK_ONLY_HIGH still blocks
+// high-confidence harmful content while letting legitimate coaching through.
+const GEMINI_SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+];
+
 const vertexAdapter: ProviderAdapter = {
   isAvailable: () =>
     Boolean(process.env.GOOGLE_CLOUD_PROJECT) || Boolean(process.env.GOOGLE_GEMINI_API_KEY),
@@ -384,6 +396,7 @@ const vertexAdapter: ProviderAdapter = {
         const modelInit: Record<string, unknown> = {
           model,
           generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
+          safetySettings: GEMINI_SAFETY_SETTINGS,
         };
         if (systemPrompt) {
           modelInit.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
@@ -418,6 +431,11 @@ const vertexAdapter: ProviderAdapter = {
           ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
           : undefined;
         const usageMeta = result.response?.usageMetadata;
+        if (!text && !toolCall) {
+          const finishReason = (candidate as any)?.finishReason;
+          const blockReason = (result.response as any)?.promptFeedback?.blockReason;
+          return { ok: false, error: `gemini_no_output finishReason=${finishReason ?? 'none'} blockReason=${blockReason ?? 'none'}` };
+        }
         return {
           ok: true,
           text,
@@ -464,6 +482,7 @@ const vertexAdapter: ProviderAdapter = {
       const body: Record<string, unknown> = {
         contents: [{ role: 'user', parts }],
         generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
+        safetySettings: GEMINI_SAFETY_SETTINGS,
       };
       if (systemPrompt) body.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
       if (fnDecls) {
@@ -487,15 +506,23 @@ const vertexAdapter: ProviderAdapter = {
         return { ok: false, error: `Google AI ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
+        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
+        promptFeedback?: { blockReason?: string };
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       };
-      const candidateParts = json.candidates?.[0]?.content?.parts || [];
+      const candidate0 = json.candidates?.[0];
+      const candidateParts = candidate0?.content?.parts || [];
       const text = candidateParts.map(p => p.text || '').join('');
       const fnPart = candidateParts.find(p => !!p.functionCall);
       const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
         ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
         : undefined;
+      if (!text && !toolCall) {
+        return {
+          ok: false,
+          error: `gemini_no_output finishReason=${candidate0?.finishReason ?? 'none'} blockReason=${json.promptFeedback?.blockReason ?? 'none'}`,
+        };
+      }
       return {
         ok: true,
         text,
