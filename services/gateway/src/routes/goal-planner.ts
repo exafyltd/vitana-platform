@@ -12,7 +12,13 @@
 import { Router, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
-import { generateGoalPlan, getGoalPlan, setStepStatus } from '../services/journey/goal-planner-service';
+import {
+  generateGoalPlan,
+  getGoalPlan,
+  setStepStatus,
+  clarifyGoalIfNeeded,
+  type ClarificationAnswer,
+} from '../services/journey/goal-planner-service';
 
 const router = Router();
 const VTID = 'VTID-03152';
@@ -30,8 +36,23 @@ router.post('/generate', requireAuth, async (req: AuthenticatedRequest, res: Res
   const client = getServiceClient();
   if (!client) return res.status(503).json({ ok: false, error: 'supabase_unavailable', vtid: VTID });
 
+  // Optional clarifying answers from a prior clarification round.
+  const rawAnswers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+  const answers: ClarificationAnswer[] = rawAnswers
+    .filter((a: any) => a && typeof a.question === 'string')
+    .map((a: any) => ({ question: String(a.question), answer: typeof a.answer === 'string' ? a.answer : '' }));
+
   try {
-    const result = await generateGoalPlan(client, userId);
+    // First pass (no answers yet): if the goal is too broad, ask Vitana's
+    // clarifying questions instead of building a generic plan.
+    if (answers.length === 0) {
+      const clar = await clarifyGoalIfNeeded(client, userId);
+      if (clar.hasGoal && !clar.specific && clar.questions.length > 0) {
+        return res.status(200).json({ ok: true, vtid: VTID, needs_clarification: true, questions: clar.questions, plan: null });
+      }
+    }
+
+    const result = await generateGoalPlan(client, userId, answers);
     if (!result) {
       // No goal/deadline yet, or generation failed — let the client fall back gracefully.
       return res.status(200).json({ ok: false, error: 'no_plan_generated', vtid: VTID, plan: null });
