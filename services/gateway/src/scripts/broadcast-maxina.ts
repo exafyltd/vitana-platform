@@ -144,15 +144,50 @@ async function firePushes(
   const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE!, {
     auth: { persistSession: false },
   });
-  const { notifyUsersAsync } = await import('../services/notification-service');
+  const { notifyUser } = await import('../services/notification-service');
   const payload = {
     title: 'Vitana',
     body: buildNotificationBody(message),
     data: { url: '/inbox', source: campaign },
   };
-  notifyUsersAsync(receiverIds, tenantId, 'new_chat_message', payload, supabase as any);
-  console.log(`${TAG} Push fan-out queued for ${receiverIds.length} users. Waiting 30s to drain…`);
-  await new Promise((r) => setTimeout(r, 30_000));
+
+  // Bounded concurrency + retry so the fan-out doesn't overwhelm flaky
+  // networks (firing 90+ concurrent fetches at once causes `fetch failed`).
+  const CONCURRENCY = 5;
+  const RETRIES = 2;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let ok = 0;
+  let failed = 0;
+
+  async function processOne(userId: string): Promise<void> {
+    for (let attempt = 0; attempt <= RETRIES; attempt++) {
+      try {
+        await notifyUser(userId, tenantId, 'new_chat_message', payload, supabase as any);
+        ok++;
+        return;
+      } catch (err: any) {
+        if (attempt < RETRIES) {
+          await sleep(500 * (attempt + 1));
+          continue;
+        }
+        failed++;
+        console.warn(`${TAG} notify FAILED ${userId.slice(0, 8)}…: ${err.message || err}`);
+      }
+    }
+  }
+
+  let idx = 0;
+  async function worker(): Promise<void> {
+    while (idx < receiverIds.length) {
+      await processOne(receiverIds[idx++]);
+    }
+  }
+  console.log(`${TAG} Push fan-out for ${receiverIds.length} users (concurrency=${CONCURRENCY})…`);
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  console.log(`${TAG} Push fan-out complete: ok=${ok} failed=${failed}`);
+  if (failed > 0) {
+    console.log(`${TAG} Re-run notify-maxina.ts --campaign ${campaign} to retry the ${failed} that failed.`);
+  }
 }
 
 async function main(): Promise<void> {
