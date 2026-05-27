@@ -424,8 +424,10 @@ const vertexAdapter: ProviderAdapter = {
           contents: [{ role: 'user', parts: parts as any }],
         });
         const candidate = result.response?.candidates?.[0];
-        const candidateParts = (candidate?.content?.parts || []) as Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }>;
-        const text = candidateParts.map(p => p.text || '').join('');
+        const candidateParts = (candidate?.content?.parts || []) as Array<{ text?: string; thought?: boolean; functionCall?: { name?: string; args?: Record<string, unknown> } }>;
+        // Drop the model's "thinking" parts — gemini thinking models emit reasoning
+        // as parts flagged thought=true; only the non-thought parts hold the answer.
+        const text = candidateParts.filter(p => !p.thought).map(p => p.text || '').join('');
         const fnPart = candidateParts.find(p => !!p.functionCall);
         const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
           ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
@@ -506,13 +508,14 @@ const vertexAdapter: ProviderAdapter = {
         return { ok: false, error: `Google AI ${resp.status}: ${errText.slice(0, 300)}` };
       }
       const json = await resp.json() as {
-        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
+        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
         promptFeedback?: { blockReason?: string };
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       };
       const candidate0 = json.candidates?.[0];
       const candidateParts = candidate0?.content?.parts || [];
-      const text = candidateParts.map(p => p.text || '').join('');
+      // Drop "thinking" parts (thought=true) — only non-thought parts hold the answer.
+      const text = candidateParts.filter(p => !p.thought).map(p => p.text || '').join('');
       const fnPart = candidateParts.find(p => !!p.functionCall);
       const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
         ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }

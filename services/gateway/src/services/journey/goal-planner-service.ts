@@ -280,17 +280,44 @@ export async function clarifyGoalIfNeeded(client: SupabaseClient, userId: string
   return { hasGoal: true, specific, questions: parsed };
 }
 
+// Extract the first balanced JSON object, anchored on the plan_summary key when
+// present. Robust to a thinking model wrapping the JSON in prose (or stray
+// braces in that prose), which the naive first-{/last-} slice mishandled.
+function extractJsonObject(text: string): string | null {
+  const keyAt = text.indexOf('"plan_summary"');
+  let start = keyAt >= 0 ? text.lastIndexOf('{', keyAt) : text.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null; // unbalanced → truncated output
+}
+
 function parseLooseJson(text: string): unknown {
   if (!text) return null;
   let t = text.trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) t = fence[1].trim();
-  const first = t.indexOf('{');
-  const last = t.lastIndexOf('}');
-  if (first >= 0 && last > first) t = t.slice(first, last + 1);
-  t = t.replace(/,\s*([}\]])/g, '$1'); // tolerate trailing commas
+  const obj = extractJsonObject(t);
+  if (!obj) return null;
+  const cleaned = obj.replace(/,\s*([}\]])/g, '$1'); // tolerate trailing commas
   try {
-    return JSON.parse(t);
+    return JSON.parse(cleaned);
   } catch {
     return null;
   }
