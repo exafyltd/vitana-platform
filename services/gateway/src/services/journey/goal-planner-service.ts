@@ -25,6 +25,25 @@ const LANGUAGE_NAMES: Record<string, string> = {
   sr: 'Serbian',
 };
 
+// Intent gloss for the canonical Life Compass preset categories. The presets
+// store only a short title + category (the rich description lives in the
+// frontend), so we restate each domain's intent here to ground the planner and
+// clarifying questions across all suggested goals.
+const CATEGORY_INTENT: Record<string, string> = {
+  relationship: 'building meaningful romantic relationships and finding a life partner',
+  health: 'achieving optimal physical and mental wellness',
+  career: 'building a fulfilling and successful career',
+  learning: 'learning and growing through new skills and knowledge',
+  spiritual: 'deepening purpose, presence, and inner peace',
+  longevity: 'healthspan, energy, and longevity',
+  wealth: 'building financial freedom and security',
+};
+
+function goalDomain(goal: ActiveGoal): string | null {
+  if (!goal.category) return null;
+  return CATEGORY_INTENT[goal.category.trim().toLowerCase()] ?? goal.category;
+}
+
 export interface ClarificationAnswer {
   question: string;
   answer: string;
@@ -183,6 +202,7 @@ function buildPrompt(
       : '';
   const user =
     `Goal: "${goal.primary_goal}"\n` +
+    (goalDomain(goal) ? `Life domain: ${goalDomain(goal)}\n` : '') +
     `Quantified target: ${target}\n` +
     `Start day offset: 0 (${startDateIso})\n` +
     `Final day offset: ${totalDays} (deadline ${goal.target_date})\n` +
@@ -231,8 +251,11 @@ export async function clarifyGoalIfNeeded(client: SupabaseClient, userId: string
     'enough to design a concrete, personalized day-by-day plan. A goal is NOT specific enough when ' +
     'key details are missing — e.g. which skill, what kind of career move, what target, or important ' +
     'constraints (time, budget, starting point). Ask only what genuinely changes the plan.';
+  const domain = goalDomain(goal);
   const user =
-    `Goal: "${goal.primary_goal}"\nQuantified target: ${target}\nCategory: ${goal.category ?? 'none'}\n\n` +
+    `Goal: "${goal.primary_goal}"\nQuantified target: ${target}\n` +
+    (domain ? `Life domain: ${domain}\n` : `Category: ${goal.category ?? 'none'}\n`) +
+    '\n' +
     'If the goal is specific enough, respond {"specific": true, "questions": []}. ' +
     'If not, respond {"specific": false, "questions": [...]} with 2-3 short, friendly questions — ' +
     `each one sentence, easy to answer — that would make the plan concrete. Write the questions in ${language}. ` +
