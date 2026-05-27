@@ -216,11 +216,14 @@ export async function generateGoalPlan(
   // Ask for plain JSON instead of forcing a tool call: Vertex/Gemini returns an
   // empty response under forced function-calling here, so we parse JSON from text.
   // High token budget — the planner model is a "thinking" model whose reasoning
-  // consumes the budget, so a low cap truncates the JSON output mid-object.
+  // tokens count against the output budget, so a low cap can be fully consumed
+  // by reasoning and leave nothing for the JSON (empty text, finishReason
+  // MAX_TOKENS). Some goal phrasings reason longer than others, so give ample
+  // headroom for thinking + the full JSON object.
   const result = await callViaRouter('planner', user, {
     service: 'goal-planner',
     systemPrompt: system,
-    maxTokens: 8000,
+    maxTokens: 16000,
   });
   console.log(
     `${LOG} llm result ok=${result.ok} provider=${result.provider} model=${result.model} ` +
