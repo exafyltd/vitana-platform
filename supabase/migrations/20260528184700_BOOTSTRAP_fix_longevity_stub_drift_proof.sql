@@ -45,6 +45,13 @@
 -- The read-only information_schema dump below records the LIVE `tenants`
 -- columns in the workflow log so the actual prod schema is captured for the
 -- record (honouring "read information_schema before migrating").
+--
+-- impact-allow-solo-migration
+--   Intentional solo migration with no gateway/worker code change. The
+--   orchestrator (services/gateway/src/services/daily-recompute-service.ts)
+--   already calls scheduler_longevity_compute_daily via RPC; this migration
+--   only replaces the function body. The return shape is unchanged except for
+--   an additive `tenant_id` field, so existing callers keep working unmodified.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
