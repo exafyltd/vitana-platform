@@ -180,6 +180,7 @@ function buildPrompt(
   startDateIso: string,
   totalDays: number,
   answers?: ClarificationAnswer[],
+  language: string = 'English',
 ): { system: string; user: string } {
   const target =
     goal.target_value != null && goal.target_unit
@@ -213,6 +214,8 @@ function buildPrompt(
     '"milestones": [{"day_offset": number, "title": string, "description": string}], ' +
     '"weekly_checkpoints": [{"day_offset": number, "title": string, "description": string}], ' +
     '"daily_habits": [{"title": string, "description": string}]}\n' +
+    `Write ALL content in ${language}: every plan_summary, title, and description must be in ${language}. ` +
+    'Keep the JSON field names (plan_summary, milestones, weekly_checkpoints, daily_habits, day_offset, title, description) in English.\n' +
     `Include 5-8 milestones spread from day 0 to day ${totalDays} (the last on or near day ${totalDays}), ` +
     'a roughly weekly checkpoint cadence, and 3-5 sustainable daily habits.';
   return { system, user };
@@ -351,15 +354,18 @@ export async function generateGoalPlan(
     return null;
   }
 
+  const locale = await getUserLocale(client, userId).catch(() => 'en');
+  const language = LANGUAGE_NAMES[locale] ?? 'English';
+
   console.log(
-    `${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date} answers=${answers?.length ?? 0}`,
+    `${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date} answers=${answers?.length ?? 0} locale=${locale}`,
   );
 
   const startIso = goal.set_at;
   const startDate = startIso.slice(0, 10);
   const totalDays = Math.max(1, calendarDaysBetween(startIso, goal.target_date));
 
-  const { system, user } = buildPrompt(goal, startDate, totalDays, answers);
+  const { system, user } = buildPrompt(goal, startDate, totalDays, answers, language);
   // Ask for plain JSON instead of forcing a tool call: Vertex/Gemini returns an
   // empty response under forced function-calling here, so we parse JSON from text.
   // High token budget — the planner model is a "thinking" model whose reasoning
