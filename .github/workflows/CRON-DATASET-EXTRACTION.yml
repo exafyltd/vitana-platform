@@ -1,0 +1,110 @@
+name: Cron Dataset Extraction
+
+# Phase 1 W1 (VTID-03178 DATASETS) — daily extractor for the three
+# Phase 1 fine-tunes. Reads prod oasis_events (read-only), filters PII,
+# writes JSONL to gs://vitana-artifacts-staging/datasets/<target>/<runId>.jsonl,
+# and emits one dataset.extraction.completed event per target.
+#
+# Required workflow-level secrets (already exist for STAGE-DEPLOY):
+#   - GCP_WIF_PROVIDER
+#   - GCP_WIF_SA_EMAIL
+#
+# WIF SA needs roles/secretmanager.secretAccessor on prod SUPABASE_URL +
+# SUPABASE_SERVICE_ROLE (granted as part of VTID-03177 PROFILE rollout) and
+# roles/storage.objectCreator on gs://vitana-artifacts-staging/ (existing
+# Phase 0 grant).
+#
+# Manual run: workflow_dispatch with optional dry_run + max_rows inputs.
+
+on:
+  schedule:
+    # Daily at 02:00 CET (00:00 UTC during winter, 01:00 UTC during DST).
+    # We accept the DST drift — corpus content doesn't care which hour ran.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip GCS upload + event emit (for testing)'
+        required: false
+        default: 'false'
+        type: choice
+        options: [ 'true', 'false' ]
+      max_rows:
+        description: 'Per-target row cap'
+        required: false
+        default: '50000'
+      days_back:
+        description: 'How many days of source data to scan'
+        required: false
+        default: '30'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-dataset-extraction
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+  GCS_BUCKET: gs://vitana-artifacts-staging
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Auth to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Setup gcloud + gsutil
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds from Secret Manager
+        id: secrets
+        run: |
+          set -euo pipefail
+          SUPABASE_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}")
+          SUPABASE_SVC=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}")
+          echo "::add-mask::$SUPABASE_URL"
+          echo "::add-mask::$SUPABASE_SVC"
+          echo "SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE=$SUPABASE_SVC" >> "$GITHUB_ENV"
+
+      - name: Run all 3 extractors
+        working-directory: services/gateway
+        env:
+          DATASET_GCS_BUCKET: ${{ env.GCS_BUCKET }}
+          DATASET_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+          DATASET_MAX_ROWS: ${{ inputs.max_rows || '50000' }}
+          DATASET_DAYS_BACK: ${{ inputs.days_back || '30' }}
+          DATASET_OUTPUT_ROOT: /tmp/vitana-datasets
+        run: |
+          set -euo pipefail
+          npx tsx scripts/datasets/run-all.ts
+
+      - name: Show output tree
+        if: always()
+        run: |
+          set +e
+          ls -la /tmp/vitana-datasets 2>/dev/null || echo 'no output dir'
+          find /tmp/vitana-datasets -maxdepth 3 -name '*.jsonl' -printf '%p %s bytes\n' 2>/dev/null || true
