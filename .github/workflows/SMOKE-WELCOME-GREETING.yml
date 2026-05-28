@@ -49,8 +49,20 @@ jobs:
           # trigger sees the user_tenants insert and our SELECT runs in the
           # same transaction. ROLLBACK at the end removes every row the
           # trigger created so production is untouched.
+          # Note on the auth.users seed: app_users.user_id is FK→auth.users.id,
+          # so the synthetic user must exist there first. We INSERT a minimal
+          # auth.users row inside the transaction; the ROLLBACK at the end
+          # removes it. No real Supabase auth user is ever created.
           OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A <<EOF
           BEGIN;
+          INSERT INTO auth.users (id, aud, role, email, instance_id, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+          VALUES (
+            '$TEST_UUID', 'authenticated', 'authenticated',
+            'smoke-$TEST_UUID@vitana-ci.local',
+            '00000000-0000-0000-0000-000000000000',
+            '{}'::jsonb, '{}'::jsonb,
+            now(), now()
+          );
           INSERT INTO public.app_users (user_id, tenant_id, display_name, welcome_chat_sent)
           VALUES ('$TEST_UUID', '$TENANT_ID', 'CI Smoke Test User', false);
           INSERT INTO public.user_tenants (user_id, tenant_id, is_primary)
