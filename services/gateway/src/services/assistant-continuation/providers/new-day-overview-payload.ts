@@ -1,89 +1,139 @@
 /**
- * VTID-03167 — Broad new-day overview payload aggregator.
+ * VTID-03172 — Unified new-day overview payload aggregator.
  *
- * REPLACES the Slice 2 (VTID-03166) renderer that pre-composed German /
- * English sentences server-side. The founder's contract:
+ * Replaces the VTID-03167 standalone aggregator with one that READS THE
+ * SAME DATA the My Journey screen renders. Voice + screen now share the
+ * exact same per-signal source functions:
  *
- *   1. The aggregator pulls EVERY available signal in parallel.
- *   2. The structured payload is handed to Gemini via a STRUCTURAL
- *      prompt block — NOT a Say-exactly line, NOT pre-composed sentences.
- *   3. Gemini composes the multi-paragraph overview in the user's
- *      language, conversationally, addressing every signal that has data.
- *   4. Zero hardcoded sentences in TypeScript. Zero sentence templates.
- *      This file ONLY produces the structured payload.
+ *   - Journey state        →  getJourneyState (services/journey/user-journey-service)
+ *                             [same path used by GET /api/v1/my-journey]
+ *   - Life Compass         →  fetchLifeCompass (services/user-context-profiler)
+ *                             [same path used by GET /api/v1/my-journey]
+ *   - Vitana Index         →  fetchVitanaIndexForProfiler (snapshot)
+ *                             [same path used by GET /api/v1/my-journey + the
+ *                              trajectory card on AutopilotDashboard]
+ *   - Autopilot recs       →  direct query on autopilot_recommendations
+ *                             [same table the screen renders, bucketed for voice]
  *
- * Sources pulled (all best-effort, per-source try/catch):
- *   - Vitana Index (today total + per-pillar + weakest pillar)
- *   - Life Compass (active goal + category)
- *   - Calendar today (count + next event)
- *   - Calendar passed since last session (count + most recent)
- *   - Autopilot pending recommendations (count + top title)
- *   - Match notifications unread (count)
- *   - Messages unread (count + sender hint when possible)
- *   - Reminders due today (count + next reminder)
- *   - Diary entries last 7 days (streak proxy)
+ * Voice keeps its time-sensitive signals that the screen doesn't render:
+ * calendar today + passed, messages unread, matches unread, reminders
+ * today, diary 7-day streak.
+ *
+ * Per-signal SETUP STATE is exposed (`state: 'set'|'not_set'` style) so
+ * the prompt can switch between three branches for each signal:
+ *   1. has data            → speak it (Rule 3: numbers + meaning + pillar)
+ *   2. empty for today     → silent (it's not a gap, just nothing scheduled)
+ *   3. user hasn't set up  → invitation ("magst du, dass wir das gleich
+ *                            gemeinsam machen?")
+ *
+ * The prompt layer renders. This aggregator only assembles.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getJourneyState, type JourneyState } from '../../journey/user-journey-service';
+import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
+
+// ---------------------------------------------------------------------------
+// Type definitions
+// ---------------------------------------------------------------------------
+
+export type SignalSetupState = 'set' | 'not_set';
 
 export interface OverviewPayload {
-  // -- VITANA INDEX --
+  // -- JOURNEY (same source as /api/v1/my-journey) --
+  journey: {
+    day_in_journey: number;
+    total_days: number;
+    days_left: number;
+    is_first_session: boolean;
+    plan_type: 'default' | 'personalized';
+    current_wave: {
+      name: string;
+      description: string;
+      day_in_wave: number;
+      days_to_next_wave: number | null;
+    } | null;
+  } | null;
+
+  // -- VITANA INDEX (same source as /api/v1/my-journey + AutopilotDashboard NowCard) --
   vitana_index: {
-    total: number;             // 0-999 (server-computed from score_total)
-    pillars: { sleep: number; nutrition: number; exercise: number; hydration: number; mental: number };
-    weakest_pillar: 'sleep' | 'nutrition' | 'exercise' | 'hydration' | 'mental' | null;
-  } | null;
+    state: 'ok' | 'not_set_up' | 'baseline_no_score';
+    today: number | null;
+    tier: string | null;
+    tier_framing: string | null;
+    trend_7d: number | null;            // delta over last 7 days; can be < 0
+    weakest_pillar: { name: string; score: number } | null;
+    strongest_pillar: { name: string; score: number } | null;
+    balance_label: string | null;
+    pillars: { sleep: number; nutrition: number; exercise: number; hydration: number; mental: number } | null;
+    projected_day_90: number | null;
+    projected_day_90_tier: string | null;
+  };
 
-  // -- LIFE COMPASS --
+  // -- LIFE COMPASS (same source as /api/v1/my-journey + CompassCard) --
   life_compass: {
-    primary_goal: string;        // free text (user's words, language as stored)
-    category: string;            // e.g. 'wealth', 'health', 'relationships'
-  } | null;
-
-  // -- CALENDAR --
-  calendar_today: {
-    count: number;               // events scheduled today (in user TZ today)
-    next: { title: string; start_iso: string } | null;  // chronologically first today
-  };
-  calendar_passed: {
-    count: number;               // events in (lookback, now)
-    most_recent: { title: string; start_iso: string } | null;
+    state: SignalSetupState;
+    primary_goal: string | null;
+    category: string | null;
+    target_date: string | null;
+    target_value: number | null;
+    target_unit: string | null;
+    starting_value: number | null;
+    set_at: string | null;
+    days_to_deadline: number | null;
+    goal_progress_pct: number | null;   // time-based progress, 0-100
   };
 
-  // -- AUTOPILOT --
-  autopilot_pending: {
-    count: number;
-    top: { title: string; domain: string | null } | null;
+  // -- CALENDAR (voice-only signal, time-sensitive) --
+  calendar_today: { count: number; next: { title: string; start_iso: string } | null };
+  calendar_passed: { count: number; most_recent: { title: string; start_iso: string } | null };
+
+  // -- AUTOPILOT (same table as AutopilotDashboard, bucketed for voice) --
+  autopilot: {
+    state: 'has_actions' | 'none_yet';
+    today_checkpoint: {
+      recommendation_id: string;
+      title: string;
+      summary: string | null;
+      domain: string | null;
+      impact_score: number | null;
+    } | null;
+    this_week: Array<{
+      recommendation_id: string;
+      title: string;
+      summary: string | null;
+    }>;
+    pending_total: number;
   };
 
-  // -- MATCHES --
-  matches_unread: number;       // open match_notifications
+  // -- MATCHES (voice-only) --
+  matches_unread: number;
 
-  // -- MESSAGES --
-  messages_unread: number;      // unread messages in inbox
+  // -- MESSAGES (voice-only) --
+  messages_unread: number;
 
-  // -- REMINDERS --
-  reminders_today: {
-    count: number;
-    next: { action_text: string; next_fire_at: string } | null;
-  };
+  // -- REMINDERS (voice-only) --
+  reminders_today: { count: number; next: { action_text: string; next_fire_at: string } | null };
 
-  // -- DIARY (streak proxy) --
+  // -- DIARY (voice-only, streak proxy) --
   diary_last_7d: number;
 
-  // -- META (for the renderer's context) --
-  last_session_date_user_tz: string | null;     // YYYY-MM-DD or null
+  // -- META --
+  last_session_date_user_tz: string | null;
 }
 
 export interface AggregateArgs {
   supabase: SupabaseClient;
   userId: string;
-  timezone: string;             // IANA TZ e.g. 'Europe/Berlin'
+  timezone: string;
   now: Date;
-  lastSessionDateUserTz: string | null;  // YYYY-MM-DD or null (from user_journey)
+  lastSessionDateUserTz: string | null;
 }
 
-/** UTC day-window matching local day in `timezone`. */
+// ---------------------------------------------------------------------------
+// TZ helpers (unchanged)
+// ---------------------------------------------------------------------------
+
 function dayWindowUtcIso(now: Date, timezone: string): { startUtc: string; endUtc: string } {
   try {
     const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -116,7 +166,6 @@ function dayWindowUtcIso(now: Date, timezone: string): { startUtc: string; endUt
   }
 }
 
-/** Local hour [0-23] in IANA TZ. */
 export function localHourInTz(now: Date, timezone: string): number {
   try {
     const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hourCycle: 'h23' });
@@ -127,7 +176,6 @@ export function localHourInTz(now: Date, timezone: string): number {
   }
 }
 
-/** Local time HH:MM in IANA TZ for use in payload. */
 export function localHhmmInTz(iso: string, timezone: string): string {
   try {
     const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -140,27 +188,12 @@ export function localHhmmInTz(iso: string, timezone: string): string {
   }
 }
 
-const EMPTY_VITANA_INDEX: OverviewPayload['vitana_index'] = null;
+export { dayWindowUtcIso };
 
-function pickWeakest(p: { sleep: number; nutrition: number; exercise: number; hydration: number; mental: number }): OverviewPayload['vitana_index'] extends infer T ? T extends { weakest_pillar: infer W } ? W : never : never {
-  const entries: Array<[keyof typeof p, number]> = [
-    ['sleep', p.sleep],
-    ['nutrition', p.nutrition],
-    ['exercise', p.exercise],
-    ['hydration', p.hydration],
-    ['mental', p.mental],
-  ];
-  entries.sort((a, b) => a[1] - b[1]);
-  const lowest = entries[0][1];
-  // If all five pillars are tied (e.g., baseline survey state), return null —
-  // the LLM should be told "all pillars need attention" via the absence of a
-  // single weakest, not pick one arbitrarily.
-  const tiedCount = entries.filter(([, v]) => v === lowest).length;
-  if (tiedCount >= 4) return null as any;
-  return entries[0][0] as any;
-}
+// ---------------------------------------------------------------------------
+// Aggregator
+// ---------------------------------------------------------------------------
 
-/** Aggregate the full overview payload. Never throws. Per-source failures degrade fields to null/0. */
 export async function gatherOverviewPayload(args: AggregateArgs): Promise<OverviewPayload> {
   const { startUtc, endUtc } = dayWindowUtcIso(args.now, args.timezone);
   const nowIso = args.now.toISOString();
@@ -169,21 +202,23 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     : new Date(args.now.getTime() - 24 * 3600 * 1000).toISOString();
 
   const [
-    vIdx,
-    lc,
+    journeyState,
+    indexSnapshot,
+    lcSnapshot,
     calToday,
     calPassed,
-    autoP,
+    autopilot,
     matchesUnread,
     msgsUnread,
     remindersToday,
     diary7d,
   ] = await Promise.all([
-    fetchVitanaIndexLatest(args.supabase, args.userId),
-    fetchLifeCompass(args.supabase, args.userId),
+    getJourneyState(args.supabase, args.userId).catch(() => null),
+    fetchVitanaIndexForProfiler(args.supabase, args.userId).catch(() => null),
+    fetchLifeCompass(args.supabase, args.userId).catch(() => null),
     fetchCalendarToday(args.supabase, args.userId, nowIso, endUtc),
     fetchCalendarPassed(args.supabase, args.userId, lookbackIso, nowIso),
-    fetchAutopilotPending(args.supabase, args.userId),
+    fetchAutopilotForVoice(args.supabase, args.userId),
     fetchMatchesUnread(args.supabase, args.userId),
     fetchMessagesUnread(args.supabase, args.userId),
     fetchRemindersToday(args.supabase, args.userId, startUtc, endUtc),
@@ -191,11 +226,12 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
   ]);
 
   return {
-    vitana_index: vIdx,
-    life_compass: lc,
+    journey: projectJourney(journeyState),
+    vitana_index: projectIndex(indexSnapshot),
+    life_compass: projectLifeCompass(lcSnapshot),
     calendar_today: calToday,
     calendar_passed: calPassed,
-    autopilot_pending: autoP,
+    autopilot,
     matches_unread: matchesUnread,
     messages_unread: msgsUnread,
     reminders_today: remindersToday,
@@ -204,56 +240,101 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
   };
 }
 
-// -------------------- per-source fetchers (defensive) --------------------
+// ---------------------------------------------------------------------------
+// Projections — narrow the shared-service shapes into the voice contract
+// ---------------------------------------------------------------------------
 
-async function fetchVitanaIndexLatest(sb: SupabaseClient, userId: string): Promise<OverviewPayload['vitana_index']> {
-  try {
-    const { data, error } = await sb
-      .from('vitana_index_scores')
-      .select('score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error || !data) return EMPTY_VITANA_INDEX;
-    const pillars = {
-      sleep: Number(data.score_sleep) || 0,
-      nutrition: Number(data.score_nutrition) || 0,
-      exercise: Number(data.score_exercise) || 0,
-      hydration: Number(data.score_hydration) || 0,
-      mental: Number(data.score_mental) || 0,
-    };
-    return {
-      total: Number(data.score_total) || 0,
-      pillars,
-      weakest_pillar: pickWeakest(pillars),
-    };
-  } catch {
-    return EMPTY_VITANA_INDEX;
-  }
+function projectJourney(s: JourneyState | null): OverviewPayload['journey'] {
+  if (!s) return null;
+  const wave = s.current_wave
+    ? {
+        name: s.current_wave.name,
+        description: s.current_wave.description,
+        day_in_wave: Math.max(0, s.day_in_journey - s.current_wave.start_day + 1),
+        days_to_next_wave: Math.max(0, s.current_wave.end_day - s.day_in_journey),
+      }
+    : null;
+  return {
+    day_in_journey: s.day_in_journey,
+    total_days: s.total_days,
+    days_left: s.days_left,
+    is_first_session: s.is_first_session,
+    plan_type: s.plan_type,
+    current_wave: wave,
+  };
 }
 
-async function fetchLifeCompass(sb: SupabaseClient, userId: string): Promise<OverviewPayload['life_compass']> {
-  try {
-    const { data, error } = await sb
-      .from('life_compass')
-      .select('primary_goal, category')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error || !data || !data.primary_goal) return null;
+function projectIndex(snap: any | null): OverviewPayload['vitana_index'] {
+  // `snap` may be null OR a VitanaIndexSnapshot when the profiler returned state=='ok'.
+  // The profiler hides the state envelope; null means either not_set_up or
+  // baseline_no_score. We collapse both into 'not_set_up' here — the prompt
+  // treats them identically (invite the user to set up the Index).
+  if (!snap) {
     return {
-      primary_goal: String(data.primary_goal),
-      category: String(data.category ?? ''),
+      state: 'not_set_up',
+      today: null, tier: null, tier_framing: null, trend_7d: null,
+      weakest_pillar: null, strongest_pillar: null, balance_label: null,
+      pillars: null, projected_day_90: null, projected_day_90_tier: null,
     };
-  } catch {
-    return null;
   }
+  return {
+    state: 'ok',
+    today: typeof snap.total === 'number' ? snap.total : null,
+    tier: snap.tier ?? null,
+    tier_framing: snap.tier_framing ?? null,
+    trend_7d: typeof snap.trend_7d === 'number' ? snap.trend_7d : null,
+    weakest_pillar: snap.weakest_pillar ?? null,
+    strongest_pillar: snap.strongest_pillar ?? null,
+    balance_label: snap.balance_label ?? null,
+    pillars: snap.pillars ?? null,
+    projected_day_90: typeof snap.projected_day_90 === 'number' ? snap.projected_day_90 : null,
+    projected_day_90_tier: snap.projected_day_90_tier ?? null,
+  };
 }
 
-async function fetchCalendarToday(sb: SupabaseClient, userId: string, nowIso: string, endOfTodayIso: string): Promise<OverviewPayload['calendar_today']> {
+function projectLifeCompass(lc: any | null): OverviewPayload['life_compass'] {
+  if (!lc || !lc.primary_goal) {
+    return {
+      state: 'not_set',
+      primary_goal: null, category: null, target_date: null,
+      target_value: null, target_unit: null, starting_value: null,
+      set_at: null, days_to_deadline: null, goal_progress_pct: null,
+    };
+  }
+  const now = Date.now();
+  const setAtMs = lc.set_at ? Date.parse(lc.set_at) : null;
+  const deadlineMs = lc.target_date ? Date.parse(`${lc.target_date}T23:59:59Z`) : null;
+  let days_to_deadline: number | null = null;
+  let goal_progress_pct: number | null = null;
+  if (deadlineMs && Number.isFinite(deadlineMs)) {
+    days_to_deadline = Math.max(0, Math.ceil((deadlineMs - now) / 86_400_000));
+    if (setAtMs && Number.isFinite(setAtMs) && deadlineMs > setAtMs) {
+      const elapsed = now - setAtMs;
+      const total = deadlineMs - setAtMs;
+      goal_progress_pct = Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+    }
+  }
+  return {
+    state: 'set',
+    primary_goal: String(lc.primary_goal),
+    category: lc.category ?? null,
+    target_date: lc.target_date ?? null,
+    target_value: typeof lc.target_value === 'number' ? lc.target_value : null,
+    target_unit: lc.target_unit ?? null,
+    starting_value: typeof lc.starting_value === 'number' ? lc.starting_value : null,
+    set_at: lc.set_at ?? null,
+    days_to_deadline,
+    goal_progress_pct,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Voice-only fetchers (calendar, messages, matches, reminders, diary)
+// ---------------------------------------------------------------------------
+
+async function fetchCalendarToday(
+  sb: SupabaseClient, userId: string, nowIso: string, endOfTodayIso: string,
+): Promise<OverviewPayload['calendar_today']> {
   try {
     const { data, error } = await sb
       .from('calendar_events')
@@ -274,7 +355,9 @@ async function fetchCalendarToday(sb: SupabaseClient, userId: string, nowIso: st
   }
 }
 
-async function fetchCalendarPassed(sb: SupabaseClient, userId: string, lookbackIso: string, nowIso: string): Promise<OverviewPayload['calendar_passed']> {
+async function fetchCalendarPassed(
+  sb: SupabaseClient, userId: string, lookbackIso: string, nowIso: string,
+): Promise<OverviewPayload['calendar_passed']> {
   try {
     const { data, error } = await sb
       .from('calendar_events')
@@ -295,23 +378,65 @@ async function fetchCalendarPassed(sb: SupabaseClient, userId: string, lookbackI
   }
 }
 
-async function fetchAutopilotPending(sb: SupabaseClient, userId: string): Promise<OverviewPayload['autopilot_pending']> {
+/**
+ * Fetch active autopilot recommendations the same way the screen does:
+ * status='new' (the real default — VTID-03167's `status='pending'` query
+ * was dead code, the column never carries that value). Top-1 by
+ * impact_score is the TODAY checkpoint; top-3 are this_week's actions.
+ *
+ * setup_state distinguishes "user has actions waiting" from "user has
+ * never generated any recommendations" — the prompt invites generation
+ * in the second case.
+ */
+async function fetchAutopilotForVoice(
+  sb: SupabaseClient, userId: string,
+): Promise<OverviewPayload['autopilot']> {
   try {
-    const { data, error } = await sb
+    const { data: activeRows, error: activeErr } = await sb
       .from('autopilot_recommendations')
-      .select('title, domain')
+      .select('id, title, summary, domain, impact_score')
       .eq('user_id', userId)
-      .eq('status', 'pending')
+      .eq('status', 'new')
+      .order('impact_score', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .limit(5);
-    if (error) return { count: 0, top: null };
-    const rows = (data ?? []) as Array<{ title: string; domain: string | null }>;
+      .limit(10);
+    if (activeErr) return { state: 'has_actions', today_checkpoint: null, this_week: [], pending_total: 0 };
+    const rows = (activeRows ?? []) as Array<{ id: string; title: string; summary: string | null; domain: string | null; impact_score: number | null }>;
+
+    if (rows.length === 0) {
+      // No active recs. Decide between "none_yet" (user never had any) and
+      // "has_actions" with empty array (user worked through them all).
+      const { count } = await sb
+        .from('autopilot_recommendations')
+        .select('id', { head: true, count: 'exact' })
+        .eq('user_id', userId);
+      return {
+        state: (count ?? 0) > 0 ? 'has_actions' : 'none_yet',
+        today_checkpoint: null,
+        this_week: [],
+        pending_total: 0,
+      };
+    }
+
+    const top = rows[0];
     return {
-      count: rows.length,
-      top: rows[0] ? { title: String(rows[0].title ?? '').trim() || 'recommendation', domain: rows[0].domain ?? null } : null,
+      state: 'has_actions',
+      today_checkpoint: {
+        recommendation_id: top.id,
+        title: String(top.title ?? '').trim() || 'next step',
+        summary: top.summary ?? null,
+        domain: top.domain ?? null,
+        impact_score: top.impact_score ?? null,
+      },
+      this_week: rows.slice(0, 3).map((r) => ({
+        recommendation_id: r.id,
+        title: String(r.title ?? '').trim() || 'next step',
+        summary: r.summary ?? null,
+      })),
+      pending_total: rows.length,
     };
   } catch {
-    return { count: 0, top: null };
+    return { state: 'has_actions', today_checkpoint: null, this_week: [], pending_total: 0 };
   }
 }
 
@@ -343,7 +468,9 @@ async function fetchMessagesUnread(sb: SupabaseClient, userId: string): Promise<
   }
 }
 
-async function fetchRemindersToday(sb: SupabaseClient, userId: string, startUtc: string, endUtc: string): Promise<OverviewPayload['reminders_today']> {
+async function fetchRemindersToday(
+  sb: SupabaseClient, userId: string, startUtc: string, endUtc: string,
+): Promise<OverviewPayload['reminders_today']> {
   try {
     const { data, error } = await sb
       .from('reminders')
@@ -379,6 +506,3 @@ async function fetchDiaryLast7Days(sb: SupabaseClient, userId: string, now: Date
     return 0;
   }
 }
-
-// dayWindowUtcIso exported for tests + the new-day-return provider integration.
-export { dayWindowUtcIso };
