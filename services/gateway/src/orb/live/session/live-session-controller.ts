@@ -1054,6 +1054,11 @@ export async function handleLiveSessionStart(
       // name-aware greeting pool. LiveKit always passed this; Vertex never
       // did — that's why `firstname_len=0` showed on every Teacher pick.
       firstName,
+      // VTID-03164: forward timezone from the client envelope so the
+      // new-day-return provider can detect "first session of new calendar
+      // day in user TZ". Missing → provider suppresses with reason
+      // 'no_timezone' and falls through to wake-brief, same as before.
+      timezone: session.clientContext?.timezone ?? null,
       // wake_origin is not yet plumbed from the client envelope on
       // Vertex; default 'unknown' so the B1 policy doesn't fire the
       // push_tap nudge. When the envelope ships this field through
