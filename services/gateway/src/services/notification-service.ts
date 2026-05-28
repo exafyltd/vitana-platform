@@ -137,6 +137,16 @@ const TYPE_META: Record<string, TypeMeta> = {
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
+  // Billing lifecycle (VTID-03107) — Duolingo-style trial / cancel / win-back
+  trial_welcome:               { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_midpoint:              { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_ending_2d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_ending_1d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_cancelled_winback:     { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_winback_one_shot:      { channel: 'inapp',          priority: 'p3', category: 'system' },
+  founding_midpoint:           { channel: 'inapp',          priority: 'p2', category: 'system' },
+  founding_ending_2d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  founding_ending_1d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
   // Wallet & Business (VTID-01250)
   wallet_credits_earned:       { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
   wallet_payout_received:      { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },

@@ -49,6 +49,18 @@ import {
   getForwardingAckTimeoutMs,
 } from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
+// VTID-03107: Live AI voice quota check at session start + per-minute meter.
+import {
+  reserveVoiceQuotaAtSessionStart,
+  recordVoiceMinute,
+  triggerDowngrade,
+} from '../../../services/voice-quota-guard';
+import { recordPaywallEvent } from '../../../services/entitlement-service';
+
+// VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
+// in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
+const voiceMeterIntervals: Map<string, NodeJS.Timeout> = new Map();
+const VOICE_METER_INTERVAL_MS = 60_000; // 1 minute
 import {
   deduplicatedExtract,
   clearExtractionState,
@@ -491,6 +503,70 @@ export async function handleLiveSessionStart(
     });
   }
 
+  // VTID-03107: Live AI voice quota gate (authenticated sessions only).
+  // Anonymous sessions skip the gate (no user to bill). For authenticated
+  // users we reserve quota up front; if exhausted with degrade behavior, we
+  // allow the session to start but mark `voice_quota_exhausted` in the
+  // response meta so the frontend can flip to Standard tier mode.
+  //
+  // Failures inside the guard never block a legitimate session — they log
+  // and fall through to normal start. The cashflow guardrail is best-effort;
+  // never trade availability for metering accuracy.
+  const _earlyAuthHeader = req.headers.authorization;
+  const _earlyAuthToken =
+    _earlyAuthHeader && _earlyAuthHeader.startsWith('Bearer ')
+      ? _earlyAuthHeader.slice(7)
+      : undefined;
+  let voiceQuotaReservation: Awaited<ReturnType<typeof reserveVoiceQuotaAtSessionStart>> | null = null;
+  if (req.identity?.user_id && req.identity?.tenant_id) {
+    try {
+      voiceQuotaReservation = await reserveVoiceQuotaAtSessionStart(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        { authToken: _earlyAuthToken }
+      );
+    } catch (err: unknown) {
+      console.warn(
+        `[VTID-03107] voice quota reservation failed (failing open): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    if (
+      voiceQuotaReservation &&
+      (voiceQuotaReservation.paywall_action === 'paywall' ||
+        voiceQuotaReservation.paywall_action === 'hard_block')
+    ) {
+      // Quota exhausted AND the user's plan configures this feature as hard_block
+      // (no PAYG path open at all). Record event + return 402 with paywall body.
+      recordPaywallEvent(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        'voice_live_minutes',
+        'shown',
+        { context: 'session_start_blocked', vtid: 'VTID-03107' }
+      ).catch(() => {});
+      return res.status(402).json({
+        ok: false,
+        error: 'payment_required',
+        paywall: {
+          feature: 'voice_live_minutes',
+          tier: 'unknown',
+          quota: voiceQuotaReservation.quota,
+          used: voiceQuotaReservation.used,
+          remaining: voiceQuotaReservation.remaining,
+          reset_at: voiceQuotaReservation.reset_at,
+          credit_cost_per_unit: 0,
+          user_credit_balance: 0,
+          allowed_burn_buckets: ['purchased_credits'],
+          credit_option: null,
+          upgrade_url: '/api/v1/billing/checkout/subscription',
+          paywall_action: voiceQuotaReservation.paywall_action,
+        },
+        vtid: 'VTID-03107',
+      });
+    }
+  }
+
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang;
   console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
@@ -765,6 +841,70 @@ export async function handleLiveSessionStart(
 
   // Store session
   liveSessions.set(sessionId, session);
+
+  // VTID-03107: arm the per-minute voice meter for authenticated sessions
+  // whose quota gate is in 'allow' or 'degrade' state. 'deferred' sessions
+  // do NOT advance the meter (D36 protection). Anonymous sessions skip
+  // (no user to bill).
+  if (
+    voiceQuotaReservation &&
+    req.identity?.user_id &&
+    req.identity?.tenant_id &&
+    voiceQuotaReservation.paywall_action !== 'deferred' &&
+    voiceQuotaReservation.paywall_action !== 'hard_block' &&
+    voiceQuotaReservation.paywall_action !== 'paywall'
+  ) {
+    const meterUserId = req.identity.user_id;
+    const meterTenantId = req.identity.tenant_id;
+    const startedRemaining = voiceQuotaReservation.remaining;
+    let degradeAlreadyFired = voiceQuotaReservation.paywall_action === 'degrade';
+    const timer = setInterval(async () => {
+      const currentSession = liveSessions.get(sessionId);
+      if (!currentSession || !currentSession.active) {
+        // Session already ended; tear down ourselves as a belt-and-suspenders cleanup
+        const handle = voiceMeterIntervals.get(sessionId);
+        if (handle) {
+          clearInterval(handle);
+          voiceMeterIntervals.delete(sessionId);
+        }
+        return;
+      }
+      try {
+        const newUsed = await recordVoiceMinute(meterUserId, meterTenantId, false);
+        if (newUsed === null) return;
+        // If we've now exceeded the start-of-session remaining, the user has
+        // burned through their daily Live quota mid-call. Emit the dedicated
+        // downgrade SSE event ONCE. The frontend's OrbDegradeBanner +
+        // OrbTierBadge will flip on their own.
+        const consumed = Math.max(0, newUsed - (voiceQuotaReservation!.used));
+        if (!degradeAlreadyFired && consumed >= startedRemaining) {
+          degradeAlreadyFired = true;
+          const sseWriter = (_eventName: string, dataJson: string) => {
+            const sseResponse = liveSessions.get(sessionId)?.sseResponse;
+            if (sseResponse) {
+              try {
+                sseResponse.write(`data: ${dataJson}\n\n`);
+              } catch {
+                // SSE may have closed; non-blocking.
+              }
+            }
+          };
+          try {
+            await triggerDowngrade(meterUserId, meterTenantId, sseWriter, 'session_quota');
+          } catch (err) {
+            console.warn(
+              `[VTID-03107] triggerDowngrade failed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[VTID-03107] voice-meter tick failed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }, VOICE_METER_INTERVAL_MS);
+    voiceMeterIntervals.set(sessionId, timer);
+  }
 
   // VTID-02917 (B0d.3): wake-timeline session_start_received event
   try {
@@ -1146,6 +1286,20 @@ export async function handleLiveSessionStart(
       voice: deps.getVoiceForLang(lang),
       modalities: responseModalities,
       model: VERTEX_LIVE_MODEL,
+      // VTID-03107: voice quota snapshot at session start. Frontend reads
+      // this to know whether to display the Standard-tier badge from the
+      // get-go (start_on_standard_tier=true) and how much quota remains.
+      voice_quota: voiceQuotaReservation
+        ? {
+            tier: voiceQuotaReservation.start_on_standard_tier ? 'standard' : 'live',
+            quota: voiceQuotaReservation.quota,
+            used: voiceQuotaReservation.used,
+            remaining: voiceQuotaReservation.remaining,
+            reset_at: voiceQuotaReservation.reset_at,
+            deferred_for_vulnerability: voiceQuotaReservation.deferred_for_vulnerability,
+            paywall_action: voiceQuotaReservation.paywall_action,
+          }
+        : null,
       context_bootstrap: {
         latency_ms: contextBootstrapLatencyMs ?? null,
         context_chars: null,
@@ -1243,6 +1397,13 @@ export async function handleLiveSessionStop(
   }
 
   session.active = false;
+
+  // VTID-03107: tear down the per-minute voice meter
+  const voiceMeterHandle = voiceMeterIntervals.get(session_id);
+  if (voiceMeterHandle) {
+    clearInterval(voiceMeterHandle);
+    voiceMeterIntervals.delete(session_id);
+  }
 
   // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
   if (session.upstreamPingInterval) {
