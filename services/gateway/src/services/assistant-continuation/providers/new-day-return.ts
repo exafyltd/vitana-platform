@@ -43,6 +43,17 @@ import {
   EMPTY_OVERVIEW,
   type NewDayOverviewPayload,
 } from './new-day-overview-aggregator';
+// VTID-03167 — broad aggregator + structural prompt block (replaces the
+// Slice 2 server-composed renderer). The provider now stuffs the full
+// structural block into userFacingLine with the STRUCTURED_BLOCK_PREFIX
+// sentinel so the controller bypasses the legacy Say-exactly wrapper.
+import { gatherOverviewPayload, localHourInTz } from './new-day-overview-payload';
+import { buildNewDayOverviewBlock } from './new-day-overview-prompt';
+
+/** Sentinel prefix on userFacingLine. When present, the controller MUST
+ *  treat the line as a fully-formed structural block and NOT wrap it in
+ *  the Say-exactly directive (which only fits short verbatim openers). */
+export const STRUCTURED_BLOCK_PREFIX = '__VTID_03167_STRUCTURED_BLOCK__\n';
 
 export const NEW_DAY_RETURN_PROVIDER_KEY = 'new_day_return';
 export const NEW_DAY_RETURN_EXTRA_KEY = 'newDayReturn' as const;
@@ -506,53 +517,49 @@ export function makeNewDayReturnProvider(
         };
       }
 
-      // ---- Compose the spoken line ----
-      const localHour = localHourInTimezone(nowDate, inputs.timezone);
-      const salutation = pickSalutationKind(localHour);
-
-      // VTID-03166: pull overnight overview content (calendar passed +
-      // today's events + Vitana Index trend + Life Compass goal). All
-      // best-effort — aggregator returns EMPTY_OVERVIEW on full failure
-      // and the overview renderer falls back to a clean greeting.
-      let overview: NewDayOverviewPayload = EMPTY_OVERVIEW;
+      // ---- VTID-03167: gather broad payload, emit structural block ----
+      // No server-side sentence composition. Aggregator pulls every
+      // signal with data; the prompt-block builder hands the structured
+      // payload to Gemini with a STRUCTURAL contract for HOW to compose
+      // the multi-paragraph overview.
+      const localHour = localHourInTz(nowDate, inputs.timezone);
+      let broadPayload;
       try {
-        // Use start of last_session_date in user TZ as the lookback floor.
-        // When null, the aggregator defaults to 24h before now.
-        const lastSessionAtIso = row?.last_session_date
-          ? new Date(`${row.last_session_date}T00:00:00Z`).toISOString()
-          : null;
-        overview = await aggregateNewDayOverview({
+        broadPayload = await gatherOverviewPayload({
           supabase: inputs.supabase,
           userId: inputs.userId,
-          lastSessionAtIso,
-          todayDateIso: todayIso,
           timezone: inputs.timezone,
           now: nowDate,
+          lastSessionDateUserTz: row?.last_session_date ?? null,
         });
       } catch (err) {
         console.warn(
-          `[VTID-03166] overview aggregation failed for ${inputs.userId.slice(0, 8)} (falling back to bare greeting):`,
+          `[VTID-03167] gatherOverviewPayload threw for ${inputs.userId.slice(0, 8)}:`,
           err instanceof Error ? err.message : String(err),
         );
+        // Even on full failure, ship a minimal block so the LLM gets the
+        // salutation directive — it composes a polite warm greeting from
+        // empty payload. Better than dropping the candidate entirely.
+        broadPayload = {
+          vitana_index: null, life_compass: null,
+          calendar_today: { count: 0, next: null },
+          calendar_passed: { count: 0, most_recent: null },
+          autopilot_pending: { count: 0, top: null },
+          matches_unread: 0, messages_unread: 0,
+          reminders_today: { count: 0, next: null },
+          diary_last_7d: 0,
+          last_session_date_user_tz: row?.last_session_date ?? null,
+        };
       }
 
-      // If the overview has ANY material content, render the enriched
-      // line; otherwise fall back to the bare Slice 1 greeting.
-      const hasContent =
-        overview.calendar_passed_count > 0
-        || overview.calendar_today_count > 0
-        || overview.vitana_index_today !== null
-        || overview.life_compass_goal !== null;
-
-      const line = hasContent
-        ? renderNewDayReturnLineWithOverview(
-            { lang: inputs.lang, salutation, firstName: inputs.firstName, timezone: inputs.timezone, payload: overview },
-            rng,
-          )
-        : renderNewDayReturnLine(
-            { lang: inputs.lang, salutation, firstName: inputs.firstName },
-            rng,
-          );
+      const block = buildNewDayOverviewBlock({
+        payload: broadPayload,
+        lang: inputs.lang,
+        firstName: inputs.firstName,
+        localHour,
+        timezone: inputs.timezone,
+      });
+      const line = STRUCTURED_BLOCK_PREFIX + block;
       if (line.length === 0) {
         return {
           providerKey: NEW_DAY_RETURN_PROVIDER_KEY,
@@ -576,7 +583,7 @@ export function makeNewDayReturnProvider(
         userFacingLine: line,
         cta: { type: 'explain' },
         evidence: [
-          { kind: 'new_day_return', detail: `${todayIso}_${salutation}` },
+          { kind: 'new_day_return', detail: `${todayIso}_hour${localHour}` },
           { kind: 'last_session_date', detail: row?.last_session_date ?? 'null' },
         ],
         // Dedupe key: one new-day greeting per (user × calendar day).
