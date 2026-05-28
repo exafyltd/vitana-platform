@@ -85,3 +85,21 @@ export {
   rankBatchWithProvenance,
   type PillarWeighterStrategyResult,
 } from './strategies/pillar-weighter';
+
+// Phase D39 PR 5c (VTID-03171) — CompatibilityResolver. 15s sync
+// cache, never-throws accessor for the `decision_compatibility_score`
+// table seeded in PR 5b. Cold fallback is byte-identical to the
+// inline d39 scoreMap / compatibilityMap literals. No D39 service
+// code consumes this resolver yet — PR 5d/5e migrate the
+// d39-taste-alignment-service consumers behind this boundary.
+export {
+  getCompatibilityResolver,
+  warmCompatibilityCache,
+  configureCompatibilityResolverForTests,
+  __resetCompatibilityResolverForTests,
+  FALLBACK_MATRICES as COMPATIBILITY_FALLBACK_MATRICES,
+  type CompatibilityResolver,
+  type CompatibilityResolverTestSeed,
+  type CompatibilityMatrix,
+  type CompatibilityMatrices,
+} from './compatibility-resolver';
