@@ -68,19 +68,19 @@ describe('VTID-03171 D39 PR 5c — compatibility resolver boundary', () => {
     });
   });
 
-  describe('no D39 consumer reads the resolver yet (PR 5d/5e territory)', () => {
-    it('d39-taste-alignment-service.ts does not import the resolver', () => {
-      const src = readFileSync(D39_SERVICE_PATH, 'utf8');
-      // Forbidden: any import-like reference to the new resolver
-      // module or its public surface.
-      expect(src).not.toMatch(/from\s+['"][^'"]*compatibility-resolver['"]/);
-      expect(src).not.toMatch(/getCompatibilityResolver\s*\(/);
-      expect(src).not.toMatch(/getCompatibilityScore\s*\(/);
-      expect(src).not.toMatch(/getCompatibilityMatrix\s*\(/);
-      expect(src).not.toMatch(/warmCompatibilityCache\s*\(/);
-    });
+  describe('D39 consumer surface (per-PR contract)', () => {
+    // Originally written for PR 5c ("no D39 consumer reads the
+    // resolver yet"). Updated for PR 5d (VTID-03182) which migrated
+    // ONLY scoreSimplicityAlignment behind the resolver. The
+    // per-function vertical-proof assertions live in
+    // `d39-pr5d-simplicity-vertical-proof.test.ts`; this file keeps
+    // only the wider boundary guards that apply across the PR 5d-g
+    // sweep.
 
     it('taste-alignment routes do not import the resolver', () => {
+      // No route handler should reach the resolver directly — the
+      // service layer is the only consumer. This stays true for
+      // every PR in the 5d-g sweep.
       const src = readFileSync(D39_ROUTE_PATH, 'utf8');
       expect(src).not.toMatch(/from\s+['"][^'"]*compatibility-resolver['"]/);
       expect(src).not.toMatch(/getCompatibilityResolver\s*\(/);
@@ -88,10 +88,13 @@ describe('VTID-03171 D39 PR 5c — compatibility resolver boundary', () => {
       expect(src).not.toMatch(/getCompatibilityMatrix\s*\(/);
     });
 
-    it("d39-taste-alignment-service.ts still uses inline scoreMap literals (proves PR 5d hasn't shipped)", () => {
-      // Sanity-check the wiring hasn't drifted in some other PR while
-      // PR 5c is in flight. The vertical proof in PR 5d will flip
-      // these to resolver calls.
+    it("d39-taste-alignment-service.ts still carries inline scoreMap literals for the un-migrated dimensions (proves PR 5e hasn't shipped)", () => {
+      // PR 5d migrated only simplicity. The remaining 8 functions
+      // still own their inline literals; PR 5e will sweep them.
+      // The per-function "still has inline literal" assertions live
+      // in d39-pr5d-simplicity-vertical-proof.test.ts. This is a
+      // cross-cut sanity check that *some* inline scoreMap remains
+      // in the file.
       const src = readFileSync(D39_SERVICE_PATH, 'utf8');
       expect(src).toMatch(/const\s+scoreMap\s*:\s*Record</);
     });
