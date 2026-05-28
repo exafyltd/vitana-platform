@@ -51,8 +51,8 @@ jobs:
           # trigger created so production is untouched.
           OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A <<EOF
           BEGIN;
-          INSERT INTO public.app_users (user_id, display_name, welcome_chat_sent)
-          VALUES ('$TEST_UUID', 'CI Smoke Test User', false);
+          INSERT INTO public.app_users (user_id, tenant_id, display_name, welcome_chat_sent)
+          VALUES ('$TEST_UUID', '$TENANT_ID', 'CI Smoke Test User', false);
           INSERT INTO public.user_tenants (user_id, tenant_id, is_primary)
           VALUES ('$TEST_UUID', '$TENANT_ID', true);
           SELECT COUNT(*) AS smoke_msgs
