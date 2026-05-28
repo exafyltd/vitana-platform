@@ -49,10 +49,17 @@ jobs:
           # trigger sees the user_tenants insert and our SELECT runs in the
           # same transaction. ROLLBACK at the end removes every row the
           # trigger created so production is untouched.
-          # Note on the auth.users seed: app_users.user_id is FK→auth.users.id,
-          # so the synthetic user must exist there first. We INSERT a minimal
-          # auth.users row inside the transaction; the ROLLBACK at the end
-          # removes it. No real Supabase auth user is ever created.
+          # The seed flow inside one transaction:
+          #   1. INSERT auth.users — required because app_users.user_id is
+          #      FK → auth.users.id.
+          #   2. Supabase's on-auth-user-created trigger auto-provisions an
+          #      app_users row at step 1, so we use ON CONFLICT DO NOTHING
+          #      for our explicit INSERT, then UPDATE the row to ensure
+          #      tenant_id is set and welcome_chat_sent starts false.
+          #   3. INSERT user_tenants — this fires the trigger we're testing.
+          #   4. SELECT counts the chat_messages the trigger emitted.
+          #   5. ROLLBACK removes everything: no real auth user, no real
+          #      tenant membership, no real chat_messages.
           OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A <<EOF
           BEGIN;
           INSERT INTO auth.users (id, aud, role, email, instance_id, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -64,7 +71,11 @@ jobs:
             now(), now()
           );
           INSERT INTO public.app_users (user_id, tenant_id, display_name, welcome_chat_sent)
-          VALUES ('$TEST_UUID', '$TENANT_ID', 'CI Smoke Test User', false);
+          VALUES ('$TEST_UUID', '$TENANT_ID', 'CI Smoke Test User', false)
+          ON CONFLICT (user_id) DO NOTHING;
+          UPDATE public.app_users
+             SET tenant_id = '$TENANT_ID', welcome_chat_sent = false
+           WHERE user_id = '$TEST_UUID';
           INSERT INTO public.user_tenants (user_id, tenant_id, is_primary)
           VALUES ('$TEST_UUID', '$TENANT_ID', true);
           SELECT COUNT(*) AS smoke_msgs
