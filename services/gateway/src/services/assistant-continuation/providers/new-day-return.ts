@@ -541,10 +541,22 @@ export function makeNewDayReturnProvider(
         // salutation directive — it composes a polite warm greeting from
         // empty payload. Better than dropping the candidate entirely.
         broadPayload = {
-          vitana_index: null, life_compass: null,
+          journey: null,
+          vitana_index: {
+            state: 'not_set_up' as const, today: null, tier: null, tier_framing: null,
+            trend_7d: null, weakest_pillar: null, strongest_pillar: null,
+            balance_label: null, pillars: null,
+            projected_day_90: null, projected_day_90_tier: null,
+          },
+          life_compass: {
+            state: 'not_set' as const, primary_goal: null, category: null,
+            target_date: null, target_value: null, target_unit: null,
+            starting_value: null, set_at: null,
+            days_to_deadline: null, goal_progress_pct: null,
+          },
           calendar_today: { count: 0, next: null },
           calendar_passed: { count: 0, most_recent: null },
-          autopilot_pending: { count: 0, top: null },
+          autopilot: { state: 'none_yet' as const, today_checkpoint: null, this_week: [], pending_total: 0 },
           matches_unread: 0, messages_unread: 0,
           reminders_today: { count: 0, next: null },
           diary_last_7d: 0,
