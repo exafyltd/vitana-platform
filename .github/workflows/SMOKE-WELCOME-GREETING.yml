@@ -54,8 +54,8 @@ jobs:
             CASE
               WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
                 THEN 'FAIL: trigger welcome_chat_on_primary_membership missing'
-              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership') != 'O'
-                THEN 'FAIL: trigger present but disabled (tgenabled=' || (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership') || ')'
+              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text != 'O'
+                THEN 'FAIL: trigger present but disabled (tgenabled=' || (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text || ')'
               WHEN NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
                 THEN 'FAIL: trigger function fire_welcome_chat_on_membership missing'
               WHEN NOT (SELECT prosecdef FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
