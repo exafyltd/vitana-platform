@@ -3,6 +3,7 @@ import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
 import { getGovernanceHistory, GovernanceHistoryEvent, GOVERNANCE_EVENT_TYPES } from '../services/oasis-event-service';
+import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -28,9 +29,11 @@ interface GovernanceEvaluationResult {
 
 export class GovernanceController {
     private getTenantId(req: Request): string {
-        // Enforce tenantId from header or query, default to 'SYSTEM' for governance
-        const tenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || 'SYSTEM';
-        return tenantId;
+        const authReq = req as AuthenticatedRequest;
+        if (authReq.identity?.tenant_id) {
+            return authReq.identity.tenant_id;
+        }
+        return 'SYSTEM';
     }
 
     /**
@@ -70,13 +73,14 @@ export class GovernanceController {
 
             const supabase = getSupabase();
             if (!supabase) {
-                console.warn('[VTID-0407] Supabase not configured - allowing deploy by default');
-                return res.json({
-                    ok: true,
-                    allowed: true,
-                    level: 'L4',
-                    violations: []
-                } as GovernanceEvaluationResult);
+                console.error('[VTID-0407] Supabase not configured - BLOCKING deploy (fail-closed)');
+                return res.status(503).json({
+                    ok: false,
+                    allowed: false,
+                    level: 'L1',
+                    violations: [{ rule_id: 'SYS-INFRA', level: 'L1', message: 'Governance backend unavailable' }],
+                    error: 'Governance system unavailable'
+                });
             }
 
             // Fetch active governance rules for deploy actions
@@ -88,13 +92,13 @@ export class GovernanceController {
 
             if (rulesError) {
                 console.error('[VTID-0407] Error fetching governance rules:', rulesError);
-                // On error, allow deploy but log warning
-                return res.json({
-                    ok: true,
-                    allowed: true,
-                    level: 'L4',
-                    violations: []
-                } as GovernanceEvaluationResult);
+                return res.status(502).json({
+                    ok: false,
+                    allowed: false,
+                    level: 'L1',
+                    violations: [{ rule_id: 'SYS-DB', level: 'L1', message: 'Failed to fetch governance rules' }],
+                    error: rulesError.message
+                });
             }
 
             // Evaluate rules against the deploy context
@@ -179,12 +183,11 @@ export class GovernanceController {
 
         } catch (error: any) {
             console.error('[VTID-0407] Error in evaluateDeploy:', error);
-            // On error, allow deploy but include error info
             return res.status(500).json({
                 ok: false,
-                allowed: true, // Fail-open to not block deployments on errors
-                level: 'L4',
-                violations: [],
+                allowed: false,
+                level: 'L1',
+                violations: [{ rule_id: 'SYS-ERROR', level: 'L1', message: 'Governance evaluation failed' }],
                 error: error.message
             });
         }

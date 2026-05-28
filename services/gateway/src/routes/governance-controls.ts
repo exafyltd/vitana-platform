@@ -7,13 +7,14 @@
  * - GET /api/v1/governance/controls/:key/history - Get audit history
  *
  * HARD GOVERNANCE:
- * - Role gate: only Dev Admin or Governance Admin can modify controls
+ * - JWT authentication required on all endpoints
+ * - Write operations require exafy_admin privilege
  * - Reason is mandatory for all changes
- * - Duration is mandatory for arming (except "until manually off" for specific roles)
+ * - Duration is mandatory for arming (except "until manually off" for admins)
  * - All changes are audited and emit OASIS events
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import {
   getAllSystemControls,
@@ -21,36 +22,9 @@ import {
   updateSystemControl,
   getControlAuditHistory,
 } from '../services/system-controls-service';
+import { requireAuth, requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
-
-// =============================================================================
-// Role Validation
-// =============================================================================
-
-const ALLOWED_ROLES = ['dev_admin', 'governance_admin', 'admin', 'operator'];
-
-/**
- * Extract and validate user role from request headers.
- * In production, this would come from authenticated session.
- */
-function getUserInfo(req: Request): { userId: string; role: string } {
-  // For now, accept role from headers (would be from auth middleware in production)
-  const userId = req.headers['x-user-id']?.toString() || req.headers['x-operator-id']?.toString() || 'unknown';
-  const role = req.headers['x-user-role']?.toString() || 'operator';
-  return { userId, role };
-}
-
-/**
- * Check if user has permission to modify controls.
- * In dev environment, all authenticated users can modify controls.
- * In production, this would be restricted to specific roles.
- */
-function canModifyControls(role: string): boolean {
-  // For now, allow all authenticated users (dev environment)
-  // TODO: In production, restrict to: ['dev_admin', 'governance_admin', 'admin']
-  return ALLOWED_ROLES.includes(role.toLowerCase());
-}
 
 // =============================================================================
 // Request Schemas
@@ -70,7 +44,7 @@ const UpdateControlSchema = z.object({
  * GET /api/v1/governance/controls
  * List all system controls with their current state
  */
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const controls = await getAllSystemControls();
 
@@ -92,7 +66,7 @@ router.get('/', async (_req: Request, res: Response) => {
  * GET /api/v1/governance/controls/:key
  * Get a specific control's current state
  */
-router.get('/:key', async (req: Request, res: Response) => {
+router.get('/:key', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { key } = req.params;
     const control = await getSystemControl(key);
@@ -123,6 +97,8 @@ router.get('/:key', async (req: Request, res: Response) => {
  * POST /api/v1/governance/controls/:key
  * Update a control (arm or disarm)
  *
+ * Requires exafy_admin JWT privilege.
+ *
  * Body:
  * {
  *   "enabled": true,
@@ -131,24 +107,15 @@ router.get('/:key', async (req: Request, res: Response) => {
  * }
  *
  * Rules:
- * - enabled=true (arming) requires duration_minutes unless role is dev_admin
+ * - enabled=true (arming) requires duration_minutes unless user is exafy_admin
  * - enabled=false (disarming) does not require duration
  * - reason is always required
  */
-router.post('/:key', async (req: Request, res: Response) => {
+router.post('/:key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { key } = req.params;
-    const { userId, role } = getUserInfo(req);
-
-    // Role check
-    if (!canModifyControls(role)) {
-      console.warn(`[VTID-01181] Unauthorized control update attempt by ${userId} (role: ${role})`);
-      return res.status(403).json({
-        ok: false,
-        error: 'forbidden',
-        message: 'Only Dev Admin or Governance Admin can modify system controls',
-      });
-    }
+    const userId = req.identity!.user_id;
+    const isAdmin = req.identity!.exafy_admin;
 
     // Validate request body
     const parseResult = UpdateControlSchema.safeParse(req.body);
@@ -162,10 +129,7 @@ router.post('/:key', async (req: Request, res: Response) => {
 
     const { enabled, reason, duration_minutes } = parseResult.data;
 
-    // Additional validation: enabling requires duration (unless dev_admin/admin/operator in dev)
-    // In dev environment, allow indefinite enabling for convenience
-    const canUseIndefinite = ['dev_admin', 'admin', 'operator'].includes(role.toLowerCase());
-    if (enabled && !duration_minutes && !canUseIndefinite) {
+    if (enabled && !duration_minutes && !isAdmin) {
       return res.status(400).json({
         ok: false,
         error: 'validation_failed',
@@ -179,7 +143,7 @@ router.post('/:key', async (req: Request, res: Response) => {
       reason,
       duration_minutes: duration_minutes || null,
       updated_by: userId,
-      updated_by_role: role,
+      updated_by_role: isAdmin ? 'exafy_admin' : 'authenticated',
     });
 
     if (!result.ok) {
@@ -191,7 +155,7 @@ router.post('/:key', async (req: Request, res: Response) => {
     }
 
     console.log(
-      `[VTID-01181] Control '${key}' ${enabled ? 'ENABLED' : 'DISABLED'} by ${userId} (${role}): ${reason}`
+      `[VTID-01181] Control '${key}' ${enabled ? 'ENABLED' : 'DISABLED'} by ${userId} (exafy_admin): ${reason}`
     );
 
     return res.status(200).json({
@@ -216,7 +180,7 @@ router.post('/:key', async (req: Request, res: Response) => {
  * Query params:
  * - limit: number (default: 50, max: 200)
  */
-router.get('/:key/history', async (req: Request, res: Response) => {
+router.get('/:key/history', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { key } = req.params;
     let limit = parseInt(req.query.limit as string, 10) || 50;
