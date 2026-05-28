@@ -8,7 +8,12 @@
 --   §1  Structural checks  — tables, columns, constraints, indexes, triggers, policies all present.
 --   §2  Cascade & constraint behavior — INSERT, partial-unique, CHECK, ON DELETE CASCADE.
 --   §3  RLS — authenticated user A sees own cart, cannot see user B's cart, cannot insert into user B's cart.
---   §4  RLS — authenticated user cannot INSERT into cart_events (service_role only).
+--   §4  RLS — authenticated user cannot INSERT into cart_events; can only SELECT events for carts they own.
+--
+-- Test fixtures: a synthetic merchant + product are inserted at the head of §2
+-- so the script tests every assertion regardless of whether the target DB has
+-- any real products. All fixture rows (merchants, products, app_users, carts,
+-- cart_items, cart_events) are rolled back at the end.
 --
 -- Invocation (psql, with a service-role connection string):
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/2026-05-28_VTID_03165_universal_cart_rls_verification.sql
@@ -68,7 +73,7 @@ BEGIN
       ('cart_items','cart_items_insert_via_cart'),
       ('cart_items','cart_items_update_via_cart'),
       ('cart_items','cart_items_delete_via_cart'),
-      ('cart_events','cart_events_select_own')
+      ('cart_events','cart_events_select_via_cart')
     ) AS expected(tbl, pol),
     LATERAL (SELECT tbl || '.' || pol AS spec) s
     WHERE NOT EXISTS (
@@ -136,7 +141,7 @@ $check_triggers$;
 -- §2  Cascade & constraint behavior  (operating as service_role / superuser)
 -- ============================================================
 
--- Seed two synthetic test users in app_users (rolled back at COMMIT step)
+-- Seed two synthetic test users in app_users (rolled back at end)
 DO $seed_users$
 DECLARE
   user_a CONSTANT UUID := '00000000-0000-4000-a000-000000000a01';
@@ -146,6 +151,29 @@ BEGIN
   INSERT INTO public.app_users (user_id) VALUES (user_b) ON CONFLICT DO NOTHING;
 END
 $seed_users$;
+
+-- Seed a synthetic merchant + product so §2.3 / §2.4 / §3.2 always have a
+-- valid FK target. Without this, an empty-products staging DB would either
+-- silently skip those assertions (false-pass) or fail loudly on the FK to
+-- products(id). Fixture rows persist only inside this transaction (rolled
+-- back at end).
+DO $seed_marketplace_fixture$
+DECLARE
+  fx_merchant_id CONSTANT UUID := '00000000-0000-4000-c000-000000000c01';
+  fx_product_id  CONSTANT UUID := '00000000-0000-4000-c000-000000000c02';
+BEGIN
+  INSERT INTO public.merchants (id, name, source_network)
+    VALUES (fx_merchant_id, '__vtid_03165_test_merchant', 'manual')
+    ON CONFLICT (id) DO NOTHING;
+  INSERT INTO public.products (
+    id, merchant_id, source_network, source_product_id, title, affiliate_url
+  ) VALUES (
+    fx_product_id, fx_merchant_id, 'manual', '__vtid_03165_test_product',
+    'VTID-03165 Test Product', 'https://example.test/vtid-03165'
+  )
+  ON CONFLICT (id) DO NOTHING;
+END
+$seed_marketplace_fixture$;
 
 -- §2.1 partial-unique index: two active carts for same user must fail
 DO $partial_unique$
@@ -189,19 +217,14 @@ $status_check$;
 DO $source_surface_check$
 DECLARE
   cart_id_a UUID;
-  prod_id   UUID;
+  fx_product_id CONSTANT UUID := '00000000-0000-4000-c000-000000000c02';
   caught    BOOLEAN := FALSE;
 BEGIN
   SELECT id INTO cart_id_a FROM public.carts
    WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
-  SELECT id INTO prod_id FROM public.products LIMIT 1;
-  IF prod_id IS NULL THEN
-    RAISE NOTICE '§2.3 skipped: no products in DB to test against';
-    RETURN;
-  END IF;
   BEGIN
     INSERT INTO public.cart_items (cart_id, item_type, product_id, source_surface)
-      VALUES (cart_id_a, 'supplement', prod_id, 'sms');
+      VALUES (cart_id_a, 'supplement', fx_product_id, 'sms');
   EXCEPTION WHEN check_violation THEN
     caught := TRUE;
   END;
@@ -215,18 +238,13 @@ $source_surface_check$;
 DO $cascade_check$
 DECLARE
   cart_id_a UUID;
-  prod_id   UUID;
+  fx_product_id CONSTANT UUID := '00000000-0000-4000-c000-000000000c02';
   remaining INT;
 BEGIN
   SELECT id INTO cart_id_a FROM public.carts
    WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
-  SELECT id INTO prod_id FROM public.products LIMIT 1;
-  IF prod_id IS NULL THEN
-    RAISE NOTICE '§2.4 skipped: no products in DB to test against';
-    RETURN;
-  END IF;
   INSERT INTO public.cart_items (cart_id, item_type, product_id, source_surface)
-    VALUES (cart_id_a, 'supplement', prod_id, 'web');
+    VALUES (cart_id_a, 'supplement', fx_product_id, 'web');
   DELETE FROM public.carts WHERE id = cart_id_a;
   SELECT count(*) INTO remaining FROM public.cart_items WHERE cart_id = cart_id_a;
   IF remaining <> 0 THEN
@@ -284,16 +302,12 @@ $rls_select$;
 DO $rls_cross_insert$
 DECLARE
   cart_b UUID;
-  prod_id UUID;
+  fx_product_id CONSTANT UUID := '00000000-0000-4000-c000-000000000c02';
   caught BOOLEAN := FALSE;
 BEGIN
+  -- Resolve cart_b while still service_role (RLS would hide it from user A)
   SELECT id INTO cart_b FROM public.carts
    WHERE user_id = '00000000-0000-4000-a000-000000000b01' AND status = 'active' LIMIT 1;
-  SELECT id INTO prod_id FROM public.products LIMIT 1;
-  IF prod_id IS NULL THEN
-    RAISE NOTICE '§3.2 skipped: no products in DB';
-    RETURN;
-  END IF;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
@@ -302,7 +316,7 @@ BEGIN
 
   BEGIN
     INSERT INTO public.cart_items (cart_id, item_type, product_id, source_surface)
-      VALUES (cart_b, 'supplement', prod_id, 'web');
+      VALUES (cart_b, 'supplement', fx_product_id, 'web');
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN
     caught := TRUE;
   END;
@@ -316,7 +330,7 @@ END
 $rls_cross_insert$;
 
 -- ============================================================
--- §4  cart_events  — authenticated cannot INSERT, only SELECT own.
+-- §4  cart_events — authenticated cannot INSERT; SELECT gated by parent cart.
 -- ============================================================
 DO $events_no_insert$
 DECLARE
@@ -345,6 +359,57 @@ BEGIN
   END IF;
 END
 $events_no_insert$;
+
+-- §4.2 cart_events SELECT uses parent-cart ownership, not self user_id.
+-- We seed two events as service_role: one on user A's cart, one on user B's
+-- cart. Switching to authenticated user A, the policy must allow only the
+-- event whose parent cart belongs to user A. We also seed a spoofed row
+-- (user_id = A) on user B's cart to prove the policy ignores cart_events.user_id
+-- and trusts cart_id only.
+DO $events_select_via_parent_cart$
+DECLARE
+  cart_a UUID;
+  cart_b UUID;
+  visible_via_a INT;
+  visible_via_b INT;
+BEGIN
+  SELECT id INTO cart_a FROM public.carts
+   WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
+  SELECT id INTO cart_b FROM public.carts
+   WHERE user_id = '00000000-0000-4000-a000-000000000b01' AND status = 'active' LIMIT 1;
+
+  -- still service_role: write three rows
+  INSERT INTO public.cart_events (cart_id, user_id, event_type, event_payload)
+    VALUES (cart_a, '00000000-0000-4000-a000-000000000a01', 'cart.created', '{}'::jsonb);
+  INSERT INTO public.cart_events (cart_id, user_id, event_type, event_payload)
+    VALUES (cart_b, '00000000-0000-4000-a000-000000000b01', 'cart.created', '{}'::jsonb);
+  -- Spoof: row on user B's cart with user_id falsely set to user A.
+  -- The OLD policy (USING user_id = auth.uid()) would have leaked this row to A.
+  -- The NEW policy (parent-cart ownership) must NOT.
+  INSERT INTO public.cart_events (cart_id, user_id, event_type, event_payload)
+    VALUES (cart_b, '00000000-0000-4000-a000-000000000a01', 'cart.spoofed', '{}'::jsonb);
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
+    true);
+  SET LOCAL ROLE authenticated;
+
+  SELECT count(*) INTO visible_via_a FROM public.cart_events WHERE cart_id = cart_a;
+  SELECT count(*) INTO visible_via_b FROM public.cart_events WHERE cart_id = cart_b;
+
+  RESET ROLE;
+
+  IF visible_via_a <> 1 THEN
+    RAISE EXCEPTION
+      '§4.2 user A should see exactly 1 cart_event on own cart, saw %', visible_via_a;
+  END IF;
+  IF visible_via_b <> 0 THEN
+    RAISE EXCEPTION
+      '§4.2 RLS LEAK: user A saw % cart_events on user B''s cart (one was spoofed with user_id=A — the new parent-cart policy must reject it)',
+      visible_via_b;
+  END IF;
+END
+$events_select_via_parent_cart$;
 
 -- ============================================================
 -- All checks passed. Roll back synthetic data so the DB is unchanged.

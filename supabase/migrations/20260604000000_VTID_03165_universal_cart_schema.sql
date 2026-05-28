@@ -49,22 +49,48 @@ DO $vtid_03165_pre_guard$
 DECLARE
   unexpected TEXT;
 BEGIN
-  SELECT string_agg(table_name || '.' || column_name, ', ' ORDER BY table_name, column_name)
+  -- Per-table column check: any column present in carts / cart_items / cart_events
+  -- whose (table_name, column_name) pair is not in the expected set is treated as
+  -- drift. The earlier UNION form (one column-name set across all three tables)
+  -- would have falsely passed e.g. `cart_items.event_type` because `event_type`
+  -- belongs on cart_events.
+  SELECT string_agg(c.table_name || '.' || c.column_name, ', ' ORDER BY c.table_name, c.column_name)
     INTO unexpected
-    FROM information_schema.columns
-   WHERE table_schema = 'public'
-     AND table_name IN ('carts', 'cart_items', 'cart_events')
-     AND column_name NOT IN (
-       -- carts (shared id/created_at/updated_at + table-specific below)
-       'id', 'user_id', 'tenant_id', 'status', 'source_context', 'metadata',
-       'created_at', 'updated_at',
-       -- cart_items table-specific
-       'cart_id', 'item_type', 'product_id', 'merchant_id', 'quantity',
-       'unit_price_cents_snapshot', 'currency_snapshot',
-       'source_surface', 'source_ref',
-       -- cart_events table-specific
-       'event_type', 'event_payload'
-     );
+    FROM information_schema.columns c
+    LEFT JOIN (VALUES
+      ('carts','id'),
+      ('carts','user_id'),
+      ('carts','tenant_id'),
+      ('carts','status'),
+      ('carts','source_context'),
+      ('carts','metadata'),
+      ('carts','created_at'),
+      ('carts','updated_at'),
+      ('cart_items','id'),
+      ('cart_items','cart_id'),
+      ('cart_items','item_type'),
+      ('cart_items','product_id'),
+      ('cart_items','merchant_id'),
+      ('cart_items','quantity'),
+      ('cart_items','unit_price_cents_snapshot'),
+      ('cart_items','currency_snapshot'),
+      ('cart_items','source_surface'),
+      ('cart_items','source_ref'),
+      ('cart_items','status'),
+      ('cart_items','metadata'),
+      ('cart_items','created_at'),
+      ('cart_items','updated_at'),
+      ('cart_events','id'),
+      ('cart_events','cart_id'),
+      ('cart_events','user_id'),
+      ('cart_events','event_type'),
+      ('cart_events','event_payload'),
+      ('cart_events','created_at')
+    ) AS allowed(tbl, col)
+      ON allowed.tbl = c.table_name AND allowed.col = c.column_name
+   WHERE c.table_schema = 'public'
+     AND c.table_name IN ('carts', 'cart_items', 'cart_events')
+     AND allowed.tbl IS NULL;
 
   IF unexpected IS NOT NULL THEN
     RAISE EXCEPTION
@@ -229,6 +255,21 @@ CREATE INDEX IF NOT EXISTS cart_events_type_idx
   ON public.cart_events (event_type, created_at DESC);
 
 -- ============================================================
+-- Explicit table grants (defense-in-depth alongside RLS).
+-- Supabase configures DEFAULT PRIVILEGES on `public` for these roles, but
+-- declaring them explicitly keeps the migration self-contained and resilient
+-- to schema-level privilege drift (e.g. a future REVOKE ALL on public).
+-- cart_events stays SELECT-only for `authenticated` — gateway writes via
+-- service_role, which bypasses RLS.
+-- ============================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.carts        TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.cart_items   TO authenticated;
+GRANT SELECT                          ON public.cart_events TO authenticated;
+GRANT ALL                             ON public.carts        TO service_role;
+GRANT ALL                             ON public.cart_items   TO service_role;
+GRANT ALL                             ON public.cart_events  TO service_role;
+
+-- ============================================================
 -- updated_at trigger (shared function, two triggers)
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.universal_cart_touch_updated_at()
@@ -307,12 +348,20 @@ CREATE POLICY cart_items_delete_via_cart ON public.cart_items
   USING (EXISTS (SELECT 1 FROM public.carts c
                   WHERE c.id = cart_items.cart_id AND c.user_id = auth.uid()));
 
--- cart_events: read-own only; writes are service_role-only (no INSERT policy for
--- `authenticated` — service_role bypasses RLS, which is the only writer).
-DROP POLICY IF EXISTS cart_events_select_own ON public.cart_events;
-CREATE POLICY cart_events_select_own ON public.cart_events
+-- cart_events: SELECT is gated by parent-cart ownership — we do NOT trust
+-- cart_events.user_id alone (defense-in-depth: if service_role ever wrote the
+-- wrong user_id, the wrong user would be able to read it). The cart_id FK is
+-- the source of truth for ownership, mirroring the cart_items policy pattern.
+-- No INSERT / UPDATE / DELETE policy for `authenticated`; service_role bypasses
+-- RLS and is the only writer.
+-- Idempotent: drop both legacy and current names before recreating, so re-runs
+-- after a partial apply or a name change land cleanly.
+DROP POLICY IF EXISTS cart_events_select_via_cart ON public.cart_events;
+DROP POLICY IF EXISTS cart_events_select_own      ON public.cart_events;
+CREATE POLICY cart_events_select_via_cart ON public.cart_events
   FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
+  USING (EXISTS (SELECT 1 FROM public.carts c
+                  WHERE c.id = cart_events.cart_id AND c.user_id = auth.uid()));
 
 -- ============================================================
 -- Post-condition: required-column guard
