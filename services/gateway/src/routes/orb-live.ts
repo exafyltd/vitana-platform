@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
+// when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
+import { withLatencyTracker } from '../orb/live/latency-tracker';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
@@ -8402,7 +8405,7 @@ router.post('/stop', (req: Request, res: Response) => {
  *   "meta": { "provider": "vertex", "model": "gemini-*", "mode": "orb_voice" }
  * }
  */
-router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/chat', withLatencyTracker('text'), optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as OrbChatRequest;
 
   // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
