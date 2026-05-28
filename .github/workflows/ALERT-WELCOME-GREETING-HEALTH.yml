@@ -29,20 +29,20 @@ jobs:
         run: |
           set -euo pipefail
           OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
-          WITH window AS (SELECT now() - interval '24 hours' AS since),
+          WITH time_window AS (SELECT now() - interval '24 hours' AS since),
           stats AS (
             SELECT
               (SELECT COUNT(*) FROM public.app_users u
-                WHERE u.created_at >= (SELECT since FROM window)
+                WHERE u.created_at >= (SELECT since FROM time_window)
                   AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
               ) AS signups_24h,
               (SELECT COUNT(DISTINCT sender_id) FROM public.chat_messages
-                WHERE created_at >= (SELECT since FROM window)
+                WHERE created_at >= (SELECT since FROM time_window)
                   AND metadata->>'source' = 'welcome_chat'
                   AND metadata->>'trigger' = 'db_trigger_on_membership'
               ) AS unique_senders_24h,
               (SELECT COUNT(*) FROM public.app_users u
-                WHERE u.created_at >= (SELECT since FROM window)
+                WHERE u.created_at >= (SELECT since FROM time_window)
                   AND COALESCE(u.welcome_chat_sent, false) = false
                   AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
               ) AS unflagged_recent_users
