@@ -11335,6 +11335,9 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
  * VTID-01155: Added Live session and TTS status
  * VTID-01219: Added Neural2 voice configuration status
  */
+// public-route: ORB Live health probe is intentionally anonymous — it is hit
+// by the Command Hub System Overview dashboard and external uptime checks and
+// must not require auth.
 router.get('/health', async (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
   const memoryBridgeEnabled = isMemoryBridgeEnabled();
