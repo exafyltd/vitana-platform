@@ -66,6 +66,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
   const { vtidRouter } = require('./routes/vtid');
+  // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
+  const { rumBeaconRouter } = require('./routes/rum-beacon');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -592,6 +594,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     owner: 'presence-did-you-know',
   });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
+  // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
+  mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)

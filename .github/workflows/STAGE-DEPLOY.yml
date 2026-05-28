@@ -210,16 +210,21 @@ jobs:
 
           echo "Recording $NEXT_SWV_ID for gateway-staging@${REVISION}"
 
-          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
+          # VTID-03177 (PROFILE): upsert on swv_id so two concurrent STAGE-DEPLOY
+          # runs that race to claim the same NEXT_SWV_ID don't 409. The "max+1"
+          # increment is inherently racy; merge-duplicates makes the second
+          # writer idempotent rather than failing. Body is identical on collision
+          # so the merge is a no-op in practice.
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions?on_conflict=swv_id" \
             -H "Content-Type: application/json" \
             -H "apikey: $SUPABASE_SVC" \
             -H "Authorization: Bearer $SUPABASE_SVC" \
-            -H "Prefer: return=minimal" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
             -d "$(jq -nc \
               --arg swv "$NEXT_SWV_ID" \
               --arg sha "$SHA" \
               '{swv_id:$swv, service:"gateway-staging", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:"success", environment:"staging"}')" || \
-            echo "::warning::software_versions INSERT failed (likely IAM or schema); continuing."
+            echo "::warning::software_versions UPSERT failed (likely IAM or schema); continuing."
 
           EVENT_BODY=$(jq -nc \
             --arg sha "$SHA" \
