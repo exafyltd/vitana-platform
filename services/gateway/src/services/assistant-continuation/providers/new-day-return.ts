@@ -37,6 +37,12 @@ import type {
   ProviderResult,
   AssistantContinuation,
 } from '../types';
+import {
+  aggregateNewDayOverview,
+  formatHhmmInTz,
+  EMPTY_OVERVIEW,
+  type NewDayOverviewPayload,
+} from './new-day-overview-aggregator';
 
 export const NEW_DAY_RETURN_PROVIDER_KEY = 'new_day_return';
 export const NEW_DAY_RETURN_EXTRA_KEY = 'newDayReturn' as const;
@@ -219,6 +225,152 @@ export function renderNewDayReturnLine(
   return args.firstName ? template.replace('{name}', args.firstName) : template;
 }
 
+// ---------------------------------------------------------------------------
+// VTID-03166 — Slice 2 overview-aware renderer.
+//
+// Composes a 3-5 sentence line that includes the structured overview
+// payload (calendar deltas + Vitana Index + Life Compass). When the
+// payload is empty (no data could be fetched), falls back to the Slice
+// 1 minimal greeting so the user always gets a coherent line. Each
+// clause is short, natural, and only emitted when the underlying data
+// is actually present — no padding, no hallucinated content.
+// ---------------------------------------------------------------------------
+
+interface OverviewRenderArgs {
+  lang: string;
+  salutation: SalutationKind;
+  firstName: string | null;
+  timezone: string;
+  payload: NewDayOverviewPayload;
+}
+
+/** Compose a "since we last spoke" clause from passed calendar events. */
+function buildPassedClause(payload: NewDayOverviewPayload, lang: string, timezone: string): string {
+  if (!payload.calendar_passed_notable || payload.calendar_passed_count === 0) return '';
+  const title = payload.calendar_passed_notable.title;
+  const hhmm = formatHhmmInTz(payload.calendar_passed_notable.start_iso, timezone);
+  if (lang === 'de') {
+    return payload.calendar_passed_count > 1
+      ? `Seit unserem letzten Gespräch hattest du ${payload.calendar_passed_count} Termine, zuletzt "${title}" um ${hhmm}.`
+      : `Seit unserem letzten Gespräch hattest du "${title}" um ${hhmm}.`;
+  }
+  return payload.calendar_passed_count > 1
+    ? `Since we last spoke you had ${payload.calendar_passed_count} events; the most recent was "${title}" at ${hhmm}.`
+    : `Since we last spoke you had "${title}" at ${hhmm}.`;
+}
+
+/** Compose a "today" clause from upcoming calendar events. */
+function buildTodayClause(payload: NewDayOverviewPayload, lang: string, timezone: string): string {
+  if (!payload.calendar_today_next || payload.calendar_today_count === 0) return '';
+  const title = payload.calendar_today_next.title;
+  const hhmm = formatHhmmInTz(payload.calendar_today_next.start_iso, timezone);
+  if (lang === 'de') {
+    return payload.calendar_today_count > 1
+      ? `Heute stehen ${payload.calendar_today_count} Termine bei dir an, als Nächstes "${title}" um ${hhmm}.`
+      : `Heute steht "${title}" um ${hhmm} bei dir an.`;
+  }
+  return payload.calendar_today_count > 1
+    ? `Today you have ${payload.calendar_today_count} events lined up, next is "${title}" at ${hhmm}.`
+    : `Today you have "${title}" at ${hhmm}.`;
+}
+
+/** Compose a Vitana Index clause when the trend is material. */
+function buildIndexClause(payload: NewDayOverviewPayload, lang: string): string {
+  if (payload.vitana_index_today === null) return '';
+  // Only mention the index when the 7-day delta is material (>= 10 points either way).
+  // Otherwise the clause is noise.
+  const trend = payload.vitana_index_trend_7d ?? 0;
+  if (Math.abs(trend) < 10) return '';
+  if (lang === 'de') {
+    return trend > 0
+      ? `Dein Vitana Index liegt bei ${payload.vitana_index_today}, ${trend} Punkte mehr als vor einer Woche.`
+      : `Dein Vitana Index liegt bei ${payload.vitana_index_today}, ${Math.abs(trend)} Punkte unter der Vorwoche.`;
+  }
+  return trend > 0
+    ? `Your Vitana Index is at ${payload.vitana_index_today}, up ${trend} points from a week ago.`
+    : `Your Vitana Index is at ${payload.vitana_index_today}, down ${Math.abs(trend)} points from a week ago.`;
+}
+
+/** Compose a Life Compass through-line — only when no other content clauses fired. */
+function buildLifeCompassClause(payload: NewDayOverviewPayload, lang: string): string {
+  if (!payload.life_compass_goal) return '';
+  const goal = payload.life_compass_goal.trim();
+  if (!goal) return '';
+  if (lang === 'de') return `Dein Fokus bleibt: ${goal}.`;
+  return `Your focus stays on: ${goal}.`;
+}
+
+/** One open invitation. */
+function buildInvitation(lang: string, rng: () => number): string {
+  const pool = lang === 'de'
+    ? ['Womit fangen wir an?', 'Wo möchtest du heute anknüpfen?', 'Womit darf ich dir helfen?']
+    : ['Where would you like to start?', 'Where do you want to pick up?', 'How can I help you today?'];
+  return pickFromPool(pool, rng);
+}
+
+/**
+ * Pure renderer that pulls overview content into the spoken line.
+ * Picks clauses by priority and caps total at 3-4 sentences so the
+ * greeting stays natural. Exported for tests.
+ *
+ * Ordering rules:
+ *   1. Salutation + name (always)
+ *   2. Passed-event clause if present
+ *   3. Today's-next clause if present
+ *   4. Vitana Index clause if delta is material
+ *   5. Life Compass through-line only if NO content clauses fired
+ *   6. One open invitation (always)
+ *
+ * Hard cap: at most 2 content clauses between the salutation and the
+ * invitation. Calendar wins over Index when both fire.
+ */
+export function renderNewDayReturnLineWithOverview(
+  args: OverviewRenderArgs,
+  rng: () => number = Math.random,
+): string {
+  // 1. Salutation. Pick a short opening that does NOT include the open
+  // question so we can chain the content clauses naturally.
+  const greeting = args.firstName
+    ? (args.lang === 'de'
+        ? `${shortGreetingDe(args.salutation)}, ${args.firstName}.`
+        : `${shortGreetingEn(args.salutation)}, ${args.firstName}.`)
+    : (args.lang === 'de'
+        ? `${shortGreetingDe(args.salutation)}.`
+        : `${shortGreetingEn(args.salutation)}.`);
+
+  // 2-4. Pick at most 2 content clauses.
+  const passedClause = buildPassedClause(args.payload, args.lang, args.timezone);
+  const todayClause = buildTodayClause(args.payload, args.lang, args.timezone);
+  const indexClause = buildIndexClause(args.payload, args.lang);
+  const contentClauses: string[] = [];
+  if (passedClause) contentClauses.push(passedClause);
+  if (todayClause) contentClauses.push(todayClause);
+  if (contentClauses.length < 2 && indexClause) contentClauses.push(indexClause);
+
+  // 5. Life Compass through-line ONLY when no calendar/index content fired.
+  if (contentClauses.length === 0) {
+    const lc = buildLifeCompassClause(args.payload, args.lang);
+    if (lc) contentClauses.push(lc);
+  }
+
+  // 6. Invitation.
+  const invitation = buildInvitation(args.lang, rng);
+
+  return [greeting, ...contentClauses, invitation].filter((s) => s.length > 0).join(' ');
+}
+
+/** Short greeting (no open question — that comes from buildInvitation). */
+function shortGreetingDe(s: SalutationKind): string {
+  if (s === 'morning') return 'Guten Morgen';
+  if (s === 'afternoon') return 'Guten Tag';
+  return 'Guten Abend';
+}
+function shortGreetingEn(s: SalutationKind): string {
+  if (s === 'morning') return 'Good morning';
+  if (s === 'afternoon') return 'Good afternoon';
+  return 'Good evening';
+}
+
 function readInputs(ctx: ContinuationDecisionContext): NewDayReturnInputs | null {
   const extra = ctx.extra;
   if (!extra || typeof extra !== 'object') return null;
@@ -357,10 +509,50 @@ export function makeNewDayReturnProvider(
       // ---- Compose the spoken line ----
       const localHour = localHourInTimezone(nowDate, inputs.timezone);
       const salutation = pickSalutationKind(localHour);
-      const line = renderNewDayReturnLine(
-        { lang: inputs.lang, salutation, firstName: inputs.firstName },
-        rng,
-      );
+
+      // VTID-03166: pull overnight overview content (calendar passed +
+      // today's events + Vitana Index trend + Life Compass goal). All
+      // best-effort — aggregator returns EMPTY_OVERVIEW on full failure
+      // and the overview renderer falls back to a clean greeting.
+      let overview: NewDayOverviewPayload = EMPTY_OVERVIEW;
+      try {
+        // Use start of last_session_date in user TZ as the lookback floor.
+        // When null, the aggregator defaults to 24h before now.
+        const lastSessionAtIso = row?.last_session_date
+          ? new Date(`${row.last_session_date}T00:00:00Z`).toISOString()
+          : null;
+        overview = await aggregateNewDayOverview({
+          supabase: inputs.supabase,
+          userId: inputs.userId,
+          lastSessionAtIso,
+          todayDateIso: todayIso,
+          timezone: inputs.timezone,
+          now: nowDate,
+        });
+      } catch (err) {
+        console.warn(
+          `[VTID-03166] overview aggregation failed for ${inputs.userId.slice(0, 8)} (falling back to bare greeting):`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      // If the overview has ANY material content, render the enriched
+      // line; otherwise fall back to the bare Slice 1 greeting.
+      const hasContent =
+        overview.calendar_passed_count > 0
+        || overview.calendar_today_count > 0
+        || overview.vitana_index_today !== null
+        || overview.life_compass_goal !== null;
+
+      const line = hasContent
+        ? renderNewDayReturnLineWithOverview(
+            { lang: inputs.lang, salutation, firstName: inputs.firstName, timezone: inputs.timezone, payload: overview },
+            rng,
+          )
+        : renderNewDayReturnLine(
+            { lang: inputs.lang, salutation, firstName: inputs.firstName },
+            rng,
+          );
       if (line.length === 0) {
         return {
           providerKey: NEW_DAY_RETURN_PROVIDER_KEY,
