@@ -52,6 +52,17 @@ import {
   TEACHER_EXTRA_KEY,
   TEACHER_PROVIDER_KEY,
 } from './assistant-continuation/providers/teacher/feature-discovery-teacher';
+// VTID-03164: new-day-return provider — fires first session of a new
+// calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
+// and wake-brief (80). Suppresses cleanly when same-day repeat or when
+// the user is brand-new (is_first_session=true). Owns the rude-jump-to-
+// Teacher bug fix: a returning user's morning is no longer a capability
+// pitch.
+import {
+  makeNewDayReturnProvider,
+  NEW_DAY_RETURN_EXTRA_KEY,
+  NEW_DAY_RETURN_PROVIDER_KEY,
+} from './assistant-continuation/providers/new-day-return';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -98,6 +109,12 @@ export function ensureWakeBriefProviderRegistered(): void {
   // tables; degrades to `suppressed:empty_catalog` when missing.
   if (!defaultProviderRegistry.get(TEACHER_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeFeatureDiscoveryTeacherProvider());
+  }
+  // VTID-03164: new-day-return at priority 90. Suppresses cleanly when
+  // same-day repeat OR is_first_session=true OR no timezone, so it
+  // never blocks the other providers when the trigger does not apply.
+  if (!defaultProviderRegistry.get(NEW_DAY_RETURN_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeNewDayReturnProvider());
   }
   _registered = true;
 }
@@ -190,6 +207,15 @@ export interface DecideWakeBriefArgs {
    * absent and the Teacher's pool falls back to no-name phrases.
    */
   firstName?: string | null;
+  /**
+   * VTID-03164: IANA timezone string (e.g. 'Europe/Berlin') from the
+   * session's clientContext.timezone. Required for the new-day-return
+   * provider to detect "first session of a new calendar day in user TZ"
+   * — without it the provider suppresses. Missing for anonymous /
+   * legacy sessions; those just lose the new-day-return greeting and
+   * fall back to wake-brief, same as before this slice.
+   */
+  timezone?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +326,18 @@ export async function decideWakeBriefForSession(
         // (suppress) from cadence-class skips (still fire — different
         // capability via per-capability dedupe).
         skipReason: greetingDecision.reason,
+      };
+      // VTID-03164: forward new-day-return inputs. Provider suppresses
+      // unless trigger conditions hold (new calendar day in user TZ AND
+      // is_first_session=false AND timezone present), so passing the
+      // extra always is safe.
+      extra[NEW_DAY_RETURN_EXTRA_KEY] = {
+        supabase: args.supabase,
+        tenantId: args.tenantId,
+        userId: args.userId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+        timezone: args.timezone ?? null,
       };
     }
   }
