@@ -64,10 +64,10 @@ jobs:
           EOF
           )
 
-          # psql -t -A prints the count on its own line (no headers, no
-          # alignment). Take the LAST non-empty line as the result so any
-          # stray NOTICE noise from the trigger doesn't break parsing.
-          COUNT=$(echo "$OUTPUT" | grep -v '^$' | tail -1 | tr -d ' \r')
+          # psql -t -A prints query results plus transaction status lines
+          # (BEGIN / INSERT 0 1 / ROLLBACK). Only the SELECT yields a bare
+          # numeric line — filter for that.
+          COUNT=$(echo "$OUTPUT" | grep -E '^[0-9]+$' | head -1 | tr -d ' \r')
           echo "Smoke result: $COUNT chat_messages would have been inserted by the trigger"
 
           if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
