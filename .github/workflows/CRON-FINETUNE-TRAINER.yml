@@ -1,0 +1,69 @@
+name: Cron Finetune Trainer
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — weekly Vertex AI Custom Training
+# submitter. Reads scripts/finetune/<target>/config.yaml and invokes
+# `gcloud ai custom-jobs create`. Submission only — does NOT wait for the
+# training job to finish; trained weights are picked up later by the
+# shadow harness when they land in gs://vitana-artifacts-staging/finetune-runs/.
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC (07:00 CET winter / 08:00 CET summer).
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which fine-tune to submit'
+        required: true
+        default: 'voice-tool-router'
+        type: choice
+        options: [ voice-tool-router, intent-kind, pillar-classifier ]
+      dry_run:
+        description: 'Print gcloud command without invoking'
+        required: false
+        default: 'false'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-finetune-trainer-${{ inputs.target || 'weekly' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        target: ${{ inputs.target && fromJSON(format('[{0}]', toJSON(inputs.target))) || fromJSON('["voice-tool-router"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Submit ${{ matrix.target }}
+        working-directory: services/gateway
+        env:
+          FINETUNE_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+        run: npx tsx scripts/finetune/submit-job.ts ${{ matrix.target }}
