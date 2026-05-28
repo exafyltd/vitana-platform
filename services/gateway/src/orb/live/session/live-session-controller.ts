@@ -430,17 +430,28 @@ export async function handleLiveStreamEndTurn(
  * Trailing punctuation + quote escaping is handled inline so the
  * line can't accidentally close the prompt block.
  */
-/** Sentinel marker — used by buildLiveSystemInstruction to suppress
- *  the SHORT-GAP GREETING PHRASES pool when an override is active.
- *  Must match the literal substring exactly in both places. */
-export const VERTEX_WAKE_BRIEF_OVERRIDE_MARKER =
-  '<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>';
+/** Sentinel marker — re-exported from wake-brief-marker.ts (extracted
+ *  to break circular imports per VTID-03167). */
+export { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
+import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
+
+// VTID-03167: sentinel prefix that providers can use to ship a fully-
+// formed structural block in `userFacingLine`. When present, the
+// wake-brief override block IS the line content (already includes the
+// VERTEX_WAKE_BRIEF_OVERRIDE_MARKER + its own structural directives).
+// We do NOT wrap with the Say-exactly template in that case.
+const STRUCTURED_BLOCK_PREFIX = '__VTID_03167_STRUCTURED_BLOCK__\n';
 
 export function buildVertexWakeBriefBlock(
   line: string,
   _lang: string,
   dedupeKey: string | null,
 ): string {
+  // VTID-03167: structured-block bypass. The provider already built a
+  // complete block (with marker + structural directives). Use it as-is.
+  if (line.startsWith(STRUCTURED_BLOCK_PREFIX)) {
+    return line.slice(STRUCTURED_BLOCK_PREFIX.length);
+  }
   // Escape backticks + close-quotes so a renderer-produced line with
   // quotes in it can't break the surrounding instruction block.
   const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
