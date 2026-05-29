@@ -40,13 +40,19 @@ export async function queryOasisEvents(
 ): Promise<Array<{ id: string; created_at: string; topic: string; metadata: Record<string, unknown> | null; message: string | null }>> {
   if (!PROD_SUPABASE_URL || !PROD_SUPABASE_KEY) return [];
 
-  // PII guards encoded as PostgREST filters:
-  //   - NOT topic.like.safety.guardrail.%
-  //   - metadata->data_export_ok=eq.true
-  // The `and=(...)` wrapper lets us combine these with the caller's `where`.
-  const piiFilter = 'and=(not.topic.like.safety.guardrail.*,metadata->data_export_ok.eq.true)';
+  // PII guards encoded as PostgREST filters (independent query params,
+  // implicitly AND-ed by PostgREST). The earlier `and=(not.topic.like...,
+  // metadata->data_export_ok.eq.true)` form failed to parse — PostgREST's
+  // `and=(...)` doesn't accept the `->` JSON-path operator inside the
+  // grouping. Splitting them outside the group works on both row-level
+  // columns and JSONB paths.
+  //
+  //   1. topic must NOT match safety.guardrail.* (`%` is the SQL LIKE wildcard)
+  //   2. metadata.data_export_ok must equal true
+  const piiTopicFilter = 'topic=not.like.safety.guardrail.%25';
+  const piiConsentFilter = 'metadata->>data_export_ok=eq.true';
   const baseFilter = `created_at=gte.${encodeURIComponent(sinceIso)}`;
-  const url = `${PROD_SUPABASE_URL}/rest/v1/oasis_events?${baseFilter}&${where}&${piiFilter}&order=created_at.asc&limit=${limit}&select=id,created_at,topic,metadata,message`;
+  const url = `${PROD_SUPABASE_URL}/rest/v1/oasis_events?${baseFilter}&${where}&${piiTopicFilter}&${piiConsentFilter}&order=created_at.asc&limit=${limit}&select=id,created_at,topic,metadata,message`;
 
   const resp = await fetch(url, {
     headers: {
