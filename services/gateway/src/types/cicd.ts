@@ -879,7 +879,18 @@ export type CicdEventType =
   | 'production.canary.requested'
   | 'production.canary.started'
   | 'production.canary.promoted'
-  | 'production.canary.aborted';
+  | 'production.canary.aborted'
+  // Phase 1 W1 (VTID-03177 PROFILE): latency + eval + dataset + fine-tune telemetry.
+  // All emitted with env=staging|production via env-tagging in emitOasisEvent().
+  // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
+  | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  | 'eval.shadow.compared'          // shadow harness compared primary vs candidate model on one eval input
+  | 'eval.coverage.report'          // periodic golden-corpus coverage report (replay-runner output)
+  | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target
+  | 'finetune.training.completed'   // Vertex Custom Training job ended; metadata.job_id / .status / .target
+  | 'auto_promote.proposed'         // auto-promoter chose to bump a staging tier; metadata.from / .to
+  | 'auto_promote.rejected';        // auto-promoter declined to bump; metadata.reason
 
 export interface CicdOasisEvent {
   vtid: string;
