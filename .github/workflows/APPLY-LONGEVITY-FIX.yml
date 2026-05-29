@@ -16,6 +16,7 @@ name: Apply Longevity Stub Fix (one-shot)
 #   watch_oasis      — 1-hour watch for any new longevity failure event
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - claude/jolly-wright-mvB8z
