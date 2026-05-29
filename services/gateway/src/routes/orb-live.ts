@@ -11338,9 +11338,58 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
  * VTID-01155: Added Live session and TTS status
  * VTID-01219: Added Neural2 voice configuration status
  */
-router.get('/health', (_req: Request, res: Response) => {
+// public-route: ORB Live health probe is intentionally anonymous — it is hit
+// by the Command Hub System Overview dashboard and external uptime checks and
+// must not require auth.
+router.get('/health', async (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
   const memoryBridgeEnabled = isMemoryBridgeEnabled();
+
+  // ORB-VOICE-HEALTH-PROBE: the probe must reflect the SAME upstream-provider
+  // decision the live runtime uses (see connectToLiveAPI ~5485), not a stale
+  // module-level flag check. After L2.2b the active provider can be Vertex or
+  // (canary) LiveKit; reporting `!!(googleAuth && VERTEX_PROJECT_ID)` lied
+  // whenever the health body failed to reach the cockpit and made the System
+  // Overview ORB card show "ORB BROKEN" while sessions were succeeding.
+  //
+  // We gather the exact same inputs selectUpstreamProvider() reads at session
+  // connect time, then derive runtime readiness from the resolved provider.
+  let activeProvider: 'vertex' | 'livekit' = 'vertex';
+  let providerReason = 'default';
+  let livekitReady = false;
+  try {
+    const __vc = await getVoiceConfig();
+    const __canary = await getLiveKitCanaryConfig();
+    const __decision = selectUpstreamProvider({
+      envProviderOverride: process.env.ORB_LIVE_PROVIDER,
+      systemConfigActiveProvider: __vc.active_provider,
+      livekitCredentials: {
+        url: process.env.LIVEKIT_URL,
+        apiKey: process.env.LIVEKIT_API_KEY,
+        apiSecret: process.env.LIVEKIT_API_SECRET,
+      },
+      canary: {
+        enabled: __canary.enabled,
+        allowedTenants: __canary.allowedTenants,
+        allowedUsers: __canary.allowedUsers,
+      },
+    });
+    activeProvider = __decision.provider;
+    providerReason = __decision.reason;
+    livekitReady = __decision.livekitReady;
+  } catch (e) {
+    // Config read failure must NOT make the probe lie about being broken —
+    // default to Vertex (matches connectToLiveAPI's own fallback).
+    console.warn(`[ORB-VOICE-HEALTH] voice/canary config read failed; defaulting to vertex: ${(e as Error).message}`);
+  }
+
+  // Vertex is ready when the project is configured AND Google Auth (ADC) is
+  // available — these are the exact gates getAccessToken()/connectToLiveAPI
+  // enforce, so the probe now agrees with what real sessions experience.
+  const vertexReady = !!VERTEX_PROJECT_ID && !!googleAuth;
+  // The voice runtime is GREEN only when the ACTIVELY-SELECTED provider is
+  // ready — not when some unrelated module flag happens to be set.
+  const voiceRuntimeHealthy = activeProvider === 'vertex' ? vertexReady : livekitReady;
 
   return res.status(200).json({
     ok: true,
@@ -11378,9 +11427,25 @@ router.get('/health', (_req: Request, res: Response) => {
       enabled: true,
       version: 'D26-v1'
     },
+    // ORB-VOICE-HEALTH-PROBE: voice runtime summary — what the LIVE provider
+    // selection actually resolves to, so the cockpit can stop reading stale
+    // module flags. `healthy` here is the single source of truth for the
+    // System Overview ORB card.
+    voice_runtime: {
+      active_provider: activeProvider,
+      provider_reason: providerReason,
+      healthy: voiceRuntimeHealthy,
+      vertex_ready: vertexReady,
+      livekit_ready: livekitReady,
+    },
     // VTID-01155: Gemini Live Multimodal + TTS status
     gemini_live: {
-      enabled: !!(googleAuth && VERTEX_PROJECT_ID),
+      // ORB-VOICE-HEALTH-PROBE: was `!!(googleAuth && VERTEX_PROJECT_ID)` — a
+      // stale module-flag check that disagreed with the live runtime. Now
+      // reflects the actively-selected provider's readiness (see voice_runtime).
+      enabled: voiceRuntimeHealthy,
+      active_provider: activeProvider,
+      provider_reason: providerReason,
       vtid: 'VTID-01155',
       active_live_sessions: liveSessions.size,
       live_model: VERTEX_LIVE_MODEL,

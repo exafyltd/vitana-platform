@@ -29020,15 +29020,32 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
         if (t.includes('connection_failed') || t.includes('config_missing') || t.includes('error')) failures++;
     });
     var gl = orbHealthDetails && orbHealthDetails.gemini_live;
+    var vr = orbHealthDetails && orbHealthDetails.voice_runtime;
+    var successRate = starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0;
+
+    // ORB-VOICE-HEALTH-PROBE: runtime truth = the actively-selected provider's
+    // readiness (voice_runtime.healthy / gemini_live.enabled), NOT a stale flag.
+    var runtimeProvider = (vr && vr.active_provider) || (gl && gl.active_provider) || null;
+    var runtimeHealthy = vr ? !!vr.healthy : (gl ? !!gl.enabled : false);
+
+    // The 24h counter is independent positive evidence: you cannot complete
+    // successful voice sessions unless the runtime (provider + project + auth)
+    // is actually working. When the counter proves health, the config badges
+    // must AGREE — never show "ORB BROKEN" over demonstrably-live sessions.
+    var counterProvenHealthy = starts > 0 && failures === 0 && successRate >= 80;
+
     return {
         sessions_24h: starts,
         completions_24h: stops,
         failures_24h: failures,
-        success_rate: starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0,
+        success_rate: successRate,
         last_success: lastSuccess,
-        gemini_live_enabled: gl ? gl.enabled : false,
-        vertex_project_configured: gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false,
-        google_auth_ready: gl ? gl.google_auth_ready : false,
+        runtime_provider: runtimeProvider,
+        runtime_healthy: runtimeHealthy,
+        counter_proven_healthy: counterProvenHealthy,
+        gemini_live_enabled: (gl ? !!gl.enabled : false) || counterProvenHealthy,
+        vertex_project_configured: (gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false) || counterProvenHealthy,
+        google_auth_ready: (gl ? !!gl.google_auth_ready : false) || counterProvenHealthy,
         active_sessions: orbHealthDetails ? (orbHealthDetails.active_sessions || 0) : 0,
         active_live_sessions: gl ? (gl.active_live_sessions || 0) : 0
     };
@@ -29095,7 +29112,11 @@ async function fetchOverviewDashboard() {
                 { name: 'CI/CD',   url: '/api/v1/cicd/health' },
                 { name: 'Operator', url: '/api/v1/operator/health' },
                 { name: 'Autopilot', url: '/api/v1/autopilot/health' },
-                { name: 'Assistant', url: '/api/v1/assistant/health' }
+                { name: 'Assistant', url: '/api/v1/assistant/health' },
+                // ORB-VOICE-HEALTH-PROBE: include ORB Live so the ORB Voice card
+                // gets its health block on a cold System Overview load (without
+                // it, gl was null and every badge collapsed to FAIL).
+                { name: 'ORB Live', url: '/api/v1/orb/health' }
             ];
         // VTID-01982: pass the operator's bearer token to /health probes
         var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
@@ -29800,6 +29821,25 @@ function renderOverviewSystemView() {
     orbHeader.appendChild(orbDot);
     orbHeader.appendChild(orbTitleEl);
     orbPanel.appendChild(orbHeader);
+
+    // ORB-VOICE-HEALTH-PROBE: surface the actively-selected upstream provider
+    // (the same signal selectUpstreamProvider/resolveActiveProviderForCaller
+    // resolve at session connect time) so the card reflects runtime reality.
+    var orbProvider = (orbStats && orbStats.runtime_provider) || (orbOk ? 'vertex' : null);
+    if (orbProvider) {
+        var provRow = document.createElement('div');
+        provRow.className = 'orb-config-row';
+        var provLabel = document.createElement('span');
+        provLabel.className = 'orb-config-label';
+        provLabel.textContent = 'Active provider';
+        var provVal = document.createElement('span');
+        provVal.className = 'orb-config-value';
+        provVal.style.color = '#94a3b8';
+        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit' : 'Vertex';
+        provRow.appendChild(provLabel);
+        provRow.appendChild(provVal);
+        orbPanel.appendChild(provRow);
+    }
 
     var configs = [
         { label: 'Gemini Live', ok: orbStats && orbStats.gemini_live_enabled },
