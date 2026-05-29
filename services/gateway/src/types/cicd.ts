@@ -863,6 +863,11 @@ export type CicdEventType =
   | 'staging.deploy.failed'
   | 'staging.metrics.snapshot'
   | 'staging.revert.completed'
+  // VTID-03177 follow-up: RUN-STAGING-MIGRATION.yml emits these per run.
+  // Allowlist for /api/v1/oasis/emit extended for the `staging.migration.`
+  // prefix in the same PR.
+  | 'staging.migration.completed'
+  | 'staging.migration.failed'
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'
