@@ -29,6 +29,7 @@ import {
   notifyGChat,
 } from '../services/self-healing-snapshot-service';
 import { spawnTriageAgent } from '../services/self-healing-triage-service';
+import { probeEndpoint, isJsonHealthy } from '../services/self-healing-probe';
 import {
   HealthReport,
   ServiceStatus,
@@ -163,7 +164,7 @@ async function shouldBeginDiagnosis(endpoint: string): Promise<{ proceed: boolea
 export async function processFailingService(
   failure: ServiceStatus,
   autonomyLevel: AutonomyLevel,
-): Promise<{ action: 'created' | 'skipped' | 'escalated' | 'disabled'; vtid?: string; reason?: string }> {
+): Promise<{ action: 'created' | 'skipped' | 'escalated' | 'disabled' | 'recovered_externally'; vtid?: string; reason?: string }> {
   // Dedup + circuit breaker
   const check = await shouldBeginDiagnosis(failure.endpoint);
   if (!check.proceed) {
@@ -176,6 +177,38 @@ export async function processFailingService(
       payload: { endpoint: failure.endpoint, reason: check.reason },
     });
     return { action: 'skipped', reason: check.reason };
+  }
+
+  // Pre-probe gate (PR-B): the scanner snapshot may already be stale by the
+  // time we get here. Real-HTTP endpoints get a 5s re-probe; if they answer
+  // with 2xx + application/json, the endpoint has recovered between snapshot
+  // and processing — bail out without allocating a VTID or writing a
+  // self_healing_log row. Voice synthetic endpoints (voice-error://) are
+  // skipped here; they have their own Synthetic Voice Probe path.
+  if (!failure.endpoint.startsWith('voice-error://')) {
+    const probe = await probeEndpoint(failure.endpoint);
+    if (isJsonHealthy(probe)) {
+      await emitOasisEvent({
+        type: 'self-healing.preflight.recovered',
+        vtid: 'SYSTEM',
+        source: 'self-healing',
+        status: 'info',
+        message: `Pre-probe found ${failure.endpoint} healthy (HTTP ${probe.http_status}, ${probe.latency_ms}ms)`,
+        payload: {
+          endpoint: failure.endpoint,
+          http_status: probe.http_status,
+          latency_ms: probe.latency_ms,
+          content_type: probe.content_type,
+          probed_at: new Date().toISOString(),
+          scanner_http_status: failure.http_status,
+          scanner_response_time_ms: failure.response_time_ms,
+        },
+      });
+      return {
+        action: 'recovered_externally',
+        reason: `endpoint healthy at pre-probe (HTTP ${probe.http_status}, ${probe.latency_ms}ms)`,
+      };
+    }
   }
 
   // Level 0: Observe only — log but don't act
@@ -381,6 +414,7 @@ router.post('/report', async (req: Request, res: Response) => {
     const details: SelfHealingReportResponse['details'] = [];
     let vtidsCreated = 0;
     let skipped = 0;
+    let recoveredExternally = 0;
 
     // Known-endpoint allowlist: only process endpoints that exist in the
     // gateway route map. Test/phantom endpoints (e.g. /api/v1/final-test/health,
@@ -425,6 +459,7 @@ router.post('/report', async (req: Request, res: Response) => {
         });
         if (result.action === 'created') vtidsCreated++;
         if (result.action === 'skipped') skipped++;
+        if (result.action === 'recovered_externally') recoveredExternally++;
       } catch (err: any) {
         console.error(`[self-healing] Error processing ${failure.name}: ${err.message}`);
         details.push({
@@ -441,6 +476,7 @@ router.post('/report', async (req: Request, res: Response) => {
       processed: downServices.length,
       vtids_created: vtidsCreated,
       skipped,
+      recovered_externally: recoveredExternally,
       details,
     } satisfies SelfHealingReportResponse);
   } catch (err: any) {

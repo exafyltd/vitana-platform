@@ -72,9 +72,25 @@ jobs:
           docker push "${IMAGE_REPO}:latest"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
+      # VTID-03041: Deepgram API key plumbed via --update-env-vars instead of
+      # --update-secrets. Secret Manager would be the right home, but the WIF
+      # service account lacks `secretmanager.secrets.create` (VTID-03040 deploy
+      # failed on permission denied). --update-env-vars lets us light up the
+      # third STT fallback today without waiting on an ops permission grant;
+      # follow-up will migrate to Secret Manager once the SA has admin.
+      # GH Actions auto-masks the value in workflow logs; the key still lives
+      # in the Cloud Run revision env (visible to anyone with run.services.get).
       - name: Deploy to Cloud Run
+        env:
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
         run: |
           set -euxo pipefail
+          EXTRA_ENV=""
+          if [ -n "${DEEPGRAM_API_KEY:-}" ]; then
+            EXTRA_ENV=",DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}"
+          else
+            echo "::warning::DEEPGRAM_API_KEY GH secret not set — orb-agent will run with the 2-instance Google-only STT chain (no cross-provider fallback)."
+          fi
           gcloud run deploy "$SERVICE_NAME" \
             --image="$IMAGE" \
             --region="$GCP_REGION" \
@@ -90,8 +106,8 @@ jobs:
             --ingress=all \
             --allow-unauthenticated \
             --labels=vtid=vtid-livekit-foundation,vt_layer=aicor,vt_module=voice \
-            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest \
-            --set-env-vars=GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=global
+            --update-secrets=LIVEKIT_URL=LIVEKIT_URL:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,GATEWAY_SERVICE_TOKEN=GATEWAY_SERVICE_TOKEN:latest \
+            --set-env-vars="GATEWAY_URL=https://gateway-q74ibpv6ia-uc.a.run.app,AGENT_LOG_LEVEL=INFO,AGENT_ENABLE_WORKER=1,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,VERTEX_AI_LOCATION=us-central1,ORB_AGENT_TEXT_ONLY=false${EXTRA_ENV}"
 
       - name: Delete prior revisions (force only-latest worker connects to LiveKit)
         run: |

@@ -7,6 +7,16 @@ on:
         required: true
         default: 'supabase/migrations/20260321000000_community_user_analyzer.sql'
 
+# VTID-03174: hardened so a psql ERROR fails the step.
+# Prior to this commit, the workflow ran `psql ... -f file.sql` without
+# `-v ON_ERROR_STOP=1`, so psql exited 0 after any SQL error and the shell
+# unconditionally echoed "Migration applied successfully" — producing a
+# green workflow even when the entire transaction had rolled back. See the
+# VTID-03165 incident on 2026-05-28 where the in-migration drift guard
+# RAISEd, the BEGIN..COMMIT rolled back, no DDL applied, and the workflow
+# reported success. A green migration workflow that rolled back is worse
+# than a red one.
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -16,16 +26,23 @@ jobs:
       - name: Apply migration
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MIGRATION_FILE: ${{ inputs.migration_file }}
         run: |
+          set -euo pipefail
           sudo apt-get install -y postgresql-client > /dev/null 2>&1
-          echo "Applying migration: ${{ inputs.migration_file }}"
-          psql "$SUPABASE_DB_URL" -f "${{ inputs.migration_file }}"
+          echo "Applying migration: ${MIGRATION_FILE}"
+          # `-v ON_ERROR_STOP=1` makes psql abort + exit nonzero on the first
+          # SQL error. `set -euo pipefail` makes the bash step abort + fail
+          # the GitHub Actions step on that nonzero exit. The "successfully"
+          # marker is only emitted if both psql and bash returned 0.
+          psql -v ON_ERROR_STOP=1 -f "${MIGRATION_FILE}" "${SUPABASE_DB_URL}"
           echo "Migration applied successfully"
 
       - name: Reload PostgREST schema cache
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -euo pipefail
           echo "Reloading PostgREST schema cache..."
-          psql "$SUPABASE_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          psql -v ON_ERROR_STOP=1 -c "NOTIFY pgrst, 'reload schema';" "${SUPABASE_DB_URL}"
           echo "Schema cache reload signal sent"

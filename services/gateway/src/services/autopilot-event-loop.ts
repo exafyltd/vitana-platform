@@ -367,10 +367,32 @@ async function performTransition(
       await markCompleted(vtid);
       await markRunCompleted(vtid); // Update persistent run state
       break;
-    case 'failed':
-      const errorMsg = (event.message || event.metadata?.error || 'Unknown error') as string;
-      await markFailed(vtid, errorMsg);
+    case 'failed': {
+      // Session 4 (autopilot-error-capture): the originating failure event
+      // (worker.execution.failed, cicd.ci.failed, verification.failed, …)
+      // carries the real reason in its message/metadata. Thread it through to
+      // markFailed so the autopilot.state.failed payload no longer collapses
+      // to a hardcoded `unknown_error` trigger.
+      const meta = (event.metadata || event.meta || {}) as Record<string, unknown>;
+      const errorMsg = (event.message ||
+        meta.error_message ||
+        meta.error ||
+        'Unknown error') as string;
+      const errorCode = (meta.error_code || meta.errorCode) as string | undefined;
+      const rawStack = (meta.stack || meta.stack_prefix) as string | undefined;
+      await markFailed(vtid, errorMsg, errorCode, {
+        error_name: (meta.error_name || meta.errorName || meta.name) as
+          | string
+          | undefined,
+        error_message: (meta.error_message || meta.error) as string | undefined,
+        stack_prefix:
+          typeof rawStack === 'string'
+            ? rawStack.split('\n').slice(0, 4).join('\n')
+            : undefined,
+        source_event_type: normalizeEventType(event),
+      });
       break;
+    }
   }
 
   // Emit transition event

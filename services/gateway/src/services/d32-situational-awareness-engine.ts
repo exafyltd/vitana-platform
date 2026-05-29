@@ -27,6 +27,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-03135 (Phase B.6): time-of-day window boundaries via PolicyResolver.
+import { getPolicyResolver } from './decision-contract/policy-resolver';
+import { POLICY_KEYS } from './decision-contract/policy-keys';
 import {
   SituationalAwarenessBundle,
   SituationalAwarenessInput,
@@ -126,15 +129,39 @@ function getSupabaseClient(): SupabaseClient | null {
 // =============================================================================
 
 /**
- * Classify hour into time window
+ * Classify hour into time window.
+ *
+ * VTID-03135 (Phase B.6): the 4 boundary hours come from `decision_policy`
+ * via PolicyResolver. Literals match the seeded rows so cache-cold
+ * behaviour is byte-identical to the pre-B.6 path.
  */
 function classifyTimeWindow(hour: number): TimeWindow {
-  if (hour >= 5 && hour < 8) return 'early_morning';
-  if (hour >= 8 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  if (hour >= 21 && hour < 24) return 'late_evening';
-  return 'night'; // 0-5
+  const earlyMorningStart = getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SITUATIONAL_TIME_OF_DAY_EARLY_MORNING_START_HOUR,
+    { defaultValue: 5 },
+  );
+  const morningStart = getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SITUATIONAL_TIME_OF_DAY_MORNING_START_HOUR,
+    { defaultValue: 8 },
+  );
+  const afternoonStart = getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SITUATIONAL_TIME_OF_DAY_AFTERNOON_START_HOUR,
+    { defaultValue: 12 },
+  );
+  const eveningStart = getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SITUATIONAL_TIME_OF_DAY_EVENING_START_HOUR,
+    { defaultValue: 17 },
+  );
+  const lateEveningStart = getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SITUATIONAL_TIME_OF_DAY_LATE_EVENING_START_HOUR,
+    { defaultValue: 21 },
+  );
+  if (hour >= earlyMorningStart && hour < morningStart) return 'early_morning';
+  if (hour >= morningStart && hour < afternoonStart) return 'morning';
+  if (hour >= afternoonStart && hour < eveningStart) return 'afternoon';
+  if (hour >= eveningStart && hour < lateEveningStart) return 'evening';
+  if (hour >= lateEveningStart && hour < 24) return 'late_evening';
+  return 'night'; // pre-earlyMorningStart
 }
 
 /**

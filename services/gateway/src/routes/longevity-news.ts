@@ -11,6 +11,11 @@ import { runFetchCycle } from '../services/longevity-news-fetcher';
 const router = Router();
 const VTID = 'VTID-01900';
 
+// Sources hidden from the feed (e.g. feeds that never supply cover images,
+// leaving ugly placeholder cards). Applied at serve time so existing rows
+// are hidden too, not just newly-fetched ones.
+const EXCLUDED_SOURCES = ['Fight Aging!'];
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -49,7 +54,7 @@ async function supabaseQuery(
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const { count, error } = await supabaseQuery('news_items', { select: 'id', limit: '0' });
-    res.json({ ok: true, vtid: VTID, service: 'longevity-news', total_items: count ?? 0, feeds_configured: 28, error: error || undefined });
+    res.json({ ok: true, vtid: VTID, service: 'longevity-news', total_items: count ?? 0, feeds_configured: 27, error: error || undefined });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -75,7 +80,16 @@ router.get('/items', async (req: Request, res: Response) => {
     };
 
     if (tag) params['tags'] = `cs.{${tag}}`;
-    if (source) params['source_name'] = `eq.${source}`;
+    if (source) {
+      // Requested source is excluded -> nothing to show.
+      if (EXCLUDED_SOURCES.includes(source)) {
+        res.json({ ok: true, items: [], total: 0, page, limit, has_more: false });
+        return;
+      }
+      params['source_name'] = `eq.${source}`;
+    } else if (EXCLUDED_SOURCES.length > 0) {
+      params['source_name'] = `not.in.(${EXCLUDED_SOURCES.map((s) => `"${s}"`).join(',')})`;
+    }
     if (language) params['language'] = `eq.${language}`;
 
     if (from) params['published_at'] = `gte.${from}`;
@@ -105,7 +119,10 @@ router.get('/sources', async (_req: Request, res: Response) => {
     const { data, error } = await supabaseQuery('news_items', { select: 'source_name', order: 'source_name' });
     if (error) { res.status(500).json({ ok: false, error }); return; }
     const sourceCounts: Record<string, number> = {};
-    for (const row of (data || [])) { sourceCounts[row.source_name] = (sourceCounts[row.source_name] || 0) + 1; }
+    for (const row of (data || [])) {
+      if (EXCLUDED_SOURCES.includes(row.source_name)) continue;
+      sourceCounts[row.source_name] = (sourceCounts[row.source_name] || 0) + 1;
+    }
     const sources = Object.entries(sourceCounts).map(([name, count]) => ({ source_name: name, item_count: count }));
     res.json({ ok: true, sources });
   } catch (err: any) {

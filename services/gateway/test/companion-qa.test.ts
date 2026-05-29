@@ -520,6 +520,128 @@ describe('D. buildProactiveGuideBlock prompt content', () => {
     // OPENING SHAPE MATRIX should reference day3)
     expect(prompt).toContain('day3');
   });
+
+  // VTID-03183 — Command Hub voice surface must NOT receive the
+  // community-flavored proactive opener content. The proactive guide block
+  // (vitana-brain.ts) is what causes the voice greeting to recommend
+  // wellness/community activities; gating it on role at the caller side
+  // makes role='developer'/'admin' return an empty string so the dev_orb
+  // persona's voice_greeting_rules win.
+  test('D6: role="developer" returns EMPTY proactive guide block (no community framing)', async () => {
+    const prompt = await buildProactiveGuideBlock({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'developer',
+      channel: 'orb',
+    });
+    expect(prompt).toBe('');
+  });
+
+  test('D7: role="admin" returns EMPTY proactive guide block (no community framing)', async () => {
+    const prompt = await buildProactiveGuideBlock({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'admin',
+      channel: 'orb',
+    });
+    expect(prompt).toBe('');
+  });
+
+  test('D8: role="community" still renders the community opener (no regression)', async () => {
+    const prompt = await buildProactiveGuideBlock({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'community',
+      channel: 'orb',
+    });
+    expect(prompt).not.toBe('');
+    expect(prompt).toContain('Vitanaland is a longevity platform');
+  });
+});
+
+// =============================================================================
+// SECTION D2 — VTID-03183 — End-to-end brain pipeline must not leak community
+// framing into developer/admin sessions. THIS is the contract the user cares
+// about: the rendered system instruction sent to Gemini Live must not contain
+// the "Vitanaland is a longevity platform" / "every suggestion MUST visibly
+// connect to [longevity goal]" prose for a developer on the Command Hub.
+// =============================================================================
+
+describe('D2. VTID-03183 brain pipeline per-surface gating', () => {
+  let buildBrainSystemInstruction: any;
+  let buildLifeCompassGoalBlock: any;
+
+  beforeAll(async () => {
+    const mod = await import('../src/services/vitana-brain');
+    buildBrainSystemInstruction = mod.buildBrainSystemInstruction;
+    buildLifeCompassGoalBlock = mod.buildLifeCompassGoalBlock;
+  });
+
+  test('D2a: buildLifeCompassGoalBlock with seeded goal renders the NON-NEGOTIABLE directive (baseline)', async () => {
+    setMockData('life_compass:list', {
+      data: [{ primary_goal: 'Improve quality of life and extend lifespan', category: 'longevity' }],
+      error: null,
+    });
+    const block = await buildLifeCompassGoalBlock({ user_id: 'u1' });
+    // Sanity: when called directly with a goal row, the block renders
+    // community-flavored text. The fix is at the CALLER (vitana-brain)
+    // which must not invoke this function when role !== 'community'.
+    expect(block).toContain('NON-NEGOTIABLE');
+    expect(block).toContain('Improve quality of life and extend lifespan');
+  });
+
+  test('D2b: brain instruction for role="developer" does NOT contain longevity-platform community prose', async () => {
+    setMockData('life_compass:list', {
+      data: [{ primary_goal: 'Improve quality of life and extend lifespan', category: 'longevity' }],
+      error: null,
+    });
+    const { instruction } = await buildBrainSystemInstruction({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'developer',
+      channel: 'orb',
+    });
+    // These are the exact strings the user heard recommended back to them
+    // when they tested on Command Hub. They must NOT appear in the
+    // developer-surface instruction.
+    expect(instruction).not.toContain('Vitanaland is a longevity platform');
+    expect(instruction).not.toContain('NON-NEGOTIABLE: every suggestion');
+    expect(instruction).not.toContain('Improve quality of life and extend lifespan');
+    expect(instruction).not.toContain('PROACTIVE GUIDE RULES');
+  });
+
+  test('D2c: brain instruction for role="admin" also excludes the community prose', async () => {
+    setMockData('life_compass:list', {
+      data: [{ primary_goal: 'Improve quality of life and extend lifespan', category: 'longevity' }],
+      error: null,
+    });
+    const { instruction } = await buildBrainSystemInstruction({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'admin',
+      channel: 'orb',
+    });
+    expect(instruction).not.toContain('Vitanaland is a longevity platform');
+    expect(instruction).not.toContain('NON-NEGOTIABLE: every suggestion');
+    expect(instruction).not.toContain('PROACTIVE GUIDE RULES');
+  });
+
+  test('D2d: brain instruction for role="community" STILL renders both community blocks (no regression)', async () => {
+    setMockData('life_compass:list', {
+      data: [{ primary_goal: 'Improve quality of life and extend lifespan', category: 'longevity' }],
+      error: null,
+    });
+    const { instruction } = await buildBrainSystemInstruction({
+      user_id: 'u1',
+      tenant_id: 'tenant-1',
+      role: 'community',
+      channel: 'orb',
+    });
+    // Community surface is the unchanged-behavior contract.
+    expect(instruction).toContain('Vitanaland is a longevity platform');
+    expect(instruction).toContain('NON-NEGOTIABLE');
+    expect(instruction).toContain('PROACTIVE GUIDE RULES');
+  });
 });
 
 // =============================================================================

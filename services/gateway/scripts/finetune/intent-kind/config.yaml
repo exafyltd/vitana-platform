@@ -1,0 +1,48 @@
+# Intent-kind classifier fine-tune config — Phase 1 W1 (VTID-03179 FINETUNES)
+# Trained in W3 of the 40-day plan; ~$5k Vertex AI Custom Training.
+# Output: HF-format LoRA adapter merged with Qwen-2.5 7B base.
+
+target: intent-kind
+base_model: Qwen/Qwen2.5-7B-Instruct
+adapter_method: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+dataset:
+  gcs_prefix: gs://vitana-artifacts-staging/datasets/intent-kind/
+  format: jsonl
+  field_input: payload.signal_text
+  field_output: payload.intent_kind
+  min_rows_required: 1500
+
+training:
+  epochs: 4
+  batch_size: 8
+  learning_rate: 1.0e-4
+  warmup_steps: 75
+  gradient_accumulation_steps: 4
+  max_seq_len: 1024
+
+vertex_custom_job:
+  project: lovable-vitana-vers1
+  region: us-central1
+  display_name_prefix: intent-kind-ft
+  worker_pool:
+    machine_type: a2-highgpu-1g
+    accelerator_type: NVIDIA_TESLA_A100
+    accelerator_count: 1
+    replica_count: 1
+  container_image: us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-3.py310:latest
+  python_module: finetune.train
+  output_uri_prefix: gs://vitana-artifacts-staging/finetune-runs/intent-kind/
+
+eval:
+  golden_corpus_min_size: 50
+  primary_metric: kind_macro_f1
+  promotion_threshold: 0.88

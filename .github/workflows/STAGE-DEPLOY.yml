@@ -1,0 +1,285 @@
+# Phase 0 staging build (handoff brief P0.2 + P0.7):
+#
+# Deploys gateway-staging on every push to `main` (and on manual dispatch).
+# This workflow is INTENTIONALLY SHORT compared to EXEC-DEPLOY.yml — the
+# staging stack is exempt from VTID + governance gates so the parent
+# session's fine-tuning + brain-unification work can iterate quickly without
+# burning ledger entries on disposable commits.
+#
+# Production deploys remain governed by EXEC-DEPLOY.yml; this workflow does
+# NOT change that path.
+#
+# Three staging-specific secrets must exist in GCP Secret Manager before this
+# workflow can succeed (created in P0.1):
+#   - STAGING_SUPABASE_URL
+#   - STAGING_SUPABASE_SERVICE_ROLE_KEY
+#   - STAGING_SUPABASE_ANON_KEY
+#
+# Required workflow-level secrets (already exist for EXEC-DEPLOY):
+#   - GCP_WIF_PROVIDER
+#   - GCP_WIF_SA_EMAIL
+#   - GOOGLE_GEMINI_API_KEY (gateway needs it for Vertex/Gemini)
+#   - SUPABASE_JWT_SECRET (shared with prod — staging JWTs are signed against
+#     the same project key; for full isolation, set STAGING_SUPABASE_JWT_SECRET
+#     and switch this below.)
+#
+# Smoke gate at the end refuses to mark the deploy successful if the new
+# revision's /api/v1/admin/health doesn't report env=staging — the single
+# strongest contract we have that env-aware code (P0.3) is wired correctly.
+
+name: Stage Deploy (gateway-staging)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/gateway/**'
+      - '.github/workflows/STAGE-DEPLOY.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual staging redeploy'
+        required: false
+        default: 'manual smoke'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+  CLOUD_RUN_SERVICE: gateway-staging
+  SOURCE_PATH: services/gateway
+  ARTIFACT_IMAGE: us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/gateway-staging:latest
+
+jobs:
+  stage-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Auth to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve commit metadata
+        id: commit
+        run: |
+          SHA="${{ github.sha }}"
+          SHORT="$(git rev-parse --short=12 "$SHA")"
+          SUBJECT="$(git log -1 --pretty=%s "$SHA" | tr -d '\r')"
+          {
+            echo "sha=$SHA"
+            echo "short=$SHORT"
+            echo "subject=$SUBJECT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy gateway-staging (source build)
+        id: deploy
+        env:
+          GIT_COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -e
+          echo "Deploying ${CLOUD_RUN_SERVICE} from ${SOURCE_PATH} @ ${GIT_COMMIT_SHA:0:12}"
+
+          DEPLOY_ARGS=(
+            --source="${SOURCE_PATH}"
+            --region="${GCP_REGION}"
+            --project="${GCP_PROJECT}"
+            --platform=managed
+            --allow-unauthenticated
+            --memory=1Gi
+            --cpu=1
+            --timeout=300
+            --max-instances=1
+            --min-instances=0
+          )
+
+          # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
+          # the staging gateway needs MUST be additive — staging code is the same
+          # main branch as prod; behavior diverges only by env.
+          ENV_VARS=(
+            "VITANA_ENV=staging"
+            "ENVIRONMENT=staging"
+            "VTID_ALLOCATOR_ENABLED=true"
+            "GCP_PROJECT_ID=${GCP_PROJECT}"
+            "GIT_COMMIT_SHA=${GIT_COMMIT_SHA}"
+            "COMMIT_SHA=${GIT_COMMIT_SHA}"
+            "BUILD_INFO_MARKER=${{ steps.commit.outputs.short }}"
+          )
+
+          # Comma-joined for --set-env-vars (replaces, not merges — we want the
+          # staging env vars to be authoritative on this service).
+          ENV_VARS_JOINED=$(IFS=, ; echo "${ENV_VARS[*]}")
+
+          # Secrets: staging Supabase trio. JWT/ANON share with prod for Phase 0
+          # — the parent session's experiment exercises the platform from the
+          # same auth boundary; nothing about the JWT secret depends on the
+          # data store. (If isolation tightens later, swap to a staging-specific
+          # JWT secret created in GCP Secret Manager.)
+          SECRETS=(
+            "SUPABASE_URL=STAGING_SUPABASE_URL:latest"
+            "SUPABASE_SERVICE_ROLE=STAGING_SUPABASE_SERVICE_ROLE_KEY:latest"
+            "SUPABASE_ANON_KEY=STAGING_SUPABASE_ANON_KEY:latest"
+            "SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest"
+            "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest"
+          )
+          SECRETS_JOINED=$(IFS=, ; echo "${SECRETS[*]}")
+
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            "${DEPLOY_ARGS[@]}" \
+            --set-env-vars="${ENV_VARS_JOINED}" \
+            --set-secrets="${SECRETS_JOINED}" \
+            --quiet
+
+          URL=$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --region="${GCP_REGION}" --project="${GCP_PROJECT}" \
+            --format='value(status.url)')
+          REV=$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --region="${GCP_REGION}" --project="${GCP_PROJECT}" \
+            --format='value(status.latestReadyRevisionName)')
+
+          echo "service_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "revision=$REV" >> "$GITHUB_OUTPUT"
+          echo "Deployed: ${CLOUD_RUN_SERVICE}@${REV} → $URL"
+
+      - name: Smoke /api/v1/admin/health (env=staging required)
+        id: smoke
+        env:
+          URL: ${{ steps.deploy.outputs.service_url }}
+        run: |
+          set -e
+          echo "Smoke: $URL/api/v1/admin/health"
+          # Retry up to 6 times — staging cold-starts can take a beat.
+          for i in 1 2 3 4 5 6; do
+            BODY=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
+            if [ -n "$BODY" ]; then
+              ENV=$(echo "$BODY" | jq -r '.env // empty')
+              if [ "$ENV" = "staging" ]; then
+                echo "✓ env=staging, supabase_host=$(echo "$BODY" | jq -r '.supabase_host')"
+                exit 0
+              fi
+              echo "Smoke attempt $i: env=$ENV (expected staging). Body: $BODY"
+            else
+              echo "Smoke attempt $i: empty response"
+            fi
+            sleep 10
+          done
+          echo "::error::Staging smoke failed — /api/v1/admin/health did not return env=staging after 6 attempts"
+          exit 1
+
+      - name: Backfill software_versions + emit OASIS event (best-effort)
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+          SHORT: ${{ steps.commit.outputs.short }}
+          SUBJECT: ${{ steps.commit.outputs.subject }}
+          REVISION: ${{ steps.deploy.outputs.revision }}
+        run: |
+          # Best-effort post-deploy tracking. The actual deploy + smoke already
+          # passed before this step; missing IAM here must NOT fail the workflow.
+          # The WIF service account may not have roles/secretmanager.secretAccessor
+          # on the SUPABASE_* secrets; in that case we skip the write and rely on
+          # /api/v1/admin/health serving as the source of truth for the new revision.
+          # Also: the `cloud_run_revision` column on prod's software_versions is
+          # only present once the supabase staging branch is merged to main (the
+          # P0.4 migration is staging-only until that merge). We omit the column
+          # from the INSERT for now and put the revision name in oasis_events.metadata.
+          set +e
+          SUPABASE_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null)
+          SUPABASE_SVC=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null)
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::warning::WIF SA lacks secretmanager.versions.access for SUPABASE_URL/SUPABASE_SERVICE_ROLE — skipping post-deploy backfill. Deploy itself succeeded; see Cloud Run for the live revision."
+            exit 0
+          fi
+
+          NEXT_SWV=$(curl -fsS \
+            "$SUPABASE_URL/rest/v1/software_versions?select=swv_id&order=created_at.desc&limit=1" \
+            -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" | jq -r '.[0].swv_id // "SWV-0000"')
+          NEXT_NUM=$(( ${NEXT_SWV##SWV-} + 1 ))
+          NEXT_SWV_ID=$(printf "SWV-%04d" "$NEXT_NUM")
+
+          echo "Recording $NEXT_SWV_ID for gateway-staging@${REVISION}"
+
+          # VTID-03177 (PROFILE): upsert on swv_id so two concurrent STAGE-DEPLOY
+          # runs that race to claim the same NEXT_SWV_ID don't 409. The "max+1"
+          # increment is inherently racy; merge-duplicates makes the second
+          # writer idempotent rather than failing. Body is identical on collision
+          # so the merge is a no-op in practice.
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions?on_conflict=swv_id" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            -d "$(jq -nc \
+              --arg swv "$NEXT_SWV_ID" \
+              --arg sha "$SHA" \
+              '{swv_id:$swv, service:"gateway-staging", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:"success", environment:"staging"}')" || \
+            echo "::warning::software_versions UPSERT failed (likely IAM or schema); continuing."
+
+          EVENT_BODY=$(jq -nc \
+            --arg sha "$SHA" \
+            --arg short "$SHORT" \
+            --arg subj "$SUBJECT" \
+            --arg rev "$REVISION" \
+            --arg swv "$NEXT_SWV_ID" \
+            '{
+              id: "00000000-0000-0000-0000-000000000000",
+              vtid: "BOOTSTRAP-STAGE-DEPLOY",
+              topic: "staging.deploy.completed",
+              service: "gateway-staging",
+              role: "CICD",
+              model: "stage-deploy",
+              status: "success",
+              message: ("STAGE-DEPLOY: " + $short + " — " + $subj),
+              metadata: {
+                env: "staging",
+                git_commit: $sha,
+                cloud_run_revision: $rev,
+                swv_id: $swv,
+                workflow: "STAGE-DEPLOY.yml"
+              }
+            }' | jq 'del(.id)')
+
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" \
+            -H "Prefer: return=minimal" \
+            -d "$EVENT_BODY"
+
+          echo "✓ software_versions row + staging.deploy.completed event emitted"
+
+      - name: Emit failure event (only on workflow failure)
+        if: failure()
+        env:
+          SHA: ${{ github.sha }}
+          REVISION: ${{ steps.deploy.outputs.revision }}
+        run: |
+          set +e
+          SUPABASE_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null) || exit 0
+          SUPABASE_SVC=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null) || exit 0
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" \
+            -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg rev "$REVISION" '{
+              vtid:"BOOTSTRAP-STAGE-DEPLOY",
+              topic:"staging.deploy.failed",
+              service:"gateway-staging",
+              role:"CICD",
+              model:"stage-deploy",
+              status:"error",
+              message:("STAGE-DEPLOY failed @ " + ($sha[:7])),
+              metadata: { env:"staging", git_commit:$sha, cloud_run_revision:$rev, workflow:"STAGE-DEPLOY.yml" }
+            }')" || true

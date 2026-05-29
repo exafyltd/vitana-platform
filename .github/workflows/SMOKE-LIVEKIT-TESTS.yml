@@ -1,0 +1,128 @@
+name: Smoke — LiveKit hourly tests (manual)
+
+# VTID-03025 (Slice 1a follow-up): operator-dispatchable smoke for the
+# voice-lab livekit dry-run suite. NOT the hourly cron — that lands in
+# Slice 1b.
+#
+# Auth: fetches GATEWAY_SERVICE_TOKEN from Secret Manager via Workload
+# Identity Federation (same path Cloud Shell uses) so the call always
+# matches the gateway's runtime env. Using `secrets.GATEWAY_SERVICE_TOKEN`
+# as a GH-repo secret turned out to be out-of-sync with Secret Manager
+# (both have the same name but different values), so fetching from the
+# source of truth is the only reliable path.
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_key:
+        description: 'Restrict to a single case key (optional, e.g. life_compass_query). Leave blank for full suite.'
+        required: false
+        default: ''
+      trigger:
+        description: 'trigger field stored on the run row'
+        required: false
+        default: 'admin'
+
+concurrency:
+  group: smoke-livekit-tests
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # required for Workload Identity Federation
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # 45 cases × ~5s/case + per-case retry on flap = up to ~10min worst case.
+    # Set to 20 to give comfortable headroom as the suite grows past 50.
+    timeout-minutes: 20
+    steps:
+      - name: Authenticate to GCP via Workload Identity Federation (mint id_token)
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          # Request an OIDC id_token (not just access_token) with audience
+          # matching the gateway's Cloud Run URL. The gateway's authn gate
+          # validates this token's audience against its own URL and accepts
+          # any *.iam.gserviceaccount.com email. `gcloud auth
+          # print-identity-token --audiences=...` does NOT work on WIF
+          # external-account credentials; the auth action's `token_format:
+          # 'id_token'` is the supported path.
+          token_format: 'id_token'
+          id_token_audience: 'https://gateway-86804897789.us-central1.run.app'
+          id_token_include_email: true
+
+      - name: Run smoke with id_token
+        env:
+          GATEWAY_URL: https://gateway-86804897789.us-central1.run.app
+          CASE_KEY: ${{ inputs.case_key }}
+          TRIGGER: ${{ inputs.trigger }}
+          SERVICE_TOKEN: ${{ steps.gcp-auth.outputs.id_token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SERVICE_TOKEN:-}" ]; then
+            echo "::error::id_token output is empty — check auth step"
+            exit 1
+          fi
+
+          # Build request body
+          if [ -n "${CASE_KEY}" ]; then
+            BODY="$(jq -nc --arg t "$TRIGGER" --arg k "$CASE_KEY" '{trigger:$t,case_key:$k}')"
+          else
+            BODY="$(jq -nc --arg t "$TRIGGER" '{trigger:$t}')"
+          fi
+          echo "::group::Request body"
+          echo "$BODY"
+          echo "::endgroup::"
+
+          # Invoke /tests/run
+          echo "::group::POST /api/v1/voice-lab/tests/run"
+          HTTP_CODE=$(curl -sS -o /tmp/run.json -w '%{http_code}' \
+            -X POST "$GATEWAY_URL/api/v1/voice-lab/tests/run" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+          echo "HTTP $HTTP_CODE"
+          echo "::endgroup::"
+
+          # If the response wasn't JSON we want to see why before jq blows up.
+          if ! jq -e . /tmp/run.json >/dev/null 2>&1; then
+            echo "::error::Response is not valid JSON. Raw body:"
+            cat /tmp/run.json
+            exit 1
+          fi
+
+          echo "::group::Run summary"
+          jq '.summary // . | {run_id, total, passed, failed, errored, duration_ms, error}' /tmp/run.json
+          echo "::endgroup::"
+
+          echo "::group::Per-case results (full detail incl. error + tool_calls)"
+          jq '.summary.results[]? | {case_key, status, error, failure_reasons, tool_calls, latency_ms, instruction_chars, retried, reply_text: (.reply_text // "" | .[0:300])}' /tmp/run.json
+          echo "::endgroup::"
+
+          # Also fetch the persisted run row (proves DB writes worked)
+          RUN_ID=$(jq -r '.summary.run_id // empty' /tmp/run.json)
+          if [ -n "$RUN_ID" ]; then
+            echo "::group::GET /api/v1/voice-lab/tests/runs/$RUN_ID"
+            curl -sS "$GATEWAY_URL/api/v1/voice-lab/tests/runs/$RUN_ID" \
+              -H "Authorization: Bearer $SERVICE_TOKEN" \
+            | jq '.run, (.results[] | {case_key, status, error, failure_reasons})'
+            echo "::endgroup::"
+          fi
+
+          # Surface a clear PASS/FAIL summary for the workflow log
+          PASSED=$(jq -r '.summary.passed // 0' /tmp/run.json)
+          FAILED=$(jq -r '.summary.failed // 0' /tmp/run.json)
+          ERRORED=$(jq -r '.summary.errored // 0' /tmp/run.json)
+          TOTAL=$(jq -r '.summary.total // 0' /tmp/run.json)
+          echo "================================================="
+          echo "Smoke result: $PASSED/$TOTAL passed, $FAILED failed, $ERRORED errored"
+          echo "================================================="
+          if [ "$ERRORED" != "0" ] || [ "$TOTAL" = "0" ]; then
+            echo "::error::$ERRORED case(s) errored or run did not execute — see per-case detail above"
+            exit 1
+          fi

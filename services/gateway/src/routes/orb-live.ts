@@ -46,6 +46,22 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
+// when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
+import { withLatencyTracker } from '../orb/live/latency-tracker';
+// VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
+// never block the wake path. The recorder is best-effort by design.
+import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
+// VTID-02918 (B0d.4): wake-brief decision wiring. Side-effect import
+// registers the voice-wake-brief provider with the default registry;
+// `decideWakeBriefForSession` runs the continuation decision and emits
+// the 3 continuation_decision_* timeline events.
+import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
+// VTID-02941 (B0b-min + B2 decision integration): minimal decision-contract
+// spine. The instruction layer renders the typed contract; the compiler
+// distills. NO raw rows cross this boundary.
+import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
+import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -75,6 +91,8 @@ import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
 import { notifyUserAsync } from '../services/notification-service';
+// VTID-02857: read operator-tunable speakingRate from system_config (cached)
+import { getVoiceConfig } from '../services/voice-config';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01225-READ-FIX: Inline fact extraction for voice sessions
@@ -227,18 +245,25 @@ import { parse as parseUrl } from 'url';
 // BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) extracted constants + helpers.
 // Definitions previously inline in this file now live in the orb/ tree.
 import {
-  VAD_SILENCE_DURATION_MS_DEFAULT,
-  POST_TURN_COOLDOWN_MS,
-  SILENCE_KEEPALIVE_INTERVAL_MS,
-  SILENCE_IDLE_THRESHOLD_MS,
+  // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
+  // The literal `*_DEFAULT` / uppercase exports were retired; accessors
+  // delegate to decision_policy rows with the same byte-identical values
+  // as the previous literals (preserved as defaultValue for cache-cold
+  // safety).
+  getVadSilenceDurationMs,
+  getPostTurnCooldownMs,
+  getSilenceKeepaliveIntervalMs,
+  getSilenceIdleThresholdMs,
   SILENCE_PCM_BYTES,
   SILENCE_AUDIO_B64,
-  GREETING_RESPONSE_TIMEOUT_MS,
-  TURN_RESPONSE_TIMEOUT_MS,
-  FORWARDING_ACK_TIMEOUT_MS,
-  MAX_CONSECUTIVE_MODEL_TURNS,
-  MAX_CONSECUTIVE_TOOL_CALLS,
-  connectionIssueMessages,
+  getGreetingResponseTimeoutMs,
+  getTurnResponseTimeoutMs,
+  getForwardingAckTimeoutMs,
+  getMaxConsecutiveModelTurns,
+  getMaxConsecutiveToolCalls,
+  // VTID-03125 (Phase D.2): connection-issue apologies now resolve via
+  // PolicyResolver render-block lookup with English fallback baked in.
+  getConnectionIssueMessage,
 } from '../orb/upstream/constants';
 import {
   SHORT_GAP_GREETING_PHRASES,
@@ -251,7 +276,7 @@ const router = Router();
 // Types & Constants
 // =============================================================================
 
-interface OrbLiveSession {
+export interface OrbLiveSession {
   sessionId: string;
   tenant: string;
   role: string;
@@ -293,11 +318,12 @@ interface StopMessage {
   sessionId: string;
 }
 
-// In-memory session store (dev sandbox only)
-const sessions = new Map<string, OrbLiveSession>();
+// In-memory session store (dev sandbox only).
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `sessions` symbol used below is imported at the top of this file.
 
-// Session timeout: 30 minutes
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+// A2 (orb-live-refactor): SESSION_TIMEOUT_MS lifted to orb/live/config.ts.
+import { SESSION_TIMEOUT_MS } from '../orb/live/config';
 
 // Allowed origins (dev sandbox)
 // VTID-01226: Added Lovable dynamic origins for frontend integration
@@ -315,6 +341,11 @@ const ALLOWED_ORIGINS = [
   'https://id-preview--vitana-v1.lovable.app',
   'https://vitanaland.com',                            // Production custom domain (mobile app)
   'https://www.vitanaland.com',                        // Production custom domain (www)
+  // VTID-03000: gateway custom-domain origin. Without this, the production
+  // ORB widget on every command-hub page served from gateway.vitanaland.com
+  // gets 403 "Origin not allowed" on /orb/live/session/* — voice path
+  // completely broken for operators using the gateway custom domain.
+  'https://gateway.vitanaland.com',
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
@@ -333,8 +364,8 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/community-app[a-z0-9-]*\.us-central1\.run\.app$/,
 ];
 
-// Connection limit per IP (dev sandbox)
-const MAX_CONNECTIONS_PER_IP = 5;
+// A2 (orb-live-refactor): MAX_CONNECTIONS_PER_IP lifted to orb/live/config.ts.
+import { MAX_CONNECTIONS_PER_IP } from '../orb/live/config';
 const connectionCountByIP = new Map<string, number>();
 
 // Gemini API configuration
@@ -672,7 +703,8 @@ const orbConversations = new Map<string, OrbConversation>();
 
 // VTID-0135: Conversation timeout
 // VTID-01109: Extended from 30 minutes to 24 hours for better conversation continuity
-const CONVERSATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+// A2 (orb-live-refactor): CONVERSATION_TIMEOUT_MS lifted to orb/live/config.ts.
+import { CONVERSATION_TIMEOUT_MS } from '../orb/live/config';
 
 // =============================================================================
 // VTID-01039: ORB Session Transcript Store
@@ -716,28 +748,21 @@ const orbTranscripts = new Map<string, OrbSessionTranscript>();
 // VTID-01155: Gemini Live Multimodal Session Types & Stores
 // =============================================================================
 
-/**
- * VTID-01155: Supported languages for Live sessions and TTS
- * Voice map uses female voices per spec
- */
-const LIVE_LANGUAGE_VOICES: Record<string, string> = {
-  'en': 'Callirrhoe',
-  'de': 'Achernar',
-  'fr': 'Leda',
-  'es': 'Aoede',
-  'ar': 'Sulafat',
-  'zh': 'Laomedeia',
-  'sr': 'Vindemiatrix',
-  'ru': 'Gacrux'
-};
+// VTID-03134 (Phase D.3.b-e): LIVE_LANGUAGE_VOICES Record moved out of
+// this file. See `services/gateway/src/orb/live/voice/voice-mapping.ts`
+// for the PolicyResolver-backed accessor (`getLiveLanguageVoice`).
+// Seeded rows live under `voice.live_language.<lang>` in
+// `decision_policy`; byte-identical literal kept in voice-mapping.ts
+// as the cache-cold safety net.
 
-const SUPPORTED_LIVE_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'sr', 'ru'];
+// A2 (orb-live-refactor): SUPPORTED_LIVE_LANGUAGES lifted to orb/live/config.ts.
+import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
 
 /**
  * VTID-01155: Gemini Live session state
  * VTID-01224: Extended with identity and context fields for intelligence stack
  */
-interface GeminiLiveSession {
+export interface GeminiLiveSession {
   sessionId: string;
   lang: string;
   voiceStyle?: string;
@@ -804,6 +829,12 @@ interface GeminiLiveSession {
   // overlaps with the Google auth + WS handshake (500-1000ms) instead of
   // serializing with /live/session/start's response.
   contextReadyPromise?: Promise<void>;
+  // VTID-03101: wake-brief override block, kept on its own field so the
+  // background bootstrap promise (which unconditionally writes
+  // contextInstruction = finalContext at the end of its .then) cannot
+  // overwrite it. The WS setup-message builder concatenates BOTH fields
+  // when rendering the system_instruction.
+  wakeBriefOverrideBlock?: string;
   // VTID-01225: Transcript accumulation for Cognee extraction
   // Forwarding v2d: `persona` records WHICH persona spoke this assistant turn
   // (e.g. 'vitana' / 'devon' / 'sage' / 'atlas' / 'mira'). Without this, the
@@ -827,7 +858,7 @@ interface GeminiLiveSession {
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
   // VTID-ECHO-COOLDOWN: Timestamp when turn_complete was received.
-  // Mic audio is gated for POST_TURN_COOLDOWN_MS after this to let client-side
+  // Mic audio is gated for getPostTurnCooldownMs() after this to let client-side
   // audio playback finish draining — prevents speaker echo being picked up as input.
   turnCompleteAt: number;
   // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
@@ -853,7 +884,7 @@ interface GeminiLiveSession {
   // 10-second windows instead of per-N-chunks, reducing Supabase HTTP calls.
   lastTelemetryEmitTime: number;
   // VTID-RESPONSE-DELAY: Per-session VAD silence threshold (ms).
-  // Defaults to VAD_SILENCE_DURATION_MS_DEFAULT; can be overridden by client.
+  // Defaults to getVadSilenceDurationMs(); can be overridden by client.
   vadSilenceMs: number;
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
@@ -881,7 +912,7 @@ interface GeminiLiveSession {
   consecutiveModelTurns: number;
   // VTID-TOOLGUARD: Consecutive tool calls without audio output.
   // Gemini can enter an infinite loop calling tools without producing audio.
-  // After MAX_CONSECUTIVE_TOOL_CALLS, we stop sending function_responses
+  // After getMaxConsecutiveToolCalls(), we stop sending function_responses
   // to force the model to generate an audio response.
   consecutiveToolCalls: number;
   // VTID-ANON: Whether this is an anonymous/unauthenticated session (landing page)
@@ -925,76 +956,24 @@ interface GeminiLiveSession {
   cachedMemoryPack?: { pack: ContextPack; cachedAt: number };
 }
 
-/**
- * VTID-CONTEXT: Client environment context gathered at session start.
- * Injected into system instruction to make Vitana contextually aware.
- */
-interface ClientContext {
-  ip: string;
-  city?: string;
-  country?: string;
-  timezone?: string;
-  localTime?: string;       // e.g. "Saturday evening, 20:35"
-  timeOfDay?: string;       // morning | afternoon | evening | night
-  device?: string;          // iPhone, Android, Desktop
-  browser?: string;         // Chrome, Safari, Firefox
-  os?: string;              // iOS, Android, Windows, macOS
-  isMobile?: boolean;
-  lang?: string;            // from Accept-Language
-  referrer?: string;        // how they found us
-}
+// A1 (orb-live-refactor): client/protocol types lifted to orb/live/types.ts.
+// No behavior change — same declarations, imported from a shared module so
+// A3/A8/A9 don't have to circle back here for the wire contract. We keep
+// ClientContext as a public re-export because external modules already
+// import it from this route file.
+import type {
+  ClientContext,
+  LiveSessionStartRequest,
+  TtsRequest,
+  LiveStreamAudioChunk,
+  LiveStreamVideoFrame,
+  LiveStreamMessage,
+} from '../orb/live/types';
+export type { ClientContext } from '../orb/live/types';
 
-/**
- * VTID-01155: Live session start request
- */
-interface LiveSessionStartRequest {
-  lang: string;
-  voice_style?: string;
-  response_modalities?: string[];
-  conversation_summary?: string;
-  // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms).
-  // Allows clients to tune response latency vs. pause tolerance.
-  vad_silence_ms?: number;
-  // VTID-02020: contextual recovery — when the client is re-starting after a
-  // disconnect, it sends the last few transcript turns + the stage the user
-  // was in (idle / listening_user_speaking / thinking / speaking) so the
-  // backend can route to the contextual recovery prompt instead of the
-  // standard greeting. conversation_id is the pinned thread identifier.
-  transcript_history?: Array<{ role: 'user' | 'assistant'; text: string }>;
-  reconnect_stage?: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking';
-  conversation_id?: string;
-}
-
-/**
- * VTID-01155: TTS request body
- */
-interface TtsRequest {
-  text: string;
-  lang?: string;
-  voice_style?: string;
-}
-
-/**
- * VTID-01155: Stream message types from client
- */
-interface LiveStreamAudioChunk {
-  type: 'audio';
-  data_b64: string;
-  mime: string;  // audio/pcm;rate=16000
-}
-
-interface LiveStreamVideoFrame {
-  type: 'video';
-  source: 'screen' | 'camera';
-  data_b64: string;  // JPEG base64
-  width?: number;
-  height?: number;
-}
-
-type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
-
-// VTID-01155: In-memory Live session store
-const liveSessions = new Map<string, GeminiLiveSession>();
+// VTID-01155: In-memory Live session store.
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `liveSessions` symbol used below is imported at the top of this file.
 
 // VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
 // Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
@@ -1136,11 +1115,129 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 // VTID-01155: Vertex AI Live API configuration
 // Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
 // Fallback to hardcoded project ID for Cloud Run deployments.
-const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
+// A2 (orb-live-refactor): VERTEX_PROJECT_ID + VERTEX_LOCATION lifted to orb/live/config.ts.
+import { VERTEX_PROJECT_ID, VERTEX_LOCATION } from '../orb/live/config';
+// A1 (orb-live-refactor): VERTEX_LIVE_MODEL + VERTEX_TTS_MODEL lifted to
+// orb/live/protocol.ts. Same values, same callers; the constants now live
+// in a shared module so A3/A7/A9 don't have to re-declare them.
+import { VERTEX_LIVE_MODEL, VERTEX_TTS_MODEL } from '../orb/live/protocol';
+// A9.1 (orb-live-refactor / VTID-02957): WebSocket transport attach lifted
+// to orb/live/transport/websocket-handler.ts. `initializeOrbWebSocket`
+// below now delegates the WSS construction + connection dispatch to the
+// new module. Wire protocol byte-for-byte identical; mount path unchanged.
+import { mountOrbWebSocketTransport } from '../orb/live/transport/websocket-handler';
+// A9.2 (orb-live-refactor / VTID-02958): SSE transport helpers lifted to
+// orb/live/transport/sse-handler.ts. The two SSE upgrade points below
+// (`GET /orb/live`, `GET /orb/live/stream`) call attachSseHeaders +
+// writeSseEvent + startSseHeartbeat. Wire format byte-for-byte identical:
+// 4 SSE headers + flushHeaders, `data: ${JSON}\n\n` events, 10 s data
+// heartbeat (NOT an SSE comment — that's the legacy [VTID-HEARTBEAT-FIX]).
+// Session-lifecycle (session.sseResponse = res, context-pack rebuild,
+// upstream WS connect, transcript extract on disconnect) stays here and
+// moves under A8.
+import {
+  attachSseHeaders,
+  writeSseEvent,
+  startSseHeartbeat,
+} from '../orb/live/transport/sse-handler';
+// A8.1 (orb-live-refactor / VTID-02959): session registries lifted to
+// orb/live/session/live-session-registry.ts. Same Map instances, same
+// identity — only the declaration location moves. orb-live.ts continues
+// to mutate `sessions`, `liveSessions`, `wsClientSessions` in place;
+// A8.2 + A8.3 lift the lifecycle methods that operate on these Maps.
+import {
+  sessions,
+  liveSessions,
+  wsClientSessions,
+} from '../orb/live/session/live-session-registry';
+// A8.2 (orb-live-refactor / VTID-02961): session lifecycle helpers +
+// smallest session-action handler lifted into the controller module.
+// A8.2.1 (VTID-02962): `/live/session/start` handler also lifted into the
+// controller; orb-live.ts configures the deps bag with all locals the
+// lifted handlers need at module-init below.
+import {
+  configureLiveSessionController,
+  cleanupExpiredSessions,
+  cleanupWsSession,
+  handleLiveStreamEndTurn,
+  handleLiveSessionStart,
+  handleLiveSessionStop,
+  handleLiveStreamSend,
+} from '../orb/live/session/live-session-controller';
+// A8.3a.2 (VTID-02968): upstream Live message-handler body lifted to
+// orb/live/session/upstream-message-handler.ts. Factory binds the
+// connectToLiveAPI Promise-closure state (setupComplete / connectionTimeout
+// / resolve) via onSetupComplete + isSetupComplete callbacks, and forwards
+// every orb-live.ts-local helper through the deps bag.
+import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-message-handler';
+// VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
+// LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
+import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
+// VTID-03134 (Phase D.3.b-e): voice mapping table accessors.
+import {
+  getLiveLanguageVoice,
+  getGeminiTtsVoice,
+  getNeural2TtsVoice,
+  getNeural2EnabledLanguages,
+  isNeural2EnabledFor,
+} from '../orb/live/voice/voice-mapping';
+// A8.3b.1 (VTID-02971): connectToLiveAPI now uses the A7 UpstreamLiveClient
+// boundary via VertexLiveClient. The orb-specific persona/tools/context
+// envelope is supplied through the new `customSetupMessage` option so the
+// payload remains byte-for-byte identical to the pre-A8.3b.1 path.
+// A8.3b.2 will rename / remove this adapter; for now it remains the active
+// call path so frontends + transparent reconnect see no behavior change.
+import { VertexLiveClient } from '../orb/live/upstream/vertex-live-client';
+// L1 (VTID-02976): provider-selection plumbing for the upstream live client.
+// Pure selector — `connectToLiveAPI` reads env + voice.active_provider, then
+// asks the selector which provider to use, then emits OASIS events for the
+// decision. L1 always pins to Vertex; L2 (canary) will honor LiveKit.
+import {
+  selectUpstreamProvider,
+  type UpstreamSelectionDecision,
+} from '../orb/live/upstream/upstream-provider-selector';
+// L2.1 (VTID-02980): LiveKit internal-canary config reader. Reads
+// `ORB_LIVEKIT_CANARY_ENABLED` env + `voice.livekit_canary_enabled`/
+// `voice.livekit_canary_allowlist` system_config rows. NEVER throws.
+import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
+// NOTE: `getVoiceConfig` is already imported above (line ~92).
+// A3 (orb-live-refactor): system instruction builder + its private helpers
+// (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
+// TemporalBucket type) lifted to orb/live/instruction/live-system-instruction.ts.
+// No behavior change. The characterization tests from A0.1 + A0.2 verify
+// the rendered prompt + bucket logic match byte-for-byte.
+//
+// Re-exported here so external callers that import from this route file
+// (including the A0.1 + A0.2 characterization test suites) continue to
+// resolve the same symbols.
+import {
+  buildLiveSystemInstruction,
+  describeTimeSince,
+  describeRoute,
+} from '../orb/live/instruction/live-system-instruction';
+export {
+  buildLiveSystemInstruction,
+  describeTimeSince,
+  describeRoute,
+} from '../orb/live/instruction/live-system-instruction';
+// A5 (orb-live-refactor): buildLiveApiTools lifted to orb/live/tools/live-tool-catalog.ts.
+// Same function, same callers, same admin-tool injection. Zero behavior change.
+// Re-exported here so external callers (including the A0.1 tool-catalog
+// characterization test) continue to resolve from this route file.
+import { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
+export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
+// VTID-03112 (T1): Teacher Mode block builder. Injected into the Vertex
+// system_instruction when wakeBriefDecision picked the Teacher AND the
+// content resolver succeeded. Drives multi-turn teaching via prompt +
+// tools rather than a TS-side state machine.
+import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
+// A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
+// lifted navigator handler. orb-live.ts keeps compat shims that build
+// the typed views and forward to handlers under orb/live/tools/handlers/.
+import { buildSessionContext } from '../orb/live/session/session-context';
+import { makeSessionMutator } from '../orb/live/session/session-mutator';
+import { getCurrentScreenHandler } from '../orb/live/tools/handlers/navigator';
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
-const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
 // Uses ADC (Application Default Credentials) - automatic on Cloud Run
@@ -1153,39 +1250,12 @@ try {
 }
 
 // VTID-01155: Gemini TTS voice mapping for each language
-// Uses Google Cloud TTS with Gemini model
-const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'en': { name: 'Kore', languageCode: 'en-US' },
-  'de': { name: 'Kore', languageCode: 'de-DE' },
-  'fr': { name: 'Kore', languageCode: 'fr-FR' },
-  'es': { name: 'Kore', languageCode: 'es-ES' },
-  'ar': { name: 'Kore', languageCode: 'ar-XA' },
-  'zh': { name: 'Kore', languageCode: 'cmn-CN' },
-  'sr': { name: 'Kore', languageCode: 'sr-RS' },
-  'ru': { name: 'Kore', languageCode: 'ru-RU' }
-};
-
-// VTID-01219: TTS voices for ALL languages
-// Neural2 voices provide lower latency and more natural speech synthesis
-// Gemini TTS "Kore" voice DOES NOT WORK due to @google-cloud/text-to-speech
-// library stripping modelName field during protobuf serialization.
-// Female voices selected per specification
-// Neural2 available: de, en, fr, es
-// WaveNet fallback: ar, zh, ru (Neural2 not available)
-// Standard fallback: sr (neither Neural2 nor WaveNet available)
-const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German - Neural2
-  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English - Neural2
-  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French - Neural2
-  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish - Neural2
-  'ar': { name: 'ar-XA-Wavenet-D', languageCode: 'ar-XA' },  // Female Arabic - WaveNet (Neural2 N/A)
-  'zh': { name: 'cmn-CN-Wavenet-A', languageCode: 'cmn-CN' }, // Female Chinese - WaveNet (Neural2 N/A)
-  'ru': { name: 'ru-RU-Wavenet-A', languageCode: 'ru-RU' },  // Female Russian - WaveNet (Neural2 N/A)
-  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian - Standard (Neural2/WaveNet N/A)
-};
-
-// ALL languages use best available voice (Neural2 > WaveNet > Standard)
-const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
+// VTID-03134 (Phase D.3.b-e): GEMINI_TTS_VOICES + NEURAL2_TTS_VOICES +
+// NEURAL2_ENABLED_LANGUAGES moved to
+// `services/gateway/src/orb/live/voice/voice-mapping.ts`. Per-lang rows
+// seeded under `voice.gemini_tts.<lang>`, `voice.neural2_tts.<lang>`,
+// `voice.neural2.enabled_languages`. Byte-identical fallbacks retained
+// in the accessor module for cache-cold safety.
 
 // =============================================================================
 // VTID-01219: Gemini Live API WebSocket Implementation
@@ -1243,20 +1313,12 @@ async function getAccessToken(): Promise<string> {
   return tokenResponse.token;
 }
 
-/**
- * VTID-01219: Live API voice names (Vertex AI voices)
- * These are different from Cloud TTS voices
- */
-const LIVE_API_VOICES: Record<string, string> = {
-  'en': 'Aoede',    // English - warm, clear
-  'de': 'Kore',     // German
-  'fr': 'Charon',   // French
-  'es': 'Fenrir',   // Spanish
-  'ar': 'Aoede',    // Arabic - fallback to English voice
-  'zh': 'Kore',     // Chinese - fallback
-  'ru': 'Aoede',    // Russian - fallback
-  'sr': 'Aoede'     // Serbian - fallback
-};
+// VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
+// into a `decision_policy`-backed accessor at
+// services/gateway/src/orb/live/voice/live-api-voice.ts. Each row now
+// carries `{voice_name, fallback_lang}` so a non-native fallback emits
+// telemetry on first use per (lang, fallback_lang) — closes the
+// previously-silent "Arabic → English Aoede" audit finding.
 
 // VTID-02651: persona voice IDs and greetings are now data-driven from
 // agent_personas (loaded by services/persona-registry.ts). Adding a new
@@ -1365,7 +1427,7 @@ const LIVE_CONTEXT_CONFIG = {
 // any agent can discuss any ticket; only action is scoped via the per-ticket
 // `owner` field. Time-to-resolution is the explicit KPI.
 
-async function fetchSpecialistContextSection(userId: string | null | undefined): Promise<string> {
+export async function fetchSpecialistContextSection(userId: string | null | undefined): Promise<string> {
   if (!userId) return '';
   try {
     const url = process.env.SUPABASE_URL!;
@@ -1460,7 +1522,7 @@ function formatSpecialistContextSection(ctx: any): string {
 // Without this, every new agent restarts cold with "what can I do for you?"
 // and the user has to repeat themselves — the exact failure the user just
 // reported. Cap at last 12 turns so the prompt doesn't bloat.
-function buildTranscriptSection(
+export function buildTranscriptSection(
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }> | undefined,
   fromPersona: string,
   targetPersona?: string,
@@ -1647,7 +1709,7 @@ function buildSpecialistTurnPhaseBlock(firstTurnDelivered: boolean): string {
   ].join('\n');
 }
 
-function buildSpecialistLanguageDirective(lang: string | undefined): string {
+export function buildSpecialistLanguageDirective(lang: string | undefined): string {
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
     ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
@@ -1680,7 +1742,7 @@ function buildGateInputFromTranscript(
   return userTurns.join(' \n ');
 }
 
-function buildPersonaBehavioralRule(personaKey: string): string {
+export function buildPersonaBehavioralRule(personaKey: string): string {
   const isSpecialist = personaKey !== '' && personaKey !== 'vitana';
   const lines: string[] = [];
 
@@ -1798,7 +1860,10 @@ function buildPersonaBehavioralRule(personaKey: string): string {
   return lines.join('\n');
 }
 
-async function buildBootstrapContextPack(
+// VTID-03025: exported so the voice-lab dry-run evaluator can mirror the
+// exact bootstrap-context fetch the live session uses. No behavior change —
+// only the visibility modifier was added.
+export async function buildBootstrapContextPack(
   identity: SupabaseIdentity,
   sessionId: string
 ): Promise<{
@@ -1889,1846 +1954,6 @@ async function buildBootstrapContextPack(
       skippedReason: `error: ${err.message}`,
     };
   }
-}
-
-/**
- * VTID-01224: Build Live API tool declarations for function calling
- * These tools enable dynamic context retrieval during the conversation
- *
- * VTID-NAV: Mode parameter — anonymous sessions get a narrow allowlist
- * (navigator_consult + navigate_to_screen) so onboarding visitors can be
- * guided to public destinations like the Maxina portal. Authenticated
- * sessions get the full set including memory/knowledge/event search.
- */
-function buildLiveApiTools(
-  mode: 'anonymous' | 'authenticated' = 'authenticated',
-  currentRoute?: string,
-  activeRole?: string,
-): object[] {
-  const navigatorTools: any[] = [
-    {
-      name: 'get_current_screen',
-      description: [
-        'Return the screen the user is CURRENTLY looking at, as a fresh live',
-        'lookup. Always call this tool when the user asks any variation of:',
-        '  "where am I?", "which screen is this?", "what page am I on?",',
-        '  "what am I looking at?", "wo bin ich?", "welcher Bildschirm ist das?".',
-        '',
-        'You should also call it after you have just navigated via',
-        'navigate_to_screen if the user asks a follow-up about "this page" —',
-        'the in-memory location is updated immediately after navigation so',
-        'this tool always reflects the freshest screen.',
-        '',
-        'The result contains:',
-        '  - title: the friendly screen title (e.g. "Events & Meetups")',
-        '  - route: the raw URL path (do NOT speak this out loud)',
-        '  - description: a short description of what the screen is for',
-        '  - category: the section of the app (community, health, wallet, ...)',
-        '',
-        'When answering, speak ONLY the title and the short description in',
-        'natural language. Never read the route aloud. If the tool returns',
-        '"unknown", tell the user you can see they\'re in the Vitana app but',
-        'not which specific screen, and ask them what they\'d like to do.',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    },
-    {
-      name: 'navigate',
-      description: [
-        'Guide the user to the right screen in the Vitana platform. Call this',
-        'tool whenever the user wants to go somewhere, find a feature, learn',
-        'how to do something, or mentions any screen, page, section, or area',
-        'of the app — even indirectly.',
-        '',
-        'You do NOT need to know which screen to send them to. Just pass the',
-        'user\'s words and the backend will find the right destination, search',
-        'the knowledge base for how-to guidance, and handle the redirect.',
-        '',
-        'WHEN TO CALL:',
-        '- "open my profile" / "open my wallet" / "open my inbox"',
-        '- "where are the podcasts" / "show me my health data"',
-        '- "I want to set up a business" / "how do I track my biology?"',
-        '- "open the screen with music" / "where is my diary"',
-        '- Any request where the user wants to SEE or DO something on a screen',
-        '',
-        'WHEN NOT TO CALL:',
-        '- Pure small talk with no screen destination ("how are you", "thank you")',
-        '- Quick factual questions ("what is longevity?")',
-        '',
-        'WHAT YOU GET BACK:',
-        '- GUIDANCE: a short explanation you should speak naturally to the user,',
-        '  telling them about the feature and what they can do there.',
-        '- NAVIGATING_TO: the screen the user is being taken to (or null if no',
-        '  match was found).',
-        '- If a redirect is happening, the orb will close automatically after',
-        '  you finish speaking. Just speak the guidance naturally — do not add',
-        '  a separate transition sentence.',
-        '- If NAVIGATING_TO is null, ask the user to clarify what they are',
-        '  looking for.',
-        '',
-        'IMPORTANT: When you speak the guidance, be helpful and warm. Explain',
-        'the feature briefly, tell them what they can do on that screen, and',
-        'let them know you are taking them there. Example: "The Business Hub',
-        'is where you can set up your services and start earning. You\'ll find',
-        'a Create button to get started. Let me take you there."',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          question: {
-            type: 'string',
-            description: 'The user\'s question, request, or intent in their own words. Pass exactly what they said — the backend handles all matching and routing.',
-          },
-        },
-        required: ['question'],
-      },
-    },
-  ];
-
-  if (mode === 'anonymous') {
-    // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO
-    // tools — the signup-intent regex flow (detectAuthIntent + session_limit_reached)
-    // handles navigation there, and Navigator tools competed with it causing
-    // double responses.
-    //
-    // VTID-NAV-TOKEN-FIX: On community pages (any route that isn't / or a
-    // portal), an "anonymous" session is almost certainly an authenticated user
-    // whose JWT expired mid-session (common on mobile Appilix WebView). Give
-    // them the navigator tools so "open my profile" / "open my inbox" still
-    // work even if the token refresh hasn't reached the orb widget yet.
-    const landingRoutes = ['/', '/maxina', '/alkalma', '/earthlinks', '/auth'];
-    const isLandingPage = !currentRoute || landingRoutes.includes(currentRoute);
-    if (isLandingPage) {
-      return [];
-    }
-    // Community page with expired token — give navigator tools only
-    return [{ function_declarations: navigatorTools }];
-  }
-
-  return [
-    {
-      function_declarations: [
-        ...navigatorTools,
-        {
-          name: 'search_memory',
-          description: 'Search the user\'s personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'The search query to find relevant memories, diary entries, or personal records',
-              },
-              categories: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Optional categories to filter: personal, health, preferences, goals, relationships, conversation, diary, notes',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        {
-          name: 'search_knowledge',
-          description: [
-            'Search the Vitana knowledge base for explanations, how-tos, and platform concepts.',
-            'Use this WHENEVER the user asks "how does X work?", "what is Y?", "can you explain ...?",',
-            '"how do I find/learn/teach/share ...?", "why are matches sparse?", or "what is the privacy here?"',
-            '',
-            "It's the default tool for any orientation, onboarding, or curious question — first-time users",
-            'deserve a real explanation, not a one-line transactional reply. Pull from this knowledge base',
-            'BEFORE answering, then synthesize into a 15-30 second voice response (~80-200 words) that',
-            'sounds natural, not robotic.',
-            '',
-            'Topics covered include: matchmaking overview, finding a dance partner, learning dance from',
-            'a teacher, offering dance lessons, why early-stage matches are sparse, sharing posts,',
-            'privacy in matchmaking, the Open Asks feed, the Vitana Index, longevity research, and the',
-            "Vitana platform itself. Supervisors keep adding documents, so always search before assuming",
-            "something isn't covered.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: "The search query — paraphrase the user's question into the topical keywords. E.g. \"how do I find a dance partner\" or \"why am I getting no matches\".",
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // Calendar tool — search user's personal calendar
-        {
-          name: 'search_calendar',
-          description: 'Search the user\'s personal calendar for events, appointments, and scheduled activities. Use this when the user asks about their schedule, upcoming events, free time, availability, or wants to know what\'s planned for a specific day or week.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'What to search for in the calendar (e.g., "tomorrow", "this week", "yoga sessions", "free time")',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // Calendar write tool — create events via voice
-        {
-          name: 'create_calendar_event',
-          description: [
-            'Create a new event in the user\'s personal calendar. Use this when the',
-            'user asks you to schedule, add, create, or book a meeting, appointment,',
-            'activity, or any calendar event.',
-            '',
-            'IMPORTANT:',
-            '- Always confirm the event details with the user BEFORE calling this tool.',
-            '- If the user does not specify an end time, default to 1 hour after start.',
-            '- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").',
-            '- After creating, confirm the event title and time back to the user.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              title: {
-                type: 'string',
-                description: 'The title or name of the event (e.g., "Dinner meeting", "Yoga class", "Doctor appointment")',
-              },
-              start_time: {
-                type: 'string',
-                description: 'Start time in ISO 8601 format (e.g. "2026-04-15T18:00:00Z")',
-              },
-              end_time: {
-                type: 'string',
-                description: 'End time in ISO 8601 format. If not specified by the user, default to 1 hour after start_time.',
-              },
-              description: {
-                type: 'string',
-                description: 'Optional description or notes for the event.',
-              },
-              location: {
-                type: 'string',
-                description: 'Optional location of the event.',
-              },
-              event_type: {
-                type: 'string',
-                enum: ['personal', 'community', 'professional', 'health', 'workout', 'nutrition'],
-                description: 'Type of event. Default to "personal" if unclear.',
-              },
-            },
-            required: ['title', 'start_time'],
-          },
-        },
-        // VTID-01270A: Community & Events voice tools
-        {
-          name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Activity or keyword to search (e.g., "yoga", "dance", "boat trip", "fitness", "wellness", "coffee"). Searches title, description, and category.',
-              },
-              location: {
-                type: 'string',
-                description: 'City, venue, or country to filter by (e.g., "Berlin", "Mallorca", "Germany", "Dubai").',
-              },
-              organizer: {
-                type: 'string',
-                description: 'Name of the event organizer or host to filter by.',
-              },
-              date_from: {
-                type: 'string',
-                description: 'Start of date range in YYYY-MM-DD format (e.g., "2026-04-01"). Defaults to today.',
-              },
-              date_to: {
-                type: 'string',
-                description: 'End of date range in YYYY-MM-DD format (e.g., "2026-04-30").',
-              },
-              max_price: {
-                type: 'number',
-                description: 'Maximum price in EUR. Use 0 for free events only.',
-              },
-              type_filter: {
-                type: 'string',
-                enum: ['meetup', 'live_room', 'all'],
-                description: 'Filter by event type. Defaults to all.',
-              },
-            },
-            required: [],
-          },
-        },
-        {
-          name: 'search_community',
-          description: 'Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Search query for community groups (e.g., "meditation", "runners", "nutrition")',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // VTID-02754 — Find one specific community member matching a free-text
-        // query and redirect the user to that member's profile. Always returns
-        // exactly one person; never returns lists.
-        {
-          name: 'find_community_member',
-          description: [
-            'Find ONE specific community member matching a free-text question and',
-            'open their profile for the user. ALWAYS returns exactly one person —',
-            'never a list, never a summary. The tool itself dispatches the',
-            'navigation; you only need to read aloud the one-line voice_summary',
-            'that the tool returns. Then stop speaking.',
-            '',
-            'CALL THIS TOOL when the user asks any "who is..." question about the',
-            'community, including:',
-            '  - Skill / activity:   "who is good at half marathon?"',
-            '                        "who plays golf?"',
-            '                        "who teaches salsa?"',
-            '  - Vitana Index:       "who is the healthiest?"',
-            '                        "who has the best sleep?"',
-            '                        "who is the fittest?"',
-            '  - Soft qualities:     "who is the funniest?"',
-            '                        "who is the smartest?"',
-            '                        "who is the most inspiring?"',
-            '                        "who is the best teacher?"',
-            '  - Tenure:             "who is the newest member?"',
-            '                        "who is the longest-standing member?"',
-            '  - Location:           "who is closest to me?"',
-            '                        "who is in my city?"',
-            '                        "who is near me?"',
-            '  - Composed:           "newest salsa teacher in my city"',
-            '',
-            'After the tool runs:',
-            '  - Read voice_summary aloud (1-2 sentences).',
-            '  - DO NOT add any other commentary — the redirect is dispatched',
-            '    by the tool itself and the widget is closing.',
-            '  - DO NOT mention "I searched", "I looked at", "I found" — the',
-            '    voice_summary already says it.',
-            '',
-            'NEVER use this tool for community groups or events — those have',
-            'their own tools (search_community for groups, search_events for',
-            'meetups/live rooms).',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'The user\'s "who is..." question, in natural language. Pass the question verbatim — the backend handles all interpretation, ranking, and edge cases.',
-              },
-              excluded_vitana_ids: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'OPTIONAL — only include if the user explicitly says "show me someone else" / "another one" after a previous find_community_member result. Pass the previously-shown vitana_id(s) here so the ranker picks a different person.',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
-        {
-          name: 'find_perfect_product',
-          description: [
-            'Recommend the perfect product for the user. Fuses their weakest',
-            'Vitana Index pillar + active Life Compass goal + a free-form ask',
-            'and any explicit filters (price cap, ingredients to exclude). Returns',
-            'top-3 with a rationale. Use for: "find me a product for poor sleep on',
-            'travel days", "what supplement should I take for my hydration?", etc.',
-            '',
-            'Use this for PRODUCTS (supplements, gear, food). For services or',
-            'practitioners use find_perfect_practitioner. For people / community',
-            'matches use find_community_member.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              goal_text: {
-                type: 'string',
-                description: 'Free-form description of what the user wants the product to help with.',
-              },
-              pillar: {
-                type: 'string',
-                description: 'OPTIONAL — nutrition / hydration / exercise / sleep / mental. Defaults to the user\'s weakest pillar.',
-              },
-              max_price: { type: 'number', description: 'OPTIONAL — price cap.' },
-              exclude_ingredients: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'OPTIONAL — list of ingredient names the user wants to avoid.',
-              },
-            },
-            required: [],
-          },
-        },
-        {
-          name: 'find_perfect_practitioner',
-          description: [
-            'Recommend the perfect practitioner / coach / doctor for the user.',
-            'Multi-criteria: specialty, language, telehealth-ok, price cap, fused',
-            'with the active Life Compass goal. Returns top-3 with a rationale.',
-            '',
-            'Use for: "find me a functional medicine doc who takes telehealth",',
-            '"who can coach me on sleep?", "I need a German-speaking nutritionist".',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              specialty: { type: 'string', description: 'e.g. "functional medicine", "nutrition", "therapy".' },
-              goal_text: { type: 'string' },
-              language: { type: 'string', description: 'OPTIONAL — language code or name, e.g. "en", "de".' },
-              telehealth_ok: { type: 'boolean' },
-              max_price: { type: 'number' },
-            },
-            required: [],
-          },
-        },
-        {
-          name: 'get_recommendations',
-          description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
-          parameters: {
-            type: 'object',
-            properties: {
-              type: {
-                type: 'string',
-                enum: ['community', 'match', 'all'],
-                description: 'Type of recommendations. Defaults to all.',
-              },
-            },
-            required: [],
-          },
-        },
-        // VTID-01941 / VTID-01942: Play a song. Backend routes to the right
-        // provider based on (a) explicit source in the phrase, (b) user
-        // preference (PR 2), (c) what's connected, (d) the in-house Vitana
-        // Media Hub as fallback. Model should only pass `source` when the
-        // user explicitly names a provider.
-        {
-          name: 'play_music',
-          description: [
-            'Play a song, album, or playlist. CALL THIS TOOL IMMEDIATELY',
-            'the moment the user asks to play, listen to, hear, or put on',
-            'music. Do NOT ask which service to use, do NOT list options,',
-            'do NOT confirm anything before calling — the backend picks',
-            'the right provider automatically based on the user\'s',
-            'preference, their connected accounts, and the Vitana Media',
-            'Hub as fallback.',
-            '',
-            'EXAMPLES — each one triggers the tool with no clarification:',
-            '  - "play Beat It by Michael Jackson"',
-            '  - "play Human Nature"',
-            '  - "play some Whitney Houston"',
-            '',
-            'ARGUMENTS:',
-            '  - query (REQUIRED): the song / artist / phrase the user said,',
-            '    minus the word "play". Pass as natural language.',
-            '  - source (OPTIONAL): ONLY include this when the user',
-            '    explicitly named a provider ("on Spotify", "from Spotify",',
-            '    "on YouTube Music", "on Apple Music", "from the Vitana',
-            '    hub"). Map to: spotify / google / apple_music / vitana_hub.',
-            '    In ALL other cases OMIT source — the backend routes.',
-            '',
-            'AFTER CALLING — the tool response tells you what happened.',
-            'The track is already playing by the time you speak. Keep your',
-            'acknowledgement short: "Playing X by Y on YouTube Music."',
-            'If the response suggests a default, ask the user if they want',
-            'it AFTER the song is playing, not before. NEVER read URLs aloud.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Song / artist / album / playlist in natural language, e.g. "Human Nature by Michael Jackson".',
-              },
-              source: {
-                type: 'string',
-                enum: ['spotify', 'google', 'apple_music', 'vitana_hub'],
-                description: 'OMIT unless the user explicitly said "on <provider>" or "from <provider>" in this exact request.',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // VTID-01942 (PR 3): set / clear the user's preferred provider for a
-        // capability. Called when the user says things like "make YouTube
-        // Music my default", "always play music on Spotify", "don't use
-        // Apple Music as default any more".
-        {
-          name: 'set_capability_preference',
-          description: [
-            'Set or clear the user\'s default provider for a capability.',
-            'Call this when the user tells you which service to use by',
-            'default. Examples:',
-            '  - "make YouTube Music my default" → capability="music.play", connector_id="google"',
-            '  - "always play music on Spotify" → capability="music.play", connector_id="spotify"',
-            '  - "use the Vitana hub by default"→ capability="music.play", connector_id="vitana_hub"',
-            '  - "stop using Spotify as default"→ capability="music.play", clear=true',
-            '',
-            'After calling, acknowledge in ONE short sentence',
-            '("Got it — YouTube Music is your default for music now.").',
-            '',
-            'IMPORTANT — if the user just asked to play a song immediately',
-            'before saying "yes make that my default", and you had already',
-            'played that song, do NOT replay it. If you had NOT played it',
-            'yet (e.g. you asked them first), call play_music RIGHT AFTER',
-            'this tool with the original query they asked for. Never leave',
-            'them without the song they asked for.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              capability: {
-                type: 'string',
-                description: 'Capability id (e.g. "music.play", "email.send").',
-              },
-              connector_id: {
-                type: 'string',
-                enum: ['google', 'spotify', 'apple_music', 'vitana_hub'],
-                description: 'Which provider should serve this capability by default.',
-              },
-              clear: {
-                type: 'boolean',
-                description: 'True to remove the existing preference entirely. Omit connector_id when set.',
-              },
-            },
-            required: ['capability'],
-          },
-        },
-        // VTID-01943: Gmail read. Routes to email.read capability.
-        {
-          name: 'read_email',
-          description: [
-            'Read the user\'s unread emails or emails from a specific sender.',
-            'Call this when the user asks things like:',
-            '  - "check my emails"',
-            '  - "do I have any new emails?"',
-            '  - "anything from Sarah today?"',
-            '  - "what\'s in my inbox?"',
-            '',
-            'Pass optional filters: `limit` (default 5 — keep low for voice),',
-            '`from` (sender filter, e.g. "sarah@example.com"),',
-            '`unread_only` (default true).',
-            '',
-            'SPEAK THE RESULT SUCCINCTLY. Summarise count + who + subject,',
-            'e.g. "You have 3 unread emails: one from Sarah about the',
-            'project plan, one from Google about your account, and one',
-            'newsletter from Substack. Want me to read any in detail?"',
-            'Don\'t read entire message bodies unless the user asks.',
-          ].join('\n'),
-          parameters: {
-            // BOOTSTRAP-ORB-1007-AUDIT: Vertex Live function-declaration schema
-            // is the OpenAPI 3.0 SUBSET supported by Gemini — it rejects
-            // `default`, `minimum`, `maximum`, and similar JSON-Schema fields
-            // with WebSocket close code 1007. Keep constraints in description
-            // text instead.
-            type: 'object',
-            properties: {
-              limit: { type: 'integer', description: 'Max emails to return (1-25). Default 5.' },
-              from: { type: 'string', description: 'Optional sender filter' },
-              unread_only: { type: 'boolean', description: 'Only unread emails. Default true.' },
-            },
-          },
-        },
-        // VTID-01943: Calendar list. Routes to calendar.list capability.
-        {
-          name: 'get_schedule',
-          description: [
-            'Return the user\'s upcoming calendar events. Call when the user asks:',
-            '  - "what\'s on today?"',
-            '  - "do I have any meetings tomorrow?"',
-            '  - "what does my week look like?"',
-            '  - "am I free at 3pm?"',
-            '',
-            'Pass `days_ahead` — 1 for "today", 2 for "today and tomorrow",',
-            '7 for "this week". Default 1.',
-            '',
-            'Summarise the events: "Today at 10am you have a call with John,',
-            'and at 2pm a team sync." For longer horizons, group by day.',
-            'Never dump raw timestamps — convert to natural language.',
-          ].join('\n'),
-          parameters: {
-            // BOOTSTRAP-ORB-1007-AUDIT: no default/minimum/maximum (Vertex 1007).
-            type: 'object',
-            properties: {
-              days_ahead: { type: 'integer', description: 'How many days ahead (1-60). Default 1 = today.' },
-            },
-          },
-        },
-        // VTID-01943: Calendar create. Routes to calendar.create capability.
-        {
-          name: 'add_to_calendar',
-          description: [
-            'Add an event to the user\'s primary calendar. Call when the user says:',
-            '  - "put a meeting with Sarah on my calendar at 3pm tomorrow"',
-            '  - "schedule a call with the team Friday at 10"',
-            '  - "add a reminder for the dentist on Monday at 2pm"',
-            '',
-            'Required: `title`, `start` (RFC3339, e.g. "2026-04-21T15:00:00+02:00").',
-            '`end` defaults to start + 1h. Optional: `description`, `attendees` (emails).',
-            '',
-            'You MUST resolve relative time phrases ("tomorrow at 3pm") into',
-            'an absolute RFC3339 string in the user\'s local timezone before',
-            'calling. If ambiguous, ask.',
-            '',
-            'Acknowledge briefly: "Added — meeting with Sarah tomorrow at 3pm."',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string' },
-              start: { type: 'string', description: 'RFC3339 start time' },
-              end: { type: 'string', description: 'RFC3339 end (default: start + 1h)' },
-              description: { type: 'string' },
-              attendees: { type: 'array', items: { type: 'string' } },
-            },
-            required: ['title', 'start'],
-          },
-        },
-        // VTID-02047: Unified Feedback Pipeline — voice claim/bug/support intake.
-        // VTID-02047 voice channel-swap (bidirectional): every persona has
-        // this tool so the user can navigate between Vitana and her
-        // colleagues by voice. Use cases:
-        //   - User to Vitana:    "switch me to Devon" / "ich möchte mit Devon
-        //                        sprechen" → switch_persona({to:'devon'})
-        //   - User to Devon:     "connect me back to Vitana" / "zurück zu
-        //                        Vitana" → switch_persona({to:'vitana'})
-        //   - User to Sage:      "actually I have a billing question" →
-        //                        switch_persona({to:'atlas'})
-        // This tool DOES NOT create a ticket. report_to_specialist creates a
-        // ticket AND swaps. switch_persona is just navigation.
-        {
-          name: 'switch_persona',
-          description: [
-            'Switch the active persona on this voice call to another colleague',
-            '(or back to Vitana). Call ONLY when the user EXPLICITLY asks to',
-            'talk to a different person by name — "switch me to Devon", "back',
-            'to Vitana please", "I want to talk to Atlas about my refund',
-            'instead". Voice + persona swap in the same call, no ticket filed.',
-            '',
-            'Personas: vitana (life companion + instruction manual), devon',
-            '(bugs), sage (general support), atlas (marketplace claims), mira',
-            '(account issues).',
-            '',
-            'AFTER calling: speak ONE short bridge sentence in your own',
-            'natural words. ANNOUNCE the handoff — never INTRODUCE the new',
-            'persona. ("I will bring Devon in" — yes. "Hi, here is Devon"',
-            '— NO, that is Devon\'s job to say in his own voice.) Vary your',
-            'phrasing every time, never recite a template. Then STOP.',
-            '',
-            'CRITICAL — never call this for instruction-manual questions',
-            '("how does X work", "what is X", "explain X", "show me", "I am',
-            'new"). Those are answered by Vitana inline. Specialists handle',
-            'BROKEN STATE (bugs, claims, account issues) only.',
-            '',
-            'Specialists CAN ONLY pass to=\'vitana\' — sideways forwards to',
-            'a peer specialist are server-blocked. Once a conversation has',
-            'used 1 forward + 1 return, further forwards are also blocked.',
-            '',
-            'Do NOT use this to file a NEW bug/claim/support ticket — for',
-            'that use report_to_specialist (creates ticket AND swaps).'
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              to: {
-                type: 'string',
-                // VTID-02651: enum is intentionally NOT hardcoded. Persona
-                // keys are data-driven from agent_personas. The handler
-                // validates against the live registry at exec time so any
-                // newly-added specialist becomes a valid switch target with
-                // zero code change. Default keys: vitana (receptionist),
-                // devon, sage, atlas, mira. New specialists added by INSERT.
-                description: 'Target persona key (e.g. vitana, devon, sage, atlas, mira, or any other active key from agent_personas). Use vitana to hand the user back to the receptionist.',
-              },
-              reason: {
-                type: 'string',
-                description: 'One short sentence on why the swap (e.g. "user wants to ask about longevity again", "this is a finance question, not tech").',
-              },
-            },
-            required: ['to'],
-          },
-        },
-        // Vitana calls this when the user wants to report something outside her
-        // domain (bugs, support questions, refunds, account issues). The tool
-        // creates a feedback_tickets row routed to the matching specialist
-        // (Devon/Sage/Atlas/Mira). Vitana then speaks a short bridge sentence
-        // confirming the handoff.
-        {
-          name: 'report_to_specialist',
-          description: [
-            'File a customer-support ticket and hand the call to a specialist',
-            '(Devon/Sage/Atlas/Mira). This is RARE — typically less than 5%',
-            'of conversations. You ARE the instruction manual; almost every',
-            'question is yours to answer.',
-            '',
-            'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
-            'first say something like "Shall I bring in Devon to file this?"',
-            'and wait for the user to say yes. Implicit consent does NOT count.',
-            'Vary the proposal phrasing every time.',
-            '',
-            'CALL ONLY WHEN ALL THREE are true:',
-            '  (1) the user has described a CONCRETE PROBLEM (bug, broken',
-            '      state, refund, account lockout, claim) — not a question',
-            '      about how something works,',
-            '  (2) the user has EXPLICITLY agreed to be connected to a',
-            '      specialist (after you proposed it), and',
-            '  (3) you can write a SPECIFIC `summary` (>= 15 words) that',
-            '      describes WHAT broke, on WHICH screen/feature, with the',
-            '      user\'s own words. If you cannot — because the user only',
-            '      said "I want to report a bug" without details — DO NOT',
-            '      CALL THIS TOOL YET. Instead ask ONE follow-up question:',
-            '      "What\'s breaking — which screen or feature?" Get the',
-            '      details, THEN call this tool. A vague summary causes the',
-            '      specialist to invent the issue, which is worse than not',
-            '      forwarding at all. Generic summaries like "user wants to',
-            '      report a bug" are FORBIDDEN.',
-            '',
-            'NEVER CALL for any of these — answer them yourself inline using',
-            'search_knowledge first:',
-            '  - "How does X work?" / "What is X?" / "Explain X"',
-            '  - "Show me how to use X" / "How do I X?" / "Teach me"',
-            '  - "Tell me about X" / "I want to learn X" / "I am new"',
-            '  - "Help me understand X" / "Walk me through X"',
-            '  - Any health, longevity, matchmaking, community, business,',
-            '    diary, calendar, or general life-companion question',
-            '  - Anything that is a learning question, not a broken-state',
-            '    report. First-time users asking how to use the diary is a',
-            '    teaching moment, NOT a customer-support ticket.',
-            '',
-            'GATE-A enforcement: the backend re-checks the user\'s actual',
-            'recent words (not your summary). If the gate returns STAY_INLINE,',
-            'do NOT mention the routing decision out loud — silently answer',
-            'the question. Same if the conversation\'s forward budget is',
-            'exhausted (max 1 forward + 1 return per conversation).',
-            '',
-            'AFTER A FORWARD FIRES: speak ONE short bridge sentence in your',
-            'own natural words. ANNOUNCE the handoff — never INTRODUCE the',
-            'specialist ("Hi, here is Devon" — that is DEVON\'S job in his',
-            'own voice). Vary your phrasing every time, never recite a',
-            'template. Then STOP — the next voice is the specialist\'s.'
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              kind: {
-                type: 'string',
-                enum: ['bug', 'ux_issue', 'support_question', 'account_issue', 'marketplace_claim', 'feature_request', 'feedback'],
-                description: 'Best classification of what the user is reporting. Pick the closest match.',
-              },
-              specialist_hint: {
-                type: 'string',
-                // VTID-02651: NOT hardcoded — backend validates against the
-                // agent_personas registry. Default specialists: devon (bugs/
-                // UX), sage (support), atlas (marketplace/finance), mira
-                // (account). New specialists added by INSERT.
-                description: 'Optional: which specialist should own this (e.g. devon, sage, atlas, mira, or any other active key from agent_personas.handles_kinds). The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
-              },
-              summary: {
-                type: 'string',
-                description: 'CONCRETE one-paragraph summary using the user\'s OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.',
-              },
-            },
-            required: ['kind', 'summary'],
-          },
-        },
-        // VTID-01943: Contacts search. Routes to contacts.read capability.
-        {
-          name: 'find_contact',
-          description: [
-            'Find a contact by name or partial email. Call when the user asks:',
-            '  - "what\'s Sarah\'s email?"',
-            '  - "find John\'s phone number"',
-            '  - "who is my dentist?"',
-            '  - "do I have a contact for the plumber?"',
-            '',
-            'Pass `query` (substring). If the user asks for a generic list',
-            '("show my contacts"), omit query and cap `limit` at 10.',
-            '',
-            'Speak naturally: "Sarah Jones — email sarah@example.com,',
-            'phone +1 555-0100." If multiple matches, say so and ask which.',
-          ].join('\n'),
-          parameters: {
-            // BOOTSTRAP-ORB-1007-AUDIT: no default/minimum/maximum (Vertex 1007).
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: 'Name / email / phone substring' },
-              limit: { type: 'integer', description: 'Max contacts to return (1-50). Default 10.' },
-            },
-          },
-        },
-        // BOOTSTRAP-ORB-DELEGATION-ROUTE: Delegate a question to another AI
-        // the user has connected via Settings → Connected Apps (ChatGPT,
-        // Claude, or Google AI). Vitana speaks the result in its own voice.
-        // The user never sees which AI answered — it's pure backend routing.
-        {
-          name: 'consult_external_ai',
-          description: [
-            'Forward a question to one of the user\'s connected external AI',
-            'accounts (ChatGPT, Claude, or Google AI / Gemini via the user\'s',
-            'own API key) and return the answer. Vitana speaks the result in',
-            'its OWN voice — never mention which AI produced the answer, and',
-            'never say "Claude says" / "ChatGPT says".',
-            '',
-            'CALL THIS TOOL WHEN:',
-            '  - the user explicitly names a provider ("ask ChatGPT …",',
-            '    "what does Claude think about …", "frag Claude …")',
-            '  - the task class strongly matches another provider\'s strength',
-            '    and the user has that provider connected (e.g. long code',
-            '    review → claude; image description of a supplied URL →',
-            '    chatgpt with vision)',
-            '  - the user asks for a "second opinion" on an answer',
-            '',
-            'DO NOT CALL WHEN:',
-            '  - the question is about Vitana, the user\'s memory, their',
-            '    calendar, events, or any internal tool you already have —',
-            '    answer those yourself',
-            '  - the user did not ask for an external opinion and your own',
-            '    answer is sufficient',
-            '',
-            'ARGUMENTS:',
-            '  - question (REQUIRED): a self-contained prompt. Do not rely',
-            '    on Vitana-internal context; include whatever the external',
-            '    AI needs to answer.',
-            '  - provider_hint (OPTIONAL): include ONLY when the user named',
-            '    a provider. openai = ChatGPT, anthropic = Claude,',
-            '    google-ai = Google AI. Omit to let the router pick.',
-            '  - task_class (OPTIONAL): hint the router toward a provider',
-            '    whose strengths match the task.',
-            '',
-            'If the user has not connected any external AI, the tool',
-            'returns a clear signal — acknowledge briefly ("you haven\'t',
-            'connected an external AI yet") and answer yourself.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              question: {
-                type: 'string',
-                description: 'Self-contained question to forward to the external AI.',
-              },
-              provider_hint: {
-                type: 'string',
-                enum: ['chatgpt', 'claude', 'google-ai'],
-                description: 'Internal ID of the provider the user named. OMIT unless named.',
-              },
-              task_class: {
-                type: 'string',
-                enum: ['code', 'reasoning', 'creative', 'factual', 'summarization', 'long_context', 'vision', 'multilingual'],
-                description: 'Kind of task, so the router can pick the best connected provider.',
-              },
-            },
-            required: ['question'],
-          },
-        },
-        // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
-        {
-          name: 'get_vitana_index',
-          description: [
-            'Return the user\'s current Vitana Index with the canonical 5-pillar',
-            'breakdown: total score (0-999), tier (Starting / Early / Building /',
-            'Strong / Really good / Elite), all 5 pillars (Nutrition, Hydration,',
-            'Exercise, Sleep, Mental — each 0-200), 7-day trend, weakest pillar',
-            'with sub-score explanation (baseline / completions / connected data /',
-            'streak), balance factor, and aspirational distance to Really-good.',
-            '',
-            'CALL THIS WHEN the user asks:',
-            '  - "What is my Vitana Index?" / "Was ist mein Vitana Index?"',
-            '  - "What\'s my score / tier?" / "Welchen Tier habe ich?"',
-            '  - "How am I doing?" / "Wie stehe ich?" (when health context is the topic)',
-            '',
-            'DO NOT CALL for generic "what IS the Vitana Index" (no "my") —',
-            'that\'s a platform explanation, use search_knowledge instead.',
-            '',
-            'The [HEALTH] block in the system prompt usually has the same info;',
-            'calling this tool gets the freshest snapshot and returns it in a',
-            'single structured object you can read aloud naturally.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {},
-          },
-        },
-        {
-          name: 'get_index_improvement_suggestions',
-          description: [
-            'Return 2-3 concrete actions the user can take to improve their',
-            'Vitana Index, ranked by predicted contribution to a specific pillar.',
-            'Each suggestion includes a title, the pillar(s) it lifts, and a',
-            'magnitude from the recommendation\'s contribution_vector.',
-            '',
-            'CALL THIS WHEN the user asks:',
-            '  - "How can I improve my Index?" / "Wie verbessere ich meinen Index?"',
-            '  - "What\'s holding me back?" / "Was hält mich zurück?"',
-            '  - "What should I focus on?" / "Worauf soll ich mich konzentrieren?"',
-            '  - "Which pillar needs work?" / "Welche Säule brauche ich?"',
-            '',
-            'If the user names a pillar ("help me with Sleep"), pass the pillar',
-            'argument. Otherwise omit it and the tool targets the weakest pillar',
-            'automatically — OR, when the balance factor is below 0.9, targets',
-            'the imbalance itself (lifting the weakest pillar moves the balance',
-            'dampener, which moves the whole score).',
-            '',
-            'Speak the suggestions naturally — "a ten-minute morning meditation',
-            'would lift Mental by three points" — never read raw JSON.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              pillar: {
-                type: 'string',
-                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
-                description: 'Optional pillar to focus on. Omit to target the weakest pillar automatically.',
-              },
-              limit: {
-                type: 'integer',
-                description: 'Max suggestions to return. Default 3.',
-              },
-            },
-          },
-        },
-        {
-          name: 'create_index_improvement_plan',
-          description: [
-            'Build a multi-event calendar plan that targets a weak pillar of',
-            'the user\'s Vitana Index, then write the events to their calendar',
-            'directly (autonomous — no per-event confirmation). Returns a',
-            'summary of what was scheduled for you to announce.',
-            '',
-            'CALL THIS WHEN the user asks:',
-            '  - "Make me a plan to improve my Index"',
-            '  - "Mach mir einen Plan für meinen Index"',
-            '  - "Schedule a routine for me" / "Plan mir eine Routine"',
-            '  - "Add things to my calendar to lift [pillar]"',
-            '',
-            'This is AUTONOMOUS by design — you do NOT need per-event',
-            'confirmation. Announce clearly in voice what you just scheduled',
-            '("I\'ve added three movement sessions this week and two',
-            'mindfulness blocks next week to lift your Sleep pillar").',
-            '',
-            'If the user names a pillar (one of nutrition / hydration / exercise',
-            '/ sleep / mental), pass it. Otherwise the tool targets the weakest',
-            'pillar automatically. Days defaults to 14 (2 weeks), actions_per_week',
-            'defaults to 3.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              pillar: {
-                type: 'string',
-                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
-                description: 'Optional pillar to focus on. Omit to target weakest automatically.',
-              },
-              days: {
-                type: 'integer',
-                description: 'How many days forward to schedule. Default 14.',
-              },
-              actions_per_week: {
-                type: 'integer',
-                description: 'Rough frequency. Default 3.',
-              },
-            },
-          },
-        },
-        // ─── VTID-01983 — save_diary_entry: voice diary logging ───
-        {
-          name: 'save_diary_entry',
-          description: [
-            'Save a Daily Diary entry on the user\'s behalf when they say',
-            'they did something or want to track something. Then celebrate',
-            'inline using the returned pillar deltas — see the override',
-            'rules block (rule M).',
-            '',
-            'CALL THIS WHEN the user says any of:',
-            '  - "Log my diary: …" / "Trag in mein Tagebuch ein: …"',
-            '  - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"',
-            '  - "Track my [water / hydration / meal / breakfast / lunch /',
-            '     dinner / workout / walk / run / sleep / meditation]"',
-            '  - "Note that I …" / "Note for today: …"',
-            '  - "Just had …" — even casual mentions',
-            '',
-            'IMPORTANT: pass the user\'s VERBATIM words as raw_text. The',
-            'gateway runs a pattern-matching extractor on the text to detect',
-            'water (1L → 1000ml), meals (breakfast / lunch / Frühstück /',
-            'Mittagessen → meal_log count), exercise, sleep, meditation.',
-            'DO NOT summarise, paraphrase, or translate. The extractor needs',
-            'the original phrasing to catch every signal.',
-            '',
-            'Returns:',
-            '  - health_features_written: number of structured rows written',
-            '    to health_features_daily',
-            '  - pillars_after: full Vitana Index pillar values after the',
-            '    diary entry was applied',
-            '  - index_delta: per-pillar lift the diary entry produced',
-            '',
-            'Use index_delta to celebrate. See override rule M for the',
-            'exact response shape ("Done — Hydration up, you\'re at <total>").',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              raw_text: {
-                type: 'string',
-                description: 'The user\'s verbatim words. Do NOT summarise or rephrase. Multi-language OK.',
-              },
-              entry_date: {
-                type: 'string',
-                description: 'Optional YYYY-MM-DD. Defaults to today.',
-              },
-            },
-            required: ['raw_text'],
-          },
-        },
-        // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
-        {
-          name: 'set_reminder',
-          description: [
-            "Set a one-time reminder when the user asks. CRITICAL: when the user says",
-            "'remind me at X to Y', 'set a reminder for Z', 'erinnere mich um X', or similar,",
-            "you MUST call this tool. Do NOT tell the user 'okay, I'll remind you' without",
-            "calling this tool — without the tool call, NO reminder is created.",
-            '',
-            "You compute the absolute UTC timestamp yourself from the user's words and",
-            "their local timezone (provided in your system context as user_tz). Examples:",
-            "  'today at 8pm'        → user's tz, today, 20:00 → convert to UTC ISO",
-            "  'in 2 hours'          → now + 2h ISO",
-            "  'tomorrow morning'    → ASK 'what time tomorrow morning?' before calling",
-            '',
-            "If a phrase is ambiguous (vague time, no day), ASK the user to clarify",
-            "before calling. Do not guess.",
-            '',
-            "Generate `spoken_message` as a friendly sentence in the user's language",
-            "that will be spoken aloud at fire time (e.g. 'Time to take your magnesium',",
-            "'Zeit für deine Magnesium-Tabletten').",
-            '',
-            "After the tool returns, confirm verbally with result.human_time and the",
-            "action_text (e.g. 'Okay, I'll remind you at 8 PM to take your magnesium.').",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              action_text: {
-                type: 'string',
-                description: "Short label, max 60 chars. e.g. 'Take magnesium'",
-              },
-              spoken_message: {
-                type: 'string',
-                description: "Friendly sentence to speak aloud at fire time, in the user's language.",
-              },
-              scheduled_for_iso: {
-                type: 'string',
-                description: 'Absolute UTC ISO 8601 timestamp. Min 60s in future, max 90 days out.',
-              },
-              description: {
-                type: 'string',
-                description: 'Optional extended details',
-              },
-            },
-            required: ['action_text', 'spoken_message', 'scheduled_for_iso'],
-          },
-        },
-        // ─── VTID-02601 — find_reminders: read-only lookup ───
-        {
-          name: 'find_reminders',
-          description: [
-            "Search the user's active reminders by free-text query. Use BEFORE delete_reminder",
-            "to find which reminder the user means, and to read back the count when they say",
-            "'delete all'. Returns up to 10 matches.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: "Free-text. Empty string = all active reminders.",
-              },
-              include_fired: {
-                type: 'boolean',
-                description: 'Include already-fired but unacked reminders. Default false.',
-              },
-            },
-            required: ['query'],
-          },
-        },
-        // ─── VTID-02601 — delete_reminder: destructive, requires verbal confirmation ───
-        {
-          name: 'delete_reminder',
-          description: [
-            "Delete one reminder OR all the user's reminders. CRITICAL SAFETY RULES:",
-            '',
-            "1. You MUST verbally confirm before calling this tool. Say something like:",
-            "   - single: 'Are you sure you want to delete the magnesium reminder at 8pm?'",
-            "   - all:    'Are you sure you want to delete all 5 of your reminders?'",
-            '',
-            "2. Only call this tool with confirmed=true AFTER the user explicitly says",
-            "   yes / ja / sí / yes please / definitely / go ahead. Vague answers like",
-            "   'maybe' or 'I think so' are NOT confirmation — re-ask.",
-            '',
-            "3. NEVER skip step 1 even if the user sounds urgent. Deleting reminders",
-            "   is destructive and the user wants you to double-check.",
-            '',
-            "4. For single deletion: first call find_reminders to get the reminder_id.",
-            "   For 'delete all': call find_reminders with empty query first, read back",
-            "   the count in the confirmation question.",
-            '',
-            "5. Soft delete only — sets status='cancelled', user can recover via UI.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              mode: {
-                type: 'string',
-                enum: ['single', 'all'],
-                description: "'single' = one reminder by id; 'all' = all active reminders",
-              },
-              reminder_id: {
-                type: 'string',
-                description: "Required when mode='single'. UUID from find_reminders result.",
-              },
-              confirmed: {
-                type: 'boolean',
-                description: 'Must be true. Set ONLY after explicit user yes.',
-              },
-              user_confirmation_phrase: {
-                type: 'string',
-                description: "Verbatim user phrase that confirmed (e.g. 'yes, delete it'). For audit.",
-              },
-            },
-            required: ['mode', 'confirmed', 'user_confirmation_phrase'],
-          },
-        },
-        // ─── BOOTSTRAP-PILLAR-AGENT-Q — per-pillar agent Q&A dispatch ───
-        {
-          name: 'ask_pillar_agent',
-          description: [
-            'Route a per-pillar deep question to the matching specialised',
-            'pillar agent (Nutrition / Hydration / Exercise / Sleep / Mental).',
-            'The agent grounds the answer in the user\'s LIVE pillar data',
-            '(current sub-scores: baseline / completions / connected data /',
-            'streak) AND cites the relevant Book of the Vitana Index chapter.',
-            '',
-            'CALL THIS WHEN the user asks about a specific pillar:',
-            '  - "How is my sleep?" / "Wie steht mein Schlaf?"',
-            '  - "Why is my nutrition low?" / "Warum ist meine Ernährung niedrig?"',
-            '  - "What\'s holding back my exercise score?"',
-            '  - "How do I improve my mental pillar?"',
-            '',
-            'Pass `pillar` when the user\'s phrasing is unambiguous; OMIT it',
-            'and the tool will detect the pillar from `question`. If detection',
-            'fails and `pillar` is omitted, the tool returns null — voice should',
-            'then fall back to search_knowledge against the Book.',
-            '',
-            'Speak the returned `text` naturally and cite the Book chapter.',
-            'NEVER read raw JSON. NEVER echo a retired pillar name (Physical,',
-            'Social, Environmental, Prosperity) — the tool already aliases',
-            'those silently.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              question: {
-                type: 'string',
-                description: 'The user\'s natural-language question, verbatim. Used for pillar detection if `pillar` is omitted.',
-              },
-              pillar: {
-                type: 'string',
-                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
-                description: 'Optional explicit pillar. Omit to auto-detect from question text.',
-              },
-            },
-            required: ['question'],
-          },
-        },
-        // ─── BOOTSTRAP-TEACH-BEFORE-REDIRECT — explanation-first dispatch ───
-        {
-          name: 'explain_feature',
-          description: [
-            'Return the canonical voice-friendly explanation of a Vitana feature',
-            'or how-to topic (manual hydration logging, Daily Diary dictation,',
-            'connecting trackers, what Autopilot is, how to improve the Index,',
-            'etc.). Returns summary + ordered steps + a redirect offer the',
-            'user can accept by saying yes.',
-            '',
-            'CALL THIS WHEN the user shows TEACH-INTENT phrasing — examples:',
-            '  - "Explain X" / "Erkläre mir X"',
-            '  - "Tell me about X" / "Tell me how X works"',
-            '  - "Show me how to <verb>" (NOT "show me the <noun>")',
-            '  - "How does X work" / "Wie funktioniert X"',
-            '  - "How do I <action>" / "How can I use X" (TEACH-THEN-NAV — speak',
-            '     a brief explanation, then offer redirect)',
-            '  - "I don\'t understand X" / "Ich verstehe X nicht"',
-            '  - "I\'m new to this" / "Ich bin neu hier"',
-            '',
-            'DO NOT CALL when the user clearly wants navigation:',
-            '  - "Open <thing>" / "Öffne <thing>"',
-            '  - "Go to <thing>" / "Take me to <thing>"',
-            '  - "Show me the <screen|page|section>" / "Zeig mir den Bildschirm"',
-            '  - "I want to see the <thing>"',
-            'Those are NAVIGATE-ONLY — call the navigation tool instead.',
-            '',
-            'Speak the returned summary_voice_<lang> verbatim, then read each',
-            'item of steps_voice_<lang> in order. End with the redirect_offer_<lang>.',
-            'Only call the navigation tool with redirect_route AFTER the user',
-            'confirms (yes / ja / open it / do it).',
-            '',
-            'If found=false, fall back to search_knowledge against the',
-            'kb/vitana-system/how-to/ corpus.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              topic: {
-                type: 'string',
-                description: 'The user\'s natural-language topic, verbatim. Used for canonical-topic resolution.',
-              },
-              mode: {
-                type: 'string',
-                enum: ['teach_only', 'teach_then_nav'],
-                description: 'Bucket per the intent classifier. teach_only = read FULL steps, no redirect. teach_then_nav = read concise steps + redirect_offer at end.',
-              },
-            },
-            required: ['topic'],
-          },
-        },
-        // ─── VTID-01967 — Vitana ID voice messaging ───
-        // Three tools that let the user say "send a message to alex3700"
-        // or "share this link with maria2307" and have ORB resolve the
-        // recipient, confirm verbally, and send. These tools enforce a
-        // strict confirmation contract: ALWAYS resolve first, ALWAYS
-        // read back, ONLY send on explicit verbal confirmation.
-        {
-          name: 'resolve_recipient',
-          description: [
-            'Resolve a spoken recipient name or Vitana ID to a real user.',
-            '',
-            'YOU MUST CALL THIS before any reply about whether a person',
-            'exists — including saying you can\'t find them. The ONLY way',
-            'to honestly tell the user "I can\'t find that person" is to',
-            'receive an empty candidates array from this tool. Without',
-            'calling, you have no contact list to consult and you will',
-            'hallucinate. Do not infer absence from your own knowledge.',
-            '',
-            'Trigger phrases (call this on ALL of them):',
-            '  - "send a message to X" / "text X" / "tell X that ..."',
-            '  - "share this with X" / "invite X" / "introduce me to X"',
-            '  - "is X here?" / "do we have someone called X?"',
-            '',
-            'Spoken_name handling for hint phrases:',
-            '  - User says "Maria, I think it\'s maria6": pass spoken_name="maria6"',
-            '    first (the Vitana ID is the strongest signal). If empty,',
-            '    retry with spoken_name="maria".',
-            '  - User says "@alex3700": pass spoken_name="alex3700" (the',
-            '    resolver strips leading @).',
-            '  - User says "Daniela": pass spoken_name="Daniela".',
-            '',
-            'Returns ranked candidates. Each has:',
-            '  - user_id (opaque UUID — pass to send_chat_message / share_link)',
-            '  - vitana_id (speakable, e.g. "alex3700" — read this to the user)',
-            '  - display_name (their full name)',
-            '  - score (0.00-1.25; 1.0 = exact vitana_id match)',
-            '  - reason ("vitana_id_exact" | "legacy_handle" | "fuzzy_name" | "fuzzy_chat_peer")',
-            '',
-            'Also returns top_confidence and ambiguous (boolean).',
-            '',
-            'BEHAVIOR:',
-            '  1. If candidates is empty: tell the user you couldn\'t find',
-            '     anyone matching that name and ask them to repeat or spell',
-            '     the Vitana ID.',
-            '  2. If ambiguous=false AND top_confidence >= 0.85 AND only ONE',
-            '     candidate: silently pick candidates[0] and proceed to step 4.',
-            '  3. If ambiguous=true OR multiple candidates: read up to 3',
-            '     options to the user — "I see {N} matches: @<vid1>',
-            '     ({display_name1}), @<vid2> ({display_name2}). Which one?"',
-            '     Wait for them to pick by Vitana ID, by name, or by',
-            '     position ("the first one", "Daniela Müller").',
-            '  4. After a recipient is chosen, NEVER call send_chat_message',
-            '     or share_link directly — first read the message back to',
-            '     the user verbatim and ask "say send to confirm or cancel',
-            '     to stop". Only on explicit confirmation, call the send',
-            '     tool.',
-            '',
-            'NEVER resolve to the user\'s own ID — the resolver excludes self.',
-            'NEVER skip this step before sending; the send tools assume a',
-            'pre-resolved user_id from this call.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              spoken_name: {
-                type: 'string',
-                description: 'The recipient name / Vitana ID exactly as the user said it. Examples: "Daniela", "alex3700", "@alex3700", "Branislav". Strip leading @ if present (the resolver normalizes).',
-              },
-              limit: {
-                type: 'integer',
-                description: 'Maximum candidates to return (default 5). Keep low for voice — 3 is plenty.',
-              },
-            },
-            required: ['spoken_name'],
-          },
-        },
-        {
-          name: 'send_chat_message',
-          description: [
-            'Send a direct message to another Vitana user. ONLY call this',
-            'after resolve_recipient has returned a candidate AND the user',
-            'has verbally confirmed both the recipient AND the message body',
-            '(e.g. "yes send it", "send", "confirm", "ja schick es").',
-            '',
-            'NEVER call this without resolve_recipient first.',
-            'NEVER auto-fire on "I want to message X" — always read back and wait.',
-            '',
-            'After a successful send, acknowledge briefly: "Sent to @<vid>."',
-            'If the response says rate_limited, tell the user: "I can\'t send',
-            'any more messages this session — please open the app to continue."',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              recipient_user_id: {
-                type: 'string',
-                description: 'Opaque user_id from resolve_recipient candidates[i].user_id. Never derive this any other way.',
-              },
-              recipient_label: {
-                type: 'string',
-                description: 'The vitana_id of the recipient, used in the OASIS audit trail and acknowledgement (e.g. "alex3700"). Pass candidates[i].vitana_id verbatim.',
-              },
-              body: {
-                type: 'string',
-                description: 'The message body, exactly as the user dictated it. Do not rephrase or summarize.',
-              },
-            },
-            required: ['recipient_user_id', 'recipient_label', 'body'],
-          },
-        },
-        {
-          // V2 — Proactive Initiative Engine
-          name: 'activate_recommendation',
-          description: [
-            'Activate an Autopilot recommendation on the user\'s behalf —',
-            'marks the recommendation as activated and brings it to the',
-            'top of their active list. Use ONLY when the user has consented',
-            'to a Proactive Initiative offer where the on_yes_tool is',
-            '`activate_recommendation`. The recommendation id is pre-picked',
-            'at initiative-resolution time — pass it through unchanged.',
-            '',
-            'After success, speak the sanctioned celebratory close from the',
-            'initiative\'s `build_voice_on_complete` template.',
-            '',
-            'Returns { ok, title, completion_message }. If ok=false, briefly',
-            'acknowledge ("Hmm, couldn\'t schedule that one") and offer to',
-            'open the Autopilot screen instead via navigate_to_screen.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'string',
-                description:
-                  'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
-              },
-            },
-            required: ['id'],
-          },
-        },
-        {
-          name: 'share_link',
-          description: [
-            'Share a link with another Vitana user as a chat message with a',
-            'link-card preview. Same confirmation contract as send_chat_message:',
-            'ALWAYS resolve_recipient first, ALWAYS read back the link target',
-            'and recipient, ONLY send on explicit confirmation.',
-            '',
-            'Use this when the user says "share this with X", "send the page',
-            'to X", "invite X to this", or similar. If the user is on a',
-            'specific screen, call get_current_screen first to learn the',
-            'target_url and target_kind ("event", "post", "profile", etc.),',
-            'then read both back to the user before sending.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              recipient_user_id: {
-                type: 'string',
-                description: 'Opaque user_id from resolve_recipient candidates[i].user_id.',
-              },
-              recipient_label: {
-                type: 'string',
-                description: 'Recipient vitana_id (e.g. "alex3700").',
-              },
-              target_url: {
-                type: 'string',
-                description: 'Full URL of the resource to share (e.g. https://vitanaland.com/events/abc).',
-              },
-              target_kind: {
-                type: 'string',
-                description: 'What is being shared. Examples: "event", "meetup", "post", "profile", "product", "campaign", "page".',
-              },
-            },
-            required: ['recipient_user_id', 'recipient_label', 'target_url', 'target_kind'],
-          },
-        },
-        // ─── VTID-01975 — Vitana Intent Engine ───
-        // Single voice tool that handles all six intent kinds. Same
-        // confirmation contract as send_chat_message: classify → extract →
-        // read back → only post on explicit verbal confirmation.
-        {
-          name: 'post_intent',
-          description: [
-            'Register an intent in the Vitana community catalog. Use this',
-            'whenever the user expresses a need, an offering, a desire to find',
-            'an activity partner / life partner / mentor, or willingness to',
-            'lend / borrow / give / receive. The classifier picks the kind',
-            'automatically; you can pass kind_hint when the user is explicit.',
-            '',
-            'CONFIRMATION CONTRACT (mandatory):',
-            '1. Call post_intent(utterance) WITHOUT confirmed=true. Server',
-            '   classifies + extracts + returns a structured summary.',
-            '2. Read the summary back verbatim ("Posting: ...").',
-            '3. Wait for explicit confirmation (post/yes/confirm/ja).',
-            '4. Call post_intent again WITH confirmed=true.',
-            '',
-            'For partner_seek: explain matches are revealed only after both',
-            'parties express interest (privacy protocol).',
-            '',
-            'DANCE matchmaking (learning_seek / mentor_seek / activity_seek with dance.* category):',
-            '- "I want to learn salsa, find a teacher" → learning_seek + dance.learning.salsa',
-            '- "I teach salsa Tuesdays" → mentor_seek + dance.teaching.salsa',
-            '- "Find me a salsa partner Saturday night" → activity_seek + dance.social_partner',
-            '- "Going out dancing this weekend" → activity_seek + dance.group_outing',
-            'When the user gives constraints like gender / age range / location radius / max price,',
-            'put them in kind_payload.counterparty_filter.',
-            '',
-            'ALWAYS-POST contract: every dictated intent gets posted regardless of match count.',
-            'When matches=0, do NOT say "no matches found." Say:',
-            '"I posted your request — you\'re the first one looking for this in our community right now.',
-            ' I\'ll let you know the moment someone matches. Your post is also visible on the board so',
-            ' anyone can see it."',
-            '',
-            'DEDUP BEHAVIOR: if the user asks the same thing twice in a session ("looking for a dance partner"',
-            'after they already posted that), the server returns deduplicated:true with the existing intent_id.',
-            'When you see deduplicated:true, do NOT post again. Tell the user: "You already posted this',
-            'earlier today. Refine it (different time, location, or style) if you want a new one — or open',
-            'the existing post and I can show you who responded." Then call list_my_intents OR navigate_to_screen',
-            'with target=my_intents so they can SEE their existing post.',
-            '',
-            'NEVER repeat-post the same generic ask. If the user repeats verbatim, treat it as "show me my',
-            'existing post" — call list_my_intents and surface what they already have.',
-            '',
-            'SUCCESS CONTRACT (VTID-02790, mandatory):',
-            'When the response contains stage:"posted" — regardless of match_count, cold_start, or any',
-            'other field — the post is LIVE in the database. You MUST confirm success.',
-            '- NEVER say "I had a problem", "there was an issue", "I couldn\'t post", "etwas ging schief",',
-            '  "es gab ein Problem", "ich konnte den Beitrag nicht erstellen", or any apologetic phrase.',
-            '- For match_count > 0: announce the post is live and that there are N potential matches.',
-            '- For match_count = 0 (cold_start): use the "you\'re the first" copy above.',
-            '- If the user later doubts ("did it really post?"), call list_my_intents and SHOW them.',
-            'Do NOT invent failure modes. Do NOT apologize when the server reported success.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              utterance: { type: 'string', description: 'The user\'s words verbatim.' },
-              kind_hint: {
-                type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
-              },
-              confirmed: { type: 'boolean' },
-            },
-            required: ['utterance'],
-          },
-        },
-        {
-          name: 'view_intent_matches',
-          description: 'Pull the top-N matches for one of the user\'s open intents. partner_seek matches show "(redacted)" until both parties express interest.',
-          parameters: {
-            type: 'object',
-            properties: {
-              intent_id: { type: 'string' },
-              limit: { type: 'integer' },
-            },
-            required: ['intent_id'],
-          },
-        },
-        {
-          name: 'list_my_intents',
-          description: 'List the user\'s open intents. Optional kind filter.',
-          parameters: {
-            type: 'object',
-            properties: {
-              intent_kind: {
-                type: 'string',
-                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
-              },
-            },
-          },
-        },
-        {
-          name: 'respond_to_match',
-          description: 'Express interest or decline a match. CONFIRMATION CONTRACT: read summary back, only call with confirmed=true after explicit user response. partner_seek mutual interest unlocks reciprocal-reveal.',
-          parameters: {
-            type: 'object',
-            properties: {
-              match_id: { type: 'string' },
-              response: { type: 'string', enum: ['express_interest', 'decline'] },
-              confirmed: { type: 'boolean' },
-            },
-            required: ['match_id', 'response'],
-          },
-        },
-        {
-          name: 'mark_intent_fulfilled',
-          description: 'Close one of the user\'s intents because they got what they were looking for.',
-          parameters: {
-            type: 'object',
-            properties: { intent_id: { type: 'string' } },
-            required: ['intent_id'],
-          },
-        },
-        // VTID-DANCE-D10: voice-driven direct invite.
-        {
-          name: 'share_intent_post',
-          description: [
-            'Direct-share one of the user\'s intent posts to specific community members.',
-            'Use when the user says "share my <topic> post with @maria3 and @daniel4" or',
-            '"send my salsa request to my friends Anna and Boris".',
-            '',
-            'CONFIRMATION CONTRACT (mandatory):',
-            '1. Resolve each spoken name via resolve_recipient first to get the @vitana_id.',
-            '2. Read back: "I\'ll share your <intent title> with @maria3 and @daniel4. Say send to confirm."',
-            '3. Wait for explicit user confirmation (send/yes/confirm/ja).',
-            '4. Call share_intent_post with confirmed=true.',
-            '',
-            'For partner_seek posts: warn the user that sharing reveals their identity to the recipient.',
-            'For private posts: only the post owner can share — others should use the public link.',
-            '',
-            'Server is idempotent: re-sharing to the same recipient is a no-op (matches_created=0).',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              intent_id: { type: 'string', description: 'The user\'s intent_id to share. Pull from list_my_intents if needed.' },
-              recipient_vitana_ids: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Up to 20 vitana_ids (without leading @).',
-              },
-              note: { type: 'string', description: 'Optional short note to include with the share (≤280 chars).' },
-              confirmed: { type: 'boolean' },
-            },
-            required: ['intent_id', 'recipient_vitana_ids'],
-          },
-        },
-        // VTID-02770 — Voice navigation. The Navigator returns a relative URL
-        // the frontend ORB widget intercepts and routes to.
-        //
-        // The valid set of `screen_id` values is the Navigation Catalog
-        // (services/gateway/src/lib/navigation-catalog.ts) — the single source
-        // of truth, ~150 entries and growing. There is no enum here on purpose:
-        // an enum drifts the moment a new screen ships. Send any screen_id or
-        // alias slug; the gateway validates with exact match → alias match →
-        // fuzzy resolve, in that order.
-        {
-          name: 'navigate_to_screen',
-          description: [
-            'Redirect the user to a screen, page, drawer, or overlay.',
-            '',
-            '── HARD-REDIRECT LEXICON — ALWAYS call this tool when the user uses any of these phrasings AND the requested item maps unambiguously to one screen ──',
-            '  Open       — "open …", "take me to …", "go to …", "launch …", "öffne …", "geh zu …", "bring mich zu …"',
-            '  Show       — "show me …", "let me see …", "display …", "zeig mir …", "lass mich … sehen"',
-            '  Guide      — "guide me to …", "navigate me to …", "lead me to …", "führe mich zu …"',
-            '  Locate     — "where can I find …", "where is …", "where do I see …", "wo finde ich …", "wo ist …"',
-            '  Action     — "where can I execute …", "where do I do …", "where can I log …", "wo kann ich …"',
-            '  Read       — "read me my …", "read this …", "read that …", "lies mir … vor"',
-            '  Not-found  — "I could not find …", "I can\'t find …", "I don\'t see …", "ich finde … nicht"',
-            '',
-            'When any of these phrasings is used and the target is unambiguous, the redirect IS the answer. Do not narrate, do not ask permission, do not re-confirm. After calling, say a brief voice cue ("Opening your matches" / "Hier ist dein Index").',
-            '',
-            '── DISAMBIGUATION ──',
-            'If the request could legitimately map to multiple screens (e.g. "show me my news" → inbox / AI feed / news; "where can I see my events" → events / calendar / reminders), DO NOT GUESS. Ask one short either/or question using the catalog titles, then call this tool with the user\'s pick. Example: "Do you mean your inbox news, or your AI feed?" / "Meinst du deinen Posteingang oder den KI-Feed?"',
-            '',
-            '── HOW TO PICK A screen_id ──',
-            'Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOVER.MARKETPLACE, OVERLAY.CALENDAR, MEMORY.DIARY, REMINDERS.OVERVIEW, INBOX.OVERVIEW, PROFILE.ME, PROFILE.PUBLIC, SETTINGS.CONNECTED_APPS, BUSINESS.OVERVIEW, COMM.OPEN_ASKS, COMM.MEMBERS, COMM.TALK_TO_VITANA, INTENTS.BOARD, INTENTS.MINE, INTENTS.MATCH_DETAIL, etc. If you only know a slug, send that — alias resolution handles "find-partner", "marketplace", "vitana-index", "calendar", "diary", "reminders", "members", "open-asks", "intent-board", "connected-apps", and the legacy snake_case forms (find_partner, events_meetups, …). Slugs work in EN or DE.',
-            '',
-            'Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.',
-            '',
-            '── PARAMETERIZED ROUTES ──',
-            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              screen_id: {
-                type: 'string',
-                description: 'Catalog screen_id (e.g. "COMM.FIND_PARTNER") OR a known alias slug ("find-partner", "marketplace"). Validated server-side with exact → alias → fuzzy resolution; unknown ids are rejected with suggestions.',
-              },
-              target: {
-                type: 'string',
-                description: 'Legacy slug field — kept for backward compatibility with older clients. Equivalent to screen_id when both are absent.',
-              },
-              reason: {
-                type: 'string',
-                description: 'One-sentence reason in the user\'s language. Surfaced in OASIS telemetry for tuning.',
-              },
-              intent_id: { type: 'string', description: 'For PROFILE.WITH_MATCH (the matched intent_id).' },
-              match_id: { type: 'string', description: 'For INTENTS.MATCH_DETAIL.' },
-              vitana_id: { type: 'string', description: 'For PROFILE.PUBLIC / PROFILE.WITH_MATCH — counterparty vitana_id without leading @.' },
-              meetup_id: { type: 'string', description: 'For OVERLAY.MEETUP_DRAWER.' },
-              event_id: { type: 'string', description: 'For OVERLAY.EVENT_DRAWER.' },
-              user_id: { type: 'string', description: 'For OVERLAY.PROFILE_PREVIEW.' },
-              groupId: { type: 'string', description: 'For COMM.GROUP_DETAIL.' },
-              roomId: { type: 'string', description: 'For COMM.LIVE_ROOM_VIEWER.' },
-              id: { type: 'string', description: 'For DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL.' },
-            },
-            // Either screen_id or target must be present — checked in the
-            // handler so legacy callers that send `target` continue to work.
-          },
-        },
-        // VTID-DANCE-D11.B — pre-post candidate scan.
-        {
-          name: 'scan_existing_matches',
-          description: [
-            'BEFORE posting an intent, call this to see who is already in the catalog with a similar ask.',
-            'Use the same intent_kind you would pass to post_intent + the category_prefix (e.g. dance.) and',
-            'the dance variety when known.',
-            '',
-            'Returns: { open_intents[], dance_pref_members[], total }.',
-            'If total > 0: read back the names + offer "Want to see them, share with them, or post yours so they can find you too?"',
-            'If total == 0: proceed with post_intent and use the always-post readback.',
-            '',
-            'This call is read-only and cheap — always safe to call before post_intent.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              intent_kind: {
-                type: 'string',
-                enum: ['commercial_buy','commercial_sell','activity_seek','partner_seek','social_seek','mutual_aid','learning_seek','mentor_seek'],
-              },
-              category_prefix: {
-                type: 'string',
-                description: 'e.g. "dance." for any dance category, "home_services." for any home service. Optional.',
-              },
-              variety: {
-                type: 'string',
-                description: 'For dance: salsa | tango | bachata | kizomba | swing | ballroom | hiphop | contemporary. Optional.',
-              },
-            },
-            required: ['intent_kind'],
-          },
-        },
-        // VTID-DANCE-D12 — poll for the matchmaker agent's polished result.
-        {
-          name: 'get_matchmaker_result',
-          description: [
-            'After post_intent, the matchmaker agent runs ASYNC (~20s) re-ranking + writing a voice readback.',
-            'Call this 3 seconds after post_intent to fetch the polished result. status will be:',
-            '  pending/running — call again in 3 seconds',
-            '  complete — read back voice_readback verbatim, then offer next steps',
-            '  error — fall back to the SQL match summary already returned by post_intent',
-            '',
-            'The polished result includes counter_questions when the user gave a vague intent.',
-            'If counter_questions is non-empty, ASK them progressively (variety → time → location)',
-            'BEFORE reading back the candidate list. The user can always say "just show me matches"',
-            'to skip — never insist on filling all slots.',
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: { intent_id: { type: 'string' } },
-            required: ['intent_id'],
-          },
-        },
-        // ─── VTID-02753 — Voice Tool Expansion P1a: structured Health logging ───
-        // Five tools backed by POST /api/v1/integrations/manual/log. Distinct
-        // from save_diary_entry (which extracts from free text). Use when the
-        // user explicitly states a quantity ("log 500ml of water", "I slept 7
-        // hours", "30 minutes of running"). Each call writes a row to
-        // health_features_daily and triggers a Vitana Index recompute.
-        {
-          name: 'log_water',
-          description: [
-            "Log a hydration entry when the user explicitly states an amount of water/fluid drunk.",
-            "",
-            "CALL THIS WHEN the user says any of:",
-            "  - 'log 500ml of water' / 'trag 500ml Wasser ein'",
-            "  - 'I drank a glass of water' (≈250ml)",
-            "  - 'two liters today' (2000ml)",
-            "  - 'log my water: 1.5L'",
-            "",
-            "Convert to ML before calling — the gateway expects amount_ml as a number.",
-            "Common conversions: 1 glass ≈ 250ml, 1 cup ≈ 240ml, 1 bottle ≈ 500ml, 1L = 1000ml.",
-            "If the amount is ambiguous ('some water'), ASK before calling — do not guess.",
-            "",
-            "After the tool returns, briefly acknowledge ('logged 500 ml — Hydration is up').",
-            "Use the index_delta to celebrate movement on the Hydration pillar.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              amount_ml: {
-                type: 'number',
-                description: 'Amount of fluid in milliliters. Min 50, max 5000.',
-              },
-              date: {
-                type: 'string',
-                description: 'Optional YYYY-MM-DD. Defaults to today (user local).',
-              },
-            },
-            required: ['amount_ml'],
-          },
-        },
-        {
-          name: 'log_sleep',
-          description: [
-            "Log a sleep duration when the user explicitly reports how long they slept.",
-            "",
-            "CALL THIS WHEN the user says any of:",
-            "  - 'I slept 7 hours last night' / 'ich habe 7 Stunden geschlafen'",
-            "  - 'log my sleep: 8.5 hours'",
-            "  - 'got 6 hours' (assume sleep context)",
-            "  - 'slept from 11 to 7' — compute hours yourself",
-            "",
-            "Convert to MINUTES before calling. Examples: 7h → 420, 8.5h → 510, 6h30m → 390.",
-            "If the user gives a sleep range without confirming hours, ASK — don't guess.",
-            "",
-            "After the tool returns, acknowledge briefly. If hours were below 7, gently note",
-            "it without lecturing ('420 minutes logged — under your typical 7 hours').",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              minutes: {
-                type: 'integer',
-                description: 'Sleep duration in minutes. Min 60, max 960 (16h).',
-              },
-              date: {
-                type: 'string',
-                description: 'Optional YYYY-MM-DD for the night logged. Defaults to today.',
-              },
-            },
-            required: ['minutes'],
-          },
-        },
-        {
-          name: 'log_exercise',
-          description: [
-            "Log an exercise/workout session when the user explicitly reports duration.",
-            "",
-            "CALL THIS WHEN the user says any of:",
-            "  - '30 minutes of running' / '30 Minuten Lauf'",
-            "  - 'just finished a 45-minute workout'",
-            "  - 'log a 1-hour walk'",
-            "  - 'I did yoga for 20 minutes'",
-            "",
-            "Convert duration to MINUTES. The activity_type is freeform — pass the user's",
-            "phrase verbatim ('running', 'cycling', 'yoga', 'crossfit', 'walk', 'swim').",
-            "If the user reports an activity without a duration ('I went for a run'), ASK",
-            "how long before calling. Don't guess.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              minutes: {
-                type: 'integer',
-                description: 'Duration in minutes. Min 5, max 600.',
-              },
-              activity_type: {
-                type: 'string',
-                description: "Freeform activity name (e.g. 'running', 'yoga', 'crossfit'). Optional.",
-              },
-              date: {
-                type: 'string',
-                description: 'Optional YYYY-MM-DD. Defaults to today.',
-              },
-            },
-            required: ['minutes'],
-          },
-        },
-        {
-          name: 'log_meditation',
-          description: [
-            "Log a meditation / mindfulness session — boosts the Mental pillar.",
-            "",
-            "CALL THIS WHEN the user says any of:",
-            "  - '10 minutes of meditation' / '10 Minuten Meditation'",
-            "  - 'just finished a 20 minute mindfulness session'",
-            "  - 'log my breathwork — 15 minutes'",
-            "  - 'did box breathing for 5 minutes'",
-            "",
-            "Pass duration in MINUTES. Don't conflate with exercise — meditation/mindfulness/",
-            "breathwork/yoga-nidra all go through this tool because they lift Mental, not",
-            "Exercise.",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              minutes: {
-                type: 'integer',
-                description: 'Meditation duration in minutes. Min 1, max 240.',
-              },
-              date: {
-                type: 'string',
-                description: 'Optional YYYY-MM-DD. Defaults to today.',
-              },
-            },
-            required: ['minutes'],
-          },
-        },
-        {
-          name: 'get_pillar_subscores',
-          description: [
-            "Return the sub-score breakdown for a single Vitana Index pillar so you can",
-            "explain WHY the pillar is low. Each pillar has four caps:",
-            "  - baseline (0-40): from the baseline survey",
-            "  - completions (0-80): from calendar tag completions",
-            "  - data (0-40): from health_features_daily (this is what log_* tools lift)",
-            "  - streak (0-40): consecutive-day streak for the pillar",
-            "",
-            "CALL THIS WHEN the user asks:",
-            "  - 'why is my Sleep score low?'",
-            "  - 'what's holding back my Nutrition?'",
-            "  - 'break down my Hydration score'",
-            "  - 'wieso ist meine Bewegung niedrig?'",
-            "",
-            "Speak the answer naturally — 'Your Sleep is mostly baseline because we don't",
-            "have any tracker data yet — connect a wearable or log sleep manually and the",
-            "data sub-score will start filling in.'",
-          ].join('\n'),
-          parameters: {
-            type: 'object',
-            properties: {
-              pillar: {
-                type: 'string',
-                enum: ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'],
-                description: 'Which pillar to break down.',
-              },
-            },
-            required: ['pillar'],
-          },
-        },
-        // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
-        // is admin / exafy_admin / developer. Community sessions never see them
-        // and the orb dispatcher rejects them server-side regardless.
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
-          ? ADMIN_TOOL_SCHEMAS
-          : []),
-      ],
-    },
-    // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
-    // Google Search directly and returns results with citations — no
-    // function_response needed from our side. Replaces the broken
-    // search_web custom function (which required PERPLEXITY_API_KEY, a
-    // secret that was never wired into the deploy). With this, factual
-    // questions like "how many calories in an apple" or "latest research
-    // on sleep" get real web-grounded answers automatically.
-    { google_search: {} },
-  ];
 }
 
 /**
@@ -4134,41 +2359,21 @@ export async function handleNavigateToScreen(
  * passes them via args to the shared dispatcher. Anonymous-safe — no
  * identity required.
  */
+// A6.2 (orb-live-refactor): handleGetCurrentScreen is now a compat shim.
+// The handler body lives in orb/live/tools/handlers/navigator.ts and
+// receives the typed SessionContext + SessionMutator. The shim here
+// builds the typed views from the live session and forwards.
+//
+// This is the template every subsequent A6.x handler extraction will
+// follow: route file keeps a thin (session) → handler(args, ctx, mutator)
+// wrapper for compatibility with the dispatcher; the real logic lives
+// under orb/live/tools/handlers/.
 async function handleGetCurrentScreen(
   session: GeminiLiveSession,
 ): Promise<{ success: boolean; result: string; error?: string }> {
-  const sb = getSupabase();
-  if (!sb) {
-    // Fallback — the shared dispatcher signature requires sb but
-    // tool_get_current_screen is anonymous-safe and doesn't read it. If
-    // Supabase isn't configured we degrade to "unknown screen" rather than
-    // failing the tool call.
-    return {
-      success: true,
-      result: JSON.stringify({
-        title: 'Unknown screen',
-        description: 'The user is on a route that is not in the navigation catalog.',
-        route: session.current_route || null,
-        recent_screens: [],
-      }),
-    };
-  }
-  const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
-  return await dispatchOrbToolForVertex(
-    'get_current_screen',
-    {
-      current_route: session.current_route ?? null,
-      recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
-    },
-    {
-      user_id: session.identity?.user_id ?? '',
-      tenant_id: session.identity?.tenant_id ?? null,
-      role: session.identity?.role ?? null,
-      vitana_id: session.identity?.vitana_id ?? null,
-      lang: session.lang ?? 'en',
-    },
-    sb,
-  );
+  const ctx = buildSessionContext(session as any);
+  const mutator = makeSessionMutator(session as any);
+  return getCurrentScreenHandler({}, ctx, mutator);
 }
 
 async function executeLiveApiToolInner(
@@ -4496,7 +2701,7 @@ async function executeLiveApiToolInner(
             type: 'persona_swap',
             from: currentPersona,
             to: target,
-            voice_id: (session as any).personaVoiceOverride || (LIVE_API_VOICES[session.lang || 'en'] || 'Aoede'),
+            voice_id: (session as any).personaVoiceOverride || getLiveApiVoice(session.lang || 'en'),
             display_name: target.charAt(0).toUpperCase() + target.slice(1),
             navigation_only: true,
           };
@@ -4566,36 +2771,13 @@ async function executeLiveApiToolInner(
           };
         }
 
-        // v2e: server-side block on vague summaries. The LLM tool description
-        // forbids placeholder summaries like "user wants to report a bug",
-        // but we enforce server-side too. A vague summary causes the receiving
-        // specialist to invent the issue (the user's most-recent complaint:
-        // Devon hallucinated a "language switch" bug because Vitana's summary
-        // was just "user wants to report a technical bug").
-        //
-        // Heuristics: too short OR matches a placeholder pattern.
-        const wordCount = summary.split(/\s+/).filter(Boolean).length;
-        const VAGUE_PATTERNS = [
-          /^user (wants|would like|wishes) to report (a|an|the)?\s*(technical |bug|issue|problem|claim|complaint|account|support)?\s*(report|issue|problem|claim|bug|complaint|question|something)\.?$/i,
-          /^user has (a|an|the)?\s*(bug|issue|problem|claim|complaint|account|support|technical)\s*(report|issue|problem|claim|bug|complaint|question|matter)\.?$/i,
-          /^report a (bug|issue|problem|claim|complaint|technical)\s*\.?$/i,
-          /^bug report\.?$/i,
-          /^something is broken\.?$/i,
-          /^(user|customer)\s+(needs help|wants help|has a question)\.?$/i,
-        ];
-        const isVague = wordCount < 12 || VAGUE_PATTERNS.some(re => re.test(summary));
-        if (isVague) {
-          console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${wordCount} words). Asking model to collect specifics.`);
-          return {
-            success: true,
-            result: `ASK_FOR_SPECIFICS: Your summary "${summary}" is too vague. Do NOT call this tool again until you have a concrete description. Speak ONE follow-up question to the user IN THEIR LANGUAGE asking what specifically broke (which screen / feature / error message / what they were doing). Vary your phrasing every call. Then wait for their answer. Only after you have specifics, call this tool again with a real description (>= 12 words, in the user's own words). Do NOT mention this internal routing — just ask the question naturally.`,
-          };
-        }
-
         // Loop guard: hard cap of 1 forward per conversation. Once swap count
         // hits 2 (one forward + one return), block re-forward regardless of
         // what the LLM decides. Also a cooldown period after swap-back-to-
         // Vitana — prevents the immediate re-forward loop the user reported.
+        // VTID-03024: stays Vertex-only because it relies on
+        // session.swapCount + session.swapCooldownUntil (WebSocket state).
+        // LiveKit has no per-session swap counter yet.
         const swapCountForReport = ((session as any).swapCount as number | undefined) ?? 0;
         const swapCooldownUntil = ((session as any).swapCooldownUntil as number | undefined) ?? 0;
         if (swapCountForReport >= 2) {
@@ -4615,152 +2797,82 @@ async function executeLiveApiToolInner(
         }
 
         try {
-          const url = process.env.SUPABASE_URL!;
-          const key = process.env.SUPABASE_SERVICE_ROLE!;
-
-          // Resolve specialist via keyword router unless hinted explicitly.
-          // VTID-02653 Phase 6: when the session has a tenant context, use
-          // the tenant-aware RPC pick_specialist_for_text_tenant which
-          // UNIONs platform handoff_keywords with the tenant's own routing
-          // keywords (and respects tenant disable). Falls back to the
-          // platform-only RPC when no tenant context (anonymous sessions).
-          let pickedPersona = specialistHint;
-          let matchedKeyword: string | null = null;
-          let confidence: number | null = null;
-          let rpcDecision: string | null = null;
-          let rpcGate: string | null = null;
+          // VTID-03024: lift the SHARED data-layer work (vague block + gate
+          // RPC + feedback_tickets insert + handoff event + OASIS emit) into
+          // a helper both Vertex and LiveKit call. Below the helper call,
+          // Vertex layers its session-state mutations (pendingPersonaSwap,
+          // personaSystemOverride, SSE/WS notify, swapCount increment) on
+          // top — those stay here because they touch the live WebSocket
+          // session.
           const _reportTenantId = session.identity?.tenant_id;
-          if (!pickedPersona) {
-            try {
-              const rpcName = _reportTenantId
-                ? 'pick_specialist_for_text_tenant'
-                : 'pick_specialist_for_text';
-              // Gate A reads the user's RAW transcript, not the LLM-rewritten
-              // summary. The LLM compresses "how does X work?" into business-
-              // language like "user is asking about X feature", which bypasses
-              // stay-inline phrases. Raw user words preserve "how does", etc.
-              const gateInput = buildGateInputFromTranscript(session.transcriptTurns, summary);
-              const rpcBody = _reportTenantId
-                ? { p_text: gateInput, p_tenant_id: _reportTenantId }
-                : { p_text: gateInput };
-              const rpcResp = await fetch(`${url}/rest/v1/rpc/${rpcName}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
-                body: JSON.stringify(rpcBody),
-              });
-              const rpcJson = await rpcResp.json().catch(() => null);
-              const row = Array.isArray(rpcJson) ? rpcJson[0] : rpcJson;
-              rpcDecision = row?.decision ?? null;
-              rpcGate = row?.gate ?? null;
-              if (row?.persona_key) {
-                pickedPersona = row.persona_key;
-                // Two-gate RPC returns matched_phrase; legacy/tenant variant returns matched_keyword.
-                matchedKeyword = row.matched_phrase ?? row.matched_keyword ?? null;
-                confidence = row.confidence ?? null;
-              }
-            } catch { /* keep empty hint, fall through */ }
+          const sbForReport = getSupabase();
+          if (!sbForReport) {
+            return { success: false, result: '', error: 'supabase_not_configured' };
           }
-
-          // Two-gate routing: if Gate A said stay-inline, OR Gate A failed
-          // (no explicit forward-request signal), Vitana keeps the user.
-          // No ticket. No swap. The model already received the user's words —
-          // it just needs to answer them.
-          if (rpcDecision === 'answer_inline') {
-            const gateLabel = rpcGate === 'stay_inline'
-              ? 'stay-inline override'
-              : (rpcGate === 'unrouted' ? 'no enabled specialist' : 'no explicit forward request');
-            console.log(`[VTID-02660] report_to_specialist suppressed (gate=${rpcGate}) — answering inline`);
-            return {
-              success: true,
-              result: `Stay with the user — this is not a customer-support handoff (${gateLabel}). Answer the question yourself as Vitana, the user's life companion. Do NOT mention this routing decision out loud.`,
-            };
-          }
-          // VTID-02651: kind→persona mapping is data-driven from
-          // agent_personas.handles_kinds. VTID-02653: tenant variant skips
-          // personas the tenant has disabled. Falls back to '' (caller
-          // skips swap) if no active persona claims the kind.
-          if (!pickedPersona) {
-            pickedPersona = _reportTenantId
-              ? ((await registryPickPersonaForKindForTenant(kind, _reportTenantId)) ?? '')
-              : ((await registryPickPersonaForKind(kind)) ?? '');
-          }
-
-          const insertResp = await fetch(`${url}/rest/v1/feedback_tickets`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: key,
-              Authorization: `Bearer ${key}`,
-              Prefer: 'return=representation',
-            },
-            body: JSON.stringify({
+          const { executeReportToSpecialist } = await import('../services/report-to-specialist-core');
+          // Gate A reads the user's RAW transcript, not the LLM-rewritten
+          // summary. The LLM compresses "how does X work?" into business-
+          // language like "user is asking about X feature", which bypasses
+          // stay-inline phrases. Raw user words preserve "how does", etc.
+          const gateInput = buildGateInputFromTranscript(session.transcriptTurns, summary);
+          const helperResult = await executeReportToSpecialist(
+            { kind, summary, specialist_hint: specialistHint },
+            {
               user_id: session.identity.user_id,
+              tenant_id: _reportTenantId ?? null,
               vitana_id: session.identity.vitana_id ?? null,
-              kind,
-              status: pickedPersona ? 'triaged' : 'new',
-              raw_transcript: summary,
-              intake_messages: [
-                { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
-              ],
-              structured_fields: {
-                specialist_hint: specialistHint || null,
-                voice_origin: true,
-              },
-              screen_path: '/orb/voice',
-              resolver_agent: pickedPersona || null,
-              triaged_at: pickedPersona ? new Date().toISOString() : null,
-            }),
-          });
-          if (!insertResp.ok) {
-            const errText = await insertResp.text().catch(() => '');
-            console.error(`[VTID-02047] feedback_tickets insert failed:`, insertResp.status, errText);
-            return { success: false, result: '', error: `insert failed: ${insertResp.status}` };
-          }
-          const created = await insertResp.json().catch(() => null);
-          const ticket = Array.isArray(created) ? created[0] : created;
-
-          // Log handoff event for Live Handoffs panel
-          if (pickedPersona) {
-            await fetch(`${url}/rest/v1/feedback_handoff_events`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
-              body: JSON.stringify({
-                conversation_id: session.sessionId,
-                ticket_id: ticket?.id,
-                user_id: session.identity.user_id,
-                vitana_id: session.identity.vitana_id ?? null,
-                from_agent: 'vitana',
-                to_agent: pickedPersona,
-                reason: 'off_domain_intent',
-                detected_intent: kind,
-                matched_keyword: matchedKeyword,
-                confidence: confidence,
-              }),
-            }).catch(() => undefined);
-          }
-
-          // Emit OASIS event so it shows in the inbox + KPIs
-          try {
-            const { emitOasisEvent } = await import('../services/oasis-event-service');
-            await emitOasisEvent({
-              vtid: 'VTID-02047',
-              type: 'feedback.ticket.created' as any,
+              lang: session.lang ?? null,
+            },
+            sbForReport,
+            {
+              gate_input: gateInput,
               source: 'orb-voice-tool',
-              status: 'info',
-              message: `Voice tool report_to_specialist created ticket ${ticket?.ticket_number} (${kind}) → ${pickedPersona || 'unrouted'}`,
-              payload: {
-                ticket_id: ticket?.id,
-                ticket_number: ticket?.ticket_number,
-                kind,
-                specialist: pickedPersona,
-                voice_origin: true,
+              screen_path: '/orb/voice',
+            },
+          );
+
+          // Branch on the helper's decision. vague + stay_inline both
+          // return the LLM instruction the model speaks; failed surfaces
+          // as a tool error; created continues to the session-state work.
+          if (helperResult.decision === 'failed') {
+            console.error(`[VTID-02047] report_to_specialist failed: ${helperResult.error}`);
+            return { success: false, result: '', error: helperResult.error };
+          }
+          if (helperResult.decision === 'vague') {
+            console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${helperResult.word_count} words). Asking model to collect specifics.`);
+            return { success: true, result: helperResult.llm_instruction };
+          }
+          if (helperResult.decision === 'stay_inline') {
+            console.log(`[VTID-02660] report_to_specialist suppressed (gate=${helperResult.rpc_gate}) — answering inline`);
+            return { success: true, result: helperResult.llm_instruction };
+          }
+
+          // helperResult.decision === 'created' — proceed with session-state swap.
+          const ticket = {
+            id: helperResult.ticket.id,
+            ticket_number: helperResult.ticket.ticket_number,
+          };
+          const pickedPersona = helperResult.persona ?? '';
+          // Vertex augments the helper's handoff_event insert with
+          // conversation_id (tied to the WebSocket session) so the Live
+          // Handoffs panel can correlate handoff → live session.
+          // The helper can't see session.sessionId; PATCH adds it after.
+          if (pickedPersona && session.sessionId) {
+            const url = process.env.SUPABASE_URL!;
+            const key = process.env.SUPABASE_SERVICE_ROLE!;
+            await fetch(
+              `${url}/rest/v1/feedback_handoff_events?ticket_id=eq.${encodeURIComponent(ticket.id)}`,
+              {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  apikey: key,
+                  Authorization: `Bearer ${key}`,
+                },
+                body: JSON.stringify({ conversation_id: session.sessionId }),
               },
-              actor_id: session.identity.user_id,
-              actor_role: 'user',
-              surface: 'orb',
-              vitana_id: session.identity.vitana_id ?? undefined,
-            });
-          } catch { /* non-blocking */ }
+            ).catch(() => undefined);
+          }
 
           const personaLabel: Record<string, string> = {
             devon: 'Devon (tech support)',
@@ -5345,7 +3457,37 @@ async function executeLiveApiToolInner(
 
         if (results.length === 0) {
           console.log(`[VTID-01270A] get_recommendations: 0 results (type=${recType}), ${Date.now() - startTime}ms`);
-          return { success: true, result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' };
+          // VTID-03110: NEVER speak "no personalized recommendations".
+          // Vitana is the Teacher of the system — the catalog has 25+
+          // capabilities, each with a manual chapter. When the recommendation
+          // queries are empty, deflect into a teaching offer pulling the next
+          // pedagogically-ordered capability. Context-aware, data-driven —
+          // no hardcoded suggestion sequence.
+          let deflection = '';
+          try {
+            const sb = getSupabase();
+            if (sb && tenantId && userId) {
+              const { buildTeacherDeflectionForEmptyRecommendations } = await import(
+                '../services/assistant-continuation/providers/teacher/teacher-deflection'
+              );
+              deflection = await buildTeacherDeflectionForEmptyRecommendations({
+                supabase: sb,
+                tenantId,
+                userId,
+                lang: session.lang,
+                recType,
+              });
+            }
+          } catch (err) {
+            console.warn(`[VTID-03110] deflection helper failed (non-fatal): ${(err as Error).message}`);
+          }
+          if (!deflection) {
+            // Last-resort generic fallback — still NOT "no recommendations".
+            deflection = (session.lang || 'en').toLowerCase().startsWith('de')
+              ? 'Im Moment ist nichts Spezifisches vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Wo möchtest du anfangen?'
+              : 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+          }
+          return { success: true, result: deflection };
         }
 
         const MAX_TOOL_RESPONSE_CHARS = 3000;
@@ -5715,115 +3857,32 @@ async function executeLiveApiToolInner(
       }
 
       // ─── VTID-01983 — save_diary_entry: log a diary entry on user's behalf ───
+      // VTID-03042: lifted to services/orb-tools-shared.ts so the LiveKit
+      // pipeline writes the user-visible diary_entries row AND runs the
+      // extractor+index recompute through the same code path Vertex uses.
       case 'save_diary_entry': {
-        try {
-          const rawText = String(args.raw_text || '').trim();
-          const argDate = args.entry_date as string | undefined;
-          const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
-            ? argDate
-            : new Date().toISOString().slice(0, 10);
-          if (!rawText) {
-            return { success: false, result: '', error: 'INVALID_RAW_TEXT' };
-          }
-
-          const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
-            '../services/diary-health-extractor'
-          );
-          const { createClient } = await import('@supabase/supabase-js');
-          const url = process.env.SUPABASE_URL;
-          const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!url || !key) return { success: false, result: '', error: 'Supabase not configured' };
-          const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-
-          // 1) Insert into diary_entries (frontend-readable table). Best-effort —
-          //    if the row exists, we still proceed with the extractor.
-          try {
-            await admin.from('diary_entries').insert({
-              user_id: lens.user_id,
-              text: rawText,
-              source: 'voice',
-              tags: ['diary', 'voice', 'orb'],
-            });
-          } catch (insertErr: any) {
-            console.warn(`[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr?.message}`);
-          }
-
-          // 2) Read pre-recompute Index for delta math.
-          const { data: beforeRow } = await admin
-            .from('vitana_index_scores')
-            .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-            .eq('user_id', lens.user_id)
-            .eq('date', entryDate)
-            .maybeSingle();
-          const before = beforeRow as Record<string, number | null> | null;
-
-          // 3) Run extractor + persist.
-          const writes = extractHealthFeaturesFromDiary(rawText);
-          const tenantId = lens.tenant_id || '00000000-0000-0000-0000-000000000000';
-          let health_features_written = 0;
-          if (writes.length > 0) {
-            const { written } = await persistDiaryHealthFeatures(
-              admin,
-              lens.user_id,
-              tenantId,
-              entryDate,
-              writes,
-            );
-            health_features_written = written;
-          }
-
-          // 4) Recompute Index.
-          let pillars_after: Record<string, number> | null = null;
-          try {
-            const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
-              p_user_id: lens.user_id,
-              p_date: entryDate,
-            });
-            const r = rec as any;
-            if (r && r.ok !== false) {
-              pillars_after = {
-                total:     Number(r.score_total     ?? 0),
-                nutrition: Number(r.score_nutrition ?? 0),
-                hydration: Number(r.score_hydration ?? 0),
-                exercise:  Number(r.score_exercise  ?? 0),
-                sleep:     Number(r.score_sleep     ?? 0),
-                mental:    Number(r.score_mental    ?? 0),
-              };
-            }
-          } catch (recErr: any) {
-            console.warn(`[save_diary_entry] Index recompute failed: ${recErr?.message}`);
-          }
-
-          const index_delta = pillars_after ? {
-            total:     pillars_after.total     - Number(before?.score_total     ?? 0),
-            nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
-            hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
-            exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
-            sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
-            mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
-          } : null;
-
-          // H.5 — diary streak celebration (best-effort, non-blocking).
-          const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
-          const streak = await celebrateDiaryStreak(admin, lens.user_id, tenantId);
-
-          console.log(`[save_diary_entry] user=${lens.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} streak=${streak ? streak.tier_days : '-'}`);
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              entry_date: entryDate,
-              health_features_written,
-              pillars_after,
-              index_delta,
-              streak,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[save_diary_entry] error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE =
+          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'save_diary_entry',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
       }
 
       // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
@@ -6054,6 +4113,10 @@ async function executeLiveApiToolInner(
 
       case 'send_chat_message': {
         // PR B-6: lifted to services/orb-tools-shared.ts.
+        // VTID-02963: thread session.sessionId through identity so the
+        // shared tool can scope its rate-limit key per real voice session
+        // (the lift originally dropped it and used a synthetic per-user
+        // key, breaking per-conversation isolation).
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -6070,6 +4133,7 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
           },
           supabase,
         );
@@ -6083,76 +4147,31 @@ async function executeLiveApiToolInner(
       // the authoritative path and runs on its own when the user opens the
       // app. This tool dispatch only covers the voice-handshake case.
       case 'activate_recommendation': {
-        const recId = String(args.id || '').trim();
-        if (!recId) {
-          return { success: false, result: '', error: 'id is required' };
+        // VTID-02975: lifted to services/orb-tools-shared.ts. The shared
+        // handler verifies ownership, flips new→activated only if needed,
+        // emits guide.initiative.executed telemetry, and returns a result
+        // with title + already_active for the celebratory close. Reachable
+        // identically via /api/v1/orb/tool now that it's in ORB_TOOL_REGISTRY.
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(
-            process.env.SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE!,
-          );
-
-          // Verify ownership + fetch title for the celebratory close.
-          const { data: rec, error: fetchErr } = await supabase
-            .from('autopilot_recommendations')
-            .select('id, title, summary, status, user_id')
-            .eq('id', recId)
-            .maybeSingle();
-
-          if (fetchErr) {
-            return { success: false, result: '', error: fetchErr.message };
-          }
-          if (!rec) {
-            return { success: false, result: '', error: 'recommendation_not_found' };
-          }
-          if (rec.user_id && rec.user_id !== session.identity!.user_id) {
-            return {
-              success: false,
-              result: '',
-              error: 'recommendation_belongs_to_another_user',
-            };
-          }
-
-          const alreadyActive = rec.status === 'activated';
-          if (!alreadyActive) {
-            const { error: updErr } = await supabase
-              .from('autopilot_recommendations')
-              .update({ status: 'activated', updated_at: new Date().toISOString() })
-              .eq('id', recId);
-            if (updErr) {
-              return { success: false, result: '', error: updErr.message };
-            }
-          }
-
-          // Telemetry — fire-and-forget. Mirrors the consented/executed split
-          // from the initiative-engine plan so dashboards can compute funnel.
-          import('../services/guide').then(({ emitGuideTelemetry }) => {
-            emitGuideTelemetry('guide.initiative.executed', {
-              user_id: session.identity!.user_id,
-              initiative_key: 'autopilot_top_recommendation',
-              on_yes_tool: 'activate_recommendation',
-              recommendation_id: recId,
-              already_active: alreadyActive,
-            }).catch(() => {});
-          }).catch(() => {});
-
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: true,
-              title: rec.title,
-              already_active: alreadyActive,
-              completion_message: alreadyActive
-                ? `"${rec.title}" was already on your active list — I'll keep it there.`
-                : `Done — "${rec.title}" is on your active list. Open Autopilot when you're ready to start it.`,
-            }),
-          };
-        } catch (err: any) {
-          console.error('[V2-INITIATIVE] activate_recommendation error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
-        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'activate_recommendation',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'share_link': {
@@ -6680,25 +4699,98 @@ async function executeLiveApiToolInner(
       }
 
       // VTID-DANCE-D12 — poll the async matchmaker agent's polished result.
+      // VTID-02861 (2026-05-07): query intent_match_recommendations directly via
+      // service-role Supabase. The previous self-HTTP call to /api/v1/intents/:id/matchmaker
+      // always 401'd because session.access_token is never populated on the WebSocket
+      // session (same root cause as VTID-02754 for find_community_member). The 401 made
+      // this tool return success:false right after a successful post_intent, and Gemini
+      // misattributed that to the post itself — apologizing "I had a problem making the
+      // post" while the row was already in user_intents. Now we always return success:true
+      // with the polished status inside the result; the voice tool description already
+      // tells the model how to react to status:'error' / status:'not_started'.
       case 'get_matchmaker_result': {
         const intentId = String(args.intent_id || '').trim();
-        if (!intentId) return { success: false, result: '', error: 'intent_id is required' };
+        if (!intentId) {
+          return {
+            success: true,
+            result: JSON.stringify({ ok: false, status: 'error', error: 'intent_id is required' }),
+          };
+        }
 
         try {
-          const url = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/intents/${encodeURIComponent(intentId)}/matchmaker`;
-          const jwt = (session as any).access_token || (session as any).jwt;
-          const res = await fetch(url, {
-            headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+          const SUPABASE_URL = process.env.SUPABASE_URL;
+          const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+          if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'supabase_unavailable' }),
+            };
+          }
+          const { createClient } = await import('@supabase/supabase-js');
+          const adminSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+            auth: { autoRefreshToken: false, persistSession: false },
           });
-          const data = await res.json();
+
+          // Visibility gate: requester owns the intent OR intent is public.
+          const { data: src } = await adminSb
+            .from('user_intents')
+            .select('intent_id, requester_user_id, visibility')
+            .eq('intent_id', intentId)
+            .maybeSingle();
+          if (!src) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'intent_not_found' }),
+            };
+          }
+          const isOwner = (src as any).requester_user_id === session.identity?.user_id;
+          const visibility = String((src as any).visibility || 'public');
+          if (!isOwner && visibility !== 'public') {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: false, status: 'error', error: 'forbidden' }),
+            };
+          }
+
+          const { data: rec } = await adminSb
+            .from('intent_match_recommendations')
+            .select('intent_id, status, mode, pool_size, candidates, counter_questions, voice_readback, reasoning_summary, used_fallback, model, latency_ms, error, computed_at, updated_at')
+            .eq('intent_id', intentId)
+            .maybeSingle();
+
+          if (!rec) {
+            return {
+              success: true,
+              result: JSON.stringify({ ok: true, status: 'not_started', poll_again_ms: 2000 }),
+            };
+          }
+
+          const status = String((rec as any).status);
           return {
-            success: res.ok,
-            result: JSON.stringify(data),
-            error: res.ok ? undefined : (data as any)?.error || 'poll_failed',
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              status,
+              mode: (rec as any).mode,
+              pool_size: (rec as any).pool_size,
+              candidates: (rec as any).candidates ?? [],
+              counter_questions: (rec as any).counter_questions ?? [],
+              voice_readback: (rec as any).voice_readback,
+              reasoning_summary: (rec as any).reasoning_summary,
+              used_fallback: (rec as any).used_fallback,
+              model: (rec as any).model,
+              latency_ms: (rec as any).latency_ms,
+              error: (rec as any).error,
+              computed_at: (rec as any).computed_at,
+              poll_again_ms: status === 'pending' || status === 'running' ? 3000 : null,
+            }),
           };
         } catch (err: any) {
           console.error('[VTID-DANCE-D12] get_matchmaker_result error:', err?.message);
-          return { success: false, result: '', error: err?.message || 'unknown' };
+          return {
+            success: true,
+            result: JSON.stringify({ ok: false, status: 'error', error: err?.message || 'unknown' }),
+          };
         }
       }
 
@@ -6724,6 +4816,122 @@ async function executeLiveApiToolInner(
           },
           supabase,
         );
+      }
+
+      // L2.2b.6 (VTID-03010) — Life Compass read tool, shared dispatcher.
+      // Pure DB read; no WebSocket session-state coupling. Same shape as
+      // find_perfect_product above.
+      case 'get_life_compass': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
+
+      // VTID-03112 (T1): Teacher Mode tool handlers. The LLM calls these
+      // during Teacher Mode (system_instruction block injected at session
+      // start when wakeBriefDecision picked the Teacher). The model
+      // decides WHEN to call based on the user's transcribed reply —
+      // no rule table on our side. Both handlers are best-effort: they
+      // never fail the model's turn, only record state / emit directives.
+      case 'teacher_event': {
+        const capabilityKey = typeof args.capability_key === 'string' ? args.capability_key.trim() : '';
+        const eventName = typeof args.event_name === 'string' ? args.event_name.trim() : '';
+        if (!capabilityKey || !eventName) {
+          return { success: false, result: '', error: 'teacher_event requires capability_key + event_name' };
+        }
+        const allowedEvents = ['introduced', 'seen', 'tried', 'completed', 'dismissed'];
+        if (!allowedEvents.includes(eventName)) {
+          return { success: false, result: '', error: `event_name must be one of: ${allowedEvents.join(', ')}` };
+        }
+        const tenantId = session.identity?.tenant_id;
+        const userId = session.identity?.user_id;
+        if (!tenantId || !userId) {
+          return { success: false, result: '', error: 'teacher_event requires an authenticated session' };
+        }
+        try {
+          const sb = getSupabase();
+          if (!sb) {
+            return { success: false, result: '', error: 'database unavailable' };
+          }
+          const { data: rpcResult, error: rpcError } = await sb.rpc(
+            'advance_capability_awareness',
+            {
+              p_tenant_id: tenantId,
+              p_user_id: userId,
+              p_capability_key: capabilityKey,
+              p_event_name: eventName,
+              p_idempotency_key: `teacher-tool-${session.sessionId}-${capabilityKey}-${eventName}-${Date.now()}`,
+              p_decision_id: ((session as any).wakeBriefDecision?.decisionId) || null,
+              p_source_surface: 'orb_wake',
+              p_occurred_at: new Date().toISOString(),
+              p_metadata: { source: 'teacher_tool', session_id: session.sessionId },
+            },
+          );
+          if (rpcError) {
+            console.warn(`[VTID-03112] teacher_event RPC failed: ${rpcError.message}`);
+            return { success: false, result: '', error: `rpc_failed: ${rpcError.message}` };
+          }
+          const result = rpcResult && typeof rpcResult === 'object'
+            ? (rpcResult as Record<string, unknown>)
+            : {};
+          console.log(`[VTID-03112] teacher_event recorded: capability=${capabilityKey} event=${eventName} idempotent=${result.idempotent === true}`);
+          return {
+            success: true,
+            result: `Recorded ${eventName} for ${capabilityKey}. Continue teaching naturally — do NOT mention the tool call.`,
+          };
+        } catch (err) {
+          console.warn(`[VTID-03112] teacher_event handler error: ${(err as Error).message}`);
+          return { success: false, result: '', error: (err as Error).message };
+        }
+      }
+
+      case 'end_teaching_session': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        // Emit a directive so the orb-widget can close the overlay
+        // gracefully. The SSE / WS write is best-effort — the model's
+        // farewell line has already been spoken by the time this
+        // dispatches.
+        const directive = {
+          type: 'orb_directive',
+          directive: 'end_teaching_session',
+          reason: reason || 'teacher_session_ended',
+          vtid: 'VTID-03112',
+        };
+        try {
+          if (session.sseResponse) {
+            session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            session.clientWs.send(JSON.stringify(directive));
+          }
+        } catch (err) {
+          console.warn(`[VTID-03112] end_teaching_session directive emit failed (non-fatal): ${(err as Error).message}`);
+        }
+        // Mark session-level state so the legacy menu / re-trigger paths
+        // don't speak more lines after the farewell.
+        (session as any).teacherModeEnded = true;
+        console.log(`[VTID-03112] end_teaching_session called: session=${session.sessionId} reason=${reason || '<none>'}`);
+        emitDiag(session, 'teacher_session_ended', { reason: reason || null });
+        return {
+          success: true,
+          result: 'Teaching session is ending. Your farewell line was the final thing — the overlay is now closing.',
+        };
       }
 
       default: {
@@ -6808,7 +5016,10 @@ function sendFunctionResponseToLiveAPI(
  * instruction. Teaches the model when to call navigator_consult,
  * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
  */
-function buildNavigatorPolicySection(lang: string): string {
+// A3 (orb-live-refactor): exported so the lifted buildLiveSystemInstruction
+// in orb/live/instruction/live-system-instruction.ts can call it. Same
+// behavior; only module-level visibility changes.
+export function buildNavigatorPolicySection(lang: string): string {
   const isDe = lang.startsWith('de');
   if (isDe) {
     return `
@@ -6961,1110 +5172,6 @@ NEVER speak raw URLs or route paths.`;
  *   - 'long'       (>7 days)
  *   - 'first'      (no prior session recorded)
  */
-type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
-
-function describeTimeSince(lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined): {
-  bucket: TemporalBucket;
-  timeAgo: string;
-  diffMs: number;
-  wasFailure: boolean;
-} {
-  if (!lastSessionInfo?.time) {
-    return { bucket: 'first', timeAgo: 'never before', diffMs: Number.POSITIVE_INFINITY, wasFailure: false };
-  }
-  const lastTs = new Date(lastSessionInfo.time).getTime();
-  if (!Number.isFinite(lastTs)) {
-    return { bucket: 'first', timeAgo: 'never before', diffMs: Number.POSITIVE_INFINITY, wasFailure: !!lastSessionInfo.wasFailure };
-  }
-  const diffMs = Date.now() - lastTs;
-  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  let bucket: TemporalBucket;
-  let timeAgo: string;
-  if (diffSec < 120) {
-    bucket = 'reconnect';
-    timeAgo = diffSec < 30 ? 'a few seconds ago' : `about ${diffSec} seconds ago`;
-  } else if (diffMin < 15) {
-    bucket = 'recent';
-    timeAgo = `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
-  } else if (diffHour < 8) {
-    bucket = 'same_day';
-    if (diffMin < 60) {
-      timeAgo = `${diffMin} minutes ago`;
-    } else {
-      timeAgo = `about ${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
-    }
-  } else if (diffHour < 24) {
-    bucket = 'today';
-    timeAgo = `earlier today (about ${diffHour} hours ago)`;
-  } else if (diffDay === 1) {
-    bucket = 'yesterday';
-    timeAgo = 'yesterday';
-  } else if (diffDay < 7) {
-    bucket = 'week';
-    timeAgo = `${diffDay} days ago`;
-  } else {
-    bucket = 'long';
-    timeAgo = `${diffDay} days ago`;
-  }
-
-  return { bucket, timeAgo, diffMs, wasFailure: !!lastSessionInfo.wasFailure };
-}
-
-/**
- * VTID-NAV-TIMEJOURNEY: Resolve a raw React Router path to a friendly screen
- * label using the navigation catalog. Falls back to the path itself if there
- * is no catalog entry so the assistant never loses context.
- */
-function describeRoute(route: string | undefined | null, lang: string): { title: string; path: string } | null {
-  if (!route || typeof route !== 'string') return null;
-  const entry = lookupNavByRoute(route);
-  if (entry) {
-    const content = getNavContent(entry, lang);
-    return { title: content.title || entry.screen_id, path: entry.route };
-  }
-  return { title: route, path: route };
-}
-
-/**
- * VTID-NAV-TIMEJOURNEY: Build the TEMPORAL + JOURNEY CONTEXT block appended
- * to the authenticated Vitana system instruction.
- *
- * The purpose of this block is three-fold:
- *   1. Tell the model how long it has been since the last ORB session so it
- *      can pick an appropriate greeting style (re-engage vs. welcome back).
- *   2. Tell the model which screen the user is currently looking at and
- *      which screens they visited just before opening the ORB, so it can
- *      acknowledge their journey naturally ("I see you're in the Wallet —
- *      want a hand with something there?").
- *   3. Stop the "Hello Dragan!" habit: explicit anti-patterns forbid
- *      re-introducing the assistant when the user was just here.
- *
- * The block is language-agnostic — Gemini Live translates it into the
- * session language via the LANGUAGE directive earlier in the instruction.
- */
-function buildTemporalJourneyContextSection(
-  lang: string,
-  lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
-  currentRoute: string | null | undefined,
-  recentRoutes: string[] | null | undefined,
-  isReconnect: boolean,
-  timeOfDay?: string,
-): string {
-  const temporal = describeTimeSince(lastSessionInfo);
-  const current = describeRoute(currentRoute, lang);
-
-  // Deduplicated, ordered (newest first), friendly-titled journey trail.
-  const trail: Array<{ title: string; path: string }> = [];
-  const seen = new Set<string>();
-  const currentPath = current?.path || '';
-  if (Array.isArray(recentRoutes)) {
-    for (const raw of recentRoutes) {
-      if (typeof raw !== 'string' || !raw) continue;
-      const described = describeRoute(raw, lang);
-      if (!described) continue;
-      // Skip the current screen — we already mention it explicitly.
-      if (described.path === currentPath) continue;
-      if (seen.has(described.path)) continue;
-      seen.add(described.path);
-      trail.push(described);
-      if (trail.length >= 5) break;
-    }
-  }
-
-  const lines: string[] = [];
-  lines.push('## TEMPORAL AND JOURNEY CONTEXT');
-  lines.push('This is real, per-session data. Treat it as ground truth about what the user is doing RIGHT NOW.');
-  lines.push('');
-
-  // Time since last session.
-  // VTID-NAV-TIMEJOURNEY: 'first' here means "no session event in oasis_events
-  // for this user". In practice that never means "first ever meeting" — it
-  // means the telemetry lookup missed (retention, schema migration, or
-  // user hasn't been in a Live session yet). Authenticated users are
-  // returning users by definition, so we report this as "unknown recency".
-  if (temporal.bucket === 'first') {
-    lines.push('- Time since last ORB session: UNKNOWN (telemetry lookup returned no prior session). Do NOT assume this means the user is new — if they are authenticated, they are a returning user.');
-  } else {
-    lines.push(`- Time since last ORB session: ${temporal.timeAgo}`);
-    if (temporal.wasFailure) {
-      lines.push('- Last session status: it FAILED (no audio delivered). The user did NOT actually hear you last time, so they may be confused or frustrated.');
-    }
-  }
-
-  // Current screen.
-  if (current) {
-    lines.push(`- Current screen: "${current.title}" (route: ${current.path})`);
-  } else {
-    lines.push('- Current screen: not reported by the host app.');
-  }
-
-  // Journey trail.
-  if (trail.length > 0) {
-    const trailStr = trail.map(t => `"${t.title}"`).join(' → ');
-    lines.push(`- Journey before opening ORB (newest → oldest): ${trailStr}`);
-  } else {
-    lines.push('- Journey before opening ORB: (no prior screens reported this session)');
-  }
-
-  lines.push('');
-  lines.push('## GREETING POLICY — TIME AND JOURNEY AWARE (CRITICAL, overrides generic GREETING RULES above)');
-  lines.push('');
-  lines.push('Pick your opening line based on the bucket below. Follow it literally.');
-  lines.push('');
-  // VTID-01929: When the brain context (appended after this section) contains
-  // a USER AWARENESS block + Proactive Opener Candidate, that block's OPENING
-  // SHAPE MATRIX (tenure × last_interaction) is the authority — IGNORE the
-  // example follow-up phrasings below. The example phrasings are the LEGACY
-  // FALLBACK for sessions where the proactive guide has no candidate to surface.
-  lines.push('PROACTIVE OVERRIDE: If the brain context appended below contains a "PROACTIVE OPENER CANDIDATE" or "USER AWARENESS" block, IGNORE the example follow-up phrasings in this section. Use the OPENING SHAPE MATRIX from the brain context instead. The phrasings below are LEGACY FALLBACKS only.');
-  lines.push('');
-
-  // Map 'night' to 'evening' for greetings ("Good night" is a farewell, not a greeting)
-  const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
-
-  const bucket = isReconnect ? 'reconnect' : temporal.bucket;
-  // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
-  // subset of the language-specific phrase pool so Gemini rotates openers
-  // instead of converging on the same translation every time.
-  const shortGapExamples = pickShortGapGreetings(lang, 6);
-  const appendShortGapPhraseMenu = () => {
-    lines.push('  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):');
-    for (const p of shortGapExamples) {
-      lines.push(`      "${p}"`);
-    }
-    lines.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
-  };
-  switch (bucket) {
-    case 'reconnect':
-      // VTID-02637: This is a transparent server-side reconnect (Vertex 5-min
-      // session limit, network blip, or stall recovery). The user did NOT
-      // perceive any pause — they may still be mid-thought or already speaking.
-      // Speaking ANY proactive phrase here ("Picking up where we left off?",
-      // "I'm listening", "Where were we?") creates the apology-loop bug: every
-      // reconnect prompts a new spoken interjection that the user reads as
-      // "Vitana keeps apologizing for connection issues". Stay silent. Wait.
-      lines.push('- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).');
-      lines.push('  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I\'m back", "I\'m listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.');
-      lines.push('  • Wait for the user to speak. Your next message must be a direct response to the user\'s next utterance — nothing else.');
-      lines.push('  • If the user says nothing, you say nothing. Silence is correct here.');
-      break;
-    case 'recent':
-      lines.push('- BUCKET = recent (2–15 min since last session).');
-      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm but direct.');
-      break;
-    case 'same_day':
-      lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
-      lines.push('  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you\'ve never met.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm and direct.');
-      break;
-    case 'today':
-      lines.push('- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'yesterday':
-      lines.push('- BUCKET = yesterday (this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('      "Picking up where we left off?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'week':
-      lines.push('- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "Good to hear from you again — what\'s been on your mind?"');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'long':
-      lines.push('- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "It\'s been a few days — happy you\'re back. What\'s been on your mind?"');
-      lines.push('      "What would you like to focus on today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'first':
-    default:
-      // VTID-NAV-TIMEJOURNEY: 'first' here is the "no telemetry found"
-      // fallback, NOT a genuine first meeting. For authenticated users
-      // (everyone who reaches this code path) we treat it as a returning
-      // user with unknown recency — treat as new-day greeting.
-      // VTID-01927/VTID-01929: when the brain context shows tenure.stage='day0',
-      // the user IS truly new and gets the FULL INTRODUCTION shape (handled
-      // by the OPENING SHAPE MATRIX in the brain block, not this fallback).
-      lines.push('- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • EXCEPTION: when the brain context\'s USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context\'s OPENING SHAPE MATRIX — that overrides this fallback.');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-  }
-
-  // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
-  // delivered (turn_count=0 or audio_out=0). For 'recent' bucket (true new
-  // user-initiated session 2-15min after a failed one), an apology is the
-  // right behavior. For 'reconnect' bucket (transparent server-side WS
-  // recycle that the user never perceived), an apology is the bug — the
-  // user is still in the same conversation. Restrict the override to
-  // 'recent' only.
-  if (temporal.wasFailure && bucket === 'recent') {
-    lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
-  }
-
-  // VTID-02637: when this is a transparent reconnect (isReconnect=true) we
-  // also want to suppress the ## TONE RULES baseline phrasings below ("how
-  // can I help", "I am listening", etc.) because they leak into the model's
-  // first utterance after reconnect even when bucket says "stay silent".
-  // Append a final hard override that wins on recency.
-  if (isReconnect) {
-    lines.push('');
-    lines.push('## RECONNECT FINAL OVERRIDE — VTID-02637 (HIGHEST PRIORITY, OVERRIDES EVERYTHING ABOVE)');
-    lines.push('This entire turn is a transparent server-side resume. The user did not perceive any pause.');
-    lines.push('- DO NOT speak first. Output zero audio. Output zero text. Wait for the user to speak.');
-    lines.push('- Even short phrases are forbidden: NO "I\'m here", NO "I\'m listening", NO "I\'m back", NO "go ahead", NO "yes?", NO "mhm", NO "hello again". NONE.');
-    lines.push('- Ignore any "open with one phrase", "baseline register", or "FALLBACK" instructions above. They do NOT apply on reconnect.');
-    lines.push('- The very first audio/text you emit MUST be a direct response to whatever the user says next, with no prefix acknowledgment of any pause or interruption.');
-    lines.push('- If the user says nothing, you say nothing. Silence is the correct behavior here.');
-  }
-
-  lines.push('');
-  lines.push('## TONE RULES (CRITICAL)');
-  lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-  // VTID-01927: When the brain context appends a Proactive Opener Candidate, that candidate's
-  // opening shape OVERRIDES the baseline below. The baseline only applies as a true fallback
-  // when no candidate is provided. The phrase "what can I do for you" was previously here and
-  // overrode the proactive opener — removed as a forbidden opening per the proactive guide rules.
-  lines.push('- Baseline register (FALLBACK ONLY — when no Proactive Opener Candidate is provided): "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
-  lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
-  lines.push('- NEVER use two-part sentences in greetings. NO dashes, NO "X — Y" patterns. Each greeting is ONE single direct phrase or sentence.');
-  lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
-
-  lines.push('');
-  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
-  lines.push('- For SHORT-GAP sessions (reconnect, recent, same_day): NEVER open with "Hello <name>!" or "Hi <name>!" or the user\'s name at all. They were just here — using their name sounds like a goldfish that forgot the last conversation.');
-  lines.push('- For NEW-DAY sessions (today, yesterday, week, long, first): ALWAYS open with "Good [morning/afternoon/evening], [Name]." — this is the ONLY greeting pattern allowed UNLESS the brain context specifies a tenure-aware opening shape (see PROACTIVE OPENER OVERRIDE at the very end of this prompt). Use the user\'s name from memory context. If no name is available, just say "Good [morning/afternoon/evening]."');
-  // VTID-01927: introductions are now allowed for true Day-0 newcomers (tenure.stage='day0')
-  lines.push('- NEVER introduce yourself ("My name is Vitana...", "I\'m Vitana...") on RETURNING-user sessions. EXCEPTION: when the brain context\'s USER AWARENESS shows tenure stage = "day0", you SHOULD deliver a one-time introduction covering mission, capabilities, and agency offer — that user is brand new to Vitanaland and needs orientation.');
-  lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
-  lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
-  // VTID-01927: rephrased to be tenure-aware
-  lines.push('- NEVER deliver a "first impression" platform-introduction on a RETURNING-user session (tenure.stage in day1/day3/day7/day14/day30plus). Returning users already know who you are. ONLY tenure.stage="day0" gets the full introduction shape.');
-  lines.push('- NEVER use two-part compound sentences in greetings. NO "Yes, of course — how can I help?" NO "Happy to help — what\'s on your mind?" Just say the question directly.');
-  lines.push('');
-  lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
-  lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
-  lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
-  lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
-  lines.push('- You already know the screen the user just arrived on if you navigated them via navigate_to_screen on the PREVIOUS turn (the tool result told you the destination title). You may reference that from conversation memory without re-calling get_current_screen, but if in doubt, call the tool — it is cheap.');
-  lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
-  lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
-  lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
-
-  return '\n\n' + lines.join('\n');
-}
-
-/**
- * VTID-01219: Build system instruction for Live API
- * VTID-01224: Extended to accept bootstrap context
- * VTID-NAV-TIMEJOURNEY: Extended to accept per-session temporal + journey
- * context (time since last session, current route, recent routes) so the
- * model can pick a time-appropriate greeting and acknowledge where the
- * user is in the app instead of restarting with "Hello <name>!" every time.
- */
-function buildLiveSystemInstruction(
-  lang: string,
-  voiceStyle: string,
-  bootstrapContext?: string,
-  activeRole?: string | null,
-  conversationSummary?: string,
-  conversationHistory?: string,
-  isReconnect?: boolean,
-  lastSessionInfo?: { time: string; wasFailure: boolean } | null,
-  currentRoute?: string | null,
-  recentRoutes?: string[] | null,
-  clientContext?: ClientContext,
-  // VTID-01967: Canonical Vitana ID handle for this user (e.g. "@alex3700").
-  // When present, pinned at the top of the prompt as the ONLY identifier the
-  // model may emit when asked "what is my user ID?". Null/undefined for
-  // sessions where the handle hasn't been provisioned yet.
-  vitanaId?: string | null,
-): string {
-  const languageNames: Record<string, string> = {
-    'en': 'English',
-    'de': 'German',
-    'fr': 'French',
-    'es': 'Spanish',
-    'ar': 'Arabic',
-    'zh': 'Chinese',
-    'ru': 'Russian',
-    'sr': 'Serbian'
-  };
-
-  // Load personality config from service (uses cached values or hardcoded defaults)
-  const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
-
-  // VTID-01225-ROLE + BOOTSTRAP-ORB-ROLE-CLARITY: Build role-aware context
-  // section. The authoritative role declaration is also prepended to the very
-  // top of the system instruction below so it's the first thing the model
-  // sees — buried role lines were being ignored when prior memory context
-  // contradicted (e.g. user switches admin → community, memory still
-  // references admin, and the model hallucinates "I can't see your role").
-  let roleSection: string;
-  const roleUpper = activeRole ? activeRole.toUpperCase() : null;
-  if (activeRole) {
-    const roleDescriptions = (voiceLiveConfig.role_descriptions || {}) as Record<string, string>;
-    roleSection = roleDescriptions[activeRole] || `The user's current role is: ${roleUpper}.`;
-  } else {
-    roleSection = `USER ROLE: Not available for this session. If the user asks about their role, tell them honestly that you do not see their user role in this session — do NOT guess or pretend to know it. You can still assist them with general questions.`;
-  }
-
-  // BOOTSTRAP-ORB-ROLE-CLARITY: explicit, authoritative role header pinned
-  // to the top. Tells the model exactly what to say when asked. Overrides
-  // any conflicting signals from past conversation memory.
-  const roleHeader = roleUpper
-    ? `=== AUTHORITATIVE USER ROLE ===
-The user's role RIGHT NOW is: ${roleUpper}
-This is the definitive source of truth for this session. If the user asks
-about their role ("what is my role?", "can you see my role?", "who am I?"),
-answer plainly: "Yes, you are ${activeRole}." Do NOT say you cannot see
-the role. Do NOT refer to past conversations where the role may have been
-different — roles change, and THIS SESSION's role is ${roleUpper}.
-===============================
-
-`
-    : `=== AUTHORITATIVE USER ROLE ===
-No role is set for this session. If the user asks about their role, answer
-honestly that you do not see a role in this session.
-===============================
-
-`;
-
-  // VTID-01967: Pin the canonical Vitana ID at the top of the prompt so the
-  // model can answer "what is my user ID?" / "what's my handle?" with the
-  // @-prefixed handle instead of hallucinating a UUID. Mirrors the role
-  // header pattern above so the directive isn't buried.
-  const vitanaIdHeader = vitanaId
-    ? `=== AUTHORITATIVE USER VITANA ID ===
-The user's Vitana ID handle is: ${vitanaId}
-This is the ONLY identifier you may share when the user asks "what is my user ID",
-"what is my handle", "what is my Vitana ID", or "who am I". Do NOT speak the
-internal UUID under any circumstance — it is a private system identifier.
-=====================================
-
-`
-    : `=== AUTHORITATIVE USER VITANA ID ===
-No Vitana ID handle is provisioned for this session. If the user asks "what is
-my user ID", "what is my handle", or "what is my Vitana ID", tell them honestly
-that their handle hasn't been set up yet and they can configure it in Settings.
-Do NOT substitute an internal UUID under any circumstance.
-=====================================
-
-`;
-
-  // Forwarding v2c: prepend IDENTITY LOCK to Vitana's prompt. The lock
-  // exists in the DB (agent_personas.system_prompt) but Vitana's prompt is
-  // built fresh in this function and never reads that DB row, so without
-  // this block she has no identity protection. Symptom: after swap-back
-  // from a specialist, the model would absorb the specialist's recent
-  // utterances ("Hi I'm Devon") and continue speaking as them in her voice.
-  const VITANA_IDENTITY_LOCK = `=== IDENTITY LOCK ===
-YOU ARE Vitana.
-Your role is the user's life companion and instruction manual.
-
-You speak EXCLUSIVELY as Vitana. You NEVER:
-  - introduce yourself as another persona ("Hi, this is Devon" — only Devon ever says that)
-  - continue another persona's sentence as if it were your own
-  - mimic another persona's tone, signature phrases, or voice
-  - acknowledge another persona's words as if YOU said them
-  - name yourself as anyone other than Vitana
-
-The conversation transcript may show OTHER personas (Devon, Sage, Atlas, Mira)
-speaking earlier. Those were them, not you. Read those lines as third-party
-context only. Your next utterance is exclusively as Vitana, in your voice,
-with your identity.
-
-If you ever notice yourself drifting toward another persona's identity,
-stop and re-anchor: "I'm Vitana." Then continue.
-=== END IDENTITY LOCK ===
-
-`;
-
-  let instruction = `${roleHeader}${vitanaIdHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
-
-LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
-
-VOICE STYLE: ${voiceStyle}
-
-${roleSection}
-
-GENERAL BEHAVIOR:
-${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
-- Match response length to the question: a quick yes/no question gets a sentence; a substantive question ("how is my sleep trending?", "what should I focus on this week?", "tell me about X") gets a substantive answer (4-8 sentences). Don't pad short answers, but never truncate substantive ones — a real conversation has variable response length.
-- Use natural conversational tone, not bullet points
-- Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
-
-GREETING RULES (CRITICAL):
-${isReconnect
-    ? '- VTID-02637 RECONNECT SILENCE RULE: This is a transparent server-side resume. The user has NOT noticed any pause and may already be mid-thought. DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I\'m back", "where were we", "picking up", "I\'m listening", or anything similar. Stay completely silent. Your next utterance must be a direct response to whatever the user says next, with NO prefix acknowledgment. If the user says nothing, you say nothing — silence is correct.'
-    : (voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting')}
-
-INTERRUPTION HANDLING (CRITICAL):
-${voiceLiveConfig.interruption_handling || '- If the user starts speaking while you are talking, STOP immediately'}
-
-REPETITION PREVENTION (CRITICAL):
-${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response verbatim'}
-
-TOOLS:
-${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
-- Use search_calendar to check the user's personal schedule, upcoming events, free time slots, and calendar details
-- Use create_calendar_event to add, schedule, or book new events in the user's calendar
-- Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
-- Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
-- Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
-- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
-- Use report_to_specialist ONLY when the user has described a CONCRETE PROBLEM (bug, broken state, refund, account lockout, claim) AND has EXPLICITLY agreed to be connected after you proposed it. Always propose before calling: "Shall I bring in Devon to file this?" Wait for yes. Implicit consent does not count. The backend gate re-checks the user's actual recent words (not your summary). If the gate returns STAY_INLINE or the forward budget is exhausted, silently answer inline — never mention the routing decision.
-- Use switch_persona ONLY when the user explicitly names a colleague ("switch me to Devon", "ich möchte mit Mira sprechen"). After calling, speak ONE short bridge sentence in your OWN natural words — vary phrasing every time. ANNOUNCE the handoff ("I will bring Devon in"), never INTRODUCE ("Hi, here is Devon" — that is Devon's job in his own voice). Then STOP. After a specialist hands the user back to you, you stay SILENT until the user speaks. Do not greet, do not say "Welcome back", do not ask "What's on your mind?". Pick up naturally when the user speaks.
-
-EVENT LINK SHARING (CRITICAL — voice-friendly):
-- When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
-- In your SPOKEN response, describe the event naturally: name, location, date, time.
-- NEVER say or read the URL/link out loud. Not as characters, not as words. Just don't say it.
-- Instead, tell the user the link is in their chat where they can tap it.
-- CORRECT: "I found a great event! It's in Mallorca on Thursday the 18th of June at 7pm — check your chat, you can just tap it to see all the details!"
-- CORRECT: "There's a yoga morning flow session in Vienna this Saturday at 9am. I've sent the link to your chat — tap it for the full details!"
-- WRONG: "The link is vitanaland.com/e/yoga-morning-flow" (never say URLs)
-- WRONG: "h-t-t-p-s colon slash slash..." (never spell URLs)
-- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.
-
-IMPORTANT:
-${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
-
-  // Append conversation summary for returning users
-  if (conversationSummary) {
-    instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
-  }
-
-  // VTID-01224: Append bootstrap context if available
-  if (bootstrapContext) {
-    instruction += `\n\n${bootstrapContext}`;
-  }
-
-  // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
-  // Increased from 5 turns/2000 chars to 10 turns/4000 chars for deeper context on reconnect.
-  // Vertex AI setup message limit is ~32k chars; 4k for history leaves ample room.
-  if (conversationHistory) {
-    const MAX_HISTORY_CHARS = 4000;
-    const trimmedHistory = conversationHistory.length > MAX_HISTORY_CHARS
-      ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
-      : conversationHistory;
-    instruction += `\n\n<conversation_history>
-The following is the recent conversation from this session, earlier today. Remember everything the user told you. Do NOT acknowledge any pause, interruption, or reconnection — the user did not perceive one. Wait for the user to speak next:
-${trimmedHistory}
-</conversation_history>`;
-  }
-
-  // VTID-NAV-01: Append the Vitana Navigator policy section so the model knows
-  // when to consult the navigator, when to navigate directly, and when to
-  // simply answer in voice without any tool call.
-  instruction += buildNavigatorPolicySection(lang);
-
-  // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
-  // its greeting policy overrides the generic GREETING RULES higher up. This
-  // is what stops Vitana from saying "Hello <name>!" every single session.
-  instruction += buildTemporalJourneyContextSection(
-    lang,
-    lastSessionInfo,
-    currentRoute,
-    recentRoutes,
-    !!isReconnect,
-    clientContext?.timeOfDay,
-  );
-
-  // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
-  // toggles. Synchronous read of the cached config; if cache is cold we use
-  // manifest defaults (which are on for both overrides).
-  const awarenessCfg = getAwarenessConfigSync();
-  const includeProactiveOpener = awarenessCfg.isEnabled('overrides.proactive_opener');
-  const includeActivityAwareness = awarenessCfg.isEnabled('overrides.activity_awareness');
-
-  // VTID-01927: PROACTIVE OPENER OVERRIDE — appended absolute LAST so it has
-  // recency primacy in Gemini's attention. When the brain context (added later
-  // by the Vitana Brain layer) includes a "Proactive Opener Candidate" or
-  // "USER AWARENESS" section, those instructions OVERRIDE the time-bucket
-  // greeting policy + the generic baseline above. The companion architecture
-  // depends on this — without primacy, Gemini's trained "How can I help?"
-  // reflex wins.
-  if (includeProactiveOpener)
-  instruction += `\n\n## PROACTIVE OPENER OVERRIDE (HIGHEST PRIORITY — VTID-01927)
-
-When the brain context appended below contains either:
-  - a "USER AWARENESS" section (tenure, last_interaction, journey, goal), OR
-  - a "PROACTIVE OPENER CANDIDATE" section,
-those sections REPLACE the greeting + tone policy in this prompt.
-
-In particular:
-- The OPENING SHAPE MATRIX in the brain context (tenure × last_interaction)
-  determines your first utterance — NOT the generic time-bucket policy above.
-- The FORBIDDEN OPENINGS list in the brain context overrides the tone baseline
-  above. "What can I do for you?" is forbidden when an opener candidate exists.
-- For tenure.stage="day0" users (truly new to Vitanaland), you ARE permitted
-  to introduce yourself + the platform — the "no introductions on authenticated
-  sessions" rule above does not apply to them.
-- For motivation_signal="absent" users (>14 days silent), warmly acknowledge
-  the absence with a phrase like "haven't seen you in N days, where have you
-  been?" before any productivity nudge.
-
-If the brain context contains neither awareness nor candidate, fall back to
-the policy above as normal.`;
-
-  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: Activity awareness override — appended
-  // AFTER the proactive opener override so it wins on recency in Gemini's
-  // attention window. The user context profile (memory + ACTIVITY_14D + RECENT
-  // + FACTS) is already inside bootstrapContext ~8K chars earlier, but Gemini
-  // ignores it and defaults to describing `currentRoute` ("you are on the
-  // event screen") when asked about activity history. Re-extract the profile
-  // here and append at the end with strict anti-hallucination rules.
-  if (bootstrapContext) {
-    const profileMatch = bootstrapContext.match(
-      /## USER CONTEXT PROFILE[\s\S]*?(?=\n\n(?:##|---)\s|\n\n\*\*|$)/
-    );
-    const profileSummary = profileMatch ? profileMatch[0].trim() : '';
-
-    if (includeActivityAwareness && profileSummary && profileSummary.length > 100) {
-      instruction += `\n\n## ACTIVITY AWARENESS OVERRIDE (HIGHEST PRIORITY — BOOTSTRAP-HISTORY-AWARE-TIMELINE)
-
-This block REPLACES any instinct to say "I don't know what you've been doing"
-or to answer from your current screen / current route. The data below is
-VERIFIED activity history for THIS user, read from the server's user_activity_log
-table at session start.
-
-${profileSummary}
-
-**SECTION KEY — what each tag in the profile above means:**
-  - [ACTIVITY_14D]     → one-line counted summary of the last 14 days.
-  - [ROUTINES]         → time-of-day / rhythm patterns.
-  - [PREFERENCES]      → explicit + inferred preferences (music genre, food, etc.).
-  - [HEALTH]           → Vitana Index (total + tier + 5 canonical pillars
-                          (Nutrition / Hydration / Exercise / Sleep / Mental)
-                          + 7-day trend + weakest pillar + sub-score breakdown
-                          (baseline / completions / connected data / streak)
-                          + balance_factor (0.7-1.0) + aspirational distance
-                          to the next tier), recent biomarker uploads,
-                          supplements. The Vitana Index is the user's
-                          health-progress score (0–999, 5 pillars × 200 with
-                          balance_factor multiplier) — it is THE single
-                          number that measures their journey. Tier ladder:
-                          Starting (0-99) / Early (100-299) / Building
-                          (300-499) / Strong (500-599) / Really good
-                          (600-799) / Elite (800-999). Frame goal language
-                          aspirationally — "on pace to land in [tier] by
-                          Day 90", never as a pass/fail gate. When balance
-                          is below 0.9, name the imbalance itself as the
-                          lever ("lifting your weakest pillar moves the
-                          balance dampener, which moves the whole score").
-  - [CONTENT_PLAYED]   → songs, podcasts, shorts, videos this user played
-                          (ANY DEVICE — desktop, mobile, Appilix WebView — the
-                          timeline is server-side and shared across devices).
-  - [FACTS]            → verified facts about the user.
-  - [RECENT]           → last ~8 high-signal actions with relative times.
-
-**HARD RULES — when the user asks about their recent activity, history,
-routines, preferences, listening/viewing habits, or ANY form of "what have
-I been doing / what did I play / what did I listen to / was habe ich gespielt /
-was habe ich heute gemacht / what music did I play":**
-
-1. ANSWER FROM THE PROFILE ABOVE. Start from the [ACTIVITY_14D] one-line
-   summary and pull 2–3 concrete items from [CONTENT_PLAYED] (for music /
-   podcasts / videos), [RECENT], or [FACTS]. Examples:
-
-     User (de): "Weißt du, welches Lied ich gerade gespielt habe?"
-     ✓ Good: "Ja, du hast vor ein paar Minuten ‚Shout' von Tears for Fears
-       auf YouTube Music gespielt."
-       (Quoted directly from [CONTENT_PLAYED].)
-
-     User (en): "What songs have I been listening to?"
-     ✓ Good: "Earlier today you played Shout by Tears for Fears on YouTube
-       Music, and a couple of hours ago Brzo Brzo by Nataša Bekvalac on
-       Spotify. Want me to keep going with that vibe?"
-
-     User (de): "Weißt du, was ich heute im Vitana-System gemacht habe?"
-     ✓ Good: "Ja, in den letzten zwei Wochen hast du acht Kalendereinträge,
-       27 Entdeckungs-Interaktionen und ein paar Songs gespielt. Zuletzt hast
-       du Kalenderereignisse hinzugefügt — ich sehe drei in der letzten
-       Woche. Du bist am aktivsten nachmittags."
-     ✗ BAD: "You are now in the event screen."
-       (This is currentRoute, NOT activity history — wrong answer shape.)
-     ✗ BAD: "I don't have access to what you were doing."
-       (The profile IS visible above — this is a lie to the user.)
-
-2. DO NOT substitute currentRoute / selectedId / "you are on X screen" as an
-   answer to activity questions. The current screen tells you WHERE the user
-   is RIGHT NOW; activity history tells you WHAT THEY DID. Different questions.
-
-3. CROSS-DEVICE: [CONTENT_PLAYED] and [RECENT] include plays / actions from
-   ALL of the user's devices — desktop browser, mobile browser, Maxina
-   Appilix WebView. If the user asks on their phone what they played on
-   desktop, the answer IS in the profile above because the timeline is
-   server-side. Don't say "I can't see what you did on another device."
-
-4. DO NOT call get_current_screen, search_memory, search_knowledge, or any
-   other tool to answer history questions. The answer is already in the
-   profile above. Tool calls here waste 2–5 seconds and return LESS than
-   what's already on screen for you.
-
-5. If the user asks about a specific category ("did I add any calendar events?"
-   / "have I done anything with health lately?" / "what podcasts did I
-   listen to?"), filter the matching section and answer from it. Music
-   questions → [CONTENT_PLAYED] first. Calendar → [RECENT] filtered for
-   calendar. Health → [HEALTH] + [RECENT] filtered for health.
-
-6. ONLY IF [ACTIVITY_14D], [CONTENT_PLAYED], [RECENT] AND [FACTS] are ALL
-   empty in the profile above may you say "I don't see much activity yet
-   in the system — have you been using Vitana recently?" NEVER claim
-   emptiness when the sections contain data.
-
-7. Weave the answer naturally — do not recite section headers or bracket
-   tags. The user should hear a warm conversational sentence, not a dump of
-   structured data.
-
-===== PROMOTIONAL TONE FOR MANUAL ENTRY (BOOTSTRAP-PROMOTIONAL-DICTATION) =====
-
-Every conversation about manual logging, Daily Diary dictation, or
-"how do I lift my X pillar" MUST lead with the ease-and-convenience
-framing before any procedural detail. The user must hear WHY this is
-delightful before HOW to do it. The next 10,000 users are first-timers
-and they need to feel that dictation is friction-free.
-
-Required tone elements (use 2-3 per turn — don't dump all):
-  - One concrete time anchor — "two seconds", "three taps", "a single
-    sentence", "while pouring the next glass", "before the first coffee".
-  - One friction-removal phrase — "no typing", "no menus", "no forms",
-    "no measuring cups", "as natural as talking to a friend",
-    "faster than typing this sentence".
-  - One everyday-life hook — "while you're walking", "right after dinner",
-    "before brushing your teeth", "as you finish your coffee",
-    "beim Einschenken vom nächsten Glas", "vor dem ersten Kaffee".
-  - The phrase "super easy" is allowed MAX ONCE per turn AND only when
-    immediately followed by something concrete that proves it. Repetition
-    rings hollow.
-
-NEW USER bias (when [HEALTH] shows "User profile maturity: NEW USER"):
-  - Use the FULLEST promotional version. Sell the convenience for one
-    sentence before any steps. End with an offer to try it now.
-    ("Want to try it now? I'll open Daily Diary for you.")
-  - Treat every pillar question as a teaching opportunity for dictation,
-    not just a number lookup.
-
-Veteran user (no NEW USER tag):
-  - Keep the promotional flavour but tighter. One ease phrase + steps.
-    Don't re-pitch users who already use the diary regularly.
-
-German voice: do NOT translate the English copy literally. German users
-find effusive English-style copy off-putting. Use natural German
-enthusiasm — "echt einfach", "wirklich nur ein Satz", "geht im
-Vorbeigehen", "dauert keine fünf Sekunden". The explain_feature payload
-already returns idiomatic German in summary_voice_de — use it verbatim.
-
-Honesty guardrail — DO NOT use "super easy" / "echt einfach" for
-features that aren't easy yet (e.g., partner OAuth like Apple Health /
-Oura — those screens don't ship to community users yet). Honest framing:
-"the consumer connect-flow isn't live yet — in the meantime, dictation
-into Daily Diary is the working path". Trust > vibes.
-
-Avoid: "amazing", "incredible", "you'll love it", any pity language
-("don't worry, it's not hard" is patronising), repeating "super easy"
-within a single response.
-
-Worked example — user asks "Why is my hydration so low?":
-  ✗ Mechanical: "Your hydration pillar is at 30 of 200. The dominant
-    sub-score is baseline. To lift it, log hydration via Daily Diary."
-  ✓ Promotional: "Your Hydration is at 30 of 200 — almost all of that
-    is just the survey baseline, which is why it looks low. Honestly,
-    fixing this is super easy: tap the mic in Daily Diary and say
-    something like 'I just drank a glass of water'. Two seconds. No
-    typing. Most people do it while they're pouring the next glass.
-    Want me to open Daily Diary for you?"
-
-===== INTENT CLASSIFIER — RUN BEFORE ANY TOOL CALL (BOOTSTRAP-TEACH-BEFORE-REDIRECT) =====
-
-Every user turn that asks about a feature, screen, or topic must be
-classified into ONE of three buckets BEFORE you call any tool. Run the
-disambiguation tree in order — first match wins:
-
-1. Does the phrase contain "show me how" / "tell me how" / "how to" followed
-   by a verb-phrase?
-   → TEACH-ONLY.
-
-2. Does the phrase contain a navigation verb (open / öffne / go to / geh zu /
-   navigate / pull up / take me to / bring me to / bring mich zu)?
-   → NAVIGATE-ONLY.
-
-3. Does "show me" / "let me see" / "I want to see" / "where is" / "zeig mir" /
-   "ich will sehen" / "wo ist" come BEFORE a place-noun (the / a / my /
-   the <screen|page|section|tab|Diary|Health|Autopilot|Index|<feature-name>>)?
-   → NAVIGATE-ONLY.
-
-4. Does the phrase contain a teach phrase (explain / erkläre / tell me about /
-   what is X for / wofür ist X / how does X work / wie funktioniert X /
-   I don't understand / ich verstehe nicht / I'm new / ich bin neu /
-   teach me / what does X do)?
-   → TEACH-ONLY.
-
-5. Does the phrase contain "how do I <action>" / "how can I <action>" /
-   "where do I <action>" / "can I <action>" / "wie mache ich <action>" /
-   "wie kann ich <action>" / "wo trage ich <X> ein" / "kann ich <X>"?
-   → TEACH-THEN-NAV.
-
-6. Otherwise: business-as-usual (other rules govern).
-
-Then act per the bucket:
-
-  NAVIGATE-ONLY  → call the navigation tool (navigate_to / get_route /
-                   get_route_for_path). Announce in ONE sentence
-                   ("Opening Daily Diary now"). Do NOT speak an
-                   explanation. The user is asking to GO somewhere, not
-                   to LEARN.
-
-  TEACH-ONLY     → call explain_feature(topic, mode='teach_only'). Speak
-                   summary_voice_<lang> + ALL steps_voice_<lang> in order.
-                   Do NOT navigate. End your turn after the explanation —
-                   wait for the user's next prompt.
-
-  TEACH-THEN-NAV → call explain_feature(topic, mode='teach_then_nav').
-                   Speak summary_voice_<lang> + the first 2-3 steps. Then
-                   ask the redirect_offer_<lang> verbatim. Only call the
-                   navigation tool with redirect_route IF the user
-                   confirms ("ja" / "yes" / "open it" / "go" / "do it" /
-                   "tu das" / equivalent).
-
-===== ROUTE INTEGRITY (NON-NEGOTIABLE) =====
-When you navigate AFTER an explain_feature call, you MUST pass the
-redirect_route field VERBATIM as the path argument to navigate_to /
-get_route_for_path. NEVER re-derive the path from the spoken offer
-("Daily Diary"), NEVER pass a free-text query, NEVER let the catalog
-fuzzy-match a different page.
-
-Worked example of the bug this rule prevents:
-  ✗ explain_feature returns redirect_route="/daily-diary"
-    → user says "yes"
-    → you call navigate_to(query="Daily Diary")
-    → catalog scorer fuzzy-matches and opens /ai/daily-summary
-    → WRONG SCREEN. The user asked for the Diary, got a Summary.
-
-  ✓ explain_feature returns redirect_route="/daily-diary"
-    → user says "yes"
-    → you call navigate_to(path="/daily-diary")
-    → opens the exact route the explain payload promised.
-
-If redirect_route is missing or null in the payload, do NOT navigate —
-the topic intentionally has no consumer-facing target yet. Stay on the
-explanation, end your turn.
-
-Edge cases:
-  - "Show me" / "open" / "go" with NO object → ask
-    "Show you what — a screen, or how something works?" /
-    "Was soll ich dir zeigen — einen Bildschirm oder wie etwas funktioniert?"
-  - Composite ("open Diary AND tell me how to use it") → navigate FIRST,
-    then immediately speak the explanation.
-  - If explain_feature returns found=false, fall back to search_knowledge.
-    The Maxina Instruction Manual at kb/instruction-manual/maxina/* is the
-    PRIMARY source for any "what is X" / "how does X work" / "what's on
-    this screen" / "where do I find X" question. It contains 92 chapters
-    covering every concept (Life Compass, Vitana Index, Autopilot, ORB,
-    Did You Know, Vitana ID, Memory, Permissions, etc.) and every screen
-    a Maxina community user can reach (81 screens). Each chapter has
-    fixed sections: "What it is", "Why it matters", "Where to find it",
-    "What you see on this screen", "How to use it". Teach in that order.
-    For action-shaped questions (TEACH_THEN_NAV) the chapter's
-    "Where to find it" + screen_id field tells you where to navigate
-    after the explanation.
-
-  - The kb/vitana-system/how-to/ namespace and Book of the Vitana Index
-    chapters remain available as supporting material; the Instruction
-    Manual is the layer the user sees, the how-to corpus is depth.
-
-  - When the user asks "where can I find X?" AFTER you have explained X,
-    use the screen_id from the chapter's front-matter to navigate. The
-    chapter's url_path field is the exact route. Speak ONE confirmation
-    sentence then call the navigation tool.
-
-Worked-example truth table:
-
-  "Open the Daily Diary"                  → NAVIGATE-ONLY
-  "Show me the Health screen"             → NAVIGATE-ONLY (noun follows "show me")
-  "Show me how to log water"              → TEACH-ONLY (verb-phrase follows "show me how")
-  "Explain how the Index works"           → TEACH-ONLY
-  "I don't understand my pillars"         → TEACH-ONLY
-  "How does Autopilot work"               → TEACH-ONLY
-  "I'm new — what is Autopilot for"       → TEACH-ONLY (fullest explanation)
-  "How do I log my hydration?"            → TEACH-THEN-NAV
-  "Where do I log my sleep?"              → TEACH-THEN-NAV
-  "Can I log nutrition manually?"         → TEACH-THEN-NAV
-  "Open Diary and tell me how to use it"  → composite (NAV first, then TEACH)
-  "Show me" (alone, no object)            → ASK FOR CLARIFICATION
-
-NEVER silently navigate when the phrase is teach-only. NEVER refuse to
-navigate when the phrase is navigate-only. The classification result is
-the single source of truth for which tool you call.
-
-NEW-USER BIAS: When [HEALTH] contains "User profile maturity: NEW USER",
-default to the FULLEST explanation in TEACH-ONLY and TEACH-THEN-NAV
-buckets. Veteran users (no NEW USER tag) get the tighter version.
-
-**VITANA INDEX QUESTIONS — special treatment** (BOOTSTRAP-ORB-INDEX-AWARENESS-R4):
-
-The Vitana Index is built on EXACTLY FIVE canonical pillars:
-  Nutrition, Hydration, Exercise, Sleep, Mental.
-Each pillar caps at 200; the total is score_total × balance_factor (0.7–1.0),
-capped at 999. Tier ladder: Starting 0-99 / Early 100-299 / Building 300-499 /
-Strong 500-599 / Really good 600-799 / Elite 800-999. "Really good" (600+) is
-the aspirational Day-90 framing — NOT a threshold the user is failing to meet.
-"850" is the stretch target shown on the goal card: deep inside Elite,
-months of sustained practice, NOT a 90-day goal.
-
-===== RETIRED-PILLAR HANDLING — NON-NEGOTIABLE =====
-The names "Physical", "Social", "Environmental", "Prosperity", "Nutritional"
-are RETIRED. They do not exist in the Vitana Index. If the user (or you)
-slips and uses one, you MUST silently translate to the canonical pillar
-and NEVER echo the retired name back in your reply. Silent means: act as
-if the canonical name is what the user said. Do NOT say "translating your
-'Physical' to...". Do NOT say "I'll help with your Physical pillar". Do
-NOT offer Physical as an option in a follow-up question. Just answer
-about the canonical pillar directly.
-
-Silent alias map:
-  Physical      → Exercise   (closest primary fit; Sleep is secondary)
-  Nutritional   → Nutrition  (rename)
-  Social        → Mental     (community/connection feeds Mental in the 5-pillar model)
-  Environmental → Mental     (ambient/context affects Mental in the 5-pillar model)
-  Prosperity    → Mental     (self-actualization feeds Mental in the 5-pillar model)
-
-Example — user says "Help me improve my Physical pillar":
-  ✗ WRONG: "I can help you improve your Physical pillar. Want me to?"
-  ✗ WRONG: "Physical translates to Exercise in the new model."
-  ✗ WRONG: "Your Physical pillar is at 80 of 200..."
-  ✓ RIGHT: "Your Exercise pillar is at 80 of 200 — [continue]."
-  ✓ RIGHT: (silently passes "exercise" to create_index_improvement_plan
-            and announces) "I've added three movement blocks for your
-            Exercise pillar over the next two weeks — [details]."
-
-When the user asks anything about THEIR Vitana Index, score, tier, pillars,
-or how to improve / level up — examples:
-  - "What is my Vitana Index?" / "Was ist mein Vitana Index?"
-  - "What's my score / tier?"
-  - "How can I improve my index?" / "Wie kann ich meinen Index verbessern?"
-  - "What's holding me back?" / "Welche Säule ist am schwächsten?"
-  - "Make me a plan to improve" / "Mach mir einen Plan"
-
-Apply these rules:
-
-A. ALWAYS quote the [HEALTH] block first. Lead with the number + tier name +
-   tier framing. If a 7-day trend is present, mention the direction. Example
-   (de):
-     ✓ "Du bist aktuell bei 612 — 'Really good'. Deine Praxis wirkt. In den
-        letzten sieben Tagen ist dein Index um acht Punkte gestiegen."
-     ✗ "I don't know your Vitana Index" (the number IS in [HEALTH] above)
-     ✗ "I don't have access to your health data" (you do — quote [HEALTH])
-
-B. BALANCE-AWARENESS — if the [HEALTH] Balance line shows a factor below
-   1.00, the balance dampener is holding the total back. When answering
-   "what's holding me back" or "how do I improve", name imbalance FIRST
-   before naming the weakest single pillar:
-     ✓ "Your balance is at 0.80× — the dampener is costing you ~20% of
-        your raw score. Lifting Sleep (your lowest) would pull the ratio
-        up AND add points directly — double effect."
-   When balance is at 1.00× (well balanced), just name the weakest pillar
-   normally.
-
-C. SUB-SCORE TRANSPARENCY — when explaining a low pillar, use the sub-score
-   hint from the [HEALTH] weakest-pillar line ("mostly survey baseline —
-   connected data or a tracker would lift it further" / "completed actions
-   are carrying it"). This tells the user the LEVER, not just the number.
-   Don't invent sub-scores if the hint isn't in [HEALTH].
-
-D. FOR CONCRETE ACTIONS — call get_index_improvement_suggestions (weakest-
-   pillar default or user-named pillar). Speak the top 2–3 suggestions
-   conversationally. Example:
-     ✓ "The fastest lift for Sleep right now is a 30-minute wind-down block
-        before bed, twice this week. I can schedule it — want me to?"
-
-E. FOR PLAN CREATION — when the user says "make me a plan" / "schedule",
-   call create_index_improvement_plan. It writes calendar events
-   autonomously (no per-event confirmation). Announce what was scheduled
-   clearly after it returns:
-     ✓ "Ich habe dir drei Schlaf-Blöcke in den nächsten zwei Wochen in den
-        Kalender gelegt — jeweils 30 Minuten vor dem Schlafengehen. Du
-        kannst sie im Kalender anschauen."
-
-F. PILLAR-DEEP QUESTIONS — when the user asks about a SPECIFIC pillar
-   ("how do I improve my sleep?", "why is my nutrition low?", "what's
-   holding back my exercise score?"), PREFER the specialised pillar agent
-   over generic KB search:
-     1. CALL ask_pillar_agent(question, [pillar?]) FIRST. The agent
-        returns text grounded in the user's CURRENT sub-scores (baseline /
-        completions / connected data / streak) plus a Book chapter
-        citation. This is fresher and more personalised than any prompt
-        text or generic KB hit.
-     2. Speak the agent's "text" field naturally (do not read raw JSON).
-     3. Cite the returned Book chapter URL — let the user open it for
-        depth.
-     4. ONLY IF ask_pillar_agent returns routed=false (no pillar
-        detected) fall back to search_knowledge against the Book:
-          - Nutrition → kb/vitana-system/index-book/01-nutrition.md
-          - Hydration → kb/vitana-system/index-book/02-hydration.md
-          - Exercise → kb/vitana-system/index-book/03-exercise.md
-          - Sleep → kb/vitana-system/index-book/04-sleep.md
-          - Mental → kb/vitana-system/index-book/05-mental.md
-   When the user uses a retired-pillar name (Physical / Social / etc.),
-   pass the question text — the router silently aliases it. Never echo
-   the retired name back.
-
-G. GENERIC "WHAT IS THE VITANA INDEX" (no "my") — platform explanation,
-   use search_knowledge with the overview / reading / balance chapters:
-     - Overview → kb/vitana-system/index-book/00-overview.md
-     - Reading your number → kb/vitana-system/index-book/08-reading-your-number.md
-     - Balance → kb/vitana-system/index-book/06-balance.md
-     - 90-day journey → kb/vitana-system/index-book/07-the-90-day-journey.md
-
-H. TIER FRAMING IS ASPIRATIONAL, NEVER GATING. Never say "you need to
-   reach X", "you're below target", "you're failing to hit". Do say "you're
-   N points from Really-good territory" — an aspirational destination, not
-   a pass/fail line. Different users have different capacities; the Index
-   communicates honest assessment, not pressure.
-     ✗ "You need 42 more points to hit Good."
-     ✓ "You're 42 points from Really-good territory. Your current rhythm
-        gets you there inside two months if you stay balanced."
-
-H1. TWO ANCHORS: 600 AND 850. The goal card on the Index Detail screen
-    shows both numbers. You must be able to explain each without confusing
-    them:
-      - 600 = Really-good MILESTONE. The Day-90 aspirational target for
-              most users — the threshold of the "thriving" zone.
-      - 850 = STRETCH target within Elite. Long-horizon. Takes months of
-              sustained balanced practice. NOT a 90-day goal.
-    When the user asks "what's 850?" answer directly:
-     ✓ "850 is the stretch target — it sits deep inside Elite. It's a
-        long-horizon marker, not a 90-day goal. Most people focus on 600
-        first."
-    Source both anchors from [HEALTH] ("Really-good milestone (600)" /
-    "Stretch target (850)") — don't invent numbers.
-
-H2. DAY-90 PROJECTION. When [HEALTH] includes a "Day-90 projection" line,
-    use it for "am I on track?" / "where will I be?" questions. Speak it
-    as the trajectory card does — "at this pace you land around X by Day
-    90 — <tier>":
-     ✓ "At this pace you land around 420 by Day 90 — Building tier. Small
-        bumps in your weakest pillar would push that higher."
-    If [HEALTH] has no projection line (no baseline yet, flat trend),
-    fall back to aspirational framing — don't invent a projection.
-
-I. NEVER cite the Index number from memory_facts or general memory. The
-   [HEALTH] block is fresher and authoritative. memory_facts may contain a
-   stale number from days ago — never quote it.
-
-J. SETUP-STATE HANDLING — if [HEALTH] contains "Vitana Index status:
-   SETUP INCOMPLETE" or "NOT SET UP YET", do NOT answer with a number
-   (there isn't one). Instead:
-     - SETUP INCOMPLETE → acknowledge honestly and offer to walk them
-       back to the Health screen to retry the baseline compute.
-       Example (en): "Your baseline survey went through, but the score
-       didn't compute yet — if you open the Health screen it should
-       offer to retry. Want me to walk you there?"
-     - NOT SET UP YET → explain the Index needs a one-time 5-question
-       baseline survey (Nutrition / Hydration / Exercise / Sleep / Mental,
-       1–5 each) and offer to navigate there.
-       Example (de): "Du hast den Vitana Index noch nicht eingerichtet
-       — es ist ein kurzer Fragebogen mit fünf Fragen im Health-Bereich.
-       Soll ich dich dahin führen?"
-   NEVER invent a number. NEVER say "I don't have access" — the status
-   line IS the answer; quote it warmly.
-
-K. THE VITANA INDEX IS THE USER'S KEY PROGRESS MEASURE across the 90-day
-   journey. Treat it with the same priority as their name or birthday — if
-   they ask, you ALWAYS answer. The journey IS the route to lift it.
-
-M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
-   When the user says any of:
-     - "log my diary: …" / "trag in mein Tagebuch ein: …"
-     - "I had …" / "Ich hatte …" / "I drank …" / "I ate …"
-     - "Track my [water / meal / breakfast / lunch / dinner / workout /
-        walk / run / sleep / meditation]" / "Trag …"
-     - "Note that I …" / "Note for today: …" / "Just had …"
-   Or any phrase that REPORTS something the user did or wants to track,
-   you MUST call save_diary_entry. Do NOT just navigate them to the diary
-   screen and stop. Do NOT say "I'll open the diary for you" — actually
-   save the entry.
-
-   IMPORTANT: pass the user's VERBATIM words as raw_text. The pattern
-   extractor needs the original phrasing ("1 L of water", "two glasses",
-   "Frühstück und Mittagessen") to catch every signal. Do NOT summarise.
-
-   AFTER save_diary_entry returns, CELEBRATE — the user just took an
-   action toward their longevity practice and deserves a warm
-   acknowledgement. Read the response fields:
-     - health_features_written: how many structured health rows were
-       written (0..N)
-     - pillars_after.total: the user's NEW Vitana Index total
-     - index_delta.total: the lift their entry produced
-     - index_delta.{nutrition,hydration,exercise,sleep,mental}: the
-       per-pillar lift (some will be 0; name only the ones that moved)
-
-   Response shape — TWO short sentences max, mirror the user's language:
-     - When index_delta.total > 0: lead with a brief "well done" + name
-       which pillars moved + state the new total. Example (en):
-         "Done — that's logged. Hydration and Nutrition both moved.
-          You're at 218 now. Keep that pattern going."
-       Example (de):
-         "Erledigt — eingetragen. Hydration und Nutrition sind gestiegen,
-          du bist bei 218. Bleib dran."
-     - When index_delta.total === 0 (already at the daily cap, or
-       nothing parsed beyond a journal_entry): still acknowledge warmly,
-       confirm the entry was saved, and pivot to ONE next-step nudge.
-       Example: "Logged. Your Index is steady today — try a short walk
-       tonight to lift Exercise."
-
-   Specifics, not vagueness:
-     ✗ WRONG: "Your score is up." (no number, no pillar)
-     ✓ RIGHT: "Hydration and Nutrition are both up — you're at 218."
-
-   Never lecture. Never list every pillar. Pick the top 1–2 movers from
-   index_delta and name them by name.
-
-   Retired-pillar handling still applies: if you're tempted to say
-   "Physical" / "Social" / "Environmental" / "Prosperity" — DON'T.
-   Always speak the canonical name (Exercise / Mental).`;
-    }
-  }
-
-  return instruction;
-}
 
 /**
  * VTID-ANON-AUTH-INTENT: Lightweight keyword-based detection of signup vs login intent.
@@ -8326,7 +5433,7 @@ naturally, never call a tool.`;
  * VTID-CONTEXT: Format client context into a context section for the system instruction.
  * Used for both anonymous and authenticated sessions.
  */
-function formatClientContextForInstruction(ctx: ClientContext): string {
+export function formatClientContextForInstruction(ctx: ClientContext): string {
   const parts: string[] = [];
   if (ctx.city && ctx.country) parts.push(`User location: ${ctx.city}, ${ctx.country}`);
   else if (ctx.country) parts.push(`User location: ${ctx.country}`);
@@ -8360,40 +5467,163 @@ async function connectToLiveAPI(
     throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
   }
 
-  // Get access token
-  const accessToken = await getAccessToken();
-  console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
+  // L1 (VTID-02976) / L2.1 (VTID-02980): consult the upstream provider
+  // selector. The selector is a pure function — it never reads env / DB /
+  // OASIS. We gather inputs here (voice config + canary config + session
+  // identity), hand them in, and emit OASIS based on the returned decision.
+  //
+  // L1 pinned every LiveKit request to Vertex. L2.1 lifts that pin INSIDE
+  // the canary gate only (env+sys request + creds + canary.enabled +
+  // identity in allowlist). Everywhere else the L1 pin still holds.
+  //
+  // L2.1 caveat: even when the selector returns `provider='livekit'` via
+  // the canary path, this consumer ALSO pins to Vertex (the LiveKit media
+  // client isn't wired yet — that's L2.2). The pin is recorded as a
+  // distinct OASIS event so it's never silent. L2.2 removes the consumer
+  // pin and adds connect_started / connect_succeeded / connect_failed.
+  let __upstreamDecision: UpstreamSelectionDecision;
+  try {
+    const __voiceCfg = await getVoiceConfig();
+    const __canary = await getLiveKitCanaryConfig();
+    __upstreamDecision = selectUpstreamProvider({
+      envProviderOverride: process.env.ORB_LIVE_PROVIDER,
+      systemConfigActiveProvider: __voiceCfg.active_provider,
+      livekitCredentials: {
+        url: process.env.LIVEKIT_URL,
+        apiKey: process.env.LIVEKIT_API_KEY,
+        apiSecret: process.env.LIVEKIT_API_SECRET,
+      },
+      canary: {
+        enabled: __canary.enabled,
+        allowedTenants: __canary.allowedTenants,
+        allowedUsers: __canary.allowedUsers,
+      },
+      identity: {
+        tenantId: session.identity?.tenant_id ?? null,
+        userId: session.identity?.user_id ?? null,
+      },
+    });
+  } catch (e) {
+    // Voice/canary config read failure must NOT block the session start;
+    // default to Vertex so production behavior matches today.
+    console.warn(`[VTID-02976] voice/canary config read failed; falling back to vertex defaults: ${(e as Error).message}`);
+    __upstreamDecision = {
+      provider: 'vertex',
+      requested: null,
+      reason: 'default',
+      livekitReady: false,
+      canary: false,
+    };
+  }
+  console.log(
+    `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
+      ` requested=${__upstreamDecision.requested ?? 'none'}` +
+      ` reason=${__upstreamDecision.reason}` +
+      ` livekit_ready=${__upstreamDecision.livekitReady}` +
+      ` canary=${__upstreamDecision.canary}`,
+  );
+  // OASIS emission — every connect call emits a single `selected` event.
+  // When the request was LiveKit but the path degraded (config invalid or
+  // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
+  // `selection_error` with the typed error string so the Improve cockpit
+  // can surface it.
+  void emitOasisEvent({
+    type: 'orb.upstream.provider.selected',
+    vtid: 'VTID-02980',
+    payload: {
+      session_id: session.sessionId,
+      provider: __upstreamDecision.provider,
+      requested: __upstreamDecision.requested,
+      reason: __upstreamDecision.reason,
+      livekit_ready: __upstreamDecision.livekitReady,
+      canary: __upstreamDecision.canary,
+    } as any,
+  } as any).catch(() => { /* best-effort */ });
+  if (__upstreamDecision.error) {
+    void emitOasisEvent({
+      type: 'orb.upstream.provider.selection_error',
+      vtid: 'VTID-02980',
+      payload: {
+        session_id: session.sessionId,
+        provider: __upstreamDecision.provider,
+        requested: __upstreamDecision.requested,
+        reason: __upstreamDecision.reason,
+        livekit_ready: __upstreamDecision.livekitReady,
+        canary: __upstreamDecision.canary,
+        error: __upstreamDecision.error,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+  }
 
-  // Build WebSocket URL for Vertex AI Live API
-  // VTID-01222: Correct endpoint per Google documentation
-  // https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/intro_multimodal_live_api.ipynb
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
+  // L2.1 (VTID-02980): canary observability. When the selector returns
+  // `provider='livekit'` via the canary path, the L1 pin has been lifted
+  // — but L2.1's consumer doesn't have a LiveKit media client yet. Emit
+  // an explicit `canary.selection_unlocked` event (the decision happened)
+  // followed by a `canary.consumer_pinned_vertex_l21` event (the
+  // consumer-side pin is what's keeping the session on Vertex). L2.2
+  // will remove the consumer pin and replace `consumer_pinned_vertex_l21`
+  // with `canary.connect_started` + `canary.connect_succeeded` /
+  // `canary.connect_failed`.
+  if (__upstreamDecision.provider === 'livekit' && __upstreamDecision.canary) {
+    void emitOasisEvent({
+      type: 'orb.upstream.canary.selection_unlocked',
+      vtid: 'VTID-02980',
+      payload: {
+        session_id: session.sessionId,
+        tenant_id: session.identity?.tenant_id ?? null,
+        user_id: session.identity?.user_id ?? null,
+        reason: __upstreamDecision.reason,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+    void emitOasisEvent({
+      type: 'orb.upstream.canary.consumer_pinned_vertex_l21',
+      vtid: 'VTID-02980',
+      payload: {
+        session_id: session.sessionId,
+        tenant_id: session.identity?.tenant_id ?? null,
+        user_id: session.identity?.user_id ?? null,
+        reason: __upstreamDecision.reason,
+        note:
+          'L2.1 selector unlocked LiveKit for this canary identity, but ' +
+          'the consumer still constructs VertexLiveClient. L2.2 will lift ' +
+          'this consumer-side pin and wire the real LiveKit media client.',
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+  }
 
-  console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
+  // A8.3b.2 (VTID-02972): the legacy raw-WebSocket scaffolding is gone.
+  // `VertexLiveClient.connect()` owns the access-token fetch, the WSS URL
+  // construction, the headers attach, and the open-handshake. We only need
+  // to log what we're about to ask it to do.
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
 
-  return new Promise((resolve, reject) => {
-    // VTID-01222: Connect WITHOUT subprotocol - Google's official examples don't use one
-    // Only Authorization header is required per documentation
-    const ws = new WebSocket(wsUrl, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
+  // A8.3b.1 (VTID-02971): the WS lifecycle now flows through the A7
+  // UpstreamLiveClient boundary via VertexLiveClient. The orb-specific
+  // persona/tools/context envelope is supplied via `customSetupMessage`
+  // so the wire payload remains byte-for-byte identical to the pre-A8.3b.1
+  // path. Error/close handlers continue to register on the raw socket
+  // returned by `vertex.getSocket()`, preserving the transparent-reconnect
+  // path and all VTID-02637 connection-issue dedupe behavior.
+  return new Promise<WebSocket>(async (resolve, reject) => {
+    const vertex = new VertexLiveClient();
 
     let setupComplete = false;
     const connectionTimeout = setTimeout(() => {
       if (!setupComplete) {
         console.error(`[VTID-01219] Live API connection timeout for session ${session.sessionId}`);
-        ws.close();
+        vertex.close().catch(() => { /* swallow */ });
         reject(new Error('Live API connection timeout'));
       }
     }, 15000); // 15 second timeout
 
-    // Connection opened - send setup message
-    ws.on('open', async () => {
+    // Build the orb-specific Vertex setup envelope. Identical body to the
+    // pre-A8.3b.1 ws.on('open') handler — returns the {setup: {...}}
+    // envelope object instead of calling ws.send() directly.
+    // VertexLiveClient awaits this builder and sends the envelope inside
+    // its own ws.on('open'), then resolves connect() when setup_complete
+    // arrives.
+    const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
 
       // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
@@ -8437,7 +5667,7 @@ async function connectToLiveAPI(
           console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
         }
       }
-      _personaVoice = _personaVoice || LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'];
+      _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       const setupMessage = {
@@ -8542,6 +5772,52 @@ async function connectToLiveAPI(
                                   ((session as any)._lastSpecialistPersona as string),
                                   session.lang,
                                 )
+                              : '')
+                          // VTID-03101: append the wake-brief override block
+                          // LAST so it has recency primacy in Gemini's
+                          // attention AND so the sentinel marker reaches
+                          // buildLiveSystemInstruction's strip+suppress
+                          // logic in the same string. The block lives on
+                          // its own session field to avoid the race where
+                          // the bootstrap promise (session.contextInstruction
+                          // = finalContext at the end of its .then) wipes
+                          // the appended override. See
+                          // live-session-controller.ts:VTID-03101 for the
+                          // write side. Empty when no override is active.
+                          + (session.wakeBriefOverrideBlock || '')
+                          // VTID-03162: VTID-03154's journeyGreetingBlock
+                          // injection removed here. Block coexisting with
+                          // the Teacher Mode block caused Gemini to follow
+                          // ambiguous turn-1 instructions and the comp-
+                          // rehension check-in language (added in
+                          // VTID-03157) made it worse — Vitana started
+                          // looping on the same capability and calling
+                          // end_teaching_session unprompted. Until the
+                          // journey-greeting vs Teacher-Mode integration
+                          // is designed properly (upstream wake-brief
+                          // suppression, not post-hoc block clearing),
+                          // we do NOT inject the journey-greeting block
+                          // into the system instruction. The controller
+                          // may still set the field on the session for
+                          // diagnostic/log purposes; it is intentionally
+                          // unread here.
+                          // VTID-03112 (T1): Teacher Mode block. Empty
+                          // when the wake-brief winner wasn't the
+                          // Teacher OR the manual resolver failed.
+                          // The block runs Teacher Mode for the WHOLE
+                          // session — turns 2+ are governed by it.
+                          // Turn 1 is still owned by the wake-brief
+                          // override (which sits ABOVE it in the
+                          // concatenation order). The model interprets
+                          // each user reply IN CONTEXT (no rule table)
+                          // and calls teacher_event / end_teaching_session
+                          // tools as appropriate.
+                          + ((session as any).teacherModeContent
+                              ? buildTeacherModeBlock({
+                                  content: (session as any).teacherModeContent,
+                                  lang: session.lang,
+                                  firstName: (session as any).teacherModeFirstName ?? null,
+                                })
                               : ''),
                         session.active_role,
                         session.conversationSummary,
@@ -8595,973 +5871,88 @@ async function connectToLiveAPI(
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
-      ws.send(JSON.stringify(setupMessage));
-      console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
+      console.log(`[VTID-01219] Setup envelope built for session ${session.sessionId} — VertexLiveClient will send`);
+      return setupMessage as unknown as Record<string, unknown>;
+    };
+
+    // A8.3b.1 (VTID-02971): open the upstream connection through the A7
+    // UpstreamLiveClient boundary. `vertex.connect()` performs the auth
+    // header attach, the ws.on('open') handshake, awaits our custom
+    // envelope builder, sends the envelope, and resolves on setup_complete.
+    // After it resolves, the raw ws is available via `vertex.getSocket()`
+    // so the legacy message + error + close handlers attach as before.
+    let ws: WebSocket;
+    try {
+      await vertex.connect({
+        model: VERTEX_LIVE_MODEL,
+        projectId: VERTEX_PROJECT_ID,
+        location: VERTEX_LOCATION,
+        // The next four fields are overridden by `customSetupMessage`.
+        // VertexLiveClient's default `buildSetupMessage` is not used.
+        voiceName: 'overridden',
+        responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+        vadSilenceMs: session.vadSilenceMs,
+        systemInstruction: 'overridden',
+        // A8.3b.2: VertexLiveClient.connect() invokes this directly.
+        getAccessToken,
+        connectTimeoutMs: 15000,
+        customSetupMessage: buildOrbVertexSetupEnvelope,
+      });
+    } catch (err) {
+      clearTimeout(connectionTimeout);
+      reject(err as Error);
+      return;
+    }
+
+    // setup_complete arrived → connect() resolved. Mark the legacy flag
+    // (preserves any code-path that reads `setupComplete`) and clear the
+    // outer connection timeout. The connect Promise is the source of
+    // truth from here on.
+    setupComplete = true;
+    clearTimeout(connectionTimeout);
+
+    const socket = vertex.getSocket();
+    if (!socket) {
+      reject(new Error('VertexLiveClient.getSocket() returned null after connect()'));
+      return;
+    }
+    ws = socket;
+
+    // A8.3a.2 (VTID-02968): the upstream message handler lives in
+    // orb/live/session/upstream-message-handler.ts. After A8.3b.1 the
+    // setup_complete branch inside it is unreachable (VertexLiveClient
+    // consumed that frame), but the handler still owns every
+    // post-setup dispatch (audio, transcripts, tool calls, turn-complete,
+    // interrupted, ANON-NUDGE, identity intercept, NAV directive, chat
+    // bridge — see the handler file for the full list).
+    const handleUpstreamLiveMessage = createUpstreamLiveMessageHandler({
+      session,
+      ws,
+      callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+      // setup_complete is consumed by VertexLiveClient now; this hook is a
+      // no-op for the Vertex path but stays wired so the handler keeps
+      // working unchanged if a future provider needs caller-side
+      // handshake plumbing.
+      onSetupComplete: () => {
+        /* no-op: VertexLiveClient already resolved connect() */
+      },
+      isSetupComplete: () => setupComplete,
+      deps: {
+        clearResponseWatchdog,
+        detectAuthIntent,
+        emitDiag,
+        emitLiveSessionEvent,
+        executeLiveApiTool,
+        isDevSandbox,
+        sendAudioToLiveAPI,
+        sendFunctionResponseToLiveAPI,
+        sendWsMessage,
+        startResponseWatchdog,
+      },
     });
 
-    // Handle incoming messages from Gemini
-    ws.on('message', (data: WebSocket.Data) => {
-      try {
-        const rawData = data.toString();
-        const message = JSON.parse(rawData);
-        const messageKeys = Object.keys(message);
-
-        // VTID-STREAM-KEEPALIVE: Reduce logging volume — skip verbose logs for audio-heavy
-        // server_content messages. Previously every audio chunk (dozens per second) was logged
-        // with 300 chars of raw base64, causing CPU pressure and event loop delays.
-        const isServerContent = !!(message.server_content || message.serverContent);
-        if (!isServerContent) {
-          // Non-audio messages (setup_complete, tool_call, etc.) — log fully
-          console.log(`[VTID-01219] Received from Gemini: keys=${messageKeys.join(',')}, len=${rawData.length}`);
-        }
-
-        // Check for setup completion (handle both snake_case and camelCase)
-        if (message.setup_complete || message.setupComplete) {
-          console.log(`[VTID-01219] Live API setup complete for session ${session.sessionId}`);
-          setupComplete = true;
-          clearTimeout(connectionTimeout);
-
-          // VTID-STREAM-KEEPALIVE: Start ping interval to prevent idle timeout.
-          // Without this, Cloud Run ALB or Vertex AI can terminate idle connections.
-          // Ping every 25s keeps the connection alive during natural pauses in conversation.
-          session.upstreamPingInterval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              try {
-                ws.ping();
-              } catch (e) {
-                // ping can throw if socket is closing — ignore
-              }
-            }
-          }, 25_000);
-
-          // VTID-STREAM-SILENCE: Start silence keepalive to prevent Vertex idle timeout.
-          // Vertex closes the audio stream with code 1000 after ~25-30s of no audio input.
-          // This sends silent PCM frames when no client audio has been forwarded recently.
-          session.lastAudioForwardedTime = Date.now();
-          session.silenceKeepaliveInterval = setInterval(() => {
-            if (ws.readyState !== WebSocket.OPEN || !session.active) return;
-            // Skip silence keepalive while model is speaking — Vertex won't idle-timeout
-            // during active generation, and sending audio input during output causes
-            // Vertex VAD to briefly process the input, creating audible glitches.
-            if (session.isModelSpeaking) return;
-            const idleMs = Date.now() - session.lastAudioForwardedTime;
-            if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
-              try {
-                sendAudioToLiveAPI(ws, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
-                // Don't update lastAudioForwardedTime — silence doesn't count as real audio
-              } catch (e) {
-                // WS may be closing — ignore
-              }
-            }
-          }, SILENCE_KEEPALIVE_INTERVAL_MS);
-
-          resolve(ws); // NOW we resolve the promise - connection is ready!
-          return;
-        }
-
-        // Handle server content (audio/text responses) - handle both formats
-        const serverContent = message.server_content || message.serverContent;
-        if (serverContent) {
-          const content = serverContent;
-
-          // VTID-STREAM-KEEPALIVE: Only log server_content keys for non-audio events
-          // (turn_complete, interrupted, transcription). Audio chunks are too frequent to log.
-          const contentKeys = Object.keys(content);
-          const hasModelTurn = !!(content.model_turn || content.modelTurn);
-          if (!hasModelTurn) {
-            console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
-          }
-
-          // Handle interruption (handle both formats)
-          const interrupted = content.interrupted || content.grounding_metadata?.interrupted;
-          if (interrupted) {
-            console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
-            // VTID-VOICE-INIT: Model stopped speaking — ungate mic audio
-            session.isModelSpeaking = false;
-            // Clear output transcript buffer on interruption (incomplete response)
-            session.outputTranscriptBuffer = '';
-            session.pendingEventLinks = [];
-            // Notify SSE client
-            if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
-            }
-            // Notify WS client via callback
-            onInterrupted?.();
-            return;
-          }
-
-          // Check if turn is complete (handle both formats)
-          const turnComplete = content.turn_complete || content.turnComplete;
-          if (turnComplete) {
-            // VTID-WATCHDOG: Model finished turn normally — clear watchdog (waiting for user now)
-            clearResponseWatchdog(session);
-            // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
-            session.isModelSpeaking = false;
-            // VTID-ECHO-COOLDOWN: Record turn completion time for post-turn mic cooldown.
-            // Client playback queue may still be draining — gate mic for POST_TURN_COOLDOWN_MS
-            // to prevent speaker echo from being picked up and triggering phantom responses.
-            session.turnCompleteAt = Date.now();
-            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
-            emitDiag(session, 'turn_complete');
-
-            // VTID-02047 voice channel-swap: if a persona swap was queued by
-            // the report_to_specialist tool, Vitana has just finished speaking
-            // her bridge sentence. Close the upstream WS now (code 1000) — the
-            // existing reconnect path will pick up the persona overrides we
-            // already set on the session and Devon/Sage/Atlas/Mira will greet
-            // in their distinct voice on the new upstream session. The
-            // user-facing WS/SSE stays connected through the swap.
-            const pendingSwap = (session as any).pendingPersonaSwap;
-            if (pendingSwap && session.upstreamWs && session.active) {
-              (session as any).activePersona = pendingSwap;
-              (session as any).pendingPersonaSwap = null;
-              // Set unambiguous flag so close + reconnect handlers know this
-              // is a persona swap (vs Vertex 5-min limit, network blip, etc).
-              // The flag covers both directions — Vitana → specialist AND
-              // specialist → Vitana — without relying on the presence of
-              // personaSystemOverride (which is null for back-to-Vitana).
-              (session as any)._personaSwapInFlight = true;
-              console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
-              try {
-                session.upstreamWs.close(1000, 'persona_swap');
-              } catch (_e) {
-                console.warn('[VTID-02047] persona swap close failed:', _e);
-              }
-              // The close handler at line ~8933 sees code=1000 + session.active
-              // and triggers attemptTransparentReconnect → connectToLiveAPI
-              // which rebuilds the setup message using personaSystemOverride
-              // + personaVoiceOverride + personaForcedFirstMessage (or, for
-              // back-to-Vitana, falls through to the default builder since
-              // those overrides were cleared by switch_persona).
-            }
-
-            session.turn_count++;
-            // VTID-LOOPGUARD: Track consecutive model turns without user speech
-            session.consecutiveModelTurns++;
-            const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
-            console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
-
-            // VTID-ANON-SIGNUP-INTENT + VTID-ANON-NUDGE: Detect signup intent and enforce turn limits.
-            // CRITICAL: No client_content injections — those cause double responses.
-            // All nudging is done via the system instruction (see buildAnonymousSystemInstruction).
-            // This block only DETECTS intent and ENDS sessions — it never injects prompts.
-            if (session.isAnonymous && !isGreetingTurn) {
-              const tc = session.turn_count;
-
-              // Detect signup OR login intent from user's spoken text. Login is
-              // distinguished so we can redirect to the correct tab on /maxina.
-              const intentText = session.inputTranscriptBuffer.trim();
-              if (intentText.length > 0 && !session.signupIntentDetected) {
-                const detected = detectAuthIntent(intentText);
-                if (detected) {
-                  session.signupIntentDetected = true;
-                  session.authIntent = detected;
-                  console.log(`[VTID-ANON-AUTH-INTENT] ${detected} intent detected at turn ${tc} for session ${session.sessionId}, text="${intentText.substring(0, 80)}"`);
-                } else if (intentText.length > 3) {
-                  // Log near-miss so we can refine patterns
-                  console.log(`[VTID-ANON-AUTH-INTENT] no match at turn ${tc}, text="${intentText.substring(0, 120)}"`);
-                }
-              }
-
-              // End session if: auth intent detected OR hard turn limit reached
-              if (session.signupIntentDetected || tc > 8) {
-                const authIntent = session.authIntent;
-                const reason = authIntent
-                  ? (authIntent === 'login' ? 'login_intent' : 'signup_intent')
-                  : 'turn_limit';
-                console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
-
-                const sendLimitMsg = () => {
-                  const payload: Record<string, unknown> = {
-                    type: 'session_limit_reached',
-                    reason,
-                    message: reason === 'login_intent'
-                      ? 'Guiding to login.'
-                      : reason === 'signup_intent'
-                        ? 'Guiding to registration.'
-                        : 'Please register to continue.',
-                  };
-                  if (authIntent === 'login') {
-                    payload.redirect = '/maxina?tab=signin';
-                  } else if (authIntent === 'signup') {
-                    payload.redirect = '/maxina?tab=signup';
-                  }
-                  const limitMsg = JSON.stringify(payload);
-                  if (session.sseResponse) {
-                    session.sseResponse.write(`data: ${limitMsg}\n\n`);
-                  }
-                  if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                    try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
-                  }
-                };
-
-                sendLimitMsg();
-              }
-            }
-
-            // VTID-LOOPGUARD: If the model has responded too many times without user input,
-            // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
-            if (session.consecutiveModelTurns > MAX_CONSECUTIVE_MODEL_TURNS && !isGreetingTurn) {
-              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
-              if (session.silenceKeepaliveInterval) {
-                clearInterval(session.silenceKeepaliveInterval);
-                session.silenceKeepaliveInterval = undefined;
-              }
-            }
-
-            // VTID-CHAT-BRIDGE: Capture transcript text at turn scope for chat_messages bridge (below)
-            let chatBridgeUserText = '';
-            let chatBridgeAssistantText = '';
-
-            // VTID-01225-THROTTLE: Flush buffered user input transcription to transcriptTurns + memory_items.
-            // Writes once per turn instead of per-fragment, reducing Supabase write amplification.
-            if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
-              const userText = session.inputTranscriptBuffer.trim();
-              chatBridgeUserText = userText;
-
-              // VTID-01953 — Identity-mutation intent intercept (post-transcription).
-              // Vertex Live API streams the LLM response in real time, so we can't
-              // pre-empt the model the way conversation-client does. But we can:
-              //   1. Detect the explicit identity-mutation intent on the user's
-              //      transcript at turn_complete.
-              //   2. Push the redirect_target as an SSE event so the frontend
-              //      fires the deep-link (open Profile / Settings) — the LLM
-              //      can't dispatch CustomEvents on its own.
-              //   3. Audit via memory.identity.write_attempted (handled inside
-              //      handleIdentityIntent).
-              // The brain prompt Guardrail B already shapes the LLM's spoken
-              // response to use the sanctioned refusal phrasing, so we don't
-              // duplicate the message — just add the deep-link.
-              if (session.identity?.user_id && session.identity?.tenant_id) {
-                handleIdentityIntent({
-                  utterance: userText,
-                  user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id,
-                  source: 'orb-live',
-                  conversation_turn_id: session.sessionId,
-                }).then((result) => {
-                  if (!result.handled) return;
-                  console.log(
-                    `[VTID-01953] Identity-mutation intent intercepted on ORB voice: ` +
-                    `fact_key=${result.detected_fact_key}, pattern="${result.detected_pattern}"`
-                  );
-                  // Push the redirect-target event to the connected client so the
-                  // frontend opens the right screen and focuses the right field.
-                  const redirectMsg = JSON.stringify({
-                    type: 'identity_redirect',
-                    redirect_target: result.redirect_target,
-                    fact_key: result.detected_fact_key,
-                    pattern: result.detected_pattern,
-                  });
-                  if (session.sseResponse) {
-                    try { session.sseResponse.write(`data: ${redirectMsg}\n\n`); } catch (_e) { /* socket closing */ }
-                  }
-                  if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                    try { sendWsMessage((session as any).clientWs, JSON.parse(redirectMsg)); } catch (_e) { /* ignore */ }
-                  }
-                }).catch((err) => {
-                  console.warn('[VTID-01953] handleIdentityIntent failed (non-fatal):', err);
-                });
-              }
-
-              session.transcriptTurns.push({
-                role: 'user',
-                text: userText,
-                timestamp: new Date().toISOString()
-              });
-              // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
-              if (session.identity && session.identity.tenant_id && session.identity.user_id) {
-                addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
-                // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
-                // Fire-and-forget — Redis failure cannot block the ORB voice path.
-                addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText)
-                  .catch(() => { /* logged inside redis-turn-buffer */ });
-              }
-              // Write to memory_items (single write per turn, not per-fragment)
-              let userMemoryIdentity: MemoryIdentity | null = null;
-              if (session.identity && session.identity.tenant_id) {
-                userMemoryIdentity = {
-                  user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id
-                };
-              } else if (isDevSandbox()) {
-                userMemoryIdentity = {
-                  user_id: DEV_IDENTITY.USER_ID,
-                  tenant_id: DEV_IDENTITY.TENANT_ID
-                };
-              }
-              if (userMemoryIdentity && userText.length > 20) {
-                writeMemoryItemWithIdentity(userMemoryIdentity, {
-                  source: 'orb_voice',
-                  content: userText,
-                  content_json: {
-                    direction: 'user',
-                    channel: 'orb',
-                    mode: 'live_voice',
-                    orb_session_id: session.sessionId,
-                    conversation_id: session.conversation_id
-                  },
-                }).catch(err => console.warn(`[VTID-01225-THROTTLE] Failed to write user transcript to memory: ${err.message}`));
-              }
-            }
-            session.inputTranscriptBuffer = '';
-
-            // VTID-LINK-INJECT: Append pending event links to output transcript
-            // The AI is instructed not to say URLs aloud, so we inject them into the text transcript
-            // so they appear in the user's chat as clickable links.
-            // Only inject links for events the AI actually referenced in its spoken response.
-            if (session.pendingEventLinks.length > 0) {
-              // Deduplicate by URL
-              const seen = new Set<string>();
-              const allLinks = session.pendingEventLinks.filter(p => {
-                if (seen.has(p.url)) return false;
-                seen.add(p.url);
-                return true;
-              });
-
-              // Filter: only include events the AI actually mentioned by checking title words
-              // against the spoken transcript. If AI mentioned none (edge case), include all.
-              const spokenText = session.outputTranscriptBuffer.toLowerCase();
-              const mentionedLinks = allLinks.filter(p => {
-                if (!p.title) return true; // no title = fallback URL, always include
-                // Check if significant words from the title appear in the spoken response
-                const words = p.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-                return words.some(w => spokenText.includes(w));
-              });
-              const linksToInject = mentionedLinks.length > 0 ? mentionedLinks : allLinks;
-
-              // Format as a numbered list with titles
-              let formattedBlock: string;
-              if (linksToInject.length === 1) {
-                // Single link: just title + URL
-                const p = linksToInject[0];
-                formattedBlock = p.title
-                  ? `\n\n${p.title}\n${p.url}`
-                  : `\n\n${p.url}`;
-              } else {
-                // Multiple links: numbered list
-                const listItems = linksToInject.map((p, i) =>
-                  p.title ? `${i + 1}. ${p.title}\n   ${p.url}` : `${i + 1}. ${p.url}`
-                );
-                formattedBlock = `\n\n${listItems.join('\n\n')}`;
-              }
-
-              session.outputTranscriptBuffer += formattedBlock;
-              console.log(`[VTID-LINK-INJECT] Injected ${linksToInject.length}/${allLinks.length} event link(s) into output transcript`);
-
-              // Send the formatted block as a single output_transcript SSE event
-              if (session.sseResponse) {
-                try { session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: formattedBlock })}\n\n`); } catch (_e) { /* SSE closed */ }
-              }
-              if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-                try { sendWsMessage(session.clientWs, { type: 'output_transcript', text: formattedBlock }); } catch (_e) { /* WS closed */ }
-              }
-              session.pendingEventLinks = [];
-            }
-
-            // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
-            // Skip memory write for the greeting turn (server-injected prompt, not real user interaction)
-            if (session.outputTranscriptBuffer.length > 0) {
-              const fullTranscript = session.outputTranscriptBuffer.trim();
-              chatBridgeAssistantText = fullTranscript;
-
-              // Forwarding v2d: the FORCED FIRST UTTERANCE flag MUST flip even
-              // for the greeting turn — that IS the forced utterance. Setting
-              // it inside the `else` branch (greeting-turn = false) was the
-              // bug: every transparent reconnect re-applied the greeting
-              // because the flag never got set on Devon's actual greeting.
-              if ((session as any).personaForcedFirstMessage
-                  && !((session as any).personaFirstUtteranceDelivered as boolean | undefined)) {
-                (session as any).personaFirstUtteranceDelivered = true;
-              }
-
-              if (isGreetingTurn) {
-                console.log(`[VTID-VOICE-INIT] Skipping memory write for greeting turn: "${fullTranscript.substring(0, 80)}..."`);
-                // Forwarding v2d: still record greeting turns in
-                // transcriptTurns so the conversation_history that gets
-                // injected into a swapped persona's prompt shows what was
-                // already said. Without this, a specialist's greeting line
-                // (e.g. "Hi I'm Devon, what's the bug?") is missing from
-                // history when the user hands back to Vitana — and the model
-                // can fill the gap by inventing it in Vitana's voice.
-                session.transcriptTurns.push({
-                  role: 'assistant',
-                  text: fullTranscript,
-                  timestamp: new Date().toISOString(),
-                  persona: ((session as any).activePersona as string | undefined) || 'vitana',
-                });
-              } else {
-                console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
-
-                // Add to transcriptTurns for in-memory accumulation, recording
-                // which persona spoke this turn so downstream prompt builders
-                // can label it correctly (otherwise Vitana absorbs Devon's
-                // lines as her own past speech — the "Hi I'm Devon in Vitana
-                // voice" failure).
-                session.transcriptTurns.push({
-                  role: 'assistant',
-                  text: fullTranscript,
-                  timestamp: new Date().toISOString(),
-                  persona: ((session as any).activePersona as string | undefined) || 'vitana',
-                });
-
-                // Forwarding v2 anti-impersonation guard: detect if this
-                // utterance impersonates a different persona ("I am Devon"
-                // spoken by anyone NOT Devon, etc). One offense = log +
-                // inject a corrective directive into the upstream. Two
-                // offenses in a row = hard reconnect with persona override
-                // re-applied.
-                try {
-                  const activePersonaForCheck = ((session as any).activePersona as string | undefined) || 'vitana';
-                  const PERSONA_KEYS = ['vitana', 'devon', 'sage', 'atlas', 'mira'];
-                  const IMPERSONATION_RE = /\b(?:I(?:'?m| am)|this is|here(?:'?s| is)|on behalf of|me, |it'?s)\s+(vitana|devon|sage|atlas|mira)\b/i;
-                  const m = fullTranscript.match(IMPERSONATION_RE);
-                  if (m) {
-                    const claimed = m[1].toLowerCase();
-                    if (PERSONA_KEYS.includes(claimed) && claimed !== activePersonaForCheck) {
-                      const driftCount = (((session as any).identityDriftCount as number | undefined) ?? 0) + 1;
-                      (session as any).identityDriftCount = driftCount;
-                      console.warn(`[VTID-02670] Identity drift detected: active=${activePersonaForCheck}, claimed=${claimed}, count=${driftCount}, utterance="${fullTranscript.substring(0,120)}"`);
-                      // Best-effort OASIS log (non-blocking).
-                      import('../services/oasis-event-service').then(({ emitOasisEvent }) => {
-                        emitOasisEvent({
-                          vtid: 'VTID-02670',
-                          type: 'orb.persona.identity_drift' as any,
-                          source: 'orb-live',
-                          status: driftCount > 1 ? 'error' : 'warning',
-                          message: `${activePersonaForCheck} introduced themselves as ${claimed}`,
-                          payload: {
-                            session_id: session.sessionId,
-                            active_persona: activePersonaForCheck,
-                            claimed_persona: claimed,
-                            drift_count: driftCount,
-                            utterance: fullTranscript.substring(0, 500),
-                          },
-                          actor_id: session.identity?.user_id,
-                          actor_role: 'system',
-                          surface: 'orb',
-                          vitana_id: session.identity?.vitana_id ?? undefined,
-                        });
-                      }).catch(() => undefined);
-                      // On REPEAT drift, force-reconnect with the persona
-                      // override re-applied. The setup-message builder picks
-                      // up the latest persona state on the new connection.
-                      if (driftCount >= 2 && session.upstreamWs) {
-                        console.warn(`[VTID-02670] Forcing hard reconnect to re-anchor persona ${activePersonaForCheck}`);
-                        (session as any)._personaSwapInFlight = true;
-                        try { session.upstreamWs.close(); } catch { /* ignore */ }
-                      }
-                    }
-                  }
-                } catch { /* non-blocking */ }
-
-                // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
-                if (session.identity && session.identity.tenant_id && session.identity.user_id) {
-                  addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript);
-                  // VTID-01955: Dual-write to Memorystore Redis (multi-instance shared).
-                  addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript)
-                    .catch(() => { /* logged inside redis-turn-buffer */ });
-                }
-
-                // Write to memory_items for persistence
-                // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
-                let memoryIdentity: MemoryIdentity | null = null;
-                if (session.identity && session.identity.tenant_id) {
-                  memoryIdentity = {
-                    user_id: session.identity.user_id,
-                    tenant_id: session.identity.tenant_id
-                  };
-                } else if (isDevSandbox()) {
-                  console.log(`[VTID-01225] No session identity, using DEV_IDENTITY fallback`);
-                  memoryIdentity = {
-                    user_id: DEV_IDENTITY.USER_ID,
-                    tenant_id: DEV_IDENTITY.TENANT_ID
-                  };
-                } else {
-                  console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
-                }
-
-                // VTID-01225-CLEANUP: Do NOT write assistant responses to memory_items.
-                // Assistant output is derivative (generated from user input + system prompt).
-                // Storing it causes pollution — "nice to meet you", "let me help you with that", etc.
-                // User facts are extracted to memory_facts via inline-fact-extractor instead.
-                if (memoryIdentity) {
-                  console.log(`[VTID-01225-CLEANUP] Skipping assistant transcript write to memory_items (pollution prevention)`);
-                }
-              }
-
-              // Clear buffer for next turn
-              session.outputTranscriptBuffer = '';
-            }
-
-            // VTID-CHAT-BRIDGE: Write voice transcripts to chat_messages so they appear
-            // as a Vitana DM conversation. Fire-and-forget to avoid blocking the voice pipeline.
-            // Explicit created_at timestamps ensure user message always sorts before Vitana reply.
-            if (session.identity?.user_id && session.identity?.tenant_id) {
-              const bridgeSupabase = getSupabase();
-              if (bridgeSupabase) {
-                const bridgeUserId = session.identity.user_id;
-                const bridgeTenantId = session.identity.tenant_id;
-                const bridgeMeta = {
-                  orb_session_id: session.sessionId,
-                  turn_index: session.turn_count,
-                  voice_language: session.lang,
-                };
-                const userMsgTime = new Date();
-                const assistantMsgTime = new Date(userMsgTime.getTime() + 1); // +1ms ensures correct sort order
-
-                // User speech → chat_messages (sender=user, receiver=Vitana)
-                if (chatBridgeUserText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
-                    tenant_id: bridgeTenantId,
-                    sender_id: bridgeUserId,
-                    receiver_id: VITANA_BOT_USER_ID,
-                    content: chatBridgeUserText,
-                    message_type: 'voice_transcript',
-                    metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
-                    created_at: userMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  });
-                }
-
-                // Vitana speech → chat_messages (sender=Vitana, receiver=user)
-                // Pre-set read_at since user already heard this during the voice session
-                if (chatBridgeAssistantText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
-                    tenant_id: bridgeTenantId,
-                    sender_id: VITANA_BOT_USER_ID,
-                    receiver_id: bridgeUserId,
-                    content: chatBridgeAssistantText,
-                    message_type: 'voice_transcript',
-                    metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
-                    read_at: assistantMsgTime.toISOString(),
-                    created_at: assistantMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  });
-                }
-              }
-            }
-
-            // VTID-01225-THROTTLE: Incremental fact extraction — throttled to max once per 60s.
-            // Fires a separate Vertex AI generateContent call, so running it on every turn
-            // creates concurrent API calls that can hit rate limits and destabilize the
-            // Live API WebSocket. The 60s throttle preserves durability (facts survive
-            // disconnects) without hammering the API during active conversation.
-            const EXTRACTION_THROTTLE_MS = 60_000;
-            // VTID-01230: Deduplicated extraction replaces manual throttle logic
-            // VTID-NAV: When a navigation is queued, force the extraction so the
-            // last turn before session close always contributes to memory facts.
-            if (session.identity && session.identity.tenant_id) {
-              const recentTurns = session.transcriptTurns.slice(-4);
-              if (recentTurns.length > 0) {
-                const recentText = recentTurns
-                  .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-                  .join('\n');
-                deduplicatedExtract({
-                  conversationText: recentText,
-                  tenant_id: session.identity.tenant_id,
-                  user_id: session.identity.user_id,
-                  session_id: session.sessionId,
-                  turn_count: session.turn_count,
-                  force: !!session.pendingNavigation,
-                });
-              }
-            }
-
-            // VTID-NAV: Dispatch the orb_directive for any pending navigation.
-            // This MUST come AFTER the memory flush, chat_messages bridge, and
-            // fact extractor above so the navigation turn's memory writes are
-            // committed before the widget tears down the session.
-            if (session.pendingNavigation) {
-              const nav = session.pendingNavigation;
-              const directive = {
-                type: 'orb_directive',
-                directive: 'navigate',
-                screen_id: nav.screen_id,
-                route: nav.route,
-                title: nav.title,
-                reason: nav.reason,
-                vtid: 'VTID-NAV-01',
-              };
-              const directiveJson = JSON.stringify(directive);
-              if (session.sseResponse) {
-                try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
-              }
-              if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                try { sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-              }
-              console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
-              emitOasisEvent({
-                vtid: 'VTID-NAV-01',
-                type: 'orb.navigator.dispatched',
-                source: 'orb-live-ws',
-                status: 'info',
-                message: `dispatched navigate to ${nav.screen_id}`,
-                payload: {
-                  session_id: session.sessionId,
-                  screen_id: nav.screen_id,
-                  route: nav.route,
-                  decision_source: nav.decision_source,
-                  drain_wait_ms: Date.now() - nav.requested_at,
-                },
-              }).catch(() => {});
-              // Clear pending so we don't re-dispatch on subsequent turns.
-              // navigationDispatched stays TRUE so input audio stays gated until
-              // the widget closes the connection.
-              session.pendingNavigation = undefined;
-            } else {
-              // VTID-NAV-DIAG: turn_complete fired but no navigation was queued.
-              // This is what "stuck in listening after asking for redirect" looks
-              // like server-side. If we see this log line after a user asked for
-              // a redirect, it means Gemini never called navigate_to_screen.
-              console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
-            }
-
-            // Notify client that response is complete
-            if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({
-                type: 'turn_complete',
-                is_greeting: isGreetingTurn
-              })}\n\n`);
-            }
-            // Notify WS client via callback
-            onTurnComplete?.();
-            return;
-          }
-
-          // Process model turn content (handle both formats)
-          const modelTurn = content.model_turn || content.modelTurn;
-          if (modelTurn && modelTurn.parts) {
-            for (const part of modelTurn.parts) {
-              // Handle audio response (handle both formats)
-              const inlineData = part.inline_data || part.inlineData;
-              const mimeType = inlineData?.mime_type || inlineData?.mimeType;
-              if (inlineData && mimeType?.startsWith('audio/')) {
-                // VTID-NAV-HOTFIX: Once navigation is queued, drop ALL further
-                // audio from Gemini. After navigate_to_screen fires, Gemini's
-                // tool-use protocol FORCES a model response to the
-                // function_response — that response IS a second (Turn 2) audio
-                // stream that would arrive at the widget before Turn 1's
-                // turn_complete and overlap the transition sentence the user
-                // is already hearing. The flag is set synchronously inside
-                // handleNavigateToScreen BEFORE sendFunctionResponseToLiveAPI
-                // is called, so by the time Gemini even produces Turn 2 audio,
-                // this gate is already armed.
-                if (session.navigationDispatched) {
-                  session.audioOutChunks++;
-                  if (session.audioOutChunks % 50 === 1) {
-                    console.log(`[VTID-NAV-HOTFIX] Dropping post-nav audio chunk ${session.audioOutChunks} for session ${session.sessionId}`);
-                  }
-                  continue;
-                }
-                // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
-                // This gates inbound mic audio to prevent echo-triggered interruptions
-                if (!session.isModelSpeaking) {
-                  session.isModelSpeaking = true;
-                  // VTID-TOOLGUARD: Model produced audio — reset tool call counter
-                  session.consecutiveToolCalls = 0;
-                  // VTID-01984 (R5): Vertex has spoken — upstream WS is healthy.
-                  // Once true, the audio-forwarding paths skip arming the
-                  // forwarding_no_ack watchdog so we never kill a healthy
-                  // session in the middle of Vertex computing a follow-up turn.
-                  session.vertexHasShownLife = true;
-                  console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
-                  emitDiag(session, 'model_start_speaking');
-                  // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
-                  // and greeting was sent), emit the pre-greeting latency gauge.
-                  //
-                  // BOOTSTRAP-ORB-RELIABILITY-R2: Log gate evaluation so we can
-                  // debug why the prior gauge version emitted zero events. All
-                  // three booleans are logged so we can spot which guard is
-                  // falsifying the condition in prod.
-                  const gateGreeting = !!session.greetingSent;
-                  const gateTurnZero = session.turn_count === 0;
-                  const gateNoChunks = !session.audioOutChunks;
-                  console.log(`[BOOTSTRAP-ORB-HOTFIX-1-GATE] session=${session.sessionId} greetingSent=${gateGreeting} turn_count=${session.turn_count} audioOutChunks=${session.audioOutChunks}`);
-                  if (gateGreeting && gateTurnZero && gateNoChunks) {
-                    const preGreetingMs = Date.now() - session.createdAt.getTime();
-                    emitLiveSessionEvent('orb.live.greeting.delivered', {
-                      session_id: session.sessionId,
-                      user_id: session.identity?.user_id || 'anonymous',
-                      tenant_id: session.identity?.tenant_id || null,
-                      transport: session.clientWs ? 'websocket' : 'sse',
-                      pre_greeting_ms: preGreetingMs,
-                      lang: session.lang,
-                      is_anonymous: session.isAnonymous || false,
-                      reconnect_count: (session as any)._reconnectCount || 0,
-                    }).catch((err: any) => {
-                      console.warn(`[BOOTSTRAP-ORB-HOTFIX-1] emit failed: ${err?.message || err}`);
-                    });
-                    console.log(`[BOOTSTRAP-ORB-HOTFIX-1] pre_greeting_ms=${preGreetingMs} for session ${session.sessionId}`);
-                  }
-                }
-                // VTID-WATCHDOG: Model is sending audio — restart watchdog.
-                // If audio stops mid-stream (no turn_complete), watchdog fires.
-                startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'audio_stall');
-                session.audioOutChunks++;
-                const audioB64 = inlineData.data;
-                // VTID-STREAM-KEEPALIVE: Only log every 50th audio chunk to reduce log volume
-                if (session.audioOutChunks % 50 === 1) {
-                  console.log(`[VTID-01219] Audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
-                }
-                onAudioResponse(audioB64);
-
-                // VTID-STREAM-KEEPALIVE: Removed per-chunk OASIS event emission.
-                // emitLiveSessionEvent fires an HTTP call to Supabase on every audio chunk
-                // (dozens per second). This creates massive I/O pressure and slows the event loop.
-                // Audio stats are logged at session stop instead.
-              }
-
-              // Handle text response
-              if (part.text) {
-                // VTID-WATCHDOG: Model is responding with text — restart watchdog.
-                // If text stops mid-stream (no turn_complete), watchdog fires.
-                startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'text_stall');
-                console.log(`[VTID-01219] Received text: ${part.text.substring(0, 100)}`);
-                onTextResponse(part.text);
-              }
-            }
-          }
-
-          // Handle input/output transcriptions if present (handle both formats)
-          // VTID-01225: Gemini returns transcription as object with .text property
-          const inputTransObj = content.input_transcription || content.inputTranscription;
-          const outputTransObj = content.output_transcription || content.outputTranscription;
-          // Debug: Log raw transcription objects to understand Gemini response format
-          if (inputTransObj || outputTransObj) {
-            console.log(`[VTID-01225] Raw transcription objects - input: ${JSON.stringify(inputTransObj)}, output: ${JSON.stringify(outputTransObj)}`);
-          }
-          // Extract text - handle both object format (.text) and direct string format
-          const inputTranscription = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
-          const outputTranscription = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
-          if (inputTranscription) {
-            // Filter out the server-injected greeting prompt from transcription/memory
-            const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
-              (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
-            if (isGreetingPrompt) {
-              console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
-            } else {
-              console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
-              // VTID-01984 (R5): Vertex's VAD fired and produced a transcription —
-              // upstream WS is demonstrably healthy. Mark life signal so subsequent
-              // user-audio chunks don't arm the forwarding_no_ack watchdog (which
-              // was destroying healthy sessions when first-turn inference exceeded
-              // 15 s). Real WS failures are still caught by native handlers.
-              session.vertexHasShownLife = true;
-              emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
-              if (session.sseResponse) {
-                session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
-              }
-              // VTID-01225-THROTTLE: Buffer user input transcription instead of writing per-fragment.
-              // Vertex Live API sends transcription incrementally (multiple fragments per utterance).
-              // Writing per-fragment caused N parallel Supabase requests per sentence. Now we
-              // accumulate in inputTranscriptBuffer and write once at turn_complete.
-              session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
-
-              // VTID-LOOPGUARD: User spoke — reset consecutive model turn counter
-              session.consecutiveModelTurns = 0;
-              // VTID-TOOLGUARD: User spoke — reset consecutive tool call counter
-              session.consecutiveToolCalls = 0;
-              // VTID-LOOPGUARD: Re-enable silence keepalive if it was paused
-              if (!session.silenceKeepaliveInterval && session.upstreamWs) {
-                session.silenceKeepaliveInterval = setInterval(() => {
-                  if (!session.upstreamWs || session.upstreamWs.readyState !== WebSocket.OPEN || !session.active) return;
-                  if (session.isModelSpeaking) return;
-                  const idleMs = Date.now() - session.lastAudioForwardedTime;
-                  if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
-                    try {
-                      sendAudioToLiveAPI(session.upstreamWs, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
-                    } catch (_e) { /* WS closing */ }
-                  }
-                }, SILENCE_KEEPALIVE_INTERVAL_MS);
-              }
-
-              // VTID-WATCHDOG: User spoke — start watchdog waiting for model response.
-              // Restart on each transcript fragment to give the model time from the
-              // LAST user speech, not the first (user may still be speaking).
-              startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'response_timeout');
-
-              // VTID-THINKING: Notify client that model is processing (user spoke, waiting for response).
-              // Client uses this to show "Thinking..." state instead of staying on "Listening...".
-              if (!session.isModelSpeaking) {
-                const thinkingMsg = { type: 'thinking' };
-                if (session.sseResponse) {
-                  try { session.sseResponse.write(`data: ${JSON.stringify(thinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
-                }
-                if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-                  try { sendWsMessage(session.clientWs, thinkingMsg); } catch (_e) { /* WS closed */ }
-                }
-              }
-            }
-          }
-          if (outputTranscription) {
-            // VTID-NAV-HOTFIX: Drop Turn 2 transcription the same way we drop
-            // Turn 2 audio. Without this, memory + chat bridge would capture
-            // the post-nav model response even though the user never heard it.
-            if (session.navigationDispatched) {
-              console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
-            } else {
-              console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
-              if (session.sseResponse) {
-                session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
-              }
-              // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
-              session.outputTranscriptBuffer += outputTranscription;
-            }
-          }
-        }
-
-        // VTID-01224: Handle tool calls (function calling) - execute and respond
-        const toolCall = message.tool_call || message.toolCall;
-        if (toolCall) {
-          const toolNames = (toolCall.function_calls || toolCall.functionCalls || []).map((fc: any) => fc.name);
-          session.consecutiveToolCalls++;
-          console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${MAX_CONSECUTIVE_TOOL_CALLS}):`, JSON.stringify(toolCall).substring(0, 500));
-          emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
-
-          // VTID-THINKING: Notify client that model is processing a tool call.
-          // Shows "Thinking..." while memory search, event search etc. execute.
-          const toolThinkingMsg = { type: 'thinking', reason: 'tool_call', tools: toolNames };
-          if (session.sseResponse) {
-            try { session.sseResponse.write(`data: ${JSON.stringify(toolThinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
-          }
-          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-            try { sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
-          }
-
-          // Extract function calls (handle both formats)
-          const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];
-
-          // VTID-TOOLGUARD: If too many consecutive tool calls without audio,
-          // we break the loop by sending synthetic responses that instruct
-          // Gemini to answer with data already gathered. Previously we silently
-          // DROPPED the responses — but that left Gemini blocked waiting on
-          // function_responses that never arrived, producing zombie upstream
-          // sessions (no input_transcription, no audio) and ultimately
-          // `watchdog_fired` with reason `forwarding_no_ack`. Sending a
-          // synthetic response keeps the Live API protocol intact while still
-          // forcing the model out of the tool-call loop.
-          if (session.consecutiveToolCalls > MAX_CONSECUTIVE_TOOL_CALLS) {
-            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${MAX_CONSECUTIVE_TOOL_CALLS}). Sending synthetic loop-break response.`);
-            emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
-            emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
-              session_id: session.sessionId,
-              consecutive: session.consecutiveToolCalls,
-              tools: toolNames,
-              function_call_count: functionCalls.length,
-            }, 'warning').catch(() => { });
-            for (const fc of functionCalls) {
-              const callId = fc.id || randomUUID();
-              sendFunctionResponseToLiveAPI(ws, callId, fc.name, {
-                success: false,
-                result: '',
-                error: 'Tool loop guard: too many consecutive tool calls. Respond to the user now with the information already gathered from earlier tool results. Do not call any more tools in this turn.',
-              });
-            }
-          } else {
-            for (const fc of functionCalls) {
-            const toolName = fc.name;
-            const toolArgs = fc.args || {};
-            const callId = fc.id || randomUUID();
-
-            console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
-
-            // Execute the tool asynchronously
-            const toolStartTime = Date.now();
-            executeLiveApiTool(session, toolName, toolArgs)
-              .then((result) => {
-                const toolElapsed = Date.now() - toolStartTime;
-                console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
-
-                // VTID-LINK: Extract title+URL pairs from tool results and send to client.
-                // Vitana won't say URLs in voice, so we push them to chat via SSE/WS.
-                // Tool results are formatted as "Title | Date | Location | ... | Link: URL"
-                if (result.success && result.result) {
-                  const linkPairs: { title: string; url: string }[] = [];
-                  const lines = result.result.split('\n');
-                  for (const line of lines) {
-                    const linkMatch = line.match(/\| Link: (https?:\/\/[^\s|]+)/);
-                    if (linkMatch) {
-                      const url = linkMatch[1];
-                      const title = line.split('|')[0].trim();
-                      if (url && title && !linkPairs.some(p => p.url === url)) {
-                        linkPairs.push({ title, url });
-                      }
-                    }
-                  }
-                  // Fallback: extract any remaining URLs not captured by the structured format
-                  if (linkPairs.length === 0) {
-                    const urlRegex = /https?:\/\/[^\s"',)}\]]+/g;
-                    const urls = result.result.match(urlRegex);
-                    if (urls) {
-                      for (const url of [...new Set(urls)]) {
-                        if (!linkPairs.some(p => p.url === url)) {
-                          linkPairs.push({ title: '', url });
-                        }
-                      }
-                    }
-                  }
-                  if (linkPairs.length > 0) {
-                    for (const { url } of linkPairs) {
-                      const linkMsg = { type: 'link', url, tool: toolName };
-                      if (session.sseResponse) {
-                        try { session.sseResponse.write(`data: ${JSON.stringify(linkMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
-                      }
-                      if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-                        try { sendWsMessage(session.clientWs, linkMsg); } catch (_e) { /* WS closed */ }
-                      }
-                    }
-                    console.log(`[VTID-LINK] Sent ${linkPairs.length} link(s) to client from ${toolName}: ${linkPairs.map(p => p.url).join(', ')}`);
-                    // VTID-LINK-INJECT: Store title+URL pairs for injection into output transcript at turn_complete
-                    session.pendingEventLinks.push(...linkPairs);
-                  }
-                }
-
-                // Send response back to Live API
-                const sent = sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
-                if (!sent) {
-                  console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
-                }
-
-                // Emit OASIS event for tool execution
-                emitOasisEvent({
-                  vtid: 'VTID-01224',
-                  type: 'orb.live.tool.executed',
-                  source: 'orb-live-ws',
-                  status: result.success ? 'info' : 'warning',
-                  message: `Tool ${toolName} executed in ${toolElapsed}ms: ${result.success ? 'success' : 'failed'}`,
-                  payload: {
-                    session_id: session.sessionId,
-                    tool_name: toolName,
-                    tool_args: toolArgs,
-                    success: result.success,
-                    result_length: result.result.length,
-                    elapsed_ms: toolElapsed,
-                    response_sent: sent,
-                    result_preview: result.result.substring(0, 200),
-                    error: result.error || null,
-                  },
-                }).catch(() => { });
-              })
-              .catch((err) => {
-                const toolElapsed = Date.now() - toolStartTime;
-                console.error(`[VTID-01224] Tool ${toolName} threw after ${toolElapsed}ms:`, err);
-                sendFunctionResponseToLiveAPI(ws, callId, toolName, {
-                  success: false,
-                  result: '',
-                  error: err.message,
-                });
-              });
-            }
-          } // end else (tool guard)
-        }
-
-      } catch (err) {
-        console.error(`[VTID-01219] Error parsing Live API message:`, err);
-      }
-    });
+    // A8.3a.1: register the named handler.
+    ws.on('message', handleUpstreamLiveMessage);
 
     // Handle WebSocket errors
     ws.on('error', (error) => {
@@ -9588,7 +5979,7 @@ async function connectToLiveAPI(
         const issueEvent = {
           type: 'connection_issue',
           reason: 'upstream_error',
-          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          message: getConnectionIssueMessage(lang),
           should_close: true,
         };
         if (session.sseResponse) {
@@ -9695,7 +6086,7 @@ async function connectToLiveAPI(
             const issueEvent = {
               type: 'connection_issue',
               reason: 'upstream_disconnected',
-              message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+              message: getConnectionIssueMessage(lang),
               should_close: true,
             };
             // VTID-02637: dedupe — only emit if we haven't already.
@@ -9750,7 +6141,7 @@ async function connectToLiveAPI(
         const issueEvent = {
           type: 'connection_issue',
           reason: 'upstream_disconnected',
-          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          message: getConnectionIssueMessage(lang),
           should_close: true,
         };
         // VTID-02637: dedupe — error handler may already have emitted.
@@ -9783,6 +6174,11 @@ async function connectToLiveAPI(
         }
       }
     });
+
+    // A8.3b.1: resolve the outer Promise — connect() already settled when
+    // setup_complete arrived, and the message/error/close handlers are
+    // wired up. Legacy consumers expect Promise<WebSocket>.
+    resolve(ws);
   });
 }
 
@@ -9794,7 +6190,8 @@ async function connectToLiveAPI(
  *
  * MAX_RECONNECTS prevents infinite reconnection loops.
  */
-const MAX_RECONNECTS = 10; // Max reconnections per session (~50 min total)
+// A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
+import { MAX_RECONNECTS } from '../orb/live/config';
 
 async function attemptTransparentReconnect(
   session: GeminiLiveSession,
@@ -10007,7 +6404,7 @@ function startResponseWatchdog(
     if (!session.active) return;
 
     const lang = session.lang || 'en';
-    const message = connectionIssueMessages[lang] || connectionIssueMessages['en'];
+    const message = getConnectionIssueMessage(lang);
 
     console.warn(`[VTID-WATCHDOG] Response watchdog fired for session ${session.sessionId}: ${reason} (${timeoutMs}ms)`);
     emitDiag(session, 'watchdog_fired', { reason, timeout_ms: timeoutMs });
@@ -10084,6 +6481,143 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const lang = session.lang;
+
+  // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
+  // a user_facing_line on /live/session/start, replace the legacy menu
+  // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
+  // (~line 6413) already uses successfully in production. The line itself
+  // is embedded in the user-turn — Gemini does not need to scan the
+  // system_instruction to find the SPOKEN FIRST UTTERANCE block, and the
+  // prompt stays compact (~150-300 chars) so it does not delay the first
+  // audio chunk past the AudioContext suspend window.
+  //
+  // History:
+  //   VTID-03101 (PR #2258) — added wake-brief override block to system_instruction.
+  //                            Legacy menu user-turn still won (recency primacy).
+  //   VTID-03102 (PR #2262) — replaced legacy menu with a long meta-instruction
+  //                            trigger that pointed Gemini at the system prompt's
+  //                            override block. Reverted in PR #2265 because
+  //                            Gemini Live either shifted response modality to
+  //                            text-only or delayed first audio past iOS
+  //                            AudioContext auto-suspend — UI flipped to
+  //                            "speaking" but no audio reached the user.
+  //   VTID-03104 (this fix)  — minimal, field-tested prompt shape; line is
+  //                            quoted directly so the model has nothing to
+  //                            look up.
+  //
+  // The suppressed-by-cadence branch deliberately falls through to the
+  // legacy bucket dispatch below — that path has shipped for months and
+  // is known to keep audio flowing. B1 cadence is a separate slice.
+  const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
+    (session as any).wakeBriefDecision || null;
+  const wakeOverrideLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim();
+  if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
+    // Escape double-quotes so the line cannot terminate the wrapper early.
+    const safe = wakeOverrideLine.replace(/"/g, '\\"');
+    const wakeTriggerByLang: Record<string, string> = {
+      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
+      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
+      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
+      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
+      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
+      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
+      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
+      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
+    };
+    const wakePrompt = wakeTriggerByLang[lang] || wakeTriggerByLang.en;
+    const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
+    const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
+    console.log(
+      `[VTID-WAKE-OPENER] path=vertex override_active=true lang=${lang} decision_id=${wakeBriefDecision?.decisionId || '<none>'} prompt_len=${wakePrompt.length}`,
+    );
+    console.log(`[VTID-WAKE-OPENER] selected_line="${linePreview}"`);
+    console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
+    const wakeMessage = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text: wakePrompt }] }],
+        turn_complete: true,
+      },
+    };
+    ws.send(JSON.stringify(wakeMessage));
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    emitDiag(session, 'greeting_sent', {
+      lang,
+      prompt_len: wakePrompt.length,
+      wake_opener: 'override_v2',
+      decision_id: wakeBriefDecision?.decisionId || null,
+    });
+    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+    return true;
+  }
+
+  // VTID-03108 (Item 5): cadence-suppressed silence. When wake-brief
+  // explicitly returned `none_with_reason` AND the rolled-up cause is
+  // one of the cadence-class skips emitted by greeting-policy.ts, we
+  // honor the policy by sending NO trigger prompt — the orb stays
+  // silent, the next turn is gated on user audio. The previous
+  // behavior fell through to the legacy menu, which made Gemini
+  // produce a generic line that contradicted the policy.
+  //
+  // Whitelist mirrors greeting-policy's emitted `reason` values
+  // (`isReconnect_forces_skip`, `transparent_reconnect_forces_skip`,
+  // `bucket_reconnect_forces_skip`, `recent_turn_continues_thread`,
+  // `greeted_recently_within_window`). Detection looks at the source
+  // provider results so we ONLY silence when the cause is a real skip
+  // from voice-wake-brief — never on generic "all_providers_suppressed"
+  // rollups that might mask an error path. The kill-switch
+  // `ORB_GREETING_SILENCE_ON_SKIP_ENABLED=false` falls back to legacy
+  // menu in case this silencing reintroduces a regression — set via
+  // system_controls or env. Default is enabled.
+  //
+  // Audio safety: anonymous sessions never use this path (their own
+  // anonPrompts block fires further down). For authenticated users we
+  // still mark `greetingSent=true` so stall-recovery doesn't later
+  // inject the legacy menu, and we do NOT arm the response watchdog
+  // (silence is intended; the watchdog would emit a false-positive
+  // timeout). The user breaks the silence by speaking.
+  const silenceOnSkipEnabled = process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false';
+  if (silenceOnSkipEnabled && !session.isAnonymous) {
+    const cadenceSkipReasons = new Set([
+      'isReconnect_forces_skip',
+      'transparent_reconnect_forces_skip',
+      'bucket_reconnect_forces_skip',
+      'recent_turn_continues_thread',
+      'greeted_recently_within_window',
+    ]);
+    const providerResults = (wakeBriefDecision as any)?.sourceProviderResults as
+      | Array<{ providerKey?: string; status?: string; reason?: string | null }>
+      | undefined;
+    const voiceWakeBriefReason = Array.isArray(providerResults)
+      ? providerResults.find((r) => r?.providerKey === 'voice_wake_brief')?.reason ?? null
+      : null;
+    const isCadenceSkip =
+      wakeBriefDecision?.selectedContinuation == null
+      && typeof voiceWakeBriefReason === 'string'
+      // voice-wake-brief returns `reason: 'greeting_policy_skip'` when policy=skip; the
+      // upstream skip-class reason from greeting-policy itself shows up on the
+      // wake_brief_selected timeline event. Match both shapes so this works
+      // regardless of which layer surfaces the reason.
+      && (cadenceSkipReasons.has(voiceWakeBriefReason)
+        || voiceWakeBriefReason === 'greeting_policy_skip');
+    if (isCadenceSkip) {
+      console.log(
+        `[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=true reason=cadence_skip voice_wake_brief_reason=${voiceWakeBriefReason} lang=${lang}`,
+      );
+      console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
+      session.greetingSent = true;
+      session.greetingTurnIndex = session.turn_count;
+      emitDiag(session, 'greeting_sent', {
+        lang,
+        prompt_len: 0,
+        wake_opener: 'silenced_on_cadence',
+        decision_id: wakeBriefDecision?.decisionId || null,
+        suppression_reason: voiceWakeBriefReason,
+      });
+      return true;
+    }
+  }
+
   // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
   // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
   // never curt. The previous iteration fixed "Hello Dragan!" but made
@@ -10210,7 +6744,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
 
   // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
-  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
 
   return true;
 }
@@ -10253,6 +6787,86 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   const lang = session.lang;
   const stage = ((session as any).reconnectStage as string) || 'idle';
   const reconnectCount = ((session as any)._reconnectCount || 0);
+
+  // VTID-03128: Teacher-aware recovery. When session.teacherModeContent
+  // is set, the generic "what were you asking?" prompt below makes
+  // Vitana lose the Teacher thread — user complained that after a
+  // disconnect during "Want me to show you Autopilot?", Vitana came
+  // back saying "Sorry, what were you asking?" instead of continuing
+  // the Teacher flow. The Teacher Mode block stays in system_instruction
+  // across the reconnect (because session.teacherModeContent is
+  // preserved on attemptTransparentReconnect); the recovery prompt was
+  // the only thing fighting against it. This branch tells Gemini to
+  // resume the Teacher flow explicitly: acknowledge the blip briefly,
+  // then continue from where the Teacher Mode block + transcript
+  // history place the conversation.
+  const teacherMode = (session as any).teacherModeContent as
+    | {
+        active_capability_key: string;
+        active_display_name: string;
+        active_teacher_intro_script: string | null;
+      }
+    | undefined;
+  if (teacherMode && teacherMode.active_capability_key) {
+    const ackByLang: Record<string, string> = {
+      en: 'Sorry, the connection blipped for a moment.',
+      de: 'Entschuldige, die Verbindung war kurz weg.',
+      fr: 'Désolé, la connexion a sauté un instant.',
+      es: 'Perdón, se cortó la conexión un momento.',
+      sr: 'Извини, веза је на тренутак отпала.',
+    };
+    const ack = ackByLang[lang] || ackByLang.en;
+
+    const teacherRecoveryPrompt = [
+      'You are recovering from a brief connection blip in the middle of a Teacher Mode session.',
+      '',
+      `The active capability is "${teacherMode.active_display_name}" (key: ${teacherMode.active_capability_key}).`,
+      'Your Teacher Mode block + the conversation history are in your system instruction. Read them to know exactly where the conversation was when the connection dropped.',
+      '',
+      'Recovery shape — speak exactly ONE acknowledgment sentence first, then RESUME the Teacher flow from where you left off:',
+      '',
+      `1. Open with: "${ack}"`,
+      '',
+      '2. Then look at what was happening BEFORE the disconnect (in the conversation history):',
+      `   - If you had JUST OFFERED the capability ("Want me to show you ${teacherMode.active_display_name}?") and the user had not yet responded → briefly re-offer in a slightly different wording, e.g. "Sind wir noch in der Frage, ob ich dir ${teacherMode.active_display_name} vorstellen darf?" / "Are we still on whether to walk through ${teacherMode.active_display_name}?"`,
+      `   - If you were IN THE MIDDLE OF the intro for ${teacherMode.active_display_name} → continue from where you stopped, picking up the unfinished sentence. Do NOT start the intro over.`,
+      `   - If you had JUST FINISHED the intro and were about to ask the user's next preference → ask the named-next question now ("Möchtest du noch mehr dazu wissen, oder soll ich dir ${teacherMode.active_display_name} jetzt im Detail zeigen?").`,
+      `   - If the user was responding when the connection dropped → paraphrase what they were saying (from history) in 3-6 words and invite them to continue ("Du warst gerade bei <kurz paraphrasieren> — sprich ruhig weiter.").`,
+      '',
+      'CRITICAL RULES:',
+      '- Do NOT say "Hello" / "Hi" / "Welcome back" / the user\'s name — this is a recovery, not a fresh start.',
+      '- Do NOT ask generic "What would you like to talk about?" — you ALREADY KNOW you were in Teacher Mode for ' + teacherMode.active_display_name + '.',
+      '- Do NOT restart the offer or the intro from scratch — continue.',
+      '- Do NOT use the word "Internet" / "network" / "Wi-Fi" — say "connection" / "Verbindung".',
+      '- Speak in the user\'s language (set in your system instruction).',
+      '- Use "Sorry" / equivalent ONCE only.',
+      '- Speak immediately when this prompt arrives.',
+      '- The Teacher Mode behavior rules (3-4 sentence intros, named-next, awareness-event tool calls) ALL still apply once you have resumed.',
+    ].join('\n');
+
+    const message = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text: teacherRecoveryPrompt }] }],
+        turn_complete: true,
+      },
+    };
+    ws.send(JSON.stringify(message));
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    console.log(
+      `[VTID-03128] Teacher-aware recovery sent — capability=${teacherMode.active_capability_key} lang=${lang} stage=${stage} reconnectCount=${reconnectCount} transcriptTurns=${session.transcriptTurns?.length || 0}`,
+    );
+    emitDiag(session, 'recovery_prompt_sent', {
+      lang,
+      stage,
+      reconnect_count: reconnectCount,
+      transcript_turns: session.transcriptTurns?.length || 0,
+      recovery_mode: 'teacher_resume',
+      capability_key: teacherMode.active_capability_key,
+    });
+    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'recovery_timeout');
+    return true;
+  }
 
   // VTID-02715 — neutral disconnect copy.
   //  - Words "internet" / "network" never appear: the user's Wi-Fi is fine,
@@ -10349,7 +6963,7 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
 
   // Watchdog so a missing recovery response surfaces as a recoverable diag,
   // matching the greeting path's behavior.
-  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'recovery_prompt_timeout');
+  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'recovery_prompt_timeout');
 
   return true;
 }
@@ -10833,7 +7447,7 @@ function getLocalTimeContext(timezone?: string): { localTime: string; timeOfDay:
 /**
  * Build full client context from request.
  */
-async function buildClientContext(req: Request): Promise<ClientContext> {
+export async function buildClientContext(req: Request): Promise<ClientContext> {
   const ip = getClientIP(req);
   // Log all IP-related headers for debugging Cloud Run IP extraction
   console.log(`[VTID-CONTEXT] IP headers: xff="${req.get('x-forwarded-for') || ''}", xri="${req.get('x-real-ip') || ''}", xaui="${req.get('x-appengine-user-ip') || ''}", req.ip="${req.ip || ''}" → resolved="${ip}"`);
@@ -11054,6 +7668,7 @@ If the user mentions sending a message, sharing a link, texting, inviting, or te
 1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
 2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
 3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
 
 If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
 
@@ -11240,24 +7855,39 @@ You KNOW this user. You REMEMBER their name, their hometown, their family, and t
   }
 }
 
-function cleanupExpiredSessions(): void {
-  const now = Date.now();
-  for (const [sessionId, session] of sessions.entries()) {
-    if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
-      console.log(`[ORB-LIVE] Session expired: ${sessionId}`);
-      if (session.sseResponse) {
-        try {
-          session.sseResponse.end();
-        } catch (e) {
-          // Ignore
-        }
-      }
-      sessions.delete(sessionId);
-    }
-  }
-}
+// A8.2 (VTID-02961) + A8.2.1 (VTID-02962): wire orb-live.ts locals into
+// the session controller. MUST happen before any session-action handler
+// fires. Function declarations are hoisted, so the references resolve at
+// this module-load point even though some bodies appear later.
+configureLiveSessionController({
+  // A8.2
+  resolveOrbIdentity,
+  clearResponseWatchdog,
+  sendEndOfTurn,
+  // A8.2.1 (/live/session/start)
+  validateOrigin,
+  buildClientContext,
+  normalizeLang,
+  getVoiceForLang,
+  getStoredLanguagePreference,
+  persistLanguagePreference,
+  fetchLastSessionInfo,
+  fetchOnboardingCohortBlock,
+  buildBootstrapContextPack,
+  resolveEffectiveRole,
+  terminateExistingSessionsForUser,
+  emitLiveSessionEvent,
+  describeTimeSince,
+  // A8.2-complete (VTID-02964) — used by handleLiveStreamSend.
+  sendAudioToLiveAPI,
+  startResponseWatchdog,
+  emitDiag,
+  getGoogleAuthReady: () => !!googleAuth,
+});
 
-// Cleanup expired sessions every 5 minutes
+// A8.2: cleanupExpiredSessions body lifted to
+// orb/live/session/live-session-controller.ts. The setInterval schedule
+// stays here — orb-live.ts owns the cleanup timer lifecycle.
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
 
 /**
@@ -11459,12 +8089,9 @@ router.get('/live', (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'Session not found' });
   }
 
-  // Setup SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
+  // A9.2 (VTID-02958): SSE upgrade lifted to orb/live/transport/sse-handler.ts.
+  // Same 4 headers + flushHeaders + ready event + 10 s data heartbeat.
+  attachSseHeaders(res);
 
   // Track connection
   incrementConnection(clientIP);
@@ -11472,22 +8099,16 @@ router.get('/live', (req: Request, res: Response) => {
   session.lastActivity = new Date();
 
   // Send ready event
-  res.write(`data: ${JSON.stringify({ type: 'ready', meta: { model: GEMINI_MODEL } })}\n\n`);
+  writeSseEvent(res, { type: 'ready', meta: { model: GEMINI_MODEL } });
 
-  // VTID-HEARTBEAT-FIX: Send actual data heartbeats (not SSE comments) so client
-  // watchdog resets properly. SSE comments don't trigger EventSource.onmessage.
-  const heartbeatInterval = setInterval(() => {
-    try {
-      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
-    } catch (e) {
-      clearInterval(heartbeatInterval);
-    }
-  }, 10000);
+  // VTID-HEARTBEAT-FIX: data-message heartbeat (NOT an SSE comment) so
+  // client EventSource.onmessage fires and resets its watchdog.
+  const heartbeat = startSseHeartbeat(res);
 
   // Handle client disconnect
   req.on('close', () => {
     console.log(`[ORB-LIVE] SSE connection closed for session: ${sessionId}`);
-    clearInterval(heartbeatInterval);
+    heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
@@ -11784,7 +8405,7 @@ router.post('/stop', (req: Request, res: Response) => {
  *   "meta": { "provider": "vertex", "model": "gemini-*", "mode": "orb_voice" }
  * }
  */
-router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/chat', withLatencyTracker('text'), optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as OrbChatRequest;
 
   // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
@@ -11983,9 +8604,34 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
 
     // VTID-01118: Inject cross-turn state context into system instruction
     const stateContext = stateEngine.generateContextString();
-    const systemInstruction = stateContext
+    let systemInstruction = stateContext
       ? `${baseSystemInstruction}\n\n${stateContext}`
       : baseSystemInstruction;
+
+    // VTID-02941 (B0b-min + B2 decision integration): append the decision-
+    // contract section. Continuity is the only signal flowing through the
+    // spine in this slice; future slices add more fields to
+    // AssistantDecisionContext via the same renderer.
+    //
+    // Wall: a thrown error here MUST NOT break the prompt — the contract
+    // is an enrichment layer, never required. We log and continue with the
+    // unaugmented instruction (acceptance #6).
+    if (identity?.tenant_id && identity?.user_id) {
+      try {
+        const decision = await compileAssistantDecisionContext({
+          tenantId: identity.tenant_id,
+          userId: identity.user_id,
+        });
+        const contractSection = renderDecisionContract(decision);
+        if (contractSection) {
+          systemInstruction = `${systemInstruction}\n\n${contractSection}`;
+        }
+      } catch (e) {
+        console.warn(
+          `[VTID-02941] decision contract render failed: ${(e as Error).message}`,
+        );
+      }
+    }
 
     // VTID-01106: Emit memory context injection event
     if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
@@ -13473,7 +10119,7 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
   const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
   const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
+  const voiceConfig = getGeminiTtsVoice(lang);
 
   const debugResult: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
@@ -13497,6 +10143,8 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
   try {
     console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
 
+    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+    const __vc = await getVoiceConfig();
     const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
       input: { text: testText },
       voice: {
@@ -13507,7 +10155,7 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
       },
       audioConfig: {
         audioEncoding: 'MP3' as any,
-        speakingRate: 1.0,
+        speakingRate: __vc.tts.speaking_rate,
         pitch: 0
       }
     };
@@ -13858,7 +10506,7 @@ function normalizeLang(lang: string): string {
  */
 function getVoiceForLang(lang: string): string {
   const normalized = normalizeLang(lang);
-  return LIVE_LANGUAGE_VOICES[normalized] || LIVE_LANGUAGE_VOICES['en'];
+  return getLiveLanguageVoice(normalized);
 }
 
 /**
@@ -13943,433 +10591,11 @@ async function getStoredLanguagePreference(
  * - 401 UNAUTHENTICATED: Missing or invalid JWT
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  */
+// A8.2.1: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/session/start', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  console.log('[VTID-ORBC] POST /orb/live/session/start');
-
-  // Validate origin
-  if (!validateOrigin(req)) {
-    return res.status(403).json({ ok: false, error: 'Origin not allowed' });
-  }
-
-  // VTID-AUTH-BACKEND-REJECT: If a Bearer token was provided but the JWT
-  // failed verification, reject with 401 so the client knows to re-auth.
-  // optionalAuth silently drops invalid tokens, which is fine for truly
-  // anonymous widget requests on public pages (no Authorization header),
-  // but lets stale authenticated sessions degrade into anonymous greetings —
-  // which is how logged-in users ended up hearing the first-time intro
-  // speech after their JWT expired in the background.
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ') && !req.identity) {
-    console.warn('[VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401');
-    return res.status(401).json({
-      ok: false,
-      error: 'AUTH_TOKEN_INVALID',
-      message: 'Session expired or invalid — please re-authenticate',
-    });
-  }
-
-  const body = req.body as LiveSessionStartRequest;
-  const clientRequestedLang = body.lang; // may be undefined if client didn't specify
-  console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
-  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
-  const responseModalities = body.response_modalities || ['audio', 'text'];
-  const conversationSummary = body.conversation_summary || undefined;
-  // VTID-02020: contextual recovery hints sent by the orb-widget on reconnect.
-  // Empty / absent on first-time sessions, in which case the standard greeting
-  // path runs unchanged. When present, _resumedFromHistory is set on the session
-  // object so the /live/stream handler routes to sendReconnectRecoveryPromptToLiveAPI.
-  const reconnectTranscriptHistory: Array<{ role: 'user' | 'assistant'; text: string }> =
-    Array.isArray(body.transcript_history)
-      ? body.transcript_history
-          .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
-          .slice(-20)
-      : [];
-  const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
-    typeof body.reconnect_stage === 'string'
-    && (body.reconnect_stage === 'idle' || body.reconnect_stage === 'listening_user_speaking'
-        || body.reconnect_stage === 'thinking' || body.reconnect_stage === 'speaking')
-      ? body.reconnect_stage
-      : 'idle';
-  const incomingConversationId: string | null =
-    typeof body.conversation_id === 'string' && body.conversation_id.length > 0
-      ? body.conversation_id : null;
-  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
-  const resolvedConversationId = incomingConversationId || randomUUID();
-  if (isReconnectStart) {
-    console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
-  }
-
-  // Generate session ID
-  const sessionId = `live-${randomUUID()}`;
-
-  // VTID-01224: Build bootstrap context pack (memory + knowledge) for system instruction
-  // This was missing from the SSE path — only the WebSocket path had it
-  let contextInstruction: string | undefined;
-  let contextPack: ContextPack | undefined;
-  let contextBootstrapLatencyMs: number | undefined;
-  let contextBootstrapSkippedReason: string | undefined;
-
-  // VTID-ANON: Anonymous = no verified JWT on the request.
-  // req.identity is set by optionalAuth middleware ONLY when a valid JWT is present.
-  // DEV_IDENTITY (from resolveOrbIdentity) is NOT a real user — it must NOT be
-  // treated as authenticated. Previously DEV_IDENTITY had real user_id/tenant_id
-  // which passed the hasRealIdentity check → loaded Jovana's memory for everyone.
-  const hasJwtIdentity = !!(req.identity && req.identity.user_id);
-  const isAnonymousSession = !hasJwtIdentity;
-
-  // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback for API calls)
-  const orbIdentity = await resolveOrbIdentity(req);
-  // Only use as bootstrapIdentity for memory/context if user has a REAL JWT
-  const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
-
-  // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
-  const clientContext = await buildClientContext(req);
-  console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
-  console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
-
-  // Resolve language priority:
-  // 1. Client-requested lang (from vitana.lang localStorage = user's LATEST UI selection)
-  // 2. Stored preference (from memory_facts = previous session's choice, used as fallback)
-  // 3. Accept-Language header (browser default)
-  // 4. 'en' (ultimate fallback)
-  //
-  // BOOTSTRAP-ORB-PHASE1: Previously getStoredLanguagePreference awaited
-  // serially here (~100 ms) before the bootstrap Promise.all. Now we kick it
-  // off in parallel and await its result alongside bootstrap/role/sessionInfo.
-  // The client-request short-circuit (most common case) stays synchronous.
-  let lang = normalizeLang(clientRequestedLang || 'en');
-  const needsStoredLang = !clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id;
-  const storedLangPromise: Promise<string | null> = needsStoredLang
-    ? getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id)
-    : Promise.resolve(null);
-  if (clientRequestedLang) {
-    console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
-  }
-  // For anonymous sessions: use Accept-Language header if client didn't specify
-  if (isAnonymousSession && !clientRequestedLang && clientContext.lang) {
-    const browserLang = normalizeLang(clientContext.lang);
-    if (browserLang !== 'en' || !clientRequestedLang) {
-      lang = browserLang;
-      console.log(`[LANG-PREF] Anonymous session using Accept-Language: ${lang}`);
-    }
-  }
-
-  // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
-  let sseActiveRole: string | null = null;
-  // VTID-01224-FIX: Last session info for context-aware greeting
-  let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
-  // BOOTSTRAP-ORB-CRITICAL-PATH: Promise resolving once context assembly has
-  // populated the session fields below. Attached to the session object and
-  // awaited by connectToLiveAPI's ws.on('open') handler, so context build
-  // overlaps with Google auth + Gemini WS handshake instead of blocking the
-  // /live/session/start response. Undefined for anonymous / no-identity
-  // sessions (nothing to build).
-  let contextReadyPromise: Promise<void> | undefined;
-
-  if (isAnonymousSession) {
-    // VTID-ANON: Anonymous session — skip ALL personal context.
-    // No memory, no tools, no lastSessionInfo, no role.
-    contextBootstrapSkippedReason = 'anonymous_session';
-    console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
-  } else if (bootstrapIdentity) {
-    const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
-    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
-
-    // VITANA-BRAIN: If ORB brain flag is enabled, use brain context assembly instead
-    const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
-    const useOrbBrain = await isVitanaBrainOrbEnabled();
-    const contextBuildStart = Date.now();
-
-    // BOOTSTRAP-ORB-CRITICAL-PATH: Kick off bootstrap + role + sessionInfo +
-    // stored-language + admin briefing in parallel, WITHOUT awaiting. The
-    // resulting promise is stored on the session and awaited by
-    // connectToLiveAPI's ws.on('open') handler. Admin briefing is fetched
-    // speculatively (only needs tenant_id) and discarded if the resolved role
-    // turns out not to be admin-ish.
-    const bootstrapWork = Promise.all([
-      useOrbBrain
-        ? (async () => {
-            const brainStart = Date.now();
-            try {
-              const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
-              // VTID-ROLE-CMD-HUB: Infer developer role from Command Hub route
-              const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-              // BOOTSTRAP-ORB-MOBILE-ROLE: Mobile (Appilix WebView / phone browsers) is community-only.
-              // Even if DB role is admin/developer/professional, mobile sessions must greet as community.
-              const brainRole = clientContext.isMobile
-                ? 'community'
-                : bodyRoute.startsWith('/command-hub')
-                  ? 'developer'
-                  : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
-                user_id: bootstrapIdentity.user_id,
-                tenant_id: bootstrapIdentity.tenant_id || 'default',
-                role: brainRole,
-                channel: 'orb',
-                thread_id: sessionId,
-                user_timezone: clientContext?.timezone,
-              });
-              console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
-              return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
-            } catch (err: any) {
-              console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
-              return buildBootstrapContextPack(bootstrapIdentity, sessionId);
-            }
-          })()
-        : buildBootstrapContextPack(bootstrapIdentity, sessionId),
-      usingDevFallback
-        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      fetchLastSessionInfo(bootstrapIdentity.user_id),
-      storedLangPromise,
-      bootstrapIdentity.tenant_id
-        ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
-            console.warn(`[BOOTSTRAP-ADMIN-EE] SSE briefing fetch failed: ${err?.message}`);
-            return null;
-          })
-        : Promise.resolve(null),
-    ]);
-
-    contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
-        // Resolve effective role (same overrides as before — kept in sync with the Brain path above).
-        let resolvedRole = fetchedSseRole;
-        const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
-          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'developer';
-        }
-        if (clientContext.isMobile && resolvedRole !== 'community') {
-          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'community';
-        }
-
-        // Build final context instruction, optionally prepending the admin briefing.
-        let finalContext = bootstrapResult.contextInstruction || '';
-        if (isAdminRole(resolvedRole) && adminBriefing) {
-          finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
-          emitOasisEvent({
-            vtid: 'BOOTSTRAP-ADMIN-EE',
-            type: 'admin.briefing.injected',
-            source: 'orb-live',
-            status: 'info',
-            message: `Admin briefing injected into SSE session ${sessionId}`,
-            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: resolvedRole, chars: adminBriefing.length },
-            actor_id: bootstrapIdentity.user_id,
-            actor_role: 'admin',
-            surface: 'orb',
-          }).catch(() => {});
-        }
-
-        if (bootstrapResult.skippedReason) {
-          console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
-        } else {
-          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${finalContext.length}`);
-        }
-
-        // Determine final lang (stored preference wins only if client didn't
-        // explicitly request one).
-        let finalLang = lang;
-        if (storedLangResult && !clientRequestedLang) {
-          finalLang = storedLangResult;
-          console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
-        }
-
-        // Patch the session (it has already been constructed with placeholders
-        // below this block). Mutations are safe because no consumer reads
-        // these fields before awaiting contextReadyPromise.
-        session.active_role = resolvedRole;
-        session.lastSessionInfo = fetchedSessionInfo;
-        session.contextInstruction = finalContext;
-        session.contextPack = bootstrapResult.contextPack;
-        session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
-        session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
-        session.contextBootstrapBuiltAt = Date.now();
-        // Forwarding v2: cache the onboarding-cohort hint for first-30-day users.
-        // Computed once at bootstrap; never changes during a session.
-        try {
-          (session as any).onboardingCohortBlock = await fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
-        } catch { /* non-blocking */ }
-        if (finalLang !== session.lang) {
-          session.lang = finalLang;
-        }
-
-        // Persist language preference (non-blocking, after we know the final lang).
-        if (bootstrapIdentity.user_id && bootstrapIdentity.tenant_id) {
-          persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, finalLang);
-        }
-
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
-      })
-      .catch((err) => {
-        console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
-      });
-  } else {
-    contextBootstrapSkippedReason = 'no_identity';
-    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
-  }
-
-  // Create session object with identity and context attached
-  const session: GeminiLiveSession = {
-    sessionId,
-    lang,
-    voiceStyle,
-    responseModalities,
-    upstreamWs: null,
-    sseResponse: null,
-    active: true,
-    createdAt: new Date(),
-    lastActivity: new Date(),
-    audioInChunks: 0,
-    videoInFrames: 0,
-    audioOutChunks: 0,
-    // VTID-01224: Context and identity
-    turn_count: 0,
-    // BOOTSTRAP-ORB-CRITICAL-PATH: context/role/lastSessionInfo are populated
-    // asynchronously by contextReadyPromise (kicked off above). For anonymous
-    // / no-identity sessions the promise is undefined and these stay
-    // undefined, which all downstream consumers already tolerate.
-    contextInstruction,
-    contextPack,
-    contextBootstrapLatencyMs,
-    contextBootstrapSkippedReason,
-    contextBootstrapBuiltAt: Date.now(),
-    contextReadyPromise,
-    // VTID-01225: Transcript accumulation for Cognee extraction.
-    // VTID-02020: seeded from request body when this is a reconnect, so the
-    // post-greeting recovery prompt + the system-instruction history block
-    // both have the previous turns immediately available.
-    transcriptTurns: reconnectTranscriptHistory.length > 0
-      ? reconnectTranscriptHistory.map(t => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
-      : [],
-    outputTranscriptBuffer: '',
-    pendingEventLinks: [],
-    // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
-    inputTranscriptBuffer: '',
-    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
-    isModelSpeaking: false,
-    // VTID-ECHO-COOLDOWN: No cooldown at session start
-    turnCompleteAt: 0,
-    // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
-    // VTID-ANON: Only attach identity if user has a real JWT.
-    // DEV_IDENTITY must NOT be attached — it would enable tools/memory for anonymous sessions.
-    identity: hasJwtIdentity ? orbIdentity || undefined : undefined,
-    // Conversation summary from previous session for greeting context
-    conversationSummary,
-    // VTID-01225-ROLE: Application-level role (community/admin/developer)
-    active_role: sseActiveRole,
-    // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
-    lastAudioForwardedTime: Date.now(),
-    // Telemetry batching: emit at most once per 10s window
-    lastTelemetryEmitTime: 0,
-    // VTID-RESPONSE-DELAY: Per-session VAD from client or default
-    vadSilenceMs: (body as any).vad_silence_ms && (body as any).vad_silence_ms >= 500 && (body as any).vad_silence_ms <= 3000
-      ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
-    // VTID-AUDIO-READY: SSE path sends greeting immediately (no handshake)
-    greetingDeferred: false,
-    // VTID-01224-FIX: Last session info for context-aware greeting
-    lastSessionInfo,
-    // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
-    consecutiveModelTurns: 0,
-    // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
-    consecutiveToolCalls: 0,
-    // VTID-ANON: Anonymous session flag
-    isAnonymous: isAnonymousSession,
-    // VTID-CONTEXT: Client environment context
-    clientContext,
-    // VTID-NAV: Current page + recent navigation history from the host React
-    // Router. The widget pushes these via VTOrb.updateContext() and includes
-    // them in the session-start payload so the consult service can score
-    // catalog matches with the user's actual context.
-    current_route: typeof (body as any).current_route === 'string'
-      ? (body as any).current_route
-      : undefined,
-    recent_routes: Array.isArray((body as any).recent_routes)
-      ? ((body as any).recent_routes as any[])
-          .filter((r): r is string => typeof r === 'string')
-          .slice(0, 5)
-      : undefined,
-    // VTID-02789: Frontend useOrbVoiceWidget reads useIsMobile() and
-    // includes is_mobile in the start payload so the Navigator picks
-    // mobile_route over route on mobile sessions.
-    is_mobile: typeof (body as any).is_mobile === 'boolean'
-      ? (body as any).is_mobile
-      : undefined,
-  };
-
-  // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
-  // Prevents zombie sessions when user re-opens the ORB without closing the previous one.
-  // VTID-SESSION-LIMIT-FIX: Skip for dev-sandbox identity — all anonymous/dev users share
-  // the same user_id (DEV_IDENTITY.USER_ID), so enforcing session limit would kill every
-  // other anonymous session whenever a new one starts, creating a death spiral of 0-turn sessions.
-  let terminatedCount = 0;
-  const isDevIdentity = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
-  if (orbIdentity?.user_id && !isDevIdentity) {
-    terminatedCount = terminateExistingSessionsForUser(orbIdentity.user_id, sessionId);
-    if (terminatedCount > 0) {
-      console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
-    }
-  }
-
-  // VTID-02020: pin the conversation_id (echoed back to the client) and
-  // mark this session as resumed-from-history when the client sent context.
-  // The /live/stream handler reads `resumedFromHistory` to route to the
-  // contextual recovery prompt instead of the standard greeting.
-  session.conversation_id = resolvedConversationId;
-  if (isReconnectStart) {
-    (session as any).resumedFromHistory = true;
-    (session as any).reconnectStage = reconnectStage;
-  }
-
-  // Store session
-  liveSessions.set(sessionId, session);
-
-  // Emit OASIS event with identity context
-  await emitLiveSessionEvent('vtid.live.session.start', {
-    session_id: sessionId,
-    user_id: orbIdentity?.user_id || 'anonymous',
-    tenant_id: orbIdentity?.tenant_id || null,
-    email: orbIdentity?.email || null,
-    active_role: sseActiveRole || null,
-    user_agent: req.headers['user-agent'] || null,
-    origin: req.headers['origin'] || req.headers['referer'] || null,
-    transport: 'sse',
-    lang,
-    modalities: responseModalities,
-    voice: getVoiceForLang(lang)
-  });
-
-  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
-
-  // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
-  // shows orb-live as healthy whenever a voice session is established.
-  // Fire-and-forget: registry write must never block the SSE response.
-  recordAgentHeartbeat('orb-live').catch(() => {});
-
-  return res.status(200).json({
-    ok: true,
-    session_id: sessionId,
-    // VTID-02020: echo the pinned conversation_id so the client can persist it
-    // and re-send on the next reconnect to keep the same conversation thread.
-    conversation_id: resolvedConversationId,
-    meta: {
-      lang,
-      voice: getVoiceForLang(lang),
-      modalities: responseModalities,
-      model: VERTEX_LIVE_MODEL,
-      context_bootstrap: {
-        // BOOTSTRAP-ORB-CRITICAL-PATH: latency / char count are now known only
-        // after contextReadyPromise resolves (which happens during the Gemini
-        // WS handshake). Returning placeholders is intentional — clients use
-        // these for diagnostics only.
-        latency_ms: contextBootstrapLatencyMs ?? null,
-        context_chars: null,
-        skipped_reason: contextBootstrapSkippedReason || null,
-        deferred: !!contextReadyPromise,
-      }
-    }
-  });
+  await handleLiveSessionStart(req, res);
 });
+
 
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
@@ -14386,170 +10612,9 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
+// A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  console.log('[VTID-ORBC] POST /orb/live/session/stop');
-
-  const { session_id } = req.body;
-  const orbIdentity = await resolveOrbIdentity(req);
-
-  if (!session_id) {
-    return res.status(400).json({ ok: false, error: 'session_id required' });
-  }
-
-  const session = liveSessions.get(session_id);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: 'Session not found' });
-  }
-
-  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
-  if (session.identity && orbIdentity && orbIdentity.user_id !== DEV_IDENTITY.USER_ID && session.identity.user_id !== orbIdentity.user_id) {
-    console.warn(`[VTID-ORBC] /session/stop ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${orbIdentity.user_id}, sessionId=${session_id}`);
-  }
-
-  // Close upstream WebSocket if exists
-  if (session.upstreamWs) {
-    try {
-      session.upstreamWs.close();
-    } catch (e) {
-      // Ignore close errors
-    }
-    session.upstreamWs = null;
-  }
-
-  // Close SSE response if exists
-  if (session.sseResponse) {
-    try {
-      session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_ended' })}\n\n`);
-      session.sseResponse.end();
-    } catch (e) {
-      // Ignore
-    }
-    session.sseResponse = null;
-  }
-
-  session.active = false;
-
-  // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
-  if (session.upstreamPingInterval) {
-    clearInterval(session.upstreamPingInterval);
-    session.upstreamPingInterval = undefined;
-  }
-  if (session.silenceKeepaliveInterval) {
-    clearInterval(session.silenceKeepaliveInterval);
-    session.silenceKeepaliveInterval = undefined;
-  }
-  // VTID-WATCHDOG: Clear response watchdog on session stop
-  clearResponseWatchdog(session);
-
-  // Emit OASIS event
-  // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
-  // this event when the user next opens the ORB.
-  await emitLiveSessionEvent('vtid.live.session.stop', {
-    session_id,
-    user_id: session.identity?.user_id || null,
-    tenant_id: session.identity?.tenant_id || null,
-    audio_in_chunks: session.audioInChunks,
-    video_in_frames: session.videoInFrames,
-    audio_out_chunks: session.audioOutChunks,
-    duration_ms: Date.now() - session.createdAt.getTime(),
-    turn_count: session.turn_count,
-    user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
-    model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
-  });
-  // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
-  // VTID-01994: pass session metrics for mode-independent quality classifier.
-  dispatchVoiceFailureFireAndForget({
-    sessionId: session_id,
-    tenantScope: session.identity?.tenant_id || 'global',
-    metadata: { synthetic: (session as any).synthetic === true },
-    sessionMetrics: {
-      audio_in_chunks: session.audioInChunks,
-      audio_out_chunks: session.audioOutChunks,
-      duration_ms: Date.now() - session.createdAt.getTime(),
-      turn_count: session.turn_count,
-      user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
-      model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
-    },
-  });
-
-  // VTID-01225: Fire-and-forget entity extraction from live session
-  // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items
-  // Falls back to memory_items query only if transcriptTurns is empty.
-  if (session.identity && session.identity.tenant_id) {
-    const tenantId = session.identity.tenant_id;
-    const userId = session.identity.user_id;
-
-    if (session.transcriptTurns.length > 0) {
-      const fullTranscript = session.transcriptTurns
-        .map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
-        .join('\n');
-
-      if (fullTranscript.length > 50) {
-        if (cogneeExtractorClient.isEnabled()) {
-          cogneeExtractorClient.extractAsync({
-            transcript: fullTranscript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id: session_id,
-            active_role: session.active_role || 'community'
-          });
-          console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
-        }
-
-        // VTID-01230: Deduplicated extraction (force on session end)
-        deduplicatedExtract({
-          conversationText: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id: session_id,
-          force: true,
-        });
-      }
-    } else {
-      // Fallback: query memory_items if no in-memory transcript available
-      fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
-        .then(transcript => {
-          if (transcript && transcript.length > 50) {
-            if (cogneeExtractorClient.isEnabled()) {
-              cogneeExtractorClient.extractAsync({
-                transcript,
-                tenant_id: tenantId,
-                user_id: userId,
-                session_id: session_id,
-                active_role: session.active_role || 'community'
-              });
-              console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
-            }
-
-            // VTID-01230: Deduplicated extraction from memory_items fallback
-            deduplicatedExtract({
-              conversationText: transcript,
-              tenant_id: tenantId,
-              user_id: userId,
-              session_id: session_id,
-              force: true,
-            });
-          } else {
-            console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
-          }
-        })
-        .catch(err => {
-          console.error(`[VTID-01225] Failed to fetch conversation for extraction: ${err.message}`);
-        });
-    }
-  }
-  // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
-
-  // VTID-01230: Clean up session buffer and extraction state on session stop
-  destroySessionBuffer(session_id);
-  clearExtractionState(session_id);
-
-  // Remove from store
-  liveSessions.delete(session_id);
-
-  console.log(`[VTID-01155] Live session stopped: ${session_id}`);
-
-  return res.status(200).json({ ok: true });
+  await handleLiveSessionStop(req, res);
 });
 
 /**
@@ -14643,12 +10708,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     return res.status(429).json({ ok: false, error: 'Too many connections' });
   }
 
-  // Setup SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
+  // A9.2 (VTID-02958): SSE upgrade lifted to orb/live/transport/sse-handler.ts.
+  // Same 4 SSE headers + flushHeaders. Session-lifecycle assignment of
+  // session.sseResponse stays here (A8 territory).
+  attachSseHeaders(res);
 
   // Track connection
   incrementConnection(clientIP);
@@ -14689,18 +10752,18 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
 
   // VTID-INSTANT-FEEDBACK: Send ready event IMMEDIATELY so client transitions UI
   // and can play the activation chime before Live API connects.
-  res.write(`data: ${JSON.stringify({
+  writeSseEvent(res, {
     type: 'ready',
     session_id: sessionId,
     live_api_connected: false, // Live API connects in parallel
     meta: {
       model: VERTEX_LIVE_MODEL,
       lang: session.lang,
-      voice: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] || getVoiceForLang(session.lang),
+      voice: getLiveApiVoice(session.lang) || getVoiceForLang(session.lang),
       audio_out_rate: 24000,
-      audio_in_rate: 16000
-    }
-  })}\n\n`);
+      audio_in_rate: 16000,
+    },
+  });
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
@@ -14843,24 +10906,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     });
   }
 
-  // VTID-HEARTBEAT-FIX: Send actual data heartbeats, not SSE comments.
-  // SSE comments (`:heartbeat`) keep the HTTP connection alive but do NOT trigger
-  // EventSource.onmessage on the client. The client watchdog only resets on
-  // onmessage events, so after the greeting turn_complete, if the user doesn't
-  // speak for 12s the watchdog fires → "No response from server" → disconnect.
-  // Sending { type: 'heartbeat' } as a data message fixes this.
-  const heartbeatInterval = setInterval(() => {
-    try {
-      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
-    } catch (e) {
-      clearInterval(heartbeatInterval);
-    }
-  }, 10000);
+  // VTID-HEARTBEAT-FIX: 10 s data-message heartbeat (NOT an SSE comment) so
+  // client EventSource.onmessage fires and resets its watchdog. A9.2 lifted
+  // the implementation into orb/live/transport/sse-handler.ts; same cadence,
+  // same payload shape, same auto-clear-on-write-failure behavior.
+  const heartbeat = startSseHeartbeat(res);
 
   // Handle client disconnect
   req.on('close', () => {
     console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
-    clearInterval(heartbeatInterval);
+    heartbeat.clear();
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
@@ -14918,241 +10973,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
+// A8.2-complete: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const { session_id } = req.query;
-  const body = req.body as LiveStreamMessage & { session_id?: string };
-  const effectiveSessionId = (session_id as string) || body.session_id;
-
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
-  // Allow anonymous requests for lovable/external frontends.
-  const identity = await resolveOrbIdentity(req);
-
-  if (!effectiveSessionId) {
-    return res.status(400).json({ ok: false, error: 'session_id required' });
-  }
-
-  const session = liveSessions.get(effectiveSessionId);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: 'Session not found' });
-  }
-
-  if (!session.active) {
-    return res.status(400).json({ ok: false, error: 'Session not active' });
-  }
-
-  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
-  // Hard 403 blocks caused intermittent failures when Cloud Run routed requests across instances
-  // or when JWT token refresh raced with session creation.
-  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
-      session.identity.user_id !== identity.user_id) {
-    console.warn(`[VTID-ORBC] /send ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, session_tenant=${session.identity.tenant_id}, request_tenant=${identity.tenant_id}, sessionId=${effectiveSessionId}`);
-  }
-
-  session.lastActivity = new Date();
-
-  // VTID-ANON-NUDGE: Block all input after turn limit — Vitana's final message (turn 8)
-  // has already been delivered. Silently drop audio/text so no partial response starts.
-  if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
-    return res.json({ ok: true });
-  }
-
-  try {
-    if (body.type === 'audio') {
-      // VTID-NAV: Once a navigation is queued, drop ALL further mic audio so
-      // Gemini cannot start a new turn while the widget is closing. Without
-      // this gate the model talks over its own goodbye sentence.
-      if (session.navigationDispatched) {
-        session.audioInChunks++;
-        return res.json({ ok: true, dropped: true, reason: 'navigation_dispatched' });
-      }
-
-      // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
-      if (session.isModelSpeaking) {
-        session.audioInChunks++;
-        if (session.audioInChunks % 50 === 0) {
-          console.log(`[VTID-VOICE-INIT] SSE path: dropping mic audio — model is speaking: session=${effectiveSessionId}`);
-        }
-        return res.json({ ok: true, dropped: true, reason: 'model_speaking' });
-      }
-
-      // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
-      // turn_complete to let client-side audio playback finish draining.
-      // Without this, speaker echo gets picked up and causes phantom responses.
-      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
-        session.audioInChunks++;
-        return res.json({ ok: true, dropped: true, reason: 'post_turn_cooldown' });
-      }
-
-      // Handle audio chunk
-      session.audioInChunks++;
-
-      // Telemetry: emit at most once per 10s window (was per-100-chunks ~1-2s)
-      // Each emit is an HTTP call to Supabase — batching reduces I/O pressure
-      const now = Date.now();
-      if (now - session.lastTelemetryEmitTime >= 10_000) {
-        session.lastTelemetryEmitTime = now;
-        emitLiveSessionEvent('vtid.live.audio.in.chunk', {
-          session_id: effectiveSessionId,
-          chunk_number: session.audioInChunks,
-          bytes: body.data_b64.length,
-          rate: 16000
-        }).catch(() => { });
-      }
-
-      // VTID-01219: Forward audio to Vertex Live API WebSocket
-      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-        // Forward audio to Live API for real-time processing
-        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
-        if (sent) {
-          session.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
-          // VTID-FORWARDING-WATCHDOG: catches zombie upstream WS connections
-          // where audio goes in but nothing comes back (no input_transcription
-          // → no watchdog → stuck forever).
-          //
-          // BOOTSTRAP-ORB-RELIABILITY-R4: the watchdog now SLIDES — reset on
-          // each audio chunk while the model isn't speaking. Means the timer
-          // fires only when the user's audio stops AND Vertex stays silent,
-          // which is the actual stall condition. Previously the timer armed
-          // once and counted down regardless of whether the user was still
-          // speaking, interrupting long utterances.
-          //
-          // Only slide when the current watchdog is this same reason — a
-          // model-response watchdog must NOT be reset by user audio or we'd
-          // suppress legitimate mid-stream model stalls.
-          if (!session.isModelSpeaking) {
-            // VTID-01984 (R5): once Vertex has shown life this session, the
-            // upstream WS is healthy by definition. A "no ack" window is just
-            // Vertex computing — not a stall. Skip arming the watchdog here.
-            // Native ws.onclose / ws.onerror still catch real connection failures.
-            // Periodically emit a watchdog_skipped diag so we can confirm in
-            // production how many sessions this saves.
-            if (session.vertexHasShownLife) {
-              if (session.audioInChunks % 200 === 0) {
-                emitDiag(session, 'watchdog_skipped', { reason: 'vertex_alive' });
-              }
-            } else {
-              const canSlide = !session.responseWatchdogTimer
-                || session.responseWatchdogReason === 'forwarding_no_ack';
-              if (canSlide) {
-                startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
-              }
-            }
-          }
-          // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
-          if (session.audioInChunks % 100 === 0) {
-            emitDiag(session, 'audio_forwarding', { chunk: session.audioInChunks });
-          }
-        } else {
-          console.warn(`[VTID-01219] Failed to forward audio chunk: session=${effectiveSessionId}`);
-          if (session.audioInChunks % 50 === 0) {
-            emitDiag(session, 'audio_forward_failed', { chunk: session.audioInChunks, ws_state: session.upstreamWs?.readyState ?? -1 });
-          }
-        }
-      } else {
-        // Fallback: Log when Live API not connected
-        if (session.audioInChunks % 50 === 0) {
-          console.log(`[VTID-ORBC] Audio NO-LIVE-API: session=${effectiveSessionId}, chunk=${session.audioInChunks}, wsState=${session.upstreamWs?.readyState ?? 'NULL'}, projectId=${VERTEX_PROJECT_ID || 'EMPTY'}, hasAuth=${!!googleAuth}`);
-          emitDiag(session, 'audio_no_ws', { chunk: session.audioInChunks });
-        }
-
-        // Send acknowledgment via SSE (fallback behavior)
-        if (session.sseResponse && session.audioInChunks % 5 === 0) {
-          session.sseResponse.write(`data: ${JSON.stringify({
-            type: 'audio_ack',
-            chunk_number: session.audioInChunks,
-            live_api: false
-          })}\n\n`);
-        }
-      }
-
-    } else if (body.type === 'video') {
-      // Handle video frame
-      session.videoInFrames++;
-      const videoBody = body as LiveStreamVideoFrame;
-
-      // Telemetry: reuse the same 10s window as audio
-      const vidNow = Date.now();
-      if (vidNow - session.lastTelemetryEmitTime >= 10_000) {
-        session.lastTelemetryEmitTime = vidNow;
-        emitLiveSessionEvent('vtid.live.video.in.frame', {
-          session_id: effectiveSessionId,
-          source: videoBody.source,
-          frame_number: session.videoInFrames,
-          bytes: videoBody.data_b64.length,
-          fps: 1
-        }).catch(() => { });
-      }
-
-      console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
-
-      // Acknowledge frame receipt via SSE
-      if (session.sseResponse) {
-        session.sseResponse.write(`data: ${JSON.stringify({
-          type: 'video_ack',
-          source: videoBody.source,
-          frame_number: session.videoInFrames
-        })}\n\n`);
-      }
-    } else if ((body as any).type === 'text' && (body as any).text) {
-      // Handle text message - forward to Live API as client_content
-      const textContent = (body as any).text as string;
-
-      // VTID-ANON-NUDGE: Block text input after turn limit (SSE text path)
-      if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
-        return res.json({ ok: true });
-      }
-
-      // If this is a client-side greeting request and server already sent one, skip it
-      if (session.greetingSent && textContent.toLowerCase().includes('greet')) {
-        console.log(`[VTID-VOICE-INIT] Skipping client greeting request - server greeting already sent`);
-        return res.status(200).json({ ok: true, note: 'Server greeting already in progress' });
-      }
-
-      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-        const textMessage = {
-          client_content: {
-            turns: [{ role: 'user', parts: [{ text: textContent }] }],
-            turn_complete: true
-          }
-        };
-        session.upstreamWs.send(JSON.stringify(textMessage));
-        console.log(`[VTID-VOICE-INIT] Text message forwarded to Live API: "${textContent.substring(0, 80)}..."`);
-      } else {
-        console.warn(`[VTID-VOICE-INIT] Cannot forward text - Live API not connected`);
-      }
-    } else if ((body as any).type === 'interrupt') {
-      // VTID-VOICE-INIT: Client-side VAD detected real user speech during model playback
-      if (!session.isModelSpeaking) {
-        return res.json({ ok: true, was_speaking: false });
-      }
-
-      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
-
-      // Ungate mic audio
-      session.isModelSpeaking = false;
-
-      // Tell Gemini to stop generating
-      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-        sendEndOfTurn(session.upstreamWs);
-      }
-
-      // Clear incomplete output transcript
-      session.outputTranscriptBuffer = '';
-
-      // Send interrupted event to client via SSE
-      if (session.sseResponse) {
-        session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
-      }
-
-      return res.json({ ok: true, was_speaking: true });
-    }
-
-    return res.status(200).json({ ok: true });
-
-  } catch (error: any) {
-    console.error(`[VTID-01155] Stream send error:`, error);
-    return res.status(500).json({ ok: false, error: error.message });
-  }
+  await handleLiveStreamSend(req, res);
 });
 
 /**
@@ -15174,45 +10997,9 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
+// A8.2: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const { session_id } = req.query;
-  const body = req.body as { session_id?: string };
-  const effectiveSessionId = (session_id as string) || body.session_id;
-
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
-  // Allow anonymous requests for lovable/external frontends.
-  const identity = await resolveOrbIdentity(req);
-
-  if (!effectiveSessionId) {
-    return res.status(400).json({ ok: false, error: 'session_id required' });
-  }
-
-  const session = liveSessions.get(effectiveSessionId);
-  if (!session) {
-    return res.status(404).json({ ok: false, error: 'Session not found' });
-  }
-
-  if (!session.active) {
-    return res.status(400).json({ ok: false, error: 'Session not active' });
-  }
-
-  // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
-  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
-      session.identity.user_id !== identity.user_id) {
-    console.warn(`[VTID-ORBC] /end-turn ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, sessionId=${effectiveSessionId}`);
-  }
-
-  // VTID-01219: Send end of turn to Live API
-  if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-    const sent = sendEndOfTurn(session.upstreamWs);
-    if (sent) {
-      console.log(`[VTID-01219] End of turn sent to Live API: session=${effectiveSessionId}`);
-      return res.status(200).json({ ok: true, message: 'End of turn signaled' });
-    }
-  }
-
-  console.log(`[VTID-01219] End of turn (no Live API): session=${effectiveSessionId}`);
-  return res.status(200).json({ ok: true, message: 'End of turn acknowledged (no Live API)' });
+  await handleLiveStreamEndTurn(req, res);
 });
 
 /**
@@ -15263,10 +11050,11 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
   const lang = normalizeLang(body.lang || 'en');
 
   // VTID-01219: Use Neural2 voices for German and English, Gemini for others
-  const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+  // VTID-03134 (Phase D.3.b-e): both branches now read through accessors.
+  const useNeural2 = isNeural2EnabledFor(lang);
   const voiceConfig = useNeural2
-    ? (NEURAL2_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'])
-    : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+    ? getNeural2TtsVoice(lang)
+    : getGeminiTtsVoice(lang);
   const voiceType = useNeural2 ? 'Neural2' : 'Gemini';
 
   // Emit request event
@@ -15308,12 +11096,14 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
       voiceParams.modelName = 'gemini-2.5-flash-tts';
     }
 
+    // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+    const __vc15315 = await getVoiceConfig();
     const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
       input: { text: text },
       voice: voiceParams,
       audioConfig: {
         audioEncoding: 'MP3' as any,  // Returns MP3 directly
-        speakingRate: 1.0,
+        speakingRate: __vc15315.tts.speaking_rate,
         pitch: 0
       }
     };
@@ -15476,10 +11266,10 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
     let audioB64 = '';
     let audioMime = '';
     if (ttsClient) {
-      const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+      const useNeural2 = isNeural2EnabledFor(lang);
       const voiceConfig = useNeural2
-        ? (NEURAL2_TTS_VOICES[lang] || NEURAL2_TTS_VOICES['en'])
-        : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+        ? (getNeural2TtsVoice(lang))
+        : (getGeminiTtsVoice(lang));
 
       const voiceParams: any = {
         languageCode: voiceConfig.languageCode,
@@ -15489,12 +11279,14 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
         voiceParams.modelName = 'gemini-2.5-flash-tts';
       }
 
+      // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+      const __vc15498 = await getVoiceConfig();
       const [ttsResponse] = await ttsClient.synthesizeSpeech({
         input: { text: replyText },
         voice: voiceParams,
         audioConfig: {
           audioEncoding: 'MP3' as any,
-          speakingRate: 1.0,
+          speakingRate: __vc15498.tts.speaking_rate,
           pitch: 0
         }
       });
@@ -15601,19 +11393,20 @@ router.get('/health', (_req: Request, res: Response) => {
       video_format: 'JPEG 768x768 @ 1 FPS'
     },
     // VTID-01219: Neural2 TTS voice configuration (ALL languages)
+    // VTID-03134 (Phase D.3.b-e): now reads via accessors.
     neural2_tts: {
       enabled: true,
       vtid: 'VTID-01219',
-      enabled_languages: NEURAL2_ENABLED_LANGUAGES,
+      enabled_languages: getNeural2EnabledLanguages(),
       voices: {
-        de: NEURAL2_TTS_VOICES['de']?.name,
-        en: NEURAL2_TTS_VOICES['en']?.name,
-        fr: NEURAL2_TTS_VOICES['fr']?.name,
-        es: NEURAL2_TTS_VOICES['es']?.name,
-        ar: NEURAL2_TTS_VOICES['ar']?.name,
-        zh: NEURAL2_TTS_VOICES['zh']?.name,
-        ru: NEURAL2_TTS_VOICES['ru']?.name,
-        sr: NEURAL2_TTS_VOICES['sr']?.name
+        de: getNeural2TtsVoice('de')?.name,
+        en: getNeural2TtsVoice('en')?.name,
+        fr: getNeural2TtsVoice('fr')?.name,
+        es: getNeural2TtsVoice('es')?.name,
+        ar: getNeural2TtsVoice('ar')?.name,
+        zh: getNeural2TtsVoice('zh')?.name,
+        ru: getNeural2TtsVoice('ru')?.name,
+        sr: getNeural2TtsVoice('sr')?.name
       },
       note: 'Gemini TTS disabled - modelName stripped by protobuf serialization'
     },
@@ -15657,7 +11450,7 @@ interface WsClientMessage {
  * VTID-01222: WebSocket session state
  * VTID-01224: Added identity for context retrieval
  */
-interface WsClientSession {
+export interface WsClientSession {
   sessionId: string;
   clientWs: WebSocket;
   liveSession: GeminiLiveSession | null;
@@ -15671,8 +11464,9 @@ interface WsClientSession {
   originUrl: string | null;
 }
 
-// Track WebSocket client sessions
-const wsClientSessions = new Map<string, WsClientSession>();
+// Track WebSocket client sessions.
+// A8.1: declaration moved to orb/live/session/live-session-registry.ts;
+// the `wsClientSessions` symbol used below is imported at the top of this file.
 
 /**
  * VTID-01222: Initialize WebSocket server for ORB client connections
@@ -15683,23 +11477,19 @@ const wsClientSessions = new Map<string, WsClientSession>();
 export function initializeOrbWebSocket(server: HttpServer): void {
   console.log('[VTID-01222] Initializing ORB WebSocket server...');
 
-  // Create WebSocket server attached to HTTP server
-  const wss = new WebSocketServer({
-    server,
-    path: '/api/v1/orb/live/ws'
-  });
-
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    handleWebSocketConnection(ws, req);
-  });
-
-  wss.on('error', (error) => {
-    console.error('[VTID-01222] WebSocket server error:', error);
+  // A9.1 (VTID-02957): WSS attach + connection/error dispatch lifted to
+  // orb/live/transport/websocket-handler.ts. Wire protocol unchanged —
+  // same mount path, same single-port attachment, same handler signature.
+  mountOrbWebSocketTransport(server, {
+    handleConnection: (ws, req) => handleWebSocketConnection(ws, req),
+    onServerError: (err) => console.error('[VTID-01222] WebSocket server error:', err),
   });
 
   console.log('[VTID-01222] ORB WebSocket server initialized at /api/v1/orb/live/ws');
 
-  // Cleanup expired WebSocket sessions every 5 minutes
+  // Cleanup expired WebSocket sessions every 5 minutes.
+  // (Stays here for A9.1 — iterates over session-level state that
+  // moves into orb/live/session/* under A8.)
   setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of wsClientSessions.entries()) {
@@ -16142,7 +11932,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     lastTelemetryEmitTime: 0,
     // VTID-RESPONSE-DELAY: Per-session VAD from client or default
     vadSilenceMs: message.vad_silence_ms && message.vad_silence_ms >= 500 && message.vad_silence_ms <= 3000
-      ? message.vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+      ? message.vad_silence_ms : getVadSilenceDurationMs(),
     // VTID-AUDIO-READY: WebSocket path defers greeting until client sends audio_ready
     greetingDeferred: true,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
@@ -16198,7 +11988,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       message: 'Session created but Live API not available (missing credentials)',
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL
       }
     });
@@ -16280,7 +12070,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     emitLiveSessionEvent('vtid.live.session.start', {
       session_id: sessionId,
       lang,
-      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      voice: getLiveApiVoice(lang),
       response_modalities: responseModalities,
       transport: 'websocket',
       // VTID-01224: Include context bootstrap info
@@ -16318,7 +12108,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       },
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL,
         audio_in_rate: 16000,
         audio_out_rate: 24000,
@@ -16366,7 +12156,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       error: err.message,
       meta: {
         lang,
-        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        voice: getLiveApiVoice(lang),
         model: VERTEX_LIVE_MODEL
       }
     });
@@ -16417,7 +12207,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
   // turn_complete to let client-side audio playback finish draining.
-  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
+  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < getPostTurnCooldownMs()) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;
@@ -16465,7 +12255,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
           const canSlide = !liveSession.responseWatchdogTimer
             || liveSession.responseWatchdogReason === 'forwarding_no_ack';
           if (canSlide) {
-            startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+            startResponseWatchdog(liveSession, getForwardingAckTimeoutMs(), 'forwarding_no_ack');
           }
         }
       }
@@ -16685,69 +12475,9 @@ function handleWsStopSession(clientSession: WsClientSession): void {
   });
 }
 
-/**
- * VTID-01222: Cleanup WebSocket session
- */
-function cleanupWsSession(sessionId: string): void {
-  const clientSession = wsClientSessions.get(sessionId);
-  if (!clientSession) return;
-
-  // Close Live API session if active
-  if (clientSession.liveSession) {
-    // VTID-01230: Deduplicated extraction on WebSocket disconnect
-    const ls = clientSession.liveSession;
-    if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
-      const fullTranscript = ls.transcriptTurns
-        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: ls.identity.tenant_id,
-        user_id: ls.identity.user_id,
-        session_id: sessionId,
-        force: true,
-      });
-      destroySessionBuffer(sessionId);
-      clearExtractionState(sessionId);
-    }
-
-    clientSession.liveSession.active = false;
-
-    // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on cleanup
-    if (clientSession.liveSession.upstreamPingInterval) {
-      clearInterval(clientSession.liveSession.upstreamPingInterval);
-      clientSession.liveSession.upstreamPingInterval = undefined;
-    }
-    if (clientSession.liveSession.silenceKeepaliveInterval) {
-      clearInterval(clientSession.liveSession.silenceKeepaliveInterval);
-      clientSession.liveSession.silenceKeepaliveInterval = undefined;
-    }
-    // VTID-WATCHDOG: Clear response watchdog on cleanup
-    clearResponseWatchdog(clientSession.liveSession);
-
-    if (clientSession.liveSession.upstreamWs) {
-      try {
-        clientSession.liveSession.upstreamWs.close();
-      } catch (e) {
-        // Ignore
-      }
-    }
-
-    liveSessions.delete(sessionId);
-  }
-
-  // Close client WebSocket if open
-  if (clientSession.clientWs.readyState === WebSocket.OPEN) {
-    try {
-      clientSession.clientWs.close(1000, 'Session cleanup');
-    } catch (e) {
-      // Ignore
-    }
-  }
-
-  wsClientSessions.delete(sessionId);
-  console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
-}
+// VTID-01222: Cleanup WebSocket session
+// A8.2: body lifted to orb/live/session/live-session-controller.ts.
+// cleanupWsSession is imported above and called from the same sites.
 
 /**
  * VTID-01222: Send message to WebSocket client

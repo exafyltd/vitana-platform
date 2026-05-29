@@ -21,7 +21,13 @@ const VTID = 'VTID-01095';
 // Request validation schemas
 const DailyRecomputeRequestSchema = z.object({
   tenant_id: z.string().uuid('tenant_id must be a valid UUID'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format'),
+  // Optional — Cloud Scheduler's static message-body can't substitute "today",
+  // so the cron POSTs only { tenant_id } and we default to the UTC date here.
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format')
+    .optional()
+    .default(() => new Date().toISOString().slice(0, 10)),
   limit_users: z.number().int().min(1).max(200).optional().default(200),
   cursor: z.string().uuid().nullable().optional(),
 });

@@ -43,7 +43,9 @@ import {
   GetCurrentAvailabilityResponse,
   OverrideAvailabilityResponse,
   AvailabilityGuardrailContext,
-  D33_THRESHOLDS,
+  // VTID-03136 (Phase B.7): replace direct D33_THRESHOLDS read with the
+  // PolicyResolver-backed accessor so DB overrides take effect.
+  getD33Thresholds,
   ACTION_DEPTH_PROFILES,
   D33_DISCLAIMER
 } from '../types/availability-readiness';
@@ -156,7 +158,7 @@ function inferAvailability(input: AvailabilityComputeInput): AvailabilityAssessm
     const { avg_response_time_seconds, interaction_count, session_length_minutes, recent_response_times } = input.telemetry;
 
     // Fast responses suggest high engagement
-    if (avg_response_time_seconds < D33_THRESHOLDS.FAST_RESPONSE_THRESHOLD) {
+    if (avg_response_time_seconds < getD33Thresholds().FAST_RESPONSE_THRESHOLD) {
       score += 25;
       confidence += 15;
       factors.push({
@@ -167,7 +169,7 @@ function inferAvailability(input: AvailabilityComputeInput): AvailabilityAssessm
       });
     }
     // Slow responses suggest distraction
-    else if (avg_response_time_seconds > D33_THRESHOLDS.SLOW_RESPONSE_THRESHOLD) {
+    else if (avg_response_time_seconds > getD33Thresholds().SLOW_RESPONSE_THRESHOLD) {
       score -= 25;
       confidence += 10;
       factors.push({
@@ -190,7 +192,7 @@ function inferAvailability(input: AvailabilityComputeInput): AvailabilityAssessm
     }
 
     // Long session suggests deep engagement
-    if (session_length_minutes > D33_THRESHOLDS.LONG_SESSION_THRESHOLD) {
+    if (session_length_minutes > getD33Thresholds().LONG_SESSION_THRESHOLD) {
       score += 10;
       factors.push({
         source: 'telemetry',
@@ -371,7 +373,7 @@ function detectTimeWindow(input: AvailabilityComputeInput): TimeWindowAssessment
     if (input.calendar.has_upcoming_event && input.calendar.minutes_to_next_event !== undefined) {
       estimatedMinutes = input.calendar.minutes_to_next_event;
 
-      if (estimatedMinutes <= D33_THRESHOLDS.TIME_IMMEDIATE_MAX) {
+      if (estimatedMinutes <= getD33Thresholds().TIME_IMMEDIATE_MAX) {
         return {
           window: 'immediate',
           confidence: 90,
@@ -382,7 +384,7 @@ function detectTimeWindow(input: AvailabilityComputeInput): TimeWindowAssessment
             contribution: -0.8
           }]
         };
-      } else if (estimatedMinutes <= D33_THRESHOLDS.TIME_SHORT_MAX) {
+      } else if (estimatedMinutes <= getD33Thresholds().TIME_SHORT_MAX) {
         return {
           window: 'short',
           confidence: 85,
@@ -417,13 +419,13 @@ function detectTimeWindow(input: AvailabilityComputeInput): TimeWindowAssessment
     }
 
     // Long session suggests user has time
-    if (session_length_minutes > D33_THRESHOLDS.LONG_SESSION_THRESHOLD) {
+    if (session_length_minutes > getD33Thresholds().LONG_SESSION_THRESHOLD) {
       factors.push({
         source: 'telemetry',
         signal: `Long session (${session_length_minutes.toFixed(0)}min)`,
         contribution: 0.4
       });
-    } else if (session_length_minutes < D33_THRESHOLDS.SHORT_SESSION_THRESHOLD) {
+    } else if (session_length_minutes < getD33Thresholds().SHORT_SESSION_THRESHOLD) {
       factors.push({
         source: 'telemetry',
         signal: 'Very short session',
@@ -753,19 +755,19 @@ function determineActionDepth(
   let actionDepth = { ...ACTION_DEPTH_PROFILES[tag] };
 
   // Apply readiness modifiers
-  if (readiness.score < D33_THRESHOLDS.READINESS_MONETIZATION_MIN) {
+  if (readiness.score < getD33Thresholds().READINESS_MONETIZATION_MIN) {
     // Block monetization actions
     actionDepth.allow_payment = false;
     actionDepth.allow_booking = false;
   }
 
-  if (readiness.score < D33_THRESHOLDS.READINESS_DEEP_FLOW_MIN && tag === 'deep_flow_ok') {
+  if (readiness.score < getD33Thresholds().READINESS_DEEP_FLOW_MIN && tag === 'deep_flow_ok') {
     // Downgrade from deep to light
     tag = 'light_flow_ok';
     actionDepth = { ...ACTION_DEPTH_PROFILES[tag] };
   }
 
-  if (readiness.score < D33_THRESHOLDS.READINESS_LIGHT_FLOW_MIN && tag === 'light_flow_ok') {
+  if (readiness.score < getD33Thresholds().READINESS_LIGHT_FLOW_MIN && tag === 'light_flow_ok') {
     // Downgrade from light to quick
     tag = 'quick_only';
     actionDepth = { ...ACTION_DEPTH_PROFILES[tag] };
@@ -823,9 +825,9 @@ function applyUserOverride(
   // Override time window based on minutes
   if (override.time_available_minutes !== undefined) {
     let window: TimeWindow;
-    if (override.time_available_minutes <= D33_THRESHOLDS.TIME_IMMEDIATE_MAX) {
+    if (override.time_available_minutes <= getD33Thresholds().TIME_IMMEDIATE_MAX) {
       window = 'immediate';
-    } else if (override.time_available_minutes <= D33_THRESHOLDS.TIME_SHORT_MAX) {
+    } else if (override.time_available_minutes <= getD33Thresholds().TIME_SHORT_MAX) {
       window = 'short';
     } else {
       window = 'extended';
@@ -1030,7 +1032,7 @@ export async function setUserOverride(
 ): Promise<OverrideAvailabilityResponse> {
   const overrideId = randomUUID();
   const now = Date.now();
-  const expiresAt = now + (D33_THRESHOLDS.OVERRIDE_EXPIRY_MINUTES * 60 * 1000);
+  const expiresAt = now + (getD33Thresholds().OVERRIDE_EXPIRY_MINUTES * 60 * 1000);
 
   // Get previous level for response
   const previousBundle = bundleCache.get(sessionId);

@@ -2374,7 +2374,36 @@ async function executeCommunityGetRecommendations(
 
   if (results.length === 0) {
     console.log(`[VTID-01270A] get_recommendations (text): 0 results (type=${recType})`);
-    return { ok: true, data: { result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' } };
+    // VTID-03110: never say "no personalized recommendations". Deflect
+    // into a teaching offer using the next pedagogically-ordered
+    // capability from the Teacher catalog. Same helper as the voice
+    // path in orb-live.ts so behavior is consistent across modalities.
+    let deflection = '';
+    try {
+      const { getSupabase } = await import('../lib/supabase');
+      const sb = getSupabase();
+      if (sb) {
+        const { buildTeacherDeflectionForEmptyRecommendations } = await import(
+          './assistant-continuation/providers/teacher/teacher-deflection'
+        );
+        // Text path doesn't carry a session lang; default to 'en'. A
+        // future slice can lookup app_users.preferred_language if
+        // needed — voice path (orb-live.ts) uses session.lang.
+        deflection = await buildTeacherDeflectionForEmptyRecommendations({
+          supabase: sb,
+          tenantId: identity.tenant_id,
+          userId: identity.user_id,
+          lang: 'en',
+          recType,
+        });
+      }
+    } catch (err) {
+      console.warn(`[VTID-03110] deflection helper failed (non-fatal): ${(err as Error).message}`);
+    }
+    if (!deflection) {
+      deflection = 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+    }
+    return { ok: true, data: { result: deflection } };
   }
 
   const formatted = results.join('\n');

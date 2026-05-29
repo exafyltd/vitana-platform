@@ -404,6 +404,14 @@ CREATE TABLE my_new_table (
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
+| 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
+| 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
+| 2026-05-21 | Seeded 9 voice-pipeline threshold rows in `decision_policy` (VAD silence 850ms, post-turn cooldown 2000ms, silence keepalive interval/idle 3000ms each, greeting/turn-response watchdogs 8000/10000ms, forwarding ack timeout 45000ms, loop guards 3/5) under `voice.vad.*`, `voice.post_turn.*`, `voice.silence_keepalive.*`, `voice.watchdog.*`, `voice.loop_guard.*`. Phase D.1 of decision-contract refactor. Accessor functions in `orb/upstream/constants.ts`. | Claude | VTID-03124 |
+| 2026-05-21 | Seeded 8 `policy_render_block` rows under `voice.connection_issue` (one per language: en/de/fr/es/ar/zh/ru/sr) — externalizes the previously-inline `connectionIssueMessages` Record. Phase D.2 of decision-contract refactor. | Claude | VTID-03125 |
+| 2026-05-21 | Seeded 8 `decision_policy` rows under `voice.live_api.voice.<lang>` with `{voice_name, fallback_lang}` JSON shape. Closes the audit's "silent Arabic → English Aoede" finding by emitting deduped `[voice-fallback]` warning whenever a non-native voice is selected. Phase D.3 of decision-contract refactor. | Claude | VTID-03126 |
+| 2026-05-21 | Seeded 1 `decision_policy` row under `voice.cascade.default` with the 6-field cascade shape (stt/llm/tts × provider+model). Gateway `/orb/context-bootstrap` now returns this when no per-agent `agent_voice_configs` row exists — kills the silent Python all-Google fallback in `orb-agent/providers.py`. Phase D.4.a of decision-contract refactor. | Claude | VTID-03127 |
+| 2026-05-21 | Added `provenance` JSONB column to `autopilot_recommendations` (nullable). Carries the `RankProvenance` trail (strategy_id + version + computed_at + tenant_id + components[] + final_score) Phase C strategies will emit. Schema + types only in this slice — Phase C.2 seeds ranker weights, C.3 implements `PillarWeighterStrategy`, C.4 wires `rankBatch()` to persist provenance. | Claude | VTID-03130 |
+| 2026-05-21 | Seeded 21 ranker policy rows in `decision_policy` under `ranker.pillar_weighter.*` — 10 weights/dampeners, 3 balance thresholds, 6 journey-mode decay curve points, 2 misc (compass decay, pillar score cap). Phase C.2 of decision-contract refactor. Values byte-identical to `DEFAULT_RANKER_CONFIG` + inline literals in `index-pillar-weighter.ts`. Consumers land in Phase C.3 / C.5+. | Claude | VTID-03131 |
 
 ---
 
@@ -792,6 +800,81 @@ CREATE INDEX idx_routine_runs_status          ON routine_runs(status);
 ```
 
 **Auth model:** GET endpoints reuse Command Hub auth. POST/PATCH require `X-Routine-Token: $ROUTINE_INGEST_TOKEN` (shared secret env var on the gateway), so a remote sandbox routine can authenticate without a user JWT.
+
+---
+
+## VTID-03113 — Decision-Contract Phase B (externalized policy)
+
+These two tables externalize the ~140 hard-coded constants and ~30 hard-coded ladders the May 2026 contextual-intelligence audit found scattered across the renderer, ranker, fusion engine, and voice layers. Phase B.1 introduces the **schema only** — no code reads from these tables yet. Reads land in Phase B.4 (vertical proof on the temporal-bucket greeting block in `services/gateway/src/orb/live/instruction/live-system-instruction.ts`).
+
+### decision_policy
+**Purpose:** Versioned, tenant-aware, time-bounded numeric/enum/JSON policy values. One row per `(policy_key, tenant_id, version)`. Replaces hard-coded literals across decision-producing code paths.
+**Used by:** `services/gateway/src/services/decision-contract/policy-resolver.ts` (lands in Phase B.3; nothing today).
+**Migration:** `supabase/migrations/20260527000000_VTID_03113_decision_policy.sql`
+
+**Resolver contract:** for a given `(policy_key, tenant_id, now)`, pick the highest `version` row where `effective_from <= now AND (effective_until IS NULL OR effective_until > now)`. Tenant-specific row wins over `tenant_id IS NULL`.
+
+**Schema:**
+```sql
+CREATE TABLE decision_policy (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  policy_key      TEXT NOT NULL,         -- e.g. session.recency_bucket.reconnect_max_seconds
+  tenant_id       UUID,                  -- NULL = global default
+  version         INTEGER NOT NULL,
+  value_json      JSONB NOT NULL,
+  effective_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  effective_until TIMESTAMPTZ,
+  source          TEXT NOT NULL DEFAULT 'seed'
+    CHECK (source IN ('seed','admin_ui','autopilot','experiment')),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      TEXT,
+  UNIQUE (policy_key, tenant_id, version)
+);
+CREATE INDEX decision_policy_lookup_idx
+  ON decision_policy (policy_key, tenant_id, effective_from DESC);
+```
+
+**Auth model:** RLS enabled. `service_role` bypasses RLS (Supabase default) — the resolver runs as service. Authenticated app role has `SELECT` only, scoped to global defaults (`tenant_id IS NULL`) plus rows whose `tenant_id` is in `user_tenants` for the caller. No INSERT/UPDATE/DELETE policy for authenticated.
+
+### policy_render_block
+**Purpose:** Versioned, tenant-aware, localized prompt fragments. Sibling of `decision_policy`: carries verbatim text the renderer concatenates or the model echoes (greeting lines, instruction blocks).
+**Used by:** Same as `decision_policy` (Phase B.3 resolver; nothing today).
+**Migration:** `supabase/migrations/20260527010000_VTID_03113_policy_render_block.sql`
+
+**Resolver contract:** identical to `decision_policy`, keyed by `(block_key, language, tenant_id, now)`.
+
+**Schema:**
+```sql
+CREATE TABLE policy_render_block (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  block_key       TEXT NOT NULL,         -- e.g. greeting.bucket.today
+  language        TEXT NOT NULL,         -- en, de, fr, es, ar, zh, ru, sr
+  tenant_id       UUID,                  -- NULL = global default
+  version         INTEGER NOT NULL,
+  content         TEXT NOT NULL,
+  effective_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  effective_until TIMESTAMPTZ,
+  source          TEXT NOT NULL DEFAULT 'seed'
+    CHECK (source IN ('seed','admin_ui','autopilot','experiment')),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      TEXT,
+  UNIQUE (block_key, language, tenant_id, version)
+);
+CREATE INDEX policy_render_block_lookup_idx
+  ON policy_render_block (block_key, language, tenant_id, effective_from DESC);
+```
+
+**Auth model:** Same as `decision_policy` (RLS-on, `service_role` bypass, authenticated SELECT only).
+
+**Phase plan (each its own VTID + PR):**
+1. B.1 — schema (this VTID, VTID-03113).
+2. B.2 — seed migration (5 `decision_policy` rows + 64 `policy_render_block` rows = 8 buckets × 8 languages).
+3. B.3 — `PolicyResolver` service, cache warm-up, telemetry, `policy-keys.ts`.
+4. B.4 — vertical proof: migrate `live-system-instruction.ts` greeting block to read via the resolver.
+
+See `docs/decision-contract/phase-b-brief.md` for the full plan.
 
 ---
 

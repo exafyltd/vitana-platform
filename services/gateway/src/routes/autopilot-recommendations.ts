@@ -26,6 +26,75 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
+import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
+
+/**
+ * Phase 5 of the Ultimate Goal hardening (VTID-02935): when a recommendation
+ * graduates to a VTID, emit an OASIS event reporting whether the rec advances
+ * any mission dimension. The rec is "aligned" if it has a primary pillar OR a
+ * non-'none' economic_axis. Pillar impact is derived from contribution_vector.
+ *
+ * NOT a hard block — visibility only. Future: graduation to a block once ≥80%
+ * of activations in a 14-day window carry alignment fields. See
+ * docs/GOVERNANCE/ULTIMATE-GOAL.md.
+ */
+async function emitAlignmentEventForActivation(params: {
+  vtid: string;
+  recId: string;
+  recTitle: string;
+  userId: string | null;
+  supabaseUrl: string;
+  svcKey: string;
+}): Promise<void> {
+  try {
+    const recResp = await fetch(
+      `${params.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${params.recId}&select=economic_axis,autonomy_level,contribution_vector,source_type,source_ref,domain&limit=1`,
+      { headers: { apikey: params.svcKey, Authorization: `Bearer ${params.svcKey}` } },
+    );
+    if (!recResp.ok) return;
+    const rows = await recResp.json() as any[];
+    const rec = rows[0];
+    if (!rec) return;
+
+    const evaluation = evaluateRecAlignment(rec);
+
+    await emitOasisEvent({
+      vtid: params.vtid,
+      type: evaluation.topic,
+      source: 'autopilot-recommendations',
+      status: evaluation.status,
+      message: evaluation.message,
+      payload: {
+        recommendation_id: params.recId,
+        recommendation_title: params.recTitle,
+        user_id: params.userId,
+        pillar_impact: evaluation.pillar_impact,
+        economic_axis: evaluation.economic_axis,
+        autonomy_level: evaluation.autonomy_level,
+        source_type: rec.source_type || null,
+        source_ref: rec.source_ref || null,
+        domain: rec.domain || null,
+      },
+    });
+  } catch (err: any) {
+    // Never let alignment telemetry break the activation path.
+    console.warn(`[VTID-02935] emitAlignmentEventForActivation failed (non-fatal): ${err?.message || err}`);
+  }
+}
+
+/**
+ * Annotate an array of recommendation rows from get_autopilot_recommendations
+ * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
+ * from contribution_vector JSONB — see services/.../pillar-impact.ts.
+ * Mutates each row in place (cheap and unambiguous for response payload use).
+ */
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(rows: T[]): Array<T & { pillar_impact: ReturnType<typeof derivePillarImpact> }> {
+  return rows.map((row) => ({
+    ...row,
+    pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+  }));
+}
 
 const router = Router();
 
@@ -154,8 +223,13 @@ function getActiveRole(req: Request): string | null {
 
 // =============================================================================
 // Helper: Direct PostgREST query for role-filtered recommendations
+//
+// VTID-02969: Exported so other voice / proactive surfaces (e.g.
+// tool_send_chat_message → next_actions) can reuse the EXACT same query
+// the Autopilot popup hits. There must be only one canonical "which
+// recommendations does this user see" source.
 // =============================================================================
-async function queryRecommendationsByRole(
+export async function queryRecommendationsByRole(
   role: string,
   userId: string | null,
   statuses: string[],
@@ -168,7 +242,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -232,7 +306,7 @@ async function queryRecommendationsFallback(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -444,6 +518,7 @@ router.get('/', async (req: Request, res: Response) => {
                 target.rank_score = r.rank_score;
                 target.pillar_boost = r.pillar_boost;
                 target.compass_boost = r.compass_boost;
+                target.economic_boost = r.economic_boost;
                 target.journey_mode = r.journey_mode;
               }
             }
@@ -497,7 +572,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       return res.status(200).json({
         ok: true,
-        recommendations,
+        recommendations: annotateWithPillarImpact(recommendations),
         count: recommendations.length,
         has_more: hasMore,
         ...(waves ? { waves } : {}),
@@ -534,7 +609,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      recommendations,
+      recommendations: annotateWithPillarImpact(recommendations),
       count: recommendations.length,
       has_more: hasMore,
       vtid: 'VTID-01180',
@@ -921,7 +996,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Emit OASIS event for tracking
     await emitOasisEvent({
       vtid: response.vtid || 'SYSTEM',
-      type: 'autopilot.recommendation.activated' as any,
+      type: 'autopilot.recommendation.activated',
       source: 'autopilot-recommendations',
       status: 'info',
       message: `Recommendation activated: ${response.title}`,
@@ -932,6 +1007,24 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         already_activated: response.already_activated,
       },
     });
+
+    // VTID-02935 Phase 5: emit alignment telemetry for fresh activations only.
+    // Skip already-activated calls (idempotent re-tries don't change alignment
+    // state). Pillar impact is derived from contribution_vector at read time.
+    if (!response.already_activated && response.vtid) {
+      const supabaseUrlForAlign = process.env.SUPABASE_URL;
+      const svcKeyForAlign = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrlForAlign && svcKeyForAlign) {
+        await emitAlignmentEventForActivation({
+          vtid: response.vtid,
+          recId: id,
+          recTitle: response.title || '',
+          userId: userId || null,
+          supabaseUrl: supabaseUrlForAlign,
+          svcKey: svcKeyForAlign,
+        });
+      }
+    }
 
     // Create draft spec in oasis_specs from recommendation data so the task
     // enters the spec pipeline with content ready for validate → approve flow
@@ -1350,6 +1443,34 @@ router.post('/generate', async (req: Request, res: Response) => {
             body: 'Autopilot found new actions to improve your wellbeing.',
             data: { url: '/autopilot', count: String(result.generated) },
           }, supa);
+
+          // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: surface the highest-impact rec
+          // from this run as a P0 push so users see critical
+          // recommendations even outside the in-app inbox. Threshold of 8+
+          // matches the engine's reserved tier (see recommendation-
+          // generator impact_score mapping where 8 is "strong signal").
+          const { data: highImpact } = await supa
+            .from('autopilot_recommendations')
+            .select('id, title, summary, impact_score')
+            .eq('user_id', userId)
+            .eq('tenant_id', tenantRow.tenant_id)
+            .gte('impact_score', 8)
+            .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+            .order('impact_score', { ascending: false })
+            .limit(1);
+          const topRec = highImpact?.[0];
+          if (topRec) {
+            notifyUserAsync(userId, tenantRow.tenant_id, 'high_impact_recommendation', {
+              title: topRec.title || 'High-impact recommendation',
+              body: topRec.summary || 'Autopilot flagged a high-impact action for you.',
+              data: {
+                url: `/autopilot?rec=${topRec.id}`,
+                entity_id: topRec.id,
+                recommendation_id: topRec.id,
+                impact_score: String(topRec.impact_score ?? ''),
+              },
+            }, supa);
+          }
         }
       } catch (notifErr: any) {
         console.warn(`[Notifications] new_recommendation dispatch error: ${notifErr.message}`);

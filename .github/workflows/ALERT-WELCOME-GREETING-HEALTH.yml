@@ -1,0 +1,81 @@
+name: Alert — Welcome Greeting Production Health
+
+# VTID-03089: independent daily heartbeat. Compares actual signups vs actual
+# welcome greetings fired in the last 24 hours. If signups happened but the
+# trigger produced zero greetings, fail the run so the alarm lights up.
+#
+# This is the second layer on top of SMOKE-WELCOME-GREETING.yml: smoke test
+# proves the trigger CODE works on synthetic data; this alert proves the
+# trigger is firing on REAL traffic.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 09:00 CET daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql
+        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
+
+      - name: Compare last-24h signups vs greetings
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
+          WITH time_window AS (SELECT now() - interval '24 hours' AS since),
+          stats AS (
+            SELECT
+              (SELECT COUNT(*) FROM public.app_users u
+                WHERE u.created_at >= (SELECT since FROM time_window)
+                  AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
+              ) AS signups_24h,
+              (SELECT COUNT(DISTINCT sender_id) FROM public.chat_messages
+                WHERE created_at >= (SELECT since FROM time_window)
+                  AND metadata->>'source' = 'welcome_chat'
+                  AND metadata->>'trigger' = 'db_trigger_on_membership'
+              ) AS unique_senders_24h,
+              (SELECT COUNT(*) FROM public.app_users u
+                WHERE u.created_at >= (SELECT since FROM time_window)
+                  AND COALESCE(u.welcome_chat_sent, false) = false
+                  AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
+              ) AS unflagged_recent_users
+          )
+          SELECT signups_24h, unique_senders_24h, unflagged_recent_users FROM stats;
+          EOF
+          )
+
+          # Parse "signups|senders|unflagged".
+          LINE=$(echo "$OUTPUT" | grep -v '^$' | tail -1)
+          SIGNUPS=$(echo "$LINE" | cut -d'|' -f1 | tr -d ' \r')
+          SENDERS=$(echo "$LINE" | cut -d'|' -f2 | tr -d ' \r')
+          UNFLAGGED=$(echo "$LINE" | cut -d'|' -f3 | tr -d ' \r')
+
+          echo "Last 24h: $SIGNUPS signups, $SENDERS distinct trigger-fired senders, $UNFLAGGED unflagged recent users"
+
+          if ! [[ "$SIGNUPS" =~ ^[0-9]+$ ]] || ! [[ "$SENDERS" =~ ^[0-9]+$ ]] || ! [[ "$UNFLAGGED" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not parse health output. Raw: $OUTPUT"
+            exit 1
+          fi
+
+          # Two failure modes worth alarming:
+          #   * Signups happened, but the trigger emitted zero greetings.
+          #   * Any user from the last 24h still has welcome_chat_sent=false.
+          # Either signals a broken trigger or someone reintroducing the
+          # endpoint-attachment regression.
+          if [ "$SIGNUPS" -gt "0" ] && [ "$SENDERS" -eq "0" ]; then
+            echo "::error::$SIGNUPS new signups in last 24h but ZERO trigger-fired greetings. Trigger likely broken or disabled."
+            exit 1
+          fi
+          if [ "$UNFLAGGED" -gt "0" ]; then
+            echo "::error::$UNFLAGGED users registered in the last 24h still have welcome_chat_sent=false. Greeting fan-out is silently failing for them."
+            exit 1
+          fi
+
+          echo "✓ Healthy: every recent signup got greeted by the trigger."

@@ -477,32 +477,82 @@ export interface AvailabilityEventPayload {
 // =============================================================================
 
 /**
- * Default thresholds for D33 rules
+ * Default thresholds for D33 rules.
+ *
+ * VTID-03136 (Phase B.7): the 11 literal values below are the cache-cold
+ * safety net. Production source of truth is `decision_policy` rows
+ * under `situational.*`. Consumers should call `getD33Thresholds()` —
+ * which reads through PolicyResolver — instead of `D33_THRESHOLDS.X`
+ * directly. The literal export is preserved for backwards compatibility
+ * and test fixtures.
  */
-export const D33_THRESHOLDS = {
+export interface D33Thresholds {
   // Readiness thresholds
-  READINESS_MONETIZATION_MIN: 0.6,    // Min readiness for payment/booking
-  READINESS_DEEP_FLOW_MIN: 0.5,       // Min readiness for extended engagement
-  READINESS_LIGHT_FLOW_MIN: 0.3,      // Min readiness for light flows
-
+  READINESS_MONETIZATION_MIN: number;
+  READINESS_DEEP_FLOW_MIN: number;
+  READINESS_LIGHT_FLOW_MIN: number;
   // Time window boundaries (minutes)
+  TIME_IMMEDIATE_MAX: number;
+  TIME_SHORT_MAX: number;
+  // Confidence threshold
+  MIN_CONFIDENCE_FOR_ACTION: number;
+  // Response time signals (seconds)
+  FAST_RESPONSE_THRESHOLD: number;
+  SLOW_RESPONSE_THRESHOLD: number;
+  // Session length signals (minutes)
+  SHORT_SESSION_THRESHOLD: number;
+  LONG_SESSION_THRESHOLD: number;
+  // Override expiry (minutes)
+  OVERRIDE_EXPIRY_MINUTES: number;
+}
+
+export const D33_THRESHOLDS_FALLBACK: D33Thresholds = {
+  READINESS_MONETIZATION_MIN: 0.6,
+  READINESS_DEEP_FLOW_MIN: 0.5,
+  READINESS_LIGHT_FLOW_MIN: 0.3,
   TIME_IMMEDIATE_MAX: 2,
   TIME_SHORT_MAX: 10,
-
-  // Confidence thresholds
   MIN_CONFIDENCE_FOR_ACTION: 50,
-
-  // Response time signals (seconds)
-  FAST_RESPONSE_THRESHOLD: 5,         // <5s suggests high engagement
-  SLOW_RESPONSE_THRESHOLD: 30,        // >30s suggests distraction
-
-  // Session length signals (minutes)
+  FAST_RESPONSE_THRESHOLD: 5,
+  SLOW_RESPONSE_THRESHOLD: 30,
   SHORT_SESSION_THRESHOLD: 2,
   LONG_SESSION_THRESHOLD: 15,
+  OVERRIDE_EXPIRY_MINUTES: 30,
+};
 
-  // Override expiry (minutes)
-  OVERRIDE_EXPIRY_MINUTES: 30
-} as const;
+// Backwards-compatible alias — kept for callers that read the const at
+// module-load time. New consumers should prefer `getD33Thresholds()`.
+export const D33_THRESHOLDS: D33Thresholds = D33_THRESHOLDS_FALLBACK;
+
+/**
+ * Resolve the current D33 threshold set via PolicyResolver. Each field
+ * falls back to the literal in `D33_THRESHOLDS_FALLBACK` when the
+ * resolver cache is cold or the policy row is missing.
+ */
+export function getD33Thresholds(): D33Thresholds {
+  // Lazy import to avoid a circular dependency: `decision-contract`
+  // doesn't import `types/`, but `types/` shouldn't pull in services at
+  // module load. The require pattern resolves at call time, when the
+  // service registry is already constructed.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getPolicyResolver } = require('../services/decision-contract/policy-resolver') as typeof import('../services/decision-contract/policy-resolver');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { POLICY_KEYS } = require('../services/decision-contract/policy-keys') as typeof import('../services/decision-contract/policy-keys');
+  const r = getPolicyResolver();
+  return {
+    READINESS_MONETIZATION_MIN: r.getValue<number>(POLICY_KEYS.SITUATIONAL_READINESS_MONETIZATION_MIN, { defaultValue: D33_THRESHOLDS_FALLBACK.READINESS_MONETIZATION_MIN }),
+    READINESS_DEEP_FLOW_MIN:    r.getValue<number>(POLICY_KEYS.SITUATIONAL_READINESS_DEEP_FLOW_MIN,    { defaultValue: D33_THRESHOLDS_FALLBACK.READINESS_DEEP_FLOW_MIN }),
+    READINESS_LIGHT_FLOW_MIN:   r.getValue<number>(POLICY_KEYS.SITUATIONAL_READINESS_LIGHT_FLOW_MIN,   { defaultValue: D33_THRESHOLDS_FALLBACK.READINESS_LIGHT_FLOW_MIN }),
+    TIME_IMMEDIATE_MAX:         r.getValue<number>(POLICY_KEYS.SITUATIONAL_TIME_WINDOW_IMMEDIATE_MAX_MINUTES, { defaultValue: D33_THRESHOLDS_FALLBACK.TIME_IMMEDIATE_MAX }),
+    TIME_SHORT_MAX:             r.getValue<number>(POLICY_KEYS.SITUATIONAL_TIME_WINDOW_SHORT_MAX_MINUTES,     { defaultValue: D33_THRESHOLDS_FALLBACK.TIME_SHORT_MAX }),
+    MIN_CONFIDENCE_FOR_ACTION:  r.getValue<number>(POLICY_KEYS.SITUATIONAL_CONFIDENCE_MIN_FOR_ACTION,         { defaultValue: D33_THRESHOLDS_FALLBACK.MIN_CONFIDENCE_FOR_ACTION }),
+    FAST_RESPONSE_THRESHOLD:    r.getValue<number>(POLICY_KEYS.SITUATIONAL_RESPONSE_TIME_FAST_THRESHOLD_SECONDS, { defaultValue: D33_THRESHOLDS_FALLBACK.FAST_RESPONSE_THRESHOLD }),
+    SLOW_RESPONSE_THRESHOLD:    r.getValue<number>(POLICY_KEYS.SITUATIONAL_RESPONSE_TIME_SLOW_THRESHOLD_SECONDS, { defaultValue: D33_THRESHOLDS_FALLBACK.SLOW_RESPONSE_THRESHOLD }),
+    SHORT_SESSION_THRESHOLD:    r.getValue<number>(POLICY_KEYS.SITUATIONAL_SESSION_LENGTH_SHORT_THRESHOLD_MINUTES, { defaultValue: D33_THRESHOLDS_FALLBACK.SHORT_SESSION_THRESHOLD }),
+    LONG_SESSION_THRESHOLD:     r.getValue<number>(POLICY_KEYS.SITUATIONAL_SESSION_LENGTH_LONG_THRESHOLD_MINUTES,  { defaultValue: D33_THRESHOLDS_FALLBACK.LONG_SESSION_THRESHOLD }),
+    OVERRIDE_EXPIRY_MINUTES:    r.getValue<number>(POLICY_KEYS.SITUATIONAL_OVERRIDE_EXPIRY_MINUTES,               { defaultValue: D33_THRESHOLDS_FALLBACK.OVERRIDE_EXPIRY_MINUTES }),
+  };
+}
 
 /**
  * Default action depth profiles

@@ -378,15 +378,27 @@ export class WorkerRunner {
         executionSuccess = executionResult.ok;
       }
 
-      // Step 5: Complete the task
-      await this.completeTask(
-        vtid,
-        runId,
-        domain,
-        executionSuccess,
-        executionResult.error,
-        executionResult
-      );
+      // PR-A (VTID-02922): self-healing tasks delegated to the autopilot
+      // pipeline may come back `defer=true` (autopilot still running past
+      // the worker-runner await window). In that case we MUST NOT call
+      // /complete or /terminalize — the self-healing reconciler watches
+      // dev_autopilot_executions and will finish the VTID lifecycle when
+      // the execution reaches a terminal state. Just release the claim.
+      if (executionResult.defer === true) {
+        console.log(
+          `[${VTID}] Self-healing ${vtid} deferred to reconciler (autopilot_execution_id=${executionResult.autopilot_execution_id?.slice(0, 8) || 'n/a'})`,
+        );
+      } else {
+        // Step 5: Complete the task
+        await this.completeTask(
+          vtid,
+          runId,
+          domain,
+          executionSuccess,
+          executionResult.error,
+          executionResult
+        );
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[${VTID}] Task processing error for ${vtid}: ${errorMessage}`);
@@ -395,8 +407,13 @@ export class WorkerRunner {
       // Attempt to complete as failed
       await this.completeTask(vtid, runId, domain, false, errorMessage);
     } finally {
-      // Always release claim and cleanup
-      await releaseTask(this.config, vtid, executionSuccess ? 'completed' : 'failed');
+      // Always release claim and cleanup. For deferred self-healing tasks
+      // we release with 'deferred' so the reconciler picks them up; for
+      // everything else use the legacy completed/failed reason.
+      const releaseReason = executionResult.defer === true
+        ? 'deferred'
+        : executionSuccess ? 'completed' : 'failed';
+      await releaseTask(this.config, vtid, releaseReason);
       this.activeVtid = null;
       this.metrics.state = 'idle';
     }

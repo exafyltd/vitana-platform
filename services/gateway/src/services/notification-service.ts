@@ -137,6 +137,16 @@ const TYPE_META: Record<string, TypeMeta> = {
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
+  // Billing lifecycle (VTID-03107) — Duolingo-style trial / cancel / win-back
+  trial_welcome:               { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_midpoint:              { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_ending_2d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_ending_1d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_cancelled_winback:     { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_winback_one_shot:      { channel: 'inapp',          priority: 'p3', category: 'system' },
+  founding_midpoint:           { channel: 'inapp',          priority: 'p2', category: 'system' },
+  founding_ending_2d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  founding_ending_1d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
   // Wallet & Business (VTID-01250)
   wallet_credits_earned:       { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
   wallet_payout_received:      { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
@@ -269,28 +279,60 @@ export async function sendAppilixPush(
   if (!appKey || !apiKey) return false;
 
   try {
-    const params = new URLSearchParams({
-      app_key: appKey,
-      api_key: apiKey,
-      notification_title: payload.title,
-      notification_body: payload.body,
-      user_identity: userId,
-    });
+    // Appilix API does NOT decode open_link_url (confirmed by their support),
+    // so that field must be sent raw. However, notification_title and
+    // notification_body CAN contain user input with &, =, + etc. which would
+    // corrupt the form body. Encode those fields to keep the body well-formed;
+    // Appilix decodes standard display fields normally for the push text.
+    const safeTitle = encodeURIComponent(payload.title);
+    const safeBody = encodeURIComponent(payload.body);
+    const bodyParts = [
+      `app_key=${appKey}`,
+      `api_key=${apiKey}`,
+      `notification_title=${safeTitle}`,
+      `notification_body=${safeBody}`,
+      `user_identity=${userId}`,
+    ];
     const url = payload.data?.url;
+    let resolvedOpenLink: string | undefined;
     if (url) {
       const baseUrl = process.env.APPILIX_APP_URL || 'https://vitanaland.com';
-      params.set('open_link_url', url.startsWith('http') ? url : `${baseUrl}${url}`);
+      resolvedOpenLink = url.startsWith('http') ? url : `${baseUrl}${url}`;
+      bodyParts.push(`open_link_url=${resolvedOpenLink}`);
     }
+
+    console.log(
+      `[Appilix] push user=${userId.slice(0, 8)}… ` +
+      `title=${JSON.stringify(payload.title)} ` +
+      `body_len=${payload.body.length} ` +
+      `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
+    );
 
     const res = await fetch('https://appilix.com/api/push-notification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+      body: bodyParts.join('&'),
     });
 
+    const text = await res.text().catch(() => '');
+
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
       console.warn(`[Notifications] Appilix push failed (${res.status}):`, text);
+      return false;
+    }
+
+    // Appilix returns HTTP 200 with { status: false, message: "No devices..." }
+    // when delivery fails (e.g. no device registered for that user_identity).
+    // Parse the JSON body and treat status:false as failure so the log
+    // accurately reflects what Appilix did.
+    let parsed: { status?: boolean | string; message?: string } | null = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    const ok = parsed?.status === true || parsed?.status === 'true';
+    if (!ok) {
+      console.warn(
+        `[Notifications] Appilix push DROPPED for user=${userId.slice(0, 8)}…: ` +
+        `${parsed?.message || text}`
+      );
       return false;
     }
     console.log(`[Notifications] Appilix push sent for user=${userId.slice(0, 8)}…`);
@@ -521,26 +563,32 @@ export async function notifyUser(
   }
 
   // ── 5. Send push — FCM first, Appilix as fallback ──────
-  // Only send ONE push per user to avoid duplicate notifications.
-  // FCM covers desktop Chrome + mobile Chrome; Appilix covers Maxina app
-  // users who have no FCM tokens registered.
-  //
-  // Appilix native push honors open_link_url (deep-links into the app).
-  // FCM in the Appilix WebView does NOT support deep-links (no service
-  // worker / Notification API). So when the payload has a URL, prefer
-  // Appilix for mobile users, with FCM as fallback for desktop browsers.
-  // For desktop-only users, Appilix fails silently → FCM delivers.
+  // Dispatch policy:
+  //   1. Always try FCM first via user_device_tokens (covers Android native
+  //      app, iOS native app once bridge captures token, web push).
+  //   2. If the notification has a deep-link URL AND we have no
+  //      Appilix-wrapped (native mobile) token registered for the user,
+  //      ALSO fire Appilix legacy user_identity push so the installed app
+  //      receives it. Web-push FCM tokens open the browser, not the app,
+  //      so without this branch users whose iOS/Android bridge hasn't
+  //      captured the native token yet would silently miss chat pushes.
+  //      Frontend registerAppilixDevice() tags native tokens with a
+  //      "Appilix " prefix on device_label — that's our detection signal.
+  //   3. If FCM delivered to zero tokens overall, also try Appilix as a
+  //      last-resort fallback (original behavior).
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
     if (payload.data?.url) {
-      // Notification with deep-link URL → Appilix first
+      // Notifications with deep-link URLs must go through Appilix first.
+      // Appilix honors open_link_url on tap; FCM-delivered notifications
+      // crash the Appilix WebView ("Something went wrong") because FCM
+      // doesn't pass the URL to Appilix's native tap handler.
       appilixSent = await sendAppilixPush(userId, payload);
       if (!appilixSent) {
         pushed = await sendPushToUser(userId, tenantId, payload, supabase);
       }
     } else {
-      // Notification without URL → FCM first, Appilix fallback
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
       if (pushed === 0) {
         appilixSent = await sendAppilixPush(userId, payload);

@@ -26,6 +26,14 @@ class Identity:
     vitana_id: str | None
     is_mobile: bool
     is_anonymous: bool
+    # VTID-03014: user's real client IP captured by the gateway's token-mint
+    # route (both /orb/livekit/token AND /agents/:id/voice-config/test-session)
+    # and embedded in LiveKit participant metadata. The agent forwards this
+    # as `X-Real-IP` to /orb/context-bootstrap so geo-IP resolves the user's
+    # actual location instead of the agent's us-central1 Cloud Run egress.
+    # None on older gateway revisions or when the gateway couldn't determine
+    # a real IP (private/localhost).
+    client_ip: str | None = None
 
 
 def resolve_identity_from_room_metadata(
@@ -50,6 +58,9 @@ def resolve_identity_from_room_metadata(
     vitana_id = metadata.get("vitana_id")
     is_mobile = bool(metadata.get("is_mobile", False))
     is_anonymous = bool(metadata.get("is_anonymous", False))
+    # VTID-03014: user's real IP, captured at token-mint time.
+    raw_client_ip = metadata.get("client_ip")
+    client_ip = str(raw_client_ip) if raw_client_ip else None
 
     # Mobile-community coercion (defense-in-depth, mirrors
     # feedback_mobile_community_only.md and orb-live.ts BOOTSTRAP-ORB-ROLE-SYNC-2)
@@ -70,6 +81,7 @@ def resolve_identity_from_room_metadata(
         vitana_id=str(vitana_id) if vitana_id else None,
         is_mobile=is_mobile,
         is_anonymous=is_anonymous,
+        client_ip=client_ip,
     )
 
 

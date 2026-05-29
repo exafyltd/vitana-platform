@@ -44,6 +44,17 @@ import {
 import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
 import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
 import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
+// VTID-03133 (Phase C.4): replace direct `rankBatch` with the
+// PolicyResolver-backed strategy so each recommendation gets a
+// RankProvenance trail persisted to autopilot_recommendations.provenance.
+// The legacy `rankBatch` import stays for the fallback path inside the
+// try/catch below — if the strategy bombs, we silently fall back to the
+// pre-C.4 scoring path so production keeps working.
+import {
+  rankBatchWithProvenance,
+  type RankProvenance,
+} from '../decision-contract';
+import { deriveEconomicAxis } from './economic-axis';
 import {
   analyzeMarketplace,
   MarketplaceSignal,
@@ -54,6 +65,16 @@ import {
   WearableSignal,
   generateWearableFingerprint,
 } from './analyzers/wearable-analyzer';
+// VTID-03140 (Phase C.6): per-signal-type impact maps live in
+// `decision_policy` now; this module owns the typed lookups.
+import {
+  getCodebaseSignalImpact,
+  getOasisSignalImpact,
+  getHealthSignalImpact,
+  getLLMSignalImpact,
+  getMarketplaceSignalImpact,
+  getWearableSignalImpact,
+} from './signal-impact';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -161,14 +182,8 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     missing_docs: 'dev',
   };
 
-  const impactMap: Record<string, number> = {
-    todo: 5,
-    large_file: 6,
-    missing_tests: 7,
-    dead_code: 4,
-    duplication: 5,
-    missing_docs: 3,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.codebase`).
 
   const effortMap: Record<string, number> = {
     todo: 3,
@@ -189,7 +204,7 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     title: signal.suggested_action.substring(0, 100),
     summary: signal.message,
     domain: domainMap[signal.type] || 'dev',
-    impact_score: impactMap[signal.type] || 5,
+    impact_score: getCodebaseSignalImpact(signal.type),
     effort_score: effortMap[signal.type] || 5,
     risk_level: severityToRisk[signal.severity] || 'low',
     source_type: 'codebase',
@@ -210,19 +225,14 @@ function convertOasisSignal(signal: OasisSignal): GeneratedRecommendation {
     underused_feature: 'Review underused feature',
   };
 
-  const impactMap: Record<string, number> = {
-    error_pattern: 8,
-    slow_endpoint: 7,
-    failed_deploy: 9,
-    anomaly: 6,
-    underused_feature: 4,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.oasis`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Address issue'}: ${signal.source.substring(0, 50)}`,
     summary: signal.message,
     domain: signal.type === 'failed_deploy' ? 'infra' : 'dev',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getOasisSignalImpact(signal.type),
     effort_score: signal.type === 'slow_endpoint' ? 6 : 5,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'oasis',
@@ -243,19 +253,14 @@ function convertHealthSignal(signal: HealthSignal): GeneratedRecommendation {
     stale_migration: 'Apply pending migration',
   };
 
-  const impactMap: Record<string, number> = {
-    missing_index: 7,
-    large_table: 6,
-    missing_rls: 9,
-    env_gap: 8,
-    stale_migration: 5,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.health`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Fix issue'}: ${signal.resource}`,
     summary: signal.message,
     domain: signal.type === 'missing_rls' ? 'security' : 'infra',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getHealthSignalImpact(signal.type),
     effort_score: signal.type === 'large_table' ? 8 : 4,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'health',
@@ -289,7 +294,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
     title: signal.title.substring(0, 100),
     summary: signal.message,
     domain: signal.type === 'security' ? 'security' : signal.type === 'architecture' ? 'infra' : 'dev',
-    impact_score: signal.confidence > 0.8 ? 8 : signal.confidence > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): confidence ladder moved to decision_policy
+    // (`recommendation.signal_impact.llm`).
+    impact_score: getLLMSignalImpact(signal.confidence),
     effort_score: signal.type === 'architecture' ? 7 : 5,
     risk_level: signal.severity,
     source_type: 'llm',
@@ -302,7 +309,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
 }
 
 function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation {
-  const impact = signal.severity === 'high' ? 8 : signal.severity === 'medium' ? 6 : 4;
+  // VTID-03140 (Phase C.6): severity ladder moved to decision_policy
+  // (`recommendation.signal_impact.wearable`).
+  const impact = getWearableSignalImpact(signal.severity);
   return {
     title: signal.summary.substring(0, 100),
     summary: signal.summary,
@@ -334,7 +343,9 @@ function convertMarketplaceSignal(signal: MarketplaceSignal): GeneratedRecommend
     title: `Try: ${signal.product_title}${priceText}`.substring(0, 100),
     summary: `Recommended${conditionText}. ${reasonsText}`,
     domain: 'marketplace',
-    impact_score: signal.match_score > 0.7 ? 8 : signal.match_score > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): match_score ladder moved to decision_policy
+    // (`recommendation.signal_impact.marketplace`).
+    impact_score: getMarketplaceSignalImpact(signal.match_score),
     effort_score: 2, // easy to act on — just review + click
     risk_level: signal.severity,
     source_type: 'marketplace',
@@ -673,6 +684,7 @@ export async function generateRecommendations(
         p_expires_days: 30,
         p_user_id: rec.user_id || null,
         p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
       });
 
       if (insertResult.ok) {
@@ -842,20 +854,59 @@ export async function generatePersonalRecommendations(
     // G4: re-rank by pillar-gap + compass + journey_mode BEFORE fingerprint
     // dedup so the highest-rank_score candidates survive when they collide.
     // rankBatch also applies the G6 per-pillar quota + balance guard.
+    // VTID-03133 (Phase C.4): use `rankBatchWithProvenance` so each
+    // ranked rec carries a `RankProvenance` trail. We key the trail by
+    // the rec's index-id and persist it after the corresponding row is
+    // inserted in autopilot_recommendations.
+    const provenanceByIndex = new Map<string, RankProvenance>();
     try {
       const rankerInputs = recommendations.map((r, idx) => ({
         id: String(idx),
         source_ref: (r as any).source_ref ?? null,
         impact_score: (r as any).impact_score ?? null,
         contribution_vector: (r as any).contribution_vector ?? null,
+        economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
       }));
-      const ranked = rankBatch(rankerInputs, rankerCtx);
+      let rankedOrder: Array<{ rec: { id?: string } }>;
+      try {
+        const rankedWithProv = rankBatchWithProvenance(rankerInputs, rankerCtx);
+        for (const r of rankedWithProv) {
+          const idxId = (r.ranked.rec as { id?: string }).id;
+          if (idxId) provenanceByIndex.set(idxId, r.provenance);
+        }
+        rankedOrder = rankedWithProv.map((r) => ({ rec: r.ranked.rec }));
+      } catch (stratErr: any) {
+        // Strategy bombed → fall back to the pre-C.4 scoring path so
+        // production isn't blocked by a Phase C wiring bug. Provenance
+        // is auxiliary; rank order is critical.
+        console.warn(
+          `${LOG_PREFIX} rankBatchWithProvenance failed — falling back to legacy rankBatch (non-fatal): ${stratErr?.message}`,
+        );
+        rankedOrder = rankBatch(rankerInputs, rankerCtx).map((r) => ({ rec: r.rec }));
+      }
       // Apply rank order back onto recommendations[].
       const indexById = new Map<string, GeneratedRecommendation>(
         recommendations.map((r, idx) => [String(idx), r]),
       );
-      recommendations = ranked
-        .map(r => indexById.get((r.rec as any).id as string))
+      // VTID-03133: stash the new ranker index back onto each rec so we
+      // can recover its provenance in the insert loop below. Map's key
+      // is `rec` reference for stability across the re-ordering.
+      const recToProvenance = new Map<GeneratedRecommendation, RankProvenance>();
+      for (const r of rankedOrder) {
+        const idxId = (r.rec as { id?: string }).id;
+        if (!idxId) continue;
+        const matched = indexById.get(idxId);
+        const prov = provenanceByIndex.get(idxId);
+        if (matched && prov) recToProvenance.set(matched, prov);
+      }
+      // Stamp provenance onto the rec object (untyped — picked up below
+      // in the insert loop). Done before `recommendations` is rewritten
+      // by the .filter so references survive.
+      for (const [rec, prov] of recToProvenance) {
+        (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance = prov;
+      }
+      recommendations = rankedOrder
+        .map(r => indexById.get((r.rec as { id?: string }).id as string))
         .filter((r): r is GeneratedRecommendation => !!r);
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
@@ -892,7 +943,7 @@ export async function generatePersonalRecommendations(
         continue;
       }
 
-      const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
+      const insertResult = await callRpc<{ duplicate?: boolean; id?: string }>('insert_autopilot_recommendation', {
         p_title: rec.title,
         p_summary: rec.summary,
         p_domain: rec.domain,
@@ -909,6 +960,7 @@ export async function generatePersonalRecommendations(
         p_expires_days: 7, // Personal recs expire faster
         p_user_id: rec.user_id || null,
         p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
       });
 
       if (insertResult.ok) {
@@ -916,6 +968,45 @@ export async function generatePersonalRecommendations(
           duplicatesSkipped++;
         } else {
           generated++;
+          // VTID-03133 (Phase C.4): persist the RankProvenance trail to
+          // the autopilot_recommendations row created by the RPC above.
+          // Best-effort: UPDATE failure NEVER blocks generation (the row
+          // already exists; provenance is auxiliary). Without an
+          // id-returning RPC, we'd have to update by fingerprint —
+          // luckily the RPC's JSONB return includes `id` when not a
+          // duplicate.
+          const insertedId = insertResult.data?.id;
+          const prov = (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance;
+          if (insertedId && prov) {
+            try {
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+              if (supabaseUrl && supabaseKey) {
+                const upd = await fetch(
+                  `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${insertedId}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      apikey: supabaseKey,
+                      Authorization: `Bearer ${supabaseKey}`,
+                      Prefer: 'return=minimal',
+                    },
+                    body: JSON.stringify({ provenance: prov }),
+                  },
+                );
+                if (!upd.ok) {
+                  console.warn(
+                    `${LOG_PREFIX} provenance UPDATE failed (non-fatal): ${upd.status} for id=${insertedId.slice(0, 8)}`,
+                  );
+                }
+              }
+            } catch (provErr: any) {
+              console.warn(
+                `${LOG_PREFIX} provenance UPDATE threw (non-fatal): ${provErr?.message}`,
+              );
+            }
+          }
         }
       } else {
         errors.push({ source: 'community', error: insertResult.error || 'Insert failed' });

@@ -433,6 +433,88 @@ router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response
       });
     }
 
+    // PR-E (VTID-02931, Gap 1): self-healing VTIDs cannot be terminalized
+    // 'success' unless their linked dev_autopilot_executions row reached
+    // status='completed'. This is the authoritative gate — the worker-runner
+    // already refuses local LLM fallback for self-healing without a bridge,
+    // and the self-healing reconciler is the only legitimate path that sets
+    // terminal_outcome='success' (via direct vtid_ledger PATCH, bypassing
+    // this endpoint). Any other caller trying to mark a self-healing VTID
+    // 'success' through this endpoint is misbehaving and gets rejected.
+    if (outcome === 'success' && task.metadata?.source === 'self-healing') {
+      const execId = typeof task.metadata?.autopilot_execution_id === 'string'
+        ? task.metadata.autopilot_execution_id
+        : null;
+
+      if (!execId) {
+        console.warn(
+          `[${VTID}] BLOCKED: self-healing VTID ${vtid} has no autopilot_execution_id in metadata — refusing terminal_outcome='success'`,
+        );
+        await emitOasisEvent(supabaseUrl, svcKey, {
+          vtid,
+          topic: 'self-healing.terminalize.blocked',
+          status: 'warning',
+          message: `Refusing terminal_outcome='success' for ${vtid}: no autopilot execution linkage (bridge failed upstream)`,
+          metadata: {
+            vtid,
+            outcome,
+            actor,
+            reason: 'missing_autopilot_execution_id',
+            healing_state: task.metadata?.healing_state || null,
+            blocked_at: new Date().toISOString(),
+            governance_vtid: 'VTID-02931',
+          },
+        });
+        return res.status(400).json({
+          ok: false,
+          error: 'SELF_HEALING_NO_AUTOPILOT_BRIDGE',
+          message: `Refusing terminal_outcome='success' for self-healing VTID ${vtid}: no autopilot execution linkage. See self-healing.execution.bridge_failed in oasis_events.`,
+          vtid,
+        });
+      }
+
+      const execResp = await fetch(
+        `${supabaseUrl}/rest/v1/dev_autopilot_executions?id=eq.${encodeURIComponent(execId)}&select=id,status,pr_url,pr_number&limit=1`,
+        {
+          headers: {
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+        },
+      );
+      const execRows = execResp.ok ? ((await execResp.json()) as Array<{ id: string; status: string; pr_url: string | null; pr_number: number | null }>) : [];
+      const execStatus = execRows[0]?.status || 'missing';
+
+      if (execStatus !== 'completed') {
+        console.warn(
+          `[${VTID}] BLOCKED: self-healing VTID ${vtid} terminalize 'success' refused — dev_autopilot_executions.status='${execStatus}' (need 'completed')`,
+        );
+        await emitOasisEvent(supabaseUrl, svcKey, {
+          vtid,
+          topic: 'self-healing.terminalize.blocked',
+          status: 'warning',
+          message: `Refusing terminal_outcome='success' for ${vtid}: autopilot execution status='${execStatus}', not 'completed'`,
+          metadata: {
+            vtid,
+            outcome,
+            actor,
+            reason: 'autopilot_not_completed',
+            autopilot_execution_id: execId,
+            autopilot_status: execStatus,
+            blocked_at: new Date().toISOString(),
+            governance_vtid: 'VTID-02931',
+          },
+        });
+        return res.status(400).json({
+          ok: false,
+          error: 'SELF_HEALING_AUTOPILOT_NOT_COMPLETED',
+          message: `Refusing terminal_outcome='success' for ${vtid}: autopilot execution ${execId.slice(0, 8)} status='${execStatus}', not 'completed'. The self-healing reconciler is the only authorized writer of success for self-healing VTIDs.`,
+          vtid,
+          autopilot_status: execStatus,
+        });
+      }
+    }
+
     // VTID-01204: Pipeline Integrity Gate - Check for full pipeline completion
     const bypassCheck = canBypassPipelineGates(req, outcome);
     if (!bypassCheck.allowed) {
