@@ -6,6 +6,7 @@
  *
  * Endpoints:
  *   POST /api/v1/scheduled-notifications/morning-briefing
+ *   POST /api/v1/scheduled-notifications/daily-pace-notifications
  *   POST /api/v1/scheduled-notifications/diary-reminder
  *   POST /api/v1/scheduled-notifications/weekly-digest
  *   POST /api/v1/scheduled-notifications/weekly-summary
@@ -22,6 +23,11 @@ import { generatePersonalRecommendations } from '../services/recommendation-engi
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
 import { getUserLocale, bulkGetUserLocales } from '../i18n/server-locale';
+import {
+  computePaceDecision,
+  paceToneKeys,
+  type SkipReason,
+} from '../services/daily-pace-service';
 
 const router = Router();
 
@@ -390,6 +396,142 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
+});
+
+// =============================================================================
+// POST /daily-pace-notifications — Hourly UTC (claude/daily-pace-notifications)
+//
+// Cron fires every hour on the hour (UTC). For each user in the tenant we
+// compute a per-user `PaceDecision` that:
+//   - resolves the user's timezone (app_users → user_preferences →
+//     memory_facts → Europe/Berlin default);
+//   - checks that their local hour is exactly 19 (one tick per local day);
+//   - checks active life_compass goal, push not muted, ≥3 surfaced
+//     autopilot recs in the last 7 days, and not already sent today;
+//   - if eligible, buckets activated_7d / surfaced_7d into one of three
+//     tones (on_track / slightly_behind / falling_behind) and dispatches
+//     ONE localized push via notifyUserAsync.
+//
+// Per-user dispatch is mirrored from morning-briefing (per-user try/catch
+// in the loop so one bad user doesn't kill the run). The per-user tone
+// means dispatchLocalized's "one key pair per fan-out" shape doesn't fit —
+// we inline a fan-out loop instead of refactoring dispatchLocalized.
+//
+// NOTE: This is the first hourly-UTC scheduled notification in the
+// codebase — all other entries in this file are daily Europe/Berlin. The
+// hourly+UTC pattern is intentional: it gives us a tick that lands in
+// every user's local 19:00 hour regardless of their tz offset (including
+// fractional offsets like Asia/Kathmandu UTC+5:45).
+// =============================================================================
+router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const nowUtc = new Date();
+  const users = await getActiveUsers(supa, tenantId);
+
+  // Pre-fetch locales for the whole tenant in one query (same pattern as
+  // the other fan-out routes — avoids N round-trips for catalog lookups).
+  const locales = await bulkGetUserLocales(supa, users.map((u) => u.user_id));
+
+  const skipped: Record<SkipReason | 'error', number> = {
+    no_goal: 0,
+    insufficient_actions: 0,
+    muted: 0,
+    already_sent: 0,
+    wrong_hour: 0,
+    invalid_tz: 0,
+    error: 0,
+  };
+  let dispatched = 0;
+  const errors: Array<{ user_id: string; message: string }> = [];
+
+  for (const { user_id } of users) {
+    try {
+      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc);
+
+      if (!decision.shouldNotify) {
+        if (decision.skipReason) skipped[decision.skipReason]++;
+        continue;
+      }
+
+      const tone = decision.tone!;
+      const { titleKey, bodyKey } = paceToneKeys(tone);
+      const lc = locales.get(user_id);
+
+      notifyUserAsync(
+        user_id,
+        tenantId,
+        'daily_pace_check',
+        {
+          title: tt(titleKey as GatewayI18nKey, lc),
+          body: tt(bodyKey as GatewayI18nKey, lc),
+          data: {
+            type: 'daily_pace_check',
+            tone,
+            // Deep-link convention in this file: morning-briefing uses
+            // `data.url: '/dashboard'`. Match that — raw path, not a
+            // `vitana://` scheme — so the frontend's existing handler
+            // routes us to the autopilot surface.
+            url: '/autopilot',
+            deeplink: '/autopilot',
+          },
+        },
+        supa,
+      );
+
+      // Pre-write a deterministic dedup row so a same-second second cron
+      // invocation can't double-fire. notifyUserAsync would write one too
+      // but it's async; this is the synchronous "I've decided to send"
+      // marker. Failing this insert is non-fatal (unique constraints may
+      // not exist) — we log and continue.
+      try {
+        await supa.from('user_notifications').insert({
+          user_id,
+          tenant_id: tenantId,
+          type: 'daily_pace_check',
+          title: tt(titleKey as GatewayI18nKey, lc),
+          body: tt(bodyKey as GatewayI18nKey, lc),
+          data: {
+            type: 'daily_pace_check',
+            tone,
+            url: '/autopilot',
+            deeplink: '/autopilot',
+            ratio: decision.ratio,
+            surfaced_7d: decision.surfaced7d,
+            activated_7d: decision.activated7d,
+            local_date: decision.userLocalDate,
+          },
+          channel: 'push_and_inapp',
+          priority: 'p2',
+          category: 'calendar',
+        });
+      } catch (insErr: any) {
+        // notifyUser() inside notifyUserAsync will still write its own row
+        // via the canonical pipeline; this is a best-effort dedup hint.
+        console.warn(
+          `[Scheduled] daily_pace pre-insert failed for ${user_id.slice(0, 8)}: ${insErr?.message || insErr}`,
+        );
+      }
+
+      dispatched++;
+    } catch (err: any) {
+      skipped.error++;
+      errors.push({ user_id, message: err?.message || String(err) });
+      console.warn(
+        `[Scheduled] daily_pace_check error for ${user_id.slice(0, 8)}: ${err?.message || err}`,
+      );
+    }
+  }
+
+  console.log(
+    `[Scheduled] daily_pace_check → dispatched=${dispatched} ` +
+      `skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
+  );
+  return res.status(200).json({ ok: true, dispatched, skipped, errors });
 });
 
 // =============================================================================

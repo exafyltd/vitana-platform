@@ -85,6 +85,7 @@ const TYPE_META: Record<string, TypeMeta> = {
   // Calendar
   daily_recompute_complete:  { channel: 'silent',          priority: 'p3', category: 'calendar' },
   morning_briefing_ready:    { channel: 'push_and_inapp', priority: 'p1', category: 'calendar' },
+  daily_pace_check:          { channel: 'push_and_inapp', priority: 'p2', category: 'calendar' },
   upcoming_event_today:      { channel: 'push',           priority: 'p1', category: 'calendar' },
   weekly_community_digest:   { channel: 'push_and_inapp', priority: 'p2', category: 'calendar' },
   // Recommendations

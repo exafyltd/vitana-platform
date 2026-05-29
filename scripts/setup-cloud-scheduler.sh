@@ -128,11 +128,21 @@ DIRECT_JOBS=(
 # longevity / topics / community_recs / matches stages) for each
 # active user. Without this job the Vitana Index only updates on
 # activity events, leaving the Health screen at 0 on inactive days.
+#
+# AP-0513 (claude/daily-pace-notifications) appends a second entry:
+# the daily-pace notification dispatcher. UNIQUE PATTERN: hourly UTC
+# rather than daily Europe/Berlin (every other scheduled-notification
+# job in this file is `0 H * * *` Europe/Berlin). We use hourly UTC
+# because the endpoint resolves each user's local timezone and only
+# dispatches to users whose local hour == 19. An hourly UTC cron
+# guarantees we hit every user's 19:xx window at least once per local
+# day (including fractional-offset zones like Asia/Kathmandu UTC+5:45).
 # ──────────────────────────────────────────────────────────────
 
 # Format: NAME|SCHEDULE|TIMEZONE|PATH
 TENANT_DIRECT_JOBS=(
   "daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute"
+  "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
 )
 
 for JOB in "${TENANT_DIRECT_JOBS[@]}"; do
