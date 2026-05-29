@@ -1,0 +1,11 @@
+name = "vitana-preview-router"
+main = "worker.js"
+compatibility_date = "2026-05-26"
+
+# Routes attach the Worker to both preview hostnames in the vitanaland.com
+# zone.  DNS for each (CNAME, proxied=true) is managed separately via the
+# Cloudflare API — see deploy notes in worker.js header.
+routes = [
+  { pattern = "preview-gateway.vitanaland.com/*", zone_name = "vitanaland.com" },
+  { pattern = "preview.vitanaland.com/*",          zone_name = "vitanaland.com" },
+]

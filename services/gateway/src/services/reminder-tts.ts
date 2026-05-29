@@ -9,6 +9,8 @@
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { protos } from '@google-cloud/text-to-speech';
+// VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+import { getVoiceConfig } from './voice-config';
 
 let ttsClient: InstanceType<typeof textToSpeech.TextToSpeechClient> | null = null;
 try {
@@ -65,12 +67,14 @@ export async function synthesizeReminderTts(
     voiceParams.modelName = 'gemini-2.5-flash-tts';
   }
 
+  // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
+  const __vc = await getVoiceConfig();
   const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
     input: { text },
     voice: voiceParams,
     audioConfig: {
       audioEncoding: 'MP3' as any,
-      speakingRate: 1.0,
+      speakingRate: __vc.tts.speaking_rate,
       pitch: 0,
     },
   };

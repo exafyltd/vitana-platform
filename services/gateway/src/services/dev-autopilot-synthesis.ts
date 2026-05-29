@@ -41,7 +41,11 @@ export type SignalType =
   | 'secret_exposure'
   | 'cve'
   | 'stale_flag'
-  | 'product_gap';
+  | 'product_gap'
+  // VTID-02866: voice-experience-scanner-v1 emissions land in autopilot_recommendations
+  // with domain='voice' (after domainForPath edit below) and surface in the
+  // Voice Improve cockpit briefing.
+  | 'voice_health';
 
 export type Severity = 'low' | 'medium' | 'high';
 
@@ -171,6 +175,12 @@ const TYPE_EFFORT: Record<SignalType, number> = {
   rls_gap: 5,
   schema_drift: 5,
   product_gap: 7,
+  // VTID-02866: voice readiness fixes are usually small (mark not_wired
+  // explicitly, add an oasis_topic, add an auth middleware, replace a
+  // hardcoded speakingRate with getVoiceConfig()). Effort=4 keeps them
+  // off auto-approve by default — the Voice Improve cockpit is the right
+  // surface for human-supervised resolution.
+  voice_health: 4,
 };
 
 /** Risk class for auto-exec eligibility — dead_code, unused_dep, missing_docs
@@ -200,6 +210,11 @@ const TYPE_RISK_CLASS: Record<SignalType, 'low' | 'medium' | 'high'> = {
   rls_gap: 'medium',
   schema_drift: 'medium',
   product_gap: 'medium',
+  // VTID-02866: voice readiness findings span multiple risk levels (missing
+  // auth on a voice route is high; a hardcoded speakingRate is low). The
+  // per-finding `severity` carries the gradient; risk_class default 'medium'
+  // keeps voice_health off auto-approve until an operator inspects.
+  voice_health: 'medium',
 };
 
 function scoreSignal(signal: DevAutopilotSignal): {
@@ -244,11 +259,33 @@ function titleForSignal(signal: DevAutopilotSignal): string {
     case 'cve':           return `CVE: ${base}`;
     case 'stale_flag':    return `Stale feature flag — ${base}`;
     case 'product_gap':   return signal.message.slice(0, 80);
+    // VTID-02866: voice-experience-scanner emissions. Use the scanner's own
+    // message which already includes the specific signal/route/file context.
+    case 'voice_health':  return signal.message.slice(0, 80);
     default:              return signal.message.substring(0, 80);
   }
 }
 
+// VTID-02866: voice-* prefixes resolve to 'voice' BEFORE the generic
+// routes/services/frontend matchers. Without this, voice-experience-scanner
+// findings land in domain='routes'|'services' and the Voice Improve
+// briefing's `domain='voice'` filter returns zero rows.
+const VOICE_PATH_PREFIXES = [
+  'services/gateway/src/services/awareness-',
+  'services/gateway/src/services/voice-',
+  'services/gateway/src/services/orb-',
+  'services/gateway/src/routes/voice-',
+  'services/gateway/src/routes/orb-',
+  'services/gateway/src/routes/awareness-',
+  'services/gateway/src/frontend/command-hub/orb-widget',
+  'scripts/ci/scanners/voice-experience-scanner',
+];
+
 function domainForPath(path: string): string {
+  // VTID-02866: voice prefixes win first.
+  for (const prefix of VOICE_PATH_PREFIXES) {
+    if (path.startsWith(prefix)) return 'voice';
+  }
   if (path.startsWith('services/gateway/src/routes/'))   return 'routes';
   if (path.startsWith('services/gateway/src/services/')) return 'services';
   if (path.startsWith('services/gateway/src/frontend/')) return 'frontend';

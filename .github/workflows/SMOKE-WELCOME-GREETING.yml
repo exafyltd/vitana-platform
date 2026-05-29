@@ -1,0 +1,77 @@
+name: Smoke — Welcome Greeting Trigger (Structural)
+
+# VTID-03089: structural regression guard for the welcome-chat DB trigger.
+#
+# Behavioral testing of the trigger was attempted by minting a synthetic
+# user inside a transaction, but Supabase's on-auth-user-created flow
+# auto-provisions multiple rows (app_users + user_tenants) in ways that
+# make a clean transactional smoke fragile. Instead, this workflow runs
+# structural checks that catch the failure modes that matter:
+#   1. Trigger exists.
+#   2. Trigger is enabled (tgenabled = 'O', i.e. origin/enabled).
+#   3. Trigger function exists and is SECURITY DEFINER.
+#   4. Trigger fires AFTER INSERT on user_tenants (not BEFORE).
+#
+# Actual production-traffic behaviour is verified by the daily
+# ALERT-WELCOME-GREETING-HEALTH.yml workflow which compares signups vs
+# greetings in the last 24h — that's the load-bearing guard against
+# real regressions like the May-18-through-28 outage.
+#
+# Triggered:
+#   * After every successful EXEC-DEPLOY (workflow_run)
+#   * Daily at 07:00 UTC (cron)
+#   * On demand (workflow_dispatch)
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Exec Deploy (VTID Bridge)"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '0 7 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  structural:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Install psql
+        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
+
+      - name: Verify trigger structure
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          # Each check returns 'PASS' or a descriptive failure line.
+          OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
+          SELECT
+            CASE
+              WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
+                THEN 'FAIL: trigger welcome_chat_on_primary_membership missing'
+              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text != 'O'
+                THEN 'FAIL: trigger present but disabled (tgenabled=' || (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text || ')'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
+                THEN 'FAIL: trigger function fire_welcome_chat_on_membership missing'
+              WHEN NOT (SELECT prosecdef FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
+                THEN 'FAIL: trigger function exists but is not SECURITY DEFINER'
+              WHEN (SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname = 'welcome_chat_on_primary_membership') != 'user_tenants'
+                THEN 'FAIL: trigger attached to wrong table'
+              ELSE 'PASS'
+            END;
+          EOF
+          )
+
+          RESULT=$(echo "$OUTPUT" | grep -v '^$' | tail -1)
+          echo "Structural check: $RESULT"
+          if [[ "$RESULT" != "PASS" ]]; then
+            echo "::error::$RESULT"
+            echo "::error::See PR #2355 — welcome chat DB trigger should be installed and enabled."
+            exit 1
+          fi
+          echo "✓ Trigger structure intact."

@@ -32,18 +32,61 @@ interface RankableProduct extends FilterableProduct {
   price_cents: number | null;
 }
 
+// VTID-03137 (Phase C.5): feed-ranker weights now resolved via
+// PolicyResolver. Literal defaults preserved for cache-cold safety.
+import { getPolicyResolver } from './decision-contract/policy-resolver';
+import { POLICY_KEYS } from './decision-contract/policy-keys';
+
+interface FeedRankerWeights {
+  pwOnboarding: number;
+  pwEarly: number;
+  pwEstablished: number;
+  pwMature: number;
+  pwDefault: number;
+  featuredBoost: number;
+  ratingScoreMax: number;
+  categoryMixWeight: number;
+  topicAffinityCap: number;
+  conditionMatchBoost: number;
+  sameRegionBonus: number;
+  highRatingThreshold: number;
+  highRatingBonus: number;
+  budgetFitBonus: number;
+}
+
+function getFeedRankerWeights(): FeedRankerWeights {
+  const r = getPolicyResolver();
+  return {
+    pwOnboarding:        r.getValue<number>(POLICY_KEYS.RANKER_FEED_PW_ONBOARDING,       { defaultValue: 0.2 }),
+    pwEarly:             r.getValue<number>(POLICY_KEYS.RANKER_FEED_PW_EARLY,            { defaultValue: 0.45 }),
+    pwEstablished:       r.getValue<number>(POLICY_KEYS.RANKER_FEED_PW_ESTABLISHED,      { defaultValue: 0.7 }),
+    pwMature:            r.getValue<number>(POLICY_KEYS.RANKER_FEED_PW_MATURE,           { defaultValue: 0.9 }),
+    pwDefault:           r.getValue<number>(POLICY_KEYS.RANKER_FEED_PW_DEFAULT,          { defaultValue: 0.3 }),
+    featuredBoost:       r.getValue<number>(POLICY_KEYS.RANKER_FEED_FEATURED_BOOST,      { defaultValue: 0.7 }),
+    ratingScoreMax:      r.getValue<number>(POLICY_KEYS.RANKER_FEED_RATING_SCORE_MAX,    { defaultValue: 0.3 }),
+    categoryMixWeight:   r.getValue<number>(POLICY_KEYS.RANKER_FEED_CATEGORY_MIX_WEIGHT, { defaultValue: 0.2 }),
+    topicAffinityCap:    r.getValue<number>(POLICY_KEYS.RANKER_FEED_TOPIC_AFFINITY_CAP,  { defaultValue: 0.4 }),
+    conditionMatchBoost: r.getValue<number>(POLICY_KEYS.RANKER_FEED_CONDITION_MATCH_BOOST, { defaultValue: 0.3 }),
+    sameRegionBonus:     r.getValue<number>(POLICY_KEYS.RANKER_FEED_SAME_REGION_BONUS,   { defaultValue: 0.1 }),
+    highRatingThreshold: r.getValue<number>(POLICY_KEYS.RANKER_FEED_HIGH_RATING_THRESHOLD, { defaultValue: 4.5 }),
+    highRatingBonus:     r.getValue<number>(POLICY_KEYS.RANKER_FEED_HIGH_RATING_BONUS,   { defaultValue: 0.1 }),
+    budgetFitBonus:      r.getValue<number>(POLICY_KEYS.RANKER_FEED_BUDGET_FIT_BONUS,    { defaultValue: 0.05 }),
+  };
+}
+
 export function defaultPersonalizationWeightForStage(stage: string | null): number {
+  const w = getFeedRankerWeights();
   switch (stage) {
     case 'onboarding':
-      return 0.2;
+      return w.pwOnboarding;
     case 'early':
-      return 0.45;
+      return w.pwEarly;
     case 'established':
-      return 0.7;
+      return w.pwEstablished;
     case 'mature':
-      return 0.9;
+      return w.pwMature;
     default:
-      return 0.3;
+      return w.pwDefault;
   }
 }
 
@@ -78,28 +121,33 @@ export function rankFeedProducts<T extends RankableProduct>(
   const maxPerMerchant = config?.max_products_per_merchant ?? 3;
   const maxPerCategory = config?.max_products_per_category ?? null;
 
+  // VTID-03137 (Phase C.5): per-product weights read once via the
+  // resolver-backed snapshot so all per-product scoring decisions
+  // share a single consistent set of weights for the batch.
+  const w = getFeedRankerWeights();
+
   const scored = products.map((p) => {
     const rank_reasons: string[] = [];
 
     // Default score component: featured pins + rating + category mix fit
     let defaultScore = 0;
     if (featuredSet.has(p.id)) {
-      defaultScore += 0.7;
+      defaultScore += w.featuredBoost;
       rank_reasons.push('Featured by editors');
     }
     if (p.rating !== null && p.rating > 0) {
-      defaultScore += Math.max(0, Math.min(0.3, ((p.rating - 3) / 2) * 0.3));
+      defaultScore += Math.max(0, Math.min(w.ratingScoreMax, ((p.rating - 3) / 2) * w.ratingScoreMax));
     }
     if (config && p.category && config.category_mix[p.category]) {
       // Slight boost for categories that the admin config prioritizes
-      defaultScore += config.category_mix[p.category] * 0.2;
+      defaultScore += config.category_mix[p.category] * w.categoryMixWeight;
     }
 
     // Personalization score component
     let personalizedScore = 0;
     // Topic affinity
     if (p.category && ctx.topic_affinity[p.category]) {
-      personalizedScore += Math.min(0.4, ctx.topic_affinity[p.category]);
+      personalizedScore += Math.min(w.topicAffinityCap, ctx.topic_affinity[p.category]);
     }
     // Active-condition fit: if product's health_goals overlap starter or active conditions
     if (p.health_goals?.length) {
@@ -107,7 +155,7 @@ export function rankFeedProducts<T extends RankableProduct>(
         if (starterConditions.has(cond.key) || cond.source === 'user_stated') {
           const goals = p.health_goals.map((g) => g.toLowerCase());
           if (goals.some((g) => g.includes(cond.key.toLowerCase().replace(/-/g, '')))) {
-            personalizedScore += 0.3;
+            personalizedScore += w.conditionMatchBoost;
             rank_reasons.push(`Supports ${cond.key}`);
             break;
           }
@@ -116,16 +164,16 @@ export function rankFeedProducts<T extends RankableProduct>(
     }
     // Same-region origin bonus
     if (ctx.region_group && p.origin_region === ctx.region_group) {
-      personalizedScore += 0.1;
+      personalizedScore += w.sameRegionBonus;
       rank_reasons.push('Ships from your region');
     }
     // Rating — also shared with default score but we leave both for simplicity
-    if (p.rating !== null && p.rating >= 4.5) {
-      personalizedScore += 0.1;
+    if (p.rating !== null && p.rating >= w.highRatingThreshold) {
+      personalizedScore += w.highRatingBonus;
     }
     // Budget fit
     if (ctx.budget_max_per_product_cents && p.price_cents !== null && p.price_cents !== undefined && p.price_cents <= ctx.budget_max_per_product_cents) {
-      personalizedScore += 0.05;
+      personalizedScore += w.budgetFitBonus;
     }
 
     const blended = (1 - personalizationWeight) * defaultScore + personalizationWeight * personalizedScore;

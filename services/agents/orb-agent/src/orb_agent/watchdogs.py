@@ -29,8 +29,16 @@ MAX_HISTORY_CHARS = 4000
 EXTRACTION_THROTTLE_MS = 60_000
 BOOTSTRAP_REBUILD_MIN_AGE_MS = 60_000
 
-# Stall watchdog: model has produced no audio output for this long → reconnect.
-STALL_THRESHOLD_MS = 8000
+# Stall watchdog: no agent OR user activity (speech_created, agent state
+# transition, user state transition) for this long → emit OASIS event +
+# soft-reset STT (VTID-03004 / VTID-03005).
+# History:
+#  - originally 8s (false-fired on conversational pauses)
+#  - bumped 8s → 30s by PR-VTID-02854 to avoid false-fires
+#  - lowered 30s → 10s by VTID-03005 once the watchdog could recover via
+#    soft STT swap instead of just being telemetry. Faster detection +
+#    cheap recovery beats slow detection + dead air for the user.
+STALL_THRESHOLD_MS = 10_000
 
 
 @dataclass

@@ -66,6 +66,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
   const { vtidRouter } = require('./routes/vtid');
+  // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
+  const { rumBeaconRouter } = require('./routes/rum-beacon');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -81,6 +83,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const cicdRouter = require('./routes/cicd').default;
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
+  // BOOTSTRAP-NOTIF-MESSENGER-DIAG: unauthenticated client beacon for chat-notification deep-link failures
+  const diagRouter = require('./routes/diag').default;
   const autopilotRouter = require('./routes/autopilot').default;
   // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
@@ -88,7 +92,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
   const orbLivekitRouter = require('./routes/orb-livekit').default;
+  // L2.2b.1 (VTID-02987): /api/v1/oasis/emit — service-token + admin-JWT
+  // gated proxy so the Python orb-agent can emit lifecycle telemetry via the
+  // same OASIS pipeline the gateway uses.
+  const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
+  const myJourneyRouter = require('./routes/my-journey').default;
+  const goalPlannerRouter = require('./routes/goal-planner').default;
+  const landingRouteRouter = require('./routes/landing-route').default;
   const orbToolRouter = require('./routes/orb-tool').default;
   const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
@@ -294,13 +306,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   const creatorsRouter = require('./routes/creators').default;
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
+  // VTID-03107: Billing v1 — customer-side Stripe subscriptions + credit packs + redemption
+  const billingRouter = require('./routes/billing').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
   const chatRouter = require('./routes/chat').default;
+  // Group chat — VTID-03089
+  const chatGroupsRouter = require('./routes/chat-groups').default;
   // VTID-01967: Vitana ID — voice resolver, admin lookup, onboarding pick
   const usersResolveRouter = require('./routes/users-resolve').default;
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
+  // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
+  const adminHealthRouter = require('./routes/admin-health').default;
   const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // VTID-01973: Vitana Intent Engine (P2-A). Voice-dictated intent registry +
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
@@ -394,6 +412,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // PR-I (VTID-02949): operator-armed canary for end-to-end self-healing
+  // smoke tests. Replaces the original PR-A canary (which mounted at `/`
+  // and tripped diagnosis into proposing edits to index.ts). New canary
+  // mounts at /api/v1/canary-target so diagnosis lands on the route file.
+  const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
 
@@ -401,8 +424,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   setupCors(app);
   app.use(sseHeaders);
 
-  // VTID-01230: Raw body parser for Stripe webhooks (MUST come BEFORE express.json())
+  // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
+  app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -569,6 +594,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     owner: 'presence-did-you-know',
   });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
+  // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
+  mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)
@@ -622,6 +649,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-0526-D: Telemetry routes with stage counters
   mountRouterSync(app, '/api/v1/telemetry', telemetryRouter, { owner: 'telemetry' });
 
+  // BOOTSTRAP-NOTIF-MESSENGER-DIAG: unauthenticated diagnostic beacon — see routes/diag.ts
+  mountRouterSync(app, '/api/v1/diag', diagRouter, { owner: 'notif-diag' });
+
   // Vitana Index — celebrate() analytics ingestion (light-weight, fire-and-forget)
   const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
   mountRouterSync(app, '/api/v1/analytics', analyticsCelebrateRouter, { owner: 'analytics-celebrate' });
@@ -674,11 +704,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Mounted at /api/v1 because its routes span /orb/*, /voice-providers/*,
   // /agents/*/voice-config — the leaf paths inside the router carry the prefix.
   mountRouterSync(app, '/api/v1', orbLivekitRouter, { owner: 'orb-livekit' });
+  mountRouterSync(app, '/api/v1', oasisEmitRouter, { owner: 'oasis-emit' });
 
   // VTID-LIVEKIT-TOOLS: Vitana Index endpoints used by the LiveKit tool catalogue
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-03152: journey-foundation endpoints.
+  mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
+  mountRouterSync(app, '/api/v1/goal-plan', goalPlannerRouter, { owner: 'goal-planner' });
+  mountRouterSync(app, '/api/v1/landing-route', landingRouteRouter, { owner: 'landing-route' });
 
   // VTID-LIVEKIT-TOOLS: dispatcher endpoint that wraps every tool whose Vertex
   // implementation is inline-only in orb-live.ts. Single POST /api/v1/orb/tool
@@ -697,6 +733,131 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-02766: Voice Tools Catalog (developer-tier)
   mountRouterSync(app, '/api/v1/voice-tools', voiceToolsCatalogRouter, { owner: 'voice-tools-catalog' });
+
+  // VTID-02857: Voice configuration (Providers & Voice screen)
+  // GET/PUT /api/v1/voice/config + GET /api/v1/voice/tts-voices + POST /api/v1/voice/preview
+  const voiceConfigRouter = require('./routes/voice-config').default;
+  mountRouterSync(app, '/api/v1', voiceConfigRouter, { owner: 'voice-config' });
+
+  // VTID-02859: Voice Awareness Watchdogs (Voice / Awareness / Watchdogs sub-tab)
+  // GET /api/v1/voice/awareness/watchdogs
+  const voiceAwarenessRouter = require('./routes/voice-awareness').default;
+  mountRouterSync(app, '/api/v1', voiceAwarenessRouter, { owner: 'voice-awareness' });
+
+  // VTID-02865: Voice Improve cockpit (Voice / Improve tab)
+  // GET /api/v1/voice/improvement/briefing + POST /items/:id/create-vtid
+  const voiceImproveRouter = require('./routes/voice-improve').default;
+  mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
+
+  // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
+  // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
+  const testContractsRouter = require('./routes/test-contracts').default;
+  mountRouterSync(app, '/api/v1', testContractsRouter, { owner: 'test-contracts' });
+
+  // VTID-02957 (PR-L2): Missing-Test Scanner — discover capabilities with no contract
+  // GET /api/v1/test-contracts/missing + POST /api/v1/test-contracts/missing/:key/allocate
+  const testContractsMissingRouter = require('./routes/test-contracts-missing').default;
+  mountRouterSync(app, '/api/v1', testContractsMissingRouter, { owner: 'test-contracts-missing' });
+
+  // VTID-02958 (PR-L3): Failure Scanner — scheduled tick that runs every
+  // live_probe contract, debounces flake, allocates repair VTIDs on real
+  // failures, quarantines after 3 repair attempts in 24h.
+  // POST /api/v1/test-contracts/scheduled-run (internal/admin)
+  // GET  /api/v1/test-contracts/:id/runs (dev access)
+  const testContractsScheduledRouter = require('./routes/test-contracts-scheduled').default;
+  mountRouterSync(app, '/api/v1', testContractsScheduledRouter, { owner: 'test-contracts-scheduled' });
+
+  // VTID-02970 (PR-L5): Repair pattern memory — every verified successful
+  // repair anchored to (fault_signature, capability) so the failure
+  // scanner can fast-track recurrences.
+  // GET /api/v1/test-contracts/patterns + POST + POST /:id/quarantine
+  const repairPatternsRouter = require('./routes/repair-patterns').default;
+  mountRouterSync(app, '/api/v1', repairPatternsRouter, { owner: 'repair-patterns' });
+
+  // VTID-02909 (B0c): Journey Context inspection (Voice / Journey Context tab)
+  // GET /api/v1/voice/journey-context/preview + GET /api/v1/voice/journey-context/state
+  const voiceJourneyContextRouter = require('./routes/voice-journey-context').default;
+  mountRouterSync(app, '/api/v1', voiceJourneyContextRouter, { owner: 'voice-journey-context' });
+
+  // VTID-02917 (B0d.3): ORB Wake Reliability Timeline
+  // GET /api/v1/voice/wake-timeline + GET /api/v1/voice/wake-timeline/recent
+  const voiceWakeTimelineRouter = require('./routes/voice-wake-timeline').default;
+  mountRouterSync(app, '/api/v1', voiceWakeTimelineRouter, { owner: 'voice-wake-timeline' });
+
+  // VTID-02923 (B0e.3): Feature Discovery inspection (read-only).
+  // GET /api/v1/voice/feature-discovery/preview
+  const voiceFeatureDiscoveryRouter = require('./routes/voice-feature-discovery').default;
+  mountRouterSync(app, '/api/v1', voiceFeatureDiscoveryRouter, { owner: 'voice-feature-discovery' });
+  // Register the B0e.2 Feature Discovery provider with the default
+  // continuation registry, bound to the real Supabase-backed fetcher.
+  // Side-effect import: safe across hot-reloads (idempotent).
+  const { ensureFeatureDiscoveryRegistered } = require('./services/assistant-continuation/providers/feature-discovery');
+  const { defaultSupabaseCapabilityFetcher } = require('./services/capability-awareness/supabase-capability-fetcher');
+  ensureFeatureDiscoveryRegistered(defaultSupabaseCapabilityFetcher);
+
+  // VTID-02924 (B0e.4): capability awareness event ingestion (the ONLY
+  // mutation entrypoint for the awareness ladder). POST /api/v1/voice/
+  // feature-discovery/event.
+  const voiceFeatureDiscoveryEventRouter = require('./routes/voice-feature-discovery-event').default;
+  mountRouterSync(app, '/api/v1', voiceFeatureDiscoveryEventRouter, { owner: 'voice-feature-discovery-event' });
+
+  // VTID-03062 (B0d-real Xf.2): Contextual Next Action accepted/dismissed
+  // lifecycle. POST /api/v1/voice/next-action/event with
+  // {decisionId, dedupeKey, eventName: 'accepted'|'dismissed', source?,
+  //  surface?, occurredAt?, metadata?}. Emits OASIS
+  // orb.livekit.next_action.{accepted,dismissed}. Complements Xf.1's
+  // auto-emitted suggested/suppressed events.
+  const voiceNextActionEventRouter = require('./routes/voice-next-action-event').default;
+  mountRouterSync(app, '/api/v1', voiceNextActionEventRouter, { owner: 'voice-next-action-event' });
+
+  // VTID-03094 (Teacher PR 4): Teacher lifecycle endpoint —
+  // POST /api/v1/voice/teacher/event. Calls the advance_capability_awareness
+  // RPC, emits capability.awareness.* OASIS events from the central
+  // registry, returns a navigate directive on 'introduced' events when
+  // the chosen capability has a manual_path.
+  const voiceTeacherEventRouter = require('./routes/voice-teacher-event').default;
+  mountRouterSync(app, '/api/v1', voiceTeacherEventRouter, { owner: 'voice-teacher-event' });
+
+  // VTID-03095 (Teacher PR 5): Teach Vitanaland inspector route — admin-only.
+  // GET /api/v1/voice/teach-vitanaland/state?user_id=<uuid>
+  // Returns catalog + per-user ledger + greeting/invitation pools for the
+  // Command Hub "Teach Vitanaland" sub-tab.
+  const voiceTeachInspectorRouter = require('./routes/voice-teach-inspector').default;
+  mountRouterSync(app, '/api/v1', voiceTeachInspectorRouter, { owner: 'voice-teach-inspector' });
+
+  // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
+  // surface that groups recent B0d-real OASIS events by decision_id.
+  // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
+  // Auth: requireExafyAdmin (exposes operator-grade decision metadata).
+  const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
+  mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
+
+  // VTID-03064 (B0d-real Xg): turn-end activation endpoint. The LiveKit
+  // agent calls this after each generate_reply to fetch the next-action
+  // continuation it should speak as a closing doorway.
+  // POST /api/v1/voice/next-action/turn-end.
+  const voiceNextActionTurnEndRouter = require('./routes/voice-next-action-turn-end').default;
+  mountRouterSync(app, '/api/v1', voiceNextActionTurnEndRouter, { owner: 'voice-next-action-turn-end' });
+
+  // VTID-02930 (B1): Greeting Decay preview (read-only simulator).
+  // GET /api/v1/voice/greeting-policy/preview
+  const voiceGreetingPolicyRouter = require('./routes/voice-greeting-policy').default;
+  mountRouterSync(app, '/api/v1', voiceGreetingPolicyRouter, { owner: 'voice-greeting-policy' });
+
+  // VTID-02932 (B2): Conversation Continuity preview (read-only).
+  // GET /api/v1/voice/continuity/preview
+  const voiceContinuityRouter = require('./routes/voice-continuity').default;
+  mountRouterSync(app, '/api/v1', voiceContinuityRouter, { owner: 'voice-continuity' });
+
+  // VTID-02936 (B3): Concept Mastery preview (read-only).
+  // GET /api/v1/voice/concept-mastery/preview
+  const voiceConceptMasteryRouter = require('./routes/voice-concept-mastery').default;
+  mountRouterSync(app, '/api/v1', voiceConceptMasteryRouter, { owner: 'voice-concept-mastery' });
+
+  // VTID-02937 (B4): Tenure & Journey Stage preview (read-only).
+  // GET /api/v1/voice/journey-stage/preview
+  const voiceJourneyStageRouter = require('./routes/voice-journey-stage').default;
+  mountRouterSync(app, '/api/v1', voiceJourneyStageRouter, { owner: 'voice-journey-stage' });
 
   // AI Personality Configuration API
   mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
@@ -843,12 +1004,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
+  // VTID-03107: Billing v1 — customer-side Stripe + redemption codes + admin code mgmt
+  mountRouterSync(app, '/api/v1/billing', billingRouter, { owner: 'billing' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
 
   // Chat — User-to-user direct messaging
   mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });
+  // Group chat — VTID-03089. Mounted under /api/v1/chat/groups (sibling of DM endpoints).
+  mountRouterSync(app, '/api/v1/chat/groups', chatGroupsRouter, { owner: 'chat-groups' });
 
   // VTID-01967: Vitana ID resolver + onboarding pick + admin lookup.
   // Mounted under /api/v1/users so /resolve and /me/vitana-id/* are siblings;
@@ -856,6 +1021,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/users', usersResolveRouter, { owner: 'users-resolve' });
   mountRouterSync(app, '/api/v1/users', usersVitanaIdRouter, { owner: 'users-vitana-id' });
   mountRouterSync(app, '/api/v1/admin', adminUsersLookupRouter, { owner: 'admin-users-lookup' });
+  // Phase 0 staging build (P0.3): /admin/health + /admin/build-info — auth-free
+  // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
+  mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
 
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
@@ -947,6 +1115,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification
   mountRouterSync(app, '/api/v1/self-healing', selfHealingRouter, { owner: 'self-healing' });
+  // PR-I (VTID-02949): canary mounted at a conventional path so the
+  // diagnosis layer (analyzeCodebase + analyzeWorkflow) infers the
+  // canary's route file from ENDPOINT_FILE_MAP. This is what unblocks
+  // the autopilot bridge from proposing edits to index.ts.
+  mountRouterSync(app, '/api/v1/canary-target', canaryTargetRouter, { owner: 'self-healing' });
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
@@ -1199,6 +1372,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-03107: Billing v1 — trial lifecycle notification worker.
+      // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
+      try {
+        const { startLifecycleNotificationWorker } = require('./services/lifecycle-notification-worker');
+        startLifecycleNotificationWorker();
+      } catch (error) {
+        console.warn('⚠️ Lifecycle notification worker startup failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize recommendation scheduler (autonomous self-improvement)
       try {
         const { startScheduler } = require('./services/recommendation-engine/scheduler');
@@ -1333,6 +1515,29 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('🧠 AI Personality config cache pre-warmed');
       } catch (error) {
         console.warn('⚠️ AI Personality cache warm failed (non-fatal, using defaults):', error);
+      }
+
+      // VTID-03116 (Phase B.3): pre-warm the PolicyResolver cache so the
+      // first inbound request can sync-read from `decision_policy` /
+      // `policy_render_block`. Warm failure is non-fatal — the resolver
+      // falls back to caller-supplied defaultValue, never crashes.
+      try {
+        const { warmPolicyResolverCache } = require('./services/decision-contract');
+        await warmPolicyResolverCache();
+        console.log('📜 PolicyResolver cache pre-warmed (decision-contract Phase B.3)');
+      } catch (error) {
+        console.warn('⚠️ PolicyResolver cache warm failed (non-fatal, using defaults):', error);
+      }
+
+      // VTID-03142 (Phase D42): pre-warm the ConflictPairResolver cache so
+      // the fusion engine's first conflict check sync-reads from
+      // decision_conflict_pair. Warm failure falls back to literals.
+      try {
+        const { warmConflictPairCache } = require('./services/decision-contract/conflict-pair-resolver');
+        await warmConflictPairCache();
+        console.log('📜 ConflictPairResolver cache pre-warmed (decision-contract D42)');
+      } catch (error) {
+        console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
       }
 
       // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh

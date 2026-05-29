@@ -54,7 +54,22 @@ export interface CommitInfo {
 export interface CodebaseAnalysis {
   route_file: string | null;
   route_file_exists: boolean;
+  /** Held in memory during a single diagnosis run for regex checks; STRIPPED
+   * by redactDiagnosisForPersistence() before any write to self_healing_log
+   * or vtid_ledger.metadata. Use route_file_excerpt for durable storage. */
   route_file_content: string | null;
+  /** Where the source was read from. 'fs' = local container filesystem;
+   * 'github_deployed_sha' = GitHub Contents API at the SHA the running
+   * revision was built from (read from BUILD_INFO); 'github_main' =
+   * last-resort fallback against ref=main. */
+  route_file_source?: 'fs' | 'github_deployed_sha' | 'github_main';
+  /** SHA of the resolved file content (when fetched via GitHub) or null
+   * for filesystem reads. Lets us detect drift between diagnosis time and
+   * any subsequent fix attempt. */
+  route_file_sha?: string | null;
+  /** Short ≤500-char excerpt around the matched health handler, safe for
+   * persistence. Populated alongside route_file_content. */
+  route_file_excerpt?: string | null;
   health_handler_exists: boolean;
   handler_has_errors: boolean;
   error_description: string | null;
@@ -165,10 +180,13 @@ export interface SelfHealingReportResponse {
   processed: number;
   vtids_created: number;
   skipped: number;
+  /** Count of failures that the pre-probe found already healthy at report
+   * time — no VTID allocated, no self_healing_log row written. */
+  recovered_externally?: number;
   details: Array<{
     service: string;
     endpoint: string;
-    action: 'created' | 'skipped' | 'escalated' | 'disabled';
+    action: 'created' | 'skipped' | 'escalated' | 'disabled' | 'recovered_externally';
     vtid?: string;
     reason?: string;
   }>;
@@ -190,6 +208,11 @@ export const ENDPOINT_FILE_MAP: Record<string, string> = {
   '/api/v1/assistant/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/assistant/knowledge/health': 'services/gateway/src/routes/assistant.ts',
   '/api/v1/orb/health': 'services/gateway/src/routes/orb-live.ts',
+  // PR-I (VTID-02949): operator-armed canary at a CONVENTIONAL mount
+  // path so diagnosis lands on the route file (canary-target.ts), not
+  // services/gateway/src/index.ts. Replaces the PR-A canary which
+  // mounted at `/` and made the endpoint→file mapping ambiguous.
+  '/api/v1/canary-target/health': 'services/gateway/src/routes/canary-target.ts',
   '/api/v1/voice-lab/health': 'services/gateway/src/routes/voice-lab.ts',
   '/api/v1/conversation/health': 'services/gateway/src/routes/conversation.ts',
   '/api/v1/conversation/tool-health': 'services/gateway/src/routes/conversation.ts',

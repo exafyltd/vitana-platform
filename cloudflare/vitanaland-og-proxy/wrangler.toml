@@ -9,7 +9,27 @@ compatibility_date = "2024-10-01"
 # Route binding (configure in the Cloudflare dashboard for the Worker):
 #   e.vitanaland.com/*   →   vitanaland-og-proxy
 #
-# The worker reads:
-#   - Supabase Edge Functions at inmkhvwdcuyhnxkgfvsb.supabase.co  (events/profiles/rooms/matches OG)
-#   - Gateway at gateway-q74ibpv6ia-uc.a.run.app  (marketplace product OG, inline)
-# Both are constants in worker.js; no secrets required.
+# The worker reads (with env-var overrides — Phase 0 staging build):
+#   - GATEWAY_URL (default: prod gateway-q74ibpv6ia-uc.a.run.app)
+#   - SUPABASE_FUNCTIONS (default: prod inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1)
+# No secrets required; both URLs are public.
+
+# Phase 0 staging build (handoff brief P0.6):
+# `wrangler deploy --env staging` ships a sibling worker at a *.workers.dev URL
+# that points at gateway-staging + the Supabase `staging` branch. No DNS
+# changes — *.workers.dev is fine for the experiment window. When the parent
+# session decides staging needs a custom subdomain, add it under
+# `[env.staging.routes]` here.
+[env.staging]
+name = "vitanaland-og-proxy-staging"
+
+[env.staging.vars]
+# Gateway URL: update this to the staging Cloud Run service URL after P0.2
+# runs `gcloud run deploy gateway-staging`. The default *.run.app URL pattern
+# is https://gateway-staging-<hash>-uc.a.run.app — paste the exact value the
+# Cloud Run console shows once provisioned.
+GATEWAY_URL = "https://gateway-staging-86804897789.us-central1.run.app"
+# Supabase functions URL on the staging branch. After P0.1 creates the
+# persistent `staging` branch, the dashboard shows the branch host (looks
+# like https://<branch-ref>.supabase.co); replace this string accordingly.
+SUPABASE_FUNCTIONS = "https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1"

@@ -49,13 +49,15 @@ interface MatchRow {
   target_id: string;
   score: number;
   reasons: any;
-  match_targets: {
-    display_name: string;
-    topic_keys: string[];
-    tags: string[];
-    metadata: any;
-    target_type: string;
-  };
+}
+
+interface MatchTargetRow {
+  id: string;
+  display_name: string | null;
+  topic_keys: string[] | null;
+  tags: string[] | null;
+  metadata: any;
+  target_type: string | null;
 }
 
 // =============================================================================
@@ -174,23 +176,19 @@ export async function sendProactiveMatchMessages(
       };
     }
 
-    // Step 2: Fetch top matches
+    // Step 2: Fetch top matches.
+    // NOTE: We deliberately do NOT use a PostgREST embed (match_targets!inner)
+    // here. The embed relies on PostgREST discovering the matches_daily ->
+    // match_targets FK in its schema cache. Production schema drift (FK absent
+    // on the deployed table) made that lookup fail with a PGRST200
+    // "Could not find a relationship ... in the schema cache" error, which
+    // bypassed the table-not-deployed fallback below and threw, spamming
+    // match.proactive.error. Fetching match_targets in a separate query (Step
+    // 2b) removes that dependency entirely and matches how matches_daily is
+    // read elsewhere in the gateway.
     const { data: matches, error: matchError } = await supabase
       .from('matches_daily')
-      .select(`
-        id,
-        match_type,
-        target_id,
-        score,
-        reasons,
-        match_targets!inner (
-          display_name,
-          topic_keys,
-          tags,
-          metadata,
-          target_type
-        )
-      `)
+      .select('id, match_type, target_id, score, reasons')
       .eq('user_id', user_id)
       .eq('match_date', date)
       .eq('state', 'suggested')
@@ -199,9 +197,18 @@ export async function sendProactiveMatchMessages(
       .limit(max_matches);
 
     if (matchError) {
-      // Graceful fallback if migration not deployed
-      if (matchError.message.includes('does not exist') || matchError.message.includes('relation')) {
-        console.warn(`[${VTID}] matches_daily table not available, skipping`);
+      // Graceful fallback if migration not deployed or schema drift on the
+      // matches_daily table (missing table/column/relationship). These are
+      // operational/data issues, not code faults — skip quietly instead of
+      // emitting a P0 error event.
+      const m = matchError.message || '';
+      if (
+        m.includes('does not exist') ||
+        m.includes('relation') ||
+        m.includes('Could not find') ||
+        m.includes('schema cache')
+      ) {
+        console.warn(`[${VTID}] matches_daily unavailable (schema drift?), skipping: ${m}`);
         return {
           ok: true,
           user_id,
@@ -211,7 +218,7 @@ export async function sendProactiveMatchMessages(
         };
       }
 
-      throw new Error(`Match query failed: ${matchError.message}`);
+      throw new Error(`Match query failed: ${m}`);
     }
 
     if (!matches || matches.length === 0) {
@@ -235,6 +242,37 @@ export async function sendProactiveMatchMessages(
       };
     }
 
+    // Step 2b: Fetch match target details in a separate query (no embed).
+    // Resilient to a missing/drifted matches_daily -> match_targets FK.
+    const typedMatches = matches as unknown as MatchRow[];
+    const targetIds = [...new Set(typedMatches.map((m) => m.target_id).filter(Boolean))];
+    const targetMap = new Map<string, MatchTargetRow>();
+    if (targetIds.length > 0) {
+      const { data: targets, error: targetError } = await supabase
+        .from('match_targets')
+        .select('id, display_name, topic_keys, tags, metadata, target_type')
+        .in('id', targetIds);
+
+      if (targetError) {
+        // Non-fatal: degrade to display_name fallbacks rather than dropping
+        // the whole proactive message. Only surface as an error if it is not a
+        // known schema-availability issue.
+        const tm = targetError.message || '';
+        if (
+          !tm.includes('does not exist') &&
+          !tm.includes('relation') &&
+          !tm.includes('Could not find') &&
+          !tm.includes('schema cache')
+        ) {
+          console.warn(`[${VTID}] match_targets lookup failed, using fallbacks: ${tm}`);
+        }
+      }
+
+      for (const t of (targets || []) as MatchTargetRow[]) {
+        targetMap.set(t.id, t);
+      }
+    }
+
     // Step 3: Get total count for context
     const { count: totalCount } = await supabase
       .from('matches_daily')
@@ -256,8 +294,8 @@ export async function sendProactiveMatchMessages(
     }
 
     // Step 5: Build match previews
-    const matchPreviews = (matches as unknown as MatchRow[]).map((m) => {
-      const target = m.match_targets;
+    const matchPreviews = typedMatches.map((m) => {
+      const target = targetMap.get(m.target_id);
       let displayName = target?.display_name || 'Unknown';
 
       if (m.match_type === 'person' && revealMode === 'anonymous') {

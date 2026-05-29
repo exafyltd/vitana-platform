@@ -22,6 +22,13 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { CicdEventType } from '../types/cicd';
+// VTID-03182 (D39 PR 5d — vertical proof): simplicity scoring now
+// reads through the compatibility-resolver boundary. The cold
+// fallback in the resolver is byte-identical to the inline scoreMap
+// this function used to carry, so behaviour is unchanged at rollout.
+// Other 8 D39 scoring functions still use inline literals; PR 5e
+// sweeps them.
+import { getCompatibilityResolver } from './decision-contract';
 import {
   TasteProfile,
   LifestyleProfile,
@@ -141,15 +148,22 @@ function scoreSimplicityAlignment(
   userPref: SimplicityPreference,
   actionComplexity: 'simple' | 'moderate' | 'complex' | undefined
 ): number {
-  if (!actionComplexity) return 0.5; // Neutral if unknown
-
-  const scoreMap: Record<SimplicityPreference, Record<string, number>> = {
-    minimalist: { simple: 1.0, moderate: 0.6, complex: 0.2 },
-    balanced: { simple: 0.7, moderate: 1.0, complex: 0.7 },
-    comprehensive: { simple: 0.4, moderate: 0.7, complex: 1.0 }
-  };
-
-  return scoreMap[userPref][actionComplexity] ?? 0.5;
+  // Neutral if the candidate carries no complexity attribute.
+  // Preserved at the call-site so we don't push `undefined` through
+  // the resolver's typed string-key API.
+  if (!actionComplexity) return 0.5;
+  // VTID-03182 (D39 PR 5d): score lookup now lives behind the
+  // compatibility-resolver boundary. The resolver's cold-cache
+  // fallback is byte-identical to the inline scoreMap this function
+  // used to carry, and its final `?? 0.5` tail matches the old
+  // unknown-key behaviour. No tenant context is threaded here; the
+  // scoring function signature does not (yet) carry tenant scope —
+  // that widening lands when a caller actually wants per-tenant D39.
+  return getCompatibilityResolver().getCompatibilityScore(
+    'simplicity',
+    userPref,
+    actionComplexity,
+  );
 }
 
 /**

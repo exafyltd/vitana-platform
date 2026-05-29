@@ -26,7 +26,12 @@ import type { LLMStage } from '../constants/llm-defaults';
 
 const STAGE: LLMStage = 'triage';
 const SERVICE_TAG = 'feedback-llm-resolvers';
-const MAX_TOKENS = 1500;
+// VTID-03034: Gemini 2.5 Pro (current triage primary) burns 1-3k tokens on
+// chain-of-thought before emitting visible output, so a 1500 cap truncates
+// the spec mid-sentence — the very first call against
+// FB-2026-05-000083 stored a 328-char draft ending at "Alternatively, `services".
+// Give the model headroom for thinking + a full one-page spec.
+const MAX_TOKENS = 8000;
 
 interface FeedbackTicketSnapshot {
   id: string;

@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-03-30-v2';
+  var _WIDGET_VERSION = '2026-05-08-vtid-02034b-stale-instance-404';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -175,6 +175,18 @@
     _audioSendFailCount: 0,          // consecutive _sendAudio failures
     _audioSendFailWindowStart: 0,    // timestamp of first fail in current window
 
+    // VTID-02034b: silent re-register budget for cross-instance 404s on
+    // /live/stream/send. The gateway holds liveSessions in an in-memory
+    // per-instance Map; Cloud Run round-robins, so an audio POST may land
+    // on an instance that doesn't have our session and respond 404. That
+    // is NOT a network outage — _handleStaleSessionInstance re-registers
+    // silently up to SILENT_REREGISTER_MAX times in
+    // SILENT_REREGISTER_WINDOW_MS before falling through to the real
+    // disconnect alert.
+    _silentReregisterCount: 0,
+    _silentReregisterWindowStart: 0,
+    _silentReregisterPending: false,
+
     // BOOTSTRAP-ORB-MODERN-RECOVERY: cached neural-voice MP3 alert clips +
     // hardened reconnect state. _alertBuffers holds AudioBuffers preloaded
     // at widget init so they play even when the network is dead.
@@ -187,6 +199,13 @@
     _isReconnecting: false,
     _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
     _disconnectStuck: false,
+    // VTID-03098: user-initiated stop guard. Set true at the top of
+    // _sessionStop (X button / VitanaOrb.hide() / signup-close), cleared at
+    // the top of _sessionStart. While true, _announceDisconnect and
+    // _resetAndReconnect both short-circuit so a spurious onerror from the
+    // manually-closed EventSource (Android WebView fires it; spec is murky)
+    // never spawns a fresh session in the background.
+    _userInitiatedStop: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -641,6 +660,13 @@
   }
 
   function _announceDisconnect(reason) {
+    // VTID-03098: never announce a disconnect during user-initiated teardown
+    // or when the overlay is already closed. Either condition means the
+    // session is supposed to be ending; treating the close as a network
+    // disconnect arms _recoveryWatchdog and spawns a fresh session in the
+    // background ~5s after the X press.
+    if (_s._userInitiatedStop) return;
+    if (!_s.overlayVisible) return;
     if (_s._disconnectActive) return; // debounce
     _s._disconnectActive = true;
     _s._disconnectReason = reason;
@@ -774,6 +800,17 @@
   // by the orb-tap handler when the user taps an orb that's stuck on the
   // disconnect display, and by the 60s watchdog as a last-resort recovery.
   function _resetAndReconnect() {
+    // VTID-03098: refuse to reconnect when the user has closed the overlay
+    // or when _sessionStop has been initiated. This is the last line of
+    // defense — both the SSE-handler detach in _sessionStop and the
+    // _userInitiatedStop guard in _announceDisconnect should prevent us
+    // from getting here, but if any future code path manages to call this
+    // function after the user pressed X, fail closed instead of spawning a
+    // background session.
+    if (_s._userInitiatedStop || !_s.overlayVisible) {
+      console.log('[VTOrb] _resetAndReconnect: skipped — overlay closed or stop in progress');
+      return;
+    }
     console.log('[VTOrb] _resetAndReconnect: forcing full session restart');
     _stopWatchdog();
     if (_s.captureStream) {
@@ -816,6 +853,11 @@
   // ============================================================
 
   function _playAudio(base64Data, mimeType) {
+    // Belt-and-suspenders: drop chunks that arrive after a user-initiated stop
+    // or while the overlay is hidden. _processQueue auto-recreates a closed
+    // playbackCtx, so without this guard any late SSE audio (e.g. from a racy
+    // _sessionStart that resolved after _sessionStop) plays in the background.
+    if (_s._userInitiatedStop || !_s.overlayVisible) return;
     _s.audioQueue.push({ data: base64Data, mime: mimeType });
     _processQueue();
   }
@@ -930,6 +972,11 @@
     if (_s.active) return;
     console.log('[VTOrb] Starting Gemini Live session...');
 
+    // VTID-03098: clear the user-initiated-stop flag at the start of every
+    // session so a fresh tap on the orb can connect normally. The flag is
+    // only meant to guard the teardown window between _sessionStop and the
+    // next intentional _sessionStart.
+    _s._userInitiatedStop = false;
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
     // call. It used to only get reset in _sessionStop (full session teardown),
@@ -1006,7 +1053,7 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 1200
+        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
       };
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
@@ -1056,8 +1103,38 @@
       });
       if (startTimer) clearTimeout(startTimer);
 
+      // Bail out if the user pressed X (or the overlay was hidden) while the
+      // session/start fetch was in flight. Without this, _sessionStart goes on
+      // to attach SSE + play the greeting audio after the overlay is already
+      // gone, which is the "Vitana keeps speaking in the background after the
+      // first close" symptom. The gateway hasn't returned a session_id yet at
+      // this point, so there's nothing to tear down upstream.
+      if (_s._userInitiatedStop || !_s.overlayVisible) {
+        console.log('[VTOrb] _sessionStart: aborted after fetch — overlay closed during start handshake');
+        return;
+      }
+
       var data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Failed to start session');
+
+      // Same guard, after the response body is parsed. This is the load-bearing
+      // check: we now have data.session_id, so we must POST /live/session/stop
+      // to release the upstream Gemini Live session — otherwise the gateway
+      // leaks it. Return BEFORE setting _s.sessionId / _s.active / opening SSE.
+      if (_s._userInitiatedStop || !_s.overlayVisible) {
+        console.log('[VTOrb] _sessionStart: aborted after json — cleaning up stranded session_id=' + (data && data.session_id));
+        if (data && data.session_id) {
+          try {
+            fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
+              method: 'POST',
+              headers: headers,
+              body: JSON.stringify({ session_id: data.session_id }),
+              keepalive: true,
+            }).catch(function () { /* ignore */ });
+          } catch (e) { /* ignore */ }
+        }
+        return;
+      }
 
       _s.sessionId = data.session_id;
       _s.active = true;
@@ -1119,8 +1196,22 @@
 
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
+    // VTID-03098: mark this as a user-initiated stop BEFORE any teardown.
+    // Anything that fires synchronously as a result of the teardown (SSE
+    // onerror on Android WebView, residual disconnect-recovery probes,
+    // setTimeout reconnect callbacks) must see this flag and bail.
+    _s._userInitiatedStop = true;
     _stopWatchdog();
     clearTimeout(_s._listeningIdleTimer);
+
+    // VTID-03098: always cancel the disconnect-recovery probe, even when
+    // _disconnectActive is false. The probe is a 5s setInterval started by
+    // _announceDisconnect; if any earlier onerror (manual close on Android,
+    // half-open socket race) armed it without flipping _disconnectActive
+    // back into the alert state we still observe, leaving it running would
+    // wake a brand-new session in the background after the user pressed X.
+    clearInterval(_s._recoveryWatchdog);
+    _s._recoveryWatchdog = null;
 
     // Cancel any pending disconnect alert silently — session is ending, so no
     // "we're back" phrase. (Alert clips are short BufferSources that finish
@@ -1131,8 +1222,6 @@
       _s._preDisconnectVoiceState = null;
       _s._disconnectStuck = false;
       _s._isReconnecting = false;
-      clearInterval(_s._recoveryWatchdog);
-      _s._recoveryWatchdog = null;
     }
 
     // Stop mic
@@ -1156,8 +1245,21 @@
     _s.greetingAudioReceived = false;
     _s.lastScheduledEnd = 0;
 
-    // Close SSE
-    if (_s.eventSource) { _s.eventSource.close(); _s.eventSource = null; }
+    // Close SSE — VTID-03098: detach handlers FIRST so the manual close
+    // cannot trip the auto-reconnect cascade through es.onerror. The
+    // EventSource spec does not require onerror to fire on close(), but
+    // Android Appilix WebView observably does fire it, and the handler
+    // bound below calls _announceDisconnect → _recoveryWatchdog (5s
+    // health probe) → _resetAndReconnect → _sessionStart, which is
+    // exactly the "background greeting after the X" symptom this fixes.
+    if (_s.eventSource) {
+      var __es = _s.eventSource;
+      _s.eventSource = null;
+      try { __es.onopen = null; } catch (e) { /* noop */ }
+      try { __es.onmessage = null; } catch (e) { /* noop */ }
+      try { __es.onerror = null; } catch (e) { /* noop */ }
+      try { __es.close(); } catch (e) { /* noop */ }
+    }
 
     // Stop backend session
     if (_s.sessionId) {
@@ -1623,6 +1725,29 @@
               }, 200);
             }, 300);
           })();
+        } else if (msg.directive === 'end_teaching_session') {
+          // VTID-03112 (T2 / DEV-COMHU-03115): the LLM called `end_teaching_session` after
+          // delivering its farewell line. Close the overlay gracefully —
+          // give the audio queue a moment to finish playing the farewell
+          // before the SSE/WS tear down. Mirrors the navigate directive's
+          // teardown pattern so the closing chime + state cleanup behave
+          // identically.
+          console.log('[VTOrb] orb_directive end_teaching_session (reason=' + (msg.reason || '<none>') + ')');
+          try {
+            // Stop accepting new audio chunks but let the queued farewell
+            // finish playing — _hide() is invoked after a short delay.
+            _s.audioPlaying = false;
+            setTimeout(function() {
+              try { _hide(); }
+              catch (e) { console.error('[VTOrb] _hide on end_teaching_session failed:', e); }
+            }, 500);
+            if (typeof _cfg.onTeachingSessionEnd === 'function') {
+              try { _cfg.onTeachingSessionEnd(msg.reason || null); }
+              catch (e) { console.error('[VTOrb] onTeachingSessionEnd handler failed:', e); }
+            }
+          } catch (e) {
+            console.error('[VTOrb] end_teaching_session handling error:', e);
+          }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }
@@ -1777,6 +1902,16 @@
         _s._audioSendFailCount = 0;
         return;
       }
+      // VTID-02034b: 404 means this Cloud Run instance doesn't hold our
+      // session — the gateway's liveSessions Map is in-memory + per-instance
+      // and Cloud Run round-robins. The network is fine; we just hit the
+      // wrong instance. Trigger a silent re-register instead of firing the
+      // user-visible "internet issues" disconnect alert. _handleStaleSessionInstance
+      // bounds this so a degenerate 404-storm still surfaces normally.
+      if (r.status === 404) {
+        _handleStaleSessionInstance();
+        return;
+      }
       if (!_s._audioSendErrorLogged) {
         _s._audioSendErrorLogged = true;
         console.error('[VTOrb] Audio send failed: HTTP ' + r.status);
@@ -1789,6 +1924,58 @@
       }
       _registerAudioSendFailure();
     });
+  }
+
+  // VTID-02034b: handle a 404 from /live/stream/send (the request landed
+  // on a Cloud Run gateway instance that doesn't hold our session) by
+  // silently re-registering the session on whatever instance answers next.
+  // The widget's normal _registerAudioSendFailure path can't tell a stale-
+  // instance 404 apart from a real network failure, so it would fire the
+  // "internet issues" alert + tear down the conversation on every cross-
+  // instance round-robin hop. This carve-out keeps the conversation alive
+  // through the round-robin, while still falling through to the real
+  // disconnect flow if every instance keeps returning 404 (the budget is
+  // SILENT_REREGISTER_MAX in SILENT_REREGISTER_WINDOW_MS).
+  //
+  // The proper fix is a shared liveSessions store (Redis/Supabase) so any
+  // gateway instance can serve any session — see the VTID-02036 revert
+  // note. This client-side carve-out is the minimal change that stops
+  // the user-visible loop until that lands.
+  var SILENT_REREGISTER_MAX = 2;
+  var SILENT_REREGISTER_WINDOW_MS = 30000;
+  function _handleStaleSessionInstance() {
+    if (_s._disconnectActive) return;
+    if (_s._silentReregisterPending) return;
+    var now = Date.now();
+    if (now - _s._silentReregisterWindowStart > SILENT_REREGISTER_WINDOW_MS) {
+      _s._silentReregisterWindowStart = now;
+      _s._silentReregisterCount = 0;
+    }
+    if (_s._silentReregisterCount >= SILENT_REREGISTER_MAX) {
+      // Budget exhausted — every instance is returning 404. Fall through to
+      // the user-visible disconnect path so the user knows something is up.
+      console.warn('[VTOrb] silent re-register budget exhausted ('
+        + _s._silentReregisterCount + '/' + SILENT_REREGISTER_MAX
+        + ') — surfacing as network disconnect');
+      _announceDisconnect('network');
+      return;
+    }
+    _s._silentReregisterCount++;
+    _s._silentReregisterPending = true;
+    console.warn('[VTOrb] /live/stream/send → 404 (cross-instance) — '
+      + 'silent re-register #' + _s._silentReregisterCount
+      + '/' + SILENT_REREGISTER_MAX);
+    // Suppress audio-send error spam during the re-register so a burst of
+    // in-flight 404s on already-queued chunks doesn't pollute the console.
+    _s._audioSendErrorLogged = true;
+    try { _resetAndReconnect(); } catch (e) {
+      console.error('[VTOrb] _resetAndReconnect threw during silent re-register:', e && e.message);
+    }
+    // Clear the pending flag after a short cooldown so a follow-up 404
+    // burst (very common while _resetAndReconnect is in flight) collapses
+    // into a single re-register, but a genuinely stuck state can still
+    // increment the counter and eventually exhaust the budget.
+    setTimeout(function () { _s._silentReregisterPending = false; }, 5000);
   }
 
   // Debounced trigger: only alert on the 2nd failure within a 3s window to
@@ -2165,6 +2352,7 @@
 
   function _show() {
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
+    _suppressSoundscape();
     // Refresh token and language on every show — picks up login/logout and language change
     _refreshToken();
     try {
@@ -2191,8 +2379,53 @@
     _sessionStart();
   }
 
+  // ============================================================
+  // HOST SOUNDSCAPE SUPPRESSION
+  // ============================================================
+  // The host app (vitana-v1) plays ambient background music ("Soundscape")
+  // through an <audio> element it exposes on window.__SOUNDSCAPE_AUDIO__.
+  // Vitana's voice is rendered through this widget's OWN AudioContext, which
+  // the host's media-precedence listeners can't observe — so without this the
+  // music keeps playing while Vitana speaks. We duck it for the whole overlay
+  // session (mirroring how Shorts/music/podcasts suppress it) and re-pause on
+  // any mid-session resume (e.g. a route effect calling startFresh()) via a
+  // one-shot 'play' guard. Self-contained: no host wiring required.
+  function _suppressSoundscape() {
+    try {
+      var a = window.__SOUNDSCAPE_AUDIO__;
+      if (!a || _s._soundscapeGuard) return; // already suppressing
+      _s._soundscapeWasPlaying = !a.paused;
+      _s._soundscapeGuard = function () {
+        // Anything that tries to resume the music while the orb is open gets
+        // immediately re-paused. Cleared by _restoreSoundscape().
+        try { a.pause(); } catch (e) { /* ignore */ }
+      };
+      if (!a.paused) { try { a.pause(); } catch (e) { /* ignore */ } }
+      a.addEventListener('play', _s._soundscapeGuard);
+      console.log('[VTOrb] Soundscape ducked for orb session (wasPlaying=' + _s._soundscapeWasPlaying + ')');
+    } catch (e) { /* host audio not present — nothing to suppress */ }
+  }
+
+  function _restoreSoundscape() {
+    try {
+      var a = window.__SOUNDSCAPE_AUDIO__;
+      if (_s._soundscapeGuard && a) {
+        a.removeEventListener('play', _s._soundscapeGuard);
+        // Only resume music we actually paused, and never override a user who
+        // muted or explicitly stopped it (muted => element stays paused+muted).
+        if (_s._soundscapeWasPlaying && a.paused && !a.muted) {
+          a.play().catch(function () { /* autoplay policy — leave paused */ });
+          console.log('[VTOrb] Soundscape resumed after orb session');
+        }
+      }
+    } catch (e) { /* ignore */ }
+    _s._soundscapeGuard = null;
+    _s._soundscapeWasPlaying = false;
+  }
+
   function _hide() {
     _sessionStop();
+    _restoreSoundscape();
     _s.overlayVisible = false;
     if (_root) {
       _root.classList.remove('vtorb-visible');
@@ -2268,9 +2501,9 @@
     _setOrbState('connecting');
 
     setTimeout(function () {
-      if (!_s.overlayVisible) {
+      if (!_s.overlayVisible || _s._userInitiatedStop) {
         _s._isReconnecting = false;
-        return; // User closed overlay
+        return; // User closed overlay / pressed X
       }
 
       // Clean up old session resources before retry
@@ -2497,6 +2730,7 @@
 
     destroy: function () {
       _sessionStop();
+      _restoreSoundscape();
       if (_root && _root.parentNode) _root.parentNode.removeChild(_root);
       if (_fab && _fab.parentNode) _fab.parentNode.removeChild(_fab);
       var css = document.getElementById('vtorb-css');
@@ -2532,3 +2766,4 @@
   };
 
 })(window);
+

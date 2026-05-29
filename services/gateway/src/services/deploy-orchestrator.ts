@@ -21,9 +21,19 @@ const DEFAULT_REPO = 'exafyltd/vitana-platform';
 export interface DeployRequest {
   vtid: string;
   service: 'gateway' | 'oasis-operator' | 'oasis-projector';
-  environment: 'dev';
+  // Phase 0 staging build: 'dev' kept for backwards compatibility with the
+  // legacy operator-deploy/command paths. 'staging' targets the gateway-staging
+  // Cloud Run service via STAGE-DEPLOY.yml; 'production' targets gateway via
+  // EXEC-DEPLOY.yml (the publish flow). VTID requirement still applies to
+  // 'production' (EXEC-DEPLOY governance gate enforces it).
+  environment: 'dev' | 'staging' | 'production';
   branch?: string;
   source: 'operator.console.chat' | 'publish.modal' | 'api';
+  // Voice-first canary: when true, deploy creates the new revision with
+  // --no-traffic and the workflow itself sets a 10/90 split (new=10, old=90).
+  // Operator then promotes via /operator/promote after watching staging
+  // metrics. Default false preserves the existing 100%-on-deploy behavior.
+  canary?: boolean;
 }
 
 // VTID-0407: Governance violation interface
@@ -196,7 +206,7 @@ async function evaluateGovernance(
  * VTID-0407: Now integrates governance evaluation before deployment.
  */
 export async function executeDeploy(request: DeployRequest): Promise<DeployResult> {
-  const { vtid, service, environment, source } = request;
+  const { vtid, service, environment, source, canary } = request;
 
   console.log(`[Deploy Orchestrator] Starting deploy for ${service} to ${environment} (VTID: ${vtid}, source: ${source})`);
 
@@ -242,6 +252,7 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
         service, // 'gateway', 'oasis-operator', or 'oasis-projector'
         health_path: '/alive',
         initiator: source === 'operator.console.chat' ? 'agent' : 'user',
+        canary: canary ? 'true' : 'false',
       }
     );
 

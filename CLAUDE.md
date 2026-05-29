@@ -578,6 +578,64 @@ Key VTIDs that established patterns:
 
 ---
 
+## 13b. SERVER-SIDE i18n (PR #2269)
+
+The gateway emits some strings directly to users (push notifications, email
+subjects, voice greetings, error bodies) where the frontend can't intercept
+and translate. The German community has been complaining about English text
+showing on their lock screen — this is the surface that causes it.
+
+### Hard rule
+
+**Never** hardcode a user-visible string in a gateway response. Use the
+catalog:
+
+```ts
+import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { getUserLocale, bulkGetUserLocales } from '../i18n/server-locale';
+
+// Single user
+const lc = await getUserLocale(supa, user_id);
+title: tt('notif.diary_reminder.title', lc),
+body:  tt('notif.diary_reminder.body', lc, { count: 3 }),
+
+// Cron fan-out (many users)
+const locales = await bulkGetUserLocales(supa, userIds);
+for (const u of users) {
+  const lc = locales.get(u.user_id);
+  await notify(u.user_id, tt('notif.x.title', lc), tt('notif.x.body', lc));
+}
+```
+
+### Adding a new key
+
+1. Add the key to `GatewayI18nKey` union in `services/gateway/src/i18n/catalog.ts`.
+2. Add translations to **all four** locale objects (DE, EN, ES, SR). DE
+   must be a real translation; ES/SR can start as a copy of EN and graduate
+   through the audit workflow later.
+3. Use `tt(key, locale, params?)` in the route handler.
+
+### Locale resolution priority
+
+1. `app_users.locale` (canonical)
+2. `memory_facts.fact_key='preferred_language'` (fallback)
+3. `'de'` (default)
+
+5-min in-process cache. Cron jobs that fan out over thousands of users
+must use `bulkGetUserLocales` to batch-fetch in one query.
+
+### What does NOT need translation
+
+- **System instructions sent to the LLM** (`buildLiveSystemInstruction`,
+  agent personas, tool prompts) — the LLM reads English instructions and
+  emits German output when told `Respond ONLY in {language}`. Translating
+  system prompts hurts model performance.
+- **Internal state identifiers** (currency codes, tab IDs, status enums) —
+  these are not user-visible.
+- **Debug/telemetry logs** — never translated.
+
+---
+
 ---
 
 ## 14. MEMORY & INTELLIGENCE ARCHITECTURE (VTID-01225)

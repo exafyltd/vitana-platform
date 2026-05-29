@@ -1,10 +1,22 @@
 /**
- * BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) — protocol + watchdog + keepalive
- * constants that were previously inline in routes/orb-live.ts.
+ * Voice-pipeline thresholds + protocol constants.
  *
- * All values are preserved byte-for-byte. No behaviour change.
+ * Phase D.1 (VTID-03124) moved the tunable thresholds out of `export
+ * const` literals and behind accessor functions that read from
+ * `PolicyResolver`. The literal values that previously lived here are
+ * kept as `*_FALLBACK` constants — they are the safety-net `defaultValue`
+ * the accessor passes to `getValue`, so behaviour is byte-identical when
+ * the resolver cache is cold (boot warm-up race) or when the
+ * `decision_policy` row is missing.
  *
- * Categories:
+ * Connection-issue messages (8 languages) remain as a literal Record for
+ * now — Phase D.2 migrates them to `policy_render_block`.
+ *
+ * The protocol-derived constants (`SILENCE_PCM_BYTES`,
+ * `SILENCE_AUDIO_B64`) stay as literals because they encode the on-wire
+ * sample-rate format (16 kHz mono 16-bit) — not a tuning knob.
+ *
+ * Original BOOTSTRAP-ORB-MOVE phase 2 move-only history:
  *   - VAD / end-of-speech detection
  *   - Post-turn mic cooldown (echo prevention)
  *   - Silence keepalive (anti-idle-timeout)
@@ -14,107 +26,144 @@
  *   - User-facing connection-issue messages
  */
 
-// =============================================================================
-// VTID-RESPONSE-DELAY: VAD silence threshold for end-of-speech detection
-// =============================================================================
-// How long Vertex waits after user stops speaking before triggering a response.
-// Default Vertex VAD is ~100ms which is too aggressive — the model starts
-// responding while users are still mid-thought or pausing between sentences.
-// 1200ms provides natural pause tolerance for conversational speech.
-export const VAD_SILENCE_DURATION_MS_DEFAULT = 1_200;
+import { getPolicyResolver } from '../../services/decision-contract/policy-resolver';
+import {
+  POLICY_KEYS,
+  RENDER_BLOCK_KEYS,
+} from '../../services/decision-contract/policy-keys';
 
-// =============================================================================
-// VTID-ECHO-COOLDOWN: Post-turn mic audio cooldown
-// =============================================================================
-// After Vertex sends turn_complete, the server unsets isModelSpeaking
-// immediately. But the client is still draining its audio playback queue
-// (Web Audio API scheduled sources). During this window, speaker output gets
-// picked up by the mic and forwarded to Vertex as new user speech, causing
-// phantom responses. Mobile AEC is weak — diagnostics show ghost responses
-// triggered on 2 chunks (~170ms) within 740ms of turn_complete. 2000ms covers
-// realistic mobile playback drain without killing responsiveness.
-export const POST_TURN_COOLDOWN_MS = 2_000;
+// ---------------------------------------------------------------------------
+// Safety-net fallback values. Match the Phase D.1 seed rows byte-for-byte.
+// Used by the accessor functions below when the resolver cache is cold or
+// when no row is seeded for the key. Production source of truth is the
+// `decision_policy` table.
+// ---------------------------------------------------------------------------
 
-// =============================================================================
-// VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
-// =============================================================================
-// Vertex closes the stream with code 1000 after ~25-30s of no audio.
-// Periodic 250ms silence frames keep it alive during user pauses.
-export const SILENCE_KEEPALIVE_INTERVAL_MS = 3_000; // Check every 3s
-export const SILENCE_IDLE_THRESHOLD_MS = 3_000;     // Send silence after 3s idle
-export const SILENCE_PCM_BYTES = 8_000;             // 250ms at 16kHz, 16-bit mono
+// VTID-RESPONSE-DELAY / VTID-03019: 1_200 → 850 ms trims ~350ms off
+// end-of-turn latency vs the original Vertex VAD default of 100 ms (too
+// aggressive — cut users off mid-thought).
+const VAD_SILENCE_DURATION_MS_FALLBACK = 850;
+
+// VTID-ECHO-COOLDOWN: gates mic for 2s after turn_complete so the
+// client's draining playback queue doesn't leak into the upstream WS
+// as new user speech (mobile AEC is weak; ghost-response repro under
+// PR #743).
+const POST_TURN_COOLDOWN_MS_FALLBACK = 2_000;
+
+// VTID-STREAM-SILENCE: Vertex closes the stream after ~25-30s of no
+// audio. A 250ms silence frame every 3s keeps it open during pauses.
+const SILENCE_KEEPALIVE_INTERVAL_MS_FALLBACK = 3_000;
+const SILENCE_IDLE_THRESHOLD_MS_FALLBACK = 3_000;
+
+// VTID-WATCHDOG: stall detection windows. 8s greeting / 10s turn — short
+// enough to recover from a true Vertex stall, long enough to tolerate a
+// healthy 5-7s first-turn inference.
+const GREETING_RESPONSE_TIMEOUT_MS_FALLBACK = 8_000;
+const TURN_RESPONSE_TIMEOUT_MS_FALLBACK = 10_000;
+
+// VTID-FORWARDING-WATCHDOG (latest = VTID-01984): 45s tolerance for
+// genuine first-turn before any sign of life. With ~15K-char system
+// instruction + 16 tools, Vertex's first-turn inference can take 8-12s;
+// shorter windows fire inside the compute window and destroy the
+// utterance. Once Vertex has shown ANY sign of life (transcription,
+// start_speaking, audio chunk), the arm site skips this watchdog
+// entirely — see the call site in live-session-controller.ts.
+const FORWARDING_ACK_TIMEOUT_MS_FALLBACK = 45_000;
+
+// VTID-LOOPGUARD: pause silence keepalive after 3 model turns without
+// user speech so Vertex's idle timeout breaks the loop.
+const MAX_CONSECUTIVE_MODEL_TURNS_FALLBACK = 3;
+
+// VTID-TOOLGUARD: 5 consecutive tool calls without audio output → inject
+// a synthetic function_response so the model answers from data gathered
+// so far. See PR #743 for the non-destructive injection pattern.
+const MAX_CONSECUTIVE_TOOL_CALLS_FALLBACK = 5;
+
+// ---------------------------------------------------------------------------
+// Accessor functions — call these instead of importing the old `const`.
+// ---------------------------------------------------------------------------
+
+export function getVadSilenceDurationMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_VAD_SILENCE_DURATION_MS,
+    { defaultValue: VAD_SILENCE_DURATION_MS_FALLBACK },
+  );
+}
+
+export function getPostTurnCooldownMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_POST_TURN_COOLDOWN_MS,
+    { defaultValue: POST_TURN_COOLDOWN_MS_FALLBACK },
+  );
+}
+
+export function getSilenceKeepaliveIntervalMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_SILENCE_KEEPALIVE_INTERVAL_MS,
+    { defaultValue: SILENCE_KEEPALIVE_INTERVAL_MS_FALLBACK },
+  );
+}
+
+export function getSilenceIdleThresholdMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_SILENCE_KEEPALIVE_IDLE_THRESHOLD_MS,
+    { defaultValue: SILENCE_IDLE_THRESHOLD_MS_FALLBACK },
+  );
+}
+
+export function getGreetingResponseTimeoutMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_WATCHDOG_GREETING_TIMEOUT_MS,
+    { defaultValue: GREETING_RESPONSE_TIMEOUT_MS_FALLBACK },
+  );
+}
+
+export function getTurnResponseTimeoutMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_WATCHDOG_TURN_RESPONSE_TIMEOUT_MS,
+    { defaultValue: TURN_RESPONSE_TIMEOUT_MS_FALLBACK },
+  );
+}
+
+export function getForwardingAckTimeoutMs(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_WATCHDOG_FORWARDING_ACK_TIMEOUT_MS,
+    { defaultValue: FORWARDING_ACK_TIMEOUT_MS_FALLBACK },
+  );
+}
+
+export function getMaxConsecutiveModelTurns(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_LOOP_GUARD_MAX_CONSECUTIVE_MODEL_TURNS,
+    { defaultValue: MAX_CONSECUTIVE_MODEL_TURNS_FALLBACK },
+  );
+}
+
+export function getMaxConsecutiveToolCalls(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.VOICE_LOOP_GUARD_MAX_CONSECUTIVE_TOOL_CALLS,
+    { defaultValue: MAX_CONSECUTIVE_TOOL_CALLS_FALLBACK },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Protocol-derived constants (NOT tuning knobs — stay literal).
+// ---------------------------------------------------------------------------
+// 250ms at 16kHz mono 16-bit = 16000 * 0.25 * 2 = 8000 bytes. This encodes
+// the on-wire audio format the upstream expects; changing it would mean
+// a different frame size, not a different policy.
+export const SILENCE_PCM_BYTES = 8_000;
 export const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
-
-// =============================================================================
-// VTID-WATCHDOG: Response watchdog — stall detection across failure modes
-// =============================================================================
-// Monitors whether Gemini produces ANY output (audio/text) within N seconds
-// after greeting prompt or user speech. Catches Vertex stalls, tool-call
-// cascade failures, network drops, post-function-response hangs, etc.
-export const GREETING_RESPONSE_TIMEOUT_MS = 8_000;  // 8s for greeting to arrive
-export const TURN_RESPONSE_TIMEOUT_MS = 10_000;     // 10s after user speech
-
-// =============================================================================
-// VTID-FORWARDING-WATCHDOG: Detect zombie upstream WebSocket connections
-// =============================================================================
-// Armed when user audio is forwarded but no watchdog is running and model is
-// not speaking — catches the case where the upstream WS is OPEN but silently
-// not processing anything. If Vertex doesn't acknowledge within this window
-// (via input_transcription or model response), stall recovery force-closes
-// the WS to trigger a transparent reconnect.
-//
-// History:
-//   R2 (#769): 15 s → 6 s. Mistaken as "Vertex responds in 2-4 s" — actually
-//     Vertex's VAD needs 1.2 s silence before input_transcription, so Vertex
-//     legitimately sends NOTHING during an ongoing utterance. 6 s tripped
-//     mid-sentence on any utterance longer than ~5 s. Reverted.
-//   #772 compromise: 10 s. Still too aggressive with our 15 K-char system
-//     instruction + 16 tools; first-turn inference alone takes 8-9 s.
-//   R3 (this change): back to the pre-regression 15 s. Users were having
-//     their 2nd/3rd questions cut off. A proper follow-up makes the watchdog
-//     SLIDING — reset on each inbound audio chunk — so any timeout becomes
-//     safe because "N seconds without Vertex response" then means "N seconds
-//     after last audio with Vertex still silent" which is the real stall
-//     condition. Until that ships, 15 s is the safest known-good value.
-//   R5 (VTID-01984): production data (24h, 14/20 sessions BAD, 1 session
-//     53s of speech with 0 turns) showed 15 s was still destroying healthy
-//     sessions during legitimate first-turn inference. With 15K-char system
-//     instruction + 16 tools, Vertex first-turn latency is 8-12 s; add
-//     1.2 s VAD trigger time + audio chunking; 15 s is right on the edge
-//     and frequently fires inside Vertex's compute window — destroying the
-//     in-flight utterance via reconnect. Two changes:
-//       (1) The arm site now skips this watchdog entirely once Vertex has
-//           shown ANY sign of life this session (input_transcription /
-//           model_start_speaking / audio_out chunk). Native WS handlers
-//           still close on real connection failures; we don't need a 15 s
-//           heuristic to "detect" a Vertex pause between turns when the
-//           WS itself is healthy.
-//       (2) For genuine first-turn (vertexHasShownLife=false), bump from
-//           15 s to 45 s. Real Vertex stalls before any life signal are
-//           rare and 45 s won't make them invisible — but it will stop
-//           the false positives that were truncating greetings.
-export const FORWARDING_ACK_TIMEOUT_MS = 45_000;
-
-// =============================================================================
-// VTID-LOOPGUARD: Response loop prevention
-// =============================================================================
-// Gemini Live can enter a generative loop where the model keeps responding to
-// its own turn_complete without user input. After MAX_CONSECUTIVE_MODEL_TURNS
-// model turns without user speech, silence keepalive is paused so Vertex's
-// idle timeout stops the loop.
-export const MAX_CONSECUTIVE_MODEL_TURNS = 3;
-
-// VTID-TOOLGUARD: Hard limit on consecutive tool calls without audio output.
-// Gemini can spiral calling tools indefinitely (search_memory + search_events
-// + search_memory + ...). After this many consecutive calls, a synthetic
-// function_response is sent instructing the model to answer with data
-// already gathered. See PR #743 for the fix that made this non-destructive.
-export const MAX_CONSECUTIVE_TOOL_CALLS = 5;
 
 // =============================================================================
 // User-facing connection-issue messages (per language)
 // =============================================================================
-export const connectionIssueMessages: Record<string, string> = {
+// Phase D.2 (VTID-03125): localized strings now live in `policy_render_block`
+// rows seeded with byte-identical content. `getConnectionIssueMessage` reads
+// via PolicyResolver; the resolver automatically falls back to 'en' if the
+// requested language has no row. The fallback Record below is the
+// cache-cold safety net — same strings as the seeded rows.
+const CONNECTION_ISSUE_FALLBACKS: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
   'de': 'Es tut mir leid, ich habe gerade Verbindungsprobleme. Bitte versuchen Sie, ein neues Gespräch zu starten.',
   'fr': "Je suis désolé, j'ai des problèmes de connexion. Veuillez réessayer une nouvelle conversation.",
@@ -124,3 +173,12 @@ export const connectionIssueMessages: Record<string, string> = {
   'ru': 'Извините, у меня проблемы с подключением. Пожалуйста, попробуйте начать новый разговор.',
   'sr': 'Извините, изгледа да имам проблеме са везом. Молимо покушајте поново.',
 };
+
+export function getConnectionIssueMessage(lang: string): string {
+  const fallback = CONNECTION_ISSUE_FALLBACKS[lang] ?? CONNECTION_ISSUE_FALLBACKS['en'];
+  return getPolicyResolver().getRenderBlock(
+    RENDER_BLOCK_KEYS.VOICE_CONNECTION_ISSUE,
+    lang,
+    { defaultValue: fallback },
+  );
+}

@@ -424,6 +424,206 @@ export function estimateFactsTokens(facts: MemoryFact[]): number {
 }
 
 // =============================================================================
+// Context-Pack Fetchers (VTID-03155 — CPB-3 boundary)
+// =============================================================================
+//
+// These two functions own the direct reads against the `memory_facts` table
+// and the `memory_facts_semantic_search` RPC. They were moved out of
+// `context-pack-builder.ts` so the context-pack layer no longer names
+// fact-tier storage directly — the boundary lives here. Behaviour
+// (timeout, sort order, dedup hooks, error tolerance) is preserved
+// byte-identical to the pre-refactor inline code so a cache-cold call
+// site sees the same rows in the same order.
+
+/**
+ * Row shape returned by both context-pack fetchers. Matches the columns
+ * the pre-refactor CPB code selected directly; the context-pack builder
+ * is responsible for mapping these into its `MemoryHit` shape with its
+ * own relevance-score formula.
+ */
+export interface RankedFact {
+  id: string;
+  fact_key: string;
+  fact_value: string;
+  entity: string;
+  provenance_confidence: number;
+  provenance_source: string;
+}
+
+/**
+ * Row shape returned by `searchFactsSemantic` — extends `RankedFact` with
+ * the cosine `similarity_score` the RPC emits.
+ */
+export interface SemanticFact extends RankedFact {
+  similarity_score: number;
+}
+
+interface ContextLensLike {
+  tenant_id?: string | null;
+  user_id?: string | null;
+}
+
+const CPB_FACT_FETCH_TIMEOUT_MS = 2500;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
+/**
+ * Tier 2 fact retrieval: cosine-similarity search via the
+ * `memory_facts_semantic_search` RPC.
+ *
+ * Preserves the pre-refactor contract:
+ *   - Returns `{ ok: false, facts: [] }` (no throw) when
+ *     `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE` is missing, when the
+ *     lens has no tenant/user, when the query is <= 3 chars, or when
+ *     the embedding service fails. Callers should fall through.
+ *   - Uses a 2500ms abort budget so it stays under the orb-live 3s
+ *     tool timeout.
+ *   - p_top_k=20, p_min_confidence=0.5 (matches the previous inline
+ *     defaults).
+ */
+export async function searchFactsSemantic(
+  lens: ContextLensLike,
+  query: string,
+  options?: {
+    top_k?: number;
+    min_confidence?: number;
+    timeout_ms?: number;
+  },
+): Promise<{ ok: boolean; facts: SemanticFact[]; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, facts: [], error: 'supabase_not_configured' };
+  }
+  if (!lens.tenant_id || !lens.user_id) {
+    return { ok: false, facts: [], error: 'missing_lens' };
+  }
+  if (!query || query.trim().length <= 3) {
+    return { ok: true, facts: [] };
+  }
+
+  const topK = options?.top_k ?? 20;
+  const minConfidence = options?.min_confidence ?? 0.5;
+  const timeoutMs = options?.timeout_ms ?? CPB_FACT_FETCH_TIMEOUT_MS;
+
+  try {
+    const { generateEmbedding } = await import('./embedding-service');
+    const embResult = await generateEmbedding(query);
+    if (!embResult.ok || !embResult.embedding) {
+      return { ok: false, facts: [], error: 'embedding_failed' };
+    }
+
+    const timeout = abortAfter(timeoutMs);
+    try {
+      const resp = await fetch(
+        `${supabaseUrl}/rest/v1/rpc/memory_facts_semantic_search`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            p_query_embedding: JSON.stringify(embResult.embedding),
+            p_top_k: topK,
+            p_tenant_id: lens.tenant_id,
+            p_user_id: lens.user_id,
+            p_min_confidence: minConfidence,
+          }),
+          signal: timeout.signal,
+        },
+      );
+      if (!resp.ok) {
+        return { ok: false, facts: [], error: `rpc_http_${resp.status}` };
+      }
+      const rows = (await resp.json()) as Array<{
+        id: string;
+        fact_key: string;
+        fact_value: string;
+        entity: string;
+        provenance_confidence: number;
+        provenance_source: string;
+        similarity_score: number;
+      }>;
+      return { ok: true, facts: rows };
+    } finally {
+      timeout.clear();
+    }
+  } catch (err: any) {
+    return { ok: false, facts: [], error: err?.message ?? 'unknown' };
+  }
+}
+
+/**
+ * Tier 3 fact retrieval: confidence + recency ordered list from
+ * the canonical fact store. Filters superseded rows.
+ *
+ * Preserves the pre-refactor contract:
+ *   - Returns `{ ok: false, facts: [] }` (no throw) when
+ *     env or lens is missing.
+ *   - Order: `provenance_confidence DESC, extracted_at DESC`.
+ *   - Filter: `superseded_by IS NULL`.
+ *   - Default limit: 50 (matches the pre-refactor `fetchMemoryFacts` arg).
+ */
+export async function listFactsByConfidence(
+  lens: ContextLensLike,
+  options?: { limit?: number; timeout_ms?: number },
+): Promise<{ ok: boolean; facts: RankedFact[]; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, facts: [], error: 'supabase_not_configured' };
+  }
+  if (!lens.tenant_id || !lens.user_id) {
+    return { ok: false, facts: [], error: 'missing_lens' };
+  }
+
+  const limit = options?.limit ?? 50;
+  const timeoutMs = options?.timeout_ms ?? CPB_FACT_FETCH_TIMEOUT_MS;
+
+  const url =
+    `${supabaseUrl}/rest/v1/memory_facts?` +
+    `select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source` +
+    `&tenant_id=eq.${lens.tenant_id}` +
+    `&user_id=eq.${lens.user_id}` +
+    `&superseded_by=is.null` +
+    `&order=provenance_confidence.desc,extracted_at.desc` +
+    `&limit=${limit}`;
+
+  const timeout = abortAfter(timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      signal: timeout.signal,
+    });
+    if (!resp.ok) {
+      return { ok: false, facts: [], error: `rest_http_${resp.status}` };
+    }
+    const rows = (await resp.json()) as Array<RankedFact>;
+    return { ok: true, facts: rows };
+  } catch (err: any) {
+    return { ok: false, facts: [], error: err?.message ?? 'unknown' };
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
 // Async Embedding Generation (VTID-01225)
 // =============================================================================
 
